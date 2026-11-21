@@ -68,12 +68,12 @@ const POSTER_BAND_TOP = 216;
 const POSTER_BAND_HEIGHT = 108;
 
 /**
- * The caption track is also the transcript, so its two lines say what the clip is for rather than
- * describing an image the reader cannot see.
+ * The caption track is also the transcript, so each line describes what the clip shows and the two
+ * together read as consecutive sentences once the cues are concatenated.
  */
 const VTT_LINES = [
-  "A short local clip stands in for a Ministry Update video.",
-  "Captions arrive as a separate rendition, so this track is also the transcript.",
+  "A single flower opens against a dark background.",
+  "Light shifts across its petals as the bloom widens.",
 ];
 
 /**
