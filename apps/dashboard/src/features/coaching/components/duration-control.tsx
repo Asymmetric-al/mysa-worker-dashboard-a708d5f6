@@ -251,7 +251,9 @@ export default function DurationControl({
       return;
     }
     setRefusedDateText(null);
-    onChange(next === "ongoing" ? { kind: "ongoing" } : { kind: "through-date", throughDate: null });
+    onChange(
+      next === "ongoing" ? { kind: "ongoing" } : { kind: "through-date", throughDate: null },
+    );
   };
 
   /* The date control's own value is a `YYYY-MM-DD` string, which is exactly the storage form a civil
@@ -452,9 +454,7 @@ function DurationCutoffPanel({
           </div>
         </dl>
         <p className="text-sm text-muted-foreground">{DURATION_WORDING.cutoffExclusive}</p>
-        <p className="text-sm text-muted-foreground">
-          {DURATION_WORDING.cutoffFrozenAtAcceptance}
-        </p>
+        <p className="text-sm text-muted-foreground">{DURATION_WORDING.cutoffFrozenAtAcceptance}</p>
         <p className="text-sm text-muted-foreground">{DURATION_WORDING.chosenIsAMaximum}</p>
         {frozenCutoff.sourceLimitWins ? (
           <>

@@ -262,9 +262,7 @@ export function SidebarNav({
   // Only the worker's own open and close decisions are held here; everything else about the
   // active destination is derived from `currentPath` on every render, so a navigation cannot
   // leave the rail describing the page it used to be on.
-  const [sectionOverrides, setSectionOverrides] = useState<Readonly<Record<string, boolean>>>(
-    {},
-  );
+  const [sectionOverrides, setSectionOverrides] = useState<Readonly<Record<string, boolean>>>({});
   const current = resolveCurrent(items, currentPath);
 
   const primaryItems = items.filter((item) => (item.section ?? "primary") === "primary");
@@ -344,13 +342,7 @@ interface NavEntryProps {
  * section that contains it — so a screen-reader user hears which section they are in and which
  * page they are on without hearing two pages at once.
  */
-function NavEntry({
-  item,
-  current,
-  sectionOverrides,
-  onToggleSection,
-  onNavigate,
-}: NavEntryProps) {
+function NavEntry({ item, current, sectionOverrides, onToggleSection, onNavigate }: NavEntryProps) {
   const subListId = useId();
   const Icon = item.icon;
   const subItems = item.children ?? [];
@@ -361,11 +353,7 @@ function NavEntry({
   // never hidden behind a collapsed section. An explicit open or close overrides that default and
   // keeps overriding it as the reader moves, which is what makes the decision the worker's.
   const isExpanded = sectionOverrides[item.href] ?? current?.sectionHref === item.href;
-  const ariaCurrent: "page" | "true" | undefined = isPage
-    ? "page"
-    : isSection
-      ? "true"
-      : undefined;
+  const ariaCurrent: "page" | "true" | undefined = isPage ? "page" : isSection ? "true" : undefined;
 
   return (
     <SidebarMenuItem>

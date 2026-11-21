@@ -13,12 +13,14 @@
  * `mutationInputSchema` therefore stays the one declaration of `operationId`, `scope` and
  * `expectedRevision` — this file never re-declares them — and every payload mirrors the field names
  * and shapes the service mutation in `modules/data-service/mutations/dev.ts` validates —
- * `scenarioId`, `offsetIso`, `bySeconds`, `{ mode, target: { kind, name } }`, and an empty object for
- * the reset. Matching that service is what keeps a panel-offered value from being refused as `invalid`
- * a moment after it was accepted here, and carrying the discriminant is what keeps a body this file
- * accepts from being refused as `invalid` keyed `action` at the transport. The confirmation a reset
- * needs is the shared review step's, not a wire field, because the reset mutation accepts no field at
- * all.
+ * `scenarioId`, `offsetIso`, `bySeconds`, `{ mode, target: { kind, name } }` to arm a failure,
+ * `{ plan: null }` to disarm the armed one, and an empty object for the reset. Mirroring that service,
+ * its strictness included, is what keeps a panel-offered value from being refused as `invalid` a
+ * moment after it was accepted here: every payload below is a strict object, so a field the mutation
+ * does not accept is refused at this boundary rather than dropped and then refused on submit, and
+ * carrying the discriminant is what keeps a body this file accepts from being refused as `invalid`
+ * keyed `action` at the transport. The confirmation a reset needs is the shared review step's, not a
+ * wire field, because the reset mutation accepts no field at all.
  *
  * The envelope module is imported rather than the `@/modules/data-service` barrel: the barrel's value
  * imports reach `node:fs/promises` (scoped media serving and media registration), while this module is
@@ -28,7 +30,9 @@
  * The failure vocabulary is not fixed here. The modes and the named reads and mutations that
  * demonstrate them belong to the development runtime, so {@link makeSetFailurePlanRequestSchema}
  * validates membership against the lists a caller passes in and embeds none of them — a stored literal
- * would become a second source of truth about what a demonstration can arm.
+ * would become a second source of truth about what a demonstration can arm. Its disarm form names no
+ * mode and no call, so it has nothing to check against those lists: clearing the armed failure asks the
+ * runtime for no demonstration at all.
  */
 
 import { z } from "zod";
@@ -67,6 +71,8 @@ const DEV_SCHEMA_MESSAGES = {
   failureTargetNameRequired:
     "A failure plan names the one read or mutation that will answer with it.",
   failureTargetNotAdvertised: "Choose a read or mutation the development runtime advertises.",
+  failurePlanDisarmNotAbsent:
+    "A failure plan is disarmed by stating a null plan, because the plan it clears is the one already armed.",
 } as const;
 
 /**
@@ -84,17 +90,17 @@ const opaqueIdentifierSchema = z
   .max(200, DEV_SCHEMA_MESSAGES.identifierTooLong);
 
 /** The `setScenario` payload: the scenario this session should run in, named but not enumerated here. */
-const setScenarioPayloadSchema = z.object({
+const setScenarioPayloadSchema = z.strictObject({
   scenarioId: opaqueIdentifierSchema,
 });
 
 /** The `setClock` payload: the instant the session's scenario clock should read, with its offset stated. */
-const setClockPayloadSchema = z.object({
+const setClockPayloadSchema = z.strictObject({
   offsetIso: z.iso.datetime({ offset: true, error: DEV_SCHEMA_MESSAGES.clockReadingRequired }),
 });
 
 /** The `advanceClock` payload: how far forward to move, in whole seconds and only forwards. */
-const advanceClockPayloadSchema = z.object({
+const advanceClockPayloadSchema = z.strictObject({
   bySeconds: z
     .number({ error: DEV_SCHEMA_MESSAGES.clockAmountNotWhole })
     .int({ error: DEV_SCHEMA_MESSAGES.clockAmountNotWhole })
@@ -102,8 +108,8 @@ const advanceClockPayloadSchema = z.object({
     .max(CLOCK_OFFSET_GUARD_SECONDS, { error: DEV_SCHEMA_MESSAGES.clockAmountOutOfRange }),
 });
 
-/** The `resetSeed` payload: a reset states nothing, so a field sent with it changes nothing. */
-const resetSeedPayloadSchema = z.object({});
+/** The `resetSeed` payload: a reset states no field, so a field sent with it is refused here as it is there. */
+const resetSeedPayloadSchema = z.strictObject({});
 
 /**
  * One validated development request: the four-field mutation input, plus the action it names.
@@ -183,14 +189,31 @@ export const advanceClockRequestSchema = developmentRequestSchema(
 /** Validates resetSeed — accepted | alreadyAccepted | unchanged | conflict | denied | invalid | unavailable | unknown. */
 export const resetSeedRequestSchema = developmentRequestSchema("resetSeed", resetSeedPayloadSchema);
 
-/** Validates setFailurePlan against the modes and targets the caller's development read advertises. */
+/** One failure a panel asks to arm: the mode, and the advertised call it is demonstrated on. */
+export type AdvertisedFailureArming = { mode: string; target: AdvertisedFailureTarget };
+
+/** The disarm a panel asks for: the absent plan, naming no mode and no call. */
+export type AdvertisedFailureDisarm = { plan: null };
+
+/** Either form of a failure-plan payload the panel sends: the failure to arm, or the disarm. */
+export type AdvertisedFailurePlanPayload = AdvertisedFailureArming | AdvertisedFailureDisarm;
+
+/**
+ * Validates setFailurePlan against the modes and targets the caller's development read advertises.
+ *
+ * The payload states either the failure to arm — `{ mode, target: { kind, name } }` — or the disarm,
+ * `{ plan: null }`, and exactly one of the two. Only the arming form has a vocabulary to check, so only
+ * it consults the advertised lists; the disarm states that no failure stays armed and asks the runtime
+ * for no demonstration. The form the payload states answers with its own issues, so each refusal keeps
+ * the field path that lets the panel place it against the control that carried the value.
+ */
 export function makeSetFailurePlanRequestSchema(advertised: AdvertisedFailurePlan) {
-  const planSchema = z
-    .object({
+  const armPlanSchema: z.ZodType<AdvertisedFailureArming> = z
+    .strictObject({
       mode: z
         .string({ error: DEV_SCHEMA_MESSAGES.failureModeRequired })
         .min(1, DEV_SCHEMA_MESSAGES.failureModeRequired),
-      target: z.object({
+      target: z.strictObject({
         kind: z.enum(["read", "mutation"], {
           error: DEV_SCHEMA_MESSAGES.failureTargetKindInvalid,
         }),
@@ -223,6 +246,37 @@ export function makeSetFailurePlanRequestSchema(advertised: AdvertisedFailurePla
       }
     });
 
+  /**
+   * The disarm states one member and nothing else: the absent plan. It is strict, like the service's own
+   * payload, so a request that states a mode or a target beside the null plan is refused here rather than
+   * quietly narrowed to a disarm the caller did not ask for.
+   */
+  const disarmPlanSchema: z.ZodType<AdvertisedFailureDisarm> = z.strictObject({
+    plan: z.null({ error: DEV_SCHEMA_MESSAGES.failurePlanDisarmNotAbsent }),
+  });
+
+  /**
+   * The form is told apart by the one member only the disarm states. `z.union` would report both forms'
+   * issues as a single form-level error with no field path, so the chosen form's issues are answered as
+   * its own schema produced them; the declared type is the payload's union and this refinement is what
+   * holds a payload to it.
+   */
+  const planSchema: z.ZodType<AdvertisedFailurePlanPayload> = z
+    .custom<AdvertisedFailurePlanPayload>()
+    .superRefine((payload, ctx) => {
+      const parsed =
+        typeof payload === "object" && payload !== null && Object.hasOwn(payload, "plan")
+          ? disarmPlanSchema.safeParse(payload)
+          : armPlanSchema.safeParse(payload);
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          // The form's own message and field path are what a caller acts on; the machine code belongs to
+          // the schema library, and an `invalid` outcome is keyed by the path and read for the message.
+          ctx.addIssue({ code: "custom", message: issue.message, path: issue.path });
+        }
+      }
+    });
+
   return developmentRequestSchema("setFailurePlan", planSchema);
 }
 
@@ -235,7 +289,10 @@ export type SetClockRequest = z.infer<typeof setClockRequestSchema>;
 /** The validated advanceClock request: the action named, the four-field envelope and the forward move. */
 export type AdvanceClockRequest = z.infer<typeof advanceClockRequestSchema>;
 
-/** The validated setFailurePlan request: the action named, the four-field envelope and the call it arms. */
+/**
+ * The validated setFailurePlan request: the action named, the four-field envelope, and either the mode
+ * with the one call it arms or the null plan that disarms the armed one.
+ */
 export type SetFailurePlanRequest = z.infer<ReturnType<typeof makeSetFailurePlanRequestSchema>>;
 
 /** The validated resetSeed request: the action named, the four-field envelope and no payload field. */

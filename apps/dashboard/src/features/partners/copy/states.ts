@@ -357,32 +357,38 @@ export const VALUE_STATE_COPY: Readonly<Record<ValueState, ValueStateCopy>> = {
   value: {
     phrase: "Recorded",
     accessibleLabel: "A recorded value, taken from the source as it stands.",
-    explanation: "The figure is a recorded value rather than an estimate, and it carries the coverage stated beside it.",
+    explanation:
+      "The figure is a recorded value rather than an estimate, and it carries the coverage stated beside it.",
   },
   zero: {
     phrase: "Zero recorded",
     accessibleLabel: "A recorded zero, which is a known value and not a missing one.",
-    explanation: "The source established a zero. It is not unknown, not withheld and not unavailable.",
+    explanation:
+      "The source established a zero. It is not unknown, not withheld and not unavailable.",
   },
   unknown: {
     phrase: "Unknown",
     accessibleLabel: "Unknown, because the source did not supply this value.",
-    explanation: "The source did not supply the value, so nothing is assumed and nothing is filled in to stand for it.",
+    explanation:
+      "The source did not supply the value, so nothing is assumed and nothing is filled in to stand for it.",
   },
   withheld: {
     phrase: "Not shown",
     accessibleLabel: "Withheld, because this context does not show the recorded value.",
-    explanation: "A value is recorded and this context does not show it, so it stays out of sight rather than becoming absent.",
+    explanation:
+      "A value is recorded and this context does not show it, so it stays out of sight rather than becoming absent.",
   },
   unavailable: {
     phrase: "Unavailable",
     accessibleLabel: "Unavailable, because the source behind the value could not be read.",
-    explanation: "The source behind this figure is down, so the figure is unavailable; a failed read is neither a missing value nor a zero.",
+    explanation:
+      "The source behind this figure is down, so the figure is unavailable; a failed read is neither a missing value nor a zero.",
   },
   "incomplete-subtotal": {
     phrase: "Incomplete subtotal",
     accessibleLabel: "An incomplete subtotal, because the coverage for the period is partial.",
-    explanation: "Coverage for the period is partial, so this subtotal covers only the part the source holds, and the coverage statement says which part.",
+    explanation:
+      "Coverage for the period is partial, so this subtotal covers only the part the source holds, and the coverage statement says which part.",
   },
 };
 

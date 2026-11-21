@@ -40,6 +40,7 @@ import { z } from "zod";
 
 import type { SourceReference } from "@/lib/ids";
 import { logger } from "@/lib/logger";
+import { failureFor, failurePlanOfDocument } from "@/modules/dev-runtime/failures";
 import { minorUnitsOf } from "@/modules/money/amount";
 import { readSession } from "@/modules/store/repository";
 import { SUPPORT_BASIS, type GiftRow, type SupportProjection } from "@/modules/support/basis";
@@ -52,7 +53,12 @@ import {
   type ReportScope,
 } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
-import { parseCivilDate, serialiseCivilDate, todayInZone, type CivilDate } from "@/modules/time/civil";
+import {
+  parseCivilDate,
+  serialiseCivilDate,
+  todayInZone,
+  type CivilDate,
+} from "@/modules/time/civil";
 
 import {
   assertScope,
@@ -358,7 +364,14 @@ export interface PartnerFacet {
  * in, exactly as the report engine reads it.
  */
 export interface PartnerGivingSelection {
-  /** The single currency a figure is stated in. Absent means the read states none. */
+  /**
+   * The single currency every giving figure and giving facet option is stated in; absent states none.
+   *
+   * A stated currency is the whole partition, not a filter applied to an unfiltered figure: a period
+   * holding no row in it is a genuine zero for that currency, never another currency's figure
+   * presented under the statement. Absent, the partition is every currency the period's authorised
+   * rows are recorded in.
+   */
   readonly currency?: string;
   /** Two civil dates, inclusive at both ends; absent resolves to the year to date. */
   readonly period?: { readonly from: string; readonly to: string };
@@ -392,16 +405,23 @@ export type PartnerRosterRecord = Pick<
  * A list envelope states one coverage for every value it carries, and this one carries exact record
  * counts that really are complete — so a partial financial subtotal is never stated inside it. The
  * list therefore states the giving facts it can state exactly: the period a row's currencies were
- * read in, the currencies present and the projection's own coverage, so a reader knows how much of
- * the past those facts reach. The amounts belong to the record's own read, whose coverage is the
- * projection's and which therefore carries every figure with the state the report engine gave it.
+ * read in, the currencies the figures are stated in and the projection's own coverage, so a reader
+ * knows how much of the past those facts reach. The amounts belong to the record's own read, whose
+ * coverage is the projection's and which therefore carries every figure with the state the report
+ * engine gave it.
  */
 export interface PartnerRosterGivingScope {
   /** The period the currencies were read in, said in words rather than implied. */
   readonly periodLabel: string;
   /** How much of the past the support projection covers. */
   readonly coverage: Coverage;
-  /** The currencies the period's authorised rows are stated in, ascending. */
+  /**
+   * The currencies the figures are stated in, ascending.
+   *
+   * The request's stated currency alone when it stated one — so a currency the period holds no row in
+   * is stated as a genuine zero rather than replaced by another currency's figure — and otherwise
+   * every currency the period's authorised rows are recorded in.
+   */
   readonly currencies: readonly string[];
 }
 
@@ -431,8 +451,10 @@ export interface PartnerRosterRow {
   /**
    * The currencies this record's received gifts are stated in inside the period, ascending.
    *
-   * Absent — not empty — when the caller may not state giving facts, because an empty list would
-   * claim that no gift is recorded rather than that this read may not say.
+   * Only rows the read's currency partition admits are counted, so a stated currency this record holds
+   * no gift in is a genuine empty list rather than this record's other currencies presented under the
+   * statement. Absent — not empty — when the caller may not state giving facts, because an empty list
+   * would claim that no gift is recorded rather than that this read may not say.
    */
   readonly givingCurrencies?: readonly string[];
   /** The last day a received gift is recorded, or `null` when none is; absent when not permitted. */
@@ -450,13 +472,41 @@ export interface PartnerRosterPage {
   /** The giving facts of the list, present exactly when the caller may state them. */
   readonly giving?: PartnerRosterGivingScope;
   /**
-   * The filters that actually took effect, as the read admitted them.
+   * The facet selections that actually took effect, as the read admitted them.
    *
    * A value the facet no longer admits narrows nothing and is reported absent here rather than
    * silently shaping a different result, which is what lets a surface show that a stored view needs
-   * repair instead of showing a roster nobody asked for.
+   * repair instead of showing a roster nobody asked for. Only facet selections appear, each facet id
+   * mapped to the values selected in it: the search text and the period are stated in
+   * `appliedSearch` and `appliedPeriod` beside this map, because a facet selection map cannot hold a
+   * text filter or a range without a reader mistaking one for a facet id.
    */
   readonly applied: Readonly<Record<string, readonly string[]>>;
+  /**
+   * The search text the read searched, trimmed, or `null` when the request stated none.
+   *
+   * Reported beside `applied` rather than inside it: `applied` is a facet id to values map that a
+   * toolbar rebuilds its selection from, and a text filter stored under a key of its own would come
+   * back as a facet nobody can select.
+   */
+  readonly appliedSearch: string | null;
+  /**
+   * The period the giving figures were read over, or `null` when the request stated no period or no
+   * giving figure could be read.
+   *
+   * The two days are the period the report engine resolved, serialised as the civil dates
+   * `giving.periodLabel` prints, so a preset the read substituted is reported as the days it resolved
+   * to. A range is not a facet selection, so it is stated here rather than inside `applied`.
+   */
+  readonly appliedPeriod: { readonly from: string; readonly to: string } | null;
+  /**
+   * The filter set describing this same result, at this same instant.
+   *
+   * The rows and the facet set are answered together because they describe one filter set: one
+   * `asOf`, one revision and one coverage describe both halves, and a second read of the same query
+   * would state counts read at another moment beside rows read at this one.
+   */
+  readonly facets: readonly PartnerFacet[];
 }
 
 /** What a saved view stores: the choices, never records. */
@@ -560,7 +610,6 @@ type FacetOutcome =
   | { readonly kind: "values"; readonly values: readonly FacetValueCandidate[] }
   | { readonly kind: "unavailable"; readonly reason: string }
   | { readonly kind: "not-applicable"; readonly reason: string };
-
 
 // ---------------------------------------------------------------------------------------------
 // The stored session document these reads parse
@@ -708,6 +757,10 @@ function calendarUnavailable(job: string): UnavailableOutcome {
  * `unavailable` and `no-access` are states of a real session — so the refusal always comes from
  * `assertScope`, which names the caller's relationship and nothing about a record.
  *
+ * An armed scope-denial plan is answered the moment the session's documents are in hand and before the
+ * state document is decoded, so the demonstration fires on the read it names while still disclosing
+ * nothing the caller may not see.
+ *
  * `source` names a session explicitly for the callers that hold an id and no request — the domain and
  * integration tests that prove isolation by naming a seeded session, and the operational scripts. It
  * is the identity the caller names, never a scope: scope is still derived here from the session's own
@@ -737,14 +790,24 @@ async function readContext(job: string, source?: SessionSource): Promise<Context
   }
 
   let state: unknown;
+  let meta: unknown;
   try {
     const documents = await readSession(session.sessionId);
     if (documents === undefined) {
       return { ok: false, refusal: sourceUnavailable(job, session) };
     }
     state = documents.state;
+    meta = documents.meta;
   } catch {
     return { ok: false, refusal: sourceUnavailable(job, session) };
+  }
+
+  // An armed scope-denial plan must take effect on the read it names, so it is answered here — after
+  // the documents are read and before any record is decoded, projected or enumerated. The refusal is
+  // this module's ordinary denial by its ordinary reason code, so the caller learns nothing about the
+  // record it was refused: no count, title, existence flag or size.
+  if (failureFor(failurePlanOfDocument(meta), "read", job) === "denied") {
+    return { ok: false, refusal: refused("no-permission") };
   }
 
   const parsed = partnerStateDocumentSchema.safeParse(state);
@@ -847,7 +910,8 @@ function commitmentRowsOf(
       record.lastSuccessfulOn === null ? undefined : civilDateOf(record.lastSuccessfulOn);
     const nextEligibleOn =
       record.nextEligibleOn === null ? undefined : civilDateOf(record.nextEligibleOn);
-    const resumeOn = record.pause.resumeOn === null ? undefined : civilDateOf(record.pause.resumeOn);
+    const resumeOn =
+      record.pause.resumeOn === null ? undefined : civilDateOf(record.pause.resumeOn);
     if (
       (record.lastSuccessfulOn !== null && lastSuccessfulOn === undefined) ||
       (record.nextEligibleOn !== null && nextEligibleOn === undefined) ||
@@ -946,19 +1010,24 @@ function givingFactsOf(
   return { record, rows, records: document.gifts, commitments };
 }
 
-/** The resolved period, currency partition and coverage one giving read states its figures in. */
+/**
+ * The resolved period and coverage one giving read states its figures in, with the currencies the
+ * period's authorised rows are recorded in.
+ */
 interface GivingSnapshot {
   readonly facts: GivingFacts;
   /** The whole authorised projection, as the report engine consumes it. */
   readonly projection: SupportProjection;
-  readonly period: { readonly from: CivilDate; readonly to: CivilDate; readonly state: PeriodState };
+  readonly period: {
+    readonly from: CivilDate;
+    readonly to: CivilDate;
+    readonly state: PeriodState;
+  };
   /** The period said in words, so a figure never stands beside an implied period. */
   readonly periodLabel: string;
   readonly coverage: Coverage;
   /** The currencies the period's authorised rows are stated in, ascending. */
   readonly currencies: readonly string[];
-  /** The single currency a figure may be stated in, or `undefined` when none may be. */
-  readonly selectedCurrency: string | undefined;
 }
 
 /** What a giving read could establish: a usable snapshot, or why no figure may be stated. */
@@ -980,7 +1049,7 @@ function reportScopeOf(scope: Scope): ReportScope {
 }
 
 /**
- * Resolves the period, the currency partition and the coverage of one giving read.
+ * Resolves the period and the coverage of one giving read, with the currencies its rows are stated in.
  *
  * Nothing here computes a figure. The period is resolved by the report engine itself — one call
  * against the whole authorised projection, whose own snapshot states the two civil dates a preset
@@ -1040,9 +1109,6 @@ function givingSnapshotOf(
   }
 
   const currencies = whole.summary.map((entry) => entry.currency);
-  const stated = selection.currency === undefined ? "" : selection.currency.trim();
-  const selectedCurrency =
-    stated !== "" ? stated : currencies.length === 1 ? currencies[0] : undefined;
 
   return {
     kind: "ready",
@@ -1059,9 +1125,26 @@ function givingSnapshotOf(
       }`,
       coverage: whole.snapshot.coverage,
       currencies,
-      selectedCurrency,
     },
   };
+}
+
+/**
+ * The currencies one giving read states its figures in: the request's stated currency alone, or every
+ * currency the period's rows are recorded in when it stated none.
+ *
+ * A stated currency is the whole partition rather than a filter applied afterwards, because a figure
+ * read in one currency and a figure read across several are two different statements: a period that
+ * holds no row in the stated currency is a genuine zero for it, never another currency's amount
+ * presented under the stated one. With no currency stated, the partition is the summary's own set, so
+ * nothing is hidden and no currency is invented.
+ */
+function givingPartitionOf(
+  snapshot: GivingSnapshot,
+  currency: string | undefined,
+): readonly string[] {
+  const stated = currency === undefined ? "" : currency.trim();
+  return stated === "" ? snapshot.currencies : [stated];
 }
 
 /** Reads the two civil dates a request states, or `undefined` when it states none or not two days. */
@@ -1172,6 +1255,13 @@ interface RosterFacts {
   readonly givingPermitted: boolean;
   /** The giving snapshot, or why no giving fact can be stated. */
   readonly giving: GivingOutcome;
+  /**
+   * The currencies the giving figures and the giving facet options are stated in.
+   *
+   * Empty when no giving fact may be stated: an empty partition would claim that no currency carries
+   * a figure, where the truth is that this read may not say.
+   */
+  readonly givingPartition: readonly string[];
   /** The calendar day the dated comparisons resolve against. */
   readonly today: CivilDate;
   /** The zone that day was resolved in: the request's own, or UTC when it names none. */
@@ -1354,6 +1444,12 @@ function rosterFactsOf(
     ? givingSnapshotOf(document, context, selection)
     : { kind: "unavailable", reason: GIVING_UNAVAILABLE_WITHOUT_PERMISSION };
 
+  // The partition is stated once here, so the list's currencies, every row's currencies and the
+  // giving-total facet's options all read the request's stated currency from one decision rather than
+  // each deciding which currencies its figures may be stated in.
+  const givingPartition: readonly string[] =
+    giving.kind === "ready" ? givingPartitionOf(giving.snapshot, selection.currency) : [];
+
   const openCurrencies = new Map<string, string[]>();
   const lastReceivedOn = new Map<string, string>();
   const givingCurrencies = new Map<string, readonly string[]>();
@@ -1367,7 +1463,7 @@ function rosterFactsOf(
         partnerId,
         latestDay(lastReceivedOn.get(partnerId), serialiseCivilDate(row.originalGiftOn)),
       );
-      if (rowWithin(row, giving.snapshot.period)) {
+      if (rowWithin(row, giving.snapshot.period) && givingPartition.includes(row.amount.currency)) {
         appendTo(openCurrencies, partnerId, row.amount.currency);
       }
     }
@@ -1394,13 +1490,13 @@ function rosterFactsOf(
       lastReceivedOn,
       givingPermitted,
       giving,
+      givingPartition,
       today: resolvedToday.date,
       timeZone: resolvedToday.zone,
       source: storeSource(context.session),
     },
   };
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // The facet set, declared once
@@ -1510,7 +1606,10 @@ const PARTNER_FACET_DECLARATIONS: readonly FacetDeclaration[] = [
     multi: true,
     requires: "roster",
     values: (facts) =>
-      closedValues(CONTACT_TYPE_LABELS, distinctInOrder(facts.partners, (r) => r.kind)),
+      closedValues(
+        CONTACT_TYPE_LABELS,
+        distinctInOrder(facts.partners, (r) => r.kind),
+      ),
     matches: (record, value) => record.kind === value,
   },
   {
@@ -1518,7 +1617,10 @@ const PARTNER_FACET_DECLARATIONS: readonly FacetDeclaration[] = [
     multi: false,
     requires: "roster",
     values: (facts) =>
-      closedValues(PREPARATION_LABELS, distinctInOrder(facts.partners, (r) => r.audience)),
+      closedValues(
+        PREPARATION_LABELS,
+        distinctInOrder(facts.partners, (r) => r.audience),
+      ),
     matches: (record, value) => record.audience === value,
   },
   {
@@ -1631,7 +1733,7 @@ const PARTNER_FACET_DECLARATIONS: readonly FacetDeclaration[] = [
     requires: "giving",
     values: (facts) =>
       facts.giving.kind === "ready"
-        ? openValues(facts.giving.snapshot.currencies)
+        ? openValues(facts.givingPartition)
         : { kind: "unavailable", reason: facts.giving.reason },
     matches: (record, value, facts) =>
       (facts.givingCurrencies.get(record.partnerId) ?? []).includes(value),
@@ -1644,7 +1746,6 @@ const PARTNER_FACET_DECLARATIONS: readonly FacetDeclaration[] = [
     matches: () => false,
   },
 ];
-
 
 /**
  * Evaluates one facet, honouring the authority it requires and the source it reads.
@@ -1900,7 +2001,6 @@ function compareRecords(
   return tiebreak;
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // Building the answer
 // ---------------------------------------------------------------------------------------------
@@ -1944,6 +2044,42 @@ function envelopeOf<T, C extends Coverage = Coverage>(
   };
 }
 
+/**
+ * The revision of the partner collection a roster read reflects.
+ *
+ * The store keeps no collection revision, and the session-context document's own token does not move
+ * when a partner record is created, edited or archived — so a roster carrying that token would answer
+ * the same revision for a different set of records and a stale view would be undetectable. This token
+ * is derived from the records the read actually reflects: the same records at the same revisions under
+ * the same context always produce the same value, and any creation, edit or archive of a record the
+ * caller may read produces a different one. Only the records `rosterFactsOf` returned are folded, so
+ * the token never changes because of a record the caller cannot see.
+ *
+ * It is a change-detection token, not a concurrency key: no mutation compares it as
+ * `expectedRevision` — a creation compares no revision, and a per-record edit presents the row's own
+ * record revision — so presenting this token to a mutation would offer a value nothing wrote.
+ *
+ * The fold is a 32-bit FNV-1a hash over the sorted parts, written as eight hexadecimal characters; it
+ * uses integer operations only, so it is identical on every host and reads no clock.
+ */
+function rosterRevisionOf(
+  context: PartnerReadContext,
+  partners: readonly StoredPartnerRecord[],
+): string {
+  const parts = [
+    `context@${context.document.context.revision}`,
+    ...partners.map((record) => `${record.partnerId}@${record.revision}`),
+  ].sort(compareIdentifiers);
+  let hash = 0x811c9dc5;
+  for (const part of parts) {
+    for (const character of `${part}\u001f`) {
+      hash ^= character.codePointAt(0) ?? 0;
+      hash = Math.imul(hash, 0x01000193);
+    }
+  }
+  return `roster-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
 /** Re-expresses a refusal as the failing half of a read result, with no envelope beside it. */
 function refusalOf<T>(refusal: DeniedOutcome | UnavailableOutcome): ReadResult<T> {
   return refusal.outcome === "denied"
@@ -1954,6 +2090,23 @@ function refusalOf<T>(refusal: DeniedOutcome | UnavailableOutcome): ReadResult<T
 /** Records one count's state: a count of zero is a genuine zero, not a missing value. */
 function countState(count: number): RecordedValueState {
   return count > 0 ? "value" : "zero";
+}
+
+/**
+ * Records every facet option's count state under the path the facet set is read at.
+ *
+ * One derivation for both reads that answer a facet set: `readFacets` answers the set alone and
+ * `findPartners` carries the same set inside the roster's answer, so an option's count is stated
+ * under one path and derived from one rule whichever read published it.
+ */
+function facetValueStatesOf(facets: readonly PartnerFacet[]): Record<string, RecordedValueState> {
+  const valueStates: Record<string, RecordedValueState> = {};
+  for (const facet of facets) {
+    for (const option of facet.options) {
+      valueStates[`facets.${facet.id}.${option.id}.count`] = countState(option.count);
+    }
+  }
+  return valueStates;
 }
 
 /** Records one date's state: a stated day is a value, and no recorded day is a genuine zero. */
@@ -2101,12 +2254,19 @@ function rowOf(
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Reads the partner roster: the whole authorised set of people, households, churches, organisations
- * and the worker's own preparation, searched, filtered, sorted and paged.
+ * Reads the partner roster and the facet set describing it: the whole authorised set of people,
+ * households, churches, organisations and the worker's own preparation, searched, filtered, sorted
+ * and paged, answered together with every filter the caller may use over that same result.
  *
- * The outcome set is `envelope` with one page of rows and the whole-result total, `denied` when the
- * session, the context or the request is not admitted, and `unavailable` when the records cannot be
- * read or the stated time zone cannot be resolved.
+ * The outcome set is `envelope` with one page of rows, the whole-result total and the facet set —
+ * all under one `asOf`, one revision and one coverage, because they describe one filter set read at
+ * one instant — `denied` when the session, the context or the request is not admitted, and
+ * `unavailable` when the records cannot be read or the stated time zone cannot be resolved.
+ *
+ * The answer also states which filters took effect: the facet selections it admitted in `applied`,
+ * the search text it searched in `appliedSearch` and the period its giving figures were read over in
+ * `appliedPeriod`. A surface that rebuilt its filters from the request instead would show a chip for
+ * a value the read dropped, and none for a filter the read applied.
  */
 export async function findPartners(
   query: PartnerRosterQuery = {},
@@ -2123,7 +2283,8 @@ export async function findPartners(
   }
   const facts = factsOutcome.facts;
   const selection = appliedSelectionOf(facts, query.applied);
-  const term = (query.search ?? "").trim().toLowerCase();
+  const searchText = (query.search ?? "").trim();
+  const term = searchText.toLowerCase();
 
   const matched: PartnerRecord[] = [];
   for (const record of facts.partners) {
@@ -2146,14 +2307,30 @@ export async function findPartners(
   const valueStates: Record<string, RecordedValueState> = { total: countState(matched.length) };
   const rows = window.map((record, position) => rowOf(record, facts, position, valueStates));
 
+  // The facet set is built from the facts already measured for these rows, so its counts describe the
+  // result they are published beside rather than a second enumeration of the same query.
+  const facets = buildFacets(facts);
+  Object.assign(valueStates, facetValueStatesOf(facets));
+
   const giving =
     facts.givingPermitted && facts.giving.kind === "ready"
       ? {
           periodLabel: facts.giving.snapshot.periodLabel,
           coverage: facts.giving.snapshot.coverage,
-          currencies: facts.giving.snapshot.currencies,
+          currencies: facts.givingPartition,
         }
       : undefined;
+
+  // The period is stated beside the facet selections because it is what the figures were read over: a
+  // preset the report engine resolved is reported as the days it resolved to, never as the request's
+  // own words.
+  const appliedPeriod =
+    query.period !== undefined && facts.giving.kind === "ready"
+      ? {
+          from: serialiseCivilDate(facts.giving.snapshot.period.from),
+          to: serialiseCivilDate(facts.giving.snapshot.period.to),
+        }
+      : null;
 
   const data: PartnerRosterPage = {
     rows,
@@ -2162,9 +2339,12 @@ export async function findPartners(
     timeZone: facts.timeZone,
     ...(giving === undefined ? {} : { giving }),
     applied: selection.applied,
+    appliedSearch: searchText === "" ? null : searchText,
+    appliedPeriod,
+    facets,
   };
 
-  return envelopeOf(context, data, context.document.context.revision, {
+  return envelopeOf(context, data, rosterRevisionOf(context, facts.partners), {
     coverage: RECORD_SET_COVERAGE,
     valueStates,
     actions: [
@@ -2205,20 +2385,12 @@ export async function readFacets(
   const facts = factsOutcome.facts;
   const facets = buildFacets(facts);
 
-  const valueStates: Record<string, RecordedValueState> = {};
-  for (const facet of facets) {
-    for (const option of facet.options) {
-      valueStates[`facets.${facet.id}.${option.id}.count`] = countState(option.count);
-    }
-  }
-
-  return envelopeOf(context, facets, context.document.context.revision, {
+  return envelopeOf(context, facets, rosterRevisionOf(context, facts.partners), {
     coverage: RECORD_SET_COVERAGE,
-    valueStates,
+    valueStates: facetValueStatesOf(facets),
     actions: [{ name: "saveView", available: true }],
   });
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // readSavedViews: the caller's stored choices, with the drift they now carry
@@ -2232,10 +2404,7 @@ export async function readFacets(
  * nothing is dropped — a view that needs repair keeps every choice it holds, which is what lets a
  * worker repair it deliberately rather than discover that their filters quietly changed.
  */
-function driftOf(
-  view: StoredSavedView,
-  facets: readonly PartnerFacet[],
-): PartnerSavedViewDrift {
+function driftOf(view: StoredSavedView, facets: readonly PartnerFacet[]): PartnerSavedViewDrift {
   const missing: string[] = [];
 
   for (const [facetId, values] of Object.entries(view.query.applied)) {
@@ -2426,11 +2595,19 @@ export async function readPartner(
   const preparationActions: readonly ReadAction[] = isPreparation
     ? [
         archived
-          ? { name: "archivePreparation", available: false, reason: "This preparation is already archived." }
+          ? {
+              name: "archivePreparation",
+              available: false,
+              reason: "This preparation is already archived.",
+            }
           : { name: "archivePreparation", available: true },
         archived
           ? { name: "restorePreparation", available: true }
-          : { name: "restorePreparation", available: false, reason: "This preparation is not archived." },
+          : {
+              name: "restorePreparation",
+              available: false,
+              reason: "This preparation is not archived.",
+            },
       ]
     : [
         { name: "archivePreparation", available: false, reason: ONLY_PREPARATION_ARCHIVED },
@@ -2537,7 +2714,11 @@ export async function readPrivatePreparation(
       { name: "savePrivateNote", available: true },
       preparation === undefined
         ? { name: "createPrivatePreparation", available: true }
-        : { name: "createPrivatePreparation", available: false, reason: "A preparation record already exists for this partner." },
+        : {
+            name: "createPrivatePreparation",
+            available: false,
+            reason: "A preparation record already exists for this partner.",
+          },
     ],
   });
 }
@@ -2663,4 +2844,3 @@ export async function readInteractions(
     ],
   });
 }
-

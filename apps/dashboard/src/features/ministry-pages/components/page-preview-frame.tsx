@@ -10,9 +10,10 @@
  *
  * - The body is the markup the read already produced. The single content renderer for this
  *   application runs on the server, is handed the pinned revision and its placements, and hands back
- *   one HTML string; this component places that string in the page unchanged. It never builds,
- *   concatenates, parses or repairs markup, and it imports no renderer, editor, media or service
- *   module — the boundary is the props below.
+ *   one HTML string, which this component passes unchanged to `components/rendered-content`, the
+ *   application's single rendering boundary. It never builds, concatenates, parses or repairs
+ *   markup, and it imports no renderer, editor, media or service module — the boundary is the props
+ *   below.
  * - The edition is named by the language it serves and by the exact revision it renders, so the
  *   preview is provably of the frozen revision rather than of whatever the draft is now. A fallback is
  *   stated as a fallback: the requested language and the language actually shown are both named, in
@@ -52,6 +53,7 @@
 
 import type { ReactElement, ReactNode } from "react";
 
+import RenderedContent from "@/components/rendered-content";
 import { SimulationLabel } from "@/components/simulation-label";
 import { StateNotice } from "@/components/state-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -468,12 +470,12 @@ function PreviewMedia({
  * subscribed and nothing is released. It is a static disclosure rather than an alarm, so the alert
  * frame carries no announcing role of its own.
  *
- * The markup below it is placed exactly as the read produced it. It is the single raw-HTML site in this
- * file: the string comes from the one content renderer over the versioned content profile, it is never
- * built, joined, parsed or repaired here, and it therefore carries no script, embed or arbitrary HTML.
- * That is also why nothing else in this file or this folder opens a second site for markup: a second
- * converter would be a second answer to "what does this edition say", which the release forbids
- * (Rule 1 clause 2; AAP 0.3.4).
+ * The markup below it is the read's own string, placed exactly as it arrived through
+ * `components/rendered-content` — the application's single rendering boundary, which carries the
+ * edition's direction and language and states what makes that markup safe to insert. Nothing here
+ * builds, joins, parses or repairs it, and nothing else in this file or this folder opens a second
+ * site for markup: a second converter would be a second answer to "what does this edition say", which
+ * the release forbids (Rule 1 clause 2; AAP 0.3.4).
  */
 function AuthorisedPreview({
   preview,
@@ -490,14 +492,13 @@ function AuthorisedPreview({
       <Alert role={undefined} data-slot="page-preview-inert">
         <AlertDescription>{copy.preview.inertBanner}</AlertDescription>
       </Alert>
-      <div
-        data-slot="page-preview-content"
-        dir={preview.direction}
+      {/* `preview.html` is the one renderer's output for the pinned revision, placed unchanged. */}
+      <RenderedContent
+        html={preview.html}
+        direction={preview.direction}
         lang={preview.servedLocale}
+        slot="page-preview-content"
         className={PREVIEW_CONTENT}
-        // The only raw-HTML site in this folder: `preview.html` is the one renderer's output for the
-        // pinned revision, placed unchanged. See the note on this component.
-        dangerouslySetInnerHTML={{ __html: preview.html }}
       />
       <PreviewMedia preview={preview} />
       {givingBinding === undefined ? null : (

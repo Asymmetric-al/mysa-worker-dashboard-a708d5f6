@@ -16,10 +16,10 @@
  *
  * - It arranges; it does not render. The HTML on each side is produced on the server by
  *   `modules/content/render.ts` inside the content reads and arrives on the read envelope with the
- *   revision it belongs to. That string is inserted once per side at
- *   {@link ComparisonPane} and nowhere else: no renderer is imported, no Tiptap JSON is turned into
- *   markup here, and the string is never sanitised, rewritten or annotated. `render.ts` emits no
- *   class, style, id or script, so there is nothing here to neutralise.
+ *   revision it belongs to, and {@link ComparisonPane} hands it to `components/rendered-content` —
+ *   the application's single rendering boundary, which states what makes that markup safe to insert
+ *   — once per side and nowhere else. No renderer is imported, no Tiptap JSON is turned into markup
+ *   here, and the string is never sanitised, rewritten or annotated.
  * - It reports differences; it does not find them. A section or placement that changed is named from
  *   the change list the envelope supplies, by its catalogue element and heading path or by its
  *   placement identity and rendition purpose. Nothing diffs two HTML strings, and when the read
@@ -68,6 +68,7 @@
 import { useId, type ReactElement, type ReactNode } from "react";
 
 import { DraftStatus, lifecycleOf } from "@/components/draft-status";
+import RenderedContent from "@/components/rendered-content";
 import { ScrollRegion } from "@/components/scroll-region";
 import { StateNotice, type NoticeHeadingLevel, type NoticeRetry } from "@/components/state-notice";
 import StatusBadge, { valueStateWord } from "@/components/status-badge";
@@ -310,6 +311,23 @@ const NESTED_HEADING_LEVEL: Readonly<Record<NoticeHeadingLevel, 2 | 3 | 4>> = {
   4: 4,
 };
 
+/**
+ * How a revision's rendered prose reads inside a comparison pane.
+ *
+ * The renderer emits semantic markup with no classes of its own, so the reading styles for it live
+ * here, in token utilities only, rather than in a second stylesheet: paragraphs keep the spacing the
+ * rest of the application reads prose with, and a link keeps its primary colour and its underline so
+ * the pane shows a reader what a link will look like while never carrying its meaning in colour
+ * alone. Images and video are bounded rather than sized: a pane is one column of a comparison, and a
+ * placed rendition must never widen it past the pane's own scroll region.
+ */
+const RENDERED_COMPARISON = cn(
+  "flex min-w-0 flex-col gap-3 text-sm text-pretty wrap-anywhere",
+  "[&_p]:mb-3 [&_p:last-child]:mb-0",
+  "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4",
+  "[&_img]:h-auto [&_img]:max-w-full [&_video]:max-w-full",
+);
+
 // ---------------------------------------------------------------------------------------------
 // Reading one change, without diffing anything
 // ---------------------------------------------------------------------------------------------
@@ -444,7 +462,9 @@ function ChangeList({
 }: ChangeListProps): ReactElement {
   const body =
     changes === undefined ? (
-      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{NO_CHANGE_LIST_NOTE}</p>
+      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">
+        {NO_CHANGE_LIST_NOTE}
+      </p>
     ) : changes.length === 0 ? (
       <p className="text-sm text-pretty wrap-anywhere">{NO_CHANGES_NOTE}</p>
     ) : (
@@ -521,9 +541,7 @@ function SideNotice({ side, reading, headingLevel }: SideNoticeProps): ReactElem
   }
 
   const retry: NoticeRetry | undefined =
-    reading.onRetry === undefined
-      ? undefined
-      : { label: RETRY_LABEL, onClick: reading.onRetry };
+    reading.onRetry === undefined ? undefined : { label: RETRY_LABEL, onClick: reading.onRetry };
 
   return (
     <StateNotice
@@ -550,6 +568,8 @@ interface ComparisonPaneProps {
   readonly headingLevel: NoticeHeadingLevel;
   /** The direction the edition is authored and read in, taken from its content locale. */
   readonly direction: ContentTextDirection;
+  /** The BCP-47 tag of the edition's content locale, applied as `lang` beside the direction. */
+  readonly lang: string;
   /** The accessible name of this pane's scroll region. */
   readonly scrollLabel: string;
   /**
@@ -567,10 +587,9 @@ interface ComparisonPaneProps {
  * content of that revision. Everything the revision states is displayed as the read supplied it: this
  * pane computes no digest, formats no instant and decides no state.
  *
- * The rendered HTML is inserted at exactly one place in this file, inside a `div` that carries no
- * markup of its own beyond layout classes on the wrapper. The string is `renderToHtml`'s `html`
- * member as the read envelope carried it; this component neither builds nor rewrites it, and the
- * renderer emits no class, style, id, script or event handler that could act on the page.
+ * The rendered HTML reaches the page at exactly one place: this pane passes `renderToHtml`'s `html`
+ * member, as the read envelope carried it, to `components/rendered-content` together with the layout
+ * classes this surface reads it in, and neither builds nor rewrites the string.
  *
  * An unreadable side is the shared notice instead of an empty card, because a card with a heading and
  * no content would read as a revision that holds nothing.
@@ -581,6 +600,7 @@ function ComparisonPane({
   headingId,
   headingLevel,
   direction,
+  lang,
   scrollLabel,
   reading,
 }: ComparisonPaneProps): ReactElement {
@@ -597,7 +617,11 @@ function ComparisonPane({
     >
       <CardHeader>
         <CardTitle>
-          <Heading level={headingLevel} id={headingId} className="text-base font-medium text-pretty">
+          <Heading
+            level={headingLevel}
+            id={headingId}
+            className="text-base font-medium text-pretty"
+          >
             {title}
           </Heading>
         </CardTitle>
@@ -623,22 +647,22 @@ function ComparisonPane({
         </dl>
         <ScrollRegion label={scrollLabel} className="rounded-lg">
           {/*
-            The only insertion point in this component: the server-rendered HTML of this revision, as
-            the read envelope's rendered `html` member for it. Inserted verbatim and never inspected,
-            rewritten or sanitised here, because `modules/content/render.ts` is the one renderer and
-            this file is not a second one.
+            This side's only insertion point: the server-rendered HTML of this revision, as the read
+            envelope's rendered `html` member for it, handed unchanged to the application's single
+            rendering boundary.
           */}
-          <div
-            data-slot="comparison-content"
-            className="flex min-w-0 flex-col gap-3 text-sm text-pretty wrap-anywhere [&_img]:h-auto [&_img]:max-w-full [&_video]:max-w-full"
-            dangerouslySetInnerHTML={{ __html: reading.renderedHtml }}
+          <RenderedContent
+            html={reading.renderedHtml}
+            direction={direction}
+            lang={lang}
+            slot="comparison-content"
+            className={RENDERED_COMPARISON}
           />
         </ScrollRegion>
       </CardContent>
     </Card>
   );
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // The comparison
@@ -717,7 +741,10 @@ export function CompareWithRelease({
   // The edition's own lifecycle, derived from the variant and its released head. A refused or
   // unreadable release side contributes no release, so the word comes from the variant alone rather
   // than from a record this surface could not read.
-  const lifecycle = lifecycleOf(variant, release.status === "revision" ? release.release : undefined);
+  const lifecycle = lifecycleOf(
+    variant,
+    release.status === "revision" ? release.release : undefined,
+  );
 
   // Whether the last release still publishes exactly the working revision. Asked of the variant
   // module, which owns that comparison, and only when both sides are readable: with a side missing
@@ -734,6 +761,7 @@ export function CompareWithRelease({
       headingId={`${baseId}-draft-${composition}`}
       headingLevel={nestedLevel}
       direction={direction}
+      lang={variant.locale.tag}
       scrollLabel={`${DRAFT_PANE_TITLE} content, scrollable`}
       reading={draft}
     />
@@ -746,6 +774,7 @@ export function CompareWithRelease({
       headingId={`${baseId}-release-${composition}`}
       headingLevel={nestedLevel}
       direction={direction}
+      lang={variant.locale.tag}
       scrollLabel={`${RELEASE_PANE_TITLE} content, scrollable`}
       reading={release}
     />
@@ -820,4 +849,3 @@ export function CompareWithRelease({
 }
 
 export default CompareWithRelease;
-

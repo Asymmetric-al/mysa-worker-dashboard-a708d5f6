@@ -53,7 +53,7 @@
  *
  * Layering: a data-service read module. It imports the store's one read function, the authorisation
  * module, the envelope and outcome contracts, the audience and content domain modules, the clock and the
- * window boundaries, and three `lib` helpers. It imports no component, no feature, no application route,
+ * window boundaries, and four `lib` helpers. It imports no component, no feature, no application route,
  * no provider package, no store internals beyond `repository.ts`, and it never writes: no transaction, no
  * file, no identifier, no log line carrying an address or a list of recipients.
  */
@@ -63,6 +63,7 @@ import { z } from "zod";
 import { isDevelopment } from "@/lib/guards";
 import type { SourceReference } from "@/lib/ids";
 import { logger } from "@/lib/logger";
+import { compareCodeUnits } from "@/lib/ordering";
 import {
   MEMBER_CHOICES,
   UPDATE_EMAIL_PURPOSE,
@@ -79,7 +80,10 @@ import {
   type ExclusionReason,
 } from "@/modules/audience/resolve";
 import { directionOfTag, resolveLocale, type ContentLocale } from "@/modules/content/locale";
-import { buildNotice, type PinnedRendition as NoticePinnedRendition } from "@/modules/content/notice";
+import {
+  buildNotice,
+  type PinnedRendition as NoticePinnedRendition,
+} from "@/modules/content/notice";
 import {
   isListedPublicly,
   reachMetadata,
@@ -95,6 +99,7 @@ import {
 } from "@/modules/content/render";
 import type { ContentDocument, Release } from "@/modules/content/variant";
 import { readSession } from "@/modules/store/repository";
+import { clampPageSize } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
 import { confirmationDeadline, notificationDeadline } from "@/modules/time/window";
 
@@ -138,7 +143,7 @@ import {
 } from "../outcome";
 
 // ---------------------------------------------------------------------------------------------
-// The session marker, the development preview world, and the sizes every list obeys
+// The session marker and the development preview world
 // ---------------------------------------------------------------------------------------------
 
 /**
@@ -165,10 +170,6 @@ const PREVIEW_PUBLISHER_SESSION_ID = "established-worker";
 /** The retry guidance an unreadable session document carries, naming the safe action and no path. */
 const STORE_READ_GUIDANCE =
   "The local synthetic store could not be read for this request. Retry the same request; if it keeps failing, reset the development data from Settings and reopen the session.";
-
-/** The default and maximum page sizes every list here uses: 50 rows, capped at 200 (AAP 0.8.7). */
-const DEFAULT_PAGE_SIZE = 50;
-const MAX_PAGE_SIZE = 200;
 
 /**
  * The first page number. Pages are one-based because the pagination control states "page 2 of 7", and a
@@ -344,7 +345,10 @@ export interface PreferencesView {
   /** The protected-reading grant, decided now from this person's own rows and nothing else. */
   readonly readingGrant: { readonly granted: boolean; readonly audience: ContentAudience };
   /** What this person's Off decision addresses: one publisher and one purpose, and no wider scope. */
-  readonly unsubscribeScope: { readonly publisherId: string; readonly purpose: AudiencePurpose } | null;
+  readonly unsubscribeScope: {
+    readonly publisherId: string;
+    readonly purpose: AudiencePurpose;
+  } | null;
   /** The copies already pinned for this person, as recorded. A language change cannot replace one. */
   readonly pinnedCopies: readonly PinnedCopy[];
 }
@@ -609,7 +613,6 @@ export interface SendResultView {
   readonly page: PageWindow;
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // The stored document this read parses, and the two worlds a session may be answered from
 // ---------------------------------------------------------------------------------------------
@@ -709,7 +712,11 @@ function sourceUnavailableRead(
   logger.sourceUnavailable({ job, source });
   return {
     kind: "unavailable",
-    unavailable: unavailable({ operationId: READ_ATTEMPT_ID, source, guidance: STORE_READ_GUIDANCE }),
+    unavailable: unavailable({
+      operationId: READ_ATTEMPT_ID,
+      source,
+      guidance: STORE_READ_GUIDANCE,
+    }),
   };
 }
 
@@ -722,13 +729,18 @@ function sourceUnavailableRead(
  */
 async function loadWorld(
   sessionId: string,
-): Promise<{ readonly ok: true; readonly world: World } | { readonly ok: false; readonly reference: string }> {
+): Promise<
+  { readonly ok: true; readonly world: World } | { readonly ok: false; readonly reference: string }
+> {
   let documents;
   try {
     documents = await readSession(sessionId);
   } catch (error) {
     const name: unknown = error instanceof Error ? error.name : undefined;
-    return { ok: false, reference: typeof name === "string" && name.length > 0 ? name : "unreadable-session" };
+    return {
+      ok: false,
+      reference: typeof name === "string" && name.length > 0 ? name : "unreadable-session",
+    };
   }
   if (documents === undefined) {
     return { ok: false, reference: "session-not-in-store" };
@@ -877,7 +889,8 @@ function revisionOrdinal(revision: string): number {
 function domainMembershipOf(record: StoredMembership, scope: Scope): DomainMembership {
   const acceptedAt = instantOf(record.acceptedAt);
   const confirmation = instantOf(record.confirmationDeadline);
-  const choice: MemberChoice = record.state === "off" || record.state === "restricted" ? "off" : "immediate";
+  const choice: MemberChoice =
+    record.state === "off" || record.state === "restricted" ? "off" : "immediate";
   return {
     membershipId: record.membershipId,
     scope: { organizationId: scope.organizationId, ministryId: scope.ministryId },
@@ -889,14 +902,19 @@ function domainMembershipOf(record: StoredMembership, scope: Scope): DomainMembe
     choice,
     languagePreference: record.languagePreference ?? "",
     ...(acceptedAt === undefined ? {} : { acceptedAt }),
-    ...(acceptedAt !== undefined && record.state !== "awaiting-proof" ? { confirmedAt: acceptedAt } : {}),
+    ...(acceptedAt !== undefined && record.state !== "awaiting-proof"
+      ? { confirmedAt: acceptedAt }
+      : {}),
     ...(confirmation === undefined ? {} : { confirmationDeadline: confirmation }),
     revision: revisionOrdinal(record.revision),
   };
 }
 
 /** The locale a stored release serves, read from the record and its variant's stated direction. */
-function localeOfRelease(record: ReleaseRecord, variant: ContentVariantRecord | undefined): ContentLocale {
+function localeOfRelease(
+  record: ReleaseRecord,
+  variant: ContentVariantRecord | undefined,
+): ContentLocale {
   return {
     tag: record.locale,
     direction: variant?.direction ?? directionOfTag(record.locale),
@@ -967,18 +985,6 @@ interface PageQuery {
   readonly pageSize?: number;
 }
 
-/** The page size actually used: the default when unstated, and never above the cap. */
-function pageSizeOf(requested: number | undefined): number {
-  if (requested === undefined || !Number.isFinite(requested)) {
-    return DEFAULT_PAGE_SIZE;
-  }
-  const whole = Math.trunc(requested);
-  if (whole < 1) {
-    return DEFAULT_PAGE_SIZE;
-  }
-  return whole > MAX_PAGE_SIZE ? MAX_PAGE_SIZE : whole;
-}
-
 /** The one-based page actually used, which is the first page when the request names none. */
 function pageNumberOf(requested: number | undefined): number {
   if (requested === undefined || !Number.isFinite(requested)) {
@@ -989,8 +995,11 @@ function pageNumberOf(requested: number | undefined): number {
 }
 
 /** The page window a read states, always measured against the whole authorised result. */
-function pageWindowOf(total: number, query: PageQuery): { readonly window: PageWindow; readonly offset: number; readonly limit: number } {
-  const pageSize = pageSizeOf(query.pageSize);
+function pageWindowOf(
+  total: number,
+  query: PageQuery,
+): { readonly window: PageWindow; readonly offset: number; readonly limit: number } {
+  const pageSize = clampPageSize(query.pageSize);
   const pageCount = total === 0 ? 0 : Math.ceil(total / pageSize);
   const page = pageNumberOf(query.page);
   return {
@@ -1053,13 +1062,18 @@ interface RenderingMedia {
  * that re-authorises on request, so a reference here is a place to ask, never a grant: a caption URL
  * cannot become a route around a denied playback, and the original bytes are never behind any of them.
  */
-function renderingMediaOf(revision: StoredRevision, assets: readonly MediaAssetRecord[]): RenderingMedia {
+function renderingMediaOf(
+  revision: StoredRevision,
+  assets: readonly MediaAssetRecord[],
+): RenderingMedia {
   const byId = new Map(assets.map((asset) => [asset.assetId, asset] as const));
   const placementList: RenderMediaPlacement[] = [];
   const renditions: Record<string, RenderRendition> = {};
   const references: MediaReference[] = [];
 
-  for (const placement of [...revision.mediaPlacements].sort((left, right) => left.position - right.position)) {
+  for (const placement of [...revision.mediaPlacements].sort(
+    (left, right) => left.position - right.position,
+  )) {
     const asset = byId.get(placement.assetId);
     if (asset === undefined) {
       placementList.push({
@@ -1076,20 +1090,34 @@ function renderingMediaOf(revision: StoredRevision, assets: readonly MediaAssetR
     );
     const poster = asset.renditions.find((rendition) => rendition.purpose === "poster");
     const captions = revision.captions.find((track) => track.assetId === placement.assetId);
-    const captionRendition = captions === undefined
-      ? undefined
-      : asset.renditions.find((rendition) => rendition.renditionId === captions.renditionId);
+    const captionRendition =
+      captions === undefined
+        ? undefined
+        : asset.renditions.find((rendition) => rendition.renditionId === captions.renditionId);
 
     if (main !== undefined) {
       const path = renditionPath(asset.assetId, main.renditionId);
-      renditions[placement.placementId] = { src: path, purpose: main.purpose === "playback" ? "playback" : "display" };
-      references.push({ assetId: asset.assetId, renditionId: main.renditionId, purpose: main.purpose, path });
+      renditions[placement.placementId] = {
+        src: path,
+        purpose: main.purpose === "playback" ? "playback" : "display",
+      };
+      references.push({
+        assetId: asset.assetId,
+        renditionId: main.renditionId,
+        purpose: main.purpose,
+        path,
+      });
     }
     if (poster !== undefined) {
       const posterKey = `${placement.placementId}:poster`;
       const path = renditionPath(asset.assetId, poster.renditionId);
       renditions[posterKey] = { src: path, purpose: "poster" };
-      references.push({ assetId: asset.assetId, renditionId: poster.renditionId, purpose: poster.purpose, path });
+      references.push({
+        assetId: asset.assetId,
+        renditionId: poster.renditionId,
+        purpose: poster.purpose,
+        path,
+      });
     }
     if (captionRendition !== undefined && captions !== undefined) {
       const captionsKey = `${placement.placementId}:captions`;
@@ -1134,14 +1162,20 @@ type RevisionRendering =
  * shown, which is a different fact from an edition that does not exist, and neither is presented as an
  * empty page.
  */
-function renderingOf(revision: StoredRevision, assets: readonly MediaAssetRecord[]): RevisionRendering {
+function renderingOf(
+  revision: StoredRevision,
+  assets: readonly MediaAssetRecord[],
+): RevisionRendering {
   const media = renderingMediaOf(revision, assets);
   const rendered = renderToHtml(revision.body, {
     placements: media.placements,
     renditions: media.renditions,
   });
   if (rendered.status === "invalid") {
-    return { ok: false, reason: "The edition's content does not satisfy the content profile this build renders." };
+    return {
+      ok: false,
+      reason: "The edition's content does not satisfy the content profile this build renders.",
+    };
   }
   return { ok: true, html: rendered.html, media };
 }
@@ -1157,16 +1191,24 @@ interface ResolvedRelease {
 
 /** Resolves the records one stored release names, so every read joins by identity rather than by name. */
 function resolveRelease(record: ReleaseRecord, state: StoredState): ResolvedRelease {
-  const variant = state.contentVariants.find((candidate) => candidate.variantId === record.variantId);
-  const revision = state.contentRevisions.find((candidate) => candidate.revisionId === record.revisionId);
+  const variant = state.contentVariants.find(
+    (candidate) => candidate.variantId === record.variantId,
+  );
+  const revision = state.contentRevisions.find(
+    (candidate) => candidate.revisionId === record.revisionId,
+  );
   const document =
     variant === undefined
       ? undefined
       : state.contentDocuments.find((candidate) => candidate.documentId === variant.documentId);
-  return { record, variant, revision, document, domain: domainReleaseOf(record, variant, revision) };
+  return {
+    record,
+    variant,
+    revision,
+    document,
+    domain: domainReleaseOf(record, variant, revision),
+  };
 }
-
-
 
 /** A count per membership state, all four present so a surface never has to guess an absent key. */
 function zeroMemberStates(): Record<DomainMembershipState, number> {
@@ -1187,13 +1229,7 @@ function zeroSendStates(): Record<SendOutcomeState, number> {
   return { accepted: 0, failed: 0, unknown: 0 };
 }
 
-/** Orders two identifiers by UTF-16 code unit, the one order every host and locale agrees on. */
-function compareCodeUnits(left: string, right: string): number {
-  if (left === right) {
-    return 0;
-  }
-  return left < right ? -1 : 1;
-}
+// Every text order below comes from the shared code-unit comparator in `@/lib/ordering`.
 
 /**
  * The scenario instant this request runs at, derived from the session's own persisted clock offset.
@@ -1242,7 +1278,9 @@ function readerOwnedMemberships(
       byId.set(row.membershipId, row);
     }
   }
-  return [...byId.values()].sort((left, right) => compareCodeUnits(left.membershipId, right.membershipId));
+  return [...byId.values()].sort((left, right) =>
+    compareCodeUnits(left.membershipId, right.membershipId),
+  );
 }
 
 /** The query the publisher's audience view accepts. */
@@ -1283,9 +1321,12 @@ export async function readAudience(
   }
 
   const at = scenarioInstant(session);
-  const addressed = published.state.memberships.filter((row) => row.purpose === UPDATE_EMAIL_PURPOSE);
+  const addressed = published.state.memberships.filter(
+    (row) => row.purpose === UPDATE_EMAIL_PURPOSE,
+  );
   const publisherId = query.publisherId ?? singlePublisherOf(addressed);
-  const rows = publisherId === undefined ? [] : addressed.filter((row) => row.publisherId === publisherId);
+  const rows =
+    publisherId === undefined ? [] : addressed.filter((row) => row.publisherId === publisherId);
 
   const members = rows
     .map((record) => {
@@ -1349,7 +1390,7 @@ export async function readAudience(
     "memberStates.awaiting-proof": countState(memberStates["awaiting-proof"]),
     "memberStates.off": countState(memberStates.off),
     "memberStates.restricted": countState(memberStates.restricted),
-    "sourceSuppliedRows": countState(sourceSuppliedRows),
+    sourceSuppliedRows: countState(sourceSuppliedRows),
     "page.total": countState(window.total),
     "page.pageCount": countState(window.pageCount),
   };
@@ -1469,8 +1510,7 @@ export async function readPreferences(): Promise<ReadResult<ReadEnvelope<Prefere
       ? { claimsMailSent: false, nextStep: "confirm-from-the-rendered-message" }
       : null,
     readingGrant: { granted: readingGrant, audience: "approved-supporter" },
-    unsubscribeScope:
-      publisherId === null ? null : { publisherId, purpose: UPDATE_EMAIL_PURPOSE },
+    unsubscribeScope: publisherId === null ? null : { publisherId, purpose: UPDATE_EMAIL_PURPOSE },
     pinnedCopies,
   };
 
@@ -1491,7 +1531,7 @@ export async function readPreferences(): Promise<ReadResult<ReadEnvelope<Prefere
           data.confirmation.remainingMilliseconds === null
             ? "unknown"
             : countState(data.confirmation.remainingMilliseconds),
-        "pinnedCopies": countState(pinnedCopies.length),
+        pinnedCopies: countState(pinnedCopies.length),
       },
       actions: [
         {
@@ -1575,7 +1615,11 @@ function confirmationWindowOf(
         deadline: window.deadlineInstant.toString(),
         remainingMilliseconds: window.remainingMilliseconds,
       }
-    : { state: "expired", deadline: window.deadlineInstant.toString(), remainingMilliseconds: null };
+    : {
+        state: "expired",
+        deadline: window.deadlineInstant.toString(),
+        remainingMilliseconds: null,
+      };
 }
 
 /** The query the synthetic inbox accepts. */
@@ -1601,7 +1645,9 @@ export interface InboxQuery {
  * reported beside the messages so a duplicate would be visible. Only messages addressed to the caller
  * are enumerated: another person's inbox is not this read's subject and cannot be named by it.
  */
-export async function readInbox(query: InboxQuery = {}): Promise<ReadResult<ReadEnvelope<InboxView>>> {
+export async function readInbox(
+  query: InboxQuery = {},
+): Promise<ReadResult<ReadEnvelope<InboxView>>> {
   const worlds = await resolveWorlds("readInbox");
   if (!worlds.ok) {
     return worlds.result;
@@ -1680,7 +1726,12 @@ export async function readInbox(query: InboxQuery = {}): Promise<ReadResult<Read
     } else {
       const rendered = renderingOf(resolved.revision, published.state.mediaAssets);
       reading = rendered.ok
-        ? { state: "rendered", href, title: resolved.revision.sharePresentation.title, html: rendered.html }
+        ? {
+            state: "rendered",
+            href,
+            title: resolved.revision.sharePresentation.title,
+            html: rendered.html,
+          }
         : { state: "unavailable", href, reason: rendered.reason };
     }
 
@@ -1737,8 +1788,8 @@ export async function readInbox(query: InboxQuery = {}): Promise<ReadResult<Read
       asOf: at.toString(),
       coverage: { from: null, to: at.toString(), state: "complete" },
       valueStates: {
-        "intentCount": countState(data.intentCount),
-        "unresolvedIntents": countState(unresolvedIntents),
+        intentCount: countState(data.intentCount),
+        unresolvedIntents: countState(unresolvedIntents),
         "sendStates.accepted": countState(sendStates.accepted),
         "sendStates.failed": countState(sendStates.failed),
         "sendStates.unknown": countState(sendStates.unknown),
@@ -1761,7 +1812,9 @@ export async function readInbox(query: InboxQuery = {}): Promise<ReadResult<Read
           available: messages.length > 0,
           ...(messages.length > 0
             ? {}
-            : { reason: "This inbox holds no message, so it has no intent to report results for." }),
+            : {
+                reason: "This inbox holds no message, so it has no intent to report results for.",
+              }),
         },
         {
           name: "confirmMembership",
@@ -1774,9 +1827,12 @@ export async function readInbox(query: InboxQuery = {}): Promise<ReadResult<Read
   };
 }
 
-
 /** The reader's own language preference, from their own rows, or `null` when none is recorded. */
-function languagePreferenceOf(session: ResolvedSession, own: World, published: World): string | null {
+function languagePreferenceOf(
+  session: ResolvedSession,
+  own: World,
+  published: World,
+): string | null {
   const rows = readerOwnedMemberships(session, own, published);
   for (const row of rows) {
     const preference = row.languagePreference;
@@ -1788,7 +1844,12 @@ function languagePreferenceOf(session: ResolvedSession, own: World, published: W
 }
 
 /** Whether the caller holds a protected-reading grant for any publisher it holds a row for. */
-function grantHeldFor(session: ResolvedSession, scope: Scope, own: World, published: World): boolean {
+function grantHeldFor(
+  session: ResolvedSession,
+  scope: Scope,
+  own: World,
+  published: World,
+): boolean {
   return readingGrantOf(
     session,
     readerOwnedMemberships(session, own, published).map((row) => domainMembershipOf(row, scope)),
@@ -1832,7 +1893,10 @@ function editionsOf(documentId: string, state: StoredState): readonly AdmittedEd
     });
   }
   return editions.sort((left, right) => {
-    const byPublication = Temporal.Instant.compare(right.domain.publishedAt, left.domain.publishedAt);
+    const byPublication = Temporal.Instant.compare(
+      right.domain.publishedAt,
+      left.domain.publishedAt,
+    );
     return byPublication === 0
       ? compareCodeUnits(left.record.releaseId, right.record.releaseId)
       : byPublication;
@@ -1893,7 +1957,13 @@ function resolveEditionFor(input: {
 }): EditionResolution {
   const attempt = (
     audience: ContentAudience,
-  ): { readonly edition: AdmittedEdition; readonly locale: ContentLocale; readonly fallbackOccurred: boolean } | undefined => {
+  ):
+    | {
+        readonly edition: AdmittedEdition;
+        readonly locale: ContentLocale;
+        readonly fallbackOccurred: boolean;
+      }
+    | undefined => {
     const candidates = input.editions.filter((edition) => edition.record.audience === audience);
     if (candidates.length === 0) {
       return undefined;
@@ -2054,7 +2124,7 @@ export async function readReceivingList(
       valueStates: {
         "page.total": countState(window.total),
         "page.pageCount": countState(window.pageCount),
-        "languagePreference": textState(preference),
+        languagePreference: textState(preference),
       },
       actions: [
         {
@@ -2115,7 +2185,8 @@ export async function readReceivingPost(
 
   const grantHeld = grantHeldFor(session, scope, own, published);
   const editions = editionsOf(document.documentId, published.state).filter(
-    (edition) => edition.domain.withdrawnAt === undefined && edition.domain.supersededBy === undefined,
+    (edition) =>
+      edition.domain.withdrawnAt === undefined && edition.domain.supersededBy === undefined,
   );
   const preference = languagePreferenceOf(session, own, published);
   const requestedLocale = requestedLocaleOf(query.locale, preference, editions);
@@ -2151,7 +2222,7 @@ export async function readReceivingPost(
         revision: collectionRevision(editions.map((edition) => edition.record.releaseId)),
         asOf: at.toString(),
         coverage: { from: null, to: at.toString(), state: "complete" },
-        valueStates: { "requestedLocale": textState(requestedLocale) },
+        valueStates: { requestedLocale: textState(requestedLocale) },
         actions: [],
       }),
     };
@@ -2191,10 +2262,10 @@ export async function readReceivingPost(
       asOf: at.toString(),
       coverage: { from: null, to: at.toString(), state: "complete" },
       valueStates: {
-        "title": textState(data.title),
+        title: textState(data.title),
         "servedLocale.tag": textState(served.locale.tag),
-        "publishedAt": textState(data.publishedAt),
-        "renditions": countState(data.renditions.length),
+        publishedAt: textState(data.publishedAt),
+        renditions: countState(data.renditions.length),
       },
       actions: [
         {
@@ -2205,7 +2276,6 @@ export async function readReceivingPost(
     }),
   };
 }
-
 
 /** The query the page discovery index accepts. */
 export interface DiscoveryIndexQuery {
@@ -2390,7 +2460,7 @@ export async function readReceivingPage(
             revision: collectionRevision(withdrawn.map((edition) => edition.record.releaseId)),
             asOf: at.toString(),
             coverage: { from: null, to: at.toString(), state: "complete" },
-            valueStates: { "requestedLocale": textState(requestedLocale) },
+            valueStates: { requestedLocale: textState(requestedLocale) },
             actions: [],
           }),
         };
@@ -2424,7 +2494,7 @@ export async function readReceivingPage(
         revision: collectionRevision(live.map((edition) => edition.record.releaseId)),
         asOf: at.toString(),
         coverage: { from: null, to: at.toString(), state: "complete" },
-        valueStates: { "requestedLocale": textState(requestedLocale) },
+        valueStates: { requestedLocale: textState(requestedLocale) },
         actions: [],
       }),
     };
@@ -2485,9 +2555,9 @@ export async function readReceivingPage(
       asOf: at.toString(),
       coverage: { from: null, to: at.toString(), state: "complete" },
       valueStates: {
-        "title": textState(data.title),
+        title: textState(data.title),
         "servedLocale.tag": textState(served.locale.tag),
-        "renditions": countState(data.renditions.length),
+        renditions: countState(data.renditions.length),
         "giving.state": textState(giving.state),
       },
       // A public reading view offers no action: it is inert, and a Give placement is a labelled simulation
@@ -2496,7 +2566,6 @@ export async function readReceivingPage(
     }),
   };
 }
-
 
 /**
  * Why one recorded outcome may not be attempted again, in the words the surface shows.
@@ -2581,7 +2650,10 @@ export async function readSendResult(
 
   // One row per recipient and intent: a duplicated recorded row for the same person is one outcome, not a
   // second copy.
-  const byRecipient = new Map<string, { readonly result: NotificationSendResultRecord; readonly copy: (typeof pairs)[number]["copy"] }>();
+  const byRecipient = new Map<
+    string,
+    { readonly result: NotificationSendResultRecord; readonly copy: (typeof pairs)[number]["copy"] }
+  >();
   for (const pair of pairs) {
     if (!byRecipient.has(pair.copy.recipientId)) {
       byRecipient.set(pair.copy.recipientId, pair);
@@ -2621,9 +2693,10 @@ export async function readSendResult(
     });
   }
 
-  const recordedAt = results
-    .map((result) => result.recordedAt)
-    .sort((left, right) => compareCodeUnits(right, left))[0] ?? null;
+  const recordedAt =
+    results
+      .map((result) => result.recordedAt)
+      .sort((left, right) => compareCodeUnits(right, left))[0] ?? null;
 
   const { window, offset, limit } = pageWindowOf(rows.length, query);
   const data: SendResultView = {
@@ -2663,7 +2736,7 @@ export async function readSendResult(
       asOf: at.toString(),
       coverage: { from: null, to: at.toString(), state: "complete" },
       valueStates: {
-        "ceilingCount": countState(intent.ceilingCount),
+        ceilingCount: countState(intent.ceilingCount),
         "counts.accepted": countState(counts.accepted),
         "counts.failed": countState(counts.failed),
         "counts.unknown": countState(counts.unknown),
@@ -2696,4 +2769,3 @@ export async function readSendResult(
     }),
   };
 }
-

@@ -57,7 +57,7 @@ const unsavedWorkResolutionSchema: z.ZodType<UnsavedWorkResolution> = z.enum([
 ]);
 
 /** Validates the `selectContext` payload: the target context only, plus the caller's optional decision. */
-export const selectContextPayloadSchema = z.object({
+export const selectContextPayloadSchema = z.strictObject({
   organizationId: organizationIdSchema,
   ministryId: ministryIdSchema,
   supportSubjectId: supportSubjectIdSchema,

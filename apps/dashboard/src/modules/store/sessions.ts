@@ -24,12 +24,7 @@
  *   guess at a failure this runtime does not model.
  */
 import { CorruptJsonError, readJson } from "./atomic";
-import {
-  InvalidSessionIdError,
-  isSafeSessionId,
-  listSessionIds,
-  sessionPaths,
-} from "./paths";
+import { InvalidSessionIdError, isSafeSessionId, listSessionIds, sessionPaths } from "./paths";
 
 /**
  * Name of the development-session cookie, defined once for the whole repository: the Route Handlers

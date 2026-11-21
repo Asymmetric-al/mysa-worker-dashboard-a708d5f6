@@ -532,7 +532,10 @@ function inputRefusalOf(input: ImportReceiptBuildInput): ImportReceiptRefusal | 
     };
   }
 
-  if (fingerprint.columnCount !== fileMeta.columnCount || fingerprint.dataRowCount !== fileMeta.rowCount) {
+  if (
+    fingerprint.columnCount !== fileMeta.columnCount ||
+    fingerprint.dataRowCount !== fileMeta.rowCount
+  ) {
     return {
       code: "file-mismatch",
       message: `The file metadata reports ${fileMeta.rowCount} data row(s) in ${fileMeta.columnCount} column(s), and the summary's fingerprint describes ${fingerprint.dataRowCount} in ${fingerprint.columnCount}. A changed file needs a fresh review.`,
@@ -1205,4 +1208,3 @@ export function cancelUnacceptedRows(receipt: ImportReceipt, cancelledAt: string
 // delivered, or that a partner consented: `facts` carries those as zeros and `false`, a consent-looking
 // column stays preserved data in the reviewed summary, and no route in a result is a URL — the import
 // feature builds every href from the descriptors defined here.
-

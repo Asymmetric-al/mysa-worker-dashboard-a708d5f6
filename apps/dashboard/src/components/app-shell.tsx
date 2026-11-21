@@ -393,8 +393,7 @@ function describeMembership(admission: AdmittedContext): string {
 /** Whether an admitted membership is the context currently in force. Compared by identifier only. */
 function isCurrentMembership(admission: AdmittedContext, scope: Scope): boolean {
   return (
-    admission.organizationId === scope.organizationId &&
-    admission.ministryId === scope.ministryId
+    admission.organizationId === scope.organizationId && admission.ministryId === scope.ministryId
   );
 }
 
@@ -627,7 +626,9 @@ function ShellChrome({
    */
   const personaOptions: readonly PersonaOption[] =
     personas ??
-    (devState === undefined ? NO_PERSONAS : devState.personaCatalogue.personas.map(toPersonaOption));
+    (devState === undefined
+      ? NO_PERSONAS
+      : devState.personaCatalogue.personas.map(toPersonaOption));
 
   /*
    * Exactly one place states a switch attempt at a time. While the dialog is open the guard states it;
@@ -796,4 +797,3 @@ function describePending(
 }
 
 export default AppShell;
-

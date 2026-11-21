@@ -24,11 +24,12 @@
  *   The words this file does own are the field labels, the two tab labels, the list of omissions and
  *   the statement about what follows the link; none of them describes the content behind it.
  * - One rendering site, no second renderer. The HTML is the string the content module produced on the
- *   server from the stored revision, handed to the browser exactly as it arrived. This file parses no
- *   content JSON, composes no markup from a document, escapes nothing the server escaped and adds no
- *   script, no authored inline style and no attribute of its own to that string. The inbox reader
- *   that the audience feature owns for its own surface stays that feature's; this one serves the
- *   notice payload, and no consumer should gain a second converter by using it.
+ *   server from the stored revision, and it reaches the page through `components/rendered-content`,
+ *   the application's single rendering boundary. This file parses no content JSON, composes no markup
+ *   from a document, escapes nothing the server escaped and adds no script, no authored inline style
+ *   and no attribute of its own to that string. The inbox reader that the audience feature owns for
+ *   its own surface stays that feature's; this one serves the notice payload, and no consumer should
+ *   gain a second converter by using it.
  * - Identity is a value, never a key. The sender, the recipient and the pinned identities are
  *   direction-weak strings, so each is isolated in `<bdi>` instead of being allowed to reorder the
  *   line around it. Nothing here compares, parses or joins on any of them — the pin is displayed, not
@@ -75,6 +76,7 @@
 
 import type { ReactElement } from "react";
 
+import RenderedContent from "@/components/rendered-content";
 import SimulationLabel from "@/components/simulation-label";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -475,27 +477,32 @@ function MissingRendering({ which }: { readonly which: "html" | "plain" | "both"
 interface MessageBodiesProps {
   readonly bodies: NoticeBodies;
   readonly direction: NoticeDirection;
+  /** The BCP-47 tag the message is written in, applied as `lang` beside its direction. */
+  readonly lang?: string;
 }
 
 /**
  * The two renderings of one notice, as a tab pair where both exist and as the one that exists where only
  * one does.
  *
- * The HTML is the server's string inserted once and unchanged: this is the single raw-markup site in the
- * file, and its contract is narrow — the string comes from the message builder, is never constructed,
- * concatenated, escaped or repaired here, and therefore carries no script, no embed and no arbitrary
- * markup. The plain text is the message's own alternative with its line breaks intact, so a reader who
- * takes only that view loses no wording. Neither view is ever left empty: a missing one is named.
+ * The HTML is the server's string inserted once and unchanged through `components/rendered-content`,
+ * the application's single rendering boundary, which carries the notice's own direction and language
+ * and states the contract behind that insertion; this component adds the reading styles and never
+ * constructs, concatenates, escapes or repairs the string. The plain text is the message's own alternative with
+ * its line breaks intact, so a reader who takes only that view loses no wording. Neither view is ever
+ * left empty: a missing one is named.
  */
-function MessageBodies({ bodies, direction }: MessageBodiesProps): ReactElement {
+function MessageBodies({ bodies, direction, lang }: MessageBodiesProps): ReactElement {
   const hasHtml = bodies.html.length > 0;
   const hasText = bodies.text.length > 0;
 
   const htmlRendering = (
-    <div
-      // The one raw-markup site in this file. `bodies.html` is the string the server produced for this
-      // notice; it is inserted exactly as it arrived, so the reading styles above are all this file adds.
-      dangerouslySetInnerHTML={{ __html: bodies.html }}
+    // `bodies.html` is the string the server produced for this notice, handed on exactly as it
+    // arrived; the reading styles above are all this file adds to it.
+    <RenderedContent
+      html={bodies.html}
+      direction={direction}
+      lang={lang}
       className={RENDERED_MESSAGE}
     />
   );
@@ -517,7 +524,7 @@ function MessageBodies({ bodies, direction }: MessageBodiesProps): ReactElement 
           <TabsTrigger value="html">{NOTICE_TAB_LABELS.html}</TabsTrigger>
           <TabsTrigger value="plain">{NOTICE_TAB_LABELS.plain}</TabsTrigger>
         </TabsList>
-        <div className="min-w-0" dir={direction}>
+        <div className="min-w-0" dir={direction} lang={lang}>
           <TabsContent value="html" className={PANEL_CLASS}>
             {htmlRendering}
           </TabsContent>
@@ -531,7 +538,7 @@ function MessageBodies({ bodies, direction }: MessageBodiesProps): ReactElement 
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <div className="min-w-0" dir={direction}>
+      <div className="min-w-0" dir={direction} lang={lang}>
         {hasHtml ? htmlRendering : textRendering}
       </div>
       <MissingRendering which={hasHtml ? "plain" : "html"} />
@@ -793,7 +800,11 @@ export default function NoticePresentation({
         <Separator />
         <CardContent className="flex min-w-0 flex-col gap-4">
           <SimulationLabel effect={SIMULATED_EFFECT_BY_TRIGGER.notify} />
-          <MessageBodies bodies={bodies} direction={direction} />
+          <MessageBodies
+            bodies={bodies}
+            direction={direction}
+            lang={languageTag.length === 0 ? undefined : languageTag}
+          />
           {admittedPoster === undefined ? null : <AdmittedPosterBlock poster={admittedPoster} />}
           <Separator />
           <OmissionsBlock items={omissions} hasLink={link !== undefined} />

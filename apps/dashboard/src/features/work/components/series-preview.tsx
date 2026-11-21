@@ -309,9 +309,7 @@ export default function SeriesPreview({
 
       <p className="text-sm text-muted-foreground">{REPEAT_PROFILE_DESCRIPTIONS[profile]}</p>
 
-      {state === "paused" ? (
-        <p className="text-sm text-muted-foreground">{PAUSED_NOTE}</p>
-      ) : null}
+      {state === "paused" ? <p className="text-sm text-muted-foreground">{PAUSED_NOTE}</p> : null}
 
       {stopped ? (
         <p className="text-sm">{STOPPED_NOTE}</p>

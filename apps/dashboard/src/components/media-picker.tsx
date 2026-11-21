@@ -259,7 +259,8 @@ const VIDEO_LIMITS = Object.freeze({
   durationS: 180,
   width: 1_920,
   height: 1_080,
-  formats: "MP4 with H.264 video and AAC audio, or WebM with VP8 or VP9 video and Vorbis or Opus audio",
+  formats:
+    "MP4 with H.264 video and AAC audio, or WebM with VP8 or VP9 video and Vorbis or Opus audio",
 });
 
 /** The `accept` hint per kind. A hint to the platform picker only: it never establishes a file's type. */
@@ -378,13 +379,9 @@ function probeVideo(file: File): Promise<MediaProbe | undefined> {
 }
 
 /** Measures the chosen file with the reader its kind needs. */
-async function probeChosenFile(
-  file: File,
-  kind: MediaPickerKind,
-): Promise<MediaProbe | undefined> {
+async function probeChosenFile(file: File, kind: MediaPickerKind): Promise<MediaProbe | undefined> {
   return kind === "image" ? probeImage(file) : probeVideo(file);
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // The form's own state, kept as text so every control stays controlled and nothing is lost to a re-render
@@ -806,8 +803,8 @@ export function MediaPicker({
           ))}
         </ul>
         <p className="text-sm text-muted-foreground">
-          This application checks the file&rsquo;s content itself, so a name or an extension never decides
-          what a file is.
+          This application checks the file&rsquo;s content itself, so a name or an extension never
+          decides what a file is.
         </p>
       </div>
     );
@@ -876,7 +873,9 @@ export function MediaPicker({
     const limits = kind === "image" ? IMAGE_LIMITS : VIDEO_LIMITS;
 
     if (file !== null && file.size > limits.bytes) {
-      problems.push(`It is ${formatBytes(file.size)}, over the ${formatBytes(limits.bytes)} admitted.`);
+      problems.push(
+        `It is ${formatBytes(file.size)}, over the ${formatBytes(limits.bytes)} admitted.`,
+      );
     }
 
     if (kind === "image") {
@@ -919,8 +918,8 @@ export function MediaPicker({
             <p key={problem}>{problem}</p>
           ))}
           <p>
-            It can still be added: this application measures the file&rsquo;s own content when it accepts it
-            and answers with the reason if the profile refuses it.
+            It can still be added: this application measures the file&rsquo;s own content when it
+            accepts it and answers with the reason if the profile refuses it.
           </p>
         </AlertDescription>
       </Alert>
@@ -964,8 +963,8 @@ export function MediaPicker({
         <p className="flex items-start gap-2 text-sm text-muted-foreground">
           <UploadIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
           <span>
-            Dropping a file on the field above does the same thing. The button inside it is the way in with a
-            keyboard, a screen reader or a single pointer.
+            Dropping a file on the field above does the same thing. The button inside it is the way
+            in with a keyboard, a screen reader or a single pointer.
           </span>
         </p>
         {renderLimits()}
@@ -1044,8 +1043,6 @@ export function MediaPicker({
       </Card>
     );
   }
-
-
 
   // -------------------------------------------------------------------------------------------
   // Describing: the placement form
@@ -1261,8 +1258,8 @@ export function MediaPicker({
         <AlertTitle>The request did not complete</AlertTitle>
         <AlertDescription>
           <p>
-            Nothing here is confirmed. No answer arrived, so this application does not know whether the work
-            was applied.
+            Nothing here is confirmed. No answer arrived, so this application does not know whether
+            the work was applied.
           </p>
           <Button type="button" variant="outline" size="sm" onClick={replaySameWork}>
             Try the same request again
@@ -1319,12 +1316,12 @@ export function MediaPicker({
           <AlertTitle>Remove this placement?</AlertTitle>
           <AlertDescription>
             <p>
-              This removes the {kind} from the draft you are editing and changes released content, so it asks
-              before it acts.
+              This removes the {kind} from the draft you are editing and changes released content,
+              so it asks before it acts.
             </p>
             <p>
-              It recalls nothing that was already sent or read, the registered file stays available to every
-              other placement, and the text around the placement is unchanged.
+              It recalls nothing that was already sent or read, the registered file stays available
+              to every other placement, and the text around the placement is unchanged.
             </p>
           </AlertDescription>
         </Alert>
@@ -1560,4 +1557,3 @@ export function MediaPicker({
 }
 
 export default MediaPicker;
-

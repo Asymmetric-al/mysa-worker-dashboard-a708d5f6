@@ -32,8 +32,9 @@
  * Layering: a data-service read. It imports the domain modules (`modules/coaching/*`,
  * `modules/support/*`, `modules/money`, `modules/time`), the authorisation layer, the envelope and
  * outcome contracts, and the store's one read function. It opens no transaction, writes nothing, sends
- * nothing, schedules nothing, reads no clock except `now()`, and holds no second activity counter:
- * every count here comes from `measureFor`.
+ * nothing, schedules nothing, reads no clock except the session's own scenario instant
+ * (`instantAt(session.clockOffsetMs)`), and holds no second activity counter: every count here
+ * comes from `measureFor`.
  */
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
@@ -41,7 +42,9 @@ import { z } from "zod";
 import { isNonEmptyString } from "@/lib/guards";
 import type { SourceReference } from "@/lib/ids";
 import { logger } from "@/lib/logger";
+import { compareCodeUnits } from "@/lib/ordering";
 import { err, ok, type Result } from "@/lib/result";
+import { failureFor, failurePlanOfDocument } from "@/modules/dev-runtime/failures";
 import {
   CHECKIN_MAX_ANSWER_SCALARS,
   CHECKIN_MAX_QUESTIONS,
@@ -112,7 +115,7 @@ import {
   type SupportProjection,
 } from "@/modules/support/basis";
 import { buildReportQuery, runReport, type ReportResult } from "@/modules/support/report";
-import { now } from "@/modules/time/clock";
+import { instantAt } from "@/modules/time/clock";
 import {
   civilDateAt,
   parseCivilDate,
@@ -123,7 +126,13 @@ import {
 } from "@/modules/time/civil";
 
 import { readSession } from "../../store/repository";
-import { assertScope, canView, resolveSession, type ResolvedSession } from "../authorize";
+import {
+  assertScope,
+  canView,
+  resolveSession,
+  type ResolvedSession,
+  type SessionSource,
+} from "../authorize";
 import {
   buildEnvelope,
   coachingCheckInRecordSchema,
@@ -346,9 +355,21 @@ function unavailableRead(reference: string, guidance: string): ReadResult<never>
  * reset takes effect on the next request. A session that does not exist, a document that cannot be
  * read and a document whose coaching records do not decode all answer `unavailable` with the source
  * named, because there is no honest retry to offer and an empty list would be a different fact.
+ *
+ * `job` names the read asking, which is what an armed scope-denial plan is matched against; `source`
+ * names a session explicitly for the callers that hold an id and no request — the domain and
+ * integration tests that prove isolation by naming a seeded session, and the operational scripts — and
+ * never states a scope, which is still derived from the session's own documents.
  */
-async function loadCoachingState(): Promise<CoachingLoad> {
-  const resolution = await resolveSession();
+async function loadCoachingState(job: string, source?: SessionSource): Promise<CoachingLoad> {
+  let resolution: Awaited<ReturnType<typeof resolveSession>>;
+  try {
+    resolution = await resolveSession(source);
+  } catch {
+    // A request context that cannot yield its cookie leaves no session to establish, which is the one
+    // refusal the resolver names for that case: it discloses nothing about a record.
+    return { ok: false, result: deniedRead("session-unavailable") };
+  }
   if (!resolution.ok) {
     return { ok: false, result: { kind: "denied", denied: resolution.denial } };
   }
@@ -377,6 +398,14 @@ async function loadCoachingState(): Promise<CoachingLoad> {
     };
   }
 
+  // An armed scope-denial plan must take effect on the read it names, so it is answered here — after
+  // the documents are read and before the coaching families are decoded, so nothing is enumerated,
+  // counted or projected first. The refusal is this family's ordinary denial by its ordinary reason
+  // code, so no module name, count, title or existence flag leaves with it.
+  if (failureFor(failurePlanOfDocument(documents.meta), "read", job) === "denied") {
+    return { ok: false, result: deniedRead("no-permission") };
+  }
+
   const parsed = coachingStateSchema.safeParse(documents.state);
   if (!parsed.success) {
     return {
@@ -388,7 +417,10 @@ async function loadCoachingState(): Promise<CoachingLoad> {
     };
   }
 
-  return { ok: true, context: { session, state: parsed.data, at: now() } };
+  return {
+    ok: true,
+    context: { session, state: parsed.data, at: instantAt(session.clockOffsetMs) },
+  };
 }
 
 /**
@@ -1254,7 +1286,7 @@ interface CoachingOverviewView {
 export async function readCoachingOverview(): Promise<
   ReadResult<ReadEnvelope<CoachingOverviewView>>
 > {
-  const loaded = await loadCoachingState();
+  const loaded = await loadCoachingState("readCoachingOverview");
   if (!loaded.ok) return loaded.result;
   const scoped = workerScope(loaded.context);
   if (!scoped.ok) return scoped.result;
@@ -1273,7 +1305,7 @@ export async function readCoachingOverview(): Promise<
         revision: visible.revision,
       };
     })
-    .toSorted((one, two) => one.displayName.localeCompare(two.displayName));
+    .toSorted((one, two) => compareCodeUnits(one.displayName, two.displayName));
 
   const relationships: WorkerRelationshipView[] = [];
   const valueStates: Record<string, RecordedValueState> = {};
@@ -1364,7 +1396,7 @@ export async function readCoachingOverview(): Promise<
     });
   }
 
-  relationships.sort((one, two) => one.grantId.localeCompare(two.grantId));
+  relationships.sort((one, two) => compareCodeUnits(one.grantId, two.grantId));
   valueStates.activeModuleCount = countState(activeModuleCount);
 
   const anyLive = relationships.some((relationship) => relationship.outcomes.accessLive);
@@ -1531,7 +1563,7 @@ function workerTargetViewOf(
 export async function readTargets(
   input: { readonly page?: number; readonly pageSize?: number } = {},
 ): Promise<ReadResult<ReadEnvelope<TargetsView>>> {
-  const loaded = await loadCoachingState();
+  const loaded = await loadCoachingState("readTargets");
   if (!loaded.ok) return loaded.result;
   const scoped = workerScope(loaded.context);
   if (!scoped.ok) return scoped.result;
@@ -1555,7 +1587,7 @@ export async function readTargets(
 
   targets.sort((one, two) => {
     const order = TARGET_MEASURES.indexOf(one.measure) - TARGET_MEASURES.indexOf(two.measure);
-    return order === 0 ? one.targetId.localeCompare(two.targetId) : order;
+    return order === 0 ? compareCodeUnits(one.targetId, two.targetId) : order;
   });
 
   const paged = pageOf(targets, input.page, input.pageSize);
@@ -1599,7 +1631,7 @@ function earliestVersionStart(targets: readonly WorkerTargetView[]): string | nu
     target.versions.map((version) => version.effectiveFrom),
   );
   if (starts.length === 0) return null;
-  return starts.toSorted((one, two) => one.localeCompare(two)).at(0) ?? null;
+  return starts.toSorted(compareCodeUnits).at(0) ?? null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1778,7 +1810,7 @@ function draftDiffersFromShared(
 export async function readCheckIns(
   input: { readonly page?: number; readonly pageSize?: number } = {},
 ): Promise<ReadResult<ReadEnvelope<CheckInsView>>> {
-  const loaded = await loadCoachingState();
+  const loaded = await loadCoachingState("readCheckIns");
   if (!loaded.ok) return loaded.result;
   const scoped = workerScope(loaded.context);
   if (!scoped.ok) return scoped.result;
@@ -1812,7 +1844,7 @@ export async function readCheckIns(
     });
   }
 
-  checkIns.sort((one, two) => one.checkInId.localeCompare(two.checkInId));
+  checkIns.sort((one, two) => compareCodeUnits(one.checkInId, two.checkInId));
   const paged = pageOf(checkIns, input.page, input.pageSize);
   paged.items.forEach((checkIn, index) => {
     valueStates[`checkIns.${index}.answers`] = countState(
@@ -2066,7 +2098,7 @@ interface TaskSharesView {
 export async function readTaskShares(
   input: { readonly page?: number; readonly pageSize?: number } = {},
 ): Promise<ReadResult<ReadEnvelope<TaskSharesView>>> {
-  const loaded = await loadCoachingState();
+  const loaded = await loadCoachingState("readTaskShares");
   if (!loaded.ok) return loaded.result;
   const scoped = workerScope(loaded.context);
   if (!scoped.ok) return scoped.result;
@@ -2126,7 +2158,7 @@ export async function readTaskShares(
     });
   }
 
-  shares.sort((one, two) => one.shareId.localeCompare(two.shareId));
+  shares.sort((one, two) => compareCodeUnits(one.shareId, two.shareId));
   const paged = pageOf(shares, input.page, input.pageSize);
   paged.items.forEach((share, index) => {
     valueStates[`shares.${index}.reviewedCodePoints`] = countState(share.reviewedCodePoints);
@@ -2223,7 +2255,7 @@ function coachPortfolioScope(session: ResolvedSession, ministryIds: readonly str
  * module, and an empty result is an authorised empty list rather than an error.
  */
 export async function readCoachPortfolio(): Promise<ReadResult<ReadEnvelope<CoachPortfolioView>>> {
-  const loaded = await loadCoachingState();
+  const loaded = await loadCoachingState("readCoachPortfolio");
   if (!loaded.ok) return loaded.result;
 
   const { session, state, at } = loaded.context;
@@ -2284,8 +2316,8 @@ export async function readCoachPortfolio(): Promise<ReadResult<ReadEnvelope<Coac
   }
 
   subjects.sort((one, two) => {
-    const byMinistry = one.ministryId.localeCompare(two.ministryId);
-    return byMinistry === 0 ? one.grantId.localeCompare(two.grantId) : byMinistry;
+    const byMinistry = compareCodeUnits(one.ministryId, two.ministryId);
+    return byMinistry === 0 ? compareCodeUnits(one.grantId, two.grantId) : byMinistry;
   });
 
   const scope = coachPortfolioScope(
@@ -2841,11 +2873,19 @@ function reviewedRangeOf(record: CoachingGrantRecord): {
  * enumerated, which is why a refusal here carries no module name, no count and no existence flag. An
  * ended relationship is denied as a whole — it is not an empty portfolio and not an unavailable module —
  * and a temporary hold is not reported as an end.
+ *
+ * `source` names a session explicitly for the callers that hold an id and no request — the domain and
+ * integration tests that prove isolation by naming a seeded session, and the operational scripts — and
+ * never states an authority: the grant, its ministries and its duration are still read from the
+ * session's own documents.
  */
-export async function readCoachSubject(input: {
-  readonly grantId: string;
-}): Promise<ReadResult<ReadEnvelope<CoachSubjectView>>> {
-  const loaded = await loadCoachingState();
+export async function readCoachSubject(
+  input: {
+    readonly grantId: string;
+  },
+  source?: SessionSource,
+): Promise<ReadResult<ReadEnvelope<CoachSubjectView>>> {
+  const loaded = await loadCoachingState("readCoachSubject", source);
   if (!loaded.ok) return loaded.result;
 
   const context = loaded.context;

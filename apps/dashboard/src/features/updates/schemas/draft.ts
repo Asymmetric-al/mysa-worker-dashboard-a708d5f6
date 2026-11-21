@@ -240,7 +240,8 @@ export const saveDraftSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["body"],
-        message: "A saved draft carries the document body, so save it from the editor rather than here.",
+        message:
+          "A saved draft carries the document body, so save it from the editor rather than here.",
       });
       return;
     }
@@ -279,4 +280,3 @@ export type SaveDraftPayload = z.infer<typeof saveDraftSchema>;
 
 /** The payload `submitForReview` accepts, inferred so the review step cannot restate it. */
 export type SubmitForReviewPayload = z.infer<typeof submitForReviewSchema>;
-

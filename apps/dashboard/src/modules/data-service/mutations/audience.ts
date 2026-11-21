@@ -226,7 +226,10 @@ function membershipsOf(holder: StateDocumentHolder): StoredMembership[] {
  * The document is replaced rather than mutated in place, so the transaction's draft holds one new
  * state value and no reader of the old one can observe a half-applied write.
  */
-function withMemberships(holder: StateDocumentHolder, memberships: readonly StoredMembership[]): void {
+function withMemberships(
+  holder: StateDocumentHolder,
+  memberships: readonly StoredMembership[],
+): void {
   const state: unknown = holder.state;
   if (!isPlainObject(state)) {
     throw new UnreadableStateDocumentError("it is not an object");
@@ -347,7 +350,10 @@ function storedAcceptanceOf(previous: StoredMembership, next: DomainMembership):
  * how the stored form states that no language has been chosen, and a record that no longer holds an
  * acceptance holds no confirmation deadline either, so no window is left dangling beside it.
  */
-function storedMembershipFrom(previous: StoredMembership, next: DomainMembership): StoredMembership {
+function storedMembershipFrom(
+  previous: StoredMembership,
+  next: DomainMembership,
+): StoredMembership {
   const acceptedAt = storedAcceptanceOf(previous, next);
   return {
     membershipId: previous.membershipId,
@@ -370,7 +376,10 @@ function storedMembershipFrom(previous: StoredMembership, next: DomainMembership
 }
 
 /** The stored record a signup creates, from the pending membership the domain module opened. */
-function newStoredMembership(membership: DomainMembership, displayName: string | null): StoredMembership {
+function newStoredMembership(
+  membership: DomainMembership,
+  displayName: string | null,
+): StoredMembership {
   return {
     membershipId: membership.membershipId,
     email: membership.email,
@@ -383,7 +392,8 @@ function newStoredMembership(membership: DomainMembership, displayName: string |
       membership.confirmationDeadline === undefined
         ? null
         : membership.confirmationDeadline.toString(),
-    languagePreference: membership.languagePreference.length === 0 ? null : membership.languagePreference,
+    languagePreference:
+      membership.languagePreference.length === 0 ? null : membership.languagePreference,
     revision: revisionTokenOf(membership.revision),
   };
 }
@@ -934,8 +944,7 @@ function applyPreference(
     result: {
       membershipId: stored.membershipId,
       state: stored.state,
-      choice:
-        stored.state === "off" || stored.state === "restricted" ? "off" : "immediate",
+      choice: stored.state === "off" || stored.state === "restricted" ? "off" : "immediate",
       languagePreference: stored.languagePreference,
       revision: stored.revision,
       changed: { choice: choiceChanged, languagePreference: languageChanged },
@@ -1154,4 +1163,3 @@ export async function unsubscribe(
     apply: (context) => applyUnsubscribe(context, input.payload, membershipScopeOf(input.scope)),
   });
 }
-

@@ -291,51 +291,57 @@ const linkHrefSchema = z.string().superRefine((href, ctx) => {
  * same tuple `ADMITTED_MARK_TYPES` is built from, so a mark can never be admitted by one and refused
  * by the other.
  */
-const formattingMarkSchema: z.ZodType<ContentFormattingMark> = z
-  .object({ type: z.literal(FORMATTING_MARK_TYPES) });
+const formattingMarkSchema: z.ZodType<ContentFormattingMark> = z.object({
+  type: z.literal(FORMATTING_MARK_TYPES),
+});
 
 /**
  * The link mark, the only mark with an attribute. Attributes the profile does not store are stripped
  * rather than refused: the editor's link extension writes `target`, `rel` and `class` on every link,
  * and `render.ts` adds the safe ones at render time, so none of them is ever saved into content.
  */
-const linkMarkSchema: z.ZodType<ContentLinkMark> = z
-  .object({ type: z.literal(LINK_MARK_TYPE), attrs: z.object({ href: linkHrefSchema }) });
+const linkMarkSchema: z.ZodType<ContentLinkMark> = z.object({
+  type: z.literal(LINK_MARK_TYPE),
+  attrs: z.object({ href: linkHrefSchema }),
+});
 
 const contentMarkNodeSchema = z.union([formattingMarkSchema, linkMarkSchema]);
 
-const contentTextNodeSchema: z.ZodType<ContentTextNode> = z
-  .object({
-    type: z.literal("text"),
-    text: z.string(),
-    marks: z.array(contentMarkNodeSchema).optional(),
-  });
+const contentTextNodeSchema: z.ZodType<ContentTextNode> = z.object({
+  type: z.literal("text"),
+  text: z.string(),
+  marks: z.array(contentMarkNodeSchema).optional(),
+});
 
-const contentHardBreakNodeSchema: z.ZodType<ContentHardBreakNode> = z
-  .object({ type: z.literal("hardBreak") });
+const contentHardBreakNodeSchema: z.ZodType<ContentHardBreakNode> = z.object({
+  type: z.literal("hardBreak"),
+});
 
 const contentInlineNodeSchema = z.union([contentTextNodeSchema, contentHardBreakNodeSchema]);
 
-const paragraphSchema: z.ZodType<ContentParagraphNode> = z
-  .object({ type: z.literal("paragraph"), content: z.array(contentInlineNodeSchema).optional() });
+const paragraphSchema: z.ZodType<ContentParagraphNode> = z.object({
+  type: z.literal("paragraph"),
+  content: z.array(contentInlineNodeSchema).optional(),
+});
 
 const headingLevelSchema = z.literal(ADMITTED_HEADING_LEVELS, {
   error:
     "A heading is H2, H3 or H4: level 1 is the managed title rather than prose, and levels 5 and 6 are not admitted.",
 });
 
-const headingSchema: z.ZodType<ContentHeadingNode> = z
-  .object({
-    type: z.literal("heading"),
-    attrs: z.object({ level: headingLevelSchema }),
-    content: z.array(contentInlineNodeSchema).optional(),
-  });
+const headingSchema: z.ZodType<ContentHeadingNode> = z.object({
+  type: z.literal("heading"),
+  attrs: z.object({ level: headingLevelSchema }),
+  content: z.array(contentInlineNodeSchema).optional(),
+});
 
 /** A code block holds plain text only, so a mark on it is stripped: a code block formats nothing. */
 const codeTextSchema = z.object({ type: z.literal("text"), text: z.string() });
 
-const codeBlockSchema: z.ZodType<ContentCodeBlockNode> = z
-  .object({ type: z.literal("codeBlock"), content: z.array(codeTextSchema).optional() });
+const codeBlockSchema: z.ZodType<ContentCodeBlockNode> = z.object({
+  type: z.literal("codeBlock"),
+  content: z.array(codeTextSchema).optional(),
+});
 
 // The four container schemas are mutually recursive through a list item, so each resolves its
 // children through a deferred getter: no document shape can be written without the cycle, and the
@@ -352,7 +358,9 @@ const orderedListNodeSchema: z.ZodType<ContentOrderedListNode> = z.lazy(() =>
   z.object({
     type: z.literal("orderedList"),
     attrs: z
-      .object({ start: z.number().int().min(0, "A numbered list starts at 0 or later.").optional() })
+      .object({
+        start: z.number().int().min(0, "A numbered list starts at 0 or later.").optional(),
+      })
       .optional(),
     content: z.array(listItemSchema).optional(),
   }),
@@ -390,53 +398,52 @@ export interface PresentationChoice {
 }
 
 /** Validates one section's presentation choices; a value outside its set is invalid, never coerced. */
-export const presentationChoiceSchema: z.ZodType<PresentationChoice> = z
-  .strictObject({
-    treatment: z.enum(PRESENTATION_CHOICES.treatment, {
-      error: "Treatment is normal or emphasized.",
-    }),
-    layout: z.enum(PRESENTATION_CHOICES.layout, {
-      error: "Layout is single-column or two-column-image-text.",
-    }),
-    alignment: z.enum(PRESENTATION_CHOICES.alignment, { error: "Alignment is start or center." }),
-    imageFit: z.enum(PRESENTATION_CHOICES.imageFit, { error: "Image fit is cover or contain." }),
-  });
+export const presentationChoiceSchema: z.ZodType<PresentationChoice> = z.strictObject({
+  treatment: z.enum(PRESENTATION_CHOICES.treatment, {
+    error: "Treatment is normal or emphasized.",
+  }),
+  layout: z.enum(PRESENTATION_CHOICES.layout, {
+    error: "Layout is single-column or two-column-image-text.",
+  }),
+  alignment: z.enum(PRESENTATION_CHOICES.alignment, { error: "Alignment is start or center." }),
+  imageFit: z.enum(PRESENTATION_CHOICES.imageFit, { error: "Image fit is cover or contain." }),
+});
 
 /**
  * Validates one composed section: the catalogue element it was composed from, its plain-text field
  * values stored verbatim, and its admitted presentation choices.
  */
-export const sectionSchema: z.ZodType<ContentSection> = z
-  .strictObject({
-    element: z.string().superRefine((value, ctx) => {
-      if (value.trim().length === 0) {
-        ctx.addIssue({
-          code: "custom",
-          message: "A section states the catalogue element it was composed from.",
-        });
-      }
-    }),
-    fields: z.record(z.string(), z.string()),
-    presentation: presentationChoiceSchema,
-    direction: z.enum(CONTENT_DIRECTIONS, { error: "A section reads ltr or rtl." }).optional(),
-  });
+export const sectionSchema: z.ZodType<ContentSection> = z.strictObject({
+  element: z.string().superRefine((value, ctx) => {
+    if (value.trim().length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: "A section states the catalogue element it was composed from.",
+      });
+    }
+  }),
+  fields: z.record(z.string(), z.string()),
+  presentation: presentationChoiceSchema,
+  direction: z.enum(CONTENT_DIRECTIONS, { error: "A section reads ltr or rtl." }).optional(),
+});
 
 /**
  * Validates a whole stored or submitted document: the Tiptap document root, its profile version, its
  * direction, its prose body and its composed sections. The object is closed, so a document cannot
  * carry a key this profile does not name.
  */
-export const contentDocumentSchema: z.ZodType<ContentDocumentJson> = z
-  .strictObject({
-    type: z.literal("doc", "A content document's root node is the Tiptap document."),
-    profileVersion: z.literal(
-      CONTENT_PROFILE_VERSION,
-      `A content document states content profile version ${CONTENT_PROFILE_VERSION}.`,
-    ),
-    direction: z.enum(CONTENT_DIRECTIONS, { error: "A document states its direction as ltr or rtl." }),
-    content: blockSequenceSchema,
-    sections: z.array(sectionSchema),
-  });
+export const contentDocumentSchema: z.ZodType<ContentDocumentJson> = z.strictObject({
+  type: z.literal("doc", "A content document's root node is the Tiptap document."),
+  profileVersion: z.literal(
+    CONTENT_PROFILE_VERSION,
+    `A content document states content profile version ${CONTENT_PROFILE_VERSION}.`,
+  ),
+  direction: z.enum(CONTENT_DIRECTIONS, {
+    error: "A document states its direction as ltr or rtl.",
+  }),
+  content: blockSequenceSchema,
+  sections: z.array(sectionSchema),
+});
 
 // ---------------------------------------------------------------------------------------------
 // The scan: what a schema cannot phrase, reported before the schema runs
@@ -623,7 +630,7 @@ function scanDocument(input: unknown): DocumentIssue[] {
   if (documentType !== "doc") {
     issues.push({
       path: "type",
-      message: "A content document's root node is the Tiptap document, so its type is \"doc\".",
+      message: 'A content document\'s root node is the Tiptap document, so its type is "doc".',
     });
   }
   const profileVersion = input["profileVersion"];
@@ -722,7 +729,9 @@ export function parseDocument(input: unknown): ParseDocumentResult {
   } catch (error) {
     return {
       status: "invalid",
-      issues: [{ path: "", message: `The content document could not be read: ${errorMessage(error)}` }],
+      issues: [
+        { path: "", message: `The content document could not be read: ${errorMessage(error)}` },
+      ],
     };
   }
 }
@@ -868,7 +877,10 @@ function plainTextOf(value: unknown, depth = 0): string {
     return value;
   }
   if (Array.isArray(value)) {
-    return value.map((item) => plainTextOf(item, depth + 1)).join(" ").trim();
+    return value
+      .map((item) => plainTextOf(item, depth + 1))
+      .join(" ")
+      .trim();
   }
   if (!isRecord(value)) {
     return "";
@@ -890,9 +902,7 @@ function paragraphOfText(text: string): ContentParagraphNode | undefined {
 
 /** A paragraph of `inline` content, stating its content only when there is some. */
 function paragraphWith(inline: readonly ContentInlineNode[]): ContentParagraphNode {
-  return inline.length === 0
-    ? { type: "paragraph" }
-    : { type: "paragraph", content: inline };
+  return inline.length === 0 ? { type: "paragraph" } : { type: "paragraph", content: inline };
 }
 
 /** The admitted heading level for `level`, or `undefined` when the profile does not admit it. */
@@ -973,7 +983,10 @@ function convertMarks(value: unknown, dropped: DroppedNames): ContentMarkNode[] 
 }
 
 /** Filters a clipboard inline sequence to admitted inline nodes, naming what it does not keep. */
-function convertInlineNodes(values: readonly unknown[], dropped: DroppedNames): ContentInlineNode[] {
+function convertInlineNodes(
+  values: readonly unknown[],
+  dropped: DroppedNames,
+): ContentInlineNode[] {
   const inline: ContentInlineNode[] = [];
   for (const value of values) {
     if (typeof value === "string") {
@@ -1022,7 +1035,11 @@ function convertListItems(
       continue;
     }
     const nodeType = value["type"];
-    if (nodeType !== "listItem" && typeof nodeType === "string" && !ADMITTED_NODE_TYPE_SET.has(nodeType)) {
+    if (
+      nodeType !== "listItem" &&
+      typeof nodeType === "string" &&
+      !ADMITTED_NODE_TYPE_SET.has(nodeType)
+    ) {
       dropped.note(nodeType);
     }
     const content = convertBlockNodes(childrenOf(value), dropped, depth + 1);
@@ -1062,7 +1079,9 @@ function convertBlockNode(
       }
       // A pasted H1 is the managed title of another document, and H5/H6 are outside the authoring
       // surface: the text is kept as a paragraph and the level that was not kept is disclosed.
-      dropped.note(typeof level === "number" ? `heading level ${level}` : "heading without a level");
+      dropped.note(
+        typeof level === "number" ? `heading level ${level}` : "heading without a level",
+      );
       return paragraphWith(inline);
     }
     case "codeBlock": {
@@ -1169,4 +1188,3 @@ export function admittedPasteDecision(decision: PasteDecision, input: PasteInput
   const content = convertBlockNodes(pasteNodeCandidates(source.json), dropped, 0);
   return { status: "converted", content: { type: "doc", content }, dropped: dropped.list() };
 }
-

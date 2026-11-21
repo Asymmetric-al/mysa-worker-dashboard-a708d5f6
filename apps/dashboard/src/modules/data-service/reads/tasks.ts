@@ -22,9 +22,11 @@
  *   behind rather than completing it.
  *
  * Every date judgement here belongs to `@/modules/time`: "today" is `todayInZone` evaluated against
- * the instant `now()` supplies, next dates come from `nextOccurrences`, a day past the end of its
- * month is resolved by `monthlyOnDay` and disclosed through the module's own resolution facts, and
- * whether a plan needs review is `missedPlan`'s answer over the dates the plan actually produced.
+ * the session's own scenario instant — the offset this session persisted applied to the one fixed
+ * seed anchor, never the process-wide `now()`, which would report another session's instant — next
+ * dates come from `nextOccurrences`, a day past the end of its month is resolved by `monthlyOnDay`
+ * and disclosed through the module's own resolution facts, and whether a plan needs review is
+ * `missedPlan`'s answer over the dates the plan actually produced.
  * Nothing here walks a calendar, adds a month, compares a midnight or decides a threshold, so these
  * reads cannot drift from the mutations that keep the same series.
  *
@@ -45,8 +47,10 @@ import { z } from "zod";
 
 import type { SourceReference } from "@/lib/ids";
 import { logger } from "@/lib/logger";
+import { compareCodeUnits } from "@/lib/ordering";
 import { readSession } from "@/modules/store/repository";
-import { now } from "@/modules/time/clock";
+import { clampPageSize } from "@/modules/support/report";
+import { instantAt } from "@/modules/time/clock";
 import {
   parseCivilDate,
   serialiseCivilDate,
@@ -65,7 +69,14 @@ import {
   type SeriesState,
 } from "@/modules/time/recurrence";
 
-import { assertScope, canEdit, canView, resolveSession, type ResolvedSession } from "../authorize";
+import {
+  assertScope,
+  canEdit,
+  canView,
+  resolveSession,
+  type ResolvedSession,
+  type SessionSource,
+} from "../authorize";
 import {
   buildEnvelope,
   project,
@@ -140,15 +151,6 @@ const DEFAULT_TASK_SORT: readonly TaskSort[] = [
   { field: "title", direction: "asc" },
 ];
 
-/** The rows a list page holds unless the caller asks for a different size. */
-const PAGE_SIZE_DEFAULT = 50;
-
-/**
- * The most rows a list page may hold. A caller asking for more is clamped here rather than refused,
- * so a page size never decides whether a request succeeds.
- */
-const PAGE_SIZE_CAP = 200;
-
 /** How many next dates a series preview shows: the three the series editor and the specification fix. */
 const PREVIEW_DATE_COUNT = 3;
 
@@ -190,9 +192,9 @@ const CALENDAR_UNREADABLE_GUIDANCE =
  * The instant type the scenario clock returns.
  *
  * Derived rather than imported so this module never names a second clock: the boundary functions take
- * whatever `now()` produces, and only `@/modules/time/clock` decides what that is.
+ * the session-derived instant, and only `@/modules/time/clock` decides what that is.
  */
-type ScenarioInstant = ReturnType<typeof now>;
+type ScenarioInstant = ReturnType<typeof instantAt>;
 
 // ---------------------------------------------------------------------------------------------
 // Opening a read: session, scope, instant
@@ -229,12 +231,18 @@ function refused(result: ReadResult<never>): ReadOpening {
  * Resolves the session a read acts for and admits its selected scope, or refuses it.
  *
  * Four steps and no more: resolve the development session, take the context it has selected, assert
- * that context against the memberships the session states, and read the scenario instant once so the
- * envelope's `asOf` and every boundary in the read agree. A session that has selected no context has
- * no scope to read in, which is a refusal rather than a guess at its first admitted membership.
+ * that context against the memberships the session states, and read the scenario instant once — the
+ * offset this session persisted, applied to the fixed seed anchor — so the envelope's `asOf` and
+ * every boundary in the read agree. A session that has selected no context has no scope to read in,
+ * which is a refusal rather than a guess at its first admitted membership.
+ *
+ * `source` names a session directly instead of taking the request cookie. The browser path never
+ * supplies one; it exists for the domain and integration tests and the operational scripts that hold
+ * a seeded session id and no request, and the resolver refuses a named session outside a development
+ * build, so it can never become a production path that names its own identity.
  */
-async function openRead(): Promise<ReadOpening> {
-  const resolution = await resolveSession();
+async function openRead(source?: SessionSource): Promise<ReadOpening> {
+  const resolution = await resolveSession(source);
   if (!resolution.ok) {
     return refused({ kind: "denied", denied: resolution.denial });
   }
@@ -250,7 +258,7 @@ async function openRead(): Promise<ReadOpening> {
     return refused({ kind: "denied", denied: admitted.denial });
   }
 
-  return { status: "ready", session, scope, instant: now() };
+  return { status: "ready", session, scope, instant: instantAt(session.clockOffsetMs) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -375,19 +383,7 @@ function todayForRead(job: string, timeZone: string, instant: ScenarioInstant): 
 // Ordering, paging and the collection revision
 // ---------------------------------------------------------------------------------------------
 
-/**
- * Compares two strings by code unit.
- *
- * Deliberately not `localeCompare`: a list's order must be identical on the server and in the browser
- * and identical between two machines, and a locale-aware comparison varies with the platform's
- * collation data. Display text is the surface's job; a stable order is this module's.
- */
-function compareCodeUnits(left: string, right: string): number {
-  if (left < right) {
-    return -1;
-  }
-  return left > right ? 1 : 0;
-}
+// Every order below comes from the shared code-unit comparator in `@/lib/ordering`.
 
 /**
  * Compares one optional text field, placing the absent value after every present one.
@@ -459,15 +455,6 @@ function normaliseSort(sort: readonly TaskSort[] | undefined): readonly TaskSort
       (instruction.direction === "asc" || instruction.direction === "desc"),
   );
   return accepted.length === 0 ? DEFAULT_TASK_SORT : accepted;
-}
-
-/** The page size a caller asked for, kept inside the 1-{@link PAGE_SIZE_CAP} contract. */
-function clampPageSize(requested: number | undefined): number {
-  if (requested === undefined || !Number.isFinite(requested)) {
-    return PAGE_SIZE_DEFAULT;
-  }
-  const whole = Math.trunc(requested);
-  return whole < 1 ? 1 : Math.min(whole, PAGE_SIZE_CAP);
 }
 
 /** Where one page of a whole result starts and ends, with the whole result's count beside it. */
@@ -742,7 +729,7 @@ export interface TaskListQuery {
   readonly displayTimeZone: string;
   /** The 1-based page to read; clamped to the pages that exist. 1 when absent. */
   readonly page?: number;
-  /** Rows per page: {@link PAGE_SIZE_DEFAULT} when absent, clamped to {@link PAGE_SIZE_CAP}. */
+  /** Rows per page, clamped by {@link clampPageSize}: 50 when absent, 200 at most. */
   readonly pageSize?: number;
   /** The ordering to apply, most significant first; the agreed due-date-then-title order when absent. */
   readonly sort?: readonly TaskSort[];
@@ -820,11 +807,16 @@ function listActions(selectableOnPage: boolean): readonly ReadAction[] {
  * Filtering, ordering, paging and counting all happen here over the whole authorised collection, so a
  * surface renders what it was given: `total` is the whole result's count and the page is a slice of
  * it, which is what keeps a filtered page from ever being presented as the complete result.
+ *
+ * `source` names a seeded session for a test or an operational script that holds an id and no
+ * request; the browser passes nothing, and the resolver refuses a named session outside a
+ * development build.
  */
 export async function listTasks(
   query: TaskListQuery,
+  source?: SessionSource,
 ): Promise<ReadResult<ReadEnvelope<TaskListData>>> {
-  const opening = await openRead();
+  const opening = await openRead(source);
   if (opening.status === "refused") {
     return opening.result;
   }
@@ -901,7 +893,7 @@ export interface AgendaQuery {
   readonly displayTimeZone: string;
   /** The 1-based page of items to read, not of days; clamped to the pages that exist. */
   readonly page?: number;
-  /** Items per page: {@link PAGE_SIZE_DEFAULT} when absent, clamped to {@link PAGE_SIZE_CAP}. */
+  /** Items per page, clamped by {@link clampPageSize}: 50 when absent, 200 at most. */
   readonly pageSize?: number;
 }
 
@@ -983,11 +975,16 @@ function groupByDay(rows: readonly TaskListRow[]): readonly AgendaDay[] {
  * bucket needs a date, and inventing one for undated work would answer a question the worker did not
  * ask. Paging applies to items, so a day that straddles a page boundary is not split into two records
  * of itself — the day appears once per page it has items on.
+ *
+ * `source` names a seeded session for a test or an operational script that holds an id and no
+ * request; the browser passes nothing, and the resolver refuses a named session outside a
+ * development build.
  */
 export async function readAgenda(
   query: AgendaQuery,
+  source?: SessionSource,
 ): Promise<ReadResult<ReadEnvelope<AgendaData>>> {
-  const opening = await openRead();
+  const opening = await openRead(source);
   if (opening.status === "refused") {
     return opening.result;
   }
@@ -1473,11 +1470,16 @@ function seriesActions(options: {
  * offers is then surfaced rather than re-decided: the next three dates as previews, the single
  * occurrence that can be acted on, any month-day resolution the rule had to make, and the plan review
  * with its three resolutions.
+ *
+ * `source` names a seeded session for a test or an operational script that holds an id and no
+ * request; the browser passes nothing, and the resolver refuses a named session outside a
+ * development build.
  */
 export async function readSeries(
   query: SeriesReadQuery,
+  source?: SessionSource,
 ): Promise<ReadResult<ReadEnvelope<SeriesReading>>> {
-  const opening = await openRead();
+  const opening = await openRead(source);
   if (opening.status === "refused") {
     return opening.result;
   }

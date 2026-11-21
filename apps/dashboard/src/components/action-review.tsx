@@ -135,7 +135,7 @@ export type ReviewHeadingLevel = keyof typeof STEP_HEADING_TAG;
 
 /**
  * The identity of one attempt, as the hook holds it: the `operationId` the service recognises, and
- * the intent fingerprint it was minted for (`null` until the first submission adopts it).
+ * the intent fingerprint it was minted for (`null` until a submission states that intent).
  *
  * Both members are opaque. The `operationId` is never derived from the intent — it is random, so
  * two identical submissions made deliberately still carry distinguishable identities — and the
@@ -243,8 +243,16 @@ export type MutationSubmit<P> = (input: MutationInput<P>) => Promise<MutationOut
 
 /** What {@link useReviewedMutation} hands back to the step that renders it. */
 export interface UseReviewedMutationResult<P> {
-  /** The identity the next submission will carry, and the one the last submission carried. */
-  readonly operationId: string;
+  /**
+   * The identity of the attempt the step holds: `null` until the first submission mints it, then the
+   * identity the last submission carried and the next one will reuse while its intent is unchanged.
+   *
+   * It is minted by a submission rather than by the hook's first render because an identity is a random
+   * value: producing one while rendering would give the server render and the hydration two different
+   * identities for one mounted step, which React reports as a hydration mismatch on any attribute that
+   * shows it.
+   */
+  readonly operationId: string | null;
   /** `true` only while a request is in flight, so the caller can state the busy condition once. */
   readonly pending: boolean;
   /** The last outcome, or `null` before the first submission settles. */
@@ -255,17 +263,18 @@ export interface UseReviewedMutationResult<P> {
   retry(): Promise<MutationOutcome | null>;
   /** Re-applies the last intent against a conflict's current revision; `null` when none applies. */
   reapply(): Promise<MutationOutcome | null>;
-  /** Discards the last outcome and starts a fresh identity for a new intent. */
+  /** Discards the last outcome and drops the attempt identity, so the next intent mints a fresh one. */
   reset(): void;
 }
 
 /**
  * Owns the attempt identity, the in-flight fence and the last outcome of one reviewed mutation.
  *
- * One identity per intent: the first submission adopts the identity minted with the hook, a retry of
- * the same intent keeps it, and a changed intent mints a new one. That is the whole rule, and it is
- * the reason `alreadyAccepted` can be trusted — the service recognises the replay by identity rather
- * than by guessing from a repeated payload.
+ * One identity per intent: the first submission mints it, a retry of the same intent keeps it, and a
+ * changed intent mints a new one. That is the whole rule, and it is the reason `alreadyAccepted` can be
+ * trusted — the service recognises the replay by identity rather than by guessing from a repeated
+ * payload. Nothing is minted before a submission exists, because an identity is random and a value
+ * produced by a render would differ between the server render and the hydration of one mounted step.
  *
  * The fence is a ref, not the state flag: a second activation in the same tick would otherwise see
  * the pre-update `pending` value and dispatch a second request. `submit` returns the promise already
@@ -287,11 +296,10 @@ export function useReviewedMutation<P = unknown>(
     submitRef.current = submit;
   }, [submit]);
 
-  const [attempt, setAttempt] = useState<ReviewedAttempt>(() => ({
-    operationId: newOperationId(),
-    intent: null,
-  }));
-  const attemptRef = useRef<ReviewedAttempt>(attempt);
+  /* No attempt before the first submission: an identity is random, so minting one here would run on
+   * the server render and again during hydration and hand one mounted step two different identities. */
+  const [attempt, setAttempt] = useState<ReviewedAttempt | null>(null);
+  const attemptRef = useRef<ReviewedAttempt | null>(null);
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
   const [outcome, setOutcome] = useState<MutationOutcome | null>(null);
@@ -300,7 +308,7 @@ export function useReviewedMutation<P = unknown>(
   const inFlightRef = useRef<Promise<MutationOutcome> | null>(null);
 
   /** Takes a new identity into both the ref and the state, so display and dispatch never disagree. */
-  const adopt = useCallback((next: ReviewedAttempt): ReviewedAttempt => {
+  const adopt = useCallback((next: ReviewedAttempt | null): ReviewedAttempt | null => {
     attemptRef.current = next;
     setAttempt(next);
     return next;
@@ -313,7 +321,10 @@ export function useReviewedMutation<P = unknown>(
         return running;
       }
 
-      const identity = adopt(attemptForIntent(attemptRef.current, intentKeyOf(input)));
+      /* The first submission mints the identity; a retry of the same intent keeps it, and a changed
+       * intent mints a new one. */
+      const identity = attemptForIntent(attemptRef.current, intentKeyOf(input));
+      adopt(identity);
       inputRef.current = input;
       pendingRef.current = true;
       setPending(true);
@@ -379,16 +390,16 @@ export function useReviewedMutation<P = unknown>(
     if (pendingRef.current) {
       return;
     }
-    const next: ReviewedAttempt = { operationId: newOperationId(), intent: null };
-    attemptRef.current = next;
-    setAttempt(next);
+    /* No identity is minted here either: the next submission mints one, so a deliberate reset needs no
+     * random value and every identity this step submits was produced by the submission that used it. */
+    adopt(null);
     inputRef.current = null;
     outcomeRef.current = null;
     setOutcome(null);
-  }, []);
+  }, [adopt]);
 
   return {
-    operationId: attempt.operationId,
+    operationId: attempt === null ? null : attempt.operationId,
     pending,
     outcome,
     submit: submitInput,
@@ -660,9 +671,11 @@ export function ActionReview<P = unknown>({
       aria-busy={pending ? true : undefined}
       data-slot="action-review"
       data-state={state}
-      /* The identity this step would submit under. A browser test asserting that a repeated press
-       * produced one effect reads it here; it is a diagnostic hook, never a control. */
-      data-operation-id={operationId}
+      /* The identity this step has submitted under, once it has submitted: a browser test asserting that
+       * a repeated press produced one effect reads it here; it is a diagnostic hook, never a control. It
+       * is absent before the first submission, because the identity is minted by that submission rather
+       * than by a render — which is what keeps the server render and the hydration identical. */
+      data-operation-id={operationId ?? undefined}
       className={cn("flex min-w-0 flex-col gap-4", className)}
     >
       <Card className="min-w-0">

@@ -300,13 +300,11 @@ const SPLICED_DESCRIPTION = "harbour youth group portrait";
  * that never held any would prove nothing.
  */
 function withDescriptiveMetadata(jpeg: Uint8Array): Uint8Array {
-  const xmp = jpegSegment(0xe1, utf8(`${XMP_NAMESPACE}\u0000<x:xmpmeta xmlns:x="adobe:ns:meta/"/>`));
-  return concat([
-    jpeg.subarray(0, 2),
-    exifSegment(SPLICED_DESCRIPTION, 6),
-    xmp,
-    jpeg.subarray(2),
-  ]);
+  const xmp = jpegSegment(
+    0xe1,
+    utf8(`${XMP_NAMESPACE}\u0000<x:xmpmeta xmlns:x="adobe:ns:meta/"/>`),
+  );
+  return concat([jpeg.subarray(0, 2), exifSegment(SPLICED_DESCRIPTION, 6), xmp, jpeg.subarray(2)]);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -379,31 +377,38 @@ function firstOf<T>(items: readonly T[], what: string): T {
 
 /** The refusal an image preparation produced, or a failure saying the pipeline accepted the file. */
 function imageRefusal(result: ImagePreparationResult): ImagePreparationRefusal {
-  if (result.ok) throw new Error("expected the image pipeline to refuse this file, but it accepted it");
+  if (result.ok)
+    throw new Error("expected the image pipeline to refuse this file, but it accepted it");
   return result;
 }
 
 /** The accepted image preparation, or a failure quoting the refusal that replaced it. */
 function imageSuccess(result: ImagePreparationResult): ImagePreparationSuccess {
-  if (!result.ok) throw new Error(`expected the image pipeline to accept this file: ${result.message}`);
+  if (!result.ok)
+    throw new Error(`expected the image pipeline to accept this file: ${result.message}`);
   return result;
 }
 
 /** The refusal a video inspection produced, or a failure saying the file was admitted. */
 function videoRefusal(result: VideoInspectionResult): VideoRefusal {
-  if (result.ok) throw new Error("expected the video profile to refuse this file, but it admitted it");
+  if (result.ok)
+    throw new Error("expected the video profile to refuse this file, but it admitted it");
   return result;
 }
 
 /** The profile the video inspection established, or a failure quoting the refusal that replaced it. */
 function videoCheck(result: VideoInspectionResult): VideoProfileCheck {
-  if (!result.ok) throw new Error(`expected the video profile to admit this file: ${result.message}`);
+  if (!result.ok)
+    throw new Error(`expected the video profile to admit this file: ${result.message}`);
   return result.profileCheck;
 }
 
 /** The refusal an acceptance returned, or a failure saying the file was accepted. */
-function acceptanceRefusal<S extends MediaAssetScope>(result: MediaAcceptanceResult<S>): MediaRefusal {
-  if (result.state === "ready") throw new Error("expected this upload to be refused, but it was accepted");
+function acceptanceRefusal<S extends MediaAssetScope>(
+  result: MediaAcceptanceResult<S>,
+): MediaRefusal {
+  if (result.state === "ready")
+    throw new Error("expected this upload to be refused, but it was accepted");
   return result;
 }
 
@@ -731,7 +736,12 @@ describe("the produced image rendition is safe to serve", () => {
     const accepted = acceptanceSuccess(await offerSeededImage({}));
     const display = firstOf(accepted.renditions, "a display rendition");
 
-    for (const needle of [PRIVATE_ORIGINAL_REF, "IMG_20260814", "harbour-youth-group", "media-originals"]) {
+    for (const needle of [
+      PRIVATE_ORIGINAL_REF,
+      "IMG_20260814",
+      "harbour-youth-group",
+      "media-originals",
+    ]) {
       expect(containsText(display.bytes, needle)).toBe(false);
     }
     // The rendition has its own identity, and the private original is not it.
@@ -771,7 +781,10 @@ describe("the produced image rendition is safe to serve", () => {
     const shelfBefore = accepted.renditions.map((rendition) => rendition.renditionId);
 
     const refused = acceptanceRefusal(
-      await offerSeededImage({ bytes: animatedPng(4, 4), sourceName: "IMG_20260814-animation.png" }),
+      await offerSeededImage({
+        bytes: animatedPng(4, 4),
+        sourceName: "IMG_20260814-animation.png",
+      }),
     );
     expect(refused.code).toBe("animated-not-admitted");
 
@@ -823,7 +836,9 @@ describe("the produced image rendition is safe to serve", () => {
 /** The seeded video asset whose playback rendition serves the committed H.264 fixture. */
 const SEEDED_MP4_ASSET: SeededMediaAsset = firstOf(
   SEEDED_ASSETS.filter((asset) =>
-    asset.renditions.some((r) => r.purpose === "playback" && r.bytesRef.endsWith("sample-h264.mp4")),
+    asset.renditions.some(
+      (r) => r.purpose === "playback" && r.bytesRef.endsWith("sample-h264.mp4"),
+    ),
   ),
   "the seeded video asset whose playback rendition serves the committed MP4",
 );
@@ -1154,4 +1169,3 @@ describe("local processing is never presented as production scanning or transcod
     ]);
   });
 });
-

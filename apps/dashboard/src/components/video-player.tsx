@@ -460,7 +460,12 @@ export function VideoPlayer({
         >
           {transcriptOpen ? "Hide transcript" : "Read transcript"}
         </Button>
-        <div id={transcriptId} dir="auto" hidden={!transcriptOpen} className={TRANSCRIPT_TEXT_CLASS}>
+        <div
+          id={transcriptId}
+          dir="auto"
+          hidden={!transcriptOpen}
+          className={TRANSCRIPT_TEXT_CLASS}
+        >
           {transcript}
         </div>
       </div>

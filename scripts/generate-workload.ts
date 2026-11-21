@@ -135,10 +135,16 @@ function formatSummary(summary: WorkloadSummary): string {
     reportLine("seed", String(WORKLOAD_SEED)) +
     reportLine("session", summary.sessionId) +
     reportLine("document", summary.workloadPath) +
-    reportLine("partners", `${String(summary.partners)} (expected ${String(EXPECTED_PARTNER_COUNT)})`) +
+    reportLine(
+      "partners",
+      `${String(summary.partners)} (expected ${String(EXPECTED_PARTNER_COUNT)})`,
+    ) +
     reportLine("gifts", `${String(summary.gifts)} (expected ${String(EXPECTED_GIFT_COUNT)})`) +
     reportLine("currencies", currencies.join(", ")) +
-    reportLine("coverage", `${summary.coverage.from} .. ${summary.coverage.to} (${summary.coverage.state})`) +
+    reportLine(
+      "coverage",
+      `${summary.coverage.from} .. ${summary.coverage.to} (${summary.coverage.state})`,
+    ) +
     reportLine("elapsed", elapsed)
   );
 }

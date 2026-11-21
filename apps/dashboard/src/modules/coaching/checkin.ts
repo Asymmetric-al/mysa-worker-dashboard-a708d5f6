@@ -498,7 +498,9 @@ function sameAnswers(left: readonly CheckInAnswer[], right: readonly CheckInAnsw
   return left.every((answer, index) => {
     const other = right[index];
     return (
-      other !== undefined && other.questionOrder === answer.questionOrder && other.text === answer.text
+      other !== undefined &&
+      other.questionOrder === answer.questionOrder &&
+      other.text === answer.text
     );
   });
 }
@@ -575,7 +577,9 @@ export function captureQuestions(
   if (captureRefusal !== null) return err(captureRefusal);
 
   const captured: readonly CheckInQuestion[] = Object.freeze(
-    questions.map((question) => Object.freeze({ wording: question.wording, order: question.order })),
+    questions.map((question) =>
+      Object.freeze({ wording: question.wording, order: question.order }),
+    ),
   );
 
   return ok(Object.freeze({ questions: captured, capturedAt }));
@@ -783,7 +787,11 @@ export function updateSharedCheckIn(
   const answers = freezeAnswers(payload.answers);
   if (sameAnswers(current.answers, answers)) {
     return ok(
-      accepted(checkIn, false, "The shared check-in already holds these answers, so nothing changed."),
+      accepted(
+        checkIn,
+        false,
+        "The shared check-in already holds these answers, so nothing changed.",
+      ),
     );
   }
 
@@ -844,4 +852,3 @@ export function withdrawSharedCheckIn(
     ),
   );
 }
-

@@ -42,7 +42,8 @@ import { LIMIT_COPY } from "../copy";
  */
 export const TASK_SHARE_SCHEMA_MESSAGES = {
   /** The payload arrived without the task it means to share. */
-  taskRequired: "This payload names no task, so reload the shared summaries and choose the task again.",
+  taskRequired:
+    "This payload names no task, so reload the shared summaries and choose the task again.",
   /** The payload arrived without the occurrence it means to share. */
   occurrenceRequired:
     "This payload names no occurrence, so choose the occurrence you want to share and try again.",
@@ -101,11 +102,7 @@ export const taskSharePayloadSchema = z.strictObject({
    * the task does not recur; it is never how the surface says "whichever occurrence is current",
    * because that fallback is exactly the inheritance the rule forbids.
    */
-  occurrenceId: z
-    .string()
-    .trim()
-    .min(1, TASK_SHARE_SCHEMA_MESSAGES.occurrenceRequired)
-    .optional(),
+  occurrenceId: z.string().trim().min(1, TASK_SHARE_SCHEMA_MESSAGES.occurrenceRequired).optional(),
   /**
    * The fingerprint of the exact task state the worker reviewed, and an opaque value here.
    *
@@ -117,7 +114,10 @@ export const taskSharePayloadSchema = z.strictObject({
   reviewedFingerprint: z
     .string()
     .trim()
-    .min(1, "A shared summary records the review it belongs to, so review the description and share it again."),
+    .min(
+      1,
+      "A shared summary records the review it belongs to, so review the description and share it again.",
+    ),
   /** The reviewed text the worker wrote for a coach to read. */
   safeDescription: safeDescriptionSchema,
 });
@@ -139,7 +139,10 @@ export const taskShareStopPayloadSchema = z.strictObject({
   taskShareId: z
     .string()
     .trim()
-    .min(1, "This payload names no shared summary, so reload the shared summaries and stop it again."),
+    .min(
+      1,
+      "This payload names no shared summary, so reload the shared summaries and stop it again.",
+    ),
 });
 
 /** The validated `stopTaskShare` payload. */

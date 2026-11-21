@@ -124,10 +124,7 @@ function renderEveryState(amount: Money): ReadonlyMap<ValueState, Rendering> {
 }
 
 /** The rendering for `state`, refusing to treat an absent entry as an empty rendering. */
-function renderingOf(
-  renderings: ReadonlyMap<ValueState, Rendering>,
-  state: ValueState,
-): Rendering {
+function renderingOf(renderings: ReadonlyMap<ValueState, Rendering>, state: ValueState): Rendering {
   const rendering = renderings.get(state);
   if (rendering === undefined) {
     throw new Error(`no rendering was produced for the value state "${state}"`);
@@ -509,7 +506,6 @@ describe("an amount of an unknown currency", () => {
   });
 });
 
-
 describe("the financial modules' source", () => {
   /** The modules that total an amount or write one into an export, read here rather than imported. */
   const FINANCIAL_MODULES = [
@@ -593,4 +589,3 @@ describe("the minor-unit brand", () => {
     expect(unbranded).toBe(100);
   });
 });
-

@@ -38,12 +38,14 @@
  * Where the seeded persona roster comes from. The roster is written by the development seed, which
  * builds the whole deterministic dataset and belongs to the write path: importing it from a
  * request-path read would pull that builder into the serving graph and blur the boundary that keeps
- * the development runtime out of it. The roster is therefore read from the **persisted session
- * document**, and this release's `SessionMetaDocument` does not yet carry it — so the read parses an
- * optional `personas` member, reports the catalogue's state (`persisted`, `absent` or `unreadable`)
- * and names in `finding` exactly what the runtime has to write for the list to appear. It invents no
- * label, kind or identifier to fill the gap: a guessed persona list would be worse than an honest
- * one, because the switch would offer an identity the seed does not describe.
+ * the development runtime out of it. The roster therefore reaches this read through the **persisted
+ * session document**, which carries it as the `personas` member `dev-runtime/scenario.ts` declares and
+ * `dev-runtime/seed.ts` writes into every seeded session. The read parses that member itself, reports
+ * the catalogue's state (`persisted`, `absent` or `unreadable`) and names in `finding` which of the
+ * last two it saw: `absent` is a document written before the roster existed, and `unreadable` is one
+ * whose rows this build cannot honour. It invents no label, kind or identifier to fill either gap: a
+ * guessed persona list would be worse than an honest one, because the switch would offer an identity
+ * the seed does not describe.
  *
  * Plan items that put this file in scope: AAP 0.6.1 and 0.9.1 (`data-service/reads/dev.ts`, "one
  * read per visible job"), 0.7.1 (`readDevState` under "Operate the development runtime"), 0.7.2 (the
@@ -99,47 +101,27 @@ import { unavailable, type ReadResult } from "@/modules/data-service/outcome";
 import {
   DEMONSTRABLE_TARGETS,
   describeFailurePlan,
-  EMPTY_FAILURE_PLAN,
   type DemonstrableTarget,
   type FailurePlanDescription,
 } from "@/modules/dev-runtime/failures";
 import {
+  DEV_SOURCE,
+  devStateRevision,
   parseSessionMeta,
+  PERSISTED_PERSONA_KINDS,
   SCENARIO_DEFINITIONS,
   SCENARIO_IDS,
   scenarioFlagsFor,
+  type PersistedPersonaKind,
   type ScenarioFlags,
   type ScenarioId,
-  type SessionMetaDocument,
 } from "@/modules/dev-runtime/scenario";
 import { readSession } from "@/modules/store/repository";
 import { instantAt, SEED_INSTANT } from "@/modules/time/clock";
 
 // ---------------------------------------------------------------------------------------------
-// The development runtime as a source
+// The attempt identity a read refusal carries
 // ---------------------------------------------------------------------------------------------
-
-/**
- * The source system every answer from this read is attributed to: the development runtime, which owns
- * the scenario, the clock offset, the failure plan and the reset.
- */
-const DEV_SOURCE_SYSTEM = "dev-runtime";
-
-/**
- * The opaque reference for what was read: this session's development document.
- *
- * It is a constant rather than the session id on purpose. A `SourceReference` travels into a
- * response, a diagnostic line and any surface that reports an outage, and the session id is the
- * cookie's own value: publishing it would hand out an identifier that names a session outside the
- * request that resolved it. The reference says what kind of record answered without naming whose.
- */
-const DEV_SOURCE_REFERENCE = "session-meta";
-
-/** The source identity an `unavailable` answer carries. */
-export const DEV_SOURCE = Object.freeze({
-  system: DEV_SOURCE_SYSTEM,
-  reference: DEV_SOURCE_REFERENCE,
-});
 
 /**
  * The operation identity a read refusal carries.
@@ -191,21 +173,14 @@ const DEVELOPMENT_RUNTIME_CONTEXT: Pick<
 });
 
 // ---------------------------------------------------------------------------------------------
-// The seeded persona catalogue, as the persisted document would carry it
+// The seeded persona catalogue, as the persisted document carries it
 // ---------------------------------------------------------------------------------------------
 
 /**
- * The four kinds of seeded identity, matching `components/persona-switcher.tsx`'s grouping: the
- * receiving readers whose persona decides what a preview shows, and the three worker-side kinds whose
- * identities own work.
- */
-const PERSISTED_PERSONA_KINDS = ["reader", "worker", "reviewer", "coach"] as const;
-
-/** What a seeded identity is, for the purpose of grouping the switch. */
-type DevPersonaKind = (typeof PERSISTED_PERSONA_KINDS)[number];
-
-/**
  * One seeded persona as the persisted catalogue states it.
+ *
+ * The kind vocabulary is `dev-runtime/scenario.ts`'s, imported rather than repeated: that module owns
+ * the stored document, so a kind the document may carry and a kind this read accepts are one list.
  *
  * `principalId` is what the active persona is matched by: it is the same reference the session
  * resolved to, so the comparison is identity by reference and never a match on a display name or an
@@ -226,7 +201,7 @@ const persistedPersonasSchema = z.array(persistedPersonaSchema);
 export interface DevPersona {
   readonly id: string;
   readonly principalId: string;
-  readonly kind: DevPersonaKind;
+  readonly kind: PersistedPersonaKind;
   readonly label: string;
   readonly description: string;
 }
@@ -326,19 +301,20 @@ export interface DevState {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * What the runtime has to write for the seeded roster to appear, stated where a panel shows it.
+ * What a document carrying no roster says, stated where a panel shows it.
  *
  * The read does not import the seeder to fill the gap: the seed builds the whole deterministic
  * dataset and belongs to the write path, so the roster has to reach this read through the session's
- * own persisted document. The wording therefore names the change rather than apologising for a gap,
+ * own persisted document. The wording therefore names the repair rather than apologising for a gap,
  * and it names no file, because this is response data and a path in a response is a filesystem
  * location disclosed for nothing.
  */
 const PERSONA_CATALOGUE_ABSENT_FINDING =
   "The persisted session document carries no persona catalogue, so no seeded persona can be listed. " +
-  "The development runtime has to write the seeded roster into the session's own development " +
-  "document and carry that member through the parser that reads it back; this read reports it " +
-  "unchanged the moment it is there, and it will not import the seed's dataset builder to guess it.";
+  "A deterministic reset writes the seeded roster into every session's development document, so a " +
+  "document carrying none was written before the roster existed or edited by hand; this read reports " +
+  "a roster unchanged the moment the document holds one, and it will not import the seed's dataset " +
+  "builder to guess it.";
 
 /** What an unreadable catalogue would have needed to be, so a malformed roster is fixable. */
 const PERSONA_CATALOGUE_UNREADABLE_FINDING =
@@ -461,34 +437,6 @@ function personaCatalogueFor(document: unknown): DevPersonaCatalogue {
 function activePersonaIdOf(personas: readonly DevPersona[], principalId: string): string | null {
   const match = personas.find((persona) => persona.principalId === principalId);
   return match === undefined ? null : match.id;
-}
-
-/**
- * The revision a caller would present as `expectedRevision` if a development mutation took one.
- *
- * The development document carries no revision of its own, so this is derived from the facts it
- * states: two reads of an unchanged state return the same value, and any control that moves the
- * scenario, the offset, the admission state or the armed failure changes it. It is reported rather
- * than assumed, so a caller that wants to detect "the state moved since I looked" has one honest
- * comparison instead of a timestamp it would have to invent.
- *
- * Exported because the controls that take that `expectedRevision` — `data-service/mutations/dev.ts` —
- * must derive the identical token: two derivations would drift, and a drift would turn every control
- * submitted from a current panel into a false conflict. This read is the token's one definition.
- */
-export function devStateRevision(meta: SessionMetaDocument, principalId: string): string {
-  const plan =
-    meta.failurePlan === EMPTY_FAILURE_PLAN
-      ? "none"
-      : `${meta.failurePlan.mode}:${meta.failurePlan.target.kind}:${meta.failurePlan.target.name}@${meta.failurePlan.armedAt}`;
-  return [
-    "dev-state.1",
-    `scenario=${meta.scenarioId}`,
-    `offset=${meta.clockOffsetMs}`,
-    `state=${meta.sessionState}`,
-    `principal=${principalId}`,
-    `plan=${plan}`,
-  ].join("|");
 }
 
 /**

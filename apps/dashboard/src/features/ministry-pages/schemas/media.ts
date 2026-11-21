@@ -233,9 +233,7 @@ export const placementSchema = z.strictObject({
  * diagnostic for the person who chose the file.
  */
 const uploadBytesSchema = z.strictObject({
-  bytesBase64: z
-    .string({ error: "Choose a file to upload." })
-    .min(1, "Choose a file to upload."),
+  bytesBase64: z.string({ error: "Choose a file to upload." }).min(1, "Choose a file to upload."),
   name: z
     .string({ error: "State the file's name as text, or leave it out." })
     .min(1, "State the file's name as text, or leave it out.")
@@ -265,9 +263,7 @@ export const registerMediaAssetPayloadSchema: z.ZodType<ServiceRegisterMediaAsse
     caption: optionalPlacementTextSchema,
     credit: optionalPlacementTextSchema,
     language: localeTagSchema.optional(),
-    placement: placementSchema
-      .extend({ language: localeTagSchema.optional() })
-      .optional(),
+    placement: placementSchema.extend({ language: localeTagSchema.optional() }).optional(),
     poster: z
       .strictObject({
         bytesBase64: z
@@ -276,7 +272,10 @@ export const registerMediaAssetPayloadSchema: z.ZodType<ServiceRegisterMediaAsse
         name: z
           .string({ error: "State the file's name as text, or leave it out." })
           .min(1, "State the file's name as text, or leave it out.")
-          .max(UPLOAD_NAME_MAX_CHARS, `A file name holds at most ${UPLOAD_NAME_MAX_CHARS} characters.`)
+          .max(
+            UPLOAD_NAME_MAX_CHARS,
+            `A file name holds at most ${UPLOAD_NAME_MAX_CHARS} characters.`,
+          )
           .optional(),
         altText: optionalAltTextSchema,
       })

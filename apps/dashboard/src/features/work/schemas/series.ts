@@ -12,9 +12,11 @@
  * A schema here validates the **payload alone**. The four-field mutation input
  * `{ operationId, scope, expectedRevision, payload }` belongs to the read envelope, and
  * `../hooks/use-series-mutations.ts` composes the two and mints one operation identity per intent,
- * so no schema below declares `operationId`, `scope` or `expectedRevision`. Every object keeps Zod's
- * default strip mode for exactly that reason: an envelope field smuggled into a payload is dropped
- * rather than trusted.
+ * so no schema below declares `operationId`, `scope` or `expectedRevision`. Every payload object is
+ * a strict object for the same reason: an envelope field smuggled into a payload — or any other
+ * stray key, inside the `end` object included — is refused here, by the rule the service's own
+ * strict payload schema applies, instead of being dropped in the browser and answered `invalid` a
+ * round trip later.
  *
  * These schemas decide shape, never admissibility. Whether the ongoing-personal-series policy
  * applies to this worker, whether an end date precedes the first due date, whether a stop already
@@ -184,15 +186,15 @@ export type SeriesEndPayload = AsStoredDate<SeriesEnd>;
 export const seriesEndSchema: z.ZodType<SeriesEndPayload> = z.discriminatedUnion(
   "kind",
   [
-    z.object({ kind: z.literal("on-date"), on: civilDateSchema }),
-    z.object({
+    z.strictObject({ kind: z.literal("on-date"), on: civilDateSchema }),
+    z.strictObject({
       kind: z.literal("after-count"),
       count: z
         .number({ error: SERIES_SCHEMA_MESSAGES.endCountInvalid })
         .int(SERIES_SCHEMA_MESSAGES.endCountInvalid)
         .min(1, SERIES_SCHEMA_MESSAGES.endCountInvalid),
     }),
-    z.object({ kind: z.literal("ongoing-personal-policy") }),
+    z.strictObject({ kind: z.literal("ongoing-personal-policy") }),
   ],
   { error: SERIES_FIELD_MESSAGES.endRequired },
 );
@@ -396,7 +398,7 @@ const effectiveFromSchema = z
  * series is never created by pointing an existing task at another one.
  */
 export const createSeriesSchema = z
-  .object({
+  .strictObject({
     title: taskTitleSchema,
     category: taskCategorySchema,
     note: taskNoteSchema,
@@ -431,7 +433,7 @@ export type CreateSeriesPayload = z.infer<typeof createSeriesSchema>;
  * does: a patch could remove a day of the month and leave the profile that reads it.
  */
 export const editThisAndFutureSchema = z
-  .object({
+  .strictObject({
     seriesId: seriesIdSchema,
     effectiveFrom: effectiveFromSchema,
     title: taskTitleSchema,
@@ -461,7 +463,7 @@ export type EditThisAndFuturePayload = z.infer<typeof editThisAndFutureSchema>;
  * would be an edit to the plan that pausing does not perform, and the plan is changed through
  * `editThisAndFuture` or not at all.
  */
-export const pauseSeriesSchema = z.object({
+export const pauseSeriesSchema = z.strictObject({
   seriesId: seriesIdSchema,
 });
 
@@ -477,7 +479,7 @@ export type PauseSeriesPayload = z.infer<typeof pauseSeriesSchema>;
  * by this payload — the service answers that, and a resume queued before a stop is caught by
  * `expectedRevision` as a conflict rather than re-enacted here.
  */
-export const resumeSeriesSchema = z.object({
+export const resumeSeriesSchema = z.strictObject({
   seriesId: seriesIdSchema,
 });
 
@@ -495,7 +497,7 @@ export type ResumeSeriesPayload = z.infer<typeof resumeSeriesSchema>;
  * queued before it is caught by `expectedRevision` as `conflict` or `unchanged` rather than revived
  * through a field here.
  */
-export const stopSeriesSchema = z.object({
+export const stopSeriesSchema = z.strictObject({
   seriesId: seriesIdSchema,
 });
 

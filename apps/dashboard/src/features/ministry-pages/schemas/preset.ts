@@ -62,9 +62,7 @@ import { mutationInputSchema, type MutationInput } from "@/modules/data-service/
 // The annotation type is imported with `import type`, which the compiler erases: it holds the schema
 // below to the service's own payload type without pulling the mutation bodies, the store or `node:fs`
 // into a client bundle.
-import type {
-  ApplyPresetPayload as ServiceApplyPresetPayload,
-} from "@/modules/data-service/mutations/content";
+import type { ApplyPresetPayload as ServiceApplyPresetPayload } from "@/modules/data-service/mutations/content";
 
 // ---------------------------------------------------------------------------------------------
 // Wording

@@ -359,8 +359,10 @@ function narrativeOf(state: PublishEditionState, publishesRevision: boolean): st
             "no reader is served it yet. A result that needs attention is complete: it names what to " +
             "look at rather than an error that stopped the run.";
     case "withdrawn":
-      return "This attempt released nothing for this edition, and the edition is withdrawn: this " +
-        "application does not serve it to that audience.";
+      return (
+        "This attempt released nothing for this edition, and the edition is withdrawn: this " +
+        "application does not serve it to that audience."
+      );
     default: {
       const unhandled: never = state;
       throw new Error(`Unhandled per-edition publish state: ${String(unhandled)}`);
@@ -649,4 +651,3 @@ export function PublishResults({
 }
 
 export default PublishResults;
-

@@ -447,10 +447,7 @@ function partnerKindLabel(kind: PartnerKind): string {
  * would print a number nobody recorded and turn a missing state into a confident figure, which is the
  * one rendering the five-state rule exists to prevent.
  */
-function valueStateOf(
-  valueStates: Readonly<Record<string, ValueState>>,
-  path: string,
-): ValueState {
+function valueStateOf(valueStates: Readonly<Record<string, ValueState>>, path: string): ValueState {
   return valueStates[path] ?? "unknown";
 }
 
@@ -504,7 +501,10 @@ function PartnerAmount({
 
   if (!STATES_WITH_A_NUMBER.has(valueState)) {
     return (
-      <span className="inline-flex flex-wrap items-baseline gap-2" title={formatted.accessibleLabel}>
+      <span
+        className="inline-flex flex-wrap items-baseline gap-2"
+        title={formatted.accessibleLabel}
+      >
         <span className="sr-only">{formatted.accessibleLabel}</span>
         {chip}
       </span>
@@ -579,7 +579,11 @@ function SupportFigures({
  * states its own meaning. This is the one place a reader learns that an amount they can see is not the
  * whole story.
  */
-function ValueStateNotes({ states }: { readonly states: readonly ValueState[] }): ReactElement | null {
+function ValueStateNotes({
+  states,
+}: {
+  readonly states: readonly ValueState[];
+}): ReactElement | null {
   const distinct = [...new Set(states)].filter((state) => state !== "value");
   if (distinct.length === 0) {
     return null;
@@ -605,7 +609,10 @@ function ValueStateNotes({ states }: { readonly states: readonly ValueState[] })
 // ---------------------------------------------------------------------------------------------
 
 /** The states a section renders in place of content: all of them a `StateNotice` can carry. */
-type SectionNoticeState = Extract<SurfaceState, "empty" | "unavailable" | "denied" | "partial-coverage">;
+type SectionNoticeState = Extract<
+  SurfaceState,
+  "empty" | "unavailable" | "denied" | "partial-coverage"
+>;
 
 /** Props of {@link SectionNotice}. */
 interface SectionNoticeProps {
@@ -796,7 +803,10 @@ function RestrictionsBody({ partner }: { readonly partner: PartnerRecord }): Rea
   return (
     <ul className="flex flex-col gap-2">
       {partner.restrictions.map((restriction, index) => (
-        <li key={`${restriction.kind}-${String(index)}`} className="flex flex-wrap items-baseline gap-2">
+        <li
+          key={`${restriction.kind}-${String(index)}`}
+          className="flex flex-wrap items-baseline gap-2"
+        >
           <Badge variant="outline">
             <bdi>{restriction.kind}</bdi>
           </Badge>
@@ -1098,8 +1108,8 @@ function TaskItem({ task }: { readonly task: TaskRecord }): ReactElement {
       {task.plannedTime === null || task.timeZone === null ? null : (
         <p className="text-xs text-muted-foreground">
           <span className="sr-only">Planned time </span>
-          <bdi className="mono-identifier">{task.plannedTime}</bdi>{" "}
-          <bdi>{task.timeZone}</bdi> — {TASK_PLANNED_IS_NOT_HELD}
+          <bdi className="mono-identifier">{task.plannedTime}</bdi> <bdi>{task.timeZone}</bdi> —{" "}
+          {TASK_PLANNED_IS_NOT_HELD}
         </p>
       )}
       {task.category === null ? null : (
@@ -1239,11 +1249,7 @@ function CommitmentItem({
       </div>
       <div className="flex flex-col items-end gap-1">
         <span className="text-xs text-muted-foreground">{COMMITMENT_PER_OCCURRENCE}</span>
-        <PartnerAmount
-          amount={commitment.perOccurrence}
-          valueState={valueState}
-          locale={locale}
-        />
+        <PartnerAmount amount={commitment.perOccurrence} valueState={valueState} locale={locale} />
       </div>
     </li>
   );
@@ -1394,7 +1400,11 @@ export default function PartnerDetailSections({
   // count, title or size for anything behind it.
   if (partner.kind !== "read") {
     return (
-      <ReadNotice read={partner} surface="partner-detail" headingLevel={layout === "page" ? 1 : 2} />
+      <ReadNotice
+        read={partner}
+        surface="partner-detail"
+        headingLevel={layout === "page" ? 1 : 2}
+      />
     );
   }
 

@@ -46,12 +46,7 @@
  */
 
 import { useEffect, useId, useMemo, useRef, type ReactElement, type ReactNode } from "react";
-import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  ChevronsUpDownIcon,
-  Columns3Icon,
-} from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, Columns3Icon } from "lucide-react";
 import {
   columnVisibilityFeature,
   rowPaginationFeature,
@@ -406,11 +401,7 @@ function defaultCell<TRow extends RowData>(
 }
 
 /** The direction indicator of a sortable header, decorative because `aria-sort` carries the state. */
-function SortIndicator({
-  direction,
-}: {
-  readonly direction: SortDirection | false;
-}): ReactElement {
+function SortIndicator({ direction }: { readonly direction: SortDirection | false }): ReactElement {
   const Icon =
     direction === "asc" ? ArrowUpIcon : direction === "desc" ? ArrowDownIcon : ChevronsUpDownIcon;
   return (
@@ -1018,4 +1009,3 @@ export function RecordList<TRow extends RowData>({
 }
 
 export default RecordList;
-

@@ -58,6 +58,8 @@ import { z } from "zod";
 import type { SourceReference } from "@/lib/ids";
 import { logger } from "@/lib/logger";
 import { err, ok, type Result } from "@/lib/result";
+import { failureFor, failurePlanOfDocument } from "@/modules/dev-runtime/failures";
+import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
 import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { exponentOf } from "@/modules/money/currency";
 import { readSession } from "@/modules/store/repository";
@@ -110,11 +112,7 @@ import {
   type SortField,
 } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
-import {
-  parseCivilDate,
-  serialiseCivilDate,
-  type CivilDate,
-} from "@/modules/time/civil";
+import { parseCivilDate, serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
 
 import {
   assertScope,
@@ -234,23 +232,6 @@ const EXPORT_UNAVAILABLE_REASON =
 /** The one sentence stating why a goal cannot be edited from this envelope. */
 const GOAL_EDIT_UNAVAILABLE_REASON =
   "This session does not hold the goal-editing capability, so the goal is read-only here: no edit control is offered and a save would be refused.";
-
-/**
- * The development scenario whose whole point is that the financial source is down.
- *
- * The scenario registry lives in `modules/dev-runtime/scenario.ts`, which a read may not import: the
- * development runtime is the seam a later owner replaces, and a read that imported it would depend on
- * the controls rather than on the data. The identifier is therefore repeated here, exactly as
- * `authorize.ts` repeats the goal capability across the same boundary, and it is stated as one
- * constant so a rename is a one-line change rather than a scattered hunt.
- *
- * The consequence of the repetition is stated rather than hidden: if that scenario were ever renamed,
- * this check would stop matching and the read would answer as though the source were available. That is
- * the fail-open direction, which is why the last line of defence is not here — the scenario's own
- * session state (`unavailable`) refuses at the admission gate, and the source identity on every
- * `unavailable` answer names what could not be read.
- */
-const FINANCIAL_SOURCE_UNAVAILABLE_SCENARIO = "financial-source-unavailable";
 
 /** The job name each read carries into its one diagnostic line, so a log names the read that failed. */
 const JOB_OVERVIEW = "readSupportOverview";
@@ -596,8 +577,6 @@ export interface SupportExportData {
   readonly snapshot: Snapshot;
 }
 
-
-
 // ---------------------------------------------------------------------------------------------
 // The session documents these reads parse
 // ---------------------------------------------------------------------------------------------
@@ -615,7 +594,6 @@ const supportStateDocumentSchema = z.object({
   gifts: z.array(giftRowRecordSchema),
   commitments: z.array(commitmentRowRecordSchema),
 });
-
 
 /**
  * The generated workload's gift collection and the statement it makes about itself.
@@ -898,9 +876,12 @@ function projectionOf(input: {
  * The order is the contract, and each step is where it is because of what the step before it makes
  * safe: the session first, because no request names a scope of its own; then the selected scope,
  * because a session that has chosen no context has no authority to read one; then the store's
- * documents; then the projection. A session resolves `ok` even when it grants nothing — `expired`,
- * `denied`, `unavailable` and `no-access` are states of a real session — so the refusal always comes
- * from `assertScope`, which names the caller's relationship and nothing about a record.
+ * documents; then the projection. An armed scope-denial plan is answered as soon as those documents
+ * are in hand, before the projection is built, so the demonstration fires on the read it names while
+ * disclosing nothing the projection would have counted. A session resolves `ok` even when it grants
+ * nothing — `expired`, `denied`, `unavailable` and `no-access` are states of a real session — so the
+ * refusal always comes from `assertScope`, which names the caller's relationship and nothing about a
+ * record.
  *
  * Three outcomes are `unavailable` rather than empty: a document that cannot be decoded, a document
  * stating no projection for this subject (or one belonging to another subject), and a stored date the
@@ -948,6 +929,7 @@ async function readContext(
 
   let state: unknown;
   let workloadValue: unknown;
+  let meta: unknown;
   try {
     const documents = await readSession(session.sessionId);
     if (documents === undefined) {
@@ -955,8 +937,17 @@ async function readContext(
     }
     state = documents.state;
     workloadValue = documents.workload;
+    meta = documents.meta;
   } catch {
     return { ok: false, refusal: sourceUnavailable(job, storeSource(session)) };
+  }
+
+  // An armed scope-denial plan must take effect on the read it names, so it is answered here — after
+  // the documents are read and before the state and workload documents are decoded, so nothing is
+  // enumerated, totalled or projected first. The refusal is this module's ordinary denial by its
+  // ordinary reason code: no count, title, existence flag or size leaves with it.
+  if (failureFor(failurePlanOfDocument(meta), "read", job) === "denied") {
+    return { ok: false, refusal: refused("no-permission") };
   }
 
   const parsed = supportStateDocumentSchema.safeParse(state);
@@ -993,10 +984,16 @@ async function readContext(
     return { ok: false, refusal: sourceUnavailable(job, record.source, SUPPORT_SOURCE_GUIDANCE) };
   }
 
-  // A session the development panel has switched into the "financial source unavailable" world answers
-  // as an outage with the source's identity, rather than reporting figures from a source it says it
-  // cannot read. The condition is stated here, once, for every financial read of this session.
-  if (session.scenarioId === FINANCIAL_SOURCE_UNAVAILABLE_SCENARIO) {
+  // The scenario registry is the single owner of the scenario vocabulary, and the flag its row sets is
+  // what this read consults: a session the development panel has switched into the "financial source
+  // unavailable" world answers as an outage with the source's identity, rather than reporting figures
+  // from a source it says it cannot read. A scenario id this build does not define cannot establish
+  // that the source is up, so it answers the same way instead of serving on an assumption. The
+  // condition is stated here, once, for every financial read of this session.
+  if (
+    !isScenarioId(session.scenarioId) ||
+    scenarioFlagsFor(session.scenarioId).financialSource === "unavailable"
+  ) {
     return {
       ok: false,
       refusal: sourceUnavailable(job, projection.source, SUPPORT_SOURCE_GUIDANCE),
@@ -1226,7 +1223,8 @@ function sortOf(
   if (!isSortDirection(direction)) {
     refused.push({
       field: "sort.direction",
-      message: "A sort runs ascending or descending. This direction is neither, so no order is assumed.",
+      message:
+        "A sort runs ascending or descending. This direction is neither, so no order is assumed.",
     });
     return undefined;
   }
@@ -1242,10 +1240,7 @@ function sortOf(
  * than with the whole result, because a list that silently returned everything would look like a page
  * of everything.
  */
-function pageOf(
-  input: SupportQuery["page"],
-  refused: ReportQueryProblem[],
-): ReportQuery["page"] {
+function pageOf(input: SupportQuery["page"], refused: ReportQueryProblem[]): ReportQuery["page"] {
   if (input === undefined) {
     return { index: 0 };
   }
@@ -1297,7 +1292,9 @@ function withoutRefusedFilters(
     ...(query.search === undefined || refused.has("search") ? {} : { search: query.search }),
     ...(query.sort === undefined || refused.has("sort") ? {} : { sort: query.sort }),
     ...(query.page === undefined || refused.has("page") ? {} : { page: query.page }),
-    ...(query.timeZone === undefined || refused.has("timeZone") ? {} : { timeZone: query.timeZone }),
+    ...(query.timeZone === undefined || refused.has("timeZone")
+      ? {}
+      : { timeZone: query.timeZone }),
   };
 }
 
@@ -1356,7 +1353,9 @@ function buildSupportQuery(
     return { query: rebuilt.query, refused };
   }
 
-  const stated = rebuilt.problems.map((problem) => `${problem.field}: ${problem.message}`).join(" ");
+  const stated = rebuilt.problems
+    .map((problem) => `${problem.field}: ${problem.message}`)
+    .join(" ");
   throw new TypeError(
     `The support read could not build a query the report engine accepts from its own defaults. ${stated}`,
   );
@@ -1625,7 +1624,6 @@ function ledgerActions(
   return [...byName.values()];
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // The figures the commitment and export reads state
 // ---------------------------------------------------------------------------------------------
@@ -1681,7 +1679,8 @@ function commitmentFigureOf(row: CommitmentRow): CommitmentFigure {
     inPartition: isInPartition(row.bucketState),
     lastSuccessfulOn:
       row.lastSuccessfulOn === undefined ? null : serialiseCivilDate(row.lastSuccessfulOn),
-    nextEligibleOn: row.nextEligibleOn === undefined ? null : serialiseCivilDate(row.nextEligibleOn),
+    nextEligibleOn:
+      row.nextEligibleOn === undefined ? null : serialiseCivilDate(row.nextEligibleOn),
     pause: {
       state: row.pause.state,
       resumeOn: row.pause.resumeOn === undefined ? null : serialiseCivilDate(row.pause.resumeOn),
@@ -2220,11 +2219,7 @@ export async function readExport(
       coverage: financialCoverageOf(context.projection, result.snapshot.query),
       revision: context.revision,
       valueStates,
-      actions: [
-        { name: "exportQuery", available: true },
-        ...refusalActions(built.refused),
-      ],
+      actions: [{ name: "exportQuery", available: true }, ...refusalActions(built.refused)],
     }),
   };
 }
-

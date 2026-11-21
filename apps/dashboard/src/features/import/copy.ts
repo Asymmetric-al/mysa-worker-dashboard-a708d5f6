@@ -1,7 +1,8 @@
 /**
  * The contact-import family's only wording: the five steps of the journey, the four limits a file is
  * held to before anything is read, the vocabulary of the four row decisions and the five row results,
- * the facts the acceptance summary states, and the framing of a refused file.
+ * the facts the acceptance summary states, the framing of a refused file, and the words the choose-file
+ * and selectively-accept step bodies add around those.
  *
  * Scope: AAP 0.10.1's contact-import journey ("a five-step journey (Choose file → Map → Validate and
  * review → Selectively accept → Results) over UTF-8 CSV within displayed limits"), 0.8.7's four fixed
@@ -506,4 +507,105 @@ export const TABLE_LABELS = {
   mapping: "Imported columns and field mapping",
   review: "Rows awaiting a decision",
   results: "Per-row import results",
+} as const;
+
+// ---------------------------------------------------------------------------------------------
+// What step one's body says
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The words only the choose-file step's own body states: the file control's label and hint, the frame
+ * around the four limits, the facts a chosen file reports about itself, and the control that opens
+ * step two.
+ *
+ * The four limits are not restated here. `LIMIT_ROWS` above states each one from the descriptor the
+ * importer measures against, and this heading is only the frame around that list, so a changed limit
+ * changes the step without an edit in this block.
+ *
+ * `fileHint` is read before the control, so what the step takes and what it does with it is stated
+ * before a file is chosen. It promises nothing the step cannot keep: this surface reads the chosen
+ * bytes and carries them to the importer, which parses them, measures them against the four limits and
+ * may refuse the file — a refusal framed by `REFUSAL_FRAMING`, never by a sentence here.
+ *
+ * `readFailed` exists because a browser can fail to read a file at all. It is worded as what is true
+ * at that moment — no file was chosen — so it can never be read as a judgement about the file's
+ * contents, which this surface does not make.
+ */
+export const CHOOSE_FILE_COPY = {
+  /** The file control's visible label, which is also its accessible name. */
+  fileLabel: "CSV file",
+  /** Read before the control: what to choose, and what happens to it. */
+  fileHint:
+    "Choose one UTF-8 CSV file from this device. This step reads its bytes in your browser and hands them to the importer, which parses them and measures them against the four limits below; nothing is imported until you have reviewed every row.",
+  /** The heading over the four limits, stated before any file is read. */
+  limitsHeading: "Limits this file is measured against",
+  /** The sentence under that heading, so the list reads as the importer's own rules. */
+  limitsLead:
+    "These are the importer's own limits, shown before you choose a file so a file that could not be accepted is not chosen in the first place.",
+  /** The heading over the facts the chosen file states about itself. */
+  chosenFileHeading: "The file you chose",
+  /** The label beside the chosen file's name. */
+  fileNameLabel: "Name",
+  /** The label beside the chosen file's size, stated in the units the size limit uses. */
+  fileSizeLabel: "Size",
+  /** Said while no file is chosen, and it says what has and has not happened. */
+  noFileChosen:
+    "No file chosen yet. Nothing has been read, parsed or imported, and a file you choose is kept until you replace it.",
+  /** The label of the control that opens step two. */
+  continueLabel: "Continue to Map",
+  /** Said beside that control while it is unavailable, so its state is never left to the eye alone. */
+  continueBlocked: "Choose a file to continue to the next step.",
+  /** Said while the chosen file's bytes are being read in this browser. */
+  readingLabel: "Reading the chosen file in this browser…",
+  /** Said when this browser could not read the chosen file at all. */
+  readFailed:
+    "This browser could not read that file, so no file was chosen. Choose it again, or choose another copy of it.",
+} as const;
+
+/**
+ * A chosen file's size, in the units the byte limit beside it is stated in.
+ *
+ * It is the same rule that renders the file-size limit, so the number a worker reads beside "Size" can
+ * be compared with the ceiling above it without arithmetic in between, and a size the importer would
+ * refuse is visibly larger than the limit rather than a differently-shaped number. The value is the
+ * file's own `size`, which the browser reports in bytes: nothing here measures, opens or inspects the
+ * file, because measuring it against the limit is the importer's judgement and not this surface's.
+ */
+export function chosenFileSize(byteLength: number): string {
+  return formatByteSize(byteLength);
+}
+
+// ---------------------------------------------------------------------------------------------
+// What the selectively-accept step's body says
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The words only the selectively-accept step adds around `ACCEPTANCE_NOTICE` and the shared review
+ * step: the frame the notice is read under, and the three strings the review step needs from this
+ * family — its title, its description and its confirm label.
+ *
+ * `title` states a verb and its target and leaves the count to the review step, which renders the
+ * selection it was handed rather than a number typed here. `description` says what accepting does to a
+ * decided row; it deliberately does not repeat the notice's own lines, because the notice is read
+ * above it and one fact stated twice in one step reads as two facts.
+ *
+ * `selectionNoun` is the word one counted record is called on this step. The noun is the caller's
+ * vocabulary, so it is stated here rather than inside the review step: what this step counts is rows
+ * of a file, and a row is not a partner, a contact or an audience.
+ */
+export const ACCEPTANCE_REVIEW_COPY = {
+  /** The heading over the notice lines, which are read before anything is accepted. */
+  noticeHeading: "What acceptance does, and what it never does",
+  /** The sentence under that heading, so the lines read as facts stated before the act. */
+  noticeLead:
+    "Read these before you confirm. Each line names something an import is often assumed to do that this one does not, so none of them is discovered after the fact.",
+  /** The review step's heading: what confirming applies, stated as a verb and its target. */
+  title: "Accept the rows you decided",
+  /** What accepting does to a row, by decision, without restating the notice above it. */
+  description:
+    "Accepting applies the decisions you reviewed. A row you decided to create becomes a new private preparation entry of your own; a row you decided to reuse attaches a private entry to the contact you named, and that contact is left exactly as it stands.",
+  /** The confirm control's label, which also names the confirmation dialog. */
+  confirmLabel: "Accept the reviewed rows",
+  /** The word one counted record is called on this step. */
+  selectionNoun: "rows",
 } as const;

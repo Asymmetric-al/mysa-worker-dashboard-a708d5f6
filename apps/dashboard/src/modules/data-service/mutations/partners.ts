@@ -37,11 +37,15 @@
  *
  * **Record-level preconditions.** `runMutation` answers `denied` for the authority questions it can ask
  * before a record is touched: the session, the claimed scope and the mutation's own permission
- * question. A condition only the stored record can answer — this record is not a private preparation,
- * this saved view is not the caller's, this note is already the note being saved — is answered
- * `unchanged`: nothing was written, no revision advanced and no history entry appeared, and the answer
- * discloses nothing, because a record that is not there and a record that is not the caller's answer
- * alike.
+ * question. A condition only the stored record can answer splits two ways. The caller's relationship to
+ * the record — this saved view is not the caller's, this record is not in this session's documents, this
+ * record is not a private preparation — is answered `denied` from inside the change, through the
+ * `{ refused }` arm `../operations` provides for exactly that case: nothing was written, no revision
+ * advanced and no history entry appeared, and the answer is identical whether the record is another
+ * principal's or not there at all, so the denial discloses nothing a hidden record could be described
+ * by. The payload's own effect — this note is already the note being saved, this preparation is already
+ * archived, this tag already stands as asked — is answered `unchanged`, because there the payload would
+ * change nothing.
  *
  * Layering: a server-side module of the data service. It imports its three sibling contracts, the
  * framework-free time and identity helpers, and `zod`; it imports no component, feature, application
@@ -211,10 +215,12 @@ const opaqueIdSchema = z
  * of its month rather than rolling it forward, so a recorded day is the day supplied and never a
  * fabricated instant.
  */
-const civilDateFieldSchema = z.string().refine(
-  (value) => parseCivilDate(value).status === "parsed",
-  "State the day as YYYY-MM-DD. It is read as a calendar day, so a time, a zone or a day that does not exist cannot be understood.",
-);
+const civilDateFieldSchema = z
+  .string()
+  .refine(
+    (value) => parseCivilDate(value).status === "parsed",
+    "State the day as YYYY-MM-DD. It is read as a calendar day, so a time, a zone or a day that does not exist cannot be understood.",
+  );
 
 /** One way of reaching a partner, as a permitted-field edit states it. */
 const contactMethodInputSchema = z.strictObject({
@@ -223,7 +229,10 @@ const contactMethodInputSchema = z.strictObject({
     .string()
     .trim()
     .min(1, "A contact method needs a value.")
-    .max(CONTACT_VALUE_MAX_LENGTH, "This contact method value is longer than a stored record holds."),
+    .max(
+      CONTACT_VALUE_MAX_LENGTH,
+      "This contact method value is longer than a stored record holds.",
+    ),
   permitted: z.boolean(),
 });
 
@@ -237,7 +246,10 @@ const namePartsInputSchema = z.strictObject({
         .string()
         .trim()
         .min(1, "A recorded additional name cannot be blank.")
-        .max(ADDITIONAL_NAME_MAX_LENGTH, "This additional name part is longer than a stored record holds."),
+        .max(
+          ADDITIONAL_NAME_MAX_LENGTH,
+          "This additional name part is longer than a stored record holds.",
+        ),
     )
     .max(ADDITIONAL_NAMES_MAX_COUNT, "A name stores at most eight additional parts."),
 });
@@ -248,12 +260,18 @@ const restrictionInputSchema = z.strictObject({
     .string()
     .trim()
     .min(1, "A restriction needs a short label.")
-    .max(RESTRICTION_KIND_MAX_LENGTH, "This restriction label is longer than a stored record holds."),
+    .max(
+      RESTRICTION_KIND_MAX_LENGTH,
+      "This restriction label is longer than a stored record holds.",
+    ),
   detail: z
     .string()
     .trim()
     .min(1, "A restriction states what must not happen.")
-    .max(RESTRICTION_DETAIL_MAX_LENGTH, "This restriction detail is longer than a stored record holds."),
+    .max(
+      RESTRICTION_DETAIL_MAX_LENGTH,
+      "This restriction detail is longer than a stored record holds.",
+    ),
 });
 
 /** A personal tag: the worker's own filing word, trimmed and bounded. */
@@ -278,7 +296,10 @@ const viewNameSchema = z
   .string()
   .trim()
   .min(1, "A saved view needs a name.")
-  .max(VIEW_NAME_MAX_LENGTH, `A saved view name is at most ${String(VIEW_NAME_MAX_LENGTH)} characters.`);
+  .max(
+    VIEW_NAME_MAX_LENGTH,
+    `A saved view name is at most ${String(VIEW_NAME_MAX_LENGTH)} characters.`,
+  );
 
 /**
  * What a saved view stores: the choices, never records.
@@ -460,7 +481,8 @@ export const logInteractionInput = z.strictObject({
         context.addIssue({
           code: "custom",
           path: ["date"],
-          message: "State the day this interaction happened on, or record the precision as unknown.",
+          message:
+            "State the day this interaction happened on, or record the precision as unknown.",
         });
       }
     }),
@@ -477,7 +499,10 @@ export const logInteractionInput = z.strictObject({
           .string()
           .trim()
           .min(1, "Say how this person took part.")
-          .max(PARTICIPANT_ROLE_MAX_LENGTH, "This participant role is longer than a stored record holds."),
+          .max(
+            PARTICIPANT_ROLE_MAX_LENGTH,
+            "This participant role is longer than a stored record holds.",
+          ),
       }),
     )
     .min(1, "Name at least one person who took part.")
@@ -686,8 +711,9 @@ function payloadOf<S extends z.ZodType>(schema: S, input: MutationInput<unknown>
  * preparation, their private notes — adds nothing to admission. A record whose audience only the stored
  * record states — a shared partner, a private preparation that may or may not be the caller's — asks its
  * record-level question inside the change, through `canEdit` against the record that was read; a refusal
- * there answers `unchanged`, because nothing was written and an answer that distinguished "not yours"
- * from "not here" would be an existence oracle.
+ * there answers `denied` with the closed set's own reason code, the same answer whether the record is
+ * another principal's or not in this session's documents, so it reports the refusal without becoming an
+ * existence oracle.
  *
  * The claimed scope has already been asserted against the session's admitted memberships before this
  * answer is used, so no context question is left open either.
@@ -868,7 +894,11 @@ function sameRestrictions(
     left.length === right.length &&
     left.every((restriction, index) => {
       const other = right[index];
-      return other !== undefined && other.kind === restriction.kind && other.detail === restriction.detail;
+      return (
+        other !== undefined &&
+        other.kind === restriction.kind &&
+        other.detail === restriction.detail
+      );
     })
   );
 }
@@ -905,7 +935,9 @@ function storedQueryOf(query: SavedViewQueryInput): StoredSavedViewQuery {
     search: query.search,
     applied,
     ...(Object.keys(columnVisibility).length === 0 ? {} : { columnVisibility }),
-    ...(query.sort === undefined ? {} : { sort: { field: query.sort.field, direction: query.sort.direction } }),
+    ...(query.sort === undefined
+      ? {}
+      : { sort: { field: query.sort.field, direction: query.sort.direction } }),
     ...(query.pageSize === undefined ? {} : { pageSize: query.pageSize }),
   };
 }
@@ -974,7 +1006,6 @@ function recordedAt(): string {
   return now().toString();
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // The payload types these mutations accept
 // ---------------------------------------------------------------------------------------------
@@ -1011,6 +1042,20 @@ const ABSENT_TARGET: CurrentTarget = { kind: "absent" };
 
 /** Reporting that a request would change nothing: no revision advance and no history entry. */
 const NOTHING_TO_CHANGE = { changed: false } as const;
+
+/**
+ * The refusal for a caller this record does not admit, reached only by reading the record itself.
+ *
+ * Whether the named view, note, preparation or partner is another principal's, is outside this
+ * session's documents, or is not the record class the command acts on cannot be known before the
+ * transaction, so the answer is built here instead of by the runner. It is `denied` and not
+ * `unchanged` because the caller was refused an action rather than shown that nothing needed doing, and
+ * the reason code is the closed set's own: the answer is identical whether the record exists elsewhere
+ * or does not exist at all, so it describes no hidden record while reporting the refusal honestly.
+ */
+function refuseDenied(operationId: string): { readonly refused: MutationOutcome } {
+  return { refused: denied({ operationId, reasonCode: "no-permission" }) };
+}
 
 /**
  * A member of an untrusted payload, read structurally.
@@ -1098,9 +1143,9 @@ function samePermittedFields(current: PartnerRecord, next: PartnerRecord): boole
  * Saves a new saved view for the caller, or replaces a view the caller already owns.
  *
  * Outcome set: `accepted` (created or replaced), `alreadyAccepted` (the same attempt replayed),
- * `unchanged` (the same choices are already stored, or the named view is not the caller's), `conflict`
- * (the view moved since it was read), `denied` (no admitted context), `invalid` (a malformed payload or
- * an unknown member), `unavailable` (the records cannot be read) and `unknown` (the effect may have
+ * `unchanged` (the same choices are already stored), `conflict` (the view moved since it was read),
+ * `denied` (no admitted context, or the named view is not the caller's), `invalid` (a malformed payload
+ * or an unknown member), `unavailable` (the records cannot be read) and `unknown` (the effect may have
  * happened and the acknowledgement was lost).
  */
 export async function saveView(
@@ -1111,8 +1156,9 @@ export async function saveView(
     name: "saveView",
     schema: saveViewInput,
     authorize: ADMISSION_ESTABLISHES_AUTHORITY,
-    readCurrent: (docs) => savedViewCurrentTarget(docs, savedViewIdOf(input), input.scope.principalId),
-    apply: ({ docs, session }) => {
+    readCurrent: (docs) =>
+      savedViewCurrentTarget(docs, savedViewIdOf(input), input.scope.principalId),
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(saveViewInput, input);
       const state = stateDocumentOf(docs);
       const query = storedQueryOf(payload.queryState);
@@ -1138,7 +1184,7 @@ export async function saveView(
 
       const view = savedViewOf(state, payload.viewId);
       if (view === undefined || view.ownerPrincipalId !== session.principalId) {
-        return NOTHING_TO_CHANGE;
+        return refuseDenied(operationId);
       }
       if (view.name === payload.name && sameQuery(view.query, query)) {
         return NOTHING_TO_CHANGE;
@@ -1165,8 +1211,9 @@ export async function saveView(
  * Renames one saved view the caller owns.
  *
  * Outcome set: `accepted` (renamed), `alreadyAccepted` (the same attempt replayed), `unchanged` (the
- * name is already that name, or the named view is not the caller's), `conflict` (the view moved since it
- * was read), `denied`, `invalid`, `unavailable` and `unknown`, as every mutation here answers them.
+ * name is already that name), `conflict` (the view moved since it was read), `denied` (no admitted
+ * context, or the named view is not the caller's), `invalid`, `unavailable` and `unknown`, as every
+ * mutation here answers them.
  */
 export async function renameView(
   input: MutationInput<RenameViewInput>,
@@ -1176,13 +1223,14 @@ export async function renameView(
     name: "renameView",
     schema: renameViewInput,
     authorize: ADMISSION_ESTABLISHES_AUTHORITY,
-    readCurrent: (docs) => savedViewCurrentTarget(docs, savedViewIdOf(input), input.scope.principalId),
-    apply: ({ docs, session }) => {
+    readCurrent: (docs) =>
+      savedViewCurrentTarget(docs, savedViewIdOf(input), input.scope.principalId),
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(renameViewInput, input);
       const state = stateDocumentOf(docs);
       const view = savedViewOf(state, payload.viewId);
       if (view === undefined || view.ownerPrincipalId !== session.principalId) {
-        return NOTHING_TO_CHANGE;
+        return refuseDenied(operationId);
       }
       if (view.name === payload.name) {
         return NOTHING_TO_CHANGE;
@@ -1208,10 +1256,10 @@ export async function renameView(
 /**
  * Deletes one saved view the caller owns; no record is touched by deleting a view.
  *
- * Outcome set: `accepted` (removed), `alreadyAccepted` (the same attempt replayed), `unchanged` (the
- * view is already gone, or the named view is not the caller's — a stale toolbar never fails, and a view
- * that is not the caller's is indistinguishable from one that is not there), `conflict`, `denied`,
- * `invalid`, `unavailable` and `unknown`.
+ * Outcome set: `accepted` (removed), `alreadyAccepted` (the same attempt replayed), `conflict` (the view
+ * moved since it was read), `denied` (no admitted context, or the named view is not the caller's — a
+ * stale toolbar is refused with the same answer a view that is not there receives), `invalid`,
+ * `unavailable` and `unknown`.
  */
 export async function deleteView(
   input: MutationInput<DeleteViewInput>,
@@ -1221,13 +1269,14 @@ export async function deleteView(
     name: "deleteView",
     schema: deleteViewInput,
     authorize: ADMISSION_ESTABLISHES_AUTHORITY,
-    readCurrent: (docs) => savedViewCurrentTarget(docs, savedViewIdOf(input), input.scope.principalId),
-    apply: ({ docs, session }) => {
+    readCurrent: (docs) =>
+      savedViewCurrentTarget(docs, savedViewIdOf(input), input.scope.principalId),
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(deleteViewInput, input);
       const state = stateDocumentOf(docs);
       const view = savedViewOf(state, payload.viewId);
       if (view === undefined || view.ownerPrincipalId !== session.principalId) {
-        return NOTHING_TO_CHANGE;
+        return refuseDenied(operationId);
       }
 
       writeState(docs, state, {
@@ -1257,8 +1306,8 @@ export async function deleteView(
  * membership, no contactability flag and no protected-content grant follows from it.
  *
  * Outcome set: `accepted` (the tag list changed), `alreadyAccepted`, `unchanged` (the tag is already
- * absent or already present, or the record is not one the caller may change), `conflict` (the record
- * moved since it was read), `denied`, `invalid`, `unavailable` and `unknown`.
+ * absent or already present), `conflict` (the record moved since it was read), `denied` (no admitted
+ * context, or the record is not one the caller may change), `invalid`, `unavailable` and `unknown`.
  */
 export async function setTag(
   input: MutationInput<SetTagInput>,
@@ -1269,7 +1318,7 @@ export async function setTag(
     schema: setTagInput,
     authorize: ADMISSION_ESTABLISHES_AUTHORITY,
     readCurrent: (docs) => partnerCurrentTarget(docs, partnerIdOf(input)),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(setTagInput, input);
       const state = stateDocumentOf(docs);
       const record = partnerOf(state, payload.partnerId);
@@ -1277,7 +1326,7 @@ export async function setTag(
         record === undefined ||
         !canEdit(session, partnerTarget(input.scope, session, record)).allowed
       ) {
-        return NOTHING_TO_CHANGE;
+        return refuseDenied(operationId);
       }
 
       const held = record.tags.includes(payload.tag);
@@ -1307,8 +1356,9 @@ export async function setTag(
  * A favourite is the worker's own shortlist. It changes no record's activity, gives nothing and proves
  * nothing about the relationship.
  *
- * Outcome set: `accepted`, `alreadyAccepted`, `unchanged` (the record already stands as asked, or is not
- * one the caller may change), `conflict`, `denied`, `invalid`, `unavailable` and `unknown`.
+ * Outcome set: `accepted`, `alreadyAccepted`, `unchanged` (the record already stands as asked),
+ * `conflict`, `denied` (no admitted context, or the record is not one the caller may change), `invalid`,
+ * `unavailable` and `unknown`.
  */
 export async function setFavourite(
   input: MutationInput<SetFavouriteInput>,
@@ -1319,7 +1369,7 @@ export async function setFavourite(
     schema: setFavouriteInput,
     authorize: ADMISSION_ESTABLISHES_AUTHORITY,
     readCurrent: (docs) => partnerCurrentTarget(docs, partnerIdOf(input)),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(setFavouriteInput, input);
       const state = stateDocumentOf(docs);
       const record = partnerOf(state, payload.partnerId);
@@ -1327,7 +1377,7 @@ export async function setFavourite(
         record === undefined ||
         !canEdit(session, partnerTarget(input.scope, session, record)).allowed
       ) {
-        return NOTHING_TO_CHANGE;
+        return refuseDenied(operationId);
       }
       if (record.favourite === payload.favourite) {
         return NOTHING_TO_CHANGE;
@@ -1345,7 +1395,6 @@ export async function setFavourite(
     },
   });
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // Private preparation: creation, contact edits, archive and restore
@@ -1369,63 +1418,67 @@ export async function createPrivatePreparation(
   input: MutationInput<CreatePrivatePreparationInput>,
   source?: SessionSource,
 ): Promise<MutationOutcome> {
-  return runPartnerMutation<CreatePrivatePreparationInput, PartnerPreparationResult>(input, source, {
-    name: "createPrivatePreparation",
-    schema: createPrivatePreparationInput,
-    authorize: (session) =>
-      authorityOf(canEdit(session, ownPreparationTarget(input.scope, session))),
-    apply: ({ docs, session }) => {
-      const payload = payloadOf(createPrivatePreparationInput, input);
-      const state = stateDocumentOf(docs);
+  return runPartnerMutation<CreatePrivatePreparationInput, PartnerPreparationResult>(
+    input,
+    source,
+    {
+      name: "createPrivatePreparation",
+      schema: createPrivatePreparationInput,
+      authorize: (session) =>
+        authorityOf(canEdit(session, ownPreparationTarget(input.scope, session))),
+      apply: ({ docs, session }) => {
+        const payload = payloadOf(createPrivatePreparationInput, input);
+        const state = stateDocumentOf(docs);
 
-      const partnerId = newRecordId();
-      const revision = nextRevision();
-      const record: StoredPartnerRecord = {
-        partnerId,
-        kind: "private-preparation",
-        displayName: payload.displayName,
-        nameParts: null,
-        contactMethods: contactMethodsOf(payload.contactMethods ?? []),
-        restrictions: [],
-        tags: [],
-        favourite: false,
-        stage: null,
-        audience: "private",
-        revision,
-        source: null,
-      };
+        const partnerId = newRecordId();
+        const revision = nextRevision();
+        const record: StoredPartnerRecord = {
+          partnerId,
+          kind: "private-preparation",
+          displayName: payload.displayName,
+          nameParts: null,
+          contactMethods: contactMethodsOf(payload.contactMethods ?? []),
+          restrictions: [],
+          tags: [],
+          favourite: false,
+          stage: null,
+          audience: "private",
+          revision,
+          source: null,
+        };
 
-      if (payload.note === undefined) {
-        writeState(docs, state, { partners: [...state.partners, record] });
+        if (payload.note === undefined) {
+          writeState(docs, state, { partners: [...state.partners, record] });
+          return {
+            changed: true,
+            revision,
+            result: { partnerId, revision, note: null },
+            created: [partnerId],
+          };
+        }
+
+        const note: PrivateNoteRecord = {
+          noteId: newRecordId(),
+          partnerId,
+          authorPrincipalId: session.principalId,
+          body: payload.note,
+          audience: "private",
+          createdAt: recordedAt(),
+          revision: nextRevision(),
+        };
+        writeState(docs, state, {
+          partners: [...state.partners, record],
+          privateNotes: [...state.privateNotes, note],
+        });
         return {
           changed: true,
           revision,
-          result: { partnerId, revision, note: null },
-          created: [partnerId],
+          result: { partnerId, revision, note: { noteId: note.noteId, revision: note.revision } },
+          created: [partnerId, note.noteId],
         };
-      }
-
-      const note: PrivateNoteRecord = {
-        noteId: newRecordId(),
-        partnerId,
-        authorPrincipalId: session.principalId,
-        body: payload.note,
-        audience: "private",
-        createdAt: recordedAt(),
-        revision: nextRevision(),
-      };
-      writeState(docs, state, {
-        partners: [...state.partners, record],
-        privateNotes: [...state.privateNotes, note],
-      });
-      return {
-        changed: true,
-        revision,
-        result: { partnerId, revision, note: { noteId: note.noteId, revision: note.revision } },
-        created: [partnerId, note.noteId],
-      };
+      },
     },
-  });
+  );
 }
 
 /**
@@ -1437,10 +1490,10 @@ export async function createPrivatePreparation(
  * a contact method's `verified` flag. A contact method is never consent and never contactability of
  * another kind: `permitted` says only whether the worker may use that method to reach this person.
  *
- * Outcome set: `accepted` (a permitted field changed), `alreadyAccepted`, `unchanged` (nothing differs,
- * or the record is not one the caller may change), `conflict` (the record moved since it was read, and
- * the caller's input travels back beside the stored value), `denied`, `invalid`, `unavailable` and
- * `unknown`.
+ * Outcome set: `accepted` (a permitted field changed), `alreadyAccepted`, `unchanged` (nothing differs),
+ * `conflict` (the record moved since it was read, and the caller's input travels back beside the stored
+ * value), `denied` (no admitted context, or the record is not one the caller may change), `invalid`,
+ * `unavailable` and `unknown`.
  */
 export async function saveContactEdits(
   input: MutationInput<SaveContactEditsInput>,
@@ -1451,7 +1504,7 @@ export async function saveContactEdits(
     schema: saveContactEditsInput,
     authorize: ADMISSION_ESTABLISHES_AUTHORITY,
     readCurrent: (docs) => partnerCurrentTarget(docs, partnerIdOf(input)),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(saveContactEditsInput, input);
       const state = stateDocumentOf(docs);
       const record = partnerOf(state, payload.partnerId);
@@ -1459,7 +1512,7 @@ export async function saveContactEdits(
         record === undefined ||
         !canEdit(session, partnerTarget(input.scope, session, record)).allowed
       ) {
-        return NOTHING_TO_CHANGE;
+        return refuseDenied(operationId);
       }
 
       const next: StoredPartnerRecord = {
@@ -1497,15 +1550,16 @@ export async function saveContactEdits(
 /**
  * Archives one private preparation record: it leaves the working lists and nothing is deleted.
  *
- * Only the worker's own preparation can be archived. A shared operational record is refused by answering
- * `unchanged`, which states that nothing was archived and discloses nothing; the read that offers the
- * action already reports it as unavailable with its reason, so a surface never presents it as offered.
- * Archiving preserves the record, its notes and its history, and touches no other record, task,
- * interaction or obligation.
+ * Only the worker's own preparation can be archived. A shared operational record, a record another
+ * principal keeps and a record this context does not hold are refused `denied` with the closed set's own
+ * reason code — the same answer in each case, so nothing about a record the caller may not archive is
+ * disclosed; the read that offers the action already reports it as unavailable with its reason, so a
+ * surface never presents it as offered. Archiving preserves the record, its notes and its history, and
+ * touches no other record, task, interaction or obligation.
  *
- * Outcome set: `accepted` (archived), `alreadyAccepted`, `unchanged` (already archived, not a private
- * preparation, not the caller's, or not in this context), `conflict`, `denied`, `invalid`, `unavailable`
- * and `unknown`.
+ * Outcome set: `accepted` (archived), `alreadyAccepted`, `unchanged` (already archived), `conflict`,
+ * `denied` (no admitted context, or the record is not a private preparation the caller may archive in
+ * this context), `invalid`, `unavailable` and `unknown`.
  */
 export async function archivePreparation(
   input: MutationInput<ArchivePreparationInput>,
@@ -1517,7 +1571,7 @@ export async function archivePreparation(
     authorize: (session) =>
       authorityOf(canEdit(session, ownPreparationTarget(input.scope, session))),
     readCurrent: (docs) => partnerCurrentTarget(docs, partnerIdOf(input)),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(archivePreparationInput, input);
       const state = stateDocumentOf(docs);
       const record = partnerOf(state, payload.partnerId);
@@ -1525,9 +1579,11 @@ export async function archivePreparation(
         record === undefined ||
         record.kind !== "private-preparation" ||
         record.audience !== "private" ||
-        !canEdit(session, partnerTarget(input.scope, session, record)).allowed ||
-        record.archived === true
+        !canEdit(session, partnerTarget(input.scope, session, record)).allowed
       ) {
+        return refuseDenied(operationId);
+      }
+      if (record.archived === true) {
         return NOTHING_TO_CHANGE;
       }
 
@@ -1551,9 +1607,9 @@ export async function archivePreparation(
  * nothing else. A record that is already present — a stale restore, or a repeat after a lost
  * acknowledgement — answers `unchanged`.
  *
- * Outcome set: `accepted` (restored), `alreadyAccepted`, `unchanged` (not archived, not a private
- * preparation, not the caller's, or not in this context), `conflict`, `denied`, `invalid`, `unavailable`
- * and `unknown`.
+ * Outcome set: `accepted` (restored), `alreadyAccepted`, `unchanged` (already present, so not archived),
+ * `conflict`, `denied` (no admitted context, or the record is not a private preparation the caller may
+ * restore in this context), `invalid`, `unavailable` and `unknown`.
  */
 export async function restorePreparation(
   input: MutationInput<RestorePreparationInput>,
@@ -1565,7 +1621,7 @@ export async function restorePreparation(
     authorize: (session) =>
       authorityOf(canEdit(session, ownPreparationTarget(input.scope, session))),
     readCurrent: (docs) => partnerCurrentTarget(docs, partnerIdOf(input)),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(restorePreparationInput, input);
       const state = stateDocumentOf(docs);
       const record = partnerOf(state, payload.partnerId);
@@ -1573,9 +1629,11 @@ export async function restorePreparation(
         record === undefined ||
         record.kind !== "private-preparation" ||
         record.audience !== "private" ||
-        !canEdit(session, partnerTarget(input.scope, session, record)).allowed ||
-        record.archived !== true
+        !canEdit(session, partnerTarget(input.scope, session, record)).allowed
       ) {
+        return refuseDenied(operationId);
+      }
+      if (record.archived !== true) {
         return NOTHING_TO_CHANGE;
       }
 
@@ -1605,8 +1663,8 @@ export async function restorePreparation(
  * read as activity.
  *
  * Outcome set: `accepted` (written), `alreadyAccepted`, `unchanged` (the same author already wrote this
- * exact note about this record, or the record is not one the caller may read), `denied`, `invalid`,
- * `unavailable` and `unknown`.
+ * exact note about this record), `denied` (no admitted context, the caller may not keep a private note
+ * here, or the record is not one the caller may read), `invalid`, `unavailable` and `unknown`.
  */
 export async function savePrivateNote(
   input: MutationInput<SavePrivateNoteInput>,
@@ -1615,8 +1673,9 @@ export async function savePrivateNote(
   return runPartnerMutation<SavePrivateNoteInput, NoteChangeResult>(input, source, {
     name: "savePrivateNote",
     schema: savePrivateNoteInput,
-    authorize: (session) => authorityOf(canEdit(session, ownPrivateNoteTarget(input.scope, session))),
-    apply: ({ docs, session }) => {
+    authorize: (session) =>
+      authorityOf(canEdit(session, ownPrivateNoteTarget(input.scope, session))),
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(savePrivateNoteInput, input);
       const state = stateDocumentOf(docs);
       const record = partnerOf(state, payload.partnerId);
@@ -1624,7 +1683,7 @@ export async function savePrivateNote(
         record === undefined ||
         !canView(session, partnerTarget(input.scope, session, record)).allowed
       ) {
-        return NOTHING_TO_CHANGE;
+        return refuseDenied(operationId);
       }
 
       const alreadyWritten = state.privateNotes.some(
@@ -1668,8 +1727,9 @@ export async function savePrivateNote(
  * `sameSourceReference` is the only comparison made about it.
  *
  * Outcome set: `accepted` (recorded), `alreadyAccepted`, `unchanged` (this source reference is already
- * recorded, a participant names no record in this context, or the partner is not one the caller may
- * read), `denied`, `invalid`, `unavailable` and `unknown`.
+ * recorded, or a participant names no record in this context), `denied` (no admitted context, the caller
+ * may not record an interaction here, or the partner is not one the caller may read), `invalid`,
+ * `unavailable` and `unknown`.
  */
 export async function logInteraction(
   input: MutationInput<LogInteractionInput>,
@@ -1679,7 +1739,7 @@ export async function logInteraction(
     name: "logInteraction",
     schema: logInteractionInput,
     authorize: (session) => authorityOf(canEdit(session, interactionTarget(input.scope))),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(logInteractionInput, input);
       const state = stateDocumentOf(docs);
       const record = partnerOf(state, payload.partnerId);
@@ -1687,7 +1747,7 @@ export async function logInteraction(
         record === undefined ||
         !canView(session, partnerTarget(input.scope, session, record)).allowed
       ) {
-        return NOTHING_TO_CHANGE;
+        return refuseDenied(operationId);
       }
 
       const provenance: SourceReference | null = payload.provenance ?? null;
@@ -1723,7 +1783,8 @@ export async function logInteraction(
         interactionId: newRecordId(),
         partnerId: record.partnerId,
         type: payload.type,
-        occurredOn: payload.occurredOn.precision === "unknown" ? null : (payload.occurredOn.date ?? null),
+        occurredOn:
+          payload.occurredOn.precision === "unknown" ? null : (payload.occurredOn.date ?? null),
         precision: payload.occurredOn.precision,
         outcome: payload.outcome,
         participants,
@@ -1745,4 +1806,3 @@ export async function logInteraction(
     },
   });
 }
-

@@ -36,11 +36,7 @@ import type { CivilDate } from "../time/civil";
  * a fourth kind is a product change rather than a configuration value — and declared in a runtime
  * form, so a stored commitment row derives its schema from this list instead of restating it.
  */
-export const COMMITMENT_KINDS = [
-  "automatic-recurring",
-  "manual-recurring",
-  "fixed-total",
-] as const;
+export const COMMITMENT_KINDS = ["automatic-recurring", "manual-recurring", "fixed-total"] as const;
 
 /** One kind of commitment, derived from {@link COMMITMENT_KINDS}. */
 export type CommitmentKind = (typeof COMMITMENT_KINDS)[number];

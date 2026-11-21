@@ -42,6 +42,7 @@ import { z } from "zod";
 
 import { isRecord } from "@/lib/guards";
 import { logger } from "@/lib/logger";
+import { compareCodeUnits } from "@/lib/ordering";
 import { assertNever } from "@/lib/result";
 import type { ImportDecisionKind, ImportDecisionSummary } from "@/modules/import/decide";
 import { IMPORT_FIELD_VOCABULARY, type ImportFieldId } from "@/modules/import/map";
@@ -58,9 +59,15 @@ import {
   type ImportResultRoute,
 } from "@/modules/import/receipt";
 import { readSession } from "@/modules/store/repository";
-import { now } from "@/modules/time/clock";
+import { clampPageSize } from "@/modules/support/report";
+import { instantAt } from "@/modules/time/clock";
 
-import { assertScope, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
+import {
+  assertScope,
+  resolveSession,
+  type ResolvedSession,
+  type SessionSource,
+} from "../authorize";
 import {
   IMPORT_ROW_DECISIONS,
   buildEnvelope,
@@ -81,7 +88,13 @@ import {
   type RecordedValueState,
   type Scope,
 } from "../envelope";
-import { LOCAL_STORE_SYSTEM, denied, unavailable, type DenialReason, type ReadResult } from "../outcome";
+import {
+  LOCAL_STORE_SYSTEM,
+  denied,
+  unavailable,
+  type DenialReason,
+  type ReadResult,
+} from "../outcome";
 
 // ---------------------------------------------------------------------------------------------
 // Copy the review and result steps show, in the closed vocabularies the record stores
@@ -142,12 +155,6 @@ const READ_ATTEMPT_ID = "read";
  * family itself is the source, and there is no operation to name when none could be read.
  */
 const PROPOSAL_SOURCE_REFERENCE = "import-proposal";
-
-/** The row-detail page size these reads use: 50 by default, capped at 200 (AAP 0.8.7). */
-const DEFAULT_ROW_PAGE_SIZE = 50;
-
-/** The row-detail page-size cap, so a request for more rows is clamped rather than honoured. */
-const MAX_ROW_PAGE_SIZE = 200;
 
 /**
  * How deep a stored operation's result is searched for a receipt. The receipt identifies itself by
@@ -233,7 +240,7 @@ interface ImportDocuments {
 // What a proposal read returns
 // ---------------------------------------------------------------------------------------------
 
-/** Paging of a per-row detail list. Defaults come from this file; a caller supplies only what it means. */
+/** Paging of a per-row detail list. The defaults come from the shared list clamp; a caller supplies only what it means. */
 export interface ImportPagingInput {
   readonly page?: number;
   readonly pageSize?: number;
@@ -500,7 +507,6 @@ export interface ReadImportReceiptInput extends ImportPagingInput, ImportRowFilt
   readonly session?: SessionSource;
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // The caller: one session, one scope, and one shape for each refusal
 // ---------------------------------------------------------------------------------------------
@@ -632,31 +638,12 @@ function newestFirst(left: OwnedProposal, right: OwnedProposal): number {
   if (byInstant !== 0) {
     return byInstant;
   }
-  return compareText(right.entry.operationId, left.entry.operationId);
-}
-
-/**
- * Code-unit ordering, never `localeCompare`: a locale-dependent sort would order the same two values
- * differently on a machine with a different default locale.
- */
-function compareText(left: string, right: string): number {
-  if (left === right) {
-    return 0;
-  }
-  return left < right ? -1 : 1;
+  return compareCodeUnits(right.entry.operationId, left.entry.operationId);
 }
 
 // ---------------------------------------------------------------------------------------------
 // Paging and value states, shared by both reads
 // ---------------------------------------------------------------------------------------------
-
-/** The page size a caller asked for, clamped to the documented default and cap. */
-function resolvePageSize(requested: number | undefined): number {
-  if (requested === undefined || !Number.isFinite(requested) || requested < 1) {
-    return DEFAULT_ROW_PAGE_SIZE;
-  }
-  return Math.min(Math.floor(requested), MAX_ROW_PAGE_SIZE);
-}
 
 /**
  * The page of rows to show and the window that page sits in.
@@ -668,7 +655,7 @@ function pagedRows<T>(
   rows: readonly T[],
   paging: ImportPagingInput,
 ): { readonly rows: readonly T[]; readonly window: ImportRowWindow } {
-  const pageSize = resolvePageSize(paging.pageSize);
+  const pageSize = clampPageSize(paging.pageSize);
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const requested = paging.page;
   const page =
@@ -714,7 +701,6 @@ function fieldLabelOf(fieldId: string): string | null {
   const field = IMPORT_FIELD_VOCABULARY.find((candidate) => candidate.id === fieldId);
   return field === undefined ? null : field.label;
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // A proposal, projected from the record the review step saved
@@ -844,7 +830,9 @@ function columnsOf(record: ImportProposalRecord): ProposalColumns {
 
   return {
     columns,
-    ignoredColumnIndexes: columns.filter((column) => column.ignored).map((column) => column.columnIndex),
+    ignoredColumnIndexes: columns
+      .filter((column) => column.ignored)
+      .map((column) => column.columnIndex),
     repeatedHeaders,
   };
 }
@@ -1164,8 +1152,7 @@ function receiptActions(receipt: ImportReceipt): readonly ReadAction[] {
       },
     ];
   }
-  const unapplied =
-    receipt.counts.total - receipt.counts.accepted - receipt.counts.alreadyAccepted;
+  const unapplied = receipt.counts.total - receipt.counts.accepted - receipt.counts.alreadyAccepted;
   return unapplied > 0
     ? [{ name: "cancelImport", available: true }]
     : [
@@ -1211,7 +1198,6 @@ function findStoredReceipt(
   }
   return null;
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // The two reads
@@ -1309,7 +1295,7 @@ export async function readImportProposal(
       scope,
       source: { system: LOCAL_STORE_SYSTEM, reference: record.importOperationId },
       revision: record.revision,
-      asOf: now().toString(),
+      asOf: instantAt(session.clockOffsetMs).toString(),
       coverage: IMPORT_COVERAGE,
       valueStates: proposalValueStates(record, summary, limits, paged.window),
       actions: proposalActions(summary),
@@ -1430,7 +1416,7 @@ export async function readImportReceipt(
       scope,
       source: { system: LOCAL_STORE_SYSTEM, reference: receipt.importOperationId },
       revision: view.revision,
-      asOf: now().toString(),
+      asOf: instantAt(session.clockOffsetMs).toString(),
       coverage: IMPORT_COVERAGE,
       valueStates: receiptValueStates(receipt, summary, paged.window),
       actions: receiptActions(receipt),
@@ -1453,4 +1439,3 @@ export async function readImportReceipt(
 // the receipt's permission-shaped tallies are not projected, and a column headed like a subscription
 // statement stays preserved data in the stored record. A file name is display metadata and evidence of
 // nothing, and no message here claims the file was safe or qualified by its local parse.
-

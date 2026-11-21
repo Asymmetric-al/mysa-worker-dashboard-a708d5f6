@@ -52,7 +52,11 @@
  * search, a page and a page size — and never filters, sorts or paginates a row itself: the read
  * owns those, so one query yields the rows, the count and the page every surface shows (AAP 0.3.4).
  * The page size is clamped to the 200 ceiling exactly as the read clamps it, and an unreadable page
- * falls back to 1 rather than erroring the screen.
+ * falls back to 1 rather than erroring the screen. Both of those members are therefore total: a page
+ * and a page size are normalised from whatever the address or the table carries, so neither ever
+ * raises a refusal and no refusal sentence exists for either. The ordering is not normalised: the
+ * read presents every list newest first, so descending is the only direction admitted, and any other
+ * is refused at the direction that named it.
  *
  * Plan items: AAP 0.6.1 "Mutations: initiatives and referrals", AAP 0.6.3's `GET/POST /api/referrals`
  * and `POST /api/referrals/continue` rows, AAP 0.7.1's outcome set, AAP 0.8.3 (an introduction date
@@ -115,13 +119,10 @@ export const LIST_QUERY_MESSAGES = {
   searchTooLong: "Shorten the search to 120 characters or fewer.",
   sortFieldInvalid:
     "The referral lists are ordered by the end of their window or by their introduction date, so choose one of those.",
-  sortDirectionInvalid: "An ordering runs ascending or descending.",
   sortAscendingUnavailable:
     "The referral lists are presented newest first, so the end of the window and the introduction date are shown descending.",
   statedOnce:
     "State this filter once; this address carries more than one value for it, so the list cannot tell which was meant.",
-  pageNotWhole: "The page is a whole number of at least 1.",
-  pageSizeNotWhole: "A page holds a whole number of rows.",
   formLevel:
     "This address does not describe a referral list the application can show, so the default list is shown.",
 } as const;
@@ -430,14 +431,18 @@ export const REFERRAL_SORT_FIELDS = ["windowEnd", "originalIntroductionOn"] as c
 export type ReferralSortField = (typeof REFERRAL_SORT_FIELDS)[number];
 
 /**
- * Validates one ordering of a referral list: a key from the closed set and a direction.
+ * Validates one ordering of a referral list: a key from the closed set, and the one direction the
+ * read honours.
  *
  * Strict, so an ordering naming a column the lists do not order by is a refusal at that field rather
- * than a choice the surface silently ignores.
+ * than a choice the surface silently ignores. Descending is the direction enum's only member because
+ * it is the only order the read applies — every list runs newest endpoint first and then newest
+ * introduction (AAP 0.3.4) — so an ascending request is refused here, at the direction that stated
+ * it, rather than admitted and rejected by a second check elsewhere.
  */
 export const referralSortSchema = z.strictObject({
   field: z.enum(REFERRAL_SORT_FIELDS, { error: LIST_QUERY_MESSAGES.sortFieldInvalid }),
-  direction: z.enum(["asc", "desc"], { error: LIST_QUERY_MESSAGES.sortDirectionInvalid }),
+  direction: z.enum(["desc"], { error: LIST_QUERY_MESSAGES.sortAscendingUnavailable }),
 });
 
 /** The validated ordering of a referral list. */
@@ -450,8 +455,16 @@ export type ReferralSort = z.infer<typeof referralSortSchema>;
  * Digits-only deliberately. A page is a count of pages and a page size a count of rows, and
  * `Number("1e3")`, `Number("0x10")` and a padded string would each turn a value nobody typed into a
  * plausible count.
+ *
+ * The value is `unknown` because an address, a table and a hand-built state hold different kinds, and
+ * a count is normalised rather than refused: anything that is not a number or a string — absent,
+ * `null`, an object, a list — reads as no number at all, so the caller falls back to the count the
+ * read would apply instead of raising a refusal a reader cannot clear.
  */
-function wholeNumberFrom(value: number | string): number | undefined {
+function wholeNumberFrom(value: unknown): number | undefined {
+  if (typeof value !== "number" && typeof value !== "string") {
+    return undefined;
+  }
   const text = typeof value === "number" ? String(value) : value.trim();
   if (!/^\d+$/u.test(text)) {
     return undefined;
@@ -464,9 +477,11 @@ function wholeNumberFrom(value: number | string): number | undefined {
  * The page a request asks for, or 1 when it asks for something no page can be.
  *
  * The read answers an unreadable page below 1 with the first page, so this normaliser does the same
- * instead of raising a refusal for a part of the address a reader cannot clear.
+ * instead of raising a refusal for a part of the address a reader cannot clear. It answers for every
+ * value it can be handed: text that is not a count, a count below 1 and a value of another kind all
+ * read as the first page, which is why the page field states no refusal at all.
  */
-function pageFrom(value: number | string): number {
+function pageFrom(value: unknown): number {
   const page = wholeNumberFrom(value);
   return page === undefined || page < 1 ? 1 : page;
 }
@@ -474,9 +489,10 @@ function pageFrom(value: number | string): number {
 /**
  * The page size a request asks for: {@link DEFAULT_REFERRAL_PAGE_SIZE} when it asks for nothing a
  * page can hold, and clamped to {@link REFERRAL_PAGE_SIZES}' ceiling rather than refused — which is
- * how the read treats the same value.
+ * how the read treats the same value. It answers for every value it can be handed, so text that is
+ * not a count, a count below 1 and a value of another kind all read as the default size.
  */
-function pageSizeFrom(value: number | string): number {
+function pageSizeFrom(value: unknown): number {
   const size = wholeNumberFrom(value);
   if (size === undefined || size < 1) {
     return DEFAULT_REFERRAL_PAGE_SIZE;
@@ -484,15 +500,23 @@ function pageSizeFrom(value: number | string): number {
   return size > REFERRAL_PAGE_SIZES[1] ? REFERRAL_PAGE_SIZES[1] : size;
 }
 
-/** A page as an address or a table carries it: a number, or the text of one, normalised. */
-const pageFieldSchema = z
-  .union([z.number(), z.string()], { error: LIST_QUERY_MESSAGES.pageNotWhole })
-  .transform((value) => pageFrom(value));
+/**
+ * A page as an address or a table carries it: a number, the text of one, or any other value the
+ * caller holds, read as the page {@link pageFrom} answers.
+ *
+ * Total by construction, because `unknown` refuses nothing: a malformed page reads as the first page
+ * at the field itself, so no schema library wording and no refusal reaches the surface for it.
+ */
+const pageFieldSchema = z.unknown().transform(pageFrom);
 
-/** A page size as an address or a table carries it: a number, or the text of one, clamped. */
-const pageSizeFieldSchema = z
-  .union([z.number(), z.string()], { error: LIST_QUERY_MESSAGES.pageSizeNotWhole })
-  .transform((value) => pageSizeFrom(value));
+/**
+ * A page size as an address or a table carries it: a number, the text of one, or any other value the
+ * caller holds, clamped by {@link pageSizeFrom}.
+ *
+ * Total for the same reason as the page: nothing an address can carry is refused, so a malformed size
+ * reads as the default size rather than as a refusal.
+ */
+const pageSizeFieldSchema = z.unknown().transform(pageSizeFrom);
 
 /**
  * The query state one referral list is read with: which list, the whole-dataset search text, the
@@ -525,7 +549,8 @@ export interface ReferralListQuery {
  *
  * An ascending direction is refused rather than accepted and ignored. The read presents every list
  * newest endpoint first and then newest introduction, and no surface may re-order a page it was given
- * (AAP 0.3.4), so a state asking for oldest first would have nothing that could honour it.
+ * (AAP 0.3.4), so a state asking for oldest first would have nothing that could honour it; the
+ * ordering schema refuses it at `sort.direction`, which is why this schema states no second check.
  */
 export const referralListQuerySchema = z
   .strictObject({
@@ -538,15 +563,6 @@ export const referralListQuerySchema = z
     sort: referralSortSchema.optional(),
     page: pageFieldSchema.optional(),
     pageSize: pageSizeFieldSchema.optional(),
-  })
-  .superRefine((raw, context) => {
-    if (raw.sort !== undefined && raw.sort.direction === "asc") {
-      context.addIssue({
-        code: "custom",
-        path: ["sort", "direction"],
-        message: LIST_QUERY_MESSAGES.sortAscendingUnavailable,
-      });
-    }
   })
   .transform((raw): ReferralListQuery => ({
     view: raw.view ?? DEFAULT_REFERRAL_VIEW,

@@ -711,7 +711,8 @@ export async function GET(request: Request): Promise<Response> {
  * Every answer is one of the eight outcomes with its own status, so a client never infers success
  * from an absent error: a stale revision is a `conflict` that preserves the submitted input, a replay
  * is `alreadyAccepted` with the stored result, and a discriminant naming no mutation — a bulk verb or
- * a series verb, which belong to other paths — is `invalid` naming `payload.operation`.
+ * a series verb, which belong to other paths — is `invalid` naming `operation`, the payload-relative
+ * field path a form attaches the message to, whose wording names the request field `payload.operation`.
  */
 export async function POST(request: Request): Promise<Response> {
   const raw = await jsonBodyOf(request);

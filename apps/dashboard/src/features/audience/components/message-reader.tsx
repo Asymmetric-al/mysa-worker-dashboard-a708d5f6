@@ -6,22 +6,20 @@
  * forms it is stored in (AAP 0.10.1 family 10), and so the protected variant is visible as the
  * minimal message it is (AAP 0.8.5). This component is that inspection, and nothing more.
  *
- * It renders supplied strings. There is one rich-text configuration and one static renderer in this
- * application, they live in the content module, and they run on the server; by the time a message
- * reaches this file its HTML and its plain text have already been produced from the same stored
- * revision. So this file never parses or serialises content JSON, never imports the content module or
- * the editor packages, never builds HTML from a document and never escapes or re-escapes HTML the
- * server produced. A second converter here would be a second answer to "what does this message say",
- * which is the one thing the release forbids (Rule 1 clause 2; AAP 0.3.4).
+ * It renders supplied strings. By the time a message reaches this file its HTML and its plain text
+ * have already been produced from the same stored revision by the application's one renderer, so this
+ * file never parses or serialises content JSON, never imports the content module or the editor
+ * packages, never builds HTML from a document and never escapes or re-escapes HTML the server
+ * produced. A second converter here would be a second answer to "what does this message say", which
+ * is the one thing the release forbids (Rule 1 clause 2; AAP 0.3.4).
  *
- * That is why {@link ServerHtml} is exported: it is the single place in the audience feature where a
- * produced HTML string becomes DOM, and `receiving-post` and `public-reading-view` import it rather
- * than opening their own site. The one raw-HTML site in this folder is inside it, and its contract is
- * narrow: the string originates from the single static renderer over the versioned content profile, it
- * is never constructed, concatenated or repaired here, and it therefore carries no script, embed or
- * arbitrary HTML. The security of the markup is the renderer's guarantee; this file's job is to hand
- * that markup to the browser unchanged instead of quietly rewriting it, which is also what keeps the
- * inbox's HTML identical to what the reader would receive.
+ * {@link ServerHtml} is exported because it is the audience feature's one reading block for a
+ * produced message: `receiving-post` and `public-reading-view` import it rather than opening their
+ * own. It owns the prose styling this surface reads in and hands the string to
+ * `components/rendered-content`, the application's single rendering boundary, which states once what
+ * makes that markup safe to insert and why it is not framed. Nothing here composes, sanitises or
+ * re-escapes the string, which is what keeps the inbox's HTML identical to what the reader would
+ * receive.
  *
  * Both tabs are real renderings of the same revision. The plain-text view is the message's own text
  * alternative with its line breaks intact, not a note saying one exists, so a reader who takes only
@@ -71,6 +69,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import RenderedContent from "@/components/rendered-content";
 import StatusBadge, {
   SEND_STATUS,
   type SendStatus,
@@ -78,6 +77,7 @@ import StatusBadge, {
 } from "@/components/status-badge";
 import { INBOX_TAB_LABELS, PROTECTED_NOTICE_COPY } from "@/features/audience/copy/inbox";
 import { cn } from "@/lib/cn";
+import { destinationProblemOf } from "@/lib/destination";
 
 /**
  * The two writing directions a message body renders in.
@@ -135,11 +135,13 @@ export interface ServerHtmlProps {
 }
 
 /**
- * The one place a produced message's HTML becomes DOM in the audience feature.
+ * The audience feature's reading block for one produced message.
  *
- * Renders nothing for a blank string, so an absent body never leaves an empty frame behind. The
- * wrapper carries the message's direction and language, which is what lets the receiving post and the
- * public reading view use it directly without a second wrapper of their own.
+ * It supplies the prose styling this surface reads in and lets `components/rendered-content` — the
+ * application's single rendering boundary — insert the markup inside a block carrying the message's
+ * direction and language, which is what lets the receiving post and the public reading view use it
+ * directly without a second wrapper of their own. Renders nothing for a blank string, so an absent
+ * body never leaves an empty frame behind.
  */
 export function ServerHtml({
   html,
@@ -152,12 +154,9 @@ export function ServerHtml({
   }
 
   return (
-    <div
-      // The only raw-HTML site in this feature: `html` comes from the single static renderer over the
-      // versioned content profile, is never constructed or concatenated here, and carries no script,
-      // embed or arbitrary HTML. See the module note above.
-      dangerouslySetInnerHTML={{ __html: html }}
-      dir={direction}
+    <RenderedContent
+      html={html}
+      direction={direction}
       lang={lang}
       className={cn(RENDERED_PROSE, className)}
     />
@@ -308,17 +307,24 @@ export function MessageReader({
  *
  * The absence is stated rather than hidden behind an empty frame, and nothing here describes the
  * content behind the link — no title of the protected Update, no excerpt, no poster, no transcript.
- * The link sentence appears only when there is a link to follow, so a notice without one makes no
- * claim about following it.
+ *
+ * The link is offered only when it is a destination this application serves: `@/lib/destination` owns
+ * that rule, and it is the same one Home applies to the destinations its rows open. A notice whose
+ * link is absent, or names another site, or carries a scheme such as `javascript:` or `data:` that
+ * would run on click, renders no anchor and no link sentence — exactly as a notice with no link does,
+ * so it makes no claim about following anything instead of offering a broken or unsafe link.
  */
 function ProtectedNotice({ href }: { readonly href?: string }): ReactElement {
   const link = href === undefined ? "" : href.trim();
+  // The anchor is the one place in this boundary where a value from the message becomes a link, so
+  // the shared guard decides it and a destination the guard refuses is not rendered at all.
+  const linkIsFollowable = destinationProblemOf(link) === undefined;
 
   return (
     <div className="flex flex-col gap-2">
       <p className="font-medium">{PROTECTED_NOTICE_COPY.heading}</p>
       <p className="text-muted-foreground">{PROTECTED_NOTICE_COPY.description}</p>
-      {link.length === 0 ? null : (
+      {linkIsFollowable ? (
         <>
           <p>
             <a className="font-medium text-primary underline underline-offset-4" href={link}>
@@ -327,7 +333,7 @@ function ProtectedNotice({ href }: { readonly href?: string }): ReactElement {
           </p>
           <p className="text-muted-foreground">{PROTECTED_NOTICE_COPY.linkStatement}</p>
         </>
-      )}
+      ) : null}
       <p className="text-muted-foreground">{PROTECTED_NOTICE_COPY.absenceStatement}</p>
     </div>
   );

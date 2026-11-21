@@ -54,18 +54,9 @@ import { describe, expect, it } from "vitest";
 
 import { Temporal } from "temporal-polyfill";
 
-import type {
-  Coverage,
-  GiftRowRecord,
-  SupportGoalRecord,
-} from "@/modules/data-service/envelope";
+import type { Coverage, GiftRowRecord, SupportGoalRecord } from "@/modules/data-service/envelope";
 import { DEFAULT_SESSION_ID, seed, type SessionStateDocument } from "@/modules/dev-runtime/seed";
-import {
-  printModel,
-  type PrintCell,
-  type PrintModel,
-  type PrintRow,
-} from "@/modules/export/print";
+import { printModel, type PrintCell, type PrintModel, type PrintRow } from "@/modules/export/print";
 import { addMinor, minorUnitsOf, negateMinor, type Money } from "@/modules/money/amount";
 import { UNKNOWN_CURRENCY, exponentOf } from "@/modules/money/currency";
 import { formatMinor } from "@/modules/money/format";
@@ -213,7 +204,10 @@ function amount(currency: string, minorUnits: number): Money {
 }
 
 /** One report request for the seeded session, with only the facts a case restates. */
-function queryOf(document: SessionStateDocument, overrides: Partial<ReportQuery> = {}): ReportQuery {
+function queryOf(
+  document: SessionStateDocument,
+  overrides: Partial<ReportQuery> = {},
+): ReportQuery {
   return {
     reportId: "received-period-and-year-to-date",
     scope: scopeOf(document),
@@ -278,9 +272,7 @@ function summaryFor(result: ReportResult, currency: string): CurrencySummary {
 
 /** The row amounts a result holds in one currency. */
 function rowAmountsOf(result: ReportResult, currency: string): readonly Money[] {
-  return result.rows
-    .filter((row) => row.amount.currency === currency)
-    .map((row) => row.amount);
+  return result.rows.filter((row) => row.amount.currency === currency).map((row) => row.amount);
 }
 
 /** One currency's series points, in month order. */
@@ -492,11 +484,8 @@ describe("one query, one snapshot, and every surface reads it", () => {
     // The instant the read ran, when the source last changed and how far back it covers are three
     // different facts, so a surface can never present one as another.
     expect(
-      new Set([
-        result.snapshot.asOf,
-        result.snapshot.lastSourceUpdate,
-        result.snapshot.coverage.to,
-      ]).size,
+      new Set([result.snapshot.asOf, result.snapshot.lastSourceUpdate, result.snapshot.coverage.to])
+        .size,
     ).toBe(3);
     // The partition the figures are stated in is the partition the summary answers in, currency for
     // currency and in the same order, so no surface can list a currency the summary never states.
@@ -544,10 +533,7 @@ describe("one query, one snapshot, and every surface reads it", () => {
   it("closes the period when the projection's instant moves past it, leaving the amounts untouched", async () => {
     const document = await establishedDocument();
     const asSeeded = run(queryOf(document), projectionOf(document));
-    const later = run(
-      queryOf(document),
-      projectionOf(document, { asOf: "2026-12-01T00:00:00Z" }),
-    );
+    const later = run(queryOf(document), projectionOf(document, { asOf: "2026-12-01T00:00:00Z" }));
 
     expect(asSeeded.snapshot.period.state).toBe("in-progress");
     expect(later.snapshot.period.state).toBe("complete");
@@ -572,7 +558,9 @@ describe("one query, one snapshot, and every surface reads it", () => {
       const requested = queryOf(document, { reportId });
       const built = buildReportQuery(requested);
       if (!built.ok) {
-        throw new Error(`One of the four fixed reports was refused by the query gate: ${reportId}.`);
+        throw new Error(
+          `One of the four fixed reports was refused by the query gate: ${reportId}.`,
+        );
       }
       const result = run(requested, projection);
       // Each identity computes, and the snapshot states the query the gate built rather than another.
@@ -582,7 +570,10 @@ describe("one query, one snapshot, and every surface reads it", () => {
 
     // A report identity outside the set arrives from a decoded request as plain data, so it is stubbed
     // as exactly that: the gate refuses it, and the engine refuses it again for a hand-built query.
-    const invented = { ...queryOf(document), reportId: "report-designer" } as unknown as ReportQuery;
+    const invented = {
+      ...queryOf(document),
+      reportId: "report-designer",
+    } as unknown as ReportQuery;
     const refused = buildReportQuery(invented);
     if (refused.ok) {
       throw new Error("A report identity outside the four fixed reports was accepted.");
@@ -948,7 +939,9 @@ describe("currencies stay partitioned", () => {
     // refused by the constructor rather than answered with a figure that compares KWD with JPY.
     const refused = buildReportQuery(acrossCurrencies);
     if (refused.ok) {
-      throw new Error("A range was accepted beside every currency, which would compare amounts that have no ordering.");
+      throw new Error(
+        "A range was accepted beside every currency, which would compare amounts that have no ordering.",
+      );
     }
     expect(refused.problems.map((problem) => problem.field)).toContain("amountRange");
     expect(validateReportQuery(acrossCurrencies).map((problem) => problem.field)).toContain(
@@ -959,9 +952,7 @@ describe("currencies stay partitioned", () => {
 
     const whole = run(queryOf(document), projection);
     expect(
-      whole.rows.some(
-        (row) => row.amount.currency === "JPY" && row.amount.minorUnits === 5000,
-      ),
+      whole.rows.some((row) => row.amount.currency === "JPY" && row.amount.minorUnits === 5000),
     ).toBe(true);
 
     const usdOnly = run(
@@ -1111,9 +1102,9 @@ describe("gaps, coverage and percentages", () => {
       minorUnits: null,
       valueState: "unknown",
     });
-    expect(printModel(unknownCoverage).notes.some((note) => note.includes("Coverage is unknown"))).toBe(
-      true,
-    );
+    expect(
+      printModel(unknownCoverage).notes.some((note) => note.includes("Coverage is unknown")),
+    ).toBe(true);
   });
 
   it("states no percentage for a zero denominator and keeps a valid 120% at 120%", async () => {
@@ -1197,10 +1188,8 @@ describe("gaps, coverage and percentages", () => {
     expect(usd.differenceMinor).toBe(usd.currentMinor);
     expect(usd.direction).toBe("increase");
     expect(
-      addMinor(
-        amount("USD", usd.currentMinor),
-        negateMinor(amount("USD", usd.baselineMinor)),
-      ).minorUnits,
+      addMinor(amount("USD", usd.currentMinor), negateMinor(amount("USD", usd.baselineMinor)))
+        .minorUnits,
     ).toBe(usd.differenceMinor);
 
     // The contributor deltas add up to that difference exactly, so the comparison explains itself
@@ -1319,10 +1308,7 @@ describe("the partner-by-month matrix reconciles to the same totals", () => {
   it("covers every currency and month, and gives every cell a drilldown of the same authority", async () => {
     const document = await establishedDocument();
     const projection = projectionOf(document);
-    const result = run(
-      queryOf(document, { reportId: "partner-month-matrix" }),
-      projection,
-    );
+    const result = run(queryOf(document, { reportId: "partner-month-matrix" }), projection);
     const matrix = need(result.matrix, "the partner-by-month matrix");
 
     expect(matrix.currencies).toEqual(result.snapshot.currencies);
@@ -1355,17 +1341,12 @@ describe("the partner-by-month matrix reconciles to the same totals", () => {
   it("sums every cell of a currency to the summary and every month's column to the series point", async () => {
     const document = await establishedDocument();
     const projection = projectionOf(document);
-    const result = run(
-      queryOf(document, { reportId: "partner-month-matrix" }),
-      projection,
-    );
+    const result = run(queryOf(document, { reportId: "partner-month-matrix" }), projection);
     const matrix = need(result.matrix, "the partner-by-month matrix");
 
     // A cell is a sum, and a sum of a currency with no exponent is not a number, so every such cell is
     // a gap and the entry states no amount.
-    const unsupported = matrix.currencies.filter(
-      (currency) => exponentOf(currency) === undefined,
-    );
+    const unsupported = matrix.currencies.filter((currency) => exponentOf(currency) === undefined);
     expect(unsupported).toEqual([UNKNOWN_CURRENCY]);
     const unsupportedCells = matrix.rows.flatMap((row) =>
       row.cells.filter((cell) => unsupported.includes(cell.currency)),
@@ -1383,9 +1364,7 @@ describe("the partner-by-month matrix reconciles to the same totals", () => {
         row.cells.filter((cell) => cell.currency === currency),
       );
       const stated = cells.flatMap((cell) =>
-        cell.gap || cell.value.minorUnits === null
-          ? []
-          : [amount(currency, cell.value.minorUnits)],
+        cell.gap || cell.value.minorUnits === null ? [] : [amount(currency, cell.value.minorUnits)],
       );
       expect(minorTotalOf(stated, currency)).toBe(summaryFor(result, currency).received.minorUnits);
     }
@@ -1426,10 +1405,7 @@ describe("the partner-by-month matrix reconciles to the same totals", () => {
   it("sums a row of cells to the same attribution's total in the same result", async () => {
     const document = await establishedDocument();
     const projection = projectionOf(document);
-    const result = run(
-      queryOf(document, { reportId: "partner-month-matrix" }),
-      projection,
-    );
+    const result = run(queryOf(document, { reportId: "partner-month-matrix" }), projection);
     const matrix = need(result.matrix, "the partner-by-month matrix");
 
     const partnerRow = need(
@@ -1458,10 +1434,7 @@ describe("the partner-by-month matrix reconciles to the same totals", () => {
   it("returns a drilldown whose rows are a subset of the parent and whose sums add to the cell", async () => {
     const document = await establishedDocument();
     const projection = projectionOf(document);
-    const result = run(
-      queryOf(document, { reportId: "partner-month-matrix" }),
-      projection,
-    );
+    const result = run(queryOf(document, { reportId: "partner-month-matrix" }), projection);
     const matrix = need(result.matrix, "the partner-by-month matrix");
     const partnerRow = need(
       matrix.rows.find((row) => row.partnerId === "partner-hana-nakamura"),
@@ -1533,9 +1506,7 @@ describe("the partner-by-month matrix reconciles to the same totals", () => {
       matrix.rows.find((row) => row.attribution.kind === "unresolved"),
       "the unattributed matrix row",
     );
-    const unknownCells = unresolved.cells.filter(
-      (cell) => cell.currency === UNKNOWN_CURRENCY,
-    );
+    const unknownCells = unresolved.cells.filter((cell) => cell.currency === UNKNOWN_CURRENCY);
 
     expect(unknownCells).toHaveLength(11);
     expect(unknownCells.every((cell) => cell.gap)).toBe(true);

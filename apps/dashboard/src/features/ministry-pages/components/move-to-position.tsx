@@ -128,8 +128,7 @@ const UNSTATED_DISABLED_REASON = "The order of this edition cannot be changed ri
  * One section is a real state rather than an empty menu: the trigger stays in place, disabled, and
  * says why, so the reader is never shown a menu with nothing in it.
  */
-const NO_OTHER_POSITION_REASON =
-  "This edition holds no other position to move this section to.";
+const NO_OTHER_POSITION_REASON = "This edition holds no other position to move this section to.";
 
 /**
  * Why the control cannot be used, or `null` when it can.
@@ -189,10 +188,7 @@ export function MoveToPosition({
   const positions = Array.from({ length: positionCount }, (_, position) => position);
 
   return (
-    <div
-      data-section-id={sectionId}
-      className={cn("flex flex-col items-start gap-1", className)}
-    >
+    <div data-section-id={sectionId} className={cn("flex flex-col items-start gap-1", className)}>
       <DropdownMenu>
         <DropdownMenuTrigger
           render={<Button variant="outline" size="sm" />}

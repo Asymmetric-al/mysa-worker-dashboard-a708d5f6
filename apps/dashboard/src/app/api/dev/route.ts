@@ -21,7 +21,9 @@
  * **The five actions are the whole set.** `setScenario`, `setClock`, `advanceClock`, `setFailurePlan`
  * and `resetSeed` — and nothing else. There is no sixth action, no persona-minting or role-switching
  * action, no `?action=` alias, no query-string discriminator, no second development endpoint anywhere in
- * the application, and no blessing of a payload field the service does not itself validate. A capability
+ * the application, and no blessing of a payload field the service does not itself validate. Clearing the
+ * armed failure is a payload form of `setFailurePlan` (`{ plan: null }`) rather than an action of its own,
+ * because the armed plan is one slot with two states and every operation here has one name. A capability
  * the fixed inventory does not contain is a gap for the owning agent to record, never an extra action
  * added here.
  *
@@ -40,7 +42,8 @@
  * - `setScenario` → `{ scenarioId }`
  * - `setClock` → `{ offsetIso }`, an ISO-8601 date-time that states its offset
  * - `advanceClock` → `{ bySeconds }`, a whole number of seconds greater than zero
- * - `setFailurePlan` → `{ mode, target: { kind: "read" | "mutation", name } }`
+ * - `setFailurePlan` → `{ mode, target: { kind: "read" | "mutation", name } }` to arm one failure, or
+ *   `{ plan: null }` to disarm the armed one, and exactly one of the two forms per request
  * - `resetSeed` → `{}`, an empty object; the destructive confirmation belongs to the surface that asks
  *   for it, because the service's reset payload states no fields at all
  *
@@ -177,10 +180,18 @@ const AMBIGUOUS_ACTION_MESSAGE = `A development request carries exactly one acti
  * checked here; membership is the service's `invalid` answer, keyed on the field that carried the value.
  */
 type ScenarioIdWire = Parameters<typeof mutations.dev.setScenario>[0]["payload"]["scenarioId"];
-type FailureModeWire = Parameters<typeof mutations.dev.setFailurePlan>[0]["payload"]["mode"];
-type FailureTargetNameWire = Parameters<
-  typeof mutations.dev.setFailurePlan
->[0]["payload"]["target"]["name"];
+
+/** Either form of a failure-plan payload, as the service's `setFailurePlan` declares them. */
+type SetFailurePlanPayloadWire = Parameters<typeof mutations.dev.setFailurePlan>[0]["payload"];
+
+/**
+ * The arming member of that payload: the form that names a mode and a target, which is the only one
+ * carrying the vocabulary below. The disarm member is the one that states a null plan instead.
+ */
+type ArmingFailurePlanPayloadWire = Exclude<SetFailurePlanPayloadWire, { plan: null }>;
+
+type FailureModeWire = ArmingFailurePlanPayloadWire["mode"];
+type FailureTargetNameWire = ArmingFailurePlanPayloadWire["target"]["name"];
 
 /**
  * Validates a non-empty bounded text of a kind whose vocabulary the service owns.
@@ -204,8 +215,23 @@ const setScenarioPayload = z.strictObject({ scenarioId: serviceWord<ScenarioIdWi
 /** The instant a session asks its scenario clock to read, exactly as the clock states it. */
 const setClockPayload = z.strictObject({ offsetIso: z.string().min(1).max(WIRE_TEXT_LIMIT) });
 
-/** The forward move a caller asks for. Only forward motion exists, so the amount is positive. */
-const advanceClockPayload = z.strictObject({ bySeconds: z.int().positive() });
+/**
+ * The forward move a caller asks for: whole seconds, and only forwards.
+ *
+ * Both refusals state that rule rather than the schema library's vocabulary, and neither restates the
+ * span the runtime enforces: that bound belongs to the mutation, which words it on the same field.
+ */
+const advanceClockPayload = z.strictObject({
+  bySeconds: z
+    .int({
+      error:
+        "A clock advance moves the scenario clock by whole seconds, so state the seconds to move by rather than a fraction of one.",
+    })
+    .positive({
+      error:
+        "A clock advance moves the scenario clock forward, so the seconds it moves by are greater than zero.",
+    }),
+});
 
 /**
  * The failure to arm: one mode and one named call.
@@ -213,13 +239,50 @@ const advanceClockPayload = z.strictObject({ bySeconds: z.int().positive() });
  * `read` and `mutation` are the two kinds of call a plan can target and are part of the shape; which
  * modes exist and which names are demonstrated is the service's registry, reached by name alone.
  */
-const setFailurePlanPayload = z.strictObject({
+const armFailurePlanPayload = z.strictObject({
   mode: serviceWord<FailureModeWire>(),
   target: z.strictObject({
     kind: z.enum(["read", "mutation"]),
     name: serviceWord<FailureTargetNameWire>(),
   }),
 });
+
+/**
+ * The disarm: one member stating the absent plan that replaces the armed one.
+ *
+ * It is the payload form of `setFailurePlan` that clears the failure, not a sixth action, because exactly
+ * one failure is armed at a time (assumption A13).
+ */
+const disarmFailurePlanPayload = z.strictObject({ plan: z.null() });
+
+/** The one member only the disarm states, which is what tells the payload's two forms apart. */
+const DISARM_PLAN_MEMBER = "plan";
+
+/**
+ * The failure-plan payload, in either form: the failure to arm, or the disarm.
+ *
+ * Which form the body states is decided by the member only the disarm carries, and that form's own
+ * schema answers with its own issues. Zod's `union` would report both forms' issues as one form-level
+ * error carrying no field path, and a refusal the panel cannot place against the control that carried
+ * the value is the defect this handler's payload schemas exist to avoid. The declared type is the
+ * service's own union and this refinement is what holds a body to it, since which form a body states
+ * has to be read before either schema can judge it.
+ */
+const setFailurePlanPayload: z.ZodType<SetFailurePlanPayloadWire> = z
+  .custom<SetFailurePlanPayloadWire>()
+  .superRefine((payload, ctx) => {
+    const parsed =
+      isRecord(payload) && Object.hasOwn(payload, DISARM_PLAN_MEMBER)
+        ? disarmFailurePlanPayload.safeParse(payload)
+        : armFailurePlanPayload.safeParse(payload);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        // The form's own message and field path are what a caller acts on; the machine code belongs to
+        // the schema library, and an `invalid` outcome is keyed by the path and read for the message.
+        ctx.addIssue({ code: "custom", message: issue.message, path: issue.path });
+      }
+    }
+  });
 
 /**
  * A reset states nothing: there is nothing a caller can choose about it.

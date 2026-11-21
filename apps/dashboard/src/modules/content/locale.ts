@@ -588,4 +588,3 @@ export function admittedLocales(query: AdmittedLocaleQuery): readonly AdmittedLo
     return left.tag < right.tag ? -1 : 1;
   });
 }
-

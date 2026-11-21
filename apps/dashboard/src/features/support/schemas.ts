@@ -11,8 +11,9 @@
  * `{ operationId, scope, expectedRevision, payload }` belongs to the read envelope
  * (`@/modules/data-service/envelope`), and the family's hooks compose the two and mint one operation
  * identity per intent, so nothing below declares `operationId`, `scope` or `expectedRevision`. The
- * objects keep Zod's default strip mode for that reason: an envelope field — or a financial field a
- * follow-up task must never carry — smuggled into a payload is dropped rather than trusted.
+ * objects are strict for that reason: an envelope field — or a financial field a follow-up task must
+ * never carry — smuggled into a payload is refused here rather than stripped and trusted, at the same
+ * boundary `mutations/support.ts` and `mutations/tasks.ts` refuse it.
  *
  * These schemas decide shape, never admissibility. Whether the caller holds `canEditGoal`, whether
  * the goal has moved since the edit was made, whether a linked partner is still visible and whether a
@@ -333,7 +334,7 @@ function isReportedCurrency(value: string): boolean {
  * with the one value — a payload stating another measure is refused on the field, which is the same
  * treatment every other value a worker types receives.
  */
-const goalSaveFormSchema = z.object({
+const goalSaveFormSchema = z.strictObject({
   currency: z.string({ error: MESSAGES.currencyRequired }).refine(isReportedCurrency, {
     error: MESSAGES.currencyRequired,
   }),
@@ -485,10 +486,10 @@ const FOLLOW_UP_TASK_KINDS = ["default", "meeting"] as const satisfies readonly 
  * the day the worker chose whatever zone it is later read in.
  *
  * The payload has no field for an amount, a currency, a gift or allocation identity, a designation, a
- * message body or a private note, and Zod's strip mode drops any of those if a caller smuggles one in.
- * That absence is the point of the action: it creates one ordinary task to work through, and it writes
- * no financial record, sends no message, records no interaction and creates no stewardship obligation.
- * Completing the task later proves nothing about contact, payment or fulfilment either.
+ * message body or a private note, and the strict object refuses any of those if a caller smuggles one
+ * in. That absence is the point of the action: it creates one ordinary task to work through, and it
+ * writes no financial record, sends no message, records no interaction and creates no stewardship
+ * obligation. Completing the task later proves nothing about contact, payment or fulfilment either.
  *
  * `operation` is not a task field. It is the routing discriminant `POST /api/tasks` selects the
  * mutation by, declared as a defaulted literal so that this schema's *output* — which is what the
@@ -496,7 +497,7 @@ const FOLLOW_UP_TASK_KINDS = ["default", "meeting"] as const satisfies readonly 
  * date and no routing metadata, which is why `use-follow-up-task.ts` types what it accepts with
  * {@link FollowUpTaskInput} while the request it composes carries the parsed output.
  */
-export const followUpTaskPayloadSchema = z.object({
+export const followUpTaskPayloadSchema = z.strictObject({
   operation: z.literal("createTask").default("createTask"),
   title: titleSchema,
   category: categorySchema,

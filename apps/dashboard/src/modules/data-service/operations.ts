@@ -72,12 +72,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import { logger, type LogScope } from "@/lib/logger";
-import {
-  EMPTY_FAILURE_PLAN,
-  failureFor,
-  parseFailurePlan,
-  type FailurePlanDocument,
-} from "@/modules/dev-runtime/failures";
+import { failureFor, failurePlanOfDocument } from "@/modules/dev-runtime/failures";
 import type { SessionDocuments } from "@/modules/store/paths";
 import { transact } from "@/modules/store/repository";
 import { now } from "@/modules/time/clock";
@@ -652,22 +647,6 @@ function claimedScope(input: unknown): LogScope | undefined {
   return { organizationId, ministryId, supportSubjectId, principalId };
 }
 
-/**
- * The failure plan a session's meta document states, or the absent plan.
- *
- * The plan is read back through `parseFailurePlan`, which refuses rather than throws: a hand-edited,
- * truncated or stale meta document arms nothing instead of turning a request into a failure nobody
- * asked for. Nothing else here decides whether a failure is armed — `failureFor` is the one
- * consultation point, and it is asked by the mutation's own name, so no list of mutations lives here.
- */
-function failurePlanOf(meta: unknown): FailurePlanDocument {
-  if (typeof meta !== "object" || meta === null) {
-    return EMPTY_FAILURE_PLAN;
-  }
-  const parsed = parseFailurePlan(Reflect.get(meta, "failurePlan"));
-  return parsed.ok ? parsed.value : EMPTY_FAILURE_PLAN;
-}
-
 /** The session a mutation acts for, or the reason code that refuses it. */
 type SessionForMutation =
   | { readonly ok: true; readonly session: ResolvedSession }
@@ -807,7 +786,10 @@ export async function runMutation<P, R extends MutationResult>(
 
   try {
     const outcome = await transact<MutationOutcome>(plan.sessionId, async (docs) => {
-      const armed = failureFor(failurePlanOf(docs.meta), "mutation", plan.name);
+      // The stored plan is read through the development runtime's one reader and consulted by this
+      // mutation's own name; the read layer asks the same reader and the same `failureFor`, so no
+      // second mechanism decides whether a failure is armed.
+      const armed = failureFor(failurePlanOfDocument(docs.meta), "mutation", plan.name);
       if (armed === "denied") {
         // `denied` is the one mode the registry arms on reads today, so a mutation reaches this branch
         // only if a plan naming a mutation with it ever becomes readable. It answers with the denial
@@ -831,13 +813,19 @@ export async function runMutation<P, R extends MutationResult>(
 
       if (begun.state === "replay") {
         // No new effect and no new revision: the stored result is the answer, so a caller that lost
-        // the first response recovers exactly what it was told.
+        // the first response recovers exactly what it was told. The entry carries what the accepted
+        // answer reported — the change's own revision and the identifiers it created or changed — so
+        // the replay states those rather than the revision the caller presented with the request. An
+        // entry written before an answer stored them falls back to the target's current revision.
         return alreadyAccepted({
           operationId,
-          revision: reportedRevision,
+          revision: begun.record.revision ?? reportedRevision,
           // The ledger holds the opaque value it was given; every result written to it came from an
           // `ApplyResult<R>` whose `R` is constrained to `MutationResult`, so the stored value is one.
           result: begun.record.result as MutationResult,
+          ...(begun.record.created === undefined ? {} : { created: begun.record.created }),
+          ...(begun.record.changed === undefined ? {} : { changed: begun.record.changed }),
+          ...(begun.record.items === undefined ? {} : { items: begun.record.items }),
         });
       }
       if (begun.state === "changed-intent") {
@@ -900,13 +888,19 @@ export async function runMutation<P, R extends MutationResult>(
       }
 
       // 6. The ledger entry is recorded in this same transaction: the effect and its record are one
-      // write, which is the whole of the replay guarantee.
+      // write, which is the whole of the replay guarantee. The entry stores what the answer reports
+      // beside the result, so a replay states the change's own revision and identifiers rather than
+      // the revision token the caller presented.
       const entry: OperationRecord = {
         operationId,
         intentHash: intent,
         scope: input.scope,
         outcome: "accepted",
         result: applied.result,
+        revision: applied.revision,
+        ...(applied.created === undefined ? {} : { created: applied.created }),
+        ...(applied.changedIds === undefined ? {} : { changed: applied.changedIds }),
+        ...(applied.items === undefined ? {} : { items: applied.items }),
         at: now().toString(),
       };
       docs.operations = record(ledger, entry);

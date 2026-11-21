@@ -60,6 +60,7 @@ import { z } from "zod";
 
 import type { ContentLifecycleState } from "@/components/draft-status";
 import type { SimulatedEffect } from "@/components/simulation-label";
+import { destinationProblemOf, type DestinationProblem } from "@/lib/destination";
 
 // ---------------------------------------------------------------------------------------------
 // Text a reader must be able to see
@@ -156,30 +157,51 @@ export const homeReasonCodeSchema = z.enum(HOME_REASON_CODES, {
 // ---------------------------------------------------------------------------------------------
 
 /**
+ * Home's own sentence for each reason a destination is refused.
+ *
+ * The rule itself is not restated here: `@/lib/destination` owns what an application destination is,
+ * and this schema delegates to it, because the audience inbox's protected notice offers the same kind
+ * of value and one copy of the rule cannot drift from the other. The wording stays in this family,
+ * because Home words a route it opens differently from a link a message carried, and an emptiness the
+ * required-text check already states is not written twice.
+ */
+const HOME_DESTINATION_PROBLEM_TEXT: Readonly<Record<DestinationProblem, string>> = {
+  empty: "A destination needs the route it opens.",
+  "not-relative": "A destination is a route in this application, so it begins with a slash.",
+  "protocol-relative":
+    "A destination carries one leading slash, because two of them name another site rather " +
+    "than a route.",
+  backslash: "A destination uses forward slashes only, because a backslash can name another site.",
+  "control-character":
+    "A destination carries no control characters, because a route is read as written.",
+};
+
+/**
  * A destination: the route Home opens for an item, with the words the worker reads on the way out.
  *
  * `href` is a route in this application, so it begins with a single `/` and carries the query state
- * that makes returning useful — a filtered list keeps its filters, a record keeps its section. Three
- * shapes are refused on purpose: an external URL, because Home never sends a worker to another site
- * from a triage row; `#`, because a destination that goes nowhere is not a destination; and a value
- * beginning `//`, which browsers read as another site even though it starts with a slash.
+ * that makes returning useful — a filtered list keeps its filters, a record keeps its section. What
+ * counts as a route is not decided here: `@/lib/destination` owns that rule and this schema delegates
+ * to it. Every shape that guard refuses is refused on purpose: an external URL, because Home never
+ * sends a worker to another site from a triage row; `#`, because a destination that goes nowhere is
+ * not a destination; a value beginning `//`, which browsers read as another site even though it
+ * starts with a slash; and a backslash or a control character, each of which can turn a path that
+ * reads as local into one that resolves elsewhere.
  *
  * `label` is required and non-empty for the same reason: a link with no words cannot be read by a
  * screen-reader user following the row's links, and cannot be understood by anyone scanning it. The
  * wording is the caller's own, because this module holds no copy.
  */
-export const homeDestinationSchema = z.object({
+export const homeDestinationSchema = z.strictObject({
   href: requiredText(
     "A destination is a route in this application, so it is text.",
-    "A destination needs the route it opens.",
-  )
-    .startsWith("/", {
-      error: "A destination is a route in this application, so it begins with a slash.",
-    })
-    .refine((href) => !href.startsWith("//"), {
-      error:
-        "A destination carries one leading slash, because two of them name another site rather than a route.",
-    }),
+    HOME_DESTINATION_PROBLEM_TEXT.empty,
+  ).superRefine((href, context) => {
+    const problem = destinationProblemOf(href);
+    if (problem !== undefined) {
+      context.addIssue({ code: "custom", message: HOME_DESTINATION_PROBLEM_TEXT[problem] });
+    }
+  }),
   label: requiredText(
     "A destination label is the words the worker reads, so it is text.",
     "A destination needs a label, because a route with no words cannot be followed or read.",
@@ -252,13 +274,16 @@ const HOME_SIMULATED_EFFECTS = [
  * to be empty: an embellishment must never be able to invalidate a real item, so the row leaves an
  * empty one out instead of the parser refusing the row.
  *
- * The object keeps Zod's default strip mode: unknown keys are accepted and dropped, so an envelope
- * that grows a field never fails this boundary and the parsed view is exactly this contract. A field
- * a row must render therefore belongs here, never in an extra read behind the type's back. No member
- * states an amount, a currency, a count, a deadline or a partner identity, so no financial or
- * identity fact can travel through a Home row by accident.
+ * The object is strict, as every schema on this boundary is: an unknown key is refused rather than
+ * dropped, so the parsed view is exactly this contract and a projection that has drifted from it is
+ * reported instead of being silently narrowed. An item that drifts is reported through
+ * `parseHomeItem`'s failure arm — which keeps one unreadable row from blanking its section — and a
+ * group that drifts is reported as the section's `unknown` state with its notice. A field a row must
+ * render therefore belongs here, never in an extra read behind the type's back. No member states an
+ * amount, a currency, a count, a deadline or a partner identity, so no financial or identity fact can
+ * travel through a Home row by accident.
  */
-export const homeItemViewSchema = z.object({
+export const homeItemViewSchema = z.strictObject({
   id: requiredText(
     "An item identity is the text the envelope gave it.",
     "An item needs the identity it arrived with, because a row without one cannot be opened.",
@@ -329,7 +354,7 @@ const homeSectionStateSchema = z.enum(HOME_SECTION_STATES, {
  * at. Both are required when the notice is present, because a heading with no sentence explains
  * nothing and a sentence with no heading has no anchor in the page outline.
  */
-const homeSectionNoticeSchema = z.object({
+const homeSectionNoticeSchema = z.strictObject({
   title: requiredText(
     "A section notice heading is text.",
     "A section notice needs a heading, so the notice joins the page outline.",
@@ -345,7 +370,7 @@ const homeSectionNoticeSchema = z.object({
  * opaque reference. Neither member is parsed, compared across systems or rendered as if its form
  * carried meaning, and no record identity is ever built from one.
  */
-const homeSectionSourceSchema = z.object({
+const homeSectionSourceSchema = z.strictObject({
   system: requiredText(
     "A source reference names its system as text.",
     "A source reference names the system that issued it.",
@@ -382,10 +407,12 @@ const UNREADABLE_SECTION_NOTICE = Object.freeze({
  * `count` is the number the envelope stated and is only ever passed through: this module never counts
  * `items`, because a section may state a whole-result total while its items are one page of it.
  * `state`, `notice` and `source` are all optional, because a group that states nothing about its
- * health is an ordinary healthy group. Unknown keys are accepted and dropped, so a group that grows a
- * field never fails this boundary.
+ * health is an ordinary healthy group. The object is strict, as the item contract above it is: an
+ * unknown key is refused rather than dropped, so a group whose shape this contract no longer matches
+ * is reported as the section's `unknown` state with the unreadable notice above, instead of being
+ * narrowed into a healthy group by a silently discarded member.
  */
-export const homeSectionGroupSchema = z.object({
+export const homeSectionGroupSchema = z.strictObject({
   items: z
     .array(z.unknown(), {
       error: "A section's items arrive as a list, so read the section again.",

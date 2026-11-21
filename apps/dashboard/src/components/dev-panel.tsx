@@ -320,7 +320,6 @@ export interface DevPanelProps {
   readonly className?: string;
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // The panel's own bookkeeping
 // ---------------------------------------------------------------------------------------------
@@ -394,7 +393,8 @@ const DISARMED_SENTENCE =
  * responding with no statement of why. It is a polite status region, and it disappears when the answer
  * arrives because the receipt then states what happened.
  */
-const PENDING_SENTENCE = "Applying that change to this development session and waiting for the answer.";
+const PENDING_SENTENCE =
+  "Applying that change to this development session and waiting for the answer.";
 
 /** What a reset discards, stated before the destructive control is reached. */
 const RESET_DESCRIPTION =
@@ -481,9 +481,7 @@ export function DevPanel({
   const chosenScenario = devState.scenarios.find((choice) => choice.id === chosenScenarioId);
   const scenarioChangePending = chosenScenarioId !== scenario.id;
 
-  const eligibleTargets = devState.failureTargets.filter((target) =>
-    target.modes.includes(mode),
-  );
+  const eligibleTargets = devState.failureTargets.filter((target) => target.modes.includes(mode));
   const chosenTarget =
     eligibleTargets.find((target) => target.name === targetName) ?? eligibleTargets[0];
 
@@ -579,7 +577,9 @@ export function DevPanel({
     }
     const amount = wholeNumber(advanceValue);
     if (amount === null) {
-      setAdvanceError(`Enter a whole number of ${unit.plural}, with no decimal point or separator.`);
+      setAdvanceError(
+        `Enter a whole number of ${unit.plural}, with no decimal point or separator.`,
+      );
       return;
     }
     if (amount <= 0) {
@@ -601,10 +601,8 @@ export function DevPanel({
       return;
     }
     const target = chosenTarget;
-    void runAction(
-      "arm-failure",
-      `Failure armed: ${MODE_LABEL[mode]} on ${target.name}`,
-      () => onSetFailurePlan({ mode, target }),
+    void runAction("arm-failure", `Failure armed: ${MODE_LABEL[mode]} on ${target.name}`, () =>
+      onSetFailurePlan({ mode, target }),
     );
   };
 
@@ -615,7 +613,8 @@ export function DevPanel({
     void runAction("disarm-failure", "No failure is armed", () => onSetFailurePlan(null));
   };
 
-  const receiptHeading = result !== null && isSettled(result.outcome) ? result.settledHeading : null;
+  const receiptHeading =
+    result !== null && isSettled(result.outcome) ? result.settledHeading : null;
   const receiptRetry = result !== null && mayReplay(result.outcome) ? retryLastAttempt : undefined;
 
   return (
@@ -631,10 +630,10 @@ export function DevPanel({
           Development runtime
         </h2>
         <p id={introId} className="text-sm text-pretty text-muted-foreground">
-          The scenario, the clock, one armed failure and the reset for this development session. These
-          are development controls: the namespaced development route refuses them on the server outside
-          a development session, so hiding this panel is not what protects them. The Development data
-          label stays visible beside it, and nothing here is a production feature.
+          The scenario, the clock, one armed failure and the reset for this development session.
+          These are development controls: the namespaced development route refuses them on the
+          server outside a development session, so hiding this panel is not what protects them. The
+          Development data label stays visible beside it, and nothing here is a production feature.
         </p>
       </div>
 
@@ -643,9 +642,9 @@ export function DevPanel({
           <Badge variant="outline">Armed</Badge>
           <p className="min-w-0 flex-1 text-sm text-pretty">
             {plan.modeLabel} is armed on{" "}
-            <bdi className="mono-identifier wrap-anywhere">{plan.target.name}</bdi>, so any request to
-            that {plan.target.kind} answers with the injected outcome. Disarm it before you judge any
-            other behaviour.
+            <bdi className="mono-identifier wrap-anywhere">{plan.target.name}</bdi>, so any request
+            to that {plan.target.kind} answers with the injected outcome. Disarm it before you judge
+            any other behaviour.
           </p>
         </div>
       ) : null}
@@ -673,9 +672,9 @@ export function DevPanel({
             <h3>Scenario</h3>
           </CardTitle>
           <CardDescription>
-            The seeded world this session runs in. A scenario decides which source is unavailable, so a
-            demonstration proves something; switching it loads a different world and changes no record
-            on its own.
+            The seeded world this session runs in. A scenario decides which source is unavailable,
+            so a demonstration proves something; switching it loads a different world and changes no
+            record on its own.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
@@ -731,8 +730,8 @@ export function DevPanel({
             <h3>Clock</h3>
           </CardTitle>
           <CardDescription>
-            The scenario instant every boundary is measured against. It is an offset from one fixed seed
-            instant rather than a second clock, and the only ways to move it are on this panel.
+            The scenario instant every boundary is measured against. It is an offset from one fixed
+            seed instant rather than a second clock, and the only ways to move it are on this panel.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
@@ -815,8 +814,8 @@ export function DevPanel({
               </Button>
             </div>
             <p id={offsetHintId} className="text-sm text-pretty text-muted-foreground">
-              Units are elapsed time: a day here is 24 hours, and no unit on this panel is a calendar
-              day. A negative offset places the instant before the seed.
+              Units are elapsed time: a day here is 24 hours, and no unit on this panel is a
+              calendar day. A negative offset places the instant before the seed.
             </p>
             {offsetError === null ? null : (
               <p id={offsetErrorId} className="text-sm text-pretty text-destructive">
@@ -875,8 +874,8 @@ export function DevPanel({
             </div>
             <p id={advanceHintId} className="text-sm text-pretty text-muted-foreground">
               Advancing moves the instant forward by elapsed time only. 24 hours reaches the
-              notification deadline exactly; 168 hours reaches the confirmation deadline exactly, which
-              is where both are refused.
+              notification deadline exactly; 168 hours reaches the confirmation deadline exactly,
+              which is where both are refused.
             </p>
             {advanceError === null ? null : (
               <p id={advanceErrorId} className="text-sm text-pretty text-destructive">
@@ -893,8 +892,8 @@ export function DevPanel({
             <h3>Failure plan</h3>
           </CardTitle>
           <CardDescription>
-            One simulated failure, injected into one named read or mutation. Exactly one plan is active at
-            a time, so a demonstration cannot confuse which failure it is watching.
+            One simulated failure, injected into one named read or mutation. Exactly one plan is
+            active at a time, so a demonstration cannot confuse which failure it is watching.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
@@ -1059,4 +1058,3 @@ export function DevPanel({
 }
 
 export default DevPanel;
-

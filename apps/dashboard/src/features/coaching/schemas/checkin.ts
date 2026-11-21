@@ -338,4 +338,3 @@ export const withdrawCheckInPayloadSchema = z.strictObject({
 
 /** The validated body of a `withdrawCheckIn` request: which check-in, and which shared revision. */
 export type CheckInWithdrawPayload = z.infer<typeof withdrawCheckInPayloadSchema>;
-

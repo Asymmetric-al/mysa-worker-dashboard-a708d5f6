@@ -68,11 +68,11 @@
  * template, no provider client and no scaffolding for a deferred integration appears here, and
  * `selectContext` stays an ordinary signed-in mutation instead of being folded into the development
  * gate. *Clause 2 (reuse the specified patterns):* one runner, one ledger, one schema per mutation,
- * one clock, one failure plan, one reset and one revision token (the read's own, imported rather than
- * re-derived). *Clause 3 (preserve meaning and completion):* a lost acknowledgement stays `unknown`
- * and is recovered by `operationId`, a replay returns the stored result with no second effect, a reset
- * restores the known seed and reports only what it did, and a context switch never discards unsaved
- * work silently.
+ * one clock, one failure plan, one reset and one revision token (imported from
+ * `dev-runtime/scenario.ts#devStateRevision` rather than re-derived). *Clause 3 (preserve meaning
+ * and completion):* a lost acknowledgement stays `unknown` and is recovered by `operationId`, a
+ * replay returns the stored result with no second effect, a reset restores the known seed and
+ * reports only what it did, and a context switch never discards unsaved work silently.
  *
  * Layering: the write layer of the data service. It imports the guard of the development boundary, the
  * one authorisation module, the envelope and outcome contracts, the runner, the development runtime's
@@ -117,9 +117,10 @@ import {
   type MutationResult,
 } from "@/modules/data-service/outcome";
 import { runMutation } from "@/modules/data-service/operations";
-import { DEV_SOURCE, devStateRevision } from "@/modules/data-service/reads/dev";
 import {
   DEMONSTRABLE_TARGETS,
+  EMPTY_FAILURE_PLAN,
+  disarmFailurePlan,
   setFailurePlan as armFailurePlan,
   type FailureMode,
   type FailurePlanRefusal,
@@ -128,8 +129,10 @@ import {
 import { resetSeed as resetDevelopmentSeed, type ResetSummary } from "@/modules/dev-runtime/reset";
 import {
   CLOCK_OFFSET_LIMIT_MS,
+  DEV_SOURCE,
   SCENARIO_IDS,
   advanceClock as advanceSessionClock,
+  devStateRevision,
   isScenarioId,
   parseSessionMeta,
   setClock as applySessionClock,
@@ -361,9 +364,9 @@ interface ProbeRequest<P extends MutationResult> {
  * above it.
  *
  * The caller's `expectedRevision` is compared against the token the read published
- * (`reads/dev.ts#devStateRevision`, imported rather than re-derived), so a control submitted from a
- * panel that has since moved is a `conflict` with the current document beside the caller's request
- * instead of an overwrite.
+ * (`dev-runtime/scenario.ts#devStateRevision`, imported rather than re-derived), so a control
+ * submitted from a panel that has since moved is a `conflict` with the current document beside the
+ * caller's request instead of an overwrite.
  *
  * Two controls submitted at the same instant can both pass their probes, and each then performs its
  * own change: two presses of the advance button move the clock twice, exactly as two presses mean.
@@ -1048,13 +1051,31 @@ export async function advanceClock(
 // ---------------------------------------------------------------------------------------------
 
 /** The failure to arm, and the one call it is demonstrated on. */
-export type SetFailurePlanPayload = {
+export type ArmingFailurePlanPayload = {
   readonly mode: FailureMode;
   readonly target: {
     readonly kind: FailureTargetKind;
     readonly name: string;
   };
 };
+
+/**
+ * The disarm: the payload form that clears the armed failure and leaves every record as it stands.
+ *
+ * `plan: null` states the absence of a plan rather than a second one, so a caller clears the slot this
+ * session's document holds without a second control and without the destructive reset.
+ */
+export type DisarmingFailurePlanPayload = {
+  readonly plan: null;
+};
+
+/**
+ * Either form of a `setFailurePlan` payload: the failure to arm, or the disarm that clears it.
+ *
+ * One control with two forms rather than two controls, because arming and clearing are the two states
+ * of the one slot exactly one failure occupies (assumption A13).
+ */
+export type SetFailurePlanPayload = ArmingFailurePlanPayload | DisarmingFailurePlanPayload;
 
 /** The plan now armed, as the development document stores it. */
 export type SetFailurePlanResult = {
@@ -1087,7 +1108,13 @@ function isDemonstrableTargetName(name: string): boolean {
 
 const DEMONSTRABLE_TARGET_MESSAGE = `A target names the call a failure is demonstrated on: ${DEMONSTRABLE_TARGETS.map((target) => target.name).join(", ")}.`;
 
-const setFailurePlanPayloadSchema: z.ZodType<SetFailurePlanPayload> = z.strictObject({
+/**
+ * The one member only the disarm states, which is what tells the payload's two forms apart before
+ * either is validated.
+ */
+const DISARM_PLAN_MEMBER = "plan";
+
+const armFailurePlanPayloadSchema: z.ZodType<ArmingFailurePlanPayload> = z.strictObject({
   mode: z.enum(FAILURE_MODES),
   target: z.strictObject({
     kind: z.enum(FAILURE_TARGET_KINDS),
@@ -1095,25 +1122,67 @@ const setFailurePlanPayloadSchema: z.ZodType<SetFailurePlanPayload> = z.strictOb
   }),
 });
 
+/** The disarm states the absent plan and nothing else, so a strict object of that one member is its form. */
+const disarmFailurePlanPayloadSchema: z.ZodType<DisarmingFailurePlanPayload> = z.strictObject({
+  plan: z.null(),
+});
+
 /**
- * Arms one simulated failure on one named read or mutation, for this session only, and answers one of
- * the eight outcomes.
+ * Validates either form of the payload, answering the messages of the form the request states.
  *
- * Exactly one failure is active at a time (assumption A13), and the registry decides which mode a target
- * demonstrates: the three deterministic failures of AAP 0.7.2 — a scope denial, a changed revision and a
- * lost acknowledgement — are each demonstrated on the calls that own the recovery they prove. Arming a
- * second plan while one is active is refused with the armed plan named and the one step that clears it;
- * the plan lives in the session's development document and is visible in the panel through
- * `reads/dev.ts#readDevState`, and a reset lays it down disarmed.
+ * A request states either the failure to arm — `{mode, target: {kind, name}}` — or the disarm,
+ * `{plan: null}`, and exactly one of the two. The form is decided here by the one member only the
+ * disarm carries, and the form's own schema answers with its own issues, so the arming form keeps the
+ * field paths and messages it has always produced. A union of the two schemas would fold both forms'
+ * issues into a single form-level error carrying no field path, which would leave a form unable to
+ * place a refusal against the control that carried the value.
+ *
+ * The declared type is the payload's own union and this refinement is what holds a value to it: which
+ * form the value states has to be read before either schema can judge it, so no predicate is handed to
+ * `custom` and every check lives in the two form schemas above.
+ */
+const setFailurePlanPayloadSchema: z.ZodType<SetFailurePlanPayload> = z
+  .custom<SetFailurePlanPayload>()
+  .superRefine((payload, ctx) => {
+    const parsed =
+      isRecord(payload) && Object.hasOwn(payload, DISARM_PLAN_MEMBER)
+        ? disarmFailurePlanPayloadSchema.safeParse(payload)
+        : armFailurePlanPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        // The branch's own message and field path are what a caller acts on; the machine code belongs to
+        // the schema library, and an `invalid` outcome is keyed by the path and read for the message.
+        ctx.addIssue({ code: "custom", message: issue.message, path: issue.path });
+      }
+    }
+  });
+
+/**
+ * Arms one simulated failure on one named read or mutation, or disarms the armed one, for this session
+ * only, and answers one of the eight outcomes.
+ *
+ * The payload states one of two forms: the failure to arm — `{mode, target: {kind, name}}` — or the
+ * disarm, `{plan: null}`, which clears the armed plan and leaves every record as it stands. The disarm
+ * is part of this control rather than a second one because exactly one failure is active at a time
+ * (assumption A13): the plan lives in the session's development document and is visible in the panel
+ * through `reads/dev.ts#readDevState`, so the slot it occupies has to be clearable without the
+ * destructive reset, and `dev-runtime/failures.ts#disarmFailurePlan` states the cleared value.
+ *
+ * The registry decides which mode a target demonstrates: the three deterministic failures of AAP 0.7.2
+ * — a scope denial, a changed revision and a lost acknowledgement — are each demonstrated on the calls
+ * that own the recovery they prove. Arming a second plan while one is active is refused with the armed
+ * plan named and the one reachable step that clears it.
  *
  * The change is written inside the recording pass's transaction because this control's effect is a pure
  * function of the document it read: nothing outside the store is touched, so the probe's document and
  * the write are one step apart only by the check that produced them.
  *
- * Answers `accepted` with the document's revision after the change, `unchanged` when that plan is
- * already armed, `alreadyAccepted` for a replay, `conflict` for a stale `expectedRevision`, `denied`
- * outside a development build, `invalid` for a target or a mode the registry does not pair or for a plan
- * already armed, and `unavailable` when the development document cannot be read.
+ * Answers `accepted` with the document's revision after the change — the armed plan, or the cleared
+ * document with a `null` result for a disarm — `unchanged` when the request would change nothing (that
+ * plan is already armed, or no plan is armed to clear), `alreadyAccepted` for a replay, `conflict` for
+ * a stale `expectedRevision`, `denied` outside a development build, `invalid` for a target or a mode the
+ * registry does not pair, for a plan already armed, or for a payload that states neither form or both,
+ * and `unavailable` when the development document cannot be read.
  */
 export async function setFailurePlan(
   input: MutationInput<SetFailurePlanPayload>,
@@ -1135,6 +1204,36 @@ export async function setFailurePlan(
   }
   if (probe.kind === "unreadable") {
     return developmentDocumentUnavailable(probe.operationId);
+  }
+
+  // The disarm states the absence of a plan, so there is nothing to stamp and nothing to arm: the
+  // document is written back with the plan cleared. A document that already holds no plan would
+  // produce no change and is answered as such (AAP 0.7.1, `unchanged`).
+  if ("plan" in input.payload) {
+    const disarmed = disarmFailurePlan();
+    if (probe.meta.failurePlan === EMPTY_FAILURE_PLAN) {
+      return unchanged({ operationId: input.operationId, revision: probe.revision });
+    }
+    const clearedDocument: SessionMetaDocument = { ...probe.meta, failurePlan: disarmed };
+    const revision = devStateRevision(clearedDocument, acting.principalId);
+
+    return runMutation<SetFailurePlanPayload, SetFailurePlanResult | null>({
+      sessionId: acting.sessionId,
+      input,
+      schema: setFailurePlanPayloadSchema,
+      name: "setFailurePlan",
+      authorize: developmentAuthority,
+      apply: (context) => {
+        const meta = context.docs.meta;
+        if (!isRecord(meta)) {
+          // Unreachable: the runner resolved this session from this same document. No plan can be
+          // cleared in a document that is not one, so nothing changed.
+          return { changed: false };
+        }
+        context.docs.meta = { ...meta, failurePlan: disarmed };
+        return { changed: true, revision, result: null };
+      },
+    });
   }
 
   const { mode, target } = input.payload;

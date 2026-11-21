@@ -163,13 +163,25 @@ export interface Scope {
   readonly principalId: PrincipalId;
 }
 
-/** Validates a scope, including one that arrived from a browser request body. */
-export const scopeSchema: z.ZodType<Scope> = z.object({
-  organizationId: organizationIdSchema,
-  ministryId: ministryIdSchema,
-  supportSubjectId: supportSubjectIdSchema,
-  principalId: principalIdSchema,
-});
+/**
+ * Validates a scope, including one that arrived from a browser request body.
+ *
+ * The object states its own message as well as its members, because an absent or unusable scope is a
+ * refusal a caller has to be able to act on: it says what a scope is, rather than leaving the schema
+ * library's vocabulary to report that something of the wrong kind arrived.
+ */
+export const scopeSchema: z.ZodType<Scope> = z.object(
+  {
+    organizationId: organizationIdSchema,
+    ministryId: ministryIdSchema,
+    supportSubjectId: supportSubjectIdSchema,
+    principalId: principalIdSchema,
+  },
+  {
+    error:
+      "A mutation states the scope it believes it is acting in: the organization, the ministry, the support subject and the principal, so the service can check the caller is admitted to that context rather than infer it from the records.",
+  },
+);
 
 /**
  * Reports whether two scopes are the same authority: exact equality on all four identifiers.
@@ -392,20 +404,41 @@ export interface MutationInput<P> {
  * that is an `invalid` outcome with the field path rather than a field quietly dropped. The payload
  * schema is the caller's own, so an unknown key inside a payload is likewise `invalid` when that
  * schema is strict, which is how each mutation's payload is declared.
+ *
+ * Every member states its own rule in the product's voice, the payload included, so a caller that
+ * omits one is told what the mutation needs from it rather than that a value of the wrong kind
+ * arrived.
  */
 export function mutationInputSchema<P>(payloadSchema: z.ZodType<P>): z.ZodType<MutationInput<P>> {
   return z.strictObject({
     operationId: z
-      .string()
+      .string({
+        error:
+          "A mutation names the operationId of the attempt it makes, so a replay is recognised by identity and a lost acknowledgement is re-queried rather than resent.",
+      })
       .regex(
         OPERATION_ID_PATTERN,
         "An operationId is the canonical lowercase UUID v4 that newOperationId mints, so a replay can be recognised by identity rather than guessed from a repeated payload.",
       ),
     scope: scopeSchema,
     expectedRevision: z
-      .string()
-      .min(1, "A mutation states the revision it saw, so a stale write is a conflict rather than an overwrite."),
-    payload: payloadSchema,
+      .string({
+        error:
+          "A mutation names the revision the caller read before it makes the change, so a write built on a version another change has replaced is a conflict rather than an overwrite.",
+      })
+      .min(
+        1,
+        "A mutation states the revision it saw, so a stale write is a conflict rather than an overwrite.",
+      ),
+    // Presence is the member's own rule and is judged before the caller's schema: an absent payload
+    // is told what a mutation needs from it, and a present one is judged by that schema alone — the
+    // pipe stops at the first refusal, so one fault never arrives as two messages.
+    payload: z
+      .custom<unknown>((stated) => stated !== undefined, {
+        error:
+          "A mutation states the change it asks for as its payload, so the service can validate it before it reads or writes anything.",
+      })
+      .pipe(payloadSchema),
   });
 }
 
@@ -461,12 +494,10 @@ export const moneySchema: z.ZodType<Money> = z
     currency: z.string().min(1),
     minorUnits: z.int(),
   })
-  .transform(
-    (stored): Money => ({
-      currency: stored.currency,
-      minorUnits: stored.minorUnits as MinorUnits,
-    }),
-  );
+  .transform((stored): Money => ({
+    currency: stored.currency,
+    minorUnits: stored.minorUnits as MinorUnits,
+  }));
 
 /** Who may read a field that names an audience: the worker alone, or the shared operational record. */
 export const RECORD_AUDIENCES = ["private", "shared"] as const;
@@ -475,7 +506,6 @@ export const RECORD_AUDIENCES = ["private", "shared"] as const;
 export type RecordAudience = (typeof RECORD_AUDIENCES)[number];
 
 export const recordAudienceSchema: z.ZodType<RecordAudience> = z.enum(RECORD_AUDIENCES);
-
 
 // ---------------------------------------------------------------------------------------------
 // Session context
@@ -1487,11 +1517,14 @@ export const commitmentRowRecordSchema: z.ZodType<CommitmentRowRecord> = z
     provenance: sourceReferenceSchema,
     revision: recordRevisionSchema,
   })
-  .refine((commitment) => (commitment.kind === "fixed-total") === (commitment.fixedTotal !== null), {
-    path: ["fixedTotal"],
-    message:
-      "Only a fixed-total commitment has a promised, fulfilled, released and remaining total; a recurring commitment states none, so an absent total is never read as zero.",
-  });
+  .refine(
+    (commitment) => (commitment.kind === "fixed-total") === (commitment.fixedTotal !== null),
+    {
+      path: ["fixedTotal"],
+      message:
+        "Only a fixed-total commitment has a promised, fulfilled, released and remaining total; a recurring commitment states none, so an absent total is never read as zero.",
+    },
+  );
 
 // ---------------------------------------------------------------------------------------------
 // Content documents and variants
@@ -1956,13 +1989,15 @@ export const notificationIntentRecordSchema: z.ZodType<NotificationIntentRecord>
   revision: recordRevisionSchema,
 });
 
-export const notificationSendResultRecordSchema: z.ZodType<NotificationSendResultRecord> = z.object({
-  sendResultId: z.string().min(1),
-  intentId: z.string().min(1),
-  recipients: z.array(notificationRecipientOutcomeRecordSchema),
-  recordedAt: storedInstantSchema,
-  revision: recordRevisionSchema,
-});
+export const notificationSendResultRecordSchema: z.ZodType<NotificationSendResultRecord> = z.object(
+  {
+    sendResultId: z.string().min(1),
+    intentId: z.string().min(1),
+    recipients: z.array(notificationRecipientOutcomeRecordSchema),
+    recordedAt: storedInstantSchema,
+    revision: recordRevisionSchema,
+  },
+);
 
 // ---------------------------------------------------------------------------------------------
 // Audience membership and preference
@@ -2120,8 +2155,9 @@ const coachingModuleSelectionShape: Readonly<Record<ModuleKey, z.ZodBoolean>> = 
 };
 
 /** Validates the five module switches as stored, so a module the worker never shared reads `false`. */
-export const coachingModuleSelectionSchema: z.ZodType<CoachingModuleSelection> =
-  z.object(coachingModuleSelectionShape);
+export const coachingModuleSelectionSchema: z.ZodType<CoachingModuleSelection> = z.object(
+  coachingModuleSelectionShape,
+);
 
 export const coachingDurationRecordSchema: z.ZodType<CoachingDurationRecord> = z
   .object({
@@ -2135,11 +2171,13 @@ export const coachingDurationRecordSchema: z.ZodType<CoachingDurationRecord> = z
       "A share-through grant states the cutoff it was accepted with, and an ongoing grant states none: a missing duration is not permission and never reads as an unbounded one.",
   });
 
-export const coachingFinancialRangeRecordSchema: z.ZodType<CoachingFinancialRangeRecord> = z.object({
-  from: storedCivilDateSchema,
-  to: storedCivilDateSchema,
-  currency: z.string().min(1),
-});
+export const coachingFinancialRangeRecordSchema: z.ZodType<CoachingFinancialRangeRecord> = z.object(
+  {
+    from: storedCivilDateSchema,
+    to: storedCivilDateSchema,
+    currency: z.string().min(1),
+  },
+);
 
 export const coachingInvitationRecordSchema: z.ZodType<CoachingInvitationRecord> = z.object({
   issuedAt: storedInstantSchema,
@@ -2332,17 +2370,14 @@ export interface CoachingCheckInRecord {
   readonly revision: string;
 }
 
-export const coachingCheckInQuestionRecordSchema: z.ZodType<CoachingCheckInQuestionRecord> = z.object(
-  {
-    wording: z
-      .string()
-      .refine((wording) => scalarCount(wording) <= 500, {
-        message:
-          "A question is at most 500 Unicode scalars; a longer one is refused with its count rather than shortened, because a shortened question would change what the worker asked.",
-      }),
+export const coachingCheckInQuestionRecordSchema: z.ZodType<CoachingCheckInQuestionRecord> =
+  z.object({
+    wording: z.string().refine((wording) => scalarCount(wording) <= 500, {
+      message:
+        "A question is at most 500 Unicode scalars; a longer one is refused with its count rather than shortened, because a shortened question would change what the worker asked.",
+    }),
     order: z.int().nonnegative(),
-  },
-);
+  });
 
 export const coachingCheckInAnswerRecordSchema: z.ZodType<CoachingCheckInAnswerRecord> = z.object({
   questionOrder: z.int().nonnegative().nullable(),
@@ -2458,14 +2493,45 @@ export const OPERATION_OUTCOME_NAMES = [
 export type OperationOutcomeName = (typeof OPERATION_OUTCOME_NAMES)[number];
 
 /**
+ * One stored per-item result.
+ *
+ * `state` is held as the word the producing mutation used, because the vocabulary belongs to the
+ * mutation (`accepted | unchanged | excluded | failed` for a bulk action, a different closed set for
+ * an import or a release) and re-declaring it here would be a second copy that could drift. A replay
+ * hands the recorded members back exactly as they were written.
+ */
+export interface StoredPerItemResult {
+  readonly targetId: string;
+  readonly state: string;
+  readonly revision?: string;
+  readonly reasonCode?: string;
+  readonly reason?: string;
+}
+
+const storedPerItemResultSchema: z.ZodType<StoredPerItemResult> = z.object({
+  targetId: z.string().min(1),
+  state: z.string().min(1),
+  revision: z.string().min(1).optional(),
+  reasonCode: z.string().min(1).optional(),
+  reason: z.string().optional(),
+});
+
+/**
  * One recorded mutation attempt.
  *
  * `intentHash` distinguishes a replay of the same intent — which returns `result` unchanged — from a
  * reuse of the same identity for a different one, which is a conflict. `result` is the stored result
  * returned verbatim on replay, so it is held as the opaque value it is rather than re-typed here.
  *
- * An entry carries no optimistic-concurrency revision: the ledger is append-only and an entry is never
- * updated, so a token to detect a concurrent change to it would describe a change that cannot happen.
+ * `revision` and the three identifier members are what the accepted answer reported, stored beside
+ * the result so a replay can state the change's own revision, the identifiers it created or changed
+ * and its per-item results — the answer a caller that lost the acknowledgement never saw — instead of
+ * the revision token the caller presented with the request. They are absent on an entry written
+ * before they were recorded, and a replay then falls back to the target's current revision.
+ *
+ * None of them is an optimistic-concurrency token: the ledger is append-only and an entry is never
+ * updated, so no comparison can detect a concurrent change to it. `revision` records what the change
+ * produced for the caller to read, not a value a later write compares against.
  */
 export interface OperationRecord {
   readonly operationId: string;
@@ -2473,6 +2539,14 @@ export interface OperationRecord {
   readonly scope: Scope;
   readonly outcome: OperationOutcomeName;
   readonly result: unknown;
+  /** The revision the accepted change produced, as its answer reported it. */
+  readonly revision?: string;
+  /** Identifiers the operation created, in the order the mutation reported them. */
+  readonly created?: readonly string[];
+  /** Identifiers the operation changed. */
+  readonly changed?: readonly string[];
+  /** Per-item results for an operation that acted on rows. */
+  readonly items?: readonly StoredPerItemResult[];
   readonly at: string;
 }
 
@@ -2482,6 +2556,10 @@ export const operationRecordSchema: z.ZodType<OperationRecord> = z.object({
   scope: scopeSchema,
   outcome: z.enum(OPERATION_OUTCOME_NAMES),
   result: z.unknown(),
+  revision: recordRevisionSchema.optional(),
+  created: z.array(z.string().min(1)).optional(),
+  changed: z.array(z.string().min(1)).optional(),
+  items: z.array(storedPerItemResultSchema).optional(),
   at: storedInstantSchema,
 });
 
@@ -2589,11 +2667,13 @@ export const importFileMetaRecordSchema: z.ZodType<ImportFileMetaRecord> = z.obj
   columnCount: z.int().nonnegative(),
 });
 
-export const importColumnAssignmentRecordSchema: z.ZodType<ImportColumnAssignmentRecord> = z.object({
-  columnIndex: z.int().nonnegative(),
-  header: z.string().min(1),
-  field: z.string().min(1).nullable(),
-});
+export const importColumnAssignmentRecordSchema: z.ZodType<ImportColumnAssignmentRecord> = z.object(
+  {
+    columnIndex: z.int().nonnegative(),
+    header: z.string().min(1),
+    field: z.string().min(1).nullable(),
+  },
+);
 
 export const importRowDecisionRecordSchema: z.ZodType<ImportRowDecisionRecord> = z.object({
   rowNumber: z.int().nonnegative(),

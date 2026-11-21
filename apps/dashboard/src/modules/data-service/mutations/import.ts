@@ -118,7 +118,13 @@ import {
 } from "@/modules/import/validate";
 import { now } from "@/modules/time/clock";
 
-import { canEdit, resolveSession, type ResolvedSession, type ScopeDecision, type SessionSource } from "../authorize";
+import {
+  canEdit,
+  resolveSession,
+  type ResolvedSession,
+  type ScopeDecision,
+  type SessionSource,
+} from "../authorize";
 import {
   importProposalRecordSchema,
   partnerRecordSchema,
@@ -163,7 +169,7 @@ import {
  * finite: it sits a mebibyte of slack above the product limit, so a file just over the limit still
  * reaches `checkLimits()` and is refused there with the limit and the measured byte count named.
  */
-const CONTENT_BASE64_MAX_CHARS = Math.ceil(((5 * 1024 * 1024) + (1 << 20)) * (4 / 3));
+const CONTENT_BASE64_MAX_CHARS = Math.ceil((5 * 1024 * 1024 + (1 << 20)) * (4 / 3));
 
 /** The alphabet base64 uses, with the padding a browser's `btoa` always emits. */
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/;
@@ -313,10 +319,12 @@ export type ProposeImportPayload = {
 };
 
 /** One corrected cell as a client sends it: the position and the replacement text, never the field. */
-const rowCorrectionInputSchema: z.ZodType<{ columnNumber: number; value: string }> = z.strictObject({
-  columnNumber: positionSchema,
-  value: z.string(),
-});
+const rowCorrectionInputSchema: z.ZodType<{ columnNumber: number; value: string }> = z.strictObject(
+  {
+    columnNumber: positionSchema,
+    value: z.string(),
+  },
+);
 
 /**
  * One worker's decision about one imported row: exactly the four kinds `decide.ts` declares, with the
@@ -374,9 +382,9 @@ export type SetRowDecisionPayload = ImportDecisionInput;
  */
 export const acceptImportRowsPayloadSchema: z.ZodType<AcceptImportRowsPayload> = z.strictObject({
   acknowledged: z.literal(true, { error: "Confirm the acceptance explicitly." }),
-  fileFingerprint: z
-    .string()
-    .min(1, { error: "fileFingerprint must carry the fingerprint reported for the file you reviewed." }),
+  fileFingerprint: z.string().min(1, {
+    error: "fileFingerprint must carry the fingerprint reported for the file you reviewed.",
+  }),
   decisions: z
     .array(rowDecisionSchema)
     .min(1, { error: "Review at least one row decision before accepting." })
@@ -786,7 +794,9 @@ function fileRefusalOn(refusals: readonly ImportRefusal[]): ImportMutationRefusa
   const messages = refusals.map((refusal) => refusal.message);
   return {
     kind: "invalid",
-    fields: { contentBase64: messages.length > 0 ? messages : ["This file could not be read as CSV."] },
+    fields: {
+      contentBase64: messages.length > 0 ? messages : ["This file could not be read as CSV."],
+    },
   };
 }
 
@@ -820,7 +830,9 @@ function candidatesOf(partners: readonly PartnerRecord[]): readonly ImportMatchC
 const CANDIDATE_FIELDS: readonly ImportFieldId[] = [...IMPORT_FIELD_IDS];
 
 /** One partner record's readable values, keyed by the import field each one answers. */
-function visibleValuesOf(partner: PartnerRecord): Readonly<Partial<Record<ImportFieldId, readonly string[]>>> {
+function visibleValuesOf(
+  partner: PartnerRecord,
+): Readonly<Partial<Record<ImportFieldId, readonly string[]>>> {
   const values: Partial<Record<ImportFieldId, string[]>> = {
     "display-name": [partner.displayName],
     restriction: partner.restrictions.map((restriction) => restriction.detail),
@@ -844,7 +856,11 @@ function visibleValuesOf(partner: PartnerRecord): Readonly<Partial<Record<Import
   }
   for (const method of partner.contactMethods) {
     const fieldId: ImportFieldId =
-      method.kind === "email" ? "contact-email" : method.kind === "phone" ? "contact-phone" : "contact-postal";
+      method.kind === "email"
+        ? "contact-email"
+        : method.kind === "phone"
+          ? "contact-phone"
+          : "contact-postal";
     const existing = values[fieldId];
     if (existing === undefined) {
       values[fieldId] = [method.value];
@@ -854,7 +870,6 @@ function visibleValuesOf(partner: PartnerRecord): Readonly<Partial<Record<Import
   }
   return values;
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // The declared projection: the proposal record the import reads parse
@@ -953,7 +968,10 @@ function mappingRecordsOf(
  * decided but blocked — reported beside the four kinds rather than added to them, because a row can be
  * both a new entry and blocked, and one total would hide which is which.
  */
-function summaryRecordOf(summary: ImportDecisionSummary | null, rowCount: number): ImportSummaryRecord {
+function summaryRecordOf(
+  summary: ImportDecisionSummary | null,
+  rowCount: number,
+): ImportSummaryRecord {
   if (summary === null) {
     return { newEntries: 0, reusedIdentities: 0, skipped: 0, needsReview: rowCount };
   }
@@ -1090,7 +1108,6 @@ function decisionsFor(
   return createDecisionSet(file);
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // The private preparation entry an accepted row becomes
 // ---------------------------------------------------------------------------------------------
@@ -1157,7 +1174,10 @@ function displayNameOf(values: ReadonlyMap<ImportFieldId, readonly string[]>): s
   }
   const given = firstValue(values, "name-given");
   const family = firstValue(values, "name-family");
-  const composed = [given, family].filter((part): part is string => part !== null).join(" ").trim();
+  const composed = [given, family]
+    .filter((part): part is string => part !== null)
+    .join(" ")
+    .trim();
   if (composed.length > 0) {
     return composed;
   }
@@ -1165,7 +1185,9 @@ function displayNameOf(values: ReadonlyMap<ImportFieldId, readonly string[]>): s
 }
 
 /** The name parts a row supplies, or null when it supplies neither of them. */
-function namePartsOf(values: ReadonlyMap<ImportFieldId, readonly string[]>): PartnerNameParts | null {
+function namePartsOf(
+  values: ReadonlyMap<ImportFieldId, readonly string[]>,
+): PartnerNameParts | null {
   const given = firstValue(values, "name-given");
   const family = firstValue(values, "name-family");
   if (given === null && family === null) {
@@ -1173,7 +1195,6 @@ function namePartsOf(values: ReadonlyMap<ImportFieldId, readonly string[]>): Par
   }
   return { given, family, additional: [] };
 }
-
 
 /** The contact methods a row supplies, each one permitted and none of them verified. */
 function contactMethodsOf(
@@ -1275,7 +1296,6 @@ function partnerIdFor(importOperationId: string, rowNumber: number): string {
   return `partner-import-${importOperationId}-${String(rowNumber)}`;
 }
 
-
 /**
  * The receipt this import already recorded, or the fact that it recorded none or that the one it holds
  * cannot be trusted.
@@ -1300,7 +1320,9 @@ function storedReceiptOf(review: ImportReviewRecord): StoredReceiptRead {
     return { kind: "unreadable" };
   }
   const read = readStoredReceipt(stored, identity);
-  return read.kind === "found" ? { kind: "receipt", receipt: read.receipt } : { kind: "unreadable" };
+  return read.kind === "found"
+    ? { kind: "receipt", receipt: read.receipt }
+    : { kind: "unreadable" };
 }
 
 /** The references one recorded receipt already points at, keyed by the row each one came from. */
@@ -1380,7 +1402,6 @@ const NOT_CHANGED: { readonly changed: false } = { changed: false };
 
 /** The target of a change that creates an import rather than replacing one. */
 const NO_TARGET: CurrentTarget = { kind: "absent" };
-
 
 // ---------------------------------------------------------------------------------------------
 // proposeImport
@@ -1488,9 +1509,9 @@ export async function proposeImport(
       // identity; choosing another file supersedes it, because a changed file requires fresh review and
       // nothing of an unaccepted review was ever applied.
       const previous = open !== null && open.review.text === text ? open : null;
-      const importOperationId =
-        previous === null ? operationId : previous.review.importOperationId;
-      const revision = previous === null ? FIRST_REVISION : nextRevision(previous.proposal.revision);
+      const importOperationId = previous === null ? operationId : previous.review.importOperationId;
+      const revision =
+        previous === null ? FIRST_REVISION : nextRevision(previous.proposal.revision);
 
       let decisions: ImportDecisionSet | null = null;
       let summary: ImportDecisionSummary | null = null;
@@ -1548,19 +1569,24 @@ export async function proposeImport(
 
       const supersededId = open === null ? null : open.review.importOperationId;
       const dropped = (candidate: { readonly importOperationId: string }): boolean =>
-        candidate.importOperationId === importOperationId || candidate.importOperationId === supersededId;
+        candidate.importOperationId === importOperationId ||
+        candidate.importOperationId === supersededId;
       context.docs.state = stateAfter(state, {
         proposals: [...state.proposals.filter((entry) => !dropped(entry)), proposal],
         reviews: [...state.reviews.filter((entry) => !dropped(entry)), review],
       });
 
-      return { changed: true, revision, result: storedResult(proposal), created: [importOperationId] };
+      return {
+        changed: true,
+        revision,
+        result: storedResult(proposal),
+        created: [importOperationId],
+      };
     },
   });
 
   return answerFor(outcome, refusal, operationId);
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // setRowDecision
@@ -1717,7 +1743,6 @@ export async function setRowDecision(
   return answerFor(outcome, refusal, operationId);
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // acceptImportRows
 // ---------------------------------------------------------------------------------------------
@@ -1864,7 +1889,9 @@ export async function acceptImportRows(
       // is reported as such, and a reuse whose identity is no longer offered is blocked rather than
       // merged.
       const alreadyApplied =
-        prior.kind === "receipt" ? appliedRowsOf(prior.receipt) : new Map<number, ImportMatchReference>();
+        prior.kind === "receipt"
+          ? appliedRowsOf(prior.receipt)
+          : new Map<number, ImportMatchReference>();
       const validatedByRow = new Map<number, ImportValidatedRow>();
       for (const row of validation.rows) {
         validatedByRow.set(row.rowNumber, row);
@@ -1910,7 +1937,10 @@ export async function acceptImportRows(
         }
 
         const partnerId = partnerIdFor(review.importOperationId, row.rowNumber);
-        const reference: ImportMatchReference = { system: LOCAL_STORE_SYSTEM, reference: partnerId };
+        const reference: ImportMatchReference = {
+          system: LOCAL_STORE_SYSTEM,
+          reference: partnerId,
+        };
         if (knownPartnerIds.has(partnerId)) {
           // An earlier attempt of this import created the record and its receipt cannot name it: the
           // record stands, it is reported, and nothing is created a second time.
@@ -2015,7 +2045,6 @@ export async function acceptImportRows(
   return answerFor(outcome, refusal, operationId);
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // cancelImport
 // ---------------------------------------------------------------------------------------------
@@ -2098,7 +2127,10 @@ export async function cancelImport(
         // The post-cancellation state is what this operation produced, so it is recorded under this
         // operation's identity; the acceptance's own receipt stays exactly as it was recorded under its
         // own, which is what keeps both recoverable and neither overwritten.
-        receipt = { ...cancelUnacceptedRows(prior.receipt, cancelledAt), importOperationId: operationId };
+        receipt = {
+          ...cancelUnacceptedRows(prior.receipt, cancelledAt),
+          importOperationId: operationId,
+        };
       } else if (review.mapping !== null) {
         // An import that was reviewed but never accepted has no receipt yet, so one is built from the
         // decisions it holds and then cancelled: every row it would have applied is stopped, and the
@@ -2196,4 +2228,3 @@ export async function cancelImport(
 
   return answerFor(outcome, refusal, operationId);
 }
-

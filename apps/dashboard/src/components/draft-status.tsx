@@ -392,9 +392,7 @@ export function DraftStatus({
       <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <StatusBadge label={spec.label} tone={spec.tone} srPrefix="Status" />
         {detail === null ? null : (
-          <span className="text-xs text-muted-foreground text-pretty wrap-anywhere">
-            {detail}
-          </span>
+          <span className="text-xs text-muted-foreground text-pretty wrap-anywhere">{detail}</span>
         )}
       </span>
       <p className="text-start text-sm text-muted-foreground text-pretty wrap-anywhere">

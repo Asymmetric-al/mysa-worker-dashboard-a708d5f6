@@ -89,7 +89,8 @@ const INTERACTION_MESSAGES = {
   noteInvalid: "A note is text, so write it as plain text or leave it empty.",
   noteEmpty: "A note needs at least one visible character, or leave the field empty.",
   taskTitleInvalid: "A task title is text, so say in a few words what needs doing.",
-  taskTitleRequired: "A follow-up task needs a title, so say what needs doing or leave the task out.",
+  taskTitleRequired:
+    "A follow-up task needs a title, so say what needs doing or leave the task out.",
   categoryInvalid: "A category is text, so enter a short label of your own or leave it empty.",
   taskKindInvalid: "Choose Task or Meeting as the kind of work.",
   plannedTimeInvalid: "A planned time is a day and a clock time together, so enter both.",
@@ -100,7 +101,8 @@ const INTERACTION_MESSAGES = {
     "A planned time belongs to a meeting, so record the kind as Meeting or remove the time.",
   planTimeOtherDay:
     "The planned time falls on a different day from the due date, so make the two describe one plan.",
-  linkInvalid: "Choose the linked contact from the list, so a link names a record rather than typed text.",
+  linkInvalid:
+    "Choose the linked contact from the list, so a link names a record rather than typed text.",
   taskNoteInvalid: "A note is text, so write a short reminder or leave it empty.",
 } as const;
 
@@ -556,4 +558,3 @@ export const nextTaskPayloadSchema = z
 
 /** The validated follow-up task payload: the members `createTask` accepts from this form. */
 export type NextTaskPayload = z.infer<typeof nextTaskPayloadSchema>;
-

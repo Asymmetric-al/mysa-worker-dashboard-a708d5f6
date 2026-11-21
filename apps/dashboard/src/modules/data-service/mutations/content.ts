@@ -774,7 +774,10 @@ function writeState(
 function requireDocument(state: ContentMutationState, documentId: string): ContentDocumentRecord {
   const record = state.contentDocuments.find((candidate) => candidate.documentId === documentId);
   if (record === undefined) {
-    throw invalidField("documentId", "This action applies to a document this context does not hold.");
+    throw invalidField(
+      "documentId",
+      "This action applies to a document this context does not hold.",
+    );
   }
   return record;
 }
@@ -783,7 +786,10 @@ function requireDocument(state: ContentMutationState, documentId: string): Conte
 function requireVariant(state: ContentMutationState, variantId: string): ContentVariantRecord {
   const record = state.contentVariants.find((candidate) => candidate.variantId === variantId);
   if (record === undefined) {
-    throw invalidField("variantId", "This action applies to an edition this context does not hold.");
+    throw invalidField(
+      "variantId",
+      "This action applies to an edition this context does not hold.",
+    );
   }
   return record;
 }
@@ -792,7 +798,10 @@ function requireVariant(state: ContentMutationState, variantId: string): Content
 function requireRevision(state: ContentMutationState, revisionId: string): StoredContentRevision {
   const record = state.contentRevisions.find((candidate) => candidate.revisionId === revisionId);
   if (record === undefined) {
-    throw invalidField("revisionId", "This action applies to a revision this edition does not hold.");
+    throw invalidField(
+      "revisionId",
+      "This action applies to a revision this edition does not hold.",
+    );
   }
   return record;
 }
@@ -948,9 +957,7 @@ const placementTextSchema = z.strictObject({
 const placementRefSchema = z.strictObject({
   placementId: recordIdSchema.optional(),
   assetId: recordIdSchema,
-  purpose: z
-    .enum(["display", "playback", "poster", "captions", "transcript"])
-    .optional(),
+  purpose: z.enum(["display", "playback", "poster", "captions", "transcript"]).optional(),
   altText: z.string().trim().min(1).max(PLACEMENT_TEXT_MAX_CHARS).optional(),
   caption: optionalPlacementTextSchema,
   credit: optionalPlacementTextSchema,
@@ -1120,7 +1127,9 @@ function resolvePlacements(input: {
 
   input.requested.forEach((requested, index) => {
     const field = `mediaPlacements.${String(index)}.assetId`;
-    const asset = input.state.mediaAssets.find((candidate) => candidate.assetId === requested.assetId);
+    const asset = input.state.mediaAssets.find(
+      (candidate) => candidate.assetId === requested.assetId,
+    );
     if (asset === undefined) {
       throw invalidField(field, UNPLACEABLE_ASSET);
     }
@@ -1869,7 +1878,6 @@ export async function rejectCandidate(
   });
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // publishVariants — one release per selected edition, reported per edition
 // ---------------------------------------------------------------------------------------------
@@ -1894,7 +1902,8 @@ const publishVariantsPayloadSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["candidateIds"],
-        message: "Choose at least one edition to release, by its candidate or by the edition itself.",
+        message:
+          "Choose at least one edition to release, by its candidate or by the edition itself.",
       });
     }
     if (payload.candidateIds !== undefined && payload.variants !== undefined) {
@@ -2012,10 +2021,7 @@ export async function publishVariants(
       const { state } = opened;
       const selections = releaseSelectionsOf(state, input.payload);
       const firstVariant = requireVariant(state, selections[0]?.variantId ?? "");
-      const document = requireDocument(
-        state,
-        input.payload.documentId ?? firstVariant.documentId,
-      );
+      const document = requireDocument(state, input.payload.documentId ?? firstVariant.documentId);
       const at = scenarioInstant(context.session);
 
       const attempts: ReleaseAttempt[] = [];
@@ -2115,7 +2121,8 @@ export async function publishVariants(
             variantId: variant.variantId,
             state: "needs-attention",
             reasonCode: "revision-unreadable",
-            reason: "The frozen revision no longer reads as admitted content, so it cannot be released.",
+            reason:
+              "The frozen revision no longer reads as admitted content, so it cannot be released.",
           });
           continue;
         }
@@ -2142,7 +2149,8 @@ export async function publishVariants(
 
         const domainVariant = domainVariantOf(variant);
         const domainRevision = domainRevisionOf(revision, parsed.document);
-        const domainHead = head === undefined ? undefined : domainReleaseOf(head, variant, revision.contentChecksum);
+        const domainHead =
+          head === undefined ? undefined : domainReleaseOf(head, variant, revision.contentChecksum);
         if (domainHead !== undefined && isReleaseUnchanged(domainHead, domainRevision)) {
           attempts.push({
             variantId: variant.variantId,
@@ -2151,7 +2159,8 @@ export async function publishVariants(
             revisionId: domainHead.revisionId,
             notifyMode,
             reasonCode: "already-published",
-            reason: "This edition already publishes exactly this revision; no second release was recorded.",
+            reason:
+              "This edition already publishes exactly this revision; no second release was recorded.",
           });
           continue;
         }
@@ -2204,9 +2213,19 @@ export async function publishVariants(
       }
 
       if (createdReleases.size === 0) {
-        // Nothing was released, so nothing is written. The refusal is reported per edition at the path
-        // a release form already addresses, which is how each reason reaches the row it belongs to.
-        const issues: DocumentIssue[] = attempts.map((attempt, index) => ({
+        // An edition that already publishes exactly the selected revision is a no-op rather than a
+        // malformed payload, so an attempt in that state is never reported as a validation failure. A
+        // genuine refusal keeps its message at the path a release form already addresses, which is how
+        // each reason reaches the row it belongs to.
+        const refusing = attempts
+          .map((attempt, index) => ({ attempt, index }))
+          .filter(({ attempt }) => attempt.reasonCode !== "already-published");
+        if (refusing.length === 0) {
+          // Nothing was released and nothing needs to be: the document already stands at the state the
+          // payload asked for, so the answer is `unchanged` with no revision advance and no ledger entry.
+          return { changed: false };
+        }
+        const issues: DocumentIssue[] = refusing.map(({ attempt, index }) => ({
           path: `variants.${String(index)}`,
           message: attempt.reason ?? "This edition could not be released.",
         }));
@@ -2283,7 +2302,8 @@ const requestNotificationPayloadSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["releaseId"],
-        message: "A notice names the published edition it is about, so choose one from the release.",
+        message:
+          "A notice names the published edition it is about, so choose one from the release.",
       });
     }
     if (payload.releaseIds !== undefined && payload.releaseIds.length > 1) {
@@ -2302,10 +2322,17 @@ export type RequestNotificationPayload = z.infer<typeof requestNotificationPaylo
 /**
  * What one submission of a notice produced, per recipient and as a whole.
  *
- * The counts are the intent's own: the ceiling it was accepted for, who was eligible at acceptance, who
- * was excluded, and how many copies were recorded. `accepted` states only that this application took
+ * The counts are the intent's own: the ceiling it covers, who was eligible at acceptance, who was
+ * excluded, and how many copies were recorded. `accepted` states only that this application took
  * the submission — never that a message arrived or was opened — and `unconfirmed` counts the recipients
  * whose copy could not be pinned to an admitted rendition.
+ *
+ * `ceilingCount` is the number of eligible recipients the accepted intent covers, so it agrees with the
+ * copies offered and with `eligibleCount` beside it. `acknowledgedCeilingCount` is separately the number
+ * the caller acknowledged, `null` when the payload stated none, and `ceilingSaturated` says that number
+ * was below the eligible set: every eligible recipient is still offered exactly one pinned copy, so a
+ * surface renders the saturation as a notification that needs attention rather than as fewer copies than
+ * the person expected.
  */
 export type NotificationSubmissionView = {
   readonly intentId: string;
@@ -2315,6 +2342,8 @@ export type NotificationSubmissionView = {
   readonly publisherId: string;
   readonly purpose: string;
   readonly ceilingCount: number;
+  readonly acknowledgedCeilingCount: number | null;
+  readonly ceilingSaturated: boolean;
   readonly eligibleCount: number;
   readonly excludedCount: number;
   readonly acceptedCount: number;
@@ -2322,7 +2351,7 @@ export type NotificationSubmissionView = {
   readonly alreadyCoveredCount: number;
   readonly link: string;
   readonly recipients: readonly { readonly recipientId: string; readonly dedupeKey: string }[];
-}
+};
 
 /**
  * The one publisher whose Update audience a notice addresses, or `undefined` when the ministry states
@@ -2380,7 +2409,10 @@ function alreadyAcceptedCopy(
  * after this intent is excluded too, so a late signup never expands an accepted ceiling. Each eligible
  * person is pinned to exactly one rendition, so a person eligible for two audiences or two languages
  * still receives one copy, and the notice itself is a minimal link-only message carrying no protected
- * prose, image, location, poster, transcript or caption.
+ * prose, image, location, poster, transcript or caption. The ceiling the caller acknowledged is recorded
+ * and answered as an acknowledgement only: it never truncates that eligibility list, and a ceiling below
+ * the eligible set is reported as a saturated one, so the result is a notification that needs attention
+ * rather than quietly fewer copies than the person expected.
  *
  * Usefulness is 24 elapsed hours from the intended instant, strict at equality: a request at exactly the
  * boundary is refused and cannot be revived as a fresh attempt. An uncertain submission answers
@@ -2549,7 +2581,10 @@ export async function requestNotification(
         recipients.push({ recipientId: recipient.recipientId, dedupeKey: recipient.dedupeKey });
       }
 
-      const ceilingCount = acknowledged ?? eligibility.eligible.length;
+      // The covered count is the audience this intent was accepted for, which is who the copies above
+      // were offered to — never the smaller number the caller acknowledged, so the record agrees with
+      // what was issued and a later signup can never expand it (`NotificationIntentRecord` in envelope.ts).
+      const ceilingCount = eligibility.eligible.length;
       const intent: NotificationIntentRecord = {
         intentId,
         publisherId,
@@ -2586,6 +2621,8 @@ export async function requestNotification(
         publisherId,
         purpose,
         ceilingCount,
+        acknowledgedCeilingCount: acknowledged ?? null,
+        ceilingSaturated: eligibility.ceilingSaturated,
         eligibleCount: eligibility.eligible.length,
         excludedCount: eligibility.excluded.length,
         acceptedCount: copies.length,
@@ -2622,7 +2659,7 @@ export type WithdrawalView = {
   readonly withdrawnReleaseIds: readonly string[];
   /** How many releases this request withdrew, as opposed to found already withdrawn. */
   readonly newlyWithdrawnCount: number;
-}
+};
 
 /**
  * Withdraws every release one document's Update editions hold.
@@ -2635,7 +2672,12 @@ export async function withdrawUpdate(
   sessionId: string,
   input: MutationInput<DocumentPayload>,
 ): Promise<MutationOutcome> {
-  return withdrawDocumentFamily(sessionId, input, "withdrawUpdate", (family) => family === "update");
+  return withdrawDocumentFamily(
+    sessionId,
+    input,
+    "withdrawUpdate",
+    (family) => family === "update",
+  );
 }
 
 /**
@@ -2649,12 +2691,7 @@ export async function withdrawPage(
   sessionId: string,
   input: MutationInput<DocumentPayload>,
 ): Promise<MutationOutcome> {
-  return withdrawDocumentFamily(
-    sessionId,
-    input,
-    "withdrawPage",
-    (family) => family !== "update",
-  );
+  return withdrawDocumentFamily(sessionId, input, "withdrawPage", (family) => family !== "update");
 }
 
 /**
@@ -2772,7 +2809,9 @@ export async function withdrawLocale(
           : opened?.state.contentDocuments.find(
               (candidate) => candidate.documentId === variant.documentId,
             );
-      return document === undefined ? unresolvedTarget() : recordTarget(document.revision, document);
+      return document === undefined
+        ? unresolvedTarget()
+        : recordTarget(document.revision, document);
     },
     apply: (context) => {
       const opened = openState(context.docs);
@@ -2828,7 +2867,7 @@ export type ReachView = {
   readonly reach: ReleaseReach;
   readonly releaseIds: readonly string[];
   readonly changedCount: number;
-}
+};
 
 /**
  * Changes how far one document's released editions reach: not public, public by link only, or listed.
@@ -3045,14 +3084,11 @@ export async function restoreRevisionAsDraft(
       const variant = requireVariant(state, source.variantId);
       const document = requireDocument(state, variant.documentId);
 
-      const restored = restoreAsNewDraft(
-        domainRevisionOf(source, requireParsedBody(source)),
-        {
-          authorPrincipalId: context.session.principalId,
-          revisionId: newRecordId("rev"),
-          at: scenarioInstant(context.session),
-        },
-      );
+      const restored = restoreAsNewDraft(domainRevisionOf(source, requireParsedBody(source)), {
+        authorPrincipalId: context.session.principalId,
+        revisionId: newRecordId("rev"),
+        at: scenarioInstant(context.session),
+      });
       const record: StoredContentRevision = {
         ...source,
         revisionId: restored.revisionId,
@@ -3089,7 +3125,6 @@ export async function restoreRevisionAsDraft(
     },
   });
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // Sections: one builder for both page families
@@ -3284,9 +3319,7 @@ function replaceRevision(
   revisions: readonly StoredContentRevision[],
   next: StoredContentRevision,
 ): readonly StoredContentRevision[] {
-  return revisions.map((revision) =>
-    revision.revisionId === next.revisionId ? next : revision,
-  );
+  return revisions.map((revision) => (revision.revisionId === next.revisionId ? next : revision));
 }
 
 /** What one section edit produced. */
@@ -3302,15 +3335,15 @@ export type SectionEditView = {
  * Runs one section edit inside the one runner, sharing the target resolution, the no-op answer and the
  * per-field refusal across the six builder actions so no action can reach a draft another would refuse.
  */
-async function editDraftSections<P extends { readonly draftRevisionId?: string; readonly variantId?: string }>(
-  input: {
-    readonly sessionId: string;
-    readonly mutation: MutationInput<P>;
-    readonly schema: z.ZodType<P>;
-    readonly name: string;
-    readonly change: (target: DraftTarget, payload: P) => readonly ContentSection[];
-  },
-): Promise<MutationOutcome> {
+async function editDraftSections<
+  P extends { readonly draftRevisionId?: string; readonly variantId?: string },
+>(input: {
+  readonly sessionId: string;
+  readonly mutation: MutationInput<P>;
+  readonly schema: z.ZodType<P>;
+  readonly name: string;
+  readonly change: (target: DraftTarget, payload: P) => readonly ContentSection[];
+}): Promise<MutationOutcome> {
   return runMutation({
     sessionId: input.sessionId,
     input: input.mutation,
@@ -3333,9 +3366,7 @@ async function editDraftSections<P extends { readonly draftRevisionId?: string; 
       const record =
         revisionId === undefined
           ? undefined
-          : opened.state.contentRevisions.find(
-              (candidate) => candidate.revisionId === revisionId,
-            );
+          : opened.state.contentRevisions.find((candidate) => candidate.revisionId === revisionId);
       return record === undefined ? unresolvedTarget() : recordTarget(record.revision, record);
     },
     apply: (context) => {
@@ -3573,7 +3604,6 @@ export async function removeSection(
       return sections.filter((_value, position) => position !== index);
     },
   });
-
 }
 /** The payload `saveSectionFields` accepts: one section's fields and its presentation choices. */
 const saveSectionFieldsPayloadSchema = z
@@ -3704,8 +3734,6 @@ export async function applyPreset(
   });
 }
 
-
-
 // ---------------------------------------------------------------------------------------------
 // Media: registering an asset, replacing one placement, removing one
 // ---------------------------------------------------------------------------------------------
@@ -3770,7 +3798,10 @@ function decodeBase64Bytes(value: string, field: string): Uint8Array {
 }
 
 /** One prepared rendition as the stored record states it. */
-function storedRenditionOf(rendition: MediaRendition, bytesRef: string): {
+function storedRenditionOf(
+  rendition: MediaRendition,
+  bytesRef: string,
+): {
   readonly renditionId: string;
   readonly purpose: MediaAssetRenditionPurpose;
   readonly bytesRef: string;
@@ -4158,9 +4189,7 @@ export async function replacePlacement(
       const record =
         revisionId === undefined
           ? undefined
-          : opened.state.contentRevisions.find(
-              (candidate) => candidate.revisionId === revisionId,
-            );
+          : opened.state.contentRevisions.find((candidate) => candidate.revisionId === revisionId);
       return record === undefined ? unresolvedTarget() : recordTarget(record.revision, record);
     },
     apply: (context) => {
@@ -4190,9 +4219,7 @@ export async function replacePlacement(
           ...(payload.placement?.caption === undefined
             ? {}
             : { caption: payload.placement.caption }),
-          ...(payload.placement?.credit === undefined
-            ? {}
-            : { credit: payload.placement.credit }),
+          ...(payload.placement?.credit === undefined ? {} : { credit: payload.placement.credit }),
         };
       });
 
@@ -4266,9 +4293,7 @@ export async function removePlacement(
       const record =
         revisionId === undefined
           ? undefined
-          : opened.state.contentRevisions.find(
-              (candidate) => candidate.revisionId === revisionId,
-            );
+          : opened.state.contentRevisions.find((candidate) => candidate.revisionId === revisionId);
       return record === undefined ? unresolvedTarget() : recordTarget(record.revision, record);
     },
     apply: (context) => {
@@ -4276,9 +4301,7 @@ export async function removePlacement(
       const target = draftTargetOf(opened.state, input.payload);
       const placementId = input.payload.placementId;
       if (
-        !target.revision.mediaPlacements.some(
-          (placement) => placement.placementId === placementId,
-        )
+        !target.revision.mediaPlacements.some((placement) => placement.placementId === placementId)
       ) {
         throw invalidField(
           "placementId",
@@ -4316,5 +4339,3 @@ export async function removePlacement(
     },
   });
 }
-
-

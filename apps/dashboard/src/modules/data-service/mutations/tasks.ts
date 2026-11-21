@@ -100,7 +100,12 @@ import {
   type TaskSeriesRecord,
 } from "../envelope";
 import { runMutation, type CurrentTarget, type MutationContext } from "../operations";
-import { denied, type MutationOutcome, type PerItemResult } from "../outcome";
+import {
+  CORRUPT_DOCUMENT_FAULT,
+  denied,
+  type MutationOutcome,
+  type PerItemResult,
+} from "../outcome";
 
 // ---------------------------------------------------------------------------------------------
 // Wording this file owns
@@ -319,17 +324,20 @@ const EMPTY_WORK_DOCUMENT: WorkDocument = { tasks: [], series: [], taskTags: [] 
  *
  * It is thrown rather than answered with an empty document on purpose: a creation applied to a state
  * document this build cannot read would overwrite families it never decoded, so refusing writes
- * nothing and leaves the document exactly as it was. The runner converts an unrecognised fault into
- * `unknown`, which is the honest answer here — the change definitively did not happen, and the caller
- * recovers by re-reading the identity it already holds rather than by repeating the effect under a
- * new one.
+ * nothing and leaves the document exactly as it was. The name is the store's own corruption fault
+ * name, which is the marker `outcome.ts` maps to `unavailable` for the local store: an unreadable
+ * document is a source that could not answer, so the caller is told the source and the retry and
+ * reset that are safe — the same request under the same operation id, then the development data
+ * reset from Settings if it keeps failing. `unknown` would assert the effect might have been applied
+ * when nothing was written at all. Every module that refuses a document it cannot read states the
+ * condition the same way.
  */
 class UnreadableWorkDocumentError extends Error {
   constructor(subject: string) {
     super(
       `This session's stored work cannot be read: ${subject}. Nothing was written, because a change applied over a document this build cannot decode would overwrite records it never read.`,
     );
-    this.name = "UnreadableWorkDocumentError";
+    this.name = CORRUPT_DOCUMENT_FAULT;
     // Keeps `instanceof` working where a built-in subclass is downlevelled past ES2015 semantics.
     Object.setPrototypeOf(this, UnreadableWorkDocumentError.prototype);
   }
@@ -756,8 +764,9 @@ function collectionWitness(
  * The target a single-task change is compared against: the task's own revision and current value.
  *
  * A task this document does not hold is `absent`, so a change to it compares no revision — there is no
- * stored value a stale expectation could overwrite — and the apply step then answers that nothing
- * needed doing. A stale expectation for the change itself is caught by the runner as `conflict`.
+ * stored value a stale expectation could overwrite — and the apply step then refuses it as not this
+ * caller's to change, which is the answer another principal's task receives too. A stale expectation
+ * for the change itself is caught by the runner as `conflict`.
  */
 function taskTarget(docs: MutationContext["docs"], taskId: string): CurrentTarget {
   const work = readWorkDocument(docs.state);
@@ -891,6 +900,18 @@ function authorizesOwnWork(
 ): ScopeDecision {
   const decision = canEdit(session, { kind, scope, ownerPrincipalId: session.principalId });
   return decision.allowed ? { ok: true } : { ok: false, denial: decision.denial };
+}
+
+/**
+ * The refusal for a task or series this caller may not change.
+ *
+ * Whether the record is absent from this session's document or belongs to another principal is a
+ * fact only the transaction can see, and the two answer alike: `denied`, with a reason code and no
+ * count, title, existence flag or size, so the caller learns nothing about a record that is not
+ * theirs. Flattening the refusal into `unchanged` would report it as though nothing needed doing.
+ */
+function refuseDenied(operationId: string): { readonly refused: MutationOutcome } {
+  return { refused: denied({ operationId, reasonCode: "no-permission" }) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2163,10 +2184,11 @@ function bulkResult(items: readonly BulkItemView[]): BulkResultView {
 /**
  * Whether every row of a selection was left alone because nothing needed doing.
  *
- * It is the one case that answers `unchanged` rather than `accepted`, because a selection in which
- * every row was already in the requested state changed nothing at all. A selection in which rows were
- * *excluded* is not this case: those rows were not already done, they were no longer eligible, and the
- * caller has to see one result per row to learn that.
+ * For the actions that change existing rows, this is the case that answers `unchanged` rather than
+ * `accepted`: every row was already in the requested state, so nothing changed at all. A selection in
+ * which rows were *excluded* is not this case: those rows were not already done, they were no longer
+ * eligible, and the caller has to see one result per row to learn that. The creation action answers
+ * `unchanged` on its own terms, because a selection with no eligible row created nothing.
  */
 function everyRowUnchanged(items: readonly BulkItemView[]): boolean {
   return items.length > 0 && items.every((item) => item.state === "unchanged");
@@ -2252,8 +2274,9 @@ export type EditTaskResult = {
  *
  * Job: correct the work itself — its title, label, due date, kind, plan, note or links — without
  * rewriting what the task's history means. Outcomes: `accepted` with the task as it now stands;
- * `unchanged` when the payload states nothing different, or when the task is not this principal's or
- * no longer exists; `conflict` when the caller's revision is stale; `invalid` with per-field messages.
+ * `unchanged` when the payload states nothing different; `denied` when this caller may not change the
+ * task, which is withheld whether it does not exist in this session's work or belongs to another
+ * principal; `conflict` when the caller's revision is stale; `invalid` with per-field messages.
  */
 export async function editTask(
   input: MutationInput<EditTaskPayload>,
@@ -2271,12 +2294,12 @@ export async function editTask(
     name: "editTask",
     authorize: (session) => authorizesOwnWork(session, input.scope, "task"),
     readCurrent: (docs) => taskTarget(docs, payloadOf(editTaskSchema, input).taskId),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(editTaskSchema, input);
       const work = readWorkDocument(docs.state);
       const task = taskOf(work, payload.taskId);
       if (task === undefined || task.ownerPrincipalId !== session.principalId) {
-        return { changed: false };
+        return refuseDenied(operationId);
       }
 
       const next = mergedTask(task, editableFieldsOf(payload), nextRevision(task.revision));
@@ -2313,8 +2336,9 @@ export type CompleteTaskResult = {
  * payment or fulfilment and never writes an interaction — a held meeting is recorded through
  * `logInteraction` — and when the task is the actionable occurrence of a series, completing it admits
  * at most one successor and never a cascade. Outcomes: `accepted`; `unchanged` when the task is
- * already complete or cancelled, is not this principal's, no longer exists, or a repeat of the same
- * completion arrives; `conflict` when the caller's revision is stale.
+ * already complete or cancelled, or a repeat of the same completion arrives; `denied` when this caller
+ * may not change the task, withheld alike for a record that does not exist and another principal's;
+ * `conflict` when the caller's revision is stale.
  */
 export async function completeTask(
   input: MutationInput<CompleteTaskPayload>,
@@ -2332,11 +2356,11 @@ export async function completeTask(
     name: "completeTask",
     authorize: (session) => authorizesOwnWork(session, input.scope, "task"),
     readCurrent: (docs) => taskTarget(docs, payloadOf(completeTaskSchema, input).taskId),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const work = readWorkDocument(docs.state);
       const task = taskOf(work, payloadOf(completeTaskSchema, input).taskId);
       if (task === undefined || task.ownerPrincipalId !== session.principalId) {
-        return { changed: false };
+        return refuseDenied(operationId);
       }
       if (!isAwaitingAction(task.status)) {
         return { changed: false };
@@ -2378,8 +2402,9 @@ export type ReopenTaskResult = {
  *
  * Job: put the work back on the list without creating a second record, because reopening is its own
  * deliberate act and never an edit of the status field. Outcomes: `accepted` with the reopened task;
- * `unchanged` when the task is already open or reopened, is not this principal's, or no longer exists;
- * `conflict` when the caller's revision is stale.
+ * `unchanged` when the task is already open or reopened; `denied` when this caller may not change the
+ * task, withheld alike for a record that does not exist and another principal's; `conflict` when the
+ * caller's revision is stale.
  */
 export async function reopenTask(
   input: MutationInput<ReopenTaskPayload>,
@@ -2397,11 +2422,11 @@ export async function reopenTask(
     name: "reopenTask",
     authorize: (session) => authorizesOwnWork(session, input.scope, "task"),
     readCurrent: (docs) => taskTarget(docs, payloadOf(reopenTaskSchema, input).taskId),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const work = readWorkDocument(docs.state);
       const task = taskOf(work, payloadOf(reopenTaskSchema, input).taskId);
       if (task === undefined || task.ownerPrincipalId !== session.principalId) {
-        return { changed: false };
+        return refuseDenied(operationId);
       }
       if (isAwaitingAction(task.status)) {
         return { changed: false };
@@ -2437,9 +2462,9 @@ export type CancelTaskResult = {
  *
  * Job: end a piece of work that is no longer owed, explaining its fate without deleting the record and
  * without claiming anything was done. Outcomes: `accepted` with the cancelled task; `unchanged` when
- * the task is already cancelled or completed, is not this principal's, or no longer exists; `conflict`
- * when the caller's revision is stale; `invalid` when the confirmation the composer produces is
- * absent.
+ * the task is already cancelled or completed; `denied` when this caller may not change the task,
+ * withheld alike for a record that does not exist and another principal's; `conflict` when the
+ * caller's revision is stale; `invalid` when the confirmation the composer produces is absent.
  */
 export async function cancelTask(
   input: MutationInput<CancelTaskPayload>,
@@ -2457,11 +2482,11 @@ export async function cancelTask(
     name: "cancelTask",
     authorize: (session) => authorizesOwnWork(session, input.scope, "task"),
     readCurrent: (docs) => taskTarget(docs, payloadOf(cancelTaskSchema, input).taskId),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const work = readWorkDocument(docs.state);
       const task = taskOf(work, payloadOf(cancelTaskSchema, input).taskId);
       if (task === undefined || task.ownerPrincipalId !== session.principalId) {
-        return { changed: false };
+        return refuseDenied(operationId);
       }
       if (!isAwaitingAction(task.status)) {
         return { changed: false };
@@ -2637,8 +2662,8 @@ export async function bulkRemoveTag(
  * anyone's behalf. The selected rows are the context rather than the content: each created task stays
  * linked to its own row's partner or initiative, and no text, note or link is copied from one row into
  * another. Outcomes: `accepted` with per-item results and the created task identifiers; `unchanged`
- * when no selected row was eligible; `invalid` for an empty selection or a payload that states no
- * template.
+ * when no selected row was eligible, because no task was then created, so no revision moves and no
+ * history entry is recorded; `invalid` for an empty selection or a payload that states no template.
  */
 export async function bulkCreateTasks(
   input: MutationInput<BulkCreateTasksPayload>,
@@ -2693,15 +2718,11 @@ export async function bulkCreateTasks(
       }
 
       if (created.length === 0) {
-        // No row was eligible, so the caller learns that from one result per row. The document is
-        // rewritten as it stands, so nothing is lost and no revision moves for any task.
-        writeWorkDocument(docs, work);
-        return {
-          changed: true,
-          revision: collectionWitness("tasks", work.tasks),
-          result: bulkResult(items),
-          items: items.map(perItemOf),
-        };
+        // No row was eligible, so nothing was created and no task exists to report: the answer is
+        // `unchanged`, which advances no revision and records no history entry. Each row's eligibility
+        // was re-checked above when the action ran, so nothing is left to apply and the document is
+        // not rewritten.
+        return { changed: false };
       }
 
       const nextWork = withNewTasks(work, created);
@@ -2966,8 +2987,9 @@ export type EditOccurrenceResult = {
  * Job: correct the work of the date in force — its title, label, due date, kind, plan or note — without
  * changing what the series will produce next. Completed or cancelled history is not rewritten: a date
  * that has already ended answers `unchanged`, because reopening is `reopenTask`'s act. Outcomes:
- * `accepted` with the date and its series; `unchanged` when the task is not an occurrence, is not this
- * principal's, has already ended, or the payload changes nothing; `conflict` when the revision is
+ * `accepted` with the date and its series; `unchanged` when the task is not an occurrence, has already
+ * ended, or the payload changes nothing; `denied` when this caller may not change the date, withheld
+ * alike for a record that does not exist and another principal's; `conflict` when the revision is
  * stale.
  */
 export async function editOccurrence(
@@ -2986,12 +3008,12 @@ export async function editOccurrence(
     name: "editOccurrence",
     authorize: (session) => authorizesOwnWork(session, input.scope, "series"),
     readCurrent: (docs) => taskTarget(docs, payloadOf(editOccurrenceSchema, input).occurrenceId),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(editOccurrenceSchema, input);
       const work = readWorkDocument(docs.state);
       const occurrence = taskOf(work, payload.occurrenceId);
       if (occurrence === undefined || occurrence.ownerPrincipalId !== session.principalId) {
-        return { changed: false };
+        return refuseDenied(operationId);
       }
       const series = occurrence.seriesId === null ? undefined : seriesOf(work, occurrence.seriesId);
       if (series === undefined) {
@@ -3048,8 +3070,9 @@ export type EditThisAndFutureResult = {
  * boundary that falls inside history or before the rule now in force. A series that has been stopped
  * takes no revision at all, so a stale edit composed before the stop changes nothing. Outcomes:
  * `accepted` with the series and the new revision; `unchanged` when the edit is not prospective, is
- * stale, changes nothing, or the series has already stopped; `conflict` when the caller's revision is
- * stale.
+ * stale, changes nothing, or the series has already stopped; `denied` when this caller may not change
+ * the series, withheld alike for a record that does not exist and another principal's; `conflict` when
+ * the caller's revision is stale.
  */
 export async function editThisAndFuture(
   input: MutationInput<EditThisAndFuturePayload>,
@@ -3067,12 +3090,12 @@ export async function editThisAndFuture(
     name: "editThisAndFuture",
     authorize: (session) => authorizesOwnWork(session, input.scope, "series"),
     readCurrent: (docs) => seriesTarget(docs, payloadOf(editThisAndFutureSchema, input).seriesId),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(editThisAndFutureSchema, input);
       const work = readWorkDocument(docs.state);
       const series = seriesOf(work, payload.seriesId);
       if (series === undefined || series.ownerPrincipalId !== session.principalId) {
-        return { changed: false };
+        return refuseDenied(operationId);
       }
       if (series.state === "stopped") {
         return { changed: false };
@@ -3206,8 +3229,9 @@ export type SkipOccurrenceResult = {
  * — a second skip of the same date answers `unchanged` rather than growing a second one. A paused or
  * stopped series answers nothing further, so a date composed before a pause or a stop is left as it
  * stands. Outcomes: `accepted`; `unchanged` when the date is not the series' current one, has already
- * ended, belongs to a series that admits nothing, is not this principal's, or the payload changes
- * nothing; `conflict` when the caller's revision is stale.
+ * ended, belongs to a series that admits nothing, or the payload changes nothing; `denied` when this
+ * caller may not change the date, withheld alike for a record that does not exist and another
+ * principal's; `conflict` when the caller's revision is stale.
  */
 export async function skipOccurrence(
   input: MutationInput<SkipOccurrencePayload>,
@@ -3225,12 +3249,12 @@ export async function skipOccurrence(
     name: "skipOccurrence",
     authorize: (session) => authorizesOwnWork(session, input.scope, "series"),
     readCurrent: (docs) => taskTarget(docs, payloadOf(skipOccurrenceSchema, input).occurrenceId),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(skipOccurrenceSchema, input);
       const work = readWorkDocument(docs.state);
       const occurrence = taskOf(work, payload.occurrenceId);
       if (occurrence === undefined || occurrence.ownerPrincipalId !== session.principalId) {
-        return { changed: false };
+        return refuseDenied(operationId);
       }
       const series = occurrence.seriesId === null ? undefined : seriesOf(work, occurrence.seriesId);
       if (series === undefined) {
@@ -3291,8 +3315,9 @@ function previewFor(series: TaskSeriesRecord): SeriesPreviewView | null {
  * Pauses a series.
  *
  * Job: stop future admission without ending the plan, so nothing is completed and nothing is
- * cancelled. Outcomes: `accepted` with the paused series; `unchanged` when it is already paused, has
- * already stopped, is not this principal's, or no longer exists; `conflict` when the revision is stale.
+ * cancelled. Outcomes: `accepted` with the paused series; `unchanged` when it is already paused or has
+ * already stopped; `denied` when this caller may not change the series, withheld alike for a record
+ * that does not exist and another principal's; `conflict` when the revision is stale.
  */
 export async function pauseSeries(
   input: MutationInput<PauseSeriesPayload>,
@@ -3310,12 +3335,12 @@ export async function pauseSeries(
     name: "pauseSeries",
     authorize: (session) => authorizesOwnWork(session, input.scope, "series"),
     readCurrent: (docs) => seriesTarget(docs, payloadOf(pauseSeriesSchema, input).seriesId),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(pauseSeriesSchema, input);
       const work = readWorkDocument(docs.state);
       const series = seriesOf(work, payload.seriesId);
       if (series === undefined || series.ownerPrincipalId !== session.principalId) {
-        return { changed: false };
+        return refuseDenied(operationId);
       }
       if (series.state !== "active") {
         return { changed: false };
@@ -3344,8 +3369,9 @@ export async function pauseSeries(
  * Job: let a paused plan admit occurrences again. Resuming admits future dates only: the dates that
  * passed while it was paused are not back-filled into an overdue stack, and the plan review decides
  * afterwards whether the plan itself needs attention. Outcomes: `accepted` with the resumed series;
- * `unchanged` when it is not paused — a stopped series is never revived by this call — or when it is
- * not this principal's; `conflict` when the revision is stale.
+ * `unchanged` when it is not paused (a stopped series is never revived by this call); `denied` when
+ * this caller may not change the series, withheld alike for a record that does not exist and another
+ * principal's; `conflict` when the revision is stale.
  */
 export async function resumeSeries(
   input: MutationInput<ResumeSeriesPayload>,
@@ -3363,12 +3389,12 @@ export async function resumeSeries(
     name: "resumeSeries",
     authorize: (session) => authorizesOwnWork(session, input.scope, "series"),
     readCurrent: (docs) => seriesTarget(docs, payloadOf(resumeSeriesSchema, input).seriesId),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(resumeSeriesSchema, input);
       const work = readWorkDocument(docs.state);
       const series = seriesOf(work, payload.seriesId);
       if (series === undefined || series.ownerPrincipalId !== session.principalId) {
-        return { changed: false };
+        return refuseDenied(operationId);
       }
       if (series.state !== "paused") {
         return { changed: false };
@@ -3416,8 +3442,9 @@ export type StopSeriesResult = {
  * silently decided the fate of someone's work would be deciding something the worker never said. A
  * stopped series also cannot be revived: every later edit, skip, pause, resume or resolution answers
  * `conflict` when it is stale and `unchanged` when the caller has already seen the stop. Outcomes:
- * `accepted`; `unchanged` when the series has already stopped, is not this principal's, or does not
- * exist; `conflict` when the revision is stale.
+ * `accepted`; `unchanged` when the series has already stopped; `denied` when this caller may not
+ * change the series, withheld alike for a record that does not exist and another principal's;
+ * `conflict` when the revision is stale.
  */
 export async function stopSeries(
   input: MutationInput<StopSeriesPayload>,
@@ -3435,12 +3462,12 @@ export async function stopSeries(
     name: "stopSeries",
     authorize: (session) => authorizesOwnWork(session, input.scope, "series"),
     readCurrent: (docs) => seriesTarget(docs, payloadOf(stopSeriesSchema, input).seriesId),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(stopSeriesSchema, input);
       const work = readWorkDocument(docs.state);
       const series = seriesOf(work, payload.seriesId);
       if (series === undefined || series.ownerPrincipalId !== session.principalId) {
-        return { changed: false };
+        return refuseDenied(operationId);
       }
       if (series.state === "stopped") {
         return { changed: false };
@@ -3508,8 +3535,9 @@ export type ResolveMissedPlanResult = {
  * to the next one the rule produces from today, so a catch-up sequence is never manufactured;
  * `stop-series` closes the series and keeps its outstanding work open. No resolution claims a
  * conversation happened or completes anything. Outcomes: `accepted` with the series and the date;
- * `unchanged` when the series is not active, the date is not its current one, the rule produces no next
- * date to move to, is not this principal's, or does not exist; `conflict` when the revision is stale.
+ * `unchanged` when the series is not active, the date is not its current one, or the rule produces no
+ * next date to move to; `denied` when this caller may not change the series, withheld alike for a
+ * record that does not exist and another principal's; `conflict` when the revision is stale.
  */
 export async function resolveMissedPlan(
   input: MutationInput<ResolveMissedPlanPayload>,
@@ -3527,12 +3555,12 @@ export async function resolveMissedPlan(
     name: "resolveMissedPlan",
     authorize: (session) => authorizesOwnWork(session, input.scope, "series"),
     readCurrent: (docs) => taskTarget(docs, payloadOf(resolveMissedPlanSchema, input).occurrenceId),
-    apply: ({ docs, session }) => {
+    apply: ({ docs, session, operationId }) => {
       const payload = payloadOf(resolveMissedPlanSchema, input);
       const work = readWorkDocument(docs.state);
       const occurrence = taskOf(work, payload.occurrenceId);
       if (occurrence === undefined || occurrence.ownerPrincipalId !== session.principalId) {
-        return { changed: false };
+        return refuseDenied(operationId);
       }
       const series = occurrence.seriesId === null ? undefined : seriesOf(work, occurrence.seriesId);
       if (series === undefined) {

@@ -64,8 +64,10 @@ import { z } from "zod";
 import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
 import type { SourceReference } from "@/lib/ids";
 import { logger } from "@/lib/logger";
+import { compareCodeUnits } from "@/lib/ordering";
 import { exponentOf } from "@/modules/money/currency";
 import { readSession } from "@/modules/store/repository";
+import { clampPageSize } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
 import {
   civilDateAt,
@@ -133,12 +135,6 @@ import {
 // ---------------------------------------------------------------------------------------------
 // Fixed values
 // ---------------------------------------------------------------------------------------------
-
-/** The default page size every list in this application uses (AAP 0.8.7). */
-const DEFAULT_PAGE_SIZE = 50;
-
-/** The page size a request is clamped to; a larger request is narrowed rather than refused. */
-const MAX_PAGE_SIZE = 200;
 
 /**
  * The operation identity a read's refusal carries.
@@ -350,14 +346,6 @@ function pageOf(requested: number | undefined): number {
   return requested !== undefined && Number.isSafeInteger(requested) && requested >= 1
     ? requested
     : 1;
-}
-
-/** The page size a request asks for, clamped to the documented maximum rather than refused. */
-function pageSizeOf(requested: number | undefined): number {
-  if (requested === undefined || !Number.isSafeInteger(requested) || requested < 1) {
-    return DEFAULT_PAGE_SIZE;
-  }
-  return Math.min(requested, MAX_PAGE_SIZE);
 }
 
 /** The rows of one page over the whole authorised result. */
@@ -640,8 +628,9 @@ function lifecycleOrder(lifecycle: InitiativeLifecycle): number {
 /**
  * Orders two initiative rows under one requested order.
  *
- * The name comparison pins its locale so the order is the same on every machine and in every process;
- * a surface may present the same rows differently, but a page boundary must not move between readers.
+ * The name tiebreak compares by code unit rather than by locale, so the order is the same on every
+ * machine, in every process and after any collation update; a surface may present the same rows
+ * differently, but a page boundary must not move between readers.
  */
 function compareInitiatives(
   sort: InitiativeSort,
@@ -664,7 +653,7 @@ function compareInitiatives(
       return difference;
     }
   }
-  return left.name.localeCompare(right.name, "en", { sensitivity: "variant" });
+  return compareCodeUnits(left.name, right.name);
 }
 
 /**
@@ -717,7 +706,7 @@ export async function readInitiatives(
   const ordered = [...matching].sort((left, right) => compareInitiatives(sort, left, right));
 
   const page = pageOf(query.page);
-  const pageSize = pageSizeOf(query.pageSize);
+  const pageSize = clampPageSize(query.pageSize);
   const items = slicePage(ordered, page, pageSize);
 
   const states: Record<string, RecordedValueState> = {};
@@ -1274,13 +1263,12 @@ export async function readInitiative(
       if (byState !== 0) {
         return byState;
       }
-      return left.partnerDisplayName.localeCompare(right.partnerDisplayName, "en", {
-        sensitivity: "variant",
-      });
+      // Code-unit order, never a locale-aware one: a page boundary must not move between machines.
+      return compareCodeUnits(left.partnerDisplayName, right.partnerDisplayName);
     });
 
   const page = pageOf(query.page);
-  const pageSize = pageSizeOf(query.pageSize);
+  const pageSize = clampPageSize(query.pageSize);
   const items = slicePage(workingList, page, pageSize);
 
   const requestRows = requests.map((request) => requestRowOf(request, partners));
@@ -2226,7 +2214,7 @@ export async function readReferrals(
     .sort(compareReferrals);
 
   const page = pageOf(query.page);
-  const pageSize = pageSizeOf(query.pageSize);
+  const pageSize = clampPageSize(query.pageSize);
   const pageRows = slicePage(matching, page, pageSize);
 
   const states: Record<string, RecordedValueState> = {};

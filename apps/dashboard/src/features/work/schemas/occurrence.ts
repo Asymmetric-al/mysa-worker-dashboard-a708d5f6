@@ -16,8 +16,9 @@
  * `../hooks/use-series-mutations.ts` composes the two while preserving `expectedRevision`, so an
  * occurrence action composed before a later Stop comes back `conflict` or `unchanged` instead of
  * reviving a stopped series. No schema below declares `operationId`, `scope` or `expectedRevision`,
- * and the objects keep Zod's default strip mode for that reason: a smuggled envelope field inside a
- * payload is dropped rather than trusted.
+ * and every payload object is a strict object for that reason: an envelope field smuggled into a
+ * payload is refused here, by the rule the service's own strict payload schema applies, instead of
+ * being dropped in the browser and answered `invalid` a round trip later.
  *
  * Two of the rules shape what is deliberately absent, because an absence is the only way to make a
  * dishonest payload unrepresentable:
@@ -149,7 +150,7 @@ export const MISSED_PLAN_RESOLUTION_COVERAGE: Record<MissedPlanResolution, true>
  * Changing the rule that produces future dates is `editThisAndFutureSchema` in `./series.ts`.
  */
 export const editOccurrenceSchema = z
-  .object({
+  .strictObject({
     occurrenceId: occurrenceIdSchema,
     title: taskTitleSchema,
     category: taskCategorySchema,
@@ -177,7 +178,7 @@ export type EditOccurrencePayload = z.infer<typeof editOccurrenceSchema>;
  * successor, records no contact and completes nothing, so the payload holds no field in which a
  * completion claim could travel. One occurrence id, never a list — only one date is actionable.
  */
-export const skipOccurrenceSchema = z.object({
+export const skipOccurrenceSchema = z.strictObject({
   occurrenceId: occurrenceIdSchema,
 });
 
@@ -197,7 +198,7 @@ export type SkipOccurrencePayload = z.infer<typeof skipOccurrenceSchema>;
  * No date travels either, because the next date a resolution produces is computed by
  * `@/modules/time/recurrence` in the series' own planning zone rather than chosen in the request.
  */
-export const resolveMissedPlanSchema = z.object({
+export const resolveMissedPlanSchema = z.strictObject({
   occurrenceId: occurrenceIdSchema,
   resolution: missedPlanResolutionSchema,
 });

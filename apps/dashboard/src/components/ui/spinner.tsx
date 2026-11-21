@@ -1,5 +1,5 @@
-import { cn } from "@/lib/cn"
-import { Loader2Icon } from "lucide-react"
+import { cn } from "@/lib/cn";
+import { Loader2Icon } from "lucide-react";
 
 /* The icon is decorative on its own: it shows the busy state visually and stays out of the
  * accessibility tree, so the pattern that renders it announces the state once — through a
@@ -14,7 +14,7 @@ function Spinner({ className, ...props }: React.ComponentProps<"svg">) {
       className={cn("size-4 animate-spin", className)}
       {...props}
     />
-  )
+  );
 }
 
-export { Spinner }
+export { Spinner };

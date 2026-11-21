@@ -62,10 +62,12 @@
  *   hooks, so there is no table, no field map and nothing to dispatch on.
  * - A record-level fact that refuses a change — a record in another ministry, an initiative someone
  *   else is responsible for, an id this session does not hold — is decided inside the transaction,
- *   where the record is readable, and answered as `{ changed: false }` (the outcome `unchanged`):
- *   nothing is written and nothing about what the record holds is disclosed. A refusal the caller
- *   can act on is a thrown `ZodError`, which the runner answers as `invalid` with a message keyed by
- *   the field the caller must change.
+ *   where the record is readable, and answered as `denied` with the closed set's `no-permission`
+ *   reason code: the three reasons answer alike, so nothing about what the record holds is disclosed,
+ *   and the caller still reads that the change was refused rather than that there was nothing to do.
+ *   A refusal of the payload against the record it names — a closed initiative, a terms version that
+ *   was never presented, a member who is not on the list — is a thrown `ZodError`, which the runner
+ *   answers as `invalid` with a message keyed by the field the caller must change.
  *
  * Every window judgement comes from `@/modules/time/window` and every civil date from
  * `@/modules/time/civil`; no boundary, DST resolution or elapsed-second span is computed here. Every
@@ -376,6 +378,27 @@ function readInstant(value: string): Temporal.Instant | undefined {
  */
 function refuseField(path: string, message: string): never {
   throw new ZodError([{ code: "custom", message, path: [path] }]);
+}
+
+/**
+ * The refusal `apply` answers with when the record it names may not be changed through this scope.
+ *
+ * It is the shape `ApplyResult` reserves for a question only the transaction can answer, so the runner
+ * returns this outcome verbatim with nothing written, no revision advanced and no ledger entry.
+ */
+type RefusalResult = { readonly refused: MutationOutcome };
+
+/**
+ * Refuses a change to a record whose access check refused it, naming the attempt that asked.
+ *
+ * The initiative is not in this session's document set, it runs in another ministry, or another
+ * principal is responsible for it: all three answer here identically, with the closed set's
+ * `no-permission` reason code, so the refusal discloses nothing about which one applies — no record's
+ * existence, title, count or size. What it does say is the truth the caller can act on, that the
+ * change was refused, rather than reporting a refusal as though there had been nothing to do.
+ */
+function refuseDenied(operationId: string): RefusalResult {
+  return { refused: denied({ operationId, reasonCode: "no-permission" }) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -790,8 +813,8 @@ type AddMembersPayload = z.infer<typeof addMembersPayloadSchema>;
  * membership of an Update's audience. A partner already included is `unchanged`, and one the worker
  * excluded from this initiative deliberately stays excluded, because a new selection is not where
  * that decision is reversed. Per-item results are `accepted | unchanged | excluded`; outcomes are
- * `accepted`, `unchanged` when nothing changed, `denied`, `invalid`, `conflict`, `unavailable` or
- * `unknown`.
+ * `accepted`, `unchanged` when nothing changed, `denied` for an initiative this scope may not act
+ * on, `invalid`, `conflict`, `unavailable` or `unknown`.
  */
 export async function addMembers(
   input: MutationInput<unknown>,
@@ -807,7 +830,7 @@ export async function addMembers(
       const { session } = context;
       const access = initiativeAccessOf(state, payload.initiativeId, session, scope);
       if (access.kind !== "found") {
-        return { changed: false };
+        return refuseDenied(context.operationId);
       }
       const { initiative } = access;
       if (initiative.state === "closed") {
@@ -964,7 +987,8 @@ type RemoveMemberPayload = z.infer<typeof removeMemberPayloadSchema>;
  * the reason if one was given; every independent obligation recorded elsewhere — a task, a Request,
  * an interaction — is untouched, because a removal settles nothing but the list. Removing someone
  * already removed is `unchanged`, and an exclusion is never overwritten by a removal. Outcomes:
- * `accepted`, `unchanged`, `denied`, `invalid`, `conflict`, `unavailable` or `unknown`.
+ * `accepted`, `unchanged`, `denied` for an initiative this scope may not act on, `invalid`,
+ * `conflict`, `unavailable` or `unknown`.
  */
 export async function removeMember(
   input: MutationInput<unknown>,
@@ -980,7 +1004,7 @@ export async function removeMember(
       const { session } = context;
       const access = initiativeAccessOf(state, payload.initiativeId, session, scope);
       if (access.kind !== "found") {
-        return { changed: false };
+        return refuseDenied(context.operationId);
       }
       const found = memberOf(state, payload.initiativeId, payload.memberId);
       if (found === undefined) {
@@ -1060,8 +1084,8 @@ type ReturnMemberPayload = z.infer<typeof returnMemberPayloadSchema>;
  * Only eligible planning state is restored: the member becomes `included` again and the history keeps
  * both the removal and the return. A member the worker excluded deliberately is refused rather than
  * silently included, because that decision is not reversed by returning a different one, and a member
- * already included is `unchanged`. Outcomes: `accepted`, `unchanged`, `denied`, `invalid`,
- * `conflict`, `unavailable` or `unknown`.
+ * already included is `unchanged`. Outcomes: `accepted`, `unchanged`, `denied` for an initiative
+ * this scope may not act on, `invalid`, `conflict`, `unavailable` or `unknown`.
  */
 export async function returnMember(
   input: MutationInput<unknown>,
@@ -1077,7 +1101,7 @@ export async function returnMember(
       const { session } = context;
       const access = initiativeAccessOf(state, payload.initiativeId, session, scope);
       if (access.kind !== "found") {
-        return { changed: false };
+        return refuseDenied(context.operationId);
       }
       const found = memberOf(state, payload.initiativeId, payload.memberId);
       if (found === undefined) {
@@ -1168,7 +1192,8 @@ type SetStagePayload = z.infer<typeof setStagePayloadSchema>;
  * again is `unchanged`, writes no history entry and changes nothing, and recording a different one
  * creates no task and unpauses nothing. A stage belongs to an included member, so a partner who was
  * removed or excluded must return to the list before an assessment is recorded. Outcomes:
- * `accepted`, `unchanged`, `denied`, `invalid`, `conflict`, `unavailable` or `unknown`.
+ * `accepted`, `unchanged`, `denied` for an initiative this scope may not act on, `invalid`,
+ * `conflict`, `unavailable` or `unknown`.
  */
 export async function setStage(
   input: MutationInput<unknown>,
@@ -1184,7 +1209,7 @@ export async function setStage(
       const { session } = context;
       const access = initiativeAccessOf(state, payload.initiativeId, session, scope);
       if (access.kind !== "found") {
-        return { changed: false };
+        return refuseDenied(context.operationId);
       }
       const found = memberOf(state, payload.initiativeId, payload.memberId);
       if (found === undefined) {
@@ -1416,8 +1441,8 @@ type DraftRequestPayload = z.infer<typeof draftRequestPayloadSchema>;
  *
  * A Request is one invitation with its own versioned terms, one presentation and one answer. Drafting
  * creates no pledge, gift, commitment, subscription, receipt, task or send: it records what the worker
- * intends to ask, and nothing else. Outcomes: `accepted` with the new identifier,
- * `denied`, `invalid`, `conflict`, `unavailable` or `unknown`.
+ * intends to ask, and nothing else. Outcomes: `accepted` with the new identifier, `denied` for an
+ * initiative this scope may not act on, `invalid`, `conflict`, `unavailable` or `unknown`.
  */
 export async function draftRequest(
   input: MutationInput<unknown>,
@@ -1430,7 +1455,7 @@ export async function draftRequest(
       const state = readState(context.docs);
       const access = initiativeAccessOf(state, payload.initiativeId, context.session, scope);
       if (access.kind !== "found") {
-        return { changed: false };
+        return refuseDenied(context.operationId);
       }
       const { initiative } = access;
       if (initiative.state === "closed") {
@@ -1523,7 +1548,8 @@ type PresentRequestPayload = z.infer<typeof presentRequestPayloadSchema>;
  * the answer behind it may be bound to. The version this presentation cites need not be the current
  * terms — a Request whose terms moved on still records the version that was actually shown — which is
  * what keeps an earlier presented version and the answer that cites it legible. Outcomes:
- * `accepted`, `unchanged`, `denied`, `invalid`, `conflict`, `unavailable` or `unknown`.
+ * `accepted`, `unchanged`, `denied` for a Request this scope may not act on, `invalid`, `conflict`,
+ * `unavailable` or `unknown`.
  */
 export async function presentRequest(
   input: MutationInput<unknown>,
@@ -1538,7 +1564,7 @@ export async function presentRequest(
       const state = readState(context.docs);
       const access = requestAccessOf(state, payload.requestId, context.session, scope);
       if (access.kind === "refused") {
-        return { changed: false };
+        return refuseDenied(context.operationId);
       }
       return presentRequestFor(context.docs, state, access, payload);
     },
@@ -1668,7 +1694,8 @@ type RecordRequestResponsePayload = z.infer<typeof recordRequestResponsePayloadS
  * subscription, receipt, task or send: it records a human answer and nothing else. Re-recording the
  * same answer is `unchanged`; a later, different answer replaces the recorded one with its own
  * recorded instant, because a respondent's changed answer is a new fact about the same invitation.
- * Outcomes: `accepted`, `unchanged`, `denied`, `invalid`, `conflict`, `unavailable` or `unknown`.
+ * Outcomes: `accepted`, `unchanged`, `denied` for a Request this scope may not act on, `invalid`,
+ * `conflict`, `unavailable` or `unknown`.
  */
 export async function recordRequestResponse(
   input: MutationInput<unknown>,
@@ -1683,7 +1710,7 @@ export async function recordRequestResponse(
       const state = readState(context.docs);
       const access = requestAccessOf(state, payload.requestId, context.session, scope);
       if (access.kind === "refused") {
-        return { changed: false };
+        return refuseDenied(context.operationId);
       }
       const { request, initiative } = access;
       if (payload.initiativeId !== undefined && payload.initiativeId !== request.initiativeId) {
@@ -1831,8 +1858,8 @@ function closureDispositionOf(payload: CloseInitiativePayload): string {
  * stands, so a closure never claims work was completed or an answer received. Late actual responses
  * remain recordable afterwards without reopening, because closing fences solicitation rather than
  * the record of what happened. Closing an already closed initiative is `unchanged`. Outcomes:
- * `accepted` (with per-item results), `unchanged`, `denied`, `invalid`, `conflict`, `unavailable` or
- * `unknown`.
+ * `accepted` (with per-item results), `unchanged`, `denied` for an initiative this scope may not act
+ * on, `invalid`, `conflict`, `unavailable` or `unknown`.
  */
 export async function closeInitiative(
   input: MutationInput<unknown>,
@@ -1847,7 +1874,7 @@ export async function closeInitiative(
       const state = readState(context.docs);
       const access = initiativeAccessOf(state, payload.initiativeId, context.session, scope);
       if (access.kind !== "found") {
-        return { changed: false };
+        return refuseDenied(context.operationId);
       }
       const { initiative } = access;
       if (initiative.state === "closed") {
@@ -1929,7 +1956,8 @@ type ReopenInitiativePayload = z.infer<typeof reopenInitiativePayloadSchema>;
  * initiative from one that was never closed, and it keeps every working-list exclusion and removal:
  * reopening restores planning, not membership, so a member who was excluded deliberately stays out
  * of the list. Reopening an open initiative is `unchanged`. Outcomes: `accepted`, `unchanged`,
- * `denied`, `invalid`, `conflict`, `unavailable` or `unknown`.
+ * `denied` for an initiative this scope may not act on, `invalid`, `conflict`, `unavailable` or
+ * `unknown`.
  */
 export async function reopenInitiative(
   input: MutationInput<unknown>,
@@ -1944,7 +1972,7 @@ export async function reopenInitiative(
       const state = readState(context.docs);
       const access = initiativeAccessOf(state, payload.initiativeId, context.session, scope);
       if (access.kind !== "found") {
-        return { changed: false };
+        return refuseDenied(context.operationId);
       }
       const { initiative } = access;
       if (initiative.state === "open") {

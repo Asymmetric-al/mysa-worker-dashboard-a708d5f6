@@ -380,8 +380,7 @@ function describeFailure(
       return {
         kind: "invalid",
         message: "This text cannot be saved yet.",
-        details:
-          lines.length > 0 ? lines : ["The content did not pass the profile's checks."],
+        details: lines.length > 0 ? lines : ["The content did not pass the profile's checks."],
         operationId: null,
         halts: false,
         tone: "destructive",
@@ -428,7 +427,6 @@ function unreadableFailure(issues: readonly DocumentIssue[]): SaveFailure {
     retry: null,
   };
 }
-
 
 /**
  * One toolbar control: a named, tooltipped button, or a toggle that also reports its state through
@@ -1377,8 +1375,7 @@ export function ProseEditor({
             </ul>
             {saveState.operationId === null ? null : (
               <p>
-                Attempt{" "}
-                <bdi className="mono-identifier break-all">{saveState.operationId}</bdi>
+                Attempt <bdi className="mono-identifier break-all">{saveState.operationId}</bdi>
               </p>
             )}
           </AlertDescription>

@@ -5,7 +5,9 @@
  * Three controls let a demonstration start from a known world without editing a single record: which
  * of the closed scenarios a session sits in, how far the scenario clock stands from the seed
  * instant, and the session's `.meta.json` document that persists both beside the armed failure plan
- * and the selected organization/ministry context. This module owns those three and nothing else.
+ * and the selected organization/ministry context. This module owns those three, and the two facts
+ * about that document its readers and writers share — the source identity an unavailable answer
+ * names and the revision token a control presents as `expectedRevision` — and nothing else.
  * Every boundary the release defines — a referral's New and Continued windows, a coaching share
  * cutoff, the 24-hour notification usefulness window, the 168-hour confirmation window, a
  * recurrence's next admitted date — is a pure function of `(input, now)` evaluated at read or
@@ -31,7 +33,9 @@
  *
  * Plan items that put this file in scope:
  * - AAP 0.6.1 "Development runtime": session scenario, clock, failure plan, seed, generator and
- *   reset, exposing `setScenario`, `setClock`, `advanceClock` and `readDevState`.
+ *   reset. This module carries the scenario registry, the three controls (`setScenario`, `setClock`,
+ *   `advanceClock`) and the session's `.meta.json` document itself; the one read that reports that
+ *   state on a request path is `data-service/reads/dev.ts#readDevState`.
  * - AAP 0.7.2 "The controllable local clock" with its boundary table, and 0.9.2's
  *   `<sessionId>.meta.json` holding the scenario id, the clock offset, the selected context and the
  *   failure plan.
@@ -47,7 +51,7 @@
  * reading of the clock.
  *
  * Layering: a development-runtime module below the data service. It imports the clock controls, the
- * store's session surface with the fault it raises for an undecodable document, the shared narrowing
+ * store's session surface with the fault it raises for a missing session, the shared narrowing
  * guards, the sibling failure-plan vocabulary and the result helpers, and it never reads the machine
  * clock: it draws no current-time value, no randomness, and it arms no timer, interval, microtask
  * chain or scheduled callback. Every instant it derives comes from `SEED_INSTANT`. It imports no
@@ -65,9 +69,8 @@ import {
   type AdmittedMembership,
   type SessionState,
 } from "@/modules/data-service/envelope";
-import { CorruptJsonError } from "@/modules/store/atomic";
 import { isSafeSessionId } from "@/modules/store/paths";
-import { readSession, SessionNotFoundError, transact } from "@/modules/store/repository";
+import { SessionNotFoundError, transact } from "@/modules/store/repository";
 import { advanceClockOffset, SEED_INSTANT, setClockOffset } from "@/modules/time/clock";
 
 import { EMPTY_FAILURE_PLAN, parseFailurePlan, type FailurePlanDocument } from "./failures";
@@ -290,18 +293,51 @@ export interface SelectedContext {
 const SESSION_META_VERSION = 1;
 
 /**
+ * The kinds a persisted roster row may state: the receiving readers whose persona decides what a
+ * preview shows, and the three worker-side kinds whose identities own work.
+ *
+ * A kind groups the roster in the development panel and is **stored, not derived**: the panel lists a
+ * persona under the heading its row states, so the vocabulary travels with the document instead of
+ * being inferred from a label, a session id or a membership.
+ */
+export const PERSISTED_PERSONA_KINDS = ["reader", "worker", "reviewer", "coach"] as const;
+
+/** One kind of seeded identity, as a persisted roster row states it. */
+export type PersistedPersonaKind = (typeof PERSISTED_PERSONA_KINDS)[number];
+
+/**
+ * One persona as a session's document persists it.
+ *
+ * `principalId` is the reference the active persona is matched by: it is the same principal the
+ * session resolves to, so a panel identifies the acting persona by reference and never by a display
+ * name or an email address, neither of which establishes identity (AAP 0.7.1).
+ */
+export interface PersistedPersonaRecord {
+  readonly id: string;
+  readonly principalId: string;
+  readonly kind: PersistedPersonaKind;
+  readonly label: string;
+  readonly description: string;
+}
+
+/**
  * Everything the development runtime persists beside a session's records.
  *
  * One document holds the scenario, the clock offset, the armed failure plan, the admission state, the
- * selected context and the session's capability set, so a session restored from disk is restored
- * whole. `selectedContext` is nullable because it is chosen after admission succeeds, and it stays
- * `null` for a session that never got that far.
+ * selected context, the session's capability set and the seeded persona roster, so a session restored
+ * from disk is restored whole. `selectedContext` is nullable because it is chosen after admission
+ * succeeds, and it stays `null` for a session that never got that far.
  *
  * `capabilities` is the session's own statement of what the person acting in it may do beyond
  * admission — a capability a domain module names, such as the support goal's `canEditGoal`, held by
  * one principal and not by another inside the same ministry. It lives with the session because
  * nothing about a record establishes it, and it is deliberately empty for a document written before
  * the field existed, so an unstated capability denies rather than grants.
+ *
+ * `personas` is the seeded roster, persisted with the session so the development read can list it
+ * without importing the seeder, which belongs to the write path. A document written before the field
+ * existed reads as an empty roster rather than as unreadable, on the same reasoning as an unstated
+ * capability: the read reports the roster as absent instead of reporting a whole session unusable.
  */
 export interface SessionMetaDocument {
   version: 1;
@@ -313,6 +349,66 @@ export interface SessionMetaDocument {
   admittedMemberships: AdmittedMembership[];
   selectedContext: SelectedContext | null;
   capabilities: string[];
+  personas: PersistedPersonaRecord[];
+}
+
+/**
+ * The source system every answer attributed to this document names: the development runtime, which
+ * owns the scenario, the clock offset, the failure plan and the reset.
+ */
+const DEV_SOURCE_SYSTEM = "dev-runtime";
+
+/**
+ * The opaque reference for what was read: this session's development document.
+ *
+ * It is a constant rather than the session id on purpose. A `SourceReference` travels into a
+ * response, a diagnostic line and any surface that reports an outage, and the session id is the
+ * cookie's own value: publishing it would hand out an identifier that names a session outside the
+ * request that resolved it. The reference says what kind of record answered without naming whose.
+ */
+const DEV_SOURCE_REFERENCE = "session-meta";
+
+/**
+ * The source identity an `unavailable` answer about this document carries.
+ *
+ * Exported because it belongs to the document rather than to one of its readers: the read that
+ * reports an unavailable development state (`data-service/reads/dev.ts`) and the controls that write
+ * one (`data-service/mutations/dev.ts`) must name the identical source, and two declarations would
+ * drift into reporting one document as two.
+ */
+export const DEV_SOURCE = Object.freeze({
+  system: DEV_SOURCE_SYSTEM,
+  reference: DEV_SOURCE_REFERENCE,
+});
+
+/**
+ * The revision a caller would present as `expectedRevision` if a development mutation took one.
+ *
+ * The development document carries no revision of its own, so this is derived from the facts it
+ * states: two reads of an unchanged state return the same value, and any control that moves the
+ * scenario, the offset, the admission state or the armed failure changes it. It is reported rather
+ * than assumed, so a caller that wants to detect "the state moved since I looked" has one honest
+ * comparison instead of a timestamp it would have to invent.
+ *
+ * Exported because it is a contract of the document this module owns, shared by both sides that use
+ * it: the read that publishes the token (`data-service/reads/dev.ts`) and the controls that take that
+ * `expectedRevision` (`data-service/mutations/dev.ts`) must derive the identical one, since two
+ * derivations would drift and a drift would turn every control submitted from a current panel into a
+ * false conflict. This definition is the token's one home.
+ */
+export function devStateRevision(meta: SessionMetaDocument, principalId: string): string {
+  const plan =
+    meta.failurePlan === EMPTY_FAILURE_PLAN
+      ? "none"
+      : `${meta.failurePlan.mode}:${meta.failurePlan.target.kind}:${meta.failurePlan.target.name}@${meta.failurePlan.armedAt}`;
+  return [
+    "dev-state.1",
+    `scenario=${meta.scenarioId}`,
+    `offset=${meta.clockOffsetMs}`,
+    `state=${meta.sessionState}`,
+    `principal=${principalId}`,
+    `plan=${plan}`,
+  ].join("|");
 }
 
 /** Why a stored meta document, or a control request, was refused. */
@@ -525,6 +621,60 @@ function parseCapabilities(value: unknown): string[] | undefined {
   return capabilities;
 }
 
+/** Whether a value names one of {@link PERSISTED_PERSONA_KINDS}. */
+function isPersistedPersonaKind(value: unknown): value is PersistedPersonaKind {
+  return (
+    typeof value === "string" && (PERSISTED_PERSONA_KINDS as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Reads a persisted persona roster, or `undefined` when the value is not a list of usable rows.
+ *
+ * One function serves the seed's builder and the stored-document parser, so a roster this module
+ * writes is by construction one it reads back. A row states a non-empty identifier, the non-empty
+ * principal it acts as, one of {@link PERSISTED_PERSONA_KINDS}, a non-empty label and a non-empty
+ * description. A repeated identifier is refused rather than collapsed, on the same reasoning as a
+ * repeated admission: the document lists one persona twice, and quietly deduplicating it would hide
+ * a hand-edited file that a person needs to see.
+ */
+function parsePersistedPersonas(value: unknown): PersistedPersonaRecord[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const personas: PersistedPersonaRecord[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) {
+      return undefined;
+    }
+    const { id, principalId, kind, label, description } = entry;
+    if (
+      !isNonEmptyString(id) ||
+      !isNonEmptyString(principalId) ||
+      !isPersistedPersonaKind(kind) ||
+      !isNonEmptyString(label) ||
+      !isNonEmptyString(description)
+    ) {
+      return undefined;
+    }
+    if (personas.some((existing) => existing.id === id)) {
+      return undefined;
+    }
+    personas.push({ id, principalId, kind, label, description });
+  }
+  return personas;
+}
+
+/**
+ * What a persona roster row has to be, in the one wording both paths report it with.
+ *
+ * Written once so a seed defect that throws and a hand-edited document that is refused state the same
+ * requirement, instead of two sentences that drift apart as the roster grows.
+ */
+function personaRosterRequirement(): string {
+  return `A session meta document's persona roster is zero or more rows, each stating a distinct non-empty identifier, the non-empty principal it acts as, one of ${PERSISTED_PERSONA_KINDS.join(", ")}, a non-empty label and a non-empty description.`;
+}
+
 /**
  * Reads the selected context: `null` for a session that has not chosen one, the context itself when
  * all three references are present, and `undefined` when the value is neither.
@@ -558,8 +708,8 @@ function parseSelectedContext(value: unknown): SelectedContext | null | undefine
  * never invents a principal and never generates an id: a session that names nobody is not a session,
  * and a fabricated identity would make an isolation test prove nothing. The rest default to the
  * state every session starts in — the baseline scenario, the seed instant, the disarmed failure
- * plan, no selected context and no capability — so a seed row states only what it is actually
- * varying.
+ * plan, no selected context, no capability and no persona roster — so a seed row states only what it
+ * is actually varying.
  */
 export interface SessionMetaSeedInput {
   principalId: string;
@@ -570,6 +720,7 @@ export interface SessionMetaSeedInput {
   failurePlan?: FailurePlanDocument;
   selectedContext?: SelectedContext | null;
   capabilities?: readonly string[];
+  personas?: readonly PersistedPersonaRecord[];
 }
 
 /**
@@ -636,6 +787,14 @@ export function buildSessionMeta(input: SessionMetaSeedInput): SessionMetaDocume
     );
   }
 
+  // An absent roster is the empty list, exactly as an absent capability set is: a session laid down
+  // without personas states none, and the development read reports that absence rather than this
+  // builder inventing a roster the seed never described.
+  const personas = parsePersistedPersonas(input.personas ?? []);
+  if (personas === undefined) {
+    throw new TypeError(personaRosterRequirement());
+  }
+
   return {
     version: SESSION_META_VERSION,
     scenarioId,
@@ -646,6 +805,7 @@ export function buildSessionMeta(input: SessionMetaSeedInput): SessionMetaDocume
     admittedMemberships: memberships,
     selectedContext,
     capabilities,
+    personas,
   };
 }
 
@@ -773,6 +933,17 @@ export function parseSessionMeta(value: unknown): Result<SessionMetaDocument, Se
     );
   }
 
+  // An absent roster is a document written before the field existed, and it resolves to no persona
+  // rather than to a refusal, on the same reasoning as an absent capability set: the development read
+  // reports the catalogue as absent, while refusing the document would call a session unusable that is
+  // merely older. A present roster that is not a list of usable rows is refused like every other
+  // unusable field, because it states something this build cannot honour — and a caller that writes
+  // the document back carries the roster it read, so a control never drops it.
+  const personas = parsePersistedPersonas(value.personas ?? []);
+  if (personas === undefined) {
+    return err(refuse("meta-unreadable", personaRosterRequirement()));
+  }
+
   return ok({
     version: SESSION_META_VERSION,
     scenarioId,
@@ -783,6 +954,7 @@ export function parseSessionMeta(value: unknown): Result<SessionMetaDocument, Se
     admittedMemberships,
     selectedContext,
     capabilities,
+    personas,
   });
 }
 
@@ -957,60 +1129,4 @@ export function applySessionClock(meta: SessionMetaDocument): void {
     throw new RangeError(refusal.message);
   }
   setClockOffset(meta.clockOffsetMs);
-}
-
-/**
- * What a session's development document read found: the document, no session, or a store that could
- * not be read.
- *
- * `document` is the stored document parsed; `absent` is no such session, or a document this release
- * cannot read as one, which a destructive reset replaces with a usable one; `unavailable` is the
- * store itself failing to answer, which is never presented as an absent session and never answered by
- * offering a reset. The last two stay apart because the facts differ: an unreadable store says
- * nothing about whether the session exists, and AAP 0.1.1 "Continuity" with 0.15.2 "Honesty" requires
- * `empty` and `unavailable` to stay distinct.
- */
-export type DevStateRead =
-  | { readonly kind: "document"; readonly meta: SessionMetaDocument }
-  | { readonly kind: "absent" }
-  | { readonly kind: "unavailable"; readonly message: string };
-
-/**
- * Reads a session's development document and reports which of those three facts it found.
- *
- * Nothing here throws: a request path asks this to describe a session, so every outcome is a value.
- * A session the store does not hold, a document written by another version of this module and a body
- * that cannot be decoded are `absent` — a destructive reset lays down a usable document — while the
- * store failing to answer at all is `unavailable`, because an unreadable directory or an I/O fault
- * says nothing about whether the session exists. The message names no file path, no session id and no
- * stored value, so a fault cannot disclose what it could not read. A caller that must report why a
- * stored document was unusable uses {@link parseSessionMeta} itself.
- */
-export async function readDevState(sessionId: string): Promise<DevStateRead> {
-  if (!isSafeSessionId(sessionId)) {
-    return { kind: "absent" };
-  }
-
-  try {
-    const documents = await readSession(sessionId);
-    if (documents === undefined) {
-      return { kind: "absent" };
-    }
-
-    const parsed = parseSessionMeta(documents.meta);
-    return parsed.ok ? { kind: "document", meta: parsed.value } : { kind: "absent" };
-  } catch (error) {
-    // Undecodable bytes, and the missing sibling document `readSession` reports the same way, are a
-    // document this release cannot read as this session's own, which a reset replaces. Every other
-    // fault is the store itself failing to answer, and presenting that as an absent session is what
-    // would invite a destructive reset for a session that may be perfectly intact.
-    if (error instanceof CorruptJsonError) {
-      return { kind: "absent" };
-    }
-    return {
-      kind: "unavailable",
-      message:
-        "The session store could not be read, so this session's scenario, clock and failure plan are unavailable rather than absent.",
-    };
-  }
 }

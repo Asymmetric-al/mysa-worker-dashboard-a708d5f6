@@ -9,9 +9,10 @@
  * A schema here validates the **payload alone**. The four-field mutation input
  * `{ operationId, scope, expectedRevision, payload }` belongs to the read envelope, and
  * `../hooks/use-task-mutations.ts` composes the two and mints one operation identity per intent, so
- * no schema below declares `operationId`, `scope` or `expectedRevision`. The objects keep Zod's
- * default strip mode for exactly that reason: a smuggled envelope field inside a payload is dropped
- * rather than trusted.
+ * no schema below declares `operationId`, `scope` or `expectedRevision`. Every payload object is a
+ * strict object for the same reason: an envelope field smuggled into a payload — or any other stray
+ * key — is refused here, by the rule the service's own strict payload schema applies, instead of
+ * being dropped in the browser and answered `invalid` a round trip later.
  *
  * One member is not a task field. `operation` is the routing discriminant `POST /api/tasks` selects
  * the mutation by, and each schema below declares it as a defaulted literal because **the schema's
@@ -353,7 +354,7 @@ export function refinePlannedTimePairing(value: PlannedTimePairing, ctx: z.Refin
  * pointing one task at another.
  */
 export const createTaskSchema = z
-  .object({
+  .strictObject({
     operation: z.literal("createTask").default("createTask"),
     title: taskTitleSchema,
     category: taskCategorySchema,
@@ -385,7 +386,7 @@ export type CreateTaskPayload = z.infer<typeof createTaskSchema>;
  * result actually differs from the record before it writes anything.
  */
 export const editTaskSchema = z
-  .object({
+  .strictObject({
     operation: z.literal("editTask").default("editTask"),
     taskId: taskIdSchema,
     title: taskTitleSchema,
@@ -416,7 +417,7 @@ export type EditTaskPayload = z.infer<typeof editTaskSchema>;
  * payment or fulfilment — so the payload holds no field in which such a claim could travel. A
  * meeting counts as held only when an interaction records that it happened.
  */
-export const completeTaskSchema = z.object({
+export const completeTaskSchema = z.strictObject({
   operation: z.literal("completeTask").default("completeTask"),
   taskId: taskIdSchema,
 });
@@ -435,7 +436,7 @@ export type CompleteTaskPayload = z.infer<typeof completeTaskSchema>;
  * The same identifier and nothing else, for the same reason: reopening says the work is open again,
  * and neither states anything about who was contacted or what was given.
  */
-export const reopenTaskSchema = z.object({
+export const reopenTaskSchema = z.strictObject({
   operation: z.literal("reopenTask").default("reopenTask"),
   taskId: taskIdSchema,
 });
@@ -455,7 +456,7 @@ export type ReopenTaskPayload = z.infer<typeof reopenTaskSchema>;
  * confirmation step produces, and no reason: a free-text reason would become a hidden note that
  * later reads as history, and the task record has no field for one.
  */
-export const cancelTaskSchema = z.object({
+export const cancelTaskSchema = z.strictObject({
   operation: z.literal("cancelTask").default("cancelTask"),
   taskId: taskIdSchema,
   confirmed: z.literal(true, { error: TASK_SCHEMA_MESSAGES.cancelConfirmationRequired }),

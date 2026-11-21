@@ -436,8 +436,7 @@ export default function TargetHistory({
                 const measuredAgainst = versions.find(
                   (version) => version.revisionId === period.measuredAgainstRevisionId,
                 );
-                const periodKey =
-                  `${serialiseCivilDate(period.periodStart)}/${serialiseCivilDate(period.periodEnd)}`;
+                const periodKey = `${serialiseCivilDate(period.periodStart)}/${serialiseCivilDate(period.periodEnd)}`;
                 return (
                   <li key={periodKey} className="flex min-w-0 flex-col gap-2">
                     {index === 0 ? null : <Separator />}
@@ -481,4 +480,3 @@ export default function TargetHistory({
     </section>
   );
 }
-

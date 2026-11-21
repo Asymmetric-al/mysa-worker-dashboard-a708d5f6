@@ -283,10 +283,7 @@ function sourceUnavailable(job: string, reference: string): ReadResult<never> {
  * session's state document. Nothing is enumerated before an authority exists, so a refusal cannot be
  * used to learn whether a document, a variant or a revision exists.
  */
-async function openContentWorkspace(
-  job: string,
-  source?: SessionSource,
-): Promise<WorkspaceOpen> {
+async function openContentWorkspace(job: string, source?: SessionSource): Promise<WorkspaceOpen> {
   let resolution: SessionResolution;
   try {
     resolution = await resolveSession(source);
@@ -555,7 +552,9 @@ function releaseOf(record: ReleaseRecord, checksums: RevisionChecksums): Release
     publishedAt: Temporal.Instant.from(record.publishedAt),
     reach: record.reach,
     contentChecksum: checksums.get(record.revisionId) ?? "",
-    ...(record.withdrawnAt === null ? {} : { withdrawnAt: Temporal.Instant.from(record.withdrawnAt) }),
+    ...(record.withdrawnAt === null
+      ? {}
+      : { withdrawnAt: Temporal.Instant.from(record.withdrawnAt) }),
     ...(record.supersededBy === null ? {} : { supersededBy: record.supersededBy }),
   };
 }
@@ -637,9 +636,7 @@ function headReleaseOf(
  * Publication order is the only order releases have; two releases of one variant published at the
  * same instant are ordered by identity, so the answer is total and a test can rely on it.
  */
-function newestReleaseOf(
-  releases: readonly ReleaseRecord[],
-): ReleaseRecord | undefined {
+function newestReleaseOf(releases: readonly ReleaseRecord[]): ReleaseRecord | undefined {
   let newest: ReleaseRecord | undefined;
   for (const release of releases) {
     if (newest === undefined) {
@@ -911,12 +908,7 @@ function renderRevision(
       if (purpose === undefined) {
         continue;
       }
-      const key =
-        purpose === "poster"
-          ? posterKey
-          : purpose === "captions"
-            ? captionsKey
-            : mainKey;
+      const key = purpose === "poster" ? posterKey : purpose === "captions" ? captionsKey : mainKey;
       renditions[key] = { src: rendition.path, purpose };
     }
 
@@ -1111,7 +1103,6 @@ function editionViewOf(
     translation: translationViewOf(state, variant),
   };
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // The canonical document, as every content read states it
@@ -1448,7 +1439,8 @@ export async function readDraft(input: {
           {
             name: "save-draft",
             available: true,
-            reason: "A fresh save writes an admitted document and replaces the unreadable revision.",
+            reason:
+              "A fresh save writes an admitted document and replaces the unreadable revision.",
           },
         ],
       }),
@@ -1725,7 +1717,9 @@ export async function readCandidate(input: {
     head === undefined ? undefined : findRevision(workspace.state, head.revisionId);
   const headDocument = headRevision === undefined ? undefined : parseDocument(headRevision.body);
   const releaseDocument =
-    headDocument !== undefined && headDocument.status === "valid" ? headDocument.document : undefined;
+    headDocument !== undefined && headDocument.status === "valid"
+      ? headDocument.document
+      : undefined;
 
   const diff = candidateDiff({
     candidate: rendered.document,
@@ -2053,7 +2047,10 @@ export async function readRelease(input: {
         data,
         source: contentSource(documentRecord.documentId),
         revision: record.revision,
-        valueStates: { placements: "zero", siblingHeads: siblingHeads.length === 0 ? "zero" : "value" },
+        valueStates: {
+          placements: "zero",
+          siblingHeads: siblingHeads.length === 0 ? "zero" : "value",
+        },
         actions: [
           {
             name: "publish-variants",
@@ -2245,7 +2242,6 @@ function tombstoneFor(workspace: ContentWorkspace, record: ReleaseRecord): Tombs
     .tombstone;
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // readPreview — one definition, both families, inert by construction
 // ---------------------------------------------------------------------------------------------
@@ -2372,7 +2368,11 @@ export async function readPreview(input: {
   const acknowledgedPlacements =
     acknowledgedRevision === undefined
       ? []
-      : placementViews(workspace, acknowledgedRevision.mediaPlacements, acknowledgedRevision.captions);
+      : placementViews(
+          workspace,
+          acknowledgedRevision.mediaPlacements,
+          acknowledgedRevision.captions,
+        );
   // The decision admits renditions for exactly the five purposes a preview serves, and all of them or
   // none: a caption or transcript address admitted on its own would become a way to ask about a
   // protected video without opening it.
@@ -2429,7 +2429,8 @@ export async function readPreview(input: {
       issues: [
         {
           path: "revisionId",
-          message: "The acknowledged revision is no longer in the store, so nothing can be rendered.",
+          message:
+            "The acknowledged revision is no longer in the store, so nothing can be rendered.",
         },
       ],
     };
@@ -2670,7 +2671,10 @@ export async function readSharePresentation(input: {
   // An edition with no release yet is still being composed, and its draft is what its author is
   // preparing to share.
   const source = head !== undefined ? findRevision(workspace.state, head.revisionId) : undefined;
-  const composing = record.draftRevisionId === null ? undefined : findRevision(workspace.state, record.draftRevisionId);
+  const composing =
+    record.draftRevisionId === null
+      ? undefined
+      : findRevision(workspace.state, record.draftRevisionId);
   const presentationSource = source ?? composing;
 
   if (presentationSource === undefined) {
@@ -2702,7 +2706,10 @@ export async function readSharePresentation(input: {
   // release, so it is never substituted here: a card that invented a heading would be describing the
   // edition with words the source never supplied.
   const image = shareImageView(workspace, share);
-  const reach = head === undefined ? undefined : reachMetadata({ reach: head.reach, withdrawnAt: head.withdrawnAt });
+  const reach =
+    head === undefined
+      ? undefined
+      : reachMetadata({ reach: head.reach, withdrawnAt: head.withdrawnAt });
 
   const data: SharePresentationData = {
     status: "shareable",
@@ -2725,7 +2732,9 @@ export async function readSharePresentation(input: {
       data,
       source: contentSource(documentRecord.documentId),
       revision: record.revision,
-      valueStates: { image: image === null ? "zero" : image.state === "ready" ? "value" : "unavailable" },
+      valueStates: {
+        image: image === null ? "zero" : image.state === "ready" ? "value" : "unavailable",
+      },
       actions: [{ name: "open-canonical-address", available: true }],
     }),
   };
@@ -2779,7 +2788,6 @@ function shareImageView(
     reason: null,
   };
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // readPageCatalogues — the two guided family catalogues
@@ -3082,7 +3090,8 @@ export async function readPage(input: {
   const variantRecords = variantsOf(workspace.state, documentRecord.documentId);
   // The edition being composed is the one holding a draft. With no draft anywhere, the first edition
   // is the one a builder opens, so a page is never refused merely because nothing is saved yet.
-  const draftVariant = variantRecords.find((variant) => variant.draftRevisionId !== null) ?? variantRecords[0];
+  const draftVariant =
+    variantRecords.find((variant) => variant.draftRevisionId !== null) ?? variantRecords[0];
   const draftRevision =
     draftVariant === undefined || draftVariant.draftRevisionId === null
       ? undefined
@@ -3187,14 +3196,19 @@ export async function readPage(input: {
         {
           name: "set-reach",
           available: hasRelease,
-          ...(hasRelease ? {} : { reason: "Reach belongs to a released edition, and none exists yet." }),
+          ...(hasRelease
+            ? {}
+            : { reason: "Reach belongs to a released edition, and none exists yet." }),
         },
         {
           name: "stop-showing-publicly",
           available: showsPublicly,
           ...(showsPublicly
             ? {}
-            : { reason: "No edition of this page is public or listed, so there is nothing to contain." }),
+            : {
+                reason:
+                  "No edition of this page is public or listed, so there is nothing to contain.",
+              }),
         },
         {
           name: "withdraw-page",
@@ -3354,13 +3368,14 @@ export async function readPageLocales(input: {
           available: resolution.status === "resolved",
           ...(resolution.status === "resolved"
             ? {}
-            : { reason: "No permitted edition serves this language, so there is nothing to open." }),
+            : {
+                reason: "No permitted edition serves this language, so there is nothing to open.",
+              }),
         },
       ],
     }),
   };
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // readGivingBinding — one approved Designation, or *Giving unavailable*, and a qualified progress
@@ -3637,4 +3652,3 @@ function progressOf(workspace: ContentWorkspace): GivingProgressView | null {
     lastSourceUpdate: projection.lastSourceUpdate,
   };
 }
-

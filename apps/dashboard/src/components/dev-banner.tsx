@@ -69,9 +69,7 @@ export function DevBanner({ scenarioId, className }: DevBannerProps) {
         <FlaskConicalIcon aria-hidden="true" data-icon="inline-start" />
         Development data
       </Badge>
-      <span className="min-w-0 text-muted-foreground break-words">
-        {DEVELOPMENT_DATA_NOTICE}
-      </span>
+      <span className="min-w-0 text-muted-foreground break-words">{DEVELOPMENT_DATA_NOTICE}</span>
       {scenario === "" ? null : (
         <span className="min-w-0 text-muted-foreground">
           scenario:{" "}

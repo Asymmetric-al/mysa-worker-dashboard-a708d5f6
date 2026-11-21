@@ -407,7 +407,6 @@ export const CHECK_IN_STATE_COPY: Readonly<Record<CheckInState, StateCopy>> = {
   },
 };
 
-
 // ---------------------------------------------------------------------------------------------
 // The lifecycle of a coaching episode
 // ---------------------------------------------------------------------------------------------
@@ -649,7 +648,6 @@ export const STOP_EFFECT_COPY: Readonly<Record<StopEffect, StopEffectCopy>> = {
       "already seen can be recalled.",
   },
 };
-
 
 // ---------------------------------------------------------------------------------------------
 // The five limit messages
@@ -931,4 +929,3 @@ export const TARGET_VERSION_GUARANTEE =
   "from the date it takes effect, and a period that has closed keeps the version it was measured " +
   "against: no two versions cover the same day, and the period where a change landed is never " +
   "split into a prorated bridge.";
-

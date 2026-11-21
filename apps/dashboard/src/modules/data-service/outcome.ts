@@ -168,12 +168,23 @@ export type AcceptedOutcome = {
  * The same `operationId` arrived again with the same intent, so the stored result is returned and
  * nothing new happens: no second effect and no new revision, which is what makes a lost
  * acknowledgement recoverable instead of a reason to send the work again.
+ *
+ * `revision` and the three identifier members are the ones the accepted answer reported, not the
+ * caller's request: a client recovering from a lost acknowledgement reads from a replay the same
+ * new revision, created identifiers, changed identifiers and per-item results it would have read
+ * from the answer it never received.
  */
 export type AlreadyAcceptedOutcome = {
   readonly outcome: "alreadyAccepted";
   readonly operationId: string;
   readonly revision: string;
   readonly result: MutationResult;
+  /** Identifiers the operation created, as the accepted answer stated them. */
+  readonly created?: readonly string[];
+  /** Identifiers the operation changed, as the accepted answer stated them. */
+  readonly changed?: readonly string[];
+  /** Per-item results, as the accepted answer stated them. */
+  readonly items?: readonly PerItemResult[];
 };
 
 /** The payload would produce no change, so no history or activity entry was written. */
@@ -294,18 +305,28 @@ export function accepted(input: {
 /**
  * Answers a replay: the same `operationId` with the same intent returns the stored result, with no
  * new effect and no new revision. The stored result is what the original call answered with, so a
- * caller that lost the first response recovers the same identifiers it would have had.
+ * caller that lost the first response recovers the same identifiers it would have had — the change's
+ * own revision, the identifiers it created or changed and any per-item results, never the revision
+ * the caller happened to present with the request.
  */
 export function alreadyAccepted(input: {
   operationId: string;
   revision: string;
   result: MutationResult;
+  created?: readonly string[];
+  changed?: readonly string[];
+  items?: readonly PerItemResult[];
 }): AlreadyAcceptedOutcome {
   return {
     outcome: "alreadyAccepted",
     operationId: input.operationId,
     revision: input.revision,
     result: input.result,
+    // Absent members are omitted rather than set to `undefined`, so a replay's body has the same
+    // shape as the accepted body it stands in for.
+    ...(input.created === undefined ? {} : { created: input.created }),
+    ...(input.changed === undefined ? {} : { changed: input.changed }),
+    ...(input.items === undefined ? {} : { items: input.items }),
   };
 }
 
@@ -381,6 +402,50 @@ function fieldMessagesFromIssues(error: ZodError): FieldMessages {
   return messages;
 }
 
+/** The envelope member a request body's payload hangs off, as a whole-body schema names it. */
+const PAYLOAD_FIELD_PATH = "payload";
+
+/** The path a field inside the payload arrives under when the whole request body was validated. */
+const PAYLOAD_FIELD_PREFIX = `${PAYLOAD_FIELD_PATH}.`;
+
+/**
+ * Re-keys an `invalid` body's fields onto the payload the caller posted, which is the convention
+ * every form in this tree already renders: the media picker's field labels are `placement.altText`
+ * and `probe.width`, the import mapper reads `byField.confirmedMapping`, and the hooks that
+ * pre-validate a payload themselves (`use-save-goal`, `use-follow-up-task`) answer with the payload's
+ * own paths. A handler that validated the whole request body reports the same input as
+ * `payload.title`, so the transport is the outlier and this is the one place that reconciles it.
+ *
+ * A path beginning `payload.` loses that prefix and nothing else changes. The bare path `payload`
+ * names the payload object as a whole rather than a control, so it becomes `ROOT_FIELD_KEY`: a
+ * form-level issue, which is the answer the service already gives for the same input. Every other
+ * key is an envelope-level refusal or a payload-relative key the service produced, and passes through
+ * untouched. Order is kept — keys in the order they arrived, each key's messages in their own order,
+ * and two source keys that collapse onto one append the later messages rather than replace them.
+ */
+function payloadRelativeFields(fields: FieldMessages): FieldMessages {
+  const messages: Record<string, string[]> = {};
+  for (const [path, pathMessages] of Object.entries(fields)) {
+    let key = path;
+    if (key === PAYLOAD_FIELD_PATH) {
+      key = ROOT_FIELD_KEY;
+    } else if (key.startsWith(PAYLOAD_FIELD_PREFIX)) {
+      key = key.slice(PAYLOAD_FIELD_PREFIX.length);
+    }
+    const existing = messages[key];
+    if (existing === undefined) {
+      messages[key] = [...pathMessages];
+    } else {
+      for (const message of pathMessages) {
+        if (!existing.includes(message)) {
+          existing.push(message);
+        }
+      }
+    }
+  }
+  return messages;
+}
+
 /**
  * Answers that the payload failed validation, with per-field messages and no side effect.
  *
@@ -443,6 +508,14 @@ export function unknown(input: { operationId: string }): UnknownOutcome {
  * mutation response: the response is not reusable at all, and a policy header here would be a
  * second, contradictory statement of that.
  *
+ * Field keys on an `invalid` body are relative to the payload the caller posted, never to the
+ * envelope it arrived in: `fieldErrorsFromInvalid` attaches each message to the control that carried
+ * the value, so `title` and `placement.altText` are the keys a form renders. A schema that validated
+ * the whole request body reports that same input as `payload.title`, and the prefix is what this
+ * mapping removes. An envelope-level refusal keeps its own name (`operationId`, `scope`,
+ * `expectedRevision`), and an issue with the payload as a whole — which names no control and belongs
+ * to the form — is keyed `ROOT_FIELD_KEY` like every other form-level issue.
+ *
  * A read result flattens onto the wire, because the status already discriminates it: 200 carries
  * the envelope itself, 403 the denial and 503 the outage. The `kind` wrapper belongs to the
  * in-process value a read returns, which is what `isReadResult` narrows; a client that has a
@@ -500,7 +573,13 @@ function respond(outcome: MutationOutcome, headers: Headers): Response {
       // cannot carry an existence flag, a count, a title or a size.
       return NextResponse.json(redactDenial(outcome), { status: 403, headers });
     case "invalid":
-      return NextResponse.json(outcome, { status: 422, headers });
+      // Field keys are re-based onto the payload the caller posted at the one boundary every
+      // mutation response crosses, so a handler that validated the whole body and a service that
+      // validated the payload alone answer with one convention.
+      return NextResponse.json(
+        { ...outcome, fields: payloadRelativeFields(outcome.fields) },
+        { status: 422, headers },
+      );
     case "unavailable":
       return NextResponse.json(outcome, { status: 503, headers });
     case "unknown":
@@ -510,8 +589,15 @@ function respond(outcome: MutationOutcome, headers: Headers): Response {
   }
 }
 
-/** The store fault raised when a session document exists but cannot be decoded. */
-const CORRUPT_DOCUMENT_FAULT = "CorruptJsonError";
+/**
+ * The store fault raised when a session document exists but cannot be decoded.
+ *
+ * Exported because it is the one name {@link outcomeFromError} maps to `unavailable`, and a mutation
+ * module that refuses a document it cannot read is stating the same condition one layer up. A caller
+ * that restates the literal instead of importing it is how one of them comes to drift and answer
+ * `unknown` for a fault the store itself reports honestly.
+ */
+export const CORRUPT_DOCUMENT_FAULT = "CorruptJsonError";
 
 /** The store fault raised for a session id that cannot name a document; refused, never repaired. */
 const INVALID_SESSION_FAULT = "InvalidSessionIdError";

@@ -396,8 +396,7 @@ interface ColumnViewInput {
 function buildColumnViews(input: ColumnViewInput): readonly ColumnView[] {
   return input.suggestion.columns.map((column) => {
     const choice = input.choiceOf(column.index);
-    const ignored =
-      input.ignored.find((candidate) => candidate.index === column.index) ?? null;
+    const ignored = input.ignored.find((candidate) => candidate.index === column.index) ?? null;
     const refusals = input.refusals.get(column.index) ?? NO_REFUSALS;
     const errors = messagesOf(refusals);
     const repeated = input.suggestion.repeatedHeaders.find(
@@ -524,12 +523,7 @@ interface ColumnControlProps extends ColumnViewProps {
  * domain's reason for the column (and any refusal naming it) arrives as the description and the
  * message, so the select is never described by anything but its own facts.
  */
-function ColumnControl({
-  view,
-  branch,
-  disabled,
-  onChoose,
-}: ColumnControlProps): ReactElement {
+function ColumnControl({ view, branch, disabled, onChoose }: ColumnControlProps): ReactElement {
   const columnIndex = view.column.index;
 
   return (
@@ -579,9 +573,7 @@ function ColumnStatusBlock({ view }: { readonly view: ColumnView }): ReactElemen
   return (
     <div className="flex flex-col items-start gap-1">
       <Badge variant={view.status.variant}>{view.status.label}</Badge>
-      {view.reason === null ? null : (
-        <p className="text-sm text-muted-foreground">{view.reason}</p>
-      )}
+      {view.reason === null ? null : <p className="text-sm text-muted-foreground">{view.reason}</p>}
       {view.note === null ? null : <p className="text-sm text-muted-foreground">{view.note}</p>}
     </div>
   );
@@ -619,12 +611,7 @@ function ColumnCard({ view, disabled, onChoose }: ColumnViewProps): ReactElement
         {view.status.kind === "blocked" ? (
           <p className="text-sm text-muted-foreground">{NOT_MAPPED}</p>
         ) : (
-          <ColumnControl
-            view={view}
-            branch="card"
-            disabled={disabled}
-            onChoose={onChoose}
-          />
+          <ColumnControl view={view} branch="card" disabled={disabled} onChoose={onChoose} />
         )}
         <ColumnStatusBlock view={view} />
       </CardContent>
@@ -722,8 +709,8 @@ export default function StepMapping({
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1 text-sm">
         <p>
-          <bdi>{name}</bdi> · <bdi>{String(rowCount)}</bdi> rows ·{" "}
-          <bdi>{String(columnCount)}</bdi> columns
+          <bdi>{name}</bdi> · <bdi>{String(rowCount)}</bdi> rows · <bdi>{String(columnCount)}</bdi>{" "}
+          columns
         </p>
         <p className="text-muted-foreground">{MAPPING_LEAD}</p>
       </div>
@@ -791,9 +778,7 @@ export default function StepMapping({
                         <bdi>{view.column.header}</bdi>
                       )}
                       {view.occurrenceLabel === null ? null : (
-                        <span className="block text-muted-foreground">
-                          {view.occurrenceLabel}
-                        </span>
+                        <span className="block text-muted-foreground">{view.occurrenceLabel}</span>
                       )}
                     </TableCell>
                     <TableCell className="whitespace-normal align-top">
@@ -874,8 +859,5 @@ export default function StepMapping({
 
 /** The fields a sentence names, in the vocabulary's own words. */
 function labelsOf(fieldIds: readonly ImportFieldId[]): string {
-  return fieldIds
-    .map((fieldId) => fieldDescriptorOf(fieldId)?.label ?? fieldId)
-    .join(", ");
+  return fieldIds.map((fieldId) => fieldDescriptorOf(fieldId)?.label ?? fieldId).join(", ");
 }
-

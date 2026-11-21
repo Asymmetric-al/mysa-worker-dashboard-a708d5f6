@@ -336,20 +336,21 @@ const MODULE_OFF_WORD = "Switched off";
 const MODULE_OFF_SENTENCE = "This module is switched off, so your coach cannot read it.";
 
 /** What a readable or an unreadable source means for the grant, in one line each. */
-const AVAILABILITY_COPY: Readonly<Record<SubjectAvailability, { label: string; description: string }>> =
-  {
-    available: {
-      label: "Readable",
-      description: "Every module this grant shares has a source that can be read at this moment.",
-    },
-    unavailable: {
-      label: "Unavailable right now",
-      description:
-        "The source behind these modules cannot be read at this moment. The episode is still open, " +
-        "the modules that do not depend on it stay usable, and this is an outage rather than an " +
-        "ending.",
-    },
-  };
+const AVAILABILITY_COPY: Readonly<
+  Record<SubjectAvailability, { label: string; description: string }>
+> = {
+  available: {
+    label: "Readable",
+    description: "Every module this grant shares has a source that can be read at this moment.",
+  },
+  unavailable: {
+    label: "Unavailable right now",
+    description:
+      "The source behind these modules cannot be read at this moment. The episode is still open, " +
+      "the modules that do not depend on it stay usable, and this is an outage rather than an " +
+      "ending.",
+  },
+};
 
 /** What a permission hold means, kept apart from every closure. */
 const HOLD_COPY: Readonly<Record<PermissionHold, { label: string; description: string }>> = {
@@ -831,7 +832,9 @@ export function SharingSummary({
                    * earlier source limit in force, presenting the Share-through date as the reason
                    * would state a rule that did not apply to this share.
                    */}
-                  {ongoing || grant.shareCutoff.sourceLimitWins ? "" : `${CUTOFF_DAY_AFTER_SENTENCE} `}
+                  {ongoing || grant.shareCutoff.sourceLimitWins
+                    ? ""
+                    : `${CUTOFF_DAY_AFTER_SENTENCE} `}
                   {CUTOFF_EXCLUSIVE_SENTENCE} {CUTOFF_FROZEN_SENTENCE}
                 </p>
                 {grant.shareCutoff.sourceLimitWins ? (
@@ -846,7 +849,9 @@ export function SharingSummary({
           </Section>
           <Separator />
           <Section id={`${headingId}-range`} title={FINANCIAL_RANGE_COPY.heading}>
-            <p className="text-sm text-pretty text-muted-foreground">{FINANCIAL_RANGE_COPY.purpose}</p>
+            <p className="text-sm text-pretty text-muted-foreground">
+              {FINANCIAL_RANGE_COPY.purpose}
+            </p>
             {range === null ? (
               <p className="text-sm text-pretty text-muted-foreground">{NO_RANGE_SENTENCE}</p>
             ) : (
@@ -888,10 +893,7 @@ export function SharingSummary({
           </Section>
         </CardContent>
         <CardFooter>
-          <Link
-            href={SHARING_ROUTE}
-            className={buttonVariants({ variant: "outline", size: "sm" })}
-          >
+          <Link href={SHARING_ROUTE} className={buttonVariants({ variant: "outline", size: "sm" })}>
             Manage what you share
           </Link>
         </CardFooter>
@@ -901,4 +903,3 @@ export function SharingSummary({
 }
 
 export default SharingSummary;
-

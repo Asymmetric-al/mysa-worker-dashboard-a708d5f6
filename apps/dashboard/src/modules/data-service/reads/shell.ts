@@ -46,9 +46,9 @@
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 
-import { isDevelopment } from "@/lib/guards";
 import type { SourceReference } from "@/lib/ids";
 import { logger } from "@/lib/logger";
+import { compareCodeUnits } from "@/lib/ordering";
 import { redactDenial } from "@/lib/redaction";
 import type { CommitmentRow } from "@/modules/support/buckets";
 import {
@@ -800,8 +800,8 @@ function compareByDayThenId(left: HomeItem, right: HomeItem): number {
   const leftDay = left.onDate ?? "";
   const rightDay = right.onDate ?? "";
   return leftDay === rightDay
-    ? left.itemId.localeCompare(right.itemId)
-    : leftDay.localeCompare(rightDay);
+    ? compareCodeUnits(left.itemId, right.itemId)
+    : compareCodeUnits(leftDay, rightDay);
 }
 
 /**
@@ -818,7 +818,7 @@ function seriesPlanReviewItems(
 ): readonly HomeItem[] {
   const items: HomeItem[] = [];
   for (const entry of [...series].sort((left, right) =>
-    left.seriesId.localeCompare(right.seriesId),
+    compareCodeUnits(left.seriesId, right.seriesId),
   )) {
     if (!entry.planNeedsReview || entry.state === "stopped") {
       continue;
@@ -867,7 +867,9 @@ function taskItems(
   const unfinished: HomeItem[] = [];
   const dated: { readonly task: TaskRecord; readonly day: CivilDate }[] = [];
 
-  for (const task of [...tasks].sort((left, right) => left.taskId.localeCompare(right.taskId))) {
+  for (const task of [...tasks].sort((left, right) =>
+    compareCodeUnits(left.taskId, right.taskId),
+  )) {
     if (task.status !== "open" && task.status !== "reopened") {
       continue;
     }
@@ -962,7 +964,7 @@ function commitmentAttentionItems(
   }
   return commitments
     .filter((record) => record.bucketState === "recovery-needs-attention")
-    .sort((left, right) => left.commitmentRowId.localeCompare(right.commitmentRowId))
+    .sort((left, right) => compareCodeUnits(left.commitmentRowId, right.commitmentRowId))
     .map((record) =>
       homeItem({
         itemId: `commitment:${record.commitmentRowId}`,
@@ -1009,7 +1011,7 @@ function notificationItems(
 
   const items: HomeItem[] = [];
   for (const intent of [...intents].sort((left, right) =>
-    left.intentId.localeCompare(right.intentId),
+    compareCodeUnits(left.intentId, right.intentId),
   )) {
     const outcomes = resultsByIntent.get(intent.intentId) ?? [];
     const needsAttention =
@@ -1083,8 +1085,8 @@ function interactionItems(
     const leftDay = left.onDate ?? "";
     const rightDay = right.onDate ?? "";
     return leftDay === rightDay
-      ? left.itemId.localeCompare(right.itemId)
-      : rightDay.localeCompare(leftDay);
+      ? compareCodeUnits(left.itemId, right.itemId)
+      : compareCodeUnits(rightDay, leftDay);
   });
   return items.slice(0, RECENT_INTERACTION_LIMIT);
 }
@@ -1110,7 +1112,7 @@ function referralItems(
   const now = instantAt(context.session.clockOffsetMs);
   const items: HomeItem[] = [];
   for (const cycle of [...referrals].sort((left, right) =>
-    left.referralId.localeCompare(right.referralId),
+    compareCodeUnits(left.referralId, right.referralId),
   )) {
     if (cycle.consumed) {
       // A consumed cycle has already produced its one successor: its window is settled history, not
@@ -1160,7 +1162,7 @@ function contentItems(
   const documentsById = new Map(documents.map((document) => [document.documentId, document]));
   const items: HomeItem[] = [];
   for (const variant of [...variants].sort((left, right) =>
-    left.variantId.localeCompare(right.variantId),
+    compareCodeUnits(left.variantId, right.variantId),
   )) {
     const document = documentsById.get(variant.documentId);
     if (document === undefined) {
@@ -1230,7 +1232,7 @@ function importItems(
   }
   return proposals
     .filter((proposal) => proposal.processedAt === null)
-    .sort((left, right) => left.importOperationId.localeCompare(right.importOperationId))
+    .sort((left, right) => compareCodeUnits(left.importOperationId, right.importOperationId))
     .map((proposal) =>
       homeItem({
         itemId: `import:${proposal.importOperationId}`,
@@ -1261,7 +1263,7 @@ function targetItems(
         target.homePlacement === "placed" &&
         target.state !== "ended",
     )
-    .sort((left, right) => left.targetId.localeCompare(right.targetId))
+    .sort((left, right) => compareCodeUnits(left.targetId, right.targetId))
     .map((target) =>
       homeItem({
         itemId: `target:${target.targetId}`,
@@ -1400,30 +1402,70 @@ function admittedMinistryCount(memberships: readonly AdmittedMembership[]): numb
 }
 
 /**
- * The actions the admission statement offers.
+ * The actions the admission statement offers, derived from the session's own state.
  *
  * Advisory only — the service re-derives scope and permission when one is submitted — and each absent
- * action states why it is absent. Switching session is a development control, so it is unavailable
- * outside a development build rather than hidden: a production build has no authentication to switch.
+ * action states why it is absent. `selectContext` is the one mutation this job's inventory names, and
+ * only a signed-in session that admits more than one ministry can perform it: a single ministry opens
+ * directly, and a session that has expired, was denied, is unavailable or holds no account admits no
+ * authority at all, so its reason states that admission fact rather than a ministry count the state
+ * does not grant.
+ *
+ * No session-switch action is offered. The session a preview acts as is chosen by the development
+ * session cookie the seeded sessions are addressed by, and this release has no switch mutation — the
+ * development runtime's own commands are scenario, clock, failure plan and reset — so a
+ * `switchDevelopmentSession` entry would name a control that can never act. Switching between the
+ * seeded sessions stays a development control of the shell, outside this envelope.
  */
 function admissionActions(session: ResolvedSession): readonly ReadAction[] {
-  const ministryCount = admittedMinistryCount(session.admittedMemberships);
-  return [
-    action(
-      "selectContext",
-      ministryCount > 1,
-      ministryCount === 1
-        ? "One ministry is admitted, so that context opens directly and there is nothing to choose."
-        : ministryCount === 0
-          ? "The session admits no ministry, so there is no context to select."
-          : "This session's contexts could not be read.",
-    ),
-    action(
-      "switchDevelopmentSession",
-      isDevelopment(),
-      "Switching session belongs to the development runtime; production authentication is out of this release's scope.",
-    ),
-  ];
+  switch (session.sessionState) {
+    case "signed-in": {
+      const ministryCount = admittedMinistryCount(session.admittedMemberships);
+      return [
+        action(
+          "selectContext",
+          ministryCount > 1,
+          ministryCount === 1
+            ? "One ministry is admitted, so that context opens directly and there is nothing to choose."
+            : ministryCount === 0
+              ? "The session admits no ministry, so there is no context to select."
+              : "Several ministries are admitted, so a context can be selected.",
+        ),
+      ];
+    }
+    case "no-access":
+      return [
+        action(
+          "selectContext",
+          false,
+          "This session is not admitted: the account it names holds no membership, so there is no context to select.",
+        ),
+      ];
+    case "denied":
+      return [
+        action(
+          "selectContext",
+          false,
+          "This session is not admitted, so there is no context to select.",
+        ),
+      ];
+    case "expired":
+      return [
+        action(
+          "selectContext",
+          false,
+          "This session has expired and is not admitted, so there is no context to select.",
+        ),
+      ];
+    case "unavailable":
+      return [
+        action(
+          "selectContext",
+          false,
+          "This session is unavailable and is not admitted, so there is no context to select.",
+        ),
+      ];
+  }
 }
 
 /** The value-state map for a stated support figure, keyed by the path the surface reads. */

@@ -99,6 +99,8 @@ import { confirmationDeadline, continuedWindowEnd, newWindowEnd } from "@/module
 import {
   buildSessionMeta,
   DEFAULT_SCENARIO_ID,
+  type PersistedPersonaKind,
+  type PersistedPersonaRecord,
   type ScenarioId,
   type SessionMetaDocument,
   type SessionState,
@@ -175,8 +177,9 @@ const PRINCIPAL_DEPUTIZED: PrincipalId = identifier<PrincipalId>("principal-depu
 const PRINCIPAL_COACH: PrincipalId = identifier<PrincipalId>("principal-coach");
 const PRINCIPAL_REVIEWER: PrincipalId = identifier<PrincipalId>("principal-content-reviewer");
 const PRINCIPAL_READER_PUBLIC: PrincipalId = identifier<PrincipalId>("principal-reader-public");
-const PRINCIPAL_READER_SUPPORTER: PrincipalId =
-  identifier<PrincipalId>("principal-reader-approved-supporter");
+const PRINCIPAL_READER_SUPPORTER: PrincipalId = identifier<PrincipalId>(
+  "principal-reader-approved-supporter",
+);
 const PRINCIPAL_READER_UNAUTHORIZED: PrincipalId = identifier<PrincipalId>(
   "principal-reader-unauthorized",
 );
@@ -221,11 +224,15 @@ const RIVERBEND_OUTREACH: AdmittedMembership = {
  * fundraiser and the content reviewer act inside the established worker's ministry, so they start
  * from the same shared records, while their own private notes and tasks are theirs. The students
  * ministry is its own workspace because a state document holds the projection of the ministry its
- * context selects, and that ministry's source carries no goal.
+ * context selects, and that ministry's source carries no goal. The partial-release workspace is the
+ * established worker's own records with only their content publication facts changed, so the failed
+ * sibling that criterion 17 starts from is record state and not a source availability: a scenario
+ * flag states what a source can serve, which is a different fact from what a release attempt did.
  */
 export type SeededWorkspace =
   | "new-worker"
   | "established-worker"
+  | "established-worker-partial-release"
   | "students-ministry"
   | "second-worker"
   | "coach"
@@ -288,9 +295,18 @@ const CAPABILITIES_BY_PERSONA: Readonly<Record<PersonaId, readonly string[]>> = 
   subscriber: Object.freeze([]),
 });
 
-/** One persona, the words it is named by, and the session a spec selects when it means that persona. */
+/**
+ * One persona, the words it is named by, and the session a spec selects when it means that persona.
+ *
+ * `principalId` is the reference the active persona is matched by: it is the same principal the
+ * persona's sessions resolve to, so the panel identifies the acting persona by reference and never by
+ * a label. `kind` is how the panel groups the roster — the receiving readers apart from the
+ * worker-side identities whose seats own work.
+ */
 export interface SeededPersona {
   readonly id: PersonaId;
+  readonly principalId: PrincipalId;
+  readonly kind: PersistedPersonaKind;
   readonly label: string;
   readonly defaultSessionId: string;
   readonly description: string;
@@ -624,7 +640,7 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = deepFreeze([
     sessionState: "signed-in",
     scenarioId: "partial-release-failure",
     selectedContext: HARBOUR_YOUTH,
-    workspace: "established-worker",
+    workspace: "established-worker-partial-release",
   },
 ]);
 
@@ -638,6 +654,8 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = deepFreeze([
 export const SEEDED_PERSONAS: Readonly<Record<PersonaId, SeededPersona>> = deepFreeze({
   "new-worker": {
     id: "new-worker",
+    principalId: PRINCIPAL_NEW_WORKER,
+    kind: "worker",
     label: "New worker",
     defaultSessionId: "new-worker",
     description:
@@ -645,6 +663,8 @@ export const SEEDED_PERSONAS: Readonly<Record<PersonaId, SeededPersona>> = deepF
   },
   "established-worker": {
     id: "established-worker",
+    principalId: PRINCIPAL_ESTABLISHED,
+    kind: "worker",
     label: "Established worker",
     defaultSessionId: DEFAULT_SESSION_ID,
     description:
@@ -652,18 +672,24 @@ export const SEEDED_PERSONAS: Readonly<Record<PersonaId, SeededPersona>> = deepF
   },
   "second-worker": {
     id: "second-worker",
+    principalId: PRINCIPAL_SECOND,
+    kind: "worker",
     label: "Second worker",
     defaultSessionId: "second-worker",
     description: "A worker in another organization, whose scope shares nothing with the first.",
   },
   fundraiser: {
     id: "fundraiser",
+    principalId: PRINCIPAL_DEPUTIZED,
+    kind: "worker",
     label: "Deputized fundraiser",
     defaultSessionId: "deputized-fundraiser",
     description: "Someone deputized to act inside one admitted ministry, and nowhere else.",
   },
   coach: {
     id: "coach",
+    principalId: PRINCIPAL_COACH,
+    kind: "coach",
     label: "Coach",
     defaultSessionId: "coach",
     description:
@@ -671,6 +697,8 @@ export const SEEDED_PERSONAS: Readonly<Record<PersonaId, SeededPersona>> = deepF
   },
   reviewer: {
     id: "reviewer",
+    principalId: PRINCIPAL_REVIEWER,
+    kind: "reviewer",
     label: "Content reviewer",
     defaultSessionId: "content-reviewer",
     description:
@@ -678,18 +706,24 @@ export const SEEDED_PERSONAS: Readonly<Record<PersonaId, SeededPersona>> = deepF
   },
   "reader-public": {
     id: "reader-public",
+    principalId: PRINCIPAL_READER_PUBLIC,
+    kind: "reader",
     label: "Public reader",
     defaultSessionId: "reader-public",
     description: "A reader of the public edition, appearing only in the in-app receiving preview.",
   },
   "reader-approved-supporter": {
     id: "reader-approved-supporter",
+    principalId: PRINCIPAL_READER_SUPPORTER,
+    kind: "reader",
     label: "Approved-supporter reader",
     defaultSessionId: "reader-approved-supporter",
     description: "A reader admitted to the approved-supporter edition and refused anything else.",
   },
   "reader-unauthorized": {
     id: "reader-unauthorized",
+    principalId: PRINCIPAL_READER_UNAUTHORIZED,
+    kind: "reader",
     label: "Unauthorized reader",
     defaultSessionId: "reader-unauthorized",
     description:
@@ -697,12 +731,60 @@ export const SEEDED_PERSONAS: Readonly<Record<PersonaId, SeededPersona>> = deepF
   },
   subscriber: {
     id: "subscriber",
+    principalId: PRINCIPAL_SUBSCRIBER,
+    kind: "reader",
     label: "Subscriber",
     defaultSessionId: "subscriber",
     description:
       "A reader with a purpose-specific membership, choosing Off or Immediate for that purpose alone.",
   },
 } satisfies Record<PersonaId, SeededPersona>);
+
+/**
+ * The order the development panel lists the seeded roster in: the worker-side identities first,
+ * then the reviewer and the coach, then the receiving readers.
+ *
+ * Written out rather than read from {@link SEEDED_PERSONAS}'s keys, because a key order is a property
+ * of insertion rather than a decision: reordering that literal would silently reorder the panel. This
+ * list is the order itself, and it is what keeps a persisted roster byte-identical between two runs
+ * of the deterministic seed (AAP 0.7.2).
+ */
+const PERSONA_ROSTER_ORDER: readonly PersonaId[] = Object.freeze([
+  "new-worker",
+  "established-worker",
+  "second-worker",
+  "fundraiser",
+  "reviewer",
+  "coach",
+  "reader-public",
+  "reader-approved-supporter",
+  "reader-unauthorized",
+  "subscriber",
+]);
+
+/**
+ * The persona roster every seeded session persists: the ten personas AAP 0.7.2 seeds, in registry
+ * order.
+ *
+ * It is written into each session's own document rather than derived at read time, so the development
+ * read can list the roster without importing this builder, which belongs to the write path. Every
+ * session carries the same roster — the panel lists what can be previewed, and which of them the
+ * session currently acts as is answered by matching the session's principal, not by which subset the
+ * document happens to hold. No clock and no randomness enters it, so two resets persist identical
+ * bytes and a caller builds a fresh array on every call rather than sharing one literal.
+ */
+function seededPersonaRoster(): PersistedPersonaRecord[] {
+  return PERSONA_ROSTER_ORDER.map((personaId) => {
+    const persona = SEEDED_PERSONAS[personaId];
+    return {
+      id: persona.id,
+      principalId: persona.principalId,
+      kind: persona.kind,
+      label: persona.label,
+      description: persona.description,
+    };
+  });
+}
 
 /** The seeded session ids, in registry order, for an operator listing and for a CLI's validation. */
 export const SEEDED_SESSION_IDS: readonly string[] = Object.freeze(
@@ -1340,10 +1422,15 @@ function secondWorkerWorkspace(session: SeededSession): SessionStateDocument {
   ];
 
   const tasks: readonly TaskRecord[] = [
-    buildTask("task-river-invite-owen", "Send Owen the outreach evening details", session.principalId, {
-      dueOn: "2026-11-25",
-      partnerId: "partner-river-owen-hale",
-    }),
+    buildTask(
+      "task-river-invite-owen",
+      "Send Owen the outreach evening details",
+      session.principalId,
+      {
+        dueOn: "2026-11-25",
+        partnerId: "partner-river-owen-hale",
+      },
+    ),
   ];
 
   const gifts: readonly GiftRowRecord[] = [
@@ -1375,7 +1462,6 @@ function secondWorkerWorkspace(session: SeededSession): SessionStateDocument {
     supportProjection,
   });
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // The established worker's shared records: relationships, preparation and work
@@ -1639,11 +1725,16 @@ function harbourTasks(session: SeededSession): readonly TaskRecord[] {
       dueOn: "2026-11-10",
       partnerId: "partner-hana-nakamura",
     }),
-    buildTask("task-completed-intro", "Introduce Grace to the students' group", session.principalId, {
-      status: "completed",
-      dueOn: "2026-11-05",
-      partnerId: "partner-grace-adeyemi",
-    }),
+    buildTask(
+      "task-completed-intro",
+      "Introduce Grace to the students' group",
+      session.principalId,
+      {
+        status: "completed",
+        dueOn: "2026-11-05",
+        partnerId: "partner-grace-adeyemi",
+      },
+    ),
     // Undated on purpose: a list must show it as undated rather than invent a due date for it.
     buildTask("task-undated-prayer", "Pray for the students' exam week", session.principalId, {
       category: "Prayer",
@@ -1762,7 +1853,6 @@ function harbourSeries(session: SeededSession): readonly TaskSeriesRecord[] {
     ),
   ];
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // Outreach: an initiative, its working list, a versioned Request, and the referral cycles
@@ -2016,7 +2106,6 @@ function harbourReferrals(): readonly ReferralCycleRecord[] {
   ];
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // Support: one named basis with its provenance and coverage, the gifts, and the commitments
 // ---------------------------------------------------------------------------------------------
@@ -2158,13 +2247,19 @@ function harbourCommitments(): readonly CommitmentRowRecord[] {
         remaining: money("USD", 125000),
       },
     }),
-    buildCommitment("commitment-harbour-0006", "automatic-recurring", "outside-partition", "KWD", 1000, {
-      pause: { state: "paused", resumeOn: "2026-12-01" },
-      lastSuccessfulOn: "2026-08-02",
-    }),
+    buildCommitment(
+      "commitment-harbour-0006",
+      "automatic-recurring",
+      "outside-partition",
+      "KWD",
+      1000,
+      {
+        pause: { state: "paused", resumeOn: "2026-12-01" },
+        lastSuccessfulOn: "2026-08-02",
+      },
+    ),
   ];
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // Content and media: locales, the draft/candidate/release states, and the prepared assets
@@ -2557,6 +2652,116 @@ function harbourContent(session: SeededSession): HarbourContent {
   };
 }
 
+// ---------------------------------------------------------------------------------------------
+// The partial-release world: the same ministry, with one submission's per-variant outcomes stored
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Every variant of the established worker's Update and Page, with the two heads the partial release
+ * left behind.
+ *
+ * One submission of the Update had two editions. The English public edition's attempt landed, so its
+ * newer release is its head and the release it replaced is marked superseded. The Arabic public
+ * edition's attempt failed, so its prior-good release is still its head and the candidate it submitted
+ * — `rev-update-ar-candidate-1`, already frozen on the variant by {@link harbourContentVariants} —
+ * stays frozen there rather than being discarded. No release names that candidate's revision, and that
+ * absence is what makes "failed under its prior-good head" a stored fact rather than a label.
+ *
+ * The other four variants are the established worker's own records unchanged, in their own order: a
+ * failed sibling changes what one submission published and nothing about the rest of the Update.
+ */
+function partialReleaseContentVariants(): readonly ContentVariantRecord[] {
+  return harbourContentVariants().map((variant) => {
+    switch (variant.variantId) {
+      case "variant-update-autumn-en-public":
+        // The sibling whose attempt succeeded: a second release became its head.
+        return { ...variant, releaseHeadId: "release-update-en-2" };
+      case "variant-update-autumn-ar-public":
+        // The sibling whose attempt failed: the prior-good head it already had, kept.
+        return { ...variant, releaseHeadId: "release-update-ar-1" };
+      default:
+        return variant;
+    }
+  });
+}
+
+/**
+ * Every revision of the partial-release world: the established worker's own, then the two the two
+ * publications named above released.
+ *
+ * Both are built through {@link buildContentRevision}, under the Update's own document identity
+ * (`doc-update-autumn`), so each carries the checksum of the body it publishes and the content profile
+ * validates it exactly as it validates the seeded drafts and candidates beside it. Each instant is a
+ * literal between the submission it belongs to and {@link SEED_INSTANT}, so no revision is dated after
+ * the instant the seed's clock starts at.
+ */
+function partialReleaseContentRevisions(): readonly ContentRevisionRecord[] {
+  const author = PRINCIPAL_ESTABLISHED;
+  return [
+    ...harbourContentRevisions(),
+    // The Arabic edition's earlier publication, which the failed attempt did not replace.
+    buildContentRevision(
+      "rev-update-ar-1",
+      "variant-update-autumn-ar-public",
+      contentBody("rtl", ["الخريف في هاربر يوث", "التقينا كل يوم جمعة هذا الفصل، وتشاركنا وجبة."]),
+      author,
+      "2026-10-23T10:00:00Z",
+      "الخريف في هاربر يوث",
+    ),
+    // The English edition's second publication, which the sibling's failure left standing.
+    buildContentRevision(
+      "rev-update-en-2",
+      "variant-update-autumn-en-public",
+      contentBody("ltr", [
+        "Autumn at Harbour Youth",
+        "This term we have met every Friday, shared a meal each week and welcomed six new faces.",
+        "As the term closes we are planning the Christmas meal, and your giving is what makes it possible.",
+      ]),
+      author,
+      "2026-11-17T15:00:00Z",
+      "Autumn at Harbour Youth",
+    ),
+  ];
+}
+
+/**
+ * Every release of the partial-release world: the established worker's own, with the one the English
+ * edition's second publication replaced marked superseded by it, then that publication's release and
+ * the Arabic edition's prior-good one.
+ *
+ * Both added releases are built through {@link buildRelease} and keep the reach the variants beside
+ * them already carry, `link-public`: this world changes which release stands at a head, not how far a
+ * released edition reaches. Their publication instants are literals: the Arabic edition's earlier
+ * release precedes its draft, and the English release follows the candidate submission it belonged to
+ * and precedes {@link SEED_INSTANT}.
+ */
+function partialReleaseReleases(): readonly ReleaseRecord[] {
+  return [
+    ...harbourReleases().map((release) =>
+      release.releaseId === "release-update-en-1"
+        ? { ...release, supersededBy: "release-update-en-2" }
+        : release,
+    ),
+    buildRelease(
+      "release-update-ar-1",
+      "variant-update-autumn-ar-public",
+      "rev-update-ar-1",
+      "public",
+      "ar",
+      "2026-10-24T09:00:00Z",
+      "link-public",
+    ),
+    buildRelease(
+      "release-update-en-2",
+      "variant-update-autumn-en-public",
+      "rev-update-en-2",
+      "public",
+      "en",
+      "2026-11-18T09:00:00Z",
+      "link-public",
+    ),
+  ];
+}
 
 // ---------------------------------------------------------------------------------------------
 // Delivery: purpose-specific memberships, one notification intent, and its per-recipient outcomes
@@ -2932,7 +3137,6 @@ function coachingShare(): CoachingShare {
   };
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // Assembling a seeded session
 // ---------------------------------------------------------------------------------------------
@@ -2974,6 +3178,30 @@ function establishedWorkerWorkspace(session: SeededSession): SessionStateDocumen
     coachingTargets: coaching.coachingTargets,
     coachingCheckIns: coaching.coachingCheckIns,
   });
+}
+
+/**
+ * The established worker's workspace with one Update submission's per-variant release outcomes stored.
+ *
+ * Everything the session acts on is the established worker's own records, built once by
+ * {@link establishedWorkerWorkspace} and carried over unchanged: the same partners, gifts, tasks,
+ * series, initiatives, requests, referrals, support projection, media assets, memberships,
+ * notification intents and results, and coaching records. Only the three publication families of the
+ * Update differ, because a partial release changes what one submission published and nothing about the
+ * ministry's operational facts.
+ *
+ * This is the world AAP 0.7.2's "partial-release example where one variant succeeded and a sibling
+ * failed" names and the one criterion 17 starts from: the success and the failed sibling's prior-good
+ * head are both readable from the records, with no store edited by hand and no scenario flag standing
+ * in for a publication outcome.
+ */
+function partialReleaseWorkspace(session: SeededSession): SessionStateDocument {
+  return {
+    ...establishedWorkerWorkspace(session),
+    contentVariants: partialReleaseContentVariants(),
+    contentRevisions: partialReleaseContentRevisions(),
+    releases: partialReleaseReleases(),
+  };
 }
 
 /**
@@ -3052,6 +3280,8 @@ export function seedWorkspace(session: SeededSession): SessionStateDocument {
       return newWorkerWorkspace(session);
     case "established-worker":
       return establishedWorkerWorkspace(session);
+    case "established-worker-partial-release":
+      return partialReleaseWorkspace(session);
     case "students-ministry":
       return studentsMinistryWorkspace(session);
     case "second-worker":
@@ -3081,6 +3311,9 @@ function buildSessionDocuments(session: SeededSession): SeededSessionDocuments {
       sessionState: session.sessionState,
       scenarioId: session.scenarioId,
       capabilities: CAPABILITIES_BY_PERSONA[session.persona],
+      // Every session persists the same roster: the panel offers the identities a preview may switch
+      // to, and the one this session acts as is found by matching the principal below.
+      personas: seededPersonaRoster(),
       selectedContext:
         selected === null
           ? null
@@ -3128,4 +3361,3 @@ export async function seed(): Promise<SeededSessionWithDocuments[]> {
   }
   return sessions;
 }
-

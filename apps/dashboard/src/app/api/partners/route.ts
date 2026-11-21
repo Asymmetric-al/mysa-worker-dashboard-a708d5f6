@@ -10,15 +10,19 @@
  * most visibly in `total`, which stays the whole-result count only while the service is its one
  * source.
  *
- * The roster read and the facet read are folded into one envelope instead of answered as two
- * documents. `findPartners` answers one page of rows plus the whole-result total for a query;
- * `readFacets` answers every filter the caller may use, with the whole-result count of records
- * carrying each value, for that same query. Served separately, a surface could show counts describing
- * a different filter set than the rows it renders, and each document would have to state its own
- * basis. Folded, the facet set travels under `data.facets` inside the roster's envelope, and the
- * facet read's `valueStates` merge in under the `facets.` paths they already carry, so every
- * value-bearing field the response holds has a state the surface can read. There is no `/api/facets`
- * path and none may be added: this fold is the only place facet data leaves the application.
+ * The roster read answers one envelope, not two documents. `findPartners` returns one page of rows,
+ * the whole-result total and the facet set describing that same query — every filter the caller may
+ * use, with the whole-result count of records carrying each value — under one `asOf`, one revision
+ * and one coverage. Read as two calls, a surface could show counts describing a different filter set,
+ * or counts read at a later instant than the rows it renders, and each document would have to state
+ * its own basis. Here the facet set travels under `data.facets` inside the roster's own envelope, and
+ * its option counts carry the `facets.` value-state paths they already had, so every value-bearing
+ * field the response holds has a state the surface can read. There is no `/api/facets` path and none
+ * may be added: this read is the only place facet data leaves the application. The answer also states
+ * which filters took effect — `data.applied` for the facet selections it admitted, `data.appliedSearch`
+ * for the search text it searched and `data.appliedPeriod` for the period its giving figures were read
+ * over — because only the service knows which of them a retired value or an unavailable source left
+ * out, and a toolbar rebuilt from the request would show a filter the read did not apply.
  *
  * A refusal is answered, never repaired. A denial or an absent source comes back through `toResponse`
  * exactly as the read reported it, because an empty roster and a zero count are the two answers an
@@ -36,47 +40,14 @@ import {
   reads,
   toResponse,
   type PartnerRecord,
-  type ReadEnvelope,
-  type ReadResult,
 } from "@/modules/data-service";
 import { isResolvableTimeZone, parseCivilDate } from "@/modules/time/civil";
-
-/**
- * The envelope a service read answers with, taken from the read's own signature.
- *
- * Deriving the shape instead of naming the module's exported interface keeps this handler honest
- * about what the service will actually hand it: a read that starts answering a different page takes
- * the fold's type with it, rather than leaving a hand-written duplicate to drift.
- */
-type EnvelopeOf<Read> = Read extends {
-  readonly kind: "envelope";
-  readonly envelope: infer Envelope;
-}
-  ? Envelope
-  : never;
-
-/** What the roster read answers: one page of rows, the whole-result total and the applied filters. */
-type RosterEnvelope = EnvelopeOf<Awaited<ReturnType<typeof reads.partners.findPartners>>>;
-
-/** What the facet read answers: every filter the caller may use, with its admitted values. */
-type FacetEnvelope = EnvelopeOf<Awaited<ReturnType<typeof reads.partners.readFacets>>>;
 
 /** The roster query the read accepts, taken from the read's own parameter list. */
 type RosterQuery = NonNullable<Parameters<typeof reads.partners.findPartners>[0]>;
 
 /** One field the roster may be sorted by, as the read declares it. */
 type RosterSort = NonNullable<RosterQuery["sort"]>;
-
-/**
- * The roster page with the facet set folded in beside it.
- *
- * The envelope's other seven members are the roster read's own, unchanged: one scope, one source, one
- * revision, one as-of instant, one coverage and one action list describe both halves of this answer,
- * and stating two could let a surface compare a count against rows read at a different moment.
- */
-type RosterEnvelopeWithFacets = ReadEnvelope<
-  RosterEnvelope["data"] & { readonly facets: FacetEnvelope["data"] }
->;
 
 /**
  * The sort fields the roster offers, checked against the read's own type.
@@ -143,7 +114,7 @@ function wholeNumber(message: string) {
  * field the roster offers, a facet named `facetId:value`, both ends of a period. It never decides
  * which facets exist, how their values combine, how many rows a page holds, or what any count is: a
  * facet id or value the read does not admit narrows nothing, and the read reports the filters that
- * actually took effect in `data.applied`.
+ * actually took effect in `data.applied`, `data.appliedSearch` and `data.appliedPeriod`.
  *
  * A period is held to the two things a range needs that its shape alone does not say — each end is a
  * day the calendar holds, written in the stored `YYYY-MM-DD` form, and its start falls on or before
@@ -386,12 +357,12 @@ function attemptIdOf(body: unknown): string {
 }
 
 /**
- * Reads the partner roster and the facet set describing the same query, as one envelope.
+ * Reads the partner roster, with the facet set describing the same query, as one envelope.
  *
- * Outcome set: `envelope` (the roster page under its own members, with `data.facets` beside it),
+ * Outcome set: `envelope` (the roster page with its own members, and `data.facets` beside the rows),
  * `denied` (no admitted session or context), `unavailable` (the records could not be read) and
- * `unknown` (a failure whose fate is not known). A refusal from either read ends the request with
- * that refusal — it is never replaced by an empty roster, an empty facet set or a zeroed count.
+ * `unknown` (a failure whose fate is not known). A refusal is returned as the read reported it — it
+ * is never replaced by an empty roster, an empty facet set or a zeroed count.
  */
 export async function GET(request: NextRequest): Promise<Response> {
   const search = new URL(request.url).searchParams;
@@ -399,27 +370,10 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (!params.success) {
     return toResponse(outcomeFromError(UNATTEMPTED_REQUEST_ID, params.error));
   }
-  const query = assembleRosterQuery(params.data);
 
   try {
-    const roster = await reads.partners.findPartners(query);
-    if (roster.kind !== "envelope") {
-      return toResponse(roster);
-    }
-
-    // The same query object, so the counts describe the filter set the rows were read under.
-    const facets = await reads.partners.readFacets(query);
-    if (facets.kind !== "envelope") {
-      return toResponse(facets);
-    }
-
-    const folded: RosterEnvelopeWithFacets = {
-      ...roster.envelope,
-      data: { ...roster.envelope.data, facets: facets.envelope.data },
-      valueStates: { ...roster.envelope.valueStates, ...facets.envelope.valueStates },
-    };
-    const result: ReadResult<RosterEnvelopeWithFacets> = { kind: "envelope", envelope: folded };
-    return toResponse(result);
+    const roster = await reads.partners.findPartners(assembleRosterQuery(params.data));
+    return toResponse(roster);
   } catch (error) {
     // An exception here is a defect rather than a presentation: the service answers refusals as
     // outcomes, so a throw means a store or medium fault, or a failure whose fate is not known. The

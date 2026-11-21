@@ -17,9 +17,10 @@
  * `{ operationId, scope, expectedRevision, payload }` belongs to the read envelope, and
  * `../hooks/use-bulk-task-mutations.ts` composes the two and reuses one operation identity per
  * intent, so a replayed submit returns the same per-item results instead of a second effect. No
- * schema below declares `operationId`, `scope` or `expectedRevision`, and each object keeps Zod's
- * default strip mode for exactly that reason: a smuggled envelope field inside a payload is dropped
- * rather than trusted.
+ * schema below declares `operationId`, `scope` or `expectedRevision`, and every payload object is a
+ * strict object for exactly that reason: an envelope field smuggled into a payload — or any other
+ * stray key — is refused here by the rule the service's own strict payload schema applies, instead
+ * of being dropped in the browser and answered `invalid` a round trip later.
  *
  * These schemas decide shape, never admissibility. Whether a selected row still exists, whether the
  * caller may change it, whether it can be completed on its own and whether it already carries the
@@ -62,7 +63,8 @@ import {
  */
 export const BULK_SCHEMA_MESSAGES = {
   /** The same task identifier reached one selection twice. */
-  duplicateSelection: "Each row appears once in a selection, so remove the repeated row and submit again.",
+  duplicateSelection:
+    "Each row appears once in a selection, so remove the repeated row and submit again.",
   /** A private tag longer than a list row can show. */
   tagTooLong: "A private tag is a short label, so shorten this one to a few words.",
 } as const;
@@ -169,7 +171,7 @@ export type BulkItemResultState = z.infer<typeof bulkItemResultStateSchema>;
  * follow-up. No field here can record contact, money or a message, so a batch of follow-ups can
  * never claim that anyone was reached or anything was given.
  */
-export const followUpTaskTemplateSchema = z.object({
+export const followUpTaskTemplateSchema = z.strictObject({
   title: taskTitleSchema,
   category: taskCategorySchema,
   dueOn: civilDateSchema.optional(),
@@ -192,7 +194,7 @@ export type FollowUpTaskTemplate = z.infer<typeof followUpTaskTemplateSchema>;
  * question about the record and therefore the service's to answer. Nothing is sent and no other
  * person sees the tag.
  */
-export const bulkApplyTagSchema = z.object({
+export const bulkApplyTagSchema = z.strictObject({
   taskIds: selectedTaskIdsSchema,
   tag: privateTagSchema,
 });
@@ -212,7 +214,7 @@ export type BulkApplyTagPayload = z.infer<typeof bulkApplyTagSchema>;
  * applied leaves the tasks themselves untouched — a tag is preparation, not the work — and a row that
  * never carried it comes back `unchanged` rather than failed.
  */
-export const bulkRemoveTagSchema = z.object({
+export const bulkRemoveTagSchema = z.strictObject({
   taskIds: selectedTaskIdsSchema,
   tag: privateTagSchema,
 });
@@ -233,7 +235,7 @@ export type BulkRemoveTagPayload = z.infer<typeof bulkRemoveTagSchema>;
  * initiative exactly as that row is, and no text, note or link is copied from one row into another.
  * No message is sent and nothing is promised on anyone's behalf.
  */
-export const bulkCreateTasksSchema = z.object({
+export const bulkCreateTasksSchema = z.strictObject({
   taskIds: selectedTaskIdsSchema,
   template: followUpTaskTemplateSchema,
 });
@@ -255,7 +257,7 @@ export type BulkCreateTasksPayload = z.infer<typeof bulkCreateTasksSchema>;
  * completed on its own comes back `excluded`, which is the service's decision taken against the
  * record at execute time and not a state a caller can declare here.
  */
-export const bulkCompleteTasksSchema = z.object({
+export const bulkCompleteTasksSchema = z.strictObject({
   taskIds: selectedTaskIdsSchema,
 });
 

@@ -494,8 +494,7 @@ const PUBLISH_ONLY_BADGE = "Publish only";
 const NOTIFY_BADGE = "Publish and notify now";
 
 /** What Publish only means, stated where the reviewer reads it. */
-const PUBLISH_ONLY_SENTENCE =
-  "The author chose to publish this edition without notifying anyone.";
+const PUBLISH_ONLY_SENTENCE = "The author chose to publish this edition without notifying anyone.";
 
 /** What Publish and notify now means, stated where the reviewer reads it. */
 const NOTIFY_SENTENCE =
@@ -571,8 +570,7 @@ const DECISION_DESCRIPTION =
 const NOTE_LABEL = "Note for the author";
 
 /** The note field's description when the chosen decision carries the note. */
-const NOTE_REQUIRED_DESCRIPTION =
-  `Required for this decision: say what the author needs to know, in up to ${REVIEW_NOTE_MAX_CHARS} characters.`;
+const NOTE_REQUIRED_DESCRIPTION = `Required for this decision: say what the author needs to know, in up to ${REVIEW_NOTE_MAX_CHARS} characters.`;
 
 /**
  * What the note field says when the chosen decision needs none, so nothing typed is wasted.
@@ -762,7 +760,6 @@ function decisionPayloadFor(
       return { decision: "rejected", ...identity, note: trimmedNote };
   }
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // The frozen revision, as the record holds it
@@ -1247,8 +1244,8 @@ function DecisionStep({
 
       {settled ? (
         <p className="text-sm text-muted-foreground text-pretty">
-          This candidate is answered, so its decision is fixed. Anything further comes from the author
-          as a new submission with a new revision.
+          This candidate is answered, so its decision is fixed. Anything further comes from the
+          author as a new submission with a new revision.
         </p>
       ) : null}
 
@@ -1421,4 +1418,3 @@ export function ReviewPanel({
 }
 
 export default ReviewPanel;
-

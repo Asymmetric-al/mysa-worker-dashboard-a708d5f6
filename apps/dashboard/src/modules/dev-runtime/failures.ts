@@ -421,7 +421,7 @@ export function setFailurePlan(
     return err(
       refuse(
         "already-armed",
-        `${MODE_LABEL[current.mode]} is already armed for ${current.target.name}. Disarm it first, because exactly one failure is active at a time.`,
+        `${MODE_LABEL[current.mode]} is already armed for ${current.target.name}. Disarm it first by sending setFailurePlan with a null plan, because exactly one failure is active at a time.`,
       ),
     );
   }
@@ -620,4 +620,22 @@ export function parseFailurePlan(value: unknown): Result<FailurePlanDocument, Fa
     target: { kind: demonstrable.kind, name: demonstrable.name },
     armedAt,
   });
+}
+
+/**
+ * Reads the armed plan out of one session document, or the absent plan.
+ *
+ * This is the one reader of a stored plan out of a session's document, used by both the mutation
+ * runner and the read layer, so neither parses the document itself and the two can never disagree
+ * about what a session has armed. A value that is not a document object, and any plan
+ * {@link parseFailurePlan} refuses, answer the absent plan: a hand-edited, truncated or stale
+ * `.meta.json` arms nothing rather than failing a request nobody asked to fail, and a document that
+ * states no plan is the disarmed plan.
+ */
+export function failurePlanOfDocument(document: unknown): FailurePlanDocument {
+  if (!isRecord(document)) {
+    return EMPTY_FAILURE_PLAN;
+  }
+  const parsed = parseFailurePlan(Reflect.get(document, "failurePlan"));
+  return parsed.ok ? parsed.value : EMPTY_FAILURE_PLAN;
 }

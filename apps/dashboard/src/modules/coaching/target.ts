@@ -622,7 +622,6 @@ export function measureFor(query: MeasureQuery): MeasureCount {
   };
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // The state a surface renders
 // ---------------------------------------------------------------------------------------------
@@ -775,4 +774,3 @@ export function coachTargetProgress(input: TargetProgressInput): CoachTargetProg
     }),
   };
 }
-

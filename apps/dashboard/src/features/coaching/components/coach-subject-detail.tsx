@@ -230,7 +230,8 @@ const TARGETS_CHART_SUMMARY =
   "Each bar is the count recorded for one period, taken from the activity the worker logged. A period " +
   "with no recorded value is named in the table beneath the chart rather than drawn as zero.";
 const TARGETS_CHART_CAPTION = "Bar chart of recorded target counts by period for this worker.";
-const TARGETS_TABLE_CAPTION = "Recorded target counts by period, the data table alternative to the chart.";
+const TARGETS_TABLE_CAPTION =
+  "Recorded target counts by period, the data table alternative to the chart.";
 const PERIOD_COLUMN_LABEL = "Period";
 
 // ---------------------------------------------------------------------------------------------
@@ -646,9 +647,7 @@ function TargetProgressChart({
     state: figure.valueState,
   }));
 
-  const series: readonly ChartSeries[] = [
-    { key: "recorded", label: TARGETS_SERIES_LABEL, points },
-  ];
+  const series: readonly ChartSeries[] = [{ key: "recorded", label: TARGETS_SERIES_LABEL, points }];
 
   const table: ChartTable = {
     caption: TARGETS_TABLE_CAPTION,
@@ -856,7 +855,9 @@ export default function CoachSubjectDetail({
             it, compares against it nor shortens it. An absent cutoff is stated as absent rather than
             left blank, because a blank line would read as an unlimited share.
           */}
-          <p className={cn("text-sm text-pretty", cutoff === null ? "text-muted-foreground" : null)}>
+          <p
+            className={cn("text-sm text-pretty", cutoff === null ? "text-muted-foreground" : null)}
+          >
             {cutoff === null ? (
               CUTOFF_ABSENT
             ) : (
