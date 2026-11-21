@@ -21,6 +21,13 @@
  * scenario module, the time and content domain modules, and `data-service/envelope` for TYPES only,
  * so the data service stays out of this module's runtime graph — `envelope.ts` is the declaration of
  * the stored record form both sides share, and it imports no module of this one.
+ *
+ * What it hands a caller. `SEEDED_PERSONAS` names the ten personas this release seeds, with the
+ * session a spec means by each; `SEEDED_SESSIONS` and `SEEDED_SESSION_IDS` are the registry a
+ * development panel lists and a CLI validates against; `DEFAULT_SESSION_ID` is the session a caller
+ * means by "the worker"; and `seed()` builds every row's three documents without persisting one.
+ * `seedSessionDocuments()` and `seedWorkspace()` stay the per-session entry points the reset script,
+ * the workload generator and the Settings reset already call.
  */
 import { Temporal } from "temporal-polyfill";
 
@@ -75,20 +82,26 @@ import type {
   RequestRecord,
   Scope,
   SessionContextRecord,
-  SessionState as RecordedSessionState,
   SupportSubjectId,
   SupportProjectionRecord,
   TaskRecord,
   TaskSeriesRecord,
 } from "@/modules/data-service/envelope";
 import { minorUnitsOf, type Money } from "@/modules/money/amount";
+import { UNKNOWN_CURRENCY } from "@/modules/money/currency";
 import type { SessionDocuments } from "@/modules/store/paths";
 import type { CommitmentKind, RecurringBucket } from "@/modules/support/buckets";
 import { SEED_INSTANT } from "@/modules/time/clock";
 import { startOfCivilDay } from "@/modules/time/civil";
 import { confirmationDeadline, continuedWindowEnd, newWindowEnd } from "@/modules/time/window";
 
-import { buildSessionMeta, DEFAULT_SCENARIO_ID, type ScenarioId, type SessionState } from "./scenario";
+import {
+  buildSessionMeta,
+  DEFAULT_SCENARIO_ID,
+  type ScenarioId,
+  type SessionMetaDocument,
+  type SessionState,
+} from "./scenario";
 
 // ---------------------------------------------------------------------------------------------
 // Document versions and shared literals
@@ -205,9 +218,17 @@ const RIVERBEND_OUTREACH: AdmittedMembership = {
  *
  * It decides what the session's state document holds, not who the session is: the deputized
  * fundraiser and the content reviewer act inside the established worker's ministry, so they start
- * from the same shared records, while their own private notes and tasks are theirs.
+ * from the same shared records, while their own private notes and tasks are theirs. The students
+ * ministry is its own workspace because a state document holds the projection of the ministry its
+ * context selects, and that ministry's source carries no goal.
  */
-export type SeededWorkspace = "new-worker" | "established-worker" | "second-worker" | "coach" | "empty";
+export type SeededWorkspace =
+  | "new-worker"
+  | "established-worker"
+  | "students-ministry"
+  | "second-worker"
+  | "coach"
+  | "empty";
 
 /** The context a seeded session has already selected: three separate references, never one id. */
 export interface SeededContext {
@@ -216,12 +237,52 @@ export interface SeededContext {
   readonly supportSubjectId: SupportSubjectId;
 }
 
+/**
+ * The closed roster of personas AAP 0.1.2 fixes, as identifiers a browser spec, a development panel
+ * and the seed itself can address.
+ *
+ * A persona is who is acting. An admission state is how the session stands, so the rows that
+ * demonstrate `unavailable`, `denied`, `expired` and `no-access` carry the persona whose seat they
+ * are and state the difference in {@link SeededSession.sessionState} — the state is never a second
+ * persona, and the enum is closed so a spec cannot name one this release does not seed.
+ */
+export type PersonaId =
+  | "new-worker"
+  | "established-worker"
+  | "second-worker"
+  | "fundraiser"
+  | "coach"
+  | "reviewer"
+  | "reader-public"
+  | "reader-approved-supporter"
+  | "reader-unauthorized"
+  | "subscriber";
+
+/** One persona, the words it is named by, and the session a spec selects when it means that persona. */
+export interface SeededPersona {
+  readonly id: PersonaId;
+  readonly label: string;
+  readonly defaultSessionId: string;
+  readonly description: string;
+}
+
+/**
+ * The session a caller means when it says "the worker": the established worker, signed in, in the
+ * baseline scenario. It is the default the workload generator and the journeys start from, so it is
+ * named once here rather than repeated as a literal.
+ */
+export const DEFAULT_SESSION_ID = "established-worker";
+
 /** One seeded persona or scenario, and everything the seed needs to lay its session down. */
 export interface SeededSession {
   /** The development session id, which is also its file name, so it satisfies `isSafeSessionId`. */
   readonly sessionId: string;
-  /** The persona or session state this row demonstrates, in the words AAP 0.1.2 and 0.7.2 use. */
-  readonly persona: string;
+  /** The persona who acts in this session, from the closed roster above. */
+  readonly persona: PersonaId;
+  /** The short name the development panel lists this session under. */
+  readonly label: string;
+  /** What this row demonstrates, in the words AAP 0.1.2 and 0.7.2 use. */
+  readonly description: string;
   /** The principal the session resolves to; the seed never invents one at run time. */
   readonly principalId: PrincipalId;
   /** The memberships the principal is admitted to, as the organization/ministry/support-subject triplets. */
@@ -234,22 +295,48 @@ export interface SeededSession {
   readonly selectedContext: SeededContext | null;
   /** The workspace the session's state document starts with. */
   readonly workspace: SeededWorkspace;
+  /**
+   * The three documents this session owns, present on what `seed()` returns and absent from the
+   * registry row.
+   *
+   * The registry stays a description, so a panel that only lists sessions pays for nothing else;
+   * `seed()` builds the documents per call, so a caller can never hold a shared literal that a later
+   * seed would read back altered.
+   */
+  readonly documents?: SeededSessionDocuments;
 }
+
+/** The three documents a seeded session owns: its records, its operation ledger and its scenario meta. */
+export interface SeededSessionDocuments {
+  readonly state: SessionStateDocument;
+  readonly operations: OperationLedgerDocument;
+  readonly meta: SessionMetaDocument;
+}
+
+/** A seeded row whose documents have been built: what {@link seed} returns. */
+export type SeededSessionWithDocuments = SeededSession & {
+  readonly documents: SeededSessionDocuments;
+};
 
 /**
  * Every seeded session, in the order the development panel lists them.
  *
- * The roster is AAP 0.1.2's closed persona list: a new worker, an established worker with two
+ * The roster is AAP 0.1.2's closed persona list — a new worker, an established worker with two
  * ministries, a second worker in another ministry (the isolation proof), a deputized fundraiser, a
- * coach, a content reviewer and the reader personas plus a subscriber, and then one row per session
- * state — signed-in, unavailable, denied, expired — and the no-access user whose only honest outcome
- * is account-recovery guidance. Scenario ids come from the registry in `./scenario`, so a row cannot
- * name a world this release does not define.
+ * coach, a content reviewer and the reader personas plus a subscriber — and then one row per session
+ * state, signed-in included, ending with the no-access user whose only honest outcome is
+ * account-recovery guidance. Every scenario `./scenario` defines also has a row, so a criterion that
+ * needs a source down or a sibling release that failed selects a session instead of editing a record
+ * by hand; and every scenario id comes from that registry, so a row cannot name a world this release
+ * does not define.
  */
-export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
+export const SEEDED_SESSIONS: readonly SeededSession[] = deepFreeze([
   {
     sessionId: "new-worker",
-    persona: "New worker: no gifts, goal, subscription or integration",
+    persona: "new-worker",
+    label: "New worker",
+    description:
+      "No gifts, goal, subscription or integration: one private contact and one task to start from.",
     principalId: PRINCIPAL_NEW_WORKER,
     admittedMemberships: [HARBOUR_YOUTH],
     sessionState: "signed-in",
@@ -259,7 +346,10 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
   },
   {
     sessionId: "established-worker",
-    persona: "Established worker with years of gifts, recurring support and two ministries",
+    persona: "established-worker",
+    label: "Established worker",
+    description:
+      "Years of gifts, recurring support, partners, drafts and pages, across two ministries.",
     principalId: PRINCIPAL_ESTABLISHED,
     admittedMemberships: [HARBOUR_YOUTH, HARBOUR_STUDENTS],
     sessionState: "signed-in",
@@ -267,9 +357,27 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
     selectedContext: HARBOUR_YOUTH,
     workspace: "established-worker",
   },
+  // The second ministry selected: the support source is available and holds no goal, which is the
+  // "no goal" state a surface must render differently from "no percentage" and from an unavailable source.
+  {
+    sessionId: "established-worker-students",
+    persona: "established-worker",
+    label: "Established worker — students ministry",
+    description:
+      "The same worker with the students ministry selected: an available support source carrying no goal.",
+    principalId: PRINCIPAL_ESTABLISHED,
+    admittedMemberships: [HARBOUR_YOUTH, HARBOUR_STUDENTS],
+    sessionState: "signed-in",
+    scenarioId: DEFAULT_SCENARIO_ID,
+    selectedContext: HARBOUR_STUDENTS,
+    workspace: "students-ministry",
+  },
   {
     sessionId: "second-worker",
-    persona: "Second worker in another ministry: the isolation proof",
+    persona: "second-worker",
+    label: "Second worker",
+    description:
+      "Another ministry entirely: the isolation proof, holding none of the first scope's records.",
     principalId: PRINCIPAL_SECOND,
     admittedMemberships: [RIVERBEND_OUTREACH],
     sessionState: "signed-in",
@@ -279,7 +387,10 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
   },
   {
     sessionId: "deputized-fundraiser",
-    persona: "Deputized fundraiser acting inside one admitted ministry",
+    persona: "fundraiser",
+    label: "Deputized fundraiser",
+    description:
+      "Acting inside one admitted ministry, among the shared records and their own private work.",
     principalId: PRINCIPAL_DEPUTIZED,
     admittedMemberships: [HARBOUR_YOUTH],
     sessionState: "signed-in",
@@ -289,7 +400,9 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
   },
   {
     sessionId: "coach",
-    persona: "Coach with read-only access to exactly what the worker has shared",
+    persona: "coach",
+    label: "Coach",
+    description: "Read-only access to exactly the modules and periods the worker has shared.",
     principalId: PRINCIPAL_COACH,
     admittedMemberships: [],
     sessionState: "signed-in",
@@ -299,7 +412,9 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
   },
   {
     sessionId: "content-reviewer",
-    persona: "Reviewer who approves frozen content candidates",
+    persona: "reviewer",
+    label: "Content reviewer",
+    description: "Approves frozen content candidates, and only candidates.",
     principalId: PRINCIPAL_REVIEWER,
     admittedMemberships: [HARBOUR_YOUTH],
     sessionState: "signed-in",
@@ -312,7 +427,9 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
   // document and one edition, never a workspace.
   {
     sessionId: "reader-public",
-    persona: "Public reader in the receiving preview",
+    persona: "reader-public",
+    label: "Public reader",
+    description: "A public reader in the receiving preview, admitted to the public edition only.",
     principalId: PRINCIPAL_READER_PUBLIC,
     admittedMemberships: [],
     sessionState: "signed-in",
@@ -322,7 +439,10 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
   },
   {
     sessionId: "reader-approved-supporter",
-    persona: "Approved-supporter reader in the receiving preview",
+    persona: "reader-approved-supporter",
+    label: "Approved-supporter reader",
+    description:
+      "A reader admitted to the approved-supporter edition, and refused the public one's siblings.",
     principalId: PRINCIPAL_READER_SUPPORTER,
     admittedMemberships: [],
     sessionState: "signed-in",
@@ -332,7 +452,9 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
   },
   {
     sessionId: "reader-unauthorized",
-    persona: "Unauthorized reader, refused protected content honestly",
+    persona: "reader-unauthorized",
+    label: "Unauthorized reader",
+    description: "Refused protected content honestly, with nothing about it disclosed.",
     principalId: PRINCIPAL_READER_UNAUTHORIZED,
     admittedMemberships: [],
     sessionState: "signed-in",
@@ -342,7 +464,9 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
   },
   {
     sessionId: "subscriber",
-    persona: "Subscriber reader with a purpose-specific membership",
+    persona: "subscriber",
+    label: "Subscriber",
+    description: "A reader with a purpose-specific membership, choosing Off or Immediate for it.",
     principalId: PRINCIPAL_SUBSCRIBER,
     admittedMemberships: [],
     sessionState: "signed-in",
@@ -350,9 +474,14 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
     selectedContext: null,
     workspace: "empty",
   },
+  // A session state belongs to a seat rather than being a persona of its own, so these rows are the
+  // established worker's seat in each state: the same person, a different admission. The state is
+  // what the shell and the service read, and it is never inferred from a label.
   {
     sessionId: "no-access",
-    persona: "No-access user whose only honest outcome is account-recovery guidance",
+    persona: "established-worker",
+    label: "No access",
+    description: "No usable account: the only honest outcome is account-recovery guidance.",
     principalId: PRINCIPAL_NO_ACCESS,
     admittedMemberships: [],
     sessionState: "no-access",
@@ -364,7 +493,10 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
   // source unavailable: the state and the world behind it are the same fact.
   {
     sessionId: "session-unavailable",
-    persona: "Session state: unavailable",
+    persona: "established-worker",
+    label: "Session state — unavailable",
+    description:
+      "Admission could not be resolved because a source is down: retry guidance, never an empty workspace.",
     principalId: PRINCIPAL_UNAVAILABLE,
     admittedMemberships: [HARBOUR_YOUTH],
     sessionState: "unavailable",
@@ -374,7 +506,9 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
   },
   {
     sessionId: "session-denied",
-    persona: "Session state: denied",
+    persona: "established-worker",
+    label: "Session state — denied",
+    description: "Denied with nothing disclosed: no count, title, size or existence hint.",
     principalId: PRINCIPAL_DENIED,
     admittedMemberships: [],
     sessionState: "denied",
@@ -384,7 +518,9 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
   },
   {
     sessionId: "session-expired",
-    persona: "Session state: expired",
+    persona: "established-worker",
+    label: "Session state — expired",
+    description: "An expired session, offered a way back in rather than a blank page.",
     principalId: PRINCIPAL_EXPIRED,
     admittedMemberships: [HARBOUR_YOUTH],
     sessionState: "expired",
@@ -392,7 +528,151 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = Object.freeze([
     selectedContext: null,
     workspace: "empty",
   },
+  // The remaining scenarios are worlds over the same records, so each is one more row for the same
+  // persona rather than a second copy of the inventory: a criterion that needs a source down, a
+  // contained edition or a sibling release that failed selects the row that puts it in reach.
+  {
+    sessionId: "established-worker-media-unavailable",
+    persona: "established-worker",
+    label: "Established worker — media unavailable",
+    description:
+      "One placement's source is down: the poster and text alternative stay, the prose is intact, retry is offered.",
+    principalId: PRINCIPAL_ESTABLISHED,
+    admittedMemberships: [HARBOUR_YOUTH, HARBOUR_STUDENTS],
+    sessionState: "signed-in",
+    scenarioId: "media-unavailable",
+    selectedContext: HARBOUR_YOUTH,
+    workspace: "established-worker",
+  },
+  {
+    sessionId: "established-worker-coaching-unavailable",
+    persona: "established-worker",
+    label: "Established worker — coaching module unavailable",
+    description:
+      "One admitted coaching module's source is down, and the other admitted modules stay usable.",
+    principalId: PRINCIPAL_ESTABLISHED,
+    admittedMemberships: [HARBOUR_YOUTH, HARBOUR_STUDENTS],
+    sessionState: "signed-in",
+    scenarioId: "coaching-module-unavailable",
+    selectedContext: HARBOUR_YOUTH,
+    workspace: "established-worker",
+  },
+  {
+    sessionId: "established-worker-continuation-on",
+    persona: "established-worker",
+    label: "Established worker — continuation on",
+    description:
+      "Worker continuation is on, so an ordinarily expired referral cycle offers its single Continue action.",
+    principalId: PRINCIPAL_ESTABLISHED,
+    admittedMemberships: [HARBOUR_YOUTH, HARBOUR_STUDENTS],
+    sessionState: "signed-in",
+    scenarioId: "continuation-on",
+    selectedContext: HARBOUR_YOUTH,
+    workspace: "established-worker",
+  },
+  {
+    sessionId: "established-worker-continuation-off",
+    persona: "established-worker",
+    label: "Established worker — continuation off",
+    description:
+      "Worker continuation is explicitly off, so the same expired cycle offers no Continue action at all.",
+    principalId: PRINCIPAL_ESTABLISHED,
+    admittedMemberships: [HARBOUR_YOUTH, HARBOUR_STUDENTS],
+    sessionState: "signed-in",
+    scenarioId: "continuation-off",
+    selectedContext: HARBOUR_YOUTH,
+    workspace: "established-worker",
+  },
+  {
+    sessionId: "established-worker-partial-release",
+    persona: "established-worker",
+    label: "Established worker — partial release failure",
+    description:
+      "One variant of a submission released while its sibling failed, and the sibling's prior-good head was kept.",
+    principalId: PRINCIPAL_ESTABLISHED,
+    admittedMemberships: [HARBOUR_YOUTH, HARBOUR_STUDENTS],
+    sessionState: "signed-in",
+    scenarioId: "partial-release-failure",
+    selectedContext: HARBOUR_YOUTH,
+    workspace: "established-worker",
+  },
 ]);
+
+/**
+ * Every persona, keyed by its identifier, with the session a spec means when it names that persona.
+ *
+ * It exists so `apps/dashboard/playwright.config.ts`, the browser specs and the development panel can
+ * name an identity instead of repeating a session id, and so a persona this release does not seed is a
+ * compile error at the call site rather than a session that silently does nothing.
+ */
+export const SEEDED_PERSONAS: Readonly<Record<PersonaId, SeededPersona>> = deepFreeze({
+  "new-worker": {
+    id: "new-worker",
+    label: "New worker",
+    defaultSessionId: "new-worker",
+    description:
+      "A worker with no gifts, goal, subscription or integration, starting from a private contact and a task.",
+  },
+  "established-worker": {
+    id: "established-worker",
+    label: "Established worker",
+    defaultSessionId: DEFAULT_SESSION_ID,
+    description:
+      "A worker with years of support, recurring gifts, partners, drafts and pages, across two ministries.",
+  },
+  "second-worker": {
+    id: "second-worker",
+    label: "Second worker",
+    defaultSessionId: "second-worker",
+    description: "A worker in another organization, whose scope shares nothing with the first.",
+  },
+  fundraiser: {
+    id: "fundraiser",
+    label: "Deputized fundraiser",
+    defaultSessionId: "deputized-fundraiser",
+    description: "Someone deputized to act inside one admitted ministry, and nowhere else.",
+  },
+  coach: {
+    id: "coach",
+    label: "Coach",
+    defaultSessionId: "coach",
+    description:
+      "A coach admitted read-only to exactly the modules and periods a worker has shared, until the frozen cutoff.",
+  },
+  reviewer: {
+    id: "reviewer",
+    label: "Content reviewer",
+    defaultSessionId: "content-reviewer",
+    description:
+      "A reviewer who approves or returns the exact frozen revisions a candidate carries, and nothing else.",
+  },
+  "reader-public": {
+    id: "reader-public",
+    label: "Public reader",
+    defaultSessionId: "reader-public",
+    description: "A reader of the public edition, appearing only in the in-app receiving preview.",
+  },
+  "reader-approved-supporter": {
+    id: "reader-approved-supporter",
+    label: "Approved-supporter reader",
+    defaultSessionId: "reader-approved-supporter",
+    description: "A reader admitted to the approved-supporter edition and refused anything else.",
+  },
+  "reader-unauthorized": {
+    id: "reader-unauthorized",
+    label: "Unauthorized reader",
+    defaultSessionId: "reader-unauthorized",
+    description:
+      "A reader with no grant: the refusal discloses no count, title, size or existence hint.",
+  },
+  subscriber: {
+    id: "subscriber",
+    label: "Subscriber",
+    defaultSessionId: "subscriber",
+    description:
+      "A reader with a purpose-specific membership, choosing Off or Immediate for that purpose alone.",
+  },
+} satisfies Record<PersonaId, SeededPersona>);
 
 /** The seeded session ids, in registry order, for an operator listing and for a CLI's validation. */
 export const SEEDED_SESSION_IDS: readonly string[] = Object.freeze(
@@ -412,6 +692,27 @@ export function isSeededSessionId(sessionId: string): boolean {
 // ---------------------------------------------------------------------------------------------
 // Small value helpers
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * Freezes a value and, recursively, everything it holds.
+ *
+ * The registry below is handed to the development panel, the browser specs and the reset script, so
+ * one caller appending to a row's `admittedMemberships` array would change what every later seed
+ * writes and two resets would no longer agree. Deep-freezing the registry turns that into a thrown
+ * error instead of a silent divergence. The documents a caller builds are not frozen: they are fresh
+ * per call, and the store is the one owner that writes them.
+ */
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) {
+    return value;
+  }
+
+  Object.freeze(value);
+  for (const key of Object.getOwnPropertyNames(value)) {
+    deepFreeze(Reflect.get(value, key));
+  }
+  return value;
+}
 
 /** Builds one exact amount from its currency code and integer minor units; no float arithmetic anywhere. */
 function money(currency: string, minorUnits: number): Money {
@@ -814,17 +1115,6 @@ function buildMediaAsset(
   };
 }
 
-/**
- * The admission state a session's stored context record states.
- *
- * The record's vocabulary is closed at four states (AAP 0.7.1). A no-access user is `denied` with no
- * admitted membership, which is how `envelope.ts` states that outcome — it is not a fifth state, and
- * it never renders as an empty workspace. The development panel keeps the finer `no-access` row.
- */
-function recordedSessionState(state: SessionState): RecordedSessionState {
-  return state === "no-access" ? "denied" : state;
-}
-
 // ---------------------------------------------------------------------------------------------
 // The documents a seeded session owns
 // ---------------------------------------------------------------------------------------------
@@ -836,7 +1126,10 @@ function recordedSessionState(state: SessionState): RecordedSessionState {
  * The operation ledger is deliberately absent: the store gives it its own
  * `<sessionId>.operations.json` so an append-only ledger is never rewritten by a record change. The
  * import proposal family is present and empty in the readable seed, because a proposal is the record
- * of a file the worker chose rather than something the seed can invent.
+ * of a file the worker chose rather than something the seed can invent. A coaching task share is
+ * absent for a related reason: `envelope.ts` declares no stored record for one, and a share exists
+ * because a worker selected a task, so seeding a shape of its own would fork the contract the reads
+ * parse.
  */
 export interface SessionStateDocument {
   readonly version: number;
@@ -876,8 +1169,11 @@ export interface OperationLedgerDocument {
 /**
  * The ledger a freshly seeded session carries: no operation has been accepted in it yet, so a
  * replay of any `operationId` is a first attempt rather than a stored result.
+ *
+ * Every seeded session starts from this same value, so it is deep-frozen: a caller appending to its
+ * `entries` array would otherwise add an entry to every session's ledger at once.
  */
-export const EMPTY_OPERATION_LEDGER: OperationLedgerDocument = Object.freeze({
+export const EMPTY_OPERATION_LEDGER: OperationLedgerDocument = deepFreeze({
   version: OPERATION_LEDGER_VERSION,
   entries: [] as readonly OperationRecord[],
 });
@@ -895,7 +1191,10 @@ function buildContext(session: SeededSession): SessionContextRecord {
     selectedOrganizationId: selected?.organizationId ?? null,
     selectedMinistryId: selected?.ministryId ?? null,
     selectedSupportSubjectId: selected?.supportSubjectId ?? null,
-    sessionState: recordedSessionState(session.sessionState),
+    // Stored exactly as the row states it. `no-access` is its own admission state and is never
+    // collapsed into `denied`: a denial discloses nothing about what it refused, while no-access
+    // states the one thing that is known, that there is an account to recover.
+    sessionState: session.sessionState,
     scenarioId: session.scenarioId,
     clockOffset: { milliseconds: 0 },
     revision: INITIAL_REVISION,
@@ -1232,7 +1531,13 @@ function harbourInteractions(session: SeededSession): readonly InteractionRecord
   ];
 }
 
-/** The month-end rule the seeded series runs on: monthly on day 31, resolved within its own planning zone. */
+/**
+ * The five repeat rules the seeded series run on, each stated once so a series' current rule and the
+ * rule revision it was appended as cannot drift apart.
+ *
+ * The month-end rule is monthly on day 31: a month with 30 days or fewer resolves to its final day
+ * and discloses that resolution, which is what makes the February case reachable from stored data.
+ */
 const SERIES_MONTH_END_RULE: TaskSeriesRecord["currentRule"] = {
   profile: "monthlyOnDay",
   interval: 1,
@@ -1242,7 +1547,47 @@ const SERIES_MONTH_END_RULE: TaskSeriesRecord["currentRule"] = {
   end: { kind: "ongoing-personal-policy" },
 };
 
-/** The work a seeded session starts with, including the one actionable occurrence of its series. */
+/** An ordinary weekly series with a stated count, so "how many are left" is a stored fact. */
+const SERIES_WEEKLY_CALL_ROUND: TaskSeriesRecord["currentRule"] = {
+  profile: "weekly",
+  interval: 1,
+  dayOfMonth: null,
+  firstDueOn: "2026-11-04",
+  planningTimeZone: REFERRAL_SOURCE_ZONE,
+  end: { kind: "after-count", count: 12 },
+};
+
+/** An every-two-weeks series with an inclusive end date, which is the shape a paused series keeps. */
+const SERIES_FORTNIGHTLY_NEWSLETTER: TaskSeriesRecord["currentRule"] = {
+  profile: "everyNWeeks",
+  interval: 2,
+  dayOfMonth: null,
+  firstDueOn: "2026-09-07",
+  planningTimeZone: REFERRAL_SOURCE_ZONE,
+  end: { kind: "on-date", on: "2027-03-29" },
+};
+
+/** The rule of a series the worker stopped: it keeps its history and admits nothing further. */
+const SERIES_VISIT_ROUND: TaskSeriesRecord["currentRule"] = {
+  profile: "weekly",
+  interval: 1,
+  dayOfMonth: null,
+  firstDueOn: "2026-10-05",
+  planningTimeZone: REFERRAL_SOURCE_ZONE,
+  end: { kind: "after-count", count: 6 },
+};
+
+/** The rule of the series whose current date was missed three times over. */
+const SERIES_MISSED_PLAN_REVIEW: TaskSeriesRecord["currentRule"] = {
+  profile: "weekly",
+  interval: 1,
+  dayOfMonth: null,
+  firstDueOn: "2026-09-24",
+  planningTimeZone: REFERRAL_SOURCE_ZONE,
+  end: { kind: "ongoing-personal-policy" },
+};
+
+/** The work a seeded session starts with, including the one actionable occurrence of each series. */
 function harbourTasks(session: SeededSession): readonly TaskRecord[] {
   return [
     buildTask("task-care-jo", "Follow up with Jo after the visit", session.principalId, {
@@ -1269,34 +1614,122 @@ function harbourTasks(session: SeededSession): readonly TaskRecord[] {
       dueOn: "2026-11-05",
       partnerId: "partner-grace-adeyemi",
     }),
+    // Undated on purpose: a list must show it as undated rather than invent a due date for it.
+    buildTask("task-undated-prayer", "Pray for the students' exam week", session.principalId, {
+      category: "Prayer",
+    }),
+    // Completed once and then reopened by hand, so the reopened state is reachable from real work.
+    buildTask("task-reopened-warden-visit", "Visit the church warden", session.principalId, {
+      status: "reopened",
+      dueOn: "2026-11-28",
+      partnerId: "partner-ruth-okafor",
+    }),
     // November has 30 days, so the day-31 rule resolves this occurrence to the 30th.
     buildTask("task-series-month-end", "Month-end support review", session.principalId, {
       dueOn: "2026-11-30",
       seriesId: "series-month-end-support-review",
     }),
+    // The one actionable occurrence of the weekly series: the following dates are previews only.
+    buildTask("task-series-weekly-call", "Weekly call round", session.principalId, {
+      dueOn: "2026-11-25",
+      seriesId: "series-weekly-call-round",
+    }),
+    // The occurrence a stopped series left behind: stopping explains its fate, it does not complete it.
+    buildTask("task-series-stopped-leftover", "Visit round: Abbey Road", session.principalId, {
+      dueOn: "2026-10-19",
+      partnerId: "partner-church-st-aidan",
+      seriesId: "series-visit-round",
+    }),
+    // Three dates have passed since this occurrence was due, so its plan needs review rather than a
+    // stack of overdue copies.
+    buildTask(
+      "task-series-missed-occurrence",
+      "Monday review of the working list",
+      session.principalId,
+      {
+        dueOn: "2026-10-22",
+        seriesId: "series-missed-plan-review",
+      },
+    ),
   ];
 }
 
-/** The one repeating piece of work: monthly on day 31, with its current rule and its single occurrence. */
+/**
+ * Builds one series: its current rule, the one rule revision it was written as, and the single
+ * occurrence it admits, if any.
+ *
+ * A series revision is appended rather than rewritten, so the history a completed occurrence was
+ * measured against stays as it was written; the seed therefore states the first revision explicitly.
+ */
+function buildSeries(
+  seriesId: string,
+  session: SeededSession,
+  title: string,
+  currentRule: TaskSeriesRecord["currentRule"],
+  state: TaskSeriesRecord["state"],
+  options: { readonly currentOccurrenceId?: string; readonly planNeedsReview?: boolean } = {},
+): TaskSeriesRecord {
+  return {
+    seriesId,
+    ownerPrincipalId: session.principalId,
+    title,
+    currentRule,
+    effectiveRevisions: [
+      {
+        revisionId: `${seriesId}-rev-1`,
+        effectiveFrom: currentRule.firstDueOn,
+        rule: currentRule,
+      },
+    ],
+    currentOccurrenceId: options.currentOccurrenceId ?? null,
+    state,
+    planNeedsReview: options.planNeedsReview ?? false,
+    revision: INITIAL_REVISION,
+  };
+}
+
+/**
+ * The repeating work, in every state a series can be in: active with one actionable occurrence, a
+ * weekly round, a paused series, a stopped one whose leftover occurrence still exists, and one whose
+ * current date was missed three times over.
+ *
+ * A stopped series states its history and admits nothing further, and it never completes the work it
+ * leaves behind: the leftover occurrence stays open, with its own fate to be decided.
+ */
 function harbourSeries(session: SeededSession): readonly TaskSeriesRecord[] {
   return [
-    {
-      seriesId: "series-month-end-support-review",
-      ownerPrincipalId: session.principalId,
-      title: "Month-end support review",
-      currentRule: SERIES_MONTH_END_RULE,
-      effectiveRevisions: [
-        {
-          revisionId: "series-month-end-rev-1",
-          effectiveFrom: "2026-08-31",
-          rule: SERIES_MONTH_END_RULE,
-        },
-      ],
-      currentOccurrenceId: "task-series-month-end",
-      state: "active",
-      planNeedsReview: false,
-      revision: INITIAL_REVISION,
-    },
+    buildSeries(
+      "series-month-end-support-review",
+      session,
+      "Month-end support review",
+      SERIES_MONTH_END_RULE,
+      "active",
+      { currentOccurrenceId: "task-series-month-end" },
+    ),
+    buildSeries(
+      "series-weekly-call-round",
+      session,
+      "Weekly call round",
+      SERIES_WEEKLY_CALL_ROUND,
+      "active",
+      { currentOccurrenceId: "task-series-weekly-call" },
+    ),
+    buildSeries(
+      "series-fortnightly-newsletter",
+      session,
+      "Fortnightly newsletter to partners",
+      SERIES_FORTNIGHTLY_NEWSLETTER,
+      "paused",
+    ),
+    buildSeries("series-visit-round", session, "Visit round", SERIES_VISIT_ROUND, "stopped"),
+    buildSeries(
+      "series-missed-plan-review",
+      session,
+      "Monday review of the working list",
+      SERIES_MISSED_PLAN_REVIEW,
+      "active",
+      { currentOccurrenceId: "task-series-missed-occurrence", planNeedsReview: true },
+    ),
   ];
 }
 
@@ -1502,6 +1935,23 @@ function harbourReferrals(): readonly ReferralCycleRecord[] {
       revision: INITIAL_REVISION,
     },
     {
+      // A date-only cycle still inside its New window at the seed instant: D is day one, so a
+      // fourteen-day window opened on 12 November is still active on 20 November.
+      referralId: "referral-kenji-active",
+      partnerId: "partner-kenji-nakamura",
+      originalIntroductionOn: "2026-11-12",
+      datePrecision: "date",
+      sourceZone: REFERRAL_SOURCE_ZONE,
+      sourceReference: source("crm", "intro-5117"),
+      cycleIndex: 0,
+      windowKind: "new",
+      windowStart: dayStart("2026-11-12", REFERRAL_SOURCE_ZONE).toString(),
+      windowEnd: referralNewWindowEnd("2026-11-12").toString(),
+      consumed: false,
+      predecessorId: null,
+      revision: INITIAL_REVISION,
+    },
+    {
       // An approximate date yields no deadline, no Active/Expired judgement and no Continue.
       referralId: "referral-hana-approximate",
       partnerId: "partner-hana-nakamura",
@@ -1610,7 +2060,7 @@ function harbourGifts(): readonly GiftRowRecord[] {
       provenance: source("finance", "gift-harbour-0006"),
     }),
     // The source never identified this currency, so no exponent exists for it and it is never defaulted.
-    buildGift("gift-row-harbour-0007", "gift-harbour-0007", "UNKNOWN", 7500, "2026-08-30", {
+    buildGift("gift-row-harbour-0007", "gift-harbour-0007", UNKNOWN_CURRENCY, 7500, "2026-08-30", {
       provenance: source("finance", "gift-harbour-0007"),
     }),
     buildGift("gift-row-harbour-0008", "gift-harbour-0008", "USD", 5000, "2026-08-18", {
@@ -1729,9 +2179,19 @@ function harbourContentDocuments(): readonly ContentDocumentRecord[] {
 }
 
 /**
- * The three scoped media assets: a playable video with a poster and WebVTT captions, an image whose
- * private original is never served, and a video whose playback rendition never prepared, so the
- * placement shows its poster and a retry rather than an empty player.
+ * The three scoped media assets, each describing the committed fixture it actually serves.
+ *
+ * The video's recorded profile is the fixture's own — `sample-h264.mp4` is H.264 High
+ * (`avc1.64001f`) at 960x540 with AAC audio and a five-second duration, `poster.jpg` is the matching
+ * 960x540 still, and `sample.vtt` is the caption track — so no surface can show a size, a duration or
+ * a codec the served bytes contradict. The image's private original carries a revealing file name
+ * that is never served and never echoed. The third asset's playback rendition was never prepared and
+ * is therefore absent rather than fabricated: its placement shows the poster, the text alternative
+ * and a retry, which is how the unavailable state is reachable without an empty player.
+ *
+ * Preparation itself belongs to the upload path, where `acceptImage()` and `acceptVideo()` decode,
+ * re-encode and strip metadata before a file is admitted; the seed records the profile of committed
+ * fixtures it does not itself re-encode, so no record here claims a preparation that never ran.
  */
 function harbourMediaAssets(session: SeededSession): readonly MediaAssetRecord[] {
   const scope = assetScope(session, HARBOUR_YOUTH);
@@ -1739,7 +2199,7 @@ function harbourMediaAssets(session: SeededSession): readonly MediaAssetRecord[]
     buildMediaAsset(
       "asset-video-welcome",
       "video",
-      { container: "mp4", codec: "avc1.64001f", durationSeconds: 12.5, width: 1280, height: 720 },
+      { container: "mp4", codec: "avc1.64001f", durationSeconds: 5.055, width: 960, height: 540 },
       "media-originals/welcome-sunday-raw.mp4",
       [
         rendition(
@@ -1766,7 +2226,7 @@ function harbourMediaAssets(session: SeededSession): readonly MediaAssetRecord[]
     buildMediaAsset(
       "asset-image-portrait",
       "image",
-      { container: "jpeg", codec: "mjpeg", durationSeconds: null, width: 1200, height: 1500 },
+      { container: "jpeg", codec: "mjpeg", durationSeconds: null, width: 960, height: 540 },
       // A revealing original filename, kept private: it is never echoed into output or served.
       "media-originals/IMG_20260814-harbour-youth-group.jpg",
       [
@@ -1782,8 +2242,8 @@ function harbourMediaAssets(session: SeededSession): readonly MediaAssetRecord[]
     buildMediaAsset(
       "asset-video-unavailable",
       "video",
-      { container: "mp4", codec: "avc1.4d401f", durationSeconds: 240, width: 1920, height: 1080 },
-      "media-originals/evening-talk-long.mp4",
+      { container: "mp4", codec: "avc1.4d401f", durationSeconds: 95.4, width: 1280, height: 720 },
+      "media-originals/evening-talk-raw.mp4",
       [
         rendition(
           "rendition-video-unavailable-poster",
@@ -2199,7 +2659,8 @@ interface CoachingShare {
 
 /**
  * What the established worker has shared with the coach: an active grant for a fixed period, a
- * revoked one, one weekly target, and a check-in whose private answers stay with the worker.
+ * revoked one and an ended one, one target per canonical measure, and a check-in whose private
+ * answers stay with the worker.
  *
  * The private label and the private answer are never part of a shared module: the shared revision
  * carries its own answers, so sharing is a deliberate act rather than a switch that exposes a draft.
@@ -2228,16 +2689,36 @@ function coachingShare(): CoachingShare {
     supersededBy: null,
   };
 
-  const period: CoachingTargetPeriodRecord = { kind: "weekly", from: null, to: null };
+  const weeklyPeriod: CoachingTargetPeriodRecord = { kind: "weekly", from: null, to: null };
 
-  const version: CoachingTargetVersionRecord = {
-    revisionId: "target-calls-weekly-1",
-    effectiveFrom: "2026-11-02",
-    effectiveTo: null,
-    quantity: 5,
-    measure: "calls-made",
-    calendarStart: "2026-11-02",
+  const monthlyPeriod: CoachingTargetPeriodRecord = { kind: "monthly", from: null, to: null };
+
+  const customPeriod: CoachingTargetPeriodRecord = {
+    kind: "custom",
+    from: "2026-11-02",
+    to: "2026-11-15",
   };
+
+  // Two versions of the conversations target: the week that ended on 8 November keeps the quantity
+  // it was measured against, and the change applies from 9 November onwards with no prorated bridge.
+  const conversationVersions: readonly CoachingTargetVersionRecord[] = [
+    {
+      revisionId: "target-conversations-weekly-1",
+      effectiveFrom: "2026-11-02",
+      effectiveTo: "2026-11-08",
+      quantity: 2,
+      measure: "conversations",
+      calendarStart: "2026-11-02",
+    },
+    {
+      revisionId: "target-conversations-weekly-2",
+      effectiveFrom: "2026-11-09",
+      effectiveTo: null,
+      quantity: 3,
+      measure: "conversations",
+      calendarStart: "2026-11-02",
+    },
+  ];
 
   return {
     coachingGrants: [
@@ -2270,6 +2751,27 @@ function coachingShare(): CoachingShare {
         },
         revision: INITIAL_REVISION,
       },
+      {
+        // An ended episode cannot return through a stale Save, an extension or a re-enabled module.
+        grantId: "grant-ended-coach",
+        workerPrincipalId: PRINCIPAL_ESTABLISHED,
+        coachPrincipalId: PRINCIPAL_COACH,
+        ministryIds: [MINISTRY_YOUTH],
+        modules: { ...modules, targets: false, "check-ins": false },
+        duration: {
+          kind: "through-date",
+          cutoffInstant: "2026-09-30T00:00:00Z",
+          frozenZone: REFERRAL_SOURCE_ZONE,
+        },
+        financialRange: null,
+        state: "ended",
+        invitation: {
+          issuedAt: "2026-08-03T09:00:00Z",
+          expiresAt: "2026-08-10T09:00:00Z",
+          supersededBy: null,
+        },
+        revision: INITIAL_REVISION,
+      },
     ],
     coachingTargets: [
       {
@@ -2278,11 +2780,81 @@ function coachingShare(): CoachingShare {
         privateLabel: "Calls each week — my own wording, never shown to a coach",
         measure: "calls-made",
         quantity: 5,
-        period,
+        period: weeklyPeriod,
         calendarStart: "2026-11-02",
         homePlacement: "placed",
         state: "active",
-        versions: [version],
+        versions: [
+          {
+            revisionId: "target-calls-weekly-1",
+            effectiveFrom: "2026-11-02",
+            effectiveTo: null,
+            quantity: 5,
+            measure: "calls-made",
+            calendarStart: "2026-11-02",
+          },
+        ],
+        revision: INITIAL_REVISION,
+      },
+      {
+        // Five calls containing two conversations are five calls and two conversations: each measure
+        // is counted from the activity records, never derived by dividing another measure.
+        targetId: "target-conversations-weekly",
+        workerPrincipalId: PRINCIPAL_ESTABLISHED,
+        privateLabel: "Real conversations, not just hellos",
+        measure: "conversations",
+        quantity: 3,
+        period: weeklyPeriod,
+        calendarStart: "2026-11-02",
+        homePlacement: "placed",
+        state: "active",
+        versions: conversationVersions,
+        revision: INITIAL_REVISION,
+      },
+      {
+        // Paused, and not placed on Home: pausing stops new counting and never rewrites a closed period.
+        targetId: "target-messages-monthly",
+        workerPrincipalId: PRINCIPAL_ESTABLISHED,
+        privateLabel: "Personal messages each month",
+        measure: "personal-messages",
+        quantity: 20,
+        period: monthlyPeriod,
+        calendarStart: "2026-10-01",
+        homePlacement: "unplaced",
+        state: "paused",
+        versions: [
+          {
+            revisionId: "target-messages-monthly-1",
+            effectiveFrom: "2026-10-01",
+            effectiveTo: null,
+            quantity: 20,
+            measure: "personal-messages",
+            calendarStart: "2026-10-01",
+          },
+        ],
+        revision: INITIAL_REVISION,
+      },
+      {
+        // A one-off custom period, which states both its first and its last day.
+        targetId: "target-meetings-custom",
+        workerPrincipalId: PRINCIPAL_ESTABLISHED,
+        privateLabel: "Meetings during the appeal fortnight",
+        measure: "meetings-held",
+        quantity: 3,
+        period: customPeriod,
+        calendarStart: "2026-11-02",
+        homePlacement: "unplaced",
+        state: "active",
+        versions: [
+          {
+            revisionId: "target-meetings-custom-1",
+            effectiveFrom: "2026-11-02",
+            effectiveTo: null,
+            quantity: 3,
+            measure: "meetings-held",
+            calendarStart: "2026-11-02",
+          },
+        ],
         revision: INITIAL_REVISION,
       },
     ],
@@ -2373,6 +2945,65 @@ function establishedWorkerWorkspace(session: SeededSession): SessionStateDocumen
 }
 
 /**
+ * The established worker's second ministry, selected: an available support source carrying no goal.
+ *
+ * A state document holds the projection of the ministry its context selects, so this is the second
+ * subject's own world rather than a second copy of the first's. Its coverage is complete and its
+ * source is available, which is what keeps "there is no goal" distinct from "the source is
+ * unavailable" and from a goal whose period has no denominator. No gift falls in the current month,
+ * so the month reads as a zero within complete coverage instead of a gap in an incomplete one.
+ */
+function studentsMinistryWorkspace(session: SeededSession): SessionStateDocument {
+  const partners: readonly PartnerRecord[] = [
+    buildPartner("partner-students-femi-adebayo", "person", "Femi Adebayo", {
+      nameParts: nameParts("Femi", "Adebayo"),
+      contactMethods: [contactMethod("email", "femi.adebayo@example.org")],
+      tags: ["students"],
+      source: source("crm", "crm-2044"),
+    }),
+    buildPartner("partner-students-holy-trinity", "church", "Holy Trinity Chaplaincy", {
+      contactMethods: [contactMethod("postal", "Holy Trinity, Harbourton HT1 4QD")],
+      tags: ["students"],
+    }),
+  ];
+
+  const gifts: readonly GiftRowRecord[] = [
+    buildGift("gift-row-students-0001", "gift-students-0001", "EUR", 6000, "2026-10-08", {
+      designation: "Students ministry",
+      attribution: { kind: "partner", partnerId: "partner-students-femi-adebayo" },
+      provenance: source("finance", "gift-students-0001"),
+    }),
+    buildGift("gift-row-students-0002", "gift-students-0002", "EUR", 4500, "2026-09-14", {
+      designation: "Students ministry",
+      attribution: { kind: "partner", partnerId: "partner-students-holy-trinity" },
+      provenance: source("finance", "gift-students-0002"),
+    }),
+  ];
+
+  const supportProjection: SupportProjectionRecord = {
+    supportSubjectId: SUPPORT_SUBJECT_STUDENTS,
+    basis: "effective_cash_allocation",
+    currencyExponents: { EUR: 2 },
+    coverage: { from: "2024-01-01", to: "2026-11-18", state: "complete" },
+    asOf: SEED_INSTANT.toString(),
+    lastSourceUpdate: "2026-11-18T07:45:00Z",
+    goal: null,
+    source: source("finance", "ledger-harbour-students-2026"),
+    revision: INITIAL_REVISION,
+  };
+
+  const tasks: readonly TaskRecord[] = [
+    buildTask("task-students-term-plan", "Plan the students' term programme", session.principalId, {
+      category: "Planning",
+      dueOn: "2026-11-27",
+      partnerId: "partner-students-holy-trinity",
+    }),
+  ];
+
+  return stateDocument(session, { partners, gifts, supportProjection, tasks });
+}
+
+/**
  * The coach's workspace: exactly what the worker shared, and nothing else.
  *
  * A coach session holds no partner, gift, draft or private note at all, which is the read-only
@@ -2389,6 +3020,8 @@ export function seedWorkspace(session: SeededSession): SessionStateDocument {
       return newWorkerWorkspace(session);
     case "established-worker":
       return establishedWorkerWorkspace(session);
+    case "students-ministry":
+      return studentsMinistryWorkspace(session);
     case "second-worker":
       return secondWorkerWorkspace(session);
     case "coach":
@@ -2399,20 +3032,13 @@ export function seedWorkspace(session: SeededSession): SessionStateDocument {
 }
 
 /**
- * Builds the three documents a seeded session owns: its scenario and context document, its records,
- * and an operation ledger in which no operation has been accepted.
+ * Builds the three documents one seeded row owns: its scenario and context document, its records, and
+ * an operation ledger in which no operation has been accepted.
  *
- * The session is refused unless a seeded row names it, so a caller cannot create a session the seed
- * does not describe. The store owns every write; this function only builds values.
+ * The row is handed in rather than looked up, so both entry points below share this one construction
+ * and neither can lay down documents the other would not.
  */
-export function seedSessionDocuments(sessionId: string): SessionDocuments {
-  const session = findSeededSession(sessionId);
-  if (session === undefined) {
-    throw new RangeError(
-      `No seeded session ${JSON.stringify(sessionId)}: the seed lays down ${SEEDED_SESSION_IDS.join(", ")}.`,
-    );
-  }
-
+function buildSessionDocuments(session: SeededSession): SeededSessionDocuments {
   const selected = session.selectedContext;
   return {
     meta: buildSessionMeta({
@@ -2434,5 +3060,39 @@ export function seedSessionDocuments(sessionId: string): SessionDocuments {
     state: seedWorkspace(session),
     operations: EMPTY_OPERATION_LEDGER,
   };
+}
+
+/**
+ * Builds the three documents a session id names, in the store's own document shape.
+ *
+ * The session is refused unless a seeded row names it, so a caller cannot create a session the seed
+ * does not describe. The store owns every write; this function only builds values.
+ */
+export function seedSessionDocuments(sessionId: string): SessionDocuments {
+  const session = findSeededSession(sessionId);
+  if (session === undefined) {
+    throw new RangeError(
+      `No seeded session ${JSON.stringify(sessionId)}: the seed lays down ${SEEDED_SESSION_IDS.join(", ")}.`,
+    );
+  }
+
+  return buildSessionDocuments(session);
+}
+
+/**
+ * Builds every seeded session's three documents and returns the rows with them attached.
+ *
+ * This is the one producer a caller reads when it wants the whole world rather than one session: it
+ * persists nothing, opens no file and reads no clock, so the caller owns every write and a reset that
+ * fails half way leaves no half-built world behind. Each call builds fresh documents, so a caller
+ * holding one session's records cannot alter what the next seed produces, and two calls in one
+ * process return deep-equal results — the determinism every criterion starts from.
+ */
+export async function seed(): Promise<SeededSessionWithDocuments[]> {
+  const sessions: SeededSessionWithDocuments[] = [];
+  for (const session of SEEDED_SESSIONS) {
+    sessions.push({ ...session, documents: buildSessionDocuments(session) });
+  }
+  return sessions;
 }
 
