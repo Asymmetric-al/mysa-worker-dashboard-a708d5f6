@@ -3,9 +3,23 @@
  * The one application shell: the chrome every route renders inside, and the only place the page's
  * landmarks are created.
  */
-import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode, type RefObject } from "react";
-import ContextIndicator, { type AdmittedContext, type ContextRequest } from "@/components/context-indicator";
+
+import { usePathname, useRouter } from "next/navigation";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+} from "react";
+
+import ContextIndicator, {
+  type AdmittedContext,
+  type ContextRequest,
+} from "@/components/context-indicator";
 // The one context-change decision. It is a shared component of this same layer, not a feature: the
 // switch is composed here so the dialog and the fence exist once and are reachable from wherever the
 // context indicator is. Its words and its dispatch arrive as props, so importing it couples the shell
@@ -33,7 +47,15 @@ export interface AppShellDevActions {
   readonly onAdvanceClock: DevPanelProps["onAdvanceClock"];
   readonly onSetFailurePlan: DevPanelProps["onSetFailurePlan"];
   readonly reset: DevPanelProps["reset"];
-  readonly onSelectPersona: PersonaSwitcherProps["onSelect"];
+  /**
+   * Asks the development runtime to carry a different seeded persona, where this build can carry one.
+   *
+   * Omitted when changing which seeded session the browser's cookie names is not a step this build
+   * provides: the persona switch then does not render at all, because a control that cannot act is worse
+   * than no control — the rule every group of this region follows.
+   */
+  readonly onSelectPersona?: PersonaSwitcherProps["onSelect"];
+  /** Asks the development runtime to apply an admission scenario, where the surface offers one. */
   readonly onSelectSessionState?: PersonaSwitcherProps["onSelectSessionState"];
 }
 /** The context switch, so it is available wherever the context indicator is visible. */
@@ -68,14 +90,55 @@ const DEVELOPMENT_REGION_LABEL = "Development controls";
 
 const HELP_HREF = "/help";
 
+/** The two ways a recovery surface's one action reaches the state its sentence names. */
+type RecoveryActionKind = "help" | "refresh";
+
+/** One recovery surface: what happened, what it does not mean, and the one way forward. */
 interface RecoveryCopy {
   readonly noticeKind: StateNoticeProps["kind"];
   readonly reasonCode?: StateNoticeProps["reasonCode"];
   readonly title: string;
   readonly description: string;
   readonly actionLabel: string;
-  readonly actionHref: string | null;
+  /**
+   * How that one action is dispatched, which is all the four surfaces differ in.
+   *
+   * `help` follows the documented Help destination the notice renders beside these words. `refresh`
+   * stays on the page the reader is already on and asks the router for this route again, which is the
+   * step that re-requests the read the notice describes: a link to the open path would replay the route
+   * payload the router already holds and need not re-request that render. There is no third form and no
+   * default, so a surface cannot end up with an action that has neither a destination nor a command.
+   */
+  readonly actionKind: RecoveryActionKind;
 }
+
+/**
+ * The four recovery surfaces, one sentence set each.
+ *
+ * The record is exhaustive over {@link RecoveryState}, so adding an admission state to the envelope's
+ * closed tuple fails to compile until its surfaces are written. None of the four offers a sign-in
+ * form: there is no authenticator in this release, and a password field would promise one. Each names
+ * what is true — nothing was changed, nothing was shown, what the way forward is — instead of the
+ * generic apology that leaves a reader unable to decide what to do next.
+ *
+ * **Why the two rejected sessions name no development control.** Every development mutation asserts
+ * the claimed scope, and so the admission gate, before its own authority question, so a session that
+ * grants nothing — which is exactly what `expired` and `no-access` are — cannot reset the seed or
+ * change persona from the surface it is looking at. Naming those controls here promised a recovery the
+ * reader could not carry out; the honest one is the Help destination rendered beside the notice, so
+ * both sentences name that and nothing else.
+ *
+ * **Why `denied` names no chooser either.** A refused admission resolves no context record, so the layout
+ * presents no revision to switch against, the shell builds no switch transport, and the indicator is
+ * narrowed to the membership in force — there is no chooser on the page to name. The way forward here is
+ * likewise the Help destination beside it, and the sentence says plainly that this page offers no way to
+ * choose another context rather than pointing at one that never renders.
+ *
+ * Only `unavailable` uses the notice's outage state; the three refusals use its denial state and are
+ * told apart by their reason code and their own sentences. That is deliberate: `components/state-notice`
+ * is the application's only surface for a state that is not a result, and a hand-written page for
+ * "expired" here would be a second one that could drift from it.
+ */
 const RECOVERY_COPY: Readonly<Record<RecoveryState, RecoveryCopy>> = {
   unavailable: {
     noticeKind: "unavailable",
@@ -85,8 +148,8 @@ const RECOVERY_COPY: Readonly<Record<RecoveryState, RecoveryCopy>> = {
       "rather than shown partially or filled in from a guess. Nothing here has been changed, and " +
       "anything already saved is still saved.",
     actionLabel: "Try this page again",
-    // A fresh request for the same route: the read that failed is the read this repeats.
-    actionHref: null,
+    // A re-request rather than a destination: the page the reader is on is the one to ask for again.
+    actionKind: "refresh",
   },
   denied: {
     noticeKind: "denied",
@@ -95,9 +158,10 @@ const RECOVERY_COPY: Readonly<Record<RecoveryState, RecoveryCopy>> = {
     description:
       "The session this page resolved does not admit the organisation and ministry it asked for. " +
       "Nothing about that context is shown — not a count, not a name and not whether a record " +
-      "exists — and the honest way forward is to choose a context this session does admit.",
+      "exists — and this page offers no way to choose another one, so Open Help explains what an " +
+      "admitted session needs.",
     actionLabel: "Open Help",
-    actionHref: HELP_HREF,
+    actionKind: "help",
   },
   expired: {
     noticeKind: "denied",
@@ -105,22 +169,21 @@ const RECOVERY_COPY: Readonly<Record<RecoveryState, RecoveryCopy>> = {
     title: "This session has expired",
     description:
       "A read from this point would not be authorised, so the workspace is closed instead of being " +
-      "shown from a session that has ended. Nothing you saved has been discarded: the development " +
-      "controls below can reset this session to the known seed, and Help explains what each " +
-      "admission state means.",
+      "shown from a session that has ended. Nothing you saved has been discarded — an ended session " +
+      "changes no stored record — and Open Help explains what each admission state means.",
     actionLabel: "Open Help",
-    actionHref: HELP_HREF,
+    actionKind: "help",
   },
   "no-access": {
     noticeKind: "denied",
     reasonCode: "no-membership",
     title: "No admitted identity for this session",
     description:
-      "There is no account for this session, so there is no workspace to show. Recovering the " +
-      "account is the only outcome that would help, and the seeded personas in the development " +
-      "controls demonstrate the admission states this release can reach.",
+      "There is no account for this session, so there is no workspace to show and nothing has been " +
+      "changed. Recovering the account is the only outcome that would help, and this release carries " +
+      "no authenticator to start it with, so Open Help explains what an admitted session needs.",
     actionLabel: "Open Help",
-    actionHref: HELP_HREF,
+    actionKind: "help",
   },
 };
 const NO_PERSONAS: readonly PersonaOption[] = [];
@@ -201,7 +264,20 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, devStat
   const [pending, setPending] = useState<PendingSwitch | null>(null);
   const [switching, setSwitching] = useState(false);
   const [lastSwitch, setLastSwitch] = useState<ContextSwitchResult | null>(null);
+
+  // The router and the transition the outage surface's retry runs in, so the refresh it starts keeps
+  // the notice readable until the fresh server render arrives.
+  const router = useRouter();
+  const [, startRefresh] = useTransition();
+
   useStickyOffset(headerRef);
+
+  /*
+   * The route to describe, from whichever side knows it. A client caller passes the path the router
+   * reported; a Server Component caller — the root layout — cannot know it and passes none, so it is
+   * read here. Both are the same source, which is what keeps the rail and the header's finance-subject
+   * disclosure pointing at the one destination the reader is actually on.
+   */
   const routedPath = usePathname();
   const currentPath = suppliedPath ?? routedPath;
   // A plain click on a destination closes the compact navigation the reader is looking at. The model
@@ -210,6 +286,23 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, devStat
   const closeCompactNav = useCallback((): void => {
     setOpenMobile(false);
   }, [setOpenMobile]);
+
+  /*
+   * The outage surface's one action: ask the router for this route again.
+   *
+   * A `next/link` to the path already open replays the route payload the router holds and need not
+   * re-request the server render that failed, which is why `app/error.tsx` pairs its retry with
+   * `router.refresh()`. Here the refresh is the whole retry: it re-reads the render that produced the
+   * notice, and running it inside a transition leaves the notice in place until the fresh payload
+   * arrives instead of flashing an empty region. It navigates nowhere else, reloads no document and
+   * starts no save.
+   */
+  const requestPageAgain = useCallback((): void => {
+    startRefresh(() => {
+      router.refresh();
+    });
+  }, [router, startRefresh]);
+
   const admissions = contextAdmissions ?? NO_ADMISSIONS;
   const requestContext = useCallback(
     (request: ContextRequest): void => {
@@ -251,7 +344,14 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, devStat
   const personaOptions: readonly PersonaOption[] = personas ?? (devState === undefined ? NO_PERSONAS : devState.personaCatalogue.personas.map(toPersonaOption));
   const announcement = pending === null && lastSwitch !== null && lastSwitch.switched ? lastSwitch.announcement : "";
   const recovery = admissionState === "signed-in" ? null : RECOVERY_COPY[admissionState];
-  const showsPersonaSwitcher = devActions !== undefined && personaOptions.length > 0;
+
+  /*
+   * The development region is rendered only where it has something to show. An empty labelled
+   * complementary landmark would still be announced in a landmark list, so a build without a
+   * development runtime simply has no development region rather than an empty one.
+   */
+  const personaSelect = devActions?.onSelectPersona;
+  const showsPersonaSwitcher = personaSelect !== undefined && personaOptions.length > 0;
   const showsDevPanel = devState !== undefined && devActions !== undefined;
   const showsDevelopmentRegion = showsPersonaSwitcher || showsDevPanel;
   return (
@@ -313,7 +413,11 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, devStat
                 title={recovery.title}
                 description={recovery.description}
                 headingLevel={1}
-                action={{ label: recovery.actionLabel, href: recovery.actionHref ?? currentPath }}
+                action={
+                  recovery.actionKind === "refresh"
+                    ? { label: recovery.actionLabel, onClick: requestPageAgain }
+                    : { label: recovery.actionLabel, href: HELP_HREF }
+                }
               />
             )}
           </div>
@@ -327,14 +431,14 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, devStat
         {showsDevelopmentRegion ? (
           <aside aria-label={DEVELOPMENT_REGION_LABEL} className="border-t border-border bg-muted/30">
             <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-3 py-4">
-              {showsPersonaSwitcher && devActions !== undefined ? (
+              {personaSelect !== undefined && personaOptions.length > 0 ? (
                 <PersonaSwitcher
                   personas={personaOptions}
                   activePersonaId={devState?.activePersonaId ?? ""}
-                  onSelect={devActions.onSelectPersona}
+                  onSelect={personaSelect}
                   sessionStates={devState?.sessionStates}
                   activeSessionState={devState?.sessionState}
-                  onSelectSessionState={devActions.onSelectSessionState}
+                  onSelectSessionState={devActions?.onSelectSessionState}
                 />
               ) : null}
               {showsDevPanel && devState !== undefined && devActions !== undefined ? (

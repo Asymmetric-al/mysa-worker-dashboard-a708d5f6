@@ -41,6 +41,15 @@ export interface ReviewedAttempt {
   readonly operationId: string;
   readonly intent: string | null;
 }
+/**
+ * Renders a value as a canonical string so two intents can be compared exactly.
+ *
+ * Object keys are sorted and every leaf is serialised by its own kind, so the same intent built by
+ * two call sites — or by the same one after a re-render reordered its keys — yields the same string.
+ * `undefined` becomes `null` rather than being dropped, so a payload that loses a key changes the
+ * fingerprint instead of colliding with one that never had it. The value is a comparison key only:
+ * nothing parses it back, and nothing derives an identifier from it.
+ */
 function canonicalIntent(value: unknown): string {
   if (value === null || value === undefined) {
     return "null";
@@ -89,7 +98,13 @@ export function reappliableRevision(outcome: MutationOutcome | null): string | n
 export type MutationSubmit<P> = (input: MutationInput<P>) => Promise<MutationOutcome>;
 /** What {@link useReviewedMutation} hands back to the step that renders it. */
 export interface UseReviewedMutationResult<P> {
+  /**
+   * The identity of the attempt in flight or the one that last settled, and `null` before the first
+   * submission: an identity names an attempt that was made, so none exists while the step is only
+   * being read (and the markup a server render and its hydration produce therefore agrees).
+   */
   readonly operationId: string | null;
+  /** `true` only while a request is in flight, so the caller can state the busy condition once. */
   readonly pending: boolean;
   readonly outcome: MutationOutcome | null;
   readonly reviewedIntent: string | null;
@@ -104,6 +119,7 @@ export function useReviewedMutation<P = unknown>(submit: MutationSubmit<P>): Use
   useEffect(() => {
     submitRef.current = submit;
   }, [submit]);
+
   const [attempt, setAttempt] = useState<ReviewedAttempt | null>(null);
   const attemptRef = useRef<ReviewedAttempt | null>(null);
   const [pending, setPending] = useState(false);
@@ -312,6 +328,10 @@ export function ActionReview<P = unknown>({
       aria-busy={pending ? true : undefined}
       data-slot="action-review"
       data-state={state}
+      /* The identity this step submitted under, written once an attempt exists: a browser test
+       * asserting that a repeated press produced one effect reads it here. It is absent before the
+       * first press, because minting it during render would make the server render and the hydration
+       * disagree, so this is a diagnostic hook and never a control. */
       data-operation-id={operationId ?? undefined}
       className={cn("flex min-w-0 flex-col gap-4", className)}
     >

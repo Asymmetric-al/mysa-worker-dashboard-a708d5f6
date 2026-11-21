@@ -19,6 +19,15 @@ export interface AdmittedContext {
   readonly organizationLabel: string;
   readonly ministryId: string;
   readonly ministryLabel: string;
+  /**
+   * The finance subject this membership reports in, as the chooser listed it.
+   *
+   * It is optional because only a read that enumerated the memberships can state it: a switch to this
+   * context must name that membership's own projection, and carrying the current context's subject
+   * across would name another ministry's. Omitted, the shell offers no switch to this membership rather
+   * than a scope it invented.
+   */
+  readonly supportSubjectId?: string;
 }
 /** The context a selection asks for: a scope without the acting principal. */
 export interface ContextRequest {
