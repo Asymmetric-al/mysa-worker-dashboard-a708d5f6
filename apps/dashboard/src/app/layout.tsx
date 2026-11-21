@@ -4,9 +4,11 @@ import type { ReactElement, ReactNode } from "react";
 import type { AdmissionState } from "@/components/app-shell";
 import type { AdmittedContext } from "@/components/context-indicator";
 import { DirectionProvider } from "@/components/ui/direction";
+import { DevControls } from "@/features/shell/components/dev-controls";
 import { ShellFrame } from "@/features/shell/components/shell-frame";
 import { ViewerPreferencesProvider } from "@/features/shell/components/viewer-preferences-provider";
 import { reads, type DenialReason, type Scope } from "@/modules/data-service";
+import { isDevelopment } from "@/lib/guards";
 import "@/styles/globals.css";
 const APPLICATION_NAME = "Worker Dashboard";
 const INTERFACE_LANGUAGE = "en";
@@ -65,13 +67,17 @@ async function readContextAdmissions(): Promise<readonly AdmittedContext[]> {
 export default async function RootLayout({ children }: RootLayoutProps): Promise<ReactElement> {
   // Both answers describe the same request and neither depends on the other, so they are read together rather than one after the other.
   const [{ scope, admissionState, contextRevision }, contextAdmissions] = await Promise.all([readShellAdmission(), readContextAdmissions()]);
+  // The development boundary is decided once, here on the server, and travels as the region's presence: a
+  // build without development controls composes no region at all, so no browser bundle re-derives the
+  // environment to decide whether a development surface exists.
+  const developmentControls = isDevelopment();
 
   return (
     <html lang={INTERFACE_LANGUAGE} dir={INTERFACE_DIRECTION} suppressHydrationWarning>
       <body className="min-h-svh bg-background text-foreground antialiased">
         <DirectionProvider direction={INTERFACE_DIRECTION}>
           <ViewerPreferencesProvider>
-            <ShellFrame scope={scope} admissionState={admissionState} contextAdmissions={contextAdmissions} contextRevision={contextRevision}>
+            <ShellFrame scope={scope} admissionState={admissionState} contextAdmissions={contextAdmissions} contextRevision={contextRevision} developmentRegion={developmentControls ? <DevControls scope={scope} developmentControls={developmentControls} /> : undefined}>
               {children}
             </ShellFrame>
           </ViewerPreferencesProvider>

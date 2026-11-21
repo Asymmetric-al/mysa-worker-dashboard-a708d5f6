@@ -986,7 +986,10 @@ async function withdrawDocumentFamily(sessionId: string, input: MutationInput<Do
         return storedReleaseOf(withdrawal.release, nextRevision(release.revision), release);
       });
       if (newlyWithdrawn === 0) return { changed: false };
-      writeState(context.docs, opened, { releases: nextReleases, contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)) });
+      // A withdrawal rewrites only this document's releases; every other document's releases in the session are
+      // carried through untouched, because withdrawing one document never removes another document's editions.
+      const nextById = new Map(nextReleases.map((release) => [release.releaseId, release]));
+      writeState(context.docs, opened, { releases: state.releases.map((release) => nextById.get(release.releaseId) ?? release), contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)) });
       const result: WithdrawalView = { documentId: document.documentId, withdrawnReleaseIds: withdrawnIds, newlyWithdrawnCount: newlyWithdrawn };
       return { changed: true, revision: nextRevision(document.revision), result, changedIds: withdrawnIds } satisfies ApplyResult<typeof result>;
     },
@@ -1069,7 +1072,10 @@ function applyStopShowingPublicly(context: MutationContext, input: MutationInput
     return storedReleaseOf(withdrawal.release, nextRevision(release.revision), release);
   });
   if (newlyWithdrawn === 0) return { changed: false };
-  writeState(context.docs, opened, { releases: nextReleases, contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)) });
+  // The withdrawal rewrites only this document's releases; every other document's releases in the session are
+  // carried through untouched, because containment hides one Page and never removes another document's releases.
+  const nextById = new Map(nextReleases.map((release) => [release.releaseId, release]));
+  writeState(context.docs, opened, { releases: state.releases.map((release) => nextById.get(release.releaseId) ?? release), contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)) });
   const result: WithdrawalView = { documentId: document.documentId, withdrawnReleaseIds: records.map((release) => release.releaseId), newlyWithdrawnCount: newlyWithdrawn };
   return { changed: true, revision: nextRevision(document.revision), result, changedIds: records.map((release) => release.releaseId) } satisfies ApplyResult<typeof result>;
 }

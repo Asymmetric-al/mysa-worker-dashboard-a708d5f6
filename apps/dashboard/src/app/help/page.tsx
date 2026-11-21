@@ -224,11 +224,11 @@ interface ProseSection {
 /** The three sections that are prose rather than a journey, a label list or the shared Help content. */
 const PROSE_SECTIONS: Readonly<Record<ProseSectionId, ProseSection>> = {
   "development-controls": {
-    intro: "The development panel selects a persona or session state, a scenario, a clock and a failure plan, and offers the same reset Settings offers. None of them is a permission, and none of them changes anything outside this session.",
+    intro: "The development panel states the identity this session carries and selects a scenario, a clock and a failure plan, and offers the same reset Settings offers. None of them is a permission, and none of them changes anything outside this session.",
     items: [
       {
         title: "Preview persona",
-        body: "Selects the seeded persona or session state the session carries, so a preview shows what that identity is given. It grants nothing: every read that follows is authorised again, so a persona that may not read a surface receives the honest denial instead of a hidden destination.",
+        body: "States the seeded persona the session carries and the roster the runtime lists, so a preview shows what that identity is given. It switches nothing: the identity is the seeded session the browser carries, every read that follows is authorised again, and a persona that may not read a surface receives the honest denial instead of a hidden destination.",
       },
       { title: "Scenario", body: "Selects which seeded world the session runs in — which source is unavailable, which content state is seeded, which setting a journey is under — for that session only, so two sessions can be in two scenarios at once." },
       {

@@ -150,8 +150,15 @@ function cellDrilldownHref(cell: MatrixCell): string {
   return `${GIFTS_ROUTE}?${params.toString()}`;
 }
 // The year the history layout states and may switch
+/** The calendar year a report covers: the one the query names, or the year its period starts in. A result that has crossed to the browser states a civil day as its own `YYYY-MM-DD` text, so the year is read from that text rather than from a date object only the server held. */
 function reportYearOf(query: ReportQuery, result: ReportResult): number {
-  return query.period.kind === "year" ? query.period.year : result.snapshot.period.from.year;
+  if (query.period.kind === "year") {
+    return query.period.year;
+  }
+  // A civil day is a `Temporal` date on the server and its own `YYYY-MM-DD` text once the result has crossed to
+  // the browser; `String` states the same ISO day in both forms, so the year is the one that day begins in.
+  const startDay = String(result.snapshot.period.from);
+  return Number(startDay.slice(0, 4));
 }
 
 // The layout the catalogue names

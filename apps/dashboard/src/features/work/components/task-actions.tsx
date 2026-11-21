@@ -48,7 +48,8 @@ const CANCEL_DIALOG_SENTENCE = "A cancelled task stays cancelled: it is neither 
 const CANCEL_CONFIRM_LABEL = "Cancel the task";
 const CANCEL_KEEP_LABEL = "Keep the task";
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { operation: "Action", taskId: "Task", confirmed: "Confirmation" };
-const STATUS_TONES: Readonly<Record<TaskRecordStatus, StatusTone>> = { open: "info", completed: "positive", reopened: "caution", cancelled: "muted" };
+/** The one tone each task status is stated in, exported so a list row and this menu state a status the same way rather than keeping a second copy of the mapping. */
+export const TASK_STATUS_TONES: Readonly<Record<TaskRecordStatus, StatusTone>> = { open: "info", completed: "positive", reopened: "caution", cancelled: "muted" };
 const CONTROL_CLASS = "h-auto min-h-8 max-w-full py-1.5 whitespace-normal";
 export type TaskActionsPresentation = "row" | "body";
 export interface TaskActionsProps {
@@ -336,7 +337,7 @@ export default function TaskActions({ taskId, title, status, revision, scope, ac
         <>
           <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
             <span className="text-muted-foreground">{STATUS_LABEL}</span>
-            <StatusBadge label={TASK_STATUS_LABELS[status]} tone={STATUS_TONES[status]} srPrefix={STATUS_SR_PREFIX} />
+            <StatusBadge label={TASK_STATUS_LABELS[status]} tone={TASK_STATUS_TONES[status]} srPrefix={STATUS_SR_PREFIX} />
           </p>
           {settled ? (
             <p className="text-sm text-pretty text-muted-foreground">{SETTLED_SENTENCE}</p>

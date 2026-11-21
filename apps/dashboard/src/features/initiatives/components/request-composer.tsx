@@ -12,7 +12,10 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
-import type { MutationInput, MutationOutcome, Scope, reads } from "@/modules/data-service";
+import { assertNever } from "@/lib/result";
+import type { MutationInput, MutationOutcome, Scope, ValueState, reads } from "@/modules/data-service";
+import { minorUnitsOf } from "@/modules/money/amount";
+import { formatMinor, type MinorFormatting } from "@/modules/money/format";
 import { cadenceValueFallback, INITIATIVE_COPY, REQUEST_LIFECYCLE_COPY, REQUEST_LIFECYCLE_STATES, REQUESTED_TERMS_COPY, RESPONSE_AGREEMENT_COPY, termValueFallback } from "../copy";
 import { useDraftRequest } from "../hooks/use-request-mutations";
 import { draftRequestPayloadSchema, type DraftRequestPayload } from "../schemas/request";
@@ -36,6 +39,10 @@ export interface RequestComposerProps {
   readonly envelope: InitiativeDetailEnvelope;
   /** Called once the draft stands, so the caller can refresh what it shows of this initiative's Requests. */
   readonly onDrafted?: (outcome: MutationOutcome) => void;
+  /** Re-reads this initiative for an unconfirmed attempt: the receipt for an `unknown` outcome offers this and never a second draft. */
+  readonly onCheckResult?: () => void;
+  /** The interface locale amounts are grouped and pointed in, as the composing page states it. */
+  readonly locale?: string;
   /** The level of this section's heading, so the composing page keeps one outline. */
   readonly headingLevel?: 3 | 4;
   readonly className?: string;
@@ -57,6 +64,15 @@ const NON_FINANCIAL_FIELD = "terms.nonFinancial.description";
 const FIELD_ORDER = [RECIPIENT_FIELD, REPRESENTED_FIELD, PURPOSE_FIELD, VERSION_FIELD, CURRENCY_FIELD, AMOUNT_FIELD, CADENCE_FIELD, TERM_FIELD, NON_FINANCIAL_FIELD] as const;
 /** The one named mutation this surface drives, as the read's actions list it. */
 const DRAFT_REQUEST = "draftRequest";
+/** The locale an amount is formatted in when the composing page states none, matching the interface locale this release's pages pass explicitly, so no amount is grouped or pointed by the runtime's own default. */
+const FALLBACK_LOCALE = "en-GB";
+/**
+ * The state a reviewed amount carries. It is the figure the worker stated for this attempt, and no
+ * envelope describes an attempt the service has not recorded yet: `value` is what the attempt asserts.
+ * A currency whose minor-unit exponent is unknown is expressed by the formatter itself, whose rendering
+ * states that no exponent, total or comparison exists — never by a state this surface picks for it.
+ */
+const STATED_AMOUNT_STATE: ValueState = "value";
 /** The wording this surface owns. */
 const SURFACE_COPY = {
   heading: "Draft a request",
@@ -78,8 +94,9 @@ const SURFACE_COPY = {
     financial: { label: "An amount", hint: "One currency, a whole number of minor units, and an optional cadence and term." },
     "non-financial": { label: REQUESTED_TERMS_COPY.nonFinancialLabel, hint: "Describe what is being asked for instead of an amount. No currency, amount, cadence or term travels with it." },
   },
-  currencyHelp: "The currency code the requested amount is in.",
-  amountHelp: "The requested amount as a whole number of minor units, exactly as entered. Nothing here rounds, scales or defaults it.",
+  currencyHelp: "The currency code the requested amount is in. A code the service does not recognise stays exactly as entered: no other currency is assumed.",
+  amountHelp: "The requested amount as a whole number of minor units — digits only, with no sign, decimal mark or exponent. Nothing here rounds, scales or defaults it.",
+  amountEchoIntro: "This reads as",
   cadenceHelp: "Optional: how often the requested amount would recur, in your own words.",
   termHelp: "Optional: how long the requested amount would run, in your own words.",
   nonFinancialHelp: "What is being asked for, in your own words — up to 2,000 characters.",
@@ -90,7 +107,7 @@ const SURFACE_COPY = {
   anotherLabel: "Draft another request",
   unavailableTitle: "A request cannot be drafted here",
   unavailableBody: "This read does not admit the draft action, so no form is offered.",
-  minorUnitsNote: "in minor units, as entered",
+  minorUnitsNote: "entered as a whole number of minor units",
   nobodyRepresented: "None: the person represents nobody.",
 } as const;
 /** The labels a refused field shows in the aggregate summary, keyed exactly as the `invalid` outcome keys them. */
@@ -134,8 +151,6 @@ interface AwaitingOutcome {
   readonly operationId: string;
   readonly resolve: (outcome: MutationOutcome) => void;
 }
-/** The two outcomes that mean a draft now exists, so the caller hears about it. */
-const DRAFTED_OUTCOMES: ReadonlySet<MutationOutcome["outcome"]> = new Set<MutationOutcome["outcome"]>(["accepted", "alreadyAccepted"]);
 /** Reports whether a radio value is one of the two terms shapes this form states. */
 function isTermsShape(value: unknown): value is TermsShape {
   return typeof value === "string" && (TERMS_SHAPES as readonly string[]).includes(value);
@@ -144,6 +159,25 @@ function isTermsShape(value: unknown): value is TermsShape {
 function numberOrUndefined(text: string): number | undefined {
   const trimmed = text.trim();
   return trimmed === "" ? undefined : Number(trimmed);
+}
+/** The only shape an entered amount may take: digits in minor units, with no sign, decimal mark, exponent or grouping separator. */
+const WHOLE_MINOR_UNITS = /^\d+$/;
+/**
+ * The amount the worker typed as an integer count of minor units. An empty field states no amount; any
+ * other text — "1.5", "-5", "1e3", "1,000" — travels as a value that is not a safe integer, so the schema
+ * refuses it on the amount field with its own whole-number message rather than this form reading a number
+ * the worker never wrote.
+ */
+function minorUnitsTextOf(text: string): number | undefined {
+  const trimmed = text.trim();
+  if (trimmed === "") return undefined;
+  return WHOLE_MINOR_UNITS.test(trimmed) ? Number(trimmed) : Number.NaN;
+}
+/** The one place an amount becomes text, over the exact minor-unit type the money module mints, so no surface builds an amount from a number of its own. */
+function statedAmountOf(currency: string, minorUnits: number | undefined, locale: string): MinorFormatting | null {
+  const code = currency.trim();
+  if (code === "" || minorUnits === undefined || !Number.isSafeInteger(minorUnits)) return null;
+  return formatMinor({ currency: code, minorUnits: minorUnitsOf(minorUnits) }, STATED_AMOUNT_STATE, locale);
 }
 /** The terms the payload carries, in exactly one of the two shapes. */
 function termsOf(values: RequestFormValues): DraftRequestPayload["terms"] {
@@ -154,7 +188,7 @@ function termsOf(values: RequestFormValues): DraftRequestPayload["terms"] {
     return { version, nonFinancial: { description: values.nonFinancialDescription } };
   }
   const currency = values.currency.trim();
-  const minorUnits = numberOrUndefined(values.minorUnits);
+  const minorUnits = minorUnitsTextOf(values.minorUnits);
   const cadence = values.cadence.trim();
   const term = values.term.trim();
   return { version, ...(currency === "" ? {} : { currency }), ...(minorUnits === undefined ? {} : { minorUnits }), ...(cadence === "" ? {} : { cadence }), ...(term === "" ? {} : { term }) };
@@ -188,9 +222,10 @@ function ReviewFact({ label, children }: { readonly label: string; readonly chil
   );
 }
 /** What will be drafted, in the worker's own values, before anything is sent. */
-function ReviewedRequestFacts({ payload, recipient }: { readonly payload: DraftRequestPayload; readonly recipient: WorkingListMember | undefined }): ReactElement {
+function ReviewedRequestFacts({ payload, recipient, locale }: { readonly payload: DraftRequestPayload; readonly recipient: WorkingListMember | undefined; readonly locale: string }): ReactElement {
   const terms = payload.terms;
   const nonFinancial = terms.nonFinancial;
+  const amount = statedAmountOf(terms.currency ?? "", terms.minorUnits, locale);
   return (
     <dl className="flex min-w-0 flex-col gap-3 text-sm">
       <ReviewFact label={SURFACE_COPY.recipientLabel}>
@@ -212,10 +247,15 @@ function ReviewedRequestFacts({ payload, recipient }: { readonly payload: DraftR
             <bdi className="mono-identifier">{terms.currency ?? REQUESTED_TERMS_COPY.notStated}</bdi>
           </ReviewFact>
           <ReviewFact label={REQUESTED_TERMS_COPY.amountLabel}>
-            <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-              <bdi className="tabular-figures">{terms.minorUnits === undefined ? REQUESTED_TERMS_COPY.notStated : String(terms.minorUnits)}</bdi>
-              <span className="text-muted-foreground">{SURFACE_COPY.minorUnitsNote}</span>
-            </span>
+            {amount === null ? (
+              <span>{REQUESTED_TERMS_COPY.notStated}</span>
+            ) : (
+              <span className="flex min-w-0 flex-wrap items-baseline gap-x-2" title={amount.accessibleLabel}>
+                <bdi className="tabular-figures">{amount.text}</bdi>
+                <span className="text-muted-foreground">{SURFACE_COPY.minorUnitsNote}</span>
+                {amount.accessibleLabel === amount.text ? null : <span className="sr-only">{amount.accessibleLabel}</span>}
+              </span>
+            )}
           </ReviewFact>
           <ReviewFact label={REQUESTED_TERMS_COPY.cadenceLabel}>
             <span className="text-pretty">{cadenceValueFallback(terms.cadence ?? "")}</span>
@@ -234,7 +274,7 @@ function ReviewedRequestFacts({ payload, recipient }: { readonly payload: DraftR
 }
 
 /** The request composer: the form, the review that names what it will draft, and the receipt for one attempt. */
-export default function RequestComposer({ initiativeId, envelope, onDrafted, headingLevel = 3, className }: RequestComposerProps): ReactElement {
+export default function RequestComposer({ initiativeId, envelope, onDrafted, onCheckResult, locale = FALLBACK_LOCALE, headingLevel = 3, className }: RequestComposerProps): ReactElement {
   const scope = envelope.scope;
   const expectedRevision = envelope.revision;
   const headingId = useId();
@@ -276,19 +316,36 @@ export default function RequestComposer({ initiativeId, envelope, onDrafted, hea
       }),
     [submitDraft],
   );
+  // Every outcome is answered here, one arm each: a refusal returns to the fields it names with every value
+  // kept, an outcome that leaves the draft standing is reported to the caller, and the rest keep the receipt
+  // as the record of this attempt. `assertNever` makes a ninth outcome a compile error, not a silent gap.
   const handleSettled = useCallback(
     (outcome: MutationOutcome): void => {
       setSettled(outcome);
-      if (outcome.outcome === "invalid") {
-        // The messages belong on the fields they name, so the step returns to the form with every value
-        // exactly as it was entered and nothing re-derived.
-        setErrors(fieldErrorsFromInvalid(outcome));
-        setStep("form");
-        return;
-      }
-      setErrors(null);
-      if (DRAFTED_OUTCOMES.has(outcome.outcome)) {
-        onDrafted?.(outcome);
+      switch (outcome.outcome) {
+        case "invalid":
+          // The messages belong on the fields they name, so the step returns to the form with every value
+          // exactly as it was entered and nothing re-derived.
+          setErrors(fieldErrorsFromInvalid(outcome));
+          setStep("form");
+          return;
+        case "accepted":
+        case "alreadyAccepted":
+          setErrors(null);
+          onDrafted?.(outcome);
+          return;
+        case "unchanged":
+        case "conflict":
+        case "denied":
+        case "unavailable":
+        case "unknown":
+          // The receipt carries what happened. A conflict keeps the entered terms in the form's own values
+          // beside the current revision the outcome states, and an unconfirmed outcome offers the caller's
+          // own re-read: neither is ever answered with a second draft.
+          setErrors(null);
+          return;
+        default:
+          assertNever(outcome, "Unhandled mutation outcome");
       }
     },
     [onDrafted],
@@ -347,13 +404,14 @@ export default function RequestComposer({ initiativeId, envelope, onDrafted, hea
         <div className="flex min-w-0 flex-col gap-3">
           <ActionReview<DraftRequestPayload>
             title={SURFACE_COPY.reviewTitle}
-            description={<ReviewedRequestFacts payload={reviewed.payload} recipient={recipientOf(reviewed.payload.recipientPartnerId)} />}
+            description={<ReviewedRequestFacts payload={reviewed.payload} recipient={recipientOf(reviewed.payload.recipientPartnerId)} locale={locale} />}
             confirmLabel={SURFACE_COPY.confirmLabel}
             cancelLabel={SURFACE_COPY.backLabel}
             onCancel={returnToForm}
             input={reviewed}
             submit={submit}
             onSettled={handleSettled}
+            checkResult={onCheckResult}
             fieldLabels={FIELD_LABELS}
             headingLevel={headingLevel}
           />
@@ -557,24 +615,48 @@ export default function RequestComposer({ initiativeId, envelope, onDrafted, hea
                         </form.Field>
                         <form.Field name="minorUnits">
                           {(field) => (
-                            <FormField name={AMOUNT_FIELD} label={REQUESTED_TERMS_COPY.amountLabel} description={SURFACE_COPY.amountHelp} error={errors?.byField[AMOUNT_FIELD]} required>
-                              {(control) => (
-                                <Input
-                                  id={control.id}
-                                  name={AMOUNT_FIELD}
-                                  type="number"
-                                  step={1}
-                                  required={control.required}
-                                  value={field.state.value}
-                                  aria-describedby={control.describedBy}
-                                  aria-invalid={control.invalid ? true : undefined}
-                                  onChange={(event) => {
-                                    field.handleChange(event.target.value);
-                                  }}
-                                  onBlur={field.handleBlur}
-                                />
-                              )}
-                            </FormField>
+                            // The amount is echoed through the one money formatter as it is typed, so the currency's
+                            // exponent is visible before review. It states what the entered digits already are, which is
+                            // what the field's description is for, and it is isolated so mixed-direction text cannot
+                            // reorder the digits or the currency code.
+                            <form.Subscribe selector={(state) => state.values.currency}>
+                              {(currency) => {
+                                const echo = statedAmountOf(currency, minorUnitsTextOf(field.state.value), locale);
+                                return (
+                                  <FormField name={AMOUNT_FIELD} label={REQUESTED_TERMS_COPY.amountLabel} description={SURFACE_COPY.amountHelp} error={errors?.byField[AMOUNT_FIELD]} required>
+                                    {(control) => {
+                                      const echoId = `${control.id}-echo`;
+                                      const describedBy = echo === null ? control.describedBy : control.describedBy === undefined ? echoId : `${control.describedBy} ${echoId}`;
+                                      return (
+                                        <div className="flex min-w-0 flex-col gap-1.5">
+                                          <Input
+                                            id={control.id}
+                                            name={AMOUNT_FIELD}
+                                            type="text"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            autoComplete="off"
+                                            required={control.required}
+                                            value={field.state.value}
+                                            aria-describedby={describedBy}
+                                            aria-invalid={control.invalid ? true : undefined}
+                                            onChange={(event) => {
+                                              field.handleChange(event.target.value);
+                                            }}
+                                            onBlur={field.handleBlur}
+                                          />
+                                          {echo === null ? null : (
+                                            <p id={echoId} className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-sm text-muted-foreground">
+                                              {SURFACE_COPY.amountEchoIntro} <bdi className="tabular-figures">{echo.text}</bdi>
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    }}
+                                  </FormField>
+                                );
+                              }}
+                            </form.Subscribe>
                           )}
                         </form.Field>
                         <form.Field name="cadence">

@@ -158,8 +158,10 @@ const REACH_COPY: Record<Reach, ReachOptionCopy> = {
   listed: { label: REACH_STATUS.listed.label, explanation: "Anyone with the link can read it, and it appears in the public discovery index, where search engines may index it.", indexable: true },
 };
 function stopShowingResult(containedCount: number): string {
-  const editions = containedCount === 1 ? "released edition" : "released editions";
-  return `Stop showing publicly applied to ${String(containedCount)} ${editions}. Each address now answers a short notice that the page is no longer available.`;
+  // The count is every language edition the Page has, because that is what containment covers. An edition with no
+  // release was never public, so calling the total "released editions" would overstate what was withdrawn.
+  const editions = containedCount === 1 ? "the one language edition" : `all ${String(containedCount)} language editions`;
+  return `Stop showing publicly applies to ${editions} of this Page. Any address that served it now answers a short notice that the page is no longer available.`;
 }
 const STOP_SHOWING_COPY = {
   action: "Stop showing me publicly",

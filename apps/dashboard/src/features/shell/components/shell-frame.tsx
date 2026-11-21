@@ -2,15 +2,13 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import AppShell, { type AdmissionState, type AppShellContextSwitch, type AppShellDevActions } from "@/components/app-shell";
+import AppShell, { type AdmissionState, type AppShellContextSwitch } from "@/components/app-shell";
 import type { AdmittedContext, ContextRequest } from "@/components/context-indicator";
 import { useContextFence } from "@/components/context-switch-guard";
 import type { Scope } from "@/modules/data-service/envelope";
 import type { MutationInput } from "@/modules/data-service";
-import { isDevelopment } from "@/lib/guards";
 import { CONTEXT_SWITCH_COPY } from "@/features/shell/copy/context-switch";
 import { submitContextSelection } from "../api-client";
-import { useDevMutations } from "../hooks/use-dev-mutations";
 import { useDevState } from "../hooks/use-dev-state";
 export type ShellFrameProps = {
   /** The exact authority the server-rendered data was read under, from the read envelope. */
@@ -20,6 +18,12 @@ export type ShellFrameProps = {
   readonly contextAdmissions: readonly AdmittedContext[];
   /** The context record's revision the server read saw; empty where the session holds no context record, in which case no chooser is offered. */
   readonly contextRevision: string;
+  /**
+   * The development region, composed by the server render that decided there are development controls at
+   * all. Its presence is the whole flag: the read below is enabled exactly where a region was composed, so
+   * no browser bundle has to re-derive the build's environment to decide whether a control surface exists.
+   */
+  readonly developmentRegion?: ReactNode;
   readonly children: ReactNode;
 };
 export function ShellFrame(props: ShellFrameProps): ReactElement {
@@ -30,11 +34,13 @@ export function ShellFrame(props: ShellFrameProps): ReactElement {
     </QueryClientProvider>
   );
 }
-function ShellSurface({ scope, admissionState, contextAdmissions, contextRevision, children }: ShellFrameProps): ReactElement {
-  const developmentControls = isDevelopment();
+function ShellSurface({ scope, admissionState, contextAdmissions, contextRevision, developmentRegion, children }: ShellFrameProps): ReactElement {
+  const developmentControls = developmentRegion !== undefined;
+  // This read is the shell's own single observation of the development envelope, and it exists for one fact:
+  // the scenario the persistent "Development data" label states. The control region observes the same query
+  // key, so both render one request and one cache entry.
   const devRead = useDevState(scope, developmentControls);
-  const envelope = devRead.data?.kind === "envelope" ? devRead.data.envelope : null;
-  const transports = useDevMutations(scope, envelope, developmentControls);
+  const devScenarioId = devRead.data?.kind === "envelope" ? devRead.data.envelope.data.scenario.id : undefined;
   const router = useRouter();
   const selectContext = useCallback((input: MutationInput<Omit<Scope, "principalId">>) => submitContextSelection(input), []);
   const fence = useContextFence({ scope, selectContext, copy: CONTEXT_SWITCH_COPY });
@@ -70,14 +76,8 @@ function ShellSurface({ scope, admissionState, contextAdmissions, contextRevisio
       },
     };
   }, [canSwitchContext, contextAdmissions, contextRevision, fence, router, scope.principalId]);
-  const devActions = useMemo<AppShellDevActions | undefined>(() => {
-    if (transports === null) {
-      return undefined;
-    }
-    return { onSetScenario: transports.onSetScenario, onSetClock: transports.onSetClock, onAdvanceClock: transports.onAdvanceClock, onSetFailurePlan: transports.onSetFailurePlan, reset: transports.reset };
-  }, [transports]);
   return (
-    <AppShell scope={scope} admissionState={admissionState} contextAdmissions={contextAdmissions} contextSwitch={contextSwitch} devState={envelope?.data} devActions={devActions}>
+    <AppShell scope={scope} admissionState={admissionState} contextAdmissions={contextAdmissions} contextSwitch={contextSwitch} developmentRegion={developmentRegion} devScenarioId={devScenarioId}>
       {children}
     </AppShell>
   );

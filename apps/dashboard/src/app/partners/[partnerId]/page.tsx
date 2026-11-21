@@ -4,6 +4,7 @@ import type { ReactElement } from "react";
 import StateNotice from "@/components/state-notice";
 import { buttonVariants } from "@/components/ui/button";
 import PartnerDetailSections, { type PartnerDetailLinks, type PartnerReadResult } from "@/features/partners/components/partner-detail-sections";
+import PrivateNoteComposer from "@/features/partners/components/private-note-composer";
 import { PARTNER_ACTION_LABELS, SURFACE_STATE_COPY } from "@/features/partners/copy/states";
 import { reads, type ReadAction, type ReadEnvelope, type ReadResult } from "@/modules/data-service";
 const ROSTER_HREF = "/partners";
@@ -123,7 +124,13 @@ export default async function PartnerDetailPage({ params }: PartnerDetailPagePro
       locale={INTERFACE_LOCALE}
       breadcrumb={[{ label: ROSTER_CRUMB_LABEL, href: ROSTER_HREF }]}
       links={links}
-      actions={{ bar: <RecordActions partnerId={partnerId} contactEditsAdmitted={contactEditsAdmitted} logInteractionAdmitted={logInteractionAdmitted} createTaskAdmitted={createTaskAdmitted} /> }}
+      actions={{
+        bar: <RecordActions partnerId={partnerId} contactEditsAdmitted={contactEditsAdmitted} logInteractionAdmitted={logInteractionAdmitted} createTaskAdmitted={createTaskAdmitted} />,
+        // The note composer is placed only for a record whose read admits `savePrivateNote`, and it is
+        // handed the revision this page read, which its receipt then reports as the revision the record
+        // now holds.
+        ...(privateNoteAdmitted ? { privateNote: <PrivateNoteComposer scope={envelope.scope} partnerId={partnerId} expectedRevision={envelope.revision} /> } : {}),
+      }}
       {...(interactions === null ? {} : { interactions: detailRead(interactions, (page) => page.interactions) })}
       {...(privatePreparation === null ? {} : { privatePreparation: detailRead(privatePreparation, (data) => data) })}
     />

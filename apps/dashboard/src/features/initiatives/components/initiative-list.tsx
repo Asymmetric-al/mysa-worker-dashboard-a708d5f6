@@ -1,5 +1,5 @@
 "use client";
-/** The initiative list: one page of the initiatives the admitted ministry lets this worker read, with the whole of its view state — the search text, the state filter, the order and the page window — … */
+/** The initiative list: one page of the initiatives the admitted ministry lets this worker read, with the whole of its view state — the search text, the state filter, the order, the page window and the hidden columns — held in the address, so a visit to one initiative returns to the view it was opened from. */
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
@@ -168,13 +168,13 @@ export function parseInitiativesQuery(source: URLSearchParams | string): Initiat
 /** The order labels, in the read's own terms: each names the column and the direction the read applies. */
 const ORDER_VALUE_COPY: Readonly<Record<InitiativeOrder, string>> = { name: "Name, A to Z", "period-start": "Period start, earliest first", state: "State, open first" };
 
-/** `../copy.ts` owns the family's shared vocabulary — the two states, the three membership states and the notices — and the wording particular to this list is named once here rather than repeated … */
+/** `../copy.ts` owns the family's shared vocabulary — the two states, the three membership states and the notices — and the wording particular to this list is named once here rather than repeated at each use. */
 const SURFACE_COPY = {
   intro: "Every initiative you may read in this ministry, filtered and paged over the whole result rather than over the rows on screen.",
   tableLabel: "Initiatives, one page of the whole authorised result",
   itemNoun: "initiatives",
   filtersLabel: "Initiative filters",
-  searchPlaceholder: "Search initiatives by name or purpose",
+  searchPlaceholder: "Search name or purpose",
   stateFilterLabel: "State",
   orderLabel: "Order",
   stateColumnLabel: "State",
@@ -385,11 +385,13 @@ export default function InitiativeList({ initialEnvelope, headingLevel = 2, clas
   const total = page === undefined ? 0 : page.total;
   const activeFilters = activeFilterCount(view);
   const createAction = (envelope ?? initialEnvelope.envelope).actions.find((action) => action.name === CREATE_INITIATIVE);
-  // `actions` is advisory and the service re-checks on submit, but a read that states the action is
-  // unavailable is answered with the reason it states rather than with a control that could only fail.
-  // An absent entry is not a refusal, so it leaves the entry point available.
-  const offersCreate = createAction === undefined || createAction.available;
-  const createUnavailableReason = createAction === undefined || createAction.available ? null : (createAction.reason?.trim() ?? SURFACE_COPY.createUnavailableReason);
+  // The entry point appears only where the current answer admits the action. A read that states it
+  // unavailable, or that does not state it at all, is answered with the reason the read gives rather than
+  // with a control whose only outcome could be a denial, and a denied, unavailable or refused read states
+  // its reason in the notice that replaces the table, so the header adds none of its own.
+  const readAnswersWithEnvelope = result === undefined || result.kind === "envelope";
+  const offersCreate = readAnswersWithEnvelope && createAction?.available === true;
+  const createUnavailableReason = !readAnswersWithEnvelope || offersCreate ? null : (createAction?.reason?.trim() ?? SURFACE_COPY.createUnavailableReason);
   // A page the address states past the last page the read's answer holds — a hand-edited URL, or a
   // result that shrank under the same address — is corrected to the last page that exists, so the pager
   // and the rows always describe the same window. The page count is the read's own total, never a count
@@ -550,7 +552,7 @@ export default function InitiativeList({ initialEnvelope, headingLevel = 2, clas
               {INITIATIVE_COPY.createLabel}
             </Button>
           ) : null}
-          <p className="text-xs text-pretty text-muted-foreground">{createUnavailableReason ?? SURFACE_COPY.createEffectNote}</p>
+          {offersCreate || createUnavailableReason !== null ? <p className="text-xs text-pretty text-muted-foreground">{createUnavailableReason ?? SURFACE_COPY.createEffectNote}</p> : null}
         </div>
       </div>
       <QueryToolbar label={SURFACE_COPY.filtersLabel} search={{ value: view.search, onChange: handleSearchChange, placeholder: SURFACE_COPY.searchPlaceholder }} facets={facets} applied={applied} onAppliedChange={handleAppliedChange} pending={read.isFetching} />

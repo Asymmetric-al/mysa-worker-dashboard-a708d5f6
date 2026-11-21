@@ -168,8 +168,15 @@ function isRefusedBody(value: unknown): value is InvalidOutcome {
 // The hook
 // ---------------------------------------------------------------------------------------------
 
-/** Reads one of the five task lists for the given scope and query: */
-export function useTaskLists(scope: Scope, query: TaskListsQuery): UseQueryResult<TaskListsResult> {
+/**
+ * Reads one of the five task lists for the given scope and query.
+ *
+ * `initialResult` is the answer a server render already read for this same scope and query, when the caller
+ * has one: it seeds the cache, so the first browser paint states exactly what the server painted and no
+ * second request repeats that read on mount. A list the service invalidates afterwards — every accepted task
+ * mutation invalidates all five — re-reads regardless, which is what keeps a row's status current.
+ */
+export function useTaskLists(scope: Scope, query: TaskListsQuery, initialResult?: TaskListsResult): UseQueryResult<TaskListsResult> {
   return useQuery({
     // The whole query sits in the key, because the request sends the whole query: no two different
     // lists or pages may share one entry. The scope segments come from the one builder the context
@@ -178,5 +185,7 @@ export function useTaskLists(scope: Scope, query: TaskListsQuery): UseQueryResul
     // The signal is forwarded, which is what lets the context fence's `cancelQueries()` abort a read
     // that was issued under the context the worker has just left.
     queryFn: ({ signal }) => fetchTaskLists(query, signal),
+    initialData: initialResult,
+    refetchOnMount: initialResult === undefined,
   });
 }

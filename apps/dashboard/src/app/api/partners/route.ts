@@ -13,6 +13,11 @@ const UNATTEMPTED_REQUEST_ID = "no-operation-attempted";
 // The one job this path serves besides the roster: the caller's own saved views, which the roster's saved-view bar reads so Rename, Delete and repair-on-drift can be driven from the views themselves. It rides the declared roster handler with the job in the query string (AAP 0.6.3 declares `GET
 // /api/partners` for this family and no other read path), so a client reaches the list without a second endpoint: a path per job would be a second transport for one read, and the caller has to name which read it wants either way.
 const SAVED_VIEWS_JOB = "saved-views";
+// The other read this path serves besides the roster: the facet set describing it, which the roster's filter toolbar
+// reads on its own. It is named in the query string for the same reason the saved-view job is — one declared read
+// path, and the caller naming the read it wants — rather than derived from the roster's own envelope by the client,
+// which would make a component the owner of a second shape of the same facts.
+const FACETS_JOB = "facets";
 function wholeNumber(message: string) {
   return z
     .string()
@@ -126,10 +131,14 @@ function refusalIdentityOf(raw: unknown): string {
   const claimed = operationIdentityOf(raw);
   return claimed === UNIDENTIFIED_ATTEMPT ? UNATTEMPTED_REQUEST_ID : claimed;
 }
-/** Reads the partner roster, with the facet set describing the same query, as one envelope — or, when the saved-view job is named, the caller's own saved views with the drift each one now carries. */
+/** The period and currency a facet read measures its giving facets over, taken from the same parameters the roster read parses, so the facet set and the roster describe one selection. */
+function givingSelectionOf(params: RosterQueryParams): NonNullable<Parameters<typeof reads.partners.readFacets>[0]> {
+  return { ...(params.currency === undefined ? {} : { currency: params.currency }), ...(params.from === undefined || params.to === undefined ? {} : { period: { from: params.from, to: params.to } }), ...(params.timeZone === undefined ? {} : { timeZone: params.timeZone }) };
+}
+/** Reads the partner roster, with the facet set describing the same query, as one envelope — or, when another job is named, the caller's own saved views with the drift each one now carries, or the facet set on its own. */
 export async function GET(request: NextRequest): Promise<Response> {
   const search = new URL(request.url).searchParams;
-  // A job the shell does not name answers the roster, which is this path's own read and the only one a caller who named no job can mean. The saved-view list is addressed for the same reason the context chooser is: one declared read path, and the caller names the read it wants.
+  // A job the shell does not name answers the roster, which is this path's own read and the only one a caller who named no job can mean. The saved-view list and the facet set are addressed for the same reason the context chooser is: one declared read path, and the caller names the read it wants.
   if (search.get("job") === SAVED_VIEWS_JOB) {
     try {
       return toResponse(await reads.partners.readSavedViews());
@@ -141,6 +150,14 @@ export async function GET(request: NextRequest): Promise<Response> {
   const params = rosterQuerySchema.safeParse(rawRosterParams(search));
   if (!params.success) {
     return toResponse(refusedRead(UNATTEMPTED_REQUEST_ID, params.error));
+  }
+  if (search.get("job") === FACETS_JOB) {
+    try {
+      return toResponse(await reads.partners.readFacets(givingSelectionOf(params.data)));
+    } catch (error) {
+      // A read attempted no effect, so a throw here is a store or medium fault, or a failure whose fate is not known, and its outcome carries the marker rather than an operation id.
+      return toResponse(outcomeFromError(UNATTEMPTED_REQUEST_ID, error));
+    }
   }
   try {
     const roster = await reads.partners.findPartners(assembleRosterQuery(params.data));

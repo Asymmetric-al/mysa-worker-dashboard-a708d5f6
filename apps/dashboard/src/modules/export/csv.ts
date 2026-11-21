@@ -34,7 +34,8 @@ type DeclaredFieldTuple<Table extends ColumnTable> = { readonly [Index in keyof 
 type FieldsAreDistinct<Tuple extends readonly string[], Seen extends string = never> = Tuple extends readonly [infer Head extends string, ...infer Tail extends readonly string[]] ? (Head extends Seen ? false : FieldsAreDistinct<Tail, Seen | Head>) : true;
 type AuditedColumnTable<Table extends ColumnTable> = [Exclude<RowField, DeclaredFields<Table>>] extends [never] ? ([Exclude<DeclaredFields<Table>, RowField>] extends [never] ? (FieldsAreDistinct<DeclaredFieldTuple<Table>> extends true ? Table : never) : never) : never;
 type CivilDate = NonNullable<ReportRow["originalGiftOn"]>;
-const civilDateText = (date: CivilDate): string => date.withCalendar("iso8601").toString();
+/** A civil date's text, taken from the value or from its wire form: the CSV that describes a result is also built from the result the browser received, where a calendar day travels as its own `YYYY-MM-DD` text. */
+const civilDateText = (date: CivilDate | string): string => (typeof date === "string" ? date : date.withCalendar("iso8601").toString());
 function giftDateText(row: ReportRow): string {
   if (row.originalGiftOn === undefined || row.datePrecision === "unknown") return VALUE_STATE_TEXT.unknown;
   return civilDateText(row.originalGiftOn);

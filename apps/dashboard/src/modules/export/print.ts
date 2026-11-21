@@ -28,7 +28,8 @@ const REPORT_TITLE = { "received-period-and-year-to-date": "Received support —
 const RECEIVED_MEASURE_LABEL = "Received support";
 const IN_PROGRESS_STATUS = "In progress";
 type CivilDate = NonNullable<ReportRow["originalGiftOn"]>;
-const civilDateText = (date: CivilDate): string => date.withCalendar("iso8601").toString();
+/** A civil date's text, taken from the value or from its wire form: the printed page is built from the same result the browser received, where a calendar day travels as its own `YYYY-MM-DD` text. */
+const civilDateText = (date: CivilDate | string): string => (typeof date === "string" ? date : date.withCalendar("iso8601").toString());
 const recordedCell = (text: string): PrintCell => ({ text, accessibleLabel: null, state: "value" });
 function notCarriedCell(fieldLabel: string): PrintCell {
   const text = VALUE_STATE_TEXT.unknown;

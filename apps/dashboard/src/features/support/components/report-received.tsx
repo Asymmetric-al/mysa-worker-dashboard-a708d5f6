@@ -1,6 +1,7 @@
 import type { ReactElement, ReactNode } from "react";
 import StateNotice from "@/components/state-notice";
 import StatusBadge from "@/components/status-badge";
+import { ScrollRegion } from "@/components/scroll-region";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -171,39 +172,43 @@ function MonthlyTable({ months, currency, locale, headingId }: MonthlyTableProps
       <h4 id={headingId} className="font-medium">
         {LABELS.months}
       </h4>
-      <Table>
-        <TableCaption className="text-start">
-          {`${REPORT_COPY.received.title} — `}
-          <bdi>{currency}</bdi>
-          {` — ${MONTHLY_CAPTION.lead}; ${MONTHLY_CAPTION.gap}.`}
-        </TableCaption>
-        <TableHeader>
-          <TableRow>
-            <TableHead scope="col">{LABELS.month}</TableHead>
-            <TableHead scope="col" className="text-end">
-              {LABELS.amount}
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {months.length === 0 ? (
+      {/* The monthly table is the widest thing in a partition, so it is the one labelled scroll region: at phone
+          widths the months scroll inside this region and the page itself never scrolls sideways. */}
+      <ScrollRegion label={`${REPORT_COPY.received.title} in ${currency}, months of the period, scrollable`}>
+        <Table>
+          <TableCaption className="text-start">
+            {`${REPORT_COPY.received.title} — `}
+            <bdi>{currency}</bdi>
+            {` — ${MONTHLY_CAPTION.lead}; ${MONTHLY_CAPTION.gap}.`}
+          </TableCaption>
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={2} className="whitespace-normal text-muted-foreground">
-                {NO_MONTH_WORD}
-              </TableCell>
+              <TableHead scope="col">{LABELS.month}</TableHead>
+              <TableHead scope="col" className="text-end">
+                {LABELS.amount}
+              </TableHead>
             </TableRow>
-          ) : (
-            months.map((point) => (
-              <TableRow key={civilDateText(point.bucketStart)}>
-                <TableCell className="whitespace-normal">
-                  <bdi>{monthText(point)}</bdi>
+          </TableHeader>
+          <TableBody>
+            {months.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={2} className="whitespace-normal text-muted-foreground">
+                  {NO_MONTH_WORD}
                 </TableCell>
-                <TableCell className="text-end">{point.gap ? <span className="text-muted-foreground">{GAP_WORD}</span> : <StatedFigure amount={point.value} currency={currency} locale={locale} />}</TableCell>
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
+            ) : (
+              months.map((point) => (
+                <TableRow key={civilDateText(point.bucketStart)}>
+                  <TableCell className="whitespace-normal">
+                    <bdi>{monthText(point)}</bdi>
+                  </TableCell>
+                  <TableCell className="text-end">{point.gap ? <span className="text-muted-foreground">{GAP_WORD}</span> : <StatedFigure amount={point.value} currency={currency} locale={locale} />}</TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </ScrollRegion>
     </section>
   );
 }

@@ -1,21 +1,26 @@
 "use client";
-/** One Request's answer: the seven recorded response kinds, bound to the terms version that was presented, recorded as the named respondent's own answer through the shared review step. **The version … */
+/**
+ * One Request's answer: the seven recorded response kinds, bound to the terms version that was presented, recorded as the named respondent's own answer through the shared review step.
+ *
+ * The version a Request presents is the version its answer binds to, so this surface never offers the latest one instead. An answer is one named person's own reply, it creates nothing outside the Request (no pledge, gift, commitment, subscription, notification or task), and a Request that already carries an answer shows that answer rather than a second way to answer it.
+ */
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
 import type { ZodError } from "zod";
 import ActionReview, { type MutationSubmit } from "@/components/action-review";
-import FormField, { fieldErrorsFromInvalid, FormErrorSummary, type FieldErrorLookup } from "@/components/form-field";
+import FormField, { fieldErrorsFromInvalid, FormErrorSummary, FormFieldGroup, type FieldErrorLookup } from "@/components/form-field";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
+import { assertNever } from "@/lib/result";
 import type { MutationInput, MutationOutcome, ReadAction, Scope, reads } from "@/modules/data-service";
-import { ASSERTING_RESPONSE_KINDS, RESPONSE_AGREEMENT_COPY, RESPONSE_KINDS, RESPONSE_KIND_COPY, type ResponseKind } from "../copy";
+import { ASSERTING_RESPONSE_KINDS, REQUEST_LIFECYCLE_COPY, RESPONSE_AGREEMENT_COPY, RESPONSE_KINDS, RESPONSE_KIND_COPY, type ResponseKind } from "../copy";
 import { useRecordRequestResponse } from "../hooks/use-request-mutations";
 import { recordRequestResponsePayloadSchemaFor, type RecordRequestResponsePayload } from "../schemas/response";
 // The contract: the detail read's own Request row, so this surface states the fields the read
@@ -23,24 +28,24 @@ import { recordRequestResponsePayloadSchemaFor, type RecordRequestResponsePayloa
 type RequestRow = Extract<Awaited<ReturnType<typeof reads.outreach.readInitiative>>, { readonly kind: "envelope" }>["envelope"]["data"]["requests"]["items"][number];
 type PresentationRow = NonNullable<RequestRow["presentation"]>;
 type ResponseRow = NonNullable<RequestRow["response"]>;
-/** The seven stored kinds keep their spelling in the read (`needs-clarification`) while this family names them for readers (`needs clarification`), so the stored word is joined to the family's … */
+/** The seven stored kinds keep their spelling in the read (`needs-clarification`) while this family names them for readers (`needs clarification`), so the stored word is joined to the family's own name for it before any wording is read. */
 function responseKindOf(recorded: ResponseRow["kind"]): ResponseKind {
   return recorded === "needs-clarification" ? "needs clarification" : recorded;
 }
 const HEADING_TAG = { 3: "h3", 4: "h4" } as const;
 /** The heading level this section renders at when the caller states none. */
 type RequestResponseHeadingLevel = keyof typeof HEADING_TAG;
-/** The level every child of this section renders at: one below its own heading, and never deeper than `h4`, which is the deepest heading the shared notice, form, summary and review patterns carry (a … */
+/** The level every child of this section renders at: one below its own heading, and never deeper than `h4`, which is the deepest heading the shared notice, form, summary and review patterns carry. */
 const NESTED_HEADING_LEVEL = 4;
 /** The three kinds that assert agreement, as the family declares them, read here as a membership test over the choice's own value. */
 const ASSERTING_KINDS: ReadonlySet<string> = new Set(ASSERTING_RESPONSE_KINDS);
-/** The option value that stands for "no answer chosen yet". A `<select>` carries strings, so the absence is stated once here. */
+/** The option value that stands for "no answer chosen yet": the form holds strings, so the absence is stated once here and selects no option. */
 const NO_KIND_VALUE = "";
 const KIND_FIELD = "kind";
 const RESPONDENT_FIELD = "respondentId";
 const EVIDENCE_FIELD = "standingEvidence";
 const VERSION_FIELD = "termsVersionRef";
-const FIELD_ORDER = [KIND_FIELD, RESPONDENT_FIELD, EVIDENCE_FIELD] as const;
+const FIELD_ORDER = [KIND_FIELD, RESPONDENT_FIELD, EVIDENCE_FIELD, VERSION_FIELD] as const;
 /** The field paths this change's payload carries, as the one field-error presentation reads them. */
 const FIELD_LABELS: Readonly<Record<string, string>> = {
   initiativeId: "Initiative",
@@ -58,18 +63,29 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
   "response.standingEvidence": "What stands behind this answer",
   "response.termsVersionRef": "Terms version answered",
 };
+/** The messages a refusal names for one field, whichever of the two shapes it keyed them under, so `invalid` lands on the field it names rather than on the summary alone. */
+function messagesFor(errors: FieldErrorLookup | null, field: string): readonly string[] | undefined {
+  return errors?.byField[field] ?? errors?.byField[`response.${field}`];
+}
 /** Wording this surface alone states. */
 const RESPONSE_SURFACE_COPY = {
   heading: "Response",
   intro: "A recorded response is the named respondent's own answer to this Request. It binds to the terms version it answers, and earlier versions are kept.",
+  lifecyclePrefix: "Request state",
+  recipientLabel: "Recipient",
+  recipientFactNote: "Who the ask was addressed to. The named respondent is a separate reference, never inferred from this person, an email address, a name or a job title.",
+  representedLabel: "Represented organization",
   termsVersionAnsweredLabel: "Terms version answered",
   currentVersionLabel: "Current terms version",
   earlierVersionLabel: "Earlier terms version",
   versionFactNote: "This is the version that was presented, and the answer is bound to it. An answer written against any other version is refused before it leaves the browser, and the service re-checks the same rule against the presentation it stored.",
   kindLabel: "How this Request was answered",
-  kindDescription: "Choose one of the seven recorded response kinds; a kind you choose is recorded as the answer it states.",
+  kindDescription: "Choose one of the seven recorded response kinds. None of them is a success: each states what the named respondent actually said.",
   respondentLabel: "Named respondent",
-  respondentDescription: "The named respondent's own opaque reference, as the roster holds it. It is never inferred from, or defaulted to, the person the ask was sent to.",
+  respondentDescription: "The named respondent's own opaque reference. It is never inferred from, and never defaulted to, the person the ask was addressed to.",
+  suppliedReferencesLabel: "Start from a reference this Request supplies:",
+  suppliedRecipientAction: "Use the recipient's reference",
+  suppliedOrganizationAction: "Use the represented organization's reference",
   evidenceLabel: "What stands behind this answer",
   evidenceRequiredDescription: "This kind asserts agreement, so describe what stands behind the answer. The family's schema decides which kinds require this, so nothing is restated here.",
   evidenceOptionalDescription: "Optional for this kind: an answer that asserts no agreement needs no evidence, and leaving it empty records that nothing was written down.",
@@ -79,7 +95,7 @@ const RESPONSE_SURFACE_COPY = {
   recordedAtNote: "the instant the read supplied, stated exactly as recorded",
   respondentFactLabel: "Named respondent",
   evidenceFactLabel: "What stands behind this answer",
-  replacing: "A different answer recorded here replaces the recorded answer for this Request, and the earlier terms version stays preserved. An identical answer is not a change, so nothing is claimed here until the result reports what happened.",
+  answeredNoSecondAnswer: "This Request already carries the named respondent's answer, so no second answer is offered here. The recorded answer stands as that person's answer to this Request.",
   reviewLabel: "Review this answer",
   reviewTitle: "Review this recorded answer",
   confirmLabel: "Record this answer",
@@ -91,6 +107,8 @@ const RESPONSE_SURFACE_COPY = {
   requestLabel: "Request",
   ministryLabel: "Ministry",
 } as const;
+/** The boundaries stated where the answer is recorded, so none of them is only in Help. */
+const AGREEMENT_STATEMENTS: readonly string[] = [RESPONSE_AGREEMENT_COPY.namedRespondentOneRequest, RESPONSE_AGREEMENT_COPY.bindsToTermsVersion, RESPONSE_AGREEMENT_COPY.unansweredIsNotDecline, RESPONSE_AGREEMENT_COPY.unansweredIsRecordedState, RESPONSE_AGREEMENT_COPY.withdrawalIsNotRefusal, "A recorded presentation is how the ask reached the person, not a send or a delivery, and recording an answer sends nothing."];
 /** The two steps the recording half of this surface can be in. */
 type ResponseStep = "form" | "review";
 /** The values the form holds; the family's schema decides what may leave it. */
@@ -114,8 +132,12 @@ export interface RequestResponseFormProps {
   /** The Request as the detail read supplied it: the presentation an answer binds to, the response already recorded, and its own revision. */
   readonly request: RequestRow;
   readonly scope: Scope;
-  /** The read's advisory action for `recordRequestResponse`; when it is unavailable its reason stands in place of the form for a Request with no answer to replace. */
+  /** The revision the caller read. Omitted, the Request's own revision is what the caller means; a revision that has moved is refused as a conflict and the input kept. */
+  readonly expectedRevision?: string;
+  /** The read's advisory action for `recordRequestResponse`; when it is unavailable its reason stands in place of the form for a Request that has no answer yet. */
   readonly responseAction?: ReadAction;
+  /** Called with the outcome once an attempt settles, except `invalid`, which returns to the form with the messages on its fields. */
+  readonly onRecorded?: (outcome: MutationOutcome) => void;
   readonly headingLevel?: RequestResponseHeadingLevel;
   readonly className?: string;
 }
@@ -155,30 +177,68 @@ function defaultValuesFor(): ResponseFormValues {
 function assertsAgreement(kind: string): boolean {
   return ASSERTING_KINDS.has(kind);
 }
-/** The family's meaning for the kind the select currently holds, or `null` while none is chosen. */
-function chosenKindCopyOf(value: string): { readonly label: string; readonly description: string } | null {
-  const chosen: ResponseKind | undefined = RESPONSE_KINDS.find((kind) => kind === value);
-  return chosen === undefined ? null : RESPONSE_KIND_COPY[chosen];
+/** The family's wording for one recorded kind. All seven are named here, so a kind added to the tuple fails the build until this surface states its meaning, and none of them is worded as a success. */
+function copyForKind(kind: ResponseKind): { readonly label: string; readonly description: string } {
+  switch (kind) {
+    case "agreed":
+      return RESPONSE_KIND_COPY.agreed;
+    case "conditional":
+      return RESPONSE_KIND_COPY.conditional;
+    case "partial":
+      return RESPONSE_KIND_COPY.partial;
+    case "deferred":
+      return RESPONSE_KIND_COPY.deferred;
+    case "declined":
+      return RESPONSE_KIND_COPY.declined;
+    case "unanswered":
+      return RESPONSE_KIND_COPY.unanswered;
+    case "needs clarification":
+      return RESPONSE_KIND_COPY["needs clarification"];
+    default:
+      return assertNever(kind, "The response kinds name a kind this surface does not state.");
+  }
+}
+/** Whether a chosen value is one of the seven recorded kinds, so a choice that is still unmade is never recorded as an answer. */
+function isResponseKind(value: string): value is ResponseKind {
+  return RESPONSE_KINDS.some((kind) => kind === value);
 }
 /** The payload the form asks the service to record, with the presented version and no field this surface did not collect. */
 function payloadOf(initiativeId: string, requestId: string, presentedVersionRef: string, values: ResponseFormValues): ResponseFormPayload {
   const evidence = values.standingEvidence.trim();
   return { initiativeId, requestId, kind: values.kind, respondentId: values.respondentId, standingEvidence: evidence === "" ? null : values.standingEvidence, termsVersionRef: presentedVersionRef };
 }
-/** The version an answer binds to: the one that was presented, stated as the read-only fact it is. */
-function AnsweredVersion({ presentedVersionRef }: { readonly presentedVersionRef: string }): ReactElement {
+/** The Request's own facts beside the version an answer binds to: who the ask was addressed to, whether an organization was represented, and whether that version is still the current one. */
+function RequestContext({ request, presentedVersionRef, citesCurrentVersion }: { readonly request: RequestRow; readonly presentedVersionRef: string; readonly citesCurrentVersion: boolean }): ReactElement {
+  const recipientName = request.recipientDisplayName?.trim() ?? "";
   return (
     <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-muted/40 p-3 text-sm">
-      <Fact term={RESPONSE_SURFACE_COPY.termsVersionAnsweredLabel}>
-        <bdi className="mono-identifier wrap-anywhere">{presentedVersionRef}</bdi>
-      </Fact>
+      <dl className="flex min-w-0 flex-col gap-1">
+        <Fact term={RESPONSE_SURFACE_COPY.recipientLabel}>
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+            {recipientName === "" ? null : <bdi className="wrap-anywhere font-medium">{recipientName}</bdi>}
+            <bdi className="mono-identifier wrap-anywhere">{request.recipientPartnerId}</bdi>
+          </span>
+        </Fact>
+        {request.representedOrganizationId === null ? null : (
+          <Fact term={RESPONSE_SURFACE_COPY.representedLabel}>
+            <bdi className="mono-identifier wrap-anywhere">{request.representedOrganizationId}</bdi>
+          </Fact>
+        )}
+        <Fact term={RESPONSE_SURFACE_COPY.termsVersionAnsweredLabel}>
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+            <bdi className="mono-identifier wrap-anywhere">{presentedVersionRef}</bdi>
+            <StatusBadge label={citesCurrentVersion ? RESPONSE_SURFACE_COPY.currentVersionLabel : RESPONSE_SURFACE_COPY.earlierVersionLabel} tone={citesCurrentVersion ? "info" : "muted"} srPrefix={RESPONSE_SURFACE_COPY.termsVersionAnsweredLabel} />
+          </span>
+        </Fact>
+      </dl>
+      <p className="text-xs text-pretty text-muted-foreground">{RESPONSE_SURFACE_COPY.recipientFactNote}</p>
       <p className="text-xs text-pretty text-muted-foreground">{RESPONSE_SURFACE_COPY.versionFactNote}</p>
     </div>
   );
 }
 /** What will be recorded, in the worker's own values, before anything is sent. */
 function ReviewSummary({ payload, request, scope }: { readonly payload: RecordRequestResponsePayload; readonly request: RequestRow; readonly scope: Scope }): ReactElement {
-  const kindCopy = RESPONSE_KIND_COPY[payload.kind];
+  const kindCopy = copyForKind(payload.kind);
   return (
     <dl className="flex min-w-0 flex-col gap-3 text-sm">
       <ReviewFact label={RESPONSE_SURFACE_COPY.kindLabel}>
@@ -205,13 +265,13 @@ function ReviewSummary({ payload, request, scope }: { readonly payload: RecordRe
 }
 /** The answer this Request already carries, stated in full beside the version it binds to. */
 function RecordedResponse({ response, request }: { readonly response: ResponseRow; readonly request: RequestRow }): ReactElement {
-  const kindCopy = RESPONSE_KIND_COPY[responseKindOf(response.kind)];
+  const kindCopy = copyForKind(responseKindOf(response.kind));
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
         <Fact term={RESPONSE_SURFACE_COPY.recordedAnswerLabel}>
           <span className="flex min-w-0 flex-wrap items-baseline gap-1.5">
-            <StatusBadge label={kindCopy.label} tone="info" srPrefix="Recorded answer" />
+            <StatusBadge label={kindCopy.label} tone="info" srPrefix={RESPONSE_SURFACE_COPY.recordedAnswerLabel} />
             <span className="min-w-0 text-xs text-pretty text-muted-foreground">{kindCopy.description}</span>
           </span>
         </Fact>
@@ -241,22 +301,35 @@ function RecordedResponse({ response, request }: { readonly response: ResponseRo
           {". The answer stays bound to the version it answered, and that earlier version stays preserved."}
         </p>
       )}
-      <p className="text-sm text-pretty text-muted-foreground">{RESPONSE_SURFACE_COPY.replacing}</p>
+    </div>
+  );
+}
+/** The state an answered Request stands in: the one recorded answer, named as a recorded state rather than a result, and no second way to answer it. */
+function AnsweredState({ request, response }: { readonly request: RequestRow; readonly response: ResponseRow }): ReactElement {
+  return (
+    <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-w-0 flex-wrap items-baseline gap-2">
+        <StatusBadge label={REQUEST_LIFECYCLE_COPY.answered.label} tone="neutral" srPrefix={RESPONSE_SURFACE_COPY.lifecyclePrefix} />
+        <span className="min-w-0 text-sm text-pretty text-muted-foreground">{REQUEST_LIFECYCLE_COPY.answered.description}</span>
+      </div>
+      <RecordedResponse request={request} response={response} />
+      <p className="text-sm text-pretty text-muted-foreground">{RESPONSE_SURFACE_COPY.answeredNoSecondAnswer}</p>
     </div>
   );
 }
 /** The recording half: the answer's fields, the version it is bound to, the review step and its receipt. */
-function ResponseEditor({ initiativeId, request, scope, responseAction, presentedVersionRef }: { readonly initiativeId: string; readonly request: RequestRow; readonly scope: Scope; readonly responseAction: ReadAction | undefined; readonly presentedVersionRef: string }): ReactElement {
-  // The read withholds this action while a presented Request waits for its first answer, so the
-  // reason is stated in place of the form for exactly that Request. A Request that already carries
-  // an answer keeps the form, because replacing a recorded answer is the act the service performs.
-  const refusal = responseAction !== undefined && !responseAction.available && request.response === null ? (responseAction.reason?.trim() ?? RESPONSE_SURFACE_COPY.unstatedRefusal) : null;
+function ResponseEditor({ initiativeId, request, scope, expectedRevision, responseAction, onRecorded, presentedVersionRef, citesCurrentVersion }: { readonly initiativeId: string; readonly request: RequestRow; readonly scope: Scope; readonly expectedRevision: string; readonly responseAction: ReadAction | undefined; readonly onRecorded: ((outcome: MutationOutcome) => void) | undefined; readonly presentedVersionRef: string; readonly citesCurrentVersion: boolean }): ReactElement {
+  // The read withholds this action while a presented Request waits for its first answer, so its reason
+  // is stated in place of the form. A Request that already carries an answer never reaches this editor:
+  // one Request is one independently answerable invitation, so no second answer is offered over one.
+  const refusal = responseAction !== undefined && !responseAction.available ? (responseAction.reason?.trim() ?? RESPONSE_SURFACE_COPY.unstatedRefusal) : null;
   const form = useForm({ defaultValues: defaultValuesFor() });
   const record = useRecordRequestResponse(scope, presentedVersionRef);
   const dispatchRecord = record.submit;
   const [step, setStep] = useState<ResponseStep>("form");
   const [errors, setErrors] = useState<FieldErrorLookup | null>(null);
   const [reviewed, setReviewed] = useState<RecordRequestResponsePayload | null>(null);
+  const optionIdPrefix = useId();
   const awaiting = useRef<{ readonly operationId: string; readonly resolve: (outcome: MutationOutcome) => void } | null>(null);
   const settledFromHook = record.state.status === "settled" ? record.state.outcome : null;
   // The family's hook reports its one settled outcome through its state rather than by returning a
@@ -282,16 +355,22 @@ function ResponseEditor({ initiativeId, request, scope, responseAction, presente
       }),
     [dispatchRecord],
   );
-  const handleSettled = useCallback((outcome: MutationOutcome): void => {
-    if (outcome.outcome !== "invalid") {
+  const handleSettled = useCallback(
+    (outcome: MutationOutcome): void => {
+      if (outcome.outcome === "invalid") {
+        // The messages belong on the fields they name, so the step returns to the form with every value
+        // exactly as it was entered and nothing re-derived.
+        setErrors(fieldErrorsFromInvalid(outcome));
+        setStep("form");
+        return;
+      }
       setErrors(null);
-      return;
-    }
-    // The messages belong on the fields they name, so the step returns to the form with every value
-    // exactly as it was entered and nothing re-derived.
-    setErrors(fieldErrorsFromInvalid(outcome));
-    setStep("form");
-  }, []);
+      // A refusal the reviewer can still act on is not a recorded answer, so the caller is told about
+      // every settled outcome and left to decide; the receipt below states what happened either way.
+      onRecorded?.(outcome);
+    },
+    [onRecorded],
+  );
   const reviewTheDetails = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     const checked = recordRequestResponsePayloadSchemaFor(presentedVersionRef).safeParse(payloadOf(initiativeId, request.requestId, presentedVersionRef, form.state.values));
@@ -326,7 +405,7 @@ function ResponseEditor({ initiativeId, request, scope, responseAction, presente
           onCancel={() => {
             setStep("form");
           }}
-          input={{ scope, expectedRevision: request.revision, payload: reviewed }}
+          input={{ scope, expectedRevision, payload: reviewed }}
           submit={submit}
           onSettled={handleSettled}
           fieldLabels={FIELD_LABELS}
@@ -335,66 +414,96 @@ function ResponseEditor({ initiativeId, request, scope, responseAction, presente
       </div>
     );
   }
-  const chosenKindCopy = chosenKindCopyOf(form.state.values.kind);
-  const needsEvidence = assertsAgreement(form.state.values.kind);
+  const chosenKind = isResponseKind(form.state.values.kind) ? form.state.values.kind : null;
+  const chosenKindCopy = chosenKind === null ? null : copyForKind(chosenKind);
+  const needsEvidence = chosenKind !== null && assertsAgreement(chosenKind);
   const kindDescription = chosenKindCopy === null ? RESPONSE_SURFACE_COPY.kindDescription : `${RESPONSE_SURFACE_COPY.kindDescription} ${chosenKindCopy.description}`;
+  // The references this Request itself supplies. Choosing one writes it into the field the worker can
+  // still correct, so the answer is never recorded against a reference nobody selected.
+  const suppliedReferences: readonly { readonly reference: string; readonly action: string }[] = [{ reference: request.recipientPartnerId, action: RESPONSE_SURFACE_COPY.suppliedRecipientAction }, ...(request.representedOrganizationId === null ? [] : [{ reference: request.representedOrganizationId, action: RESPONSE_SURFACE_COPY.suppliedOrganizationAction }])];
   return (
     <form noValidate className="flex min-w-0 flex-col gap-4" onSubmit={reviewTheDetails}>
-      <AnsweredVersion presentedVersionRef={presentedVersionRef} />
+      <div className="flex min-w-0 flex-wrap items-baseline gap-2">
+        <StatusBadge label={REQUEST_LIFECYCLE_COPY.presented.label} tone="neutral" srPrefix={RESPONSE_SURFACE_COPY.lifecyclePrefix} />
+        <span className="min-w-0 text-sm text-pretty text-muted-foreground">{REQUEST_LIFECYCLE_COPY.presented.description}</span>
+      </div>
+      <RequestContext request={request} presentedVersionRef={presentedVersionRef} citesCurrentVersion={citesCurrentVersion} />
       {errors === null || errors.count === 0 ? null : <FormErrorSummary errors={errors} labels={FIELD_LABELS} order={FIELD_ORDER} headingLevel={NESTED_HEADING_LEVEL} />}
-      <form.Field name={KIND_FIELD}>
-        {(field) => (
-          <FormField name={KIND_FIELD} label={RESPONSE_SURFACE_COPY.kindLabel} description={kindDescription} error={errors?.byField[KIND_FIELD]} required>
-            {(control) => (
-              <NativeSelect
-                id={control.id}
-                name={KIND_FIELD}
-                className="w-full"
-                required={control.required}
-                value={field.state.value}
-                aria-describedby={control.describedBy}
-                aria-invalid={control.invalid ? true : undefined}
-                onChange={(event) => {
-                  field.handleChange(event.target.value);
-                }}
-                onBlur={field.handleBlur}
-              >
-                <NativeSelectOption value={NO_KIND_VALUE}>{"Choose how this Request was answered"}</NativeSelectOption>
-                {RESPONSE_KINDS.map((kind) => (
-                  <NativeSelectOption key={kind} value={kind}>
-                    {RESPONSE_KIND_COPY[kind].label}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+      <FormFieldGroup legend={RESPONSE_SURFACE_COPY.kindLabel} name={KIND_FIELD} description={kindDescription} error={messagesFor(errors, KIND_FIELD)} required>
+        {(group) => (
+          <form.Field name={KIND_FIELD}>
+            {(field) => (
+              <RadioGroup value={field.state.value} onValueChange={(next) => {
+                if (!isResponseKind(next)) {
+                  return;
+                }
+                field.handleChange(next);
+              }} aria-labelledby={group.legendId} aria-describedby={group.describedBy} aria-invalid={group.invalid ? true : undefined} aria-required={group.required ? true : undefined}>
+                {RESPONSE_KINDS.map((kind, index) => {
+                  const wording = copyForKind(kind);
+                  const optionId = `${optionIdPrefix}-kind-${String(index)}`;
+                  const meaningId = `${optionId}-meaning`;
+                  return (
+                    <label key={kind} htmlFor={optionId} className="flex min-h-target items-start gap-3 py-1">
+                      <RadioGroupItem id={optionId} value={kind} aria-label={wording.label} aria-describedby={meaningId} className="mt-0.5" />
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="text-sm font-medium text-pretty">{wording.label}</span>
+                        <span id={meaningId} className="text-sm text-pretty text-muted-foreground">
+                          {wording.description}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </RadioGroup>
             )}
-          </FormField>
+          </form.Field>
         )}
-      </form.Field>
+      </FormFieldGroup>
       <form.Field name={RESPONDENT_FIELD}>
         {(field) => (
-          <FormField name={RESPONDENT_FIELD} label={RESPONSE_SURFACE_COPY.respondentLabel} description={RESPONSE_SURFACE_COPY.respondentDescription} error={errors?.byField[RESPONDENT_FIELD]} required>
+          <FormField name={RESPONDENT_FIELD} label={RESPONSE_SURFACE_COPY.respondentLabel} description={RESPONSE_SURFACE_COPY.respondentDescription} error={messagesFor(errors, RESPONDENT_FIELD)} required>
             {(control) => (
-              <Input
-                id={control.id}
-                name={RESPONDENT_FIELD}
-                type="text"
-                autoComplete="off"
-                required={control.required}
-                value={field.state.value}
-                aria-describedby={control.describedBy}
-                aria-invalid={control.invalid ? true : undefined}
-                onChange={(event) => {
-                  field.handleChange(event.target.value);
-                }}
-                onBlur={field.handleBlur}
-              />
+              <div className="flex min-w-0 flex-col gap-2">
+                <Input
+                  id={control.id}
+                  name={RESPONDENT_FIELD}
+                  type="text"
+                  autoComplete="off"
+                  required={control.required}
+                  value={field.state.value}
+                  aria-describedby={control.describedBy}
+                  aria-invalid={control.invalid ? true : undefined}
+                  onChange={(event) => {
+                    field.handleChange(event.target.value);
+                  }}
+                  onBlur={field.handleBlur}
+                />
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="text-xs text-pretty text-muted-foreground">{RESPONSE_SURFACE_COPY.suppliedReferencesLabel}</span>
+                  {suppliedReferences.map((supplied) => (
+                    <Button
+                      key={supplied.reference}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="max-w-full"
+                      onClick={() => {
+                        field.handleChange(supplied.reference);
+                      }}
+                    >
+                      {supplied.action}
+                    </Button>
+                  ))}
+                </div>
+              </div>
             )}
           </FormField>
         )}
       </form.Field>
       <form.Field name={EVIDENCE_FIELD}>
         {(field) => (
-          <FormField name={EVIDENCE_FIELD} label={RESPONSE_SURFACE_COPY.evidenceLabel} description={needsEvidence ? RESPONSE_SURFACE_COPY.evidenceRequiredDescription : RESPONSE_SURFACE_COPY.evidenceOptionalDescription} error={errors?.byField[EVIDENCE_FIELD]} required={needsEvidence} optionalHint={!needsEvidence}>
+          <FormField name={EVIDENCE_FIELD} label={RESPONSE_SURFACE_COPY.evidenceLabel} description={needsEvidence ? RESPONSE_SURFACE_COPY.evidenceRequiredDescription : RESPONSE_SURFACE_COPY.evidenceOptionalDescription} error={messagesFor(errors, EVIDENCE_FIELD)} required={needsEvidence} optionalHint={!needsEvidence}>
             {(control) => (
               <Textarea
                 id={control.id}
@@ -420,32 +529,39 @@ function ResponseEditor({ initiativeId, request, scope, responseAction, presente
   );
 }
 
-/** One Request's recorded answer, or the reviewed recording of one bound to the version it answers. */
-export default function RequestResponseForm({ initiativeId, request, scope, responseAction, headingLevel = 3, className }: RequestResponseFormProps): ReactElement {
+/** One Request's recorded answer in the state it stands in, or the reviewed recording of one bound to the version that was presented. */
+export default function RequestResponseForm({ initiativeId, request, scope, expectedRevision, responseAction, onRecorded, headingLevel = 3, className }: RequestResponseFormProps): ReactElement {
   const headingId = useId();
   const Heading = HEADING_TAG[headingLevel];
   const presentation: PresentationRow | null = request.presentation;
   const response: ResponseRow | null = request.response;
   return (
-    <section aria-labelledby={headingId} data-slot="request-response-form" data-state={presentation === null ? "unpresented" : response === null ? "awaiting" : "answered"} className={cn("flex min-w-0 flex-col gap-4", className)}>
+    <section aria-labelledby={headingId} data-slot="request-response-form" data-state={response !== null ? "answered" : presentation === null ? "unpresented" : "awaiting"} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-1">
         <Heading id={headingId} className="font-heading text-base font-medium text-pretty">
           {RESPONSE_SURFACE_COPY.heading}
         </Heading>
         <p className="text-sm text-pretty text-muted-foreground">{RESPONSE_SURFACE_COPY.intro}</p>
       </div>
-      {/* The boundary is stated where the worker records the answer, not only in Help: the answer is
-          one named person's own, it is not agreement to pay anything, and it creates no work. */}
-      <ul className="flex min-w-0 flex-col gap-1 text-xs text-pretty text-muted-foreground">
-        {[RESPONSE_AGREEMENT_COPY.namedRespondentOneRequest, RESPONSE_AGREEMENT_COPY.bindsToTermsVersion, RESPONSE_AGREEMENT_COPY.agreementCreatesNothing, RESPONSE_AGREEMENT_COPY.unansweredIsRecordedState].map((statement) => (
-          <li key={statement}>{statement}</li>
-        ))}
-      </ul>
-      {presentation !== null && response !== null ? <RecordedResponse response={response} request={request} /> : null}
-      {presentation === null ? (
+      {/* The boundaries stay legible where the answer is recorded, not only in Help: agreement creates no
+          pledge, gift, commitment, subscription, notification, send or task, and a staff withdrawal is not
+          the supporter's refusal. This block states a fact rather than a change, so it announces nothing. */}
+      <Alert role={undefined} className="px-3 py-2">
+        <AlertTitle>{RESPONSE_AGREEMENT_COPY.agreementCreatesNothing}</AlertTitle>
+        <AlertDescription>
+          <ul className="flex min-w-0 list-disc flex-col gap-1 ps-4 text-pretty">
+            {AGREEMENT_STATEMENTS.map((statement) => (
+              <li key={statement}>{statement}</li>
+            ))}
+          </ul>
+        </AlertDescription>
+      </Alert>
+      {response !== null ? (
+        <AnsweredState request={request} response={response} />
+      ) : presentation === null ? (
         <StateNotice kind="empty" title={RESPONSE_SURFACE_COPY.noPresentationTitle} description={RESPONSE_SURFACE_COPY.noPresentationBody} headingLevel={NESTED_HEADING_LEVEL} />
       ) : (
-        <ResponseEditor initiativeId={initiativeId} request={request} scope={scope} responseAction={responseAction} presentedVersionRef={presentation.versionRef} />
+        <ResponseEditor initiativeId={initiativeId} request={request} scope={scope} expectedRevision={expectedRevision ?? request.revision} responseAction={responseAction} onRecorded={onRecorded} presentedVersionRef={presentation.versionRef} citesCurrentVersion={presentation.citesCurrentVersion} />
       )}
     </section>
   );

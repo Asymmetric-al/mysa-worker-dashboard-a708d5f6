@@ -1,5 +1,6 @@
 import type { ReactElement } from "react";
 import StateNotice from "@/components/state-notice";
+import { ScrollRegion } from "@/components/scroll-region";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -96,34 +97,38 @@ function CurrencyPartition({ entry, current, baseline, deltas, locale }: Currenc
           {contributors.length === 0 ? (
             <p className="min-w-0 break-words text-sm text-muted-foreground">{NO_CONTRIBUTOR_CHANGE}</p>
           ) : (
-            <Table>
-              <TableCaption>
-                {REPORT_COPY.comparison.title}
-                {" — contributor changes in "}
-                <bdi>{entry.currency}</bdi>
-                {", one row per attribution."}
-              </TableCaption>
-              <TableHeader>
-                <TableRow>
-                  <TableHead scope="col">{COLUMN_HEADINGS.contributor}</TableHead>
-                  <TableHead scope="col" className="text-end">
-                    {COLUMN_HEADINGS.change}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {contributors.map((change) => (
-                  <TableRow key={`${change.currency}:${change.partnerId ?? change.attribution?.kind ?? "unresolved"}`}>
-                    <TableHead scope="row" className="whitespace-normal break-words">
-                      <ContributorLabel change={change} />
+            // The contributor table is the widest thing in a partition, so it is the one labelled scroll region: at phone
+            // widths the columns scroll inside this region instead of being clipped by the card around it.
+            <ScrollRegion label={`${REPORT_COPY.comparison.title} in ${entry.currency}, contributor changes, scrollable`}>
+              <Table>
+                <TableCaption>
+                  {REPORT_COPY.comparison.title}
+                  {" — contributor changes in "}
+                  <bdi>{entry.currency}</bdi>
+                  {", one row per attribution."}
+                </TableCaption>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">{COLUMN_HEADINGS.contributor}</TableHead>
+                    <TableHead scope="col" className="text-end">
+                      {COLUMN_HEADINGS.change}
                     </TableHead>
-                    <TableCell className="text-end">
-                      <AmountValue money={{ currency: change.currency, minorUnits: change.minorUnits }} valueState={entry.valueState} locale={locale} />
-                    </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {contributors.map((change) => (
+                    <TableRow key={`${change.currency}:${change.partnerId ?? change.attribution?.kind ?? "unresolved"}`}>
+                      <TableHead scope="row" className="whitespace-normal break-words">
+                        <ContributorLabel change={change} />
+                      </TableHead>
+                      <TableCell className="text-end">
+                        <AmountValue money={{ currency: change.currency, minorUnits: change.minorUnits }} valueState={entry.valueState} locale={locale} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollRegion>
           )}
         </CardContent>
       </Card>

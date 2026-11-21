@@ -12,6 +12,7 @@ export const CLOCK_COPY = {
   instantLabel: "Instant this session reads at",
   advanceLabel: "Advance the clock",
   presetsLabel: "Preset amounts to advance by",
+  presetPendingNote: "Applying that preset to this development session and waiting for the answer.",
 } as const;
 export const FAILURE_PLAN_COPY = {
   title: "Failure plan",
@@ -44,6 +45,21 @@ export const PERSONA_SWITCH_COPY = {
   label: "Preview persona",
   explanation: "This development control selects the seeded persona or session state this session carries, so a preview shows what that identity is given.",
   grantsNothingNote: "It grants nothing: every read that follows is authorised again, so a persona that may not read a surface receives the honest denial notice instead of a hidden destination.",
+  switchUnavailableNote:
+    "The build this session runs advertises no call that changes the identity it acts as, so none is offered here. The identity is chosen by the seeded session this browser carries, which is laid down when the sessions are seeded, and a deterministic reset restores every one of them.",
+  carriesLabel: "This session carries",
+  rosterLabel: "Identities the runtime lists",
+  sessionStateLabel: "Session state",
+  activeMarker: "this session",
+  unlistedIdentityNote: "The principal this session acts as is not one the roster lists, so it is reported as an identity the roster does not describe rather than given a guessed label.",
+} as const;
+/** The sentences the composition states instead of a panel when this session's development runtime could not be read at all. */
+export const DEV_READ_COPY = {
+  loadingTitle: "Reading this session's development runtime",
+  deniedTitle: "This session's development controls are not readable here",
+  unavailableTitle: "This session's development runtime could not be read",
+  refusedTitle: "The development read's own request was refused",
+  retryLabel: "Read the development runtime again",
 } as const;
 export const RESET_COPY = {
   title: "Reset the local session store",

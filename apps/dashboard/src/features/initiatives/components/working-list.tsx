@@ -1,10 +1,17 @@
 "use client";
-/** The reviewed working list of one initiative: the three membership states the read returns, the review-then-accept step a removal and a Return go through with each member's own result, each … */
+/**
+ * The reviewed working list of one initiative: the three membership states the read returns, each
+ * partner's stage, dates and recorded history, and the one change their state admits — reviewed before
+ * it is accepted, then reported for that partner alone. The family's list preset renders the rows below
+ * its own scroll region; a labelled card list carries the same facts and the same actions beneath it, so
+ * a phone reads the list in the same order without the page ever scrolling sideways.
+ */
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import ActionReview, { type MutationSubmit } from "@/components/action-review";
 import FormField, { fieldErrorsFromInvalid, refusalSummary, type FieldErrorLookup } from "@/components/form-field";
 import { PerItemResults, type PerItemResultState } from "@/components/operation-result";
+import { RecordList, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { statusBadgeProps, VALUE_STATE_WORDS, type StatusTone } from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -53,15 +60,22 @@ type WorkingListHeadingLevel = keyof typeof SECTION_HEADING_TAG;
 
 const COUNT_FORMAT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
+// The whole-result window this surface renders
+const NO_SORT: RecordListQueryState["sort"] = [];
+
+const NO_COLUMNS_HIDDEN: RecordListQueryState["columnVisibility"] = {};
+
 // Wording this surface alone states
-/** `../copy.ts` owns this family's shared vocabulary — the three membership states, the statements about what inclusion is not, the stage and closure wording — and every sentence it carries is … */
+/** `../copy.ts` owns this family's shared vocabulary — the three membership states, the statements about what inclusion is not, the stage and closure wording — and every sentence here is particular to this list. */
 const WORKING_LIST_COPY = {
-  countLabel: "Partners in this state",
+  partnerSingular: "partner",
+  partnerPlural: "partners",
   countsNote: "Each state is counted on its own: nothing here is summed, and no state stands in for another.",
-  noneOnPage: (count: number): string => `This page of the read carries none of the ${COUNT_FORMAT.format(count)} partners in this state, so the count above is the whole list's.`,
   partialPage: (shown: number, count: number): string => `This page of the read carries ${COUNT_FORMAT.format(shown)} of the ${COUNT_FORMAT.format(count)} partners in this state.`,
   addedTerm: "Added",
   returnedTerm: "Returned",
+  notReturned: "Not returned",
+  memberNoun: "working-list members",
   historyHeading: "Recorded history",
   noHistory: "No state change is recorded for this partner.",
   recordedByTerm: "Recorded by",
@@ -70,15 +84,26 @@ const WORKING_LIST_COPY = {
   addRefusalTitle: "Adding partners is not on offer in this read",
   closureHeading: "Closing and reopening this initiative",
   unstatedRefusal: "The read that supplied this list states that this change is not on offer, without a reason of its own.",
-  excludedNote: "A partner the source marks not eligible is never re-included from this surface: the reason recorded above comes from the source, and no control here overrides it.",
+  excludedNote: "A partner the source marks not eligible is never re-included from this surface: the reason in their history comes from the source, and no control here overrides it.",
   reviewDescription: "One change at a time, recorded against this member's own revision. The review below states what the change does and what it leaves untouched, and its result stays here afterwards.",
+  emptyTitle: "No partners on the working list yet",
+  emptyBody: "Only partners you choose join this list, and each addition is reviewed before it is recorded. Choose from the eligible partners further down this page.",
+  emptyAction: "Choose partners to add",
+  listSuffix: "reviewed working list",
 } as const;
 
-/** The word a member's state-change instant carries, derived from the state that member's record now holds rather than fixed for the field. */
-const STATE_CHANGE_TERM: Readonly<Record<MembershipState, string>> = { included: WORKING_LIST_COPY.returnedTerm, removed: MEMBERSHIP_STATE_COPY.removed.label, excluded: MEMBERSHIP_STATE_COPY.excluded.label };
+/** The table's column headings, named once so the header row and the narrow card list state the same facts. */
+const COLUMN_COPY = {
+  partner: "Partner",
+  state: "Membership state",
+  stage: STAGE_SELECTOR_COPY.label,
+  added: WORKING_LIST_COPY.addedTerm,
+  returned: WORKING_LIST_COPY.returnedTerm,
+} as const;
 
 const REMOVE_COPY = {
   trigger: "Remove from the working list",
+  shortTrigger: "Remove",
   title: "Review this removal",
   description: "Removing this partner takes them off the reviewed working list. Their history stays visible and every obligation recorded elsewhere is kept.",
   confirmLabel: "Remove this partner",
@@ -88,7 +113,7 @@ const REMOVE_COPY = {
   perItemHeading: "Result for this member",
 } as const;
 
-const RETURN_COPY = { trigger: "Return to the working list", title: "Review this return", confirmLabel: "Return this partner", cancelLabel: "Leave them removed", perItemHeading: "Result for this member" } as const;
+const RETURN_COPY = { trigger: "Return to the working list", shortTrigger: "Return", title: "Review this return", confirmLabel: "Return this partner", cancelLabel: "Leave them removed", perItemHeading: "Result for this member" } as const;
 
 /** The field names a change carries, as the one field-error presentation reads them. */
 const REMOVE_FIELD_LABELS: Readonly<Record<string, string>> = { initiativeId: "Initiative", memberId: "Working-list member", reason: REMOVE_COPY.reasonLabel };
@@ -113,7 +138,31 @@ const STAGE_STATE_OF_READ: Readonly<Record<MemberRow["stageState"], StageState |
 /** The tone each stage state's word carries. */
 const STAGE_STATE_TONE: Readonly<Record<StageState, StatusTone>> = { recorded: "neutral", retired: "caution", denied: "caution", unavailable: "danger" };
 
-/** A count rendered from the value state the read recorded for it: a plain number only when the read says the number stands, the incompleteness beside the figure when the period behind it is partly … */
+/**
+ * The value state the read recorded for one state's count. Where it states no entry, the count is still
+ * the read's own enumeration of this initiative's complete list, so a zero is a recorded zero rather
+ * than a gap and a populated count is a plain value.
+ */
+function countStateOf(valueStates: ValueStates, state: MembershipState, count: number): ValueState {
+  return valueStates[`initiative.memberStates.${state}`] ?? (count === 0 ? "zero" : "value");
+}
+
+/** The state the read recorded for one member's stage, or `unknown` when it recorded none. */
+function stageStateOf(valueStates: ValueStates, member: MemberRow): ValueState {
+  return valueStates[`${member.memberId}.stage`] ?? "unknown";
+}
+
+/** The state the read recorded for one member's return instant. */
+function returnedStateOf(valueStates: ValueStates, member: MemberRow): ValueState {
+  return valueStates[`${member.memberId}.returnedAt`] ?? (member.returnedAt === null ? "unknown" : "value");
+}
+
+/** The revision a member change presents: the member record's own, with the envelope's only as the fallback for a row that states none. */
+function memberRevisionOf(member: MemberRow, expectedRevision: string): string {
+  return member.revision.trim() === "" ? expectedRevision : member.revision;
+}
+
+/** A count rendered from the value state the read recorded for it. */
 function CountFigure({ count, state }: { readonly count: number; readonly state: ValueState }): ReactElement {
   if (!Number.isFinite(count)) {
     // A count that is not a number is never printed as one; it is reported as the unknown it is.
@@ -137,11 +186,6 @@ function CountFigure({ count, state }: { readonly count: number; readonly state:
     default:
       return assertNever(state, "Unhandled value state");
   }
-}
-
-/** Whether the read stated a count this surface may render as the number it carries. */
-function isCounted(state: ValueState): boolean {
-  return state === "value" || state === "zero" || state === "incomplete-subtotal";
 }
 
 /** A civil date or instant exactly as the read supplies it, isolated so a mixed-direction neighbour cannot reorder it. */
@@ -175,6 +219,22 @@ function RefusalNote({ title, text }: { readonly title?: string; readonly text: 
       <AlertDescription>{text}</AlertDescription>
     </Alert>
   );
+}
+
+/** Who the row is about: the partner's name, isolated for direction, with the member record's opaque reference beside it. */
+function PartnerFigure({ member }: { readonly member: MemberRow }): ReactElement {
+  return (
+    <span className="flex min-w-0 flex-col gap-0.5">
+      <bdi className="min-w-0 font-medium text-pretty wrap-anywhere">{member.partnerDisplayName}</bdi>
+      <bdi className="mono-identifier min-w-0 break-all text-xs text-muted-foreground">{member.memberId}</bdi>
+    </span>
+  );
+}
+
+/** The state this partner stands in, as its own word — never a colour alone and never "active" or "inactive". */
+function StateFigure({ member }: { readonly member: MemberRow }): ReactElement {
+  const copy = MEMBERSHIP_STATE_COPY[member.state];
+  return <StatusBadge label={copy.label} tone={MEMBERSHIP_TONE[member.state]} />;
 }
 
 /** The stage a member holds, in the state the read recorded for it: a value, or this family's not-stated wording. */
@@ -239,6 +299,253 @@ function MemberHistory({ entries }: { readonly entries: readonly MemberHistoryEn
   );
 }
 
+/** One member's change frozen at the moment the worker asked for it. */
+interface MemberReview {
+  readonly memberId: string;
+  readonly partnerDisplayName: string;
+  readonly memberState: MembershipState;
+  readonly memberRevision: string;
+  readonly task: MemberTask;
+}
+
+interface RowActionsProps {
+  readonly member: MemberRow;
+  readonly expectedRevision: string;
+  readonly removeAction: ReadAction | undefined;
+  readonly returnAction: ReadAction | undefined;
+  readonly onReview: (review: MemberReview) => void;
+  readonly className?: string;
+}
+
+/**
+ * The one change this partner's state admits: Remove for an included partner, Return for a removed one,
+ * and nothing at all for a partner the source marks not eligible. Where the read does not offer the
+ * change, the reason it gives stands where the control would have been.
+ */
+function RowActions({ member, expectedRevision, removeAction, returnAction, onReview, className }: RowActionsProps): ReactElement {
+  const openReview = (task: MemberTask): void => {
+    onReview({ memberId: member.memberId, partnerDisplayName: member.partnerDisplayName, memberState: member.state, memberRevision: memberRevisionOf(member, expectedRevision), task });
+  };
+  if (member.state === "excluded") {
+    return <p className={cn("max-w-56 text-xs text-pretty text-muted-foreground", className)}>{WORKING_LIST_COPY.excludedNote}</p>;
+  }
+  const action = member.state === "included" ? removeAction : returnAction;
+  if (action?.available !== true) {
+    return <p className={cn("max-w-56 text-xs text-pretty text-muted-foreground", className)}>{action?.reason ?? WORKING_LIST_COPY.unstatedRefusal}</p>;
+  }
+  const task: MemberTask = member.state === "included" ? "remove" : "return";
+  const copy = task === "remove" ? REMOVE_COPY : RETURN_COPY;
+  return (
+    <Button type="button" variant="outline" size="sm" className={className} onClick={() => openReview(task)}>
+      {copy.shortTrigger}
+      {/* The visible word stays short enough for a table cell; the accessible name states the partner
+          and the list, so a reader meets each row's control as its own. */}
+      <span className="sr-only">
+        {" "}
+        <bdi>{member.partnerDisplayName}</bdi>
+        {task === "remove" ? " from the working list" : " to the working list"}
+      </span>
+    </Button>
+  );
+}
+
+/** The scope, the read's own value states, the admitted stages and the one re-read a change reports through: what every row of this list needs and no row owns. */
+interface MemberSurfaceContext {
+  readonly initiativeId: string;
+  readonly scope: Scope;
+  readonly valueStates: ValueStates;
+  readonly admittedStages: readonly string[];
+  readonly stageAction: ReadAction | undefined;
+  readonly expectedRevision: string;
+  readonly onOutcome: ((outcome: MutationOutcome) => void) | undefined;
+  readonly onCheckResult: () => void;
+}
+
+interface StageCellProps extends MemberSurfaceContext {
+  readonly member: MemberRow;
+}
+
+/**
+ * The stage a member holds: the family's own stage selector for an included partner, and the recorded
+ * value with its state word for anyone else — an assessment is only ever changed by the selector.
+ */
+function StageCell({ initiativeId, member, scope, valueStates, admittedStages, stageAction, expectedRevision, onOutcome, onCheckResult }: StageCellProps): ReactElement {
+  if (member.state !== "included") {
+    return <StageValue member={member} stageState={STAGE_STATE_OF_READ[member.stageState]} valueState={stageStateOf(valueStates, member)} />;
+  }
+  return (
+    <StageSelector
+      initiativeId={initiativeId}
+      member={member}
+      admittedStages={admittedStages}
+      scope={scope}
+      expectedRevision={memberRevisionOf(member, expectedRevision)}
+      stageAction={stageAction}
+      onOutcome={onOutcome}
+      onCheckResult={onCheckResult}
+      className="min-w-0"
+    />
+  );
+}
+
+/** When the read recorded this partner's return to the list, or the explicit statement that they have not returned. */
+function ReturnedFigure({ member, valueState }: { readonly member: MemberRow; readonly valueState: ValueState }): ReactElement {
+  if (member.returnedAt !== null) {
+    return <StatedInstant value={member.returnedAt} />;
+  }
+  switch (valueState) {
+    case "withheld":
+    case "unavailable":
+      return <StatusBadge {...statusBadgeProps(VALUE_STATE_WORDS, valueState)} />;
+    case "value":
+    case "zero":
+    case "incomplete-subtotal":
+    case "unknown":
+      return <span className="text-muted-foreground">{WORKING_LIST_COPY.notReturned}</span>;
+    default:
+      return assertNever(valueState, "Unhandled value state");
+  }
+}
+
+interface MemberSurfaceProps extends MemberSurfaceContext {
+  readonly removeAction: ReadAction | undefined;
+  readonly returnAction: ReadAction | undefined;
+  readonly onReview: (review: MemberReview) => void;
+}
+
+/** The columns this list's table is composed from: each cell is one of the figures above, never a second rendering of the same fact. */
+function memberColumns({ initiativeId, scope, valueStates, admittedStages, stageAction, expectedRevision, onOutcome, onCheckResult }: MemberSurfaceContext): ReadonlyArray<RecordListColumnDef<MemberRow>> {
+  return [
+    { id: "partner", header: COLUMN_COPY.partner, enableSorting: false, enableHiding: false, cell: ({ row }) => <PartnerFigure member={row.original} /> },
+    {
+      id: "state",
+      header: COLUMN_COPY.state,
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => (
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <StateFigure member={row.original} />
+          <MemberHistory entries={row.original.history} />
+        </div>
+      ),
+    },
+    {
+      id: "stage",
+      header: COLUMN_COPY.stage,
+      enableSorting: false,
+      cell: ({ row }) => <StageCell initiativeId={initiativeId} member={row.original} scope={scope} valueStates={valueStates} admittedStages={admittedStages} stageAction={stageAction} expectedRevision={expectedRevision} onOutcome={onOutcome} onCheckResult={onCheckResult} />,
+    },
+    {
+      id: "added",
+      header: COLUMN_COPY.added,
+      enableSorting: false,
+      cell: ({ row }) => (row.original.addedAt.trim() === "" ? <span className="text-muted-foreground">{REQUESTED_TERMS_COPY.notStated}</span> : <StatedInstant value={row.original.addedAt} />),
+    },
+    {
+      id: "returned",
+      header: COLUMN_COPY.returned,
+      enableSorting: false,
+      cell: ({ row }) => <ReturnedFigure member={row.original} valueState={returnedStateOf(valueStates, row.original)} />,
+    },
+  ];
+}
+
+function memberRowId(row: MemberRow): string {
+  return row.memberId;
+}
+
+interface MemberCardListProps extends MemberSurfaceProps {
+  readonly rows: readonly MemberRow[];
+  readonly label: string;
+  readonly className?: string;
+}
+
+/**
+ * The same rows, the same order and the same actions as a labelled sequence of member cards. It is the
+ * composition a narrow surface actually shows; `display: none` removes the table it replaces, so a
+ * reader meets one of the two and never both (WCAG 1.3.1, 1.4.10).
+ */
+function MemberCardList({ rows, label, className, initiativeId, scope, valueStates, admittedStages, stageAction, expectedRevision, onOutcome, onCheckResult, removeAction, returnAction, onReview }: MemberCardListProps): ReactElement {
+  return (
+    <div data-slot="working-list-members" className={cn("min-w-0", className)}>
+      <ul aria-label={label} className="flex min-w-0 flex-col gap-3">
+        {rows.map((member) => (
+          <li key={member.memberId} className="flex min-w-0 flex-col gap-3 rounded-xl border border-border p-3">
+            <PartnerFigure member={member} />
+            <dl className="flex min-w-0 flex-col gap-1 text-sm">
+              <MemberFact term={COLUMN_COPY.state}>
+                <StateFigure member={member} />
+              </MemberFact>
+              <MemberFact term={COLUMN_COPY.stage}>
+                <StageCell initiativeId={initiativeId} member={member} scope={scope} valueStates={valueStates} admittedStages={admittedStages} stageAction={stageAction} expectedRevision={expectedRevision} onOutcome={onOutcome} onCheckResult={onCheckResult} />
+              </MemberFact>
+              <MemberFact term={COLUMN_COPY.added}>
+                {member.addedAt.trim() === "" ? <span className="text-muted-foreground">{REQUESTED_TERMS_COPY.notStated}</span> : <StatedInstant value={member.addedAt} />}
+              </MemberFact>
+              <MemberFact term={COLUMN_COPY.returned}>
+                <ReturnedFigure member={member} valueState={returnedStateOf(valueStates, member)} />
+              </MemberFact>
+            </dl>
+            <MemberHistory entries={member.history} />
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <RowActions member={member} expectedRevision={expectedRevision} removeAction={removeAction} returnAction={returnAction} onReview={onReview} />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Whether the read stated a count this surface may render as the number it carries. */
+function isCounted(state: ValueState): boolean {
+  return state === "value" || state === "zero" || state === "incomplete-subtotal";
+}
+
+/** The three states, their own counts and the sentence each one means: distinct words, never one "active" flag. */
+function StatesSummary({ memberStates, valueStates }: { readonly memberStates: InitiativeDetail["initiative"]["memberStates"]; readonly valueStates: ValueStates }): ReactElement {
+  return (
+    <div data-slot="working-list-states" className="flex min-w-0 flex-col gap-2">
+      <ul className="flex min-w-0 flex-col gap-2">
+        {MEMBERSHIP_STATES.map((state) => {
+          const copy = MEMBERSHIP_STATE_COPY[state];
+          const count = memberStates[state];
+          const countState = countStateOf(valueStates, state, count);
+          return (
+            <li key={state} className="flex min-w-0 flex-col gap-0.5">
+              <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                <StatusBadge label={copy.label} tone={MEMBERSHIP_TONE[state]} />
+                <span className="text-sm">
+                  <CountFigure count={count} state={countState} />
+                </span>
+                {/* The noun belongs to a figure the read stands behind; a badge standing in for an
+                    unknown or withheld count is never read as "unknown partners". */}
+                {isCounted(countState) && Number.isFinite(count) ? <span className="text-sm text-muted-foreground">{count === 1 ? WORKING_LIST_COPY.partnerSingular : WORKING_LIST_COPY.partnerPlural}</span> : null}
+              </p>
+              <p className="text-xs text-pretty text-muted-foreground">{copy.description}</p>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-xs text-pretty text-muted-foreground">{WORKING_LIST_COPY.countsNote}</p>
+    </div>
+  );
+}
+
+/** What a working-list place is not, stated where the list is read rather than only in Help. */
+function MembershipRules(): ReactElement {
+  return (
+    <div data-slot="working-list-rules" className="flex min-w-0 flex-col gap-1">
+      <p className="text-sm text-pretty text-muted-foreground">{MEMBERSHIP_RULES_COPY.explicitSelectionOnly}</p>
+      <ul className="flex min-w-0 flex-col gap-1 text-xs text-pretty text-muted-foreground">
+        {[MEMBERSHIP_RULES_COPY.notAsked, MEMBERSHIP_RULES_COPY.notConsent, MEMBERSHIP_RULES_COPY.notAudienceMembership, MEMBERSHIP_RULES_COPY.removalPreservesHistory, MEMBERSHIP_RULES_COPY.returnRestoresEligiblePlanning].map((statement) => (
+          <li key={statement}>{statement}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /** The member mutation as its handle actually dispatches it. */
 type MutationDispatch<Variables> = (variables: Variables, options: { readonly onSettled: (outcome: MutationOutcome | undefined) => void }) => void;
 
@@ -283,106 +590,6 @@ function memberResultRows(outcome: MutationOutcome | null, memberId: string): re
   }
   const reason = statedReasonOf(outcome);
   return [{ targetId: namedMemberOf(outcome, memberId), state: PER_ITEM_STATE_OF_OUTCOME[outcome.outcome], ...(reason === undefined ? {} : { reason }) }];
-}
-
-/** One member's change frozen at the moment the worker asked for it. */
-interface MemberReview {
-  readonly memberId: string;
-  readonly partnerDisplayName: string;
-  readonly memberState: MembershipState;
-  readonly memberRevision: string;
-  readonly task: MemberTask;
-}
-
-interface MemberCardProps {
-  readonly initiativeId: string;
-  readonly member: MemberRow;
-  readonly scope: Scope;
-  readonly valueStates: ValueStates;
-  readonly admittedStages: readonly string[];
-  readonly stageAction: ReadAction | undefined;
-  /** The revision the page read; the member record's own revision stands in front of it. */
-  readonly expectedRevision: string;
-  readonly canRemove: boolean;
-  readonly canReturn: boolean;
-  readonly onChanged: ((outcome: MutationOutcome) => void) | undefined;
-  readonly onCheckResult: () => void;
-  readonly onReview: (review: MemberReview) => void;
-}
-
-/** One partner on the reviewed working list: who they are, the state they stand in, the dates and reason the read recorded, the stage their record holds, and the one action their state admits. */
-function MemberCard({ initiativeId, member, scope, valueStates, admittedStages, stageAction, expectedRevision, canRemove, canReturn, onChanged, onCheckResult, onReview }: MemberCardProps): ReactElement {
-  const stateCopy = MEMBERSHIP_STATE_COPY[member.state];
-  // The member record's own revision is what the service compares; the envelope's revision is the
-  // fallback for a row that states none, never a substitute for one that does.
-  const memberRevision = member.revision.trim() === "" ? expectedRevision : member.revision;
-  const stageState = STAGE_STATE_OF_READ[member.stageState];
-  // A state-change instant only means something for a partner who left the list or came back to it, so
-  // the fact is stated for those partners and never as an empty term beside a partner who never left.
-  // Its word comes from the state the record now holds, so the instant is never dated with a change the
-  // record does not hold.
-  const stateChangeTerm = member.state === "removed" || member.returnedAt !== null ? STATE_CHANGE_TERM[member.state] : null;
-  const memberName = <bdi className="min-w-0 wrap-anywhere">{member.partnerDisplayName}</bdi>;
-  const openReview = (task: MemberTask): void => {
-    onReview({ memberId: member.memberId, partnerDisplayName: member.partnerDisplayName, memberState: member.state, memberRevision, task });
-  };
-  return (
-    <div data-slot="working-list-member" data-member-id={member.memberId} data-member-state={member.state} className="flex min-w-0 flex-col gap-3 rounded-xl border border-border p-3">
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-        <p className="min-w-0 font-medium text-pretty">{memberName}</p>
-        <StatusBadge label={stateCopy.label} tone={MEMBERSHIP_TONE[member.state]} />
-        <bdi className="mono-identifier min-w-0 break-all text-xs text-muted-foreground">{member.memberId}</bdi>
-      </div>
-      <dl className="flex min-w-0 flex-col gap-1 text-sm">
-        <MemberFact term={WORKING_LIST_COPY.addedTerm}>
-          <StatedInstant value={member.addedAt} />
-        </MemberFact>
-        {stateChangeTerm === null ? null : <MemberFact term={stateChangeTerm}>{member.returnedAt === null ? <span className="text-muted-foreground">{REQUESTED_TERMS_COPY.notStated}</span> : <StatedInstant value={member.returnedAt} />}</MemberFact>}
-        {member.state === "included" ? null : (
-          <MemberFact term={STAGE_SELECTOR_COPY.label}>
-            <StageValue member={member} stageState={stageState} valueState={valueStates[`${member.memberId}.stage`] ?? "unknown"} />
-          </MemberFact>
-        )}
-      </dl>
-      <MemberHistory entries={member.history} />
-      {member.state === "included" ? <StageSelector initiativeId={initiativeId} member={member} admittedStages={admittedStages} scope={scope} expectedRevision={memberRevision} stageAction={stageAction} onOutcome={onChanged} onCheckResult={onCheckResult} className="min-w-0" /> : null}
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        {member.state === "included" && canRemove ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              openReview("remove");
-            }}
-          >
-            {REMOVE_COPY.trigger}
-            <span className="sr-only">
-              {" for "}
-              {memberName}
-            </span>
-          </Button>
-        ) : null}
-        {member.state === "removed" && canReturn ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              openReview("return");
-            }}
-          >
-            {RETURN_COPY.trigger}
-            <span className="sr-only">
-              {" for "}
-              {memberName}
-            </span>
-          </Button>
-        ) : null}
-        {member.state === "excluded" ? <p className="min-w-0 text-xs text-pretty text-muted-foreground">{WORKING_LIST_COPY.excludedNote}</p> : null}
-      </div>
-    </div>
-  );
 }
 
 interface MemberReviewDialogProps {
@@ -583,75 +790,6 @@ function MemberReviewDialog({ review, initiativeId, scope, onChanged, onCheckRes
   );
 }
 
-interface MembershipGroupProps {
-  readonly state: MembershipState;
-  readonly rows: readonly MemberRow[];
-  readonly count: number;
-  readonly countState: ValueState;
-  readonly level: WorkingListHeadingLevel;
-  readonly action: ReadAction | undefined;
-  readonly initiativeId: string;
-  readonly scope: Scope;
-  readonly valueStates: ValueStates;
-  readonly admittedStages: readonly string[];
-  readonly stageAction: ReadAction | undefined;
-  readonly expectedRevision: string;
-  readonly onChanged: ((outcome: MutationOutcome) => void) | undefined;
-  readonly onCheckResult: () => void;
-  readonly onReview: (review: MemberReview) => void;
-}
-
-/** One of the three membership states: its word, its description, its own count and the members the read returned in it. */
-function MembershipGroup({ state, rows, count, countState, level, action, initiativeId, scope, valueStates, admittedStages, stageAction, expectedRevision, onChanged, onCheckResult, onReview }: MembershipGroupProps): ReactElement {
-  const headingId = useId();
-  const copy = MEMBERSHIP_STATE_COPY[state];
-  const Heading = GROUP_HEADING_TAG[level];
-  const counted = isCounted(countState);
-  const canAct = action?.available === true;
-  return (
-    <section aria-labelledby={headingId} data-slot="working-list-state" data-membership-state={state} className="flex min-w-0 flex-col gap-3">
-      <div className="flex min-w-0 flex-col gap-1">
-        <Heading id={headingId} className="font-heading text-base font-medium text-pretty">
-          {copy.label}
-        </Heading>
-        <p className="text-sm text-pretty text-muted-foreground">{copy.description}</p>
-      </div>
-      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
-        <span className="text-muted-foreground">{WORKING_LIST_COPY.countLabel}</span>
-        <CountFigure count={count} state={countState} />
-      </p>
-      {action !== undefined && !action.available ? <RefusalNote text={action.reason ?? WORKING_LIST_COPY.unstatedRefusal} /> : null}
-      {counted && count === 0 ? (
-        <p className="text-sm text-pretty text-muted-foreground">{copy.emptyNote}</p>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-pretty text-muted-foreground">{WORKING_LIST_COPY.noneOnPage(count)}</p>
-      ) : (
-        <ul className="flex min-w-0 flex-col gap-3">
-          {rows.map((row) => (
-            <li key={row.memberId} className="min-w-0">
-              <MemberCard
-                initiativeId={initiativeId}
-                member={row}
-                scope={scope}
-                valueStates={valueStates}
-                admittedStages={admittedStages}
-                stageAction={stageAction}
-                expectedRevision={expectedRevision}
-                canRemove={state === "included" && canAct}
-                canReturn={state === "removed" && canAct}
-                onChanged={onChanged}
-                onCheckResult={onCheckResult}
-                onReview={onReview}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-      {rows.length > 0 && counted && rows.length < count ? <p className="text-xs text-pretty text-muted-foreground">{WORKING_LIST_COPY.partialPage(rows.length, count)}</p> : null}
-    </section>
-  );
-}
-
 interface ClosureControlProps {
   readonly initiativeId: string;
   readonly envelope: ReadEnvelope<InitiativeDetail>;
@@ -662,7 +800,7 @@ interface ClosureControlProps {
   readonly onCheckResult: () => void;
 }
 
-/** The two closure actions, with the statements that keep each of them honest: closing fences new solicitation and leaves every obligation with its owner, a late response stays recordable without a … */
+/** The two closure actions, with the statements that keep each of them honest: closing fences new solicitation and leaves every obligation with its owner, a late response stays recordable without reopening, and reopening keeps the closure history. */
 function ClosureControl({ initiativeId, envelope, closeAction, reopenAction, level, onChanged, onCheckResult }: ClosureControlProps): ReactElement {
   const headingId = useId();
   const [closeOpen, setCloseOpen] = useState(false);
@@ -731,20 +869,16 @@ interface WorkingListBodyProps {
   readonly level: WorkingListHeadingLevel;
 }
 
-/** The envelope in hand: the three states, the picker that adds to them, and the two closure actions. */
+/** The envelope in hand: the three states, the one list of every partner in them, the picker that adds to them, and the two closure actions. */
 function WorkingListBody({ initiativeId, envelope, candidates, onChanged, onCheckResult, level }: WorkingListBodyProps): ReactElement {
   const { data, valueStates, scope, revision, actions } = envelope;
   // The member whose change is under review, frozen when it was opened; the row it came from may move
   // between states while the review is open, which is exactly what its receipt has to survive.
   const [review, setReview] = useState<MemberReview | null>(null);
+  // Column visibility is presentation and belongs to this surface; the page window and the order are
+  // the service's, so neither is offered as a control here.
+  const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(NO_COLUMNS_HIDDEN);
   const admittedStages = useMemo<readonly string[]>(() => data.stages.filter((option) => option.admitted).map((option) => option.value), [data.stages]);
-  const rowsByState = useMemo<Readonly<Record<MembershipState, readonly MemberRow[]>>>(() => {
-    const grouped: Record<MembershipState, MemberRow[]> = { included: [], removed: [], excluded: [] };
-    for (const row of data.workingList.items) {
-      grouped[row.state].push(row);
-    }
-    return grouped;
-  }, [data.workingList.items]);
   const closeReview = useCallback((): void => {
     setReview(null);
   }, []);
@@ -755,49 +889,57 @@ function WorkingListBody({ initiativeId, envelope, candidates, onChanged, onChec
   const stageAction = actionOf("setStage");
   const closeAction = actionOf("closeInitiative");
   const reopenAction = actionOf("reopenInitiative");
+  const rows = data.workingList.items;
+  const total = data.workingList.total;
+  const listQueryState = useMemo<RecordListQueryState>(() => ({ sort: NO_SORT, page: data.workingList.page, pageSize: data.workingList.pageSize, columnVisibility }), [data.workingList.page, data.workingList.pageSize, columnVisibility]);
+  const surface = useMemo<MemberSurfaceProps>(
+    () => ({ initiativeId, scope, valueStates, admittedStages, stageAction, expectedRevision: revision, onOutcome: onChanged, onCheckResult, removeAction, returnAction, onReview: setReview }),
+    [initiativeId, scope, valueStates, admittedStages, stageAction, revision, onChanged, onCheckResult, removeAction, returnAction],
+  );
+  const columns = useMemo<ReadonlyArray<RecordListColumnDef<MemberRow>>>(() => memberColumns(surface), [surface]);
+  const listLabel = `${INITIATIVE_COPY.membersHeading} for ${data.initiative.name}, ${WORKING_LIST_COPY.listSuffix}`;
+  function handleQueryStateChange(next: RecordListQueryState): void {
+    // The order and the page window belong to the service: this surface renders the page the read
+    // returned and states the whole-result total beside it, and no column here offers a sort the service
+    // was not asked for, so the only change this handler takes is the presentation it owns.
+    if (next.columnVisibility !== columnVisibility) {
+      setColumnVisibility(next.columnVisibility);
+    }
+  }
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <div className="flex min-w-0 flex-col gap-2">
-        <p className="text-sm text-pretty text-muted-foreground">{MEMBERSHIP_RULES_COPY.explicitSelectionOnly}</p>
-        <ul className="flex min-w-0 flex-col gap-1 text-xs text-pretty text-muted-foreground">
-          {[MEMBERSHIP_RULES_COPY.notAsked, MEMBERSHIP_RULES_COPY.notConsent, MEMBERSHIP_RULES_COPY.notAudienceMembership, MEMBERSHIP_RULES_COPY.removalPreservesHistory].map((statement) => (
-            <li key={statement}>{statement}</li>
-          ))}
-        </ul>
-        <p className="text-xs text-pretty text-muted-foreground">{WORKING_LIST_COPY.countsNote}</p>
-      </div>
-      <div className="flex min-w-0 flex-col gap-6">
-        {MEMBERSHIP_STATES.map((state) => {
-          const count = data.initiative.memberStates[state];
-          return (
-            <MembershipGroup
-              key={state}
-              state={state}
-              rows={rowsByState[state]}
-              count={count}
-              countState={valueStates[`initiative.memberStates.${state}`] ?? (count === 0 ? "zero" : "value")}
-              level={level}
-              action={state === "included" ? removeAction : state === "removed" ? returnAction : undefined}
-              initiativeId={initiativeId}
-              scope={scope}
-              valueStates={valueStates}
-              admittedStages={admittedStages}
-              stageAction={stageAction}
-              expectedRevision={revision}
-              onChanged={onChanged}
-              onCheckResult={onCheckResult}
-              onReview={setReview}
-            />
-          );
-        })}
-      </div>
+      <MembershipRules />
+      {total === 0 ? null : <StatesSummary memberStates={data.initiative.memberStates} valueStates={valueStates} />}
+      {total === 0 ? (
+        // Nothing is on the list yet, so the honest answer is the collection's own emptiness beside the
+        // one real first action — the picker this surface renders below, reached by this link.
+        <StateNotice kind="empty" headingLevel={GROUP_HEADING_LEVEL[level]} title={WORKING_LIST_COPY.emptyTitle} description={WORKING_LIST_COPY.emptyBody} action={{ label: WORKING_LIST_COPY.emptyAction, href: "#working-list-add" }} />
+      ) : (
+        <>
+          {/*
+            One answer, two compositions with opposite responsive display utilities: the preset's table
+            for a wide surface, the labelled card list for a narrow one, so `display: none` leaves a
+            reader exactly one of them (WCAG 1.3.1, 1.4.10). The pager states the whole-list total the
+            read measured and offers only the page size the read used.
+          */}
+          <div className="hidden min-w-0 md:block">
+            <RecordList label={listLabel} columns={columns} rows={rows} rowCount={total} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={memberRowId} rowActions={(row) => <RowActions member={row} expectedRevision={revision} removeAction={removeAction} returnAction={returnAction} onReview={setReview} />} itemNoun={WORKING_LIST_COPY.memberNoun} pageSizeOptions={[data.workingList.pageSize]} />
+          </div>
+          <MemberCardList {...surface} rows={rows} label={listLabel} className="md:hidden" />
+          {rows.length < total ? <p className="text-xs text-pretty text-muted-foreground">{WORKING_LIST_COPY.partialPage(rows.length, total)}</p> : null}
+        </>
+      )}
       {review === null ? null : <MemberReviewDialog review={review} initiativeId={initiativeId} scope={scope} onChanged={onChanged} onCheckResult={onCheckResult} onClose={closeReview} />}
       <Separator />
-      {addAction?.available === true ? (
-        <MemberPicker initiativeId={initiativeId} candidates={candidates} scope={scope} expectedRevision={revision} onAdded={onChanged} headingLevel={GROUP_HEADING_LEVEL[level]} className="min-w-0" />
-      ) : (
-        <RefusalNote title={WORKING_LIST_COPY.addRefusalTitle} text={addAction?.reason ?? WORKING_LIST_COPY.unstatedRefusal} />
-      )}
+      {/* The picker is the only way a partner joins this list, so its refusal stands exactly where the
+          picker would be and the rest of the surface keeps working. */}
+      <div id="working-list-add" className="min-w-0 scroll-mt-24">
+        {addAction?.available === true ? (
+          <MemberPicker initiativeId={initiativeId} candidates={candidates} scope={scope} expectedRevision={revision} onAdded={onChanged} headingLevel={GROUP_HEADING_LEVEL[level]} className="min-w-0" />
+        ) : (
+          <RefusalNote title={WORKING_LIST_COPY.addRefusalTitle} text={addAction?.reason ?? WORKING_LIST_COPY.unstatedRefusal} />
+        )}
+      </div>
       <Separator />
       <ClosureControl initiativeId={initiativeId} envelope={envelope} closeAction={closeAction} reopenAction={reopenAction} level={level} onChanged={onChanged} onCheckResult={onCheckResult} />
     </div>
@@ -808,13 +950,13 @@ function WorkingListBody({ initiativeId, envelope, candidates, onChanged, onChec
 export interface WorkingListProps {
   /** The initiative the working list belongs to: the identifier every change below names. */
   readonly initiativeId: string;
-  /** The initiative detail envelope the composing page read: its scope and revision, its advisory actions, the working-list page, the source-approved stages, the work the initiative owns and its dated … */
+  /** The initiative detail envelope the composing page read: its scope and revision, its advisory actions, the working-list page, the source-approved stages and the initiative's own overview. */
   readonly envelope: ReadEnvelope<InitiativeDetail>;
   /** The eligible-partner read the composing route supplied, handed to the picker unchanged; no candidate set is computed here. */
   readonly candidates: readonly MemberCandidate[] | MemberCandidates;
   /** Called with the outcome once a change made through this surface stands, so the caller can re-read or move on. */
   readonly onChanged?: (outcome: MutationOutcome) => void;
-  /** The heading level this section renders at; its membership groups and closure section render one level deeper. */
+  /** The heading level this section renders at; its groups, cards and closure section render one level deeper. */
   readonly headingLevel?: WorkingListHeadingLevel;
   readonly className?: string;
 }
