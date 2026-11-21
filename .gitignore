@@ -23,11 +23,6 @@ blitzy/
 # Pre-existing untracked inventory document (not part of the delivered repository)
 metering-inventory.md
 
-# Environment files (this project needs no secrets; never commit any)
+# Environment files: the repository ships none and needs no secret, so nothing here is negated
 .env
 .env.*
-!.env.example
-
-# Operating system noise
-.DS_Store
-Thumbs.db
