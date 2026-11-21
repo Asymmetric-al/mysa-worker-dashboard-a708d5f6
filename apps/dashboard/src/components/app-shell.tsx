@@ -62,6 +62,7 @@
  * runtime the label stays and the controls are simply absent.
  */
 
+import { usePathname } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -196,8 +197,16 @@ export interface AppShellProps {
   /** How this session was admitted, which decides whether the route or a recovery surface renders. */
   readonly admissionState: AdmissionState;
 
-  /** The route currently open, as the router reports it, so the rail never guesses. */
-  readonly currentPath: string;
+  /**
+   * The route currently open, as the router reports it, so the rail never guesses.
+   *
+   * Omitted by a caller that cannot know it: a Server Component is never told the request pathname
+   * (`usePathname` documents that as intentional, so that layout state survives navigation), and the
+   * root layout — this shell's only caller — is one. The shell then reads the same fact from the
+   * router itself, which is the source this value is defined to come from, so the rail still never
+   * guesses and there is still exactly one "where am I" answer rather than two that can disagree.
+   */
+  readonly currentPath?: string;
 
   /**
    * This session's development state. Omitted in a build without the development runtime: the
@@ -512,7 +521,7 @@ type ShellChromeProps = Omit<AppShellProps, "className">;
 function ShellChrome({
   scope,
   admissionState,
-  currentPath,
+  currentPath: suppliedPath,
   devState,
   personas,
   devActions,
@@ -528,6 +537,15 @@ function ShellChrome({
   const [lastSwitch, setLastSwitch] = useState<ContextSwitchResult | null>(null);
 
   useStickyOffset(headerRef);
+
+  /*
+   * The route to describe, from whichever side knows it. A client caller passes the path the router
+   * reported; a Server Component caller — the root layout — cannot know it and passes none, so it is
+   * read here. Both are the same source, which is what keeps the rail, the header's finance-subject
+   * disclosure and the recovery action pointing at the one destination the reader is actually on.
+   */
+  const routedPath = usePathname();
+  const currentPath = suppliedPath ?? routedPath;
 
   // A plain click on a destination closes the compact navigation the reader is looking at. The model
   // reports only real navigations — a modified click that opens another tab is not one — so following a
