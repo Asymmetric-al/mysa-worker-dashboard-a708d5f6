@@ -2012,7 +2012,9 @@ function harbourSupportProjection(): SupportProjectionRecord {
       amount: money("USD", 2500000),
       measure: "received-support",
       effectiveFrom: "2026-01-01",
-      revision: INITIAL_REVISION,
+      // A goal's revision is the base revision an edit presents, and the report reads it as a whole
+      // number: it is the one seeded revision that is not an opaque token, so it is not "rev-1".
+      revision: "1",
     },
     source: source("finance", "ledger-harbour-2026"),
     revision: INITIAL_REVISION,

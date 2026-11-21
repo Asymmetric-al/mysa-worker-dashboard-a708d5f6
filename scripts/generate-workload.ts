@@ -86,9 +86,10 @@ async function main(): Promise<number> {
       `store: ${report.storePath}\n` +
         `session: ${report.sessionId}\n` +
         `document: ${report.workloadPath}\n` +
-        `bytes: ${String(report.bytes)}\n` +
-        `partners: ${String(report.partnerCount)}\n` +
-        `gifts: ${String(report.giftCount)}\n`,
+        `partners: ${String(report.partners)}\n` +
+        `gifts: ${String(report.gifts)}\n` +
+        `currencies: ${report.currencies.join(", ")}\n` +
+        `coverage: ${report.coverage.from} to ${report.coverage.to} (${report.coverage.state})\n`,
     );
     return 0;
   } catch (error) {
