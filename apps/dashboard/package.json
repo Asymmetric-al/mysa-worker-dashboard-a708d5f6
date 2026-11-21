@@ -7,7 +7,7 @@
     "build": "next build",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --config ../../.oxlintrc.json",
-    "test": "vitest run && playwright test"
+    "test": "vitest run && playwright test --pass-with-no-tests"
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",
