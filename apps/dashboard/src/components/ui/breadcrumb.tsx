@@ -13,19 +13,7 @@ function BreadcrumbItem({ className, ...props }: React.ComponentProps<"li">) {
   return <li data-slot="breadcrumb-item" className={cn("inline-flex items-center gap-1.5", className)} {...props} />;
 }
 function BreadcrumbLink({ className, render, ...props }: useRender.ComponentProps<"a">) {
-  return useRender({
-    defaultTagName: "a",
-    props: mergeProps<"a">(
-      {
-        className: cn("transition-colors hover:text-foreground", className),
-      },
-      props,
-    ),
-    render,
-    state: {
-      slot: "breadcrumb-link",
-    },
-  });
+  return useRender({ defaultTagName: "a", props: mergeProps<"a">({ className: cn("transition-colors hover:text-foreground", className) }, props), render, state: { slot: "breadcrumb-link" } });
 }
 function BreadcrumbPage({ className, ...props }: React.ComponentProps<"span">) {
   return <span data-slot="breadcrumb-page" aria-current="page" className={cn("font-normal text-foreground", className)} {...props} />;
@@ -33,8 +21,7 @@ function BreadcrumbPage({ className, ...props }: React.ComponentProps<"span">) {
 function BreadcrumbSeparator({ children, className, ...props }: React.ComponentProps<"li">) {
   return (
     <li data-slot="breadcrumb-separator" role="presentation" aria-hidden="true" className={cn("[&>svg]:size-3.5", className)} {...props}>
-      {/* The chevron points along the reading direction: it is mirrored under dir="rtl"
-          rather than paired with a second icon, so no caller has to know the direction. */}
+      {/* The chevron points along the reading direction: it is mirrored under dir="rtl" rather than paired with a second icon, so no caller has to know the direction. */}
       {children ?? <ChevronRightIcon className="rtl:rotate-180" />}
     </li>
   );

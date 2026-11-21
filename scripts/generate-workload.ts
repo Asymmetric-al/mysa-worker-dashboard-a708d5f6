@@ -1,14 +1,9 @@
-/**
- * `bun run seed:workload`: generates the deterministic 10,000-partner / 100,000-gift workload into a
- * seeded session's store document, and prints what it wrote.
- */
+/** `bun run seed:workload`: generates the deterministic 10,000-partner / 100,000-gift workload into a seeded session's store document, and prints what it wrote. */
 import { DEFAULT_WORKLOAD_SESSION_ID, generateWorkload, WORKLOAD_GIFT_COUNT, WORKLOAD_PARTNER_COUNT, WORKLOAD_SEED, type WorkloadSummary } from "../apps/dashboard/src/modules/dev-runtime/generate";
 const EXPECTED_PARTNER_COUNT: number = 10_000;
 const EXPECTED_GIFT_COUNT: number = 100_000;
 
-const USAGE =
-  "usage: bun scripts/generate-workload.ts [session-id]\n" +
-  `with no session id the workload is written into ${DEFAULT_WORKLOAD_SESSION_ID}, the seeded session the journeys and the measurements start from.\n`;
+const USAGE = "usage: bun scripts/generate-workload.ts [session-id]\n" + `with no session id the workload is written into ${DEFAULT_WORKLOAD_SESSION_ID}, the seeded session the journeys and the measurements start from.\n`;
 class UsageError extends Error {}
 
 function parseArguments(argv: readonly string[]): string | undefined {

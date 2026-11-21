@@ -1,7 +1,4 @@
-/**
- * `/coaching` — the worker's coaching overview: optional private preparation, the sharing state a
- * coach can read right now, and the coaching screens this page leads to.
- */
+/** `/coaching` — the worker's coaching overview: optional private preparation, the sharing state a coach can read right now, and the coaching screens this page leads to. */
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactElement } from "react";
@@ -19,23 +16,16 @@ type CoachingOverviewEnvelope = Extract<CoachingOverviewResult, { kind: "envelop
 type CoachingOverview = CoachingOverviewEnvelope["data"];
 type CoachingRelationship = CoachingOverview["relationships"][number];
 type RelationshipDuration = CoachingRelationship["duration"];
-
 type PreparationRecordView = CoachingOverview["preparation"][number];
-
 type PreparationView = PreparationSurfaceProps["preparation"];
-// Fixed values
 /** The page title, from the family copy's own heading for this surface. */
-export const metadata: Metadata = {
-  title: COACHING_COPY.overview.heading,
-};
+export const metadata: Metadata = { title: COACHING_COPY.overview.heading };
 const DESTINATIONS_LABEL = "Coaching destinations";
-
 const DESTINATIONS = [
   { href: "/coaching/targets", label: COACHING_COPY.targets.heading },
   { href: "/coaching/coach", label: COACHING_COPY.coachPortfolio.heading },
 ] as const;
 const DESTINATION_LINK_CLASS = "h-auto min-h-8 max-w-full whitespace-normal py-1.5";
-// The envelope mapped onto the family's props
 function currentRelationshipOf(overview: CoachingOverview): CoachingRelationship | null {
   const live = overview.relationships.find((relationship) => relationship.grantId === overview.activeGrantId);
   return live ?? overview.relationships[0] ?? null;
@@ -67,32 +57,17 @@ function durationViewOf(duration: RelationshipDuration): GrantDurationView {
 }
 function grantViewOf(relationship: CoachingRelationship): CoachingGrantView {
   const readable = relationship.outcomes.accessLive;
-  const modules: readonly ModuleRead[] = readable
-    ? relationship.admittedModules.map((admitted) => ({
-        key: admitted.module,
-        readState: admitted.readState,
-      }))
-    : [];
+  const modules: readonly ModuleRead[] = readable ? relationship.admittedModules.map((admitted) => ({ key: admitted.module, readState: admitted.readState })) : [];
   return {
     state: relationship.state,
     availability: relationship.availability,
     modules,
     duration: durationViewOf(relationship.duration),
-    shareCutoff: {
-      instant: relationship.duration.cutoffInstant ?? relationship.duration.boundInstant ?? "",
-      zone: relationship.duration.frozenZone ?? "",
-      sourceLimitWins: relationship.duration.boundedBy === "source",
-    },
+    shareCutoff: { instant: relationship.duration.cutoffInstant ?? relationship.duration.boundInstant ?? "", zone: relationship.duration.frozenZone ?? "", sourceLimitWins: relationship.duration.boundedBy === "source" },
     financialRange: null,
-    outcomes: {
-      delivery: outcomeOf(relationship.outcomes.invitationIssued),
-      identityVerification: outcomeOf(relationship.outcomes.identityVerified),
-      acceptance: outcomeOf(relationship.outcomes.accepted),
-      access: outcomeOf(relationship.outcomes.accessLive),
-    },
+    outcomes: { delivery: outcomeOf(relationship.outcomes.invitationIssued), identityVerification: outcomeOf(relationship.outcomes.identityVerified), acceptance: outcomeOf(relationship.outcomes.accepted), access: outcomeOf(relationship.outcomes.accessLive) },
   };
 }
-// The route
 /** The worker's coaching overview. */
 export default async function CoachingPage(): Promise<ReactElement> {
   const result = await reads.coaching.readCoachingOverview();
@@ -107,6 +82,14 @@ export default async function CoachingPage(): Promise<ReactElement> {
     return (
       <div className="flex min-w-0 flex-col gap-6 text-start">
         <StateNotice kind="unavailable" headingLevel={1} title={COACHING_COPY.overview.heading} description={COACHING_COPY.overview.unavailable} source={result.unavailable.source} />
+      </div>
+    );
+  }
+  if (result.kind === "refused") {
+    // This route calls the read directly, so the request is its own and never one a handler refuses: the arm is stated the same way as the others rather than thrown, and the notice's own sentence says the request was refused rather than the source failing.
+    return (
+      <div className="flex min-w-0 flex-col gap-6 text-start">
+        <StateNotice kind="refused" headingLevel={1} title={COACHING_COPY.overview.heading} />
       </div>
     );
   }

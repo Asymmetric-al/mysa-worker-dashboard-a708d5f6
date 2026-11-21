@@ -1,14 +1,11 @@
 "use client";
-/**
- * The Gifts ledger's browser read: its controlled query state, the two pure helpers that carry that
- * state through a URL, and the one hook that reads it through `reads.readGifts`.
- */
+/** The Gifts ledger's browser read: its controlled query state, the two pure helpers that carry that state through a URL, and the one hook that reads it through `reads.readGifts`. */
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { scopeKey } from "@/components/context-switch-guard";
 import { isRecord } from "@/lib/guards";
 import type { reads } from "@/modules/data-service";
 import type { FinancialCoverage, ReadEnvelope, Scope } from "@/modules/data-service/envelope";
-import type { DeniedOutcome, ReadResult, UnavailableOutcome } from "@/modules/data-service/outcome";
+import type { DeniedOutcome, InvalidOutcome, ReadResult, UnavailableOutcome } from "@/modules/data-service/outcome";
 import { minorUnitsOf, type MinorUnits } from "@/modules/money/amount";
 // Paging
 /** The number of rows the gifts ledger shows unless the caller states a size. */
@@ -21,13 +18,7 @@ export type GiftsPageSize = typeof GIFTS_PAGE_SIZE_DEFAULT | typeof GIFTS_PAGE_S
 /** The period a result is stated for: one of the service's admitted presets, carried opaquely, or two civil dates inclusive at both ends. */
 export type GiftPeriodQuery = { readonly kind: "preset"; readonly preset: string } | { readonly kind: "custom"; readonly from: string; readonly to: string };
 /** Which currency's amounts the ledger states, with the amount range only where it can mean something. */
-export type GiftCurrencyQuery =
-  | { readonly kind: "all" }
-  | {
-      readonly kind: "one";
-      readonly currency: string;
-      readonly amountRange?: { readonly minMinor?: MinorUnits; readonly maxMinor?: MinorUnits };
-    };
+export type GiftCurrencyQuery = { readonly kind: "all" } | { readonly kind: "one"; readonly currency: string; readonly amountRange?: { readonly minMinor?: MinorUnits; readonly maxMinor?: MinorUnits } };
 /** Which attribution the result is restricted to. */
 export type GiftRecipientQuery = { readonly kind: "any" } | { readonly kind: "partner"; readonly partnerId: string } | { readonly kind: "anonymous" } | { readonly kind: "unresolved" };
 /** The gifts ledger's controlled state: the whole of it, in one value, so the URL, the hook key and the toolbar cannot hold three descriptions of the same view. */
@@ -41,7 +32,6 @@ export interface GiftsQuery {
   readonly sort?: { readonly key: string; readonly direction: "asc" | "desc" };
   readonly page: number;
   readonly pageSize: number;
-  readonly giftId?: string;
 }
 const PARAM = {
   period: "period",
@@ -59,7 +49,6 @@ const PARAM = {
   sortDirection: "sortDirection",
   page: "page",
   pageSize: "pageSize",
-  giftId: "giftId",
 } as const;
 const RECIPIENT_PARTNER = "partner";
 const RECIPIENT_ANONYMOUS = "anonymous";
@@ -113,9 +102,6 @@ export function toGiftsParams(query: GiftsQuery): URLSearchParams {
   }
   params.set(PARAM.page, String(query.page));
   params.set(PARAM.pageSize, String(query.pageSize));
-  if (query.giftId !== undefined) {
-    params.set(PARAM.giftId, query.giftId);
-  }
   return params;
 }
 /** Reads a query string back into the ledger's state, omitting every facet it cannot read rather than guessing at one — while the page index, the page size and the preset of a period the URL. */
@@ -127,14 +113,7 @@ export function parseGiftsQuery(source: URLSearchParams | string): GiftsQuery {
   const period: GiftPeriodQuery = from !== null && to !== null ? { kind: "custom", from, to } : { kind: "preset", preset: statedPreset ?? UNSTATED_PERIOD_PRESET };
   const currencyCode = params.get(PARAM.currency);
   const range = amountRangeOf(params);
-  const currency: GiftCurrencyQuery =
-    currencyCode === null
-      ? { kind: "all" }
-      : {
-          kind: "one",
-          currency: currencyCode,
-          ...(range === undefined ? {} : { amountRange: range }),
-        };
+  const currency: GiftCurrencyQuery = currencyCode === null ? { kind: "all" } : { kind: "one", currency: currencyCode, ...(range === undefined ? {} : { amountRange: range }) };
   const statedRecipient = params.get(PARAM.recipient);
   const partnerId = params.get(PARAM.partnerId);
   let recipient: GiftRecipientQuery = { kind: "any" };
@@ -154,7 +133,6 @@ export function parseGiftsQuery(source: URLSearchParams | string): GiftsQuery {
   const designation = params.get(PARAM.designation);
   const method = params.get(PARAM.method);
   const search = params.get(PARAM.search);
-  const giftId = params.get(PARAM.giftId);
   return {
     period,
     currency,
@@ -165,7 +143,6 @@ export function parseGiftsQuery(source: URLSearchParams | string): GiftsQuery {
     ...(sort === undefined ? {} : { sort }),
     page: nonNegativeIntegerOf(params.get(PARAM.page)) ?? FIRST_PAGE,
     pageSize: statedPageSize(params.get(PARAM.pageSize)),
-    ...(giftId === null ? {} : { giftId }),
   };
 }
 function amountRangeOf(params: URLSearchParams): { readonly minMinor?: MinorUnits; readonly maxMinor?: MinorUnits } | undefined {
@@ -174,10 +151,7 @@ function amountRangeOf(params: URLSearchParams): { readonly minMinor?: MinorUnit
   if (minMinor === undefined && maxMinor === undefined) {
     return undefined;
   }
-  return {
-    ...(minMinor === undefined ? {} : { minMinor }),
-    ...(maxMinor === undefined ? {} : { maxMinor }),
-  };
+  return { ...(minMinor === undefined ? {} : { minMinor }), ...(maxMinor === undefined ? {} : { maxMinor }) };
 }
 const SIGNED_INTEGER_PATTERN = /^-?\d+$/;
 
@@ -213,7 +187,12 @@ const GIFTS_ENDPOINT = "/api/support/gifts";
 
 const ENVELOPE_STATUS = 200;
 const DENIED_STATUS = 403;
+/** A session that expired or could not be established answers 401 with the same denial, which is a session fault rather than a permission refusal. */
+const SESSION_FAULT_STATUS = 401;
 const UNAVAILABLE_STATUS = 503;
+
+/** A query this ledger does not admit answers 422 with the field-keyed refusal, which is the request's own fault and not a source that did not answer. */
+const REFUSED_STATUS = 422;
 /** How long a gifts envelope is treated as fresh. */
 export const GIFTS_STALE_TIME_MS = 60_000;
 
@@ -222,7 +201,7 @@ type GiftsServiceResult = Awaited<ReturnType<typeof reads.support.readGifts>>;
 type GiftsLedgerData = Extract<GiftsServiceResult, { kind: "envelope" }>["envelope"]["data"];
 /** The scoped envelope a ledger view renders once it has narrowed the result to `envelope`. */
 export type GiftsEnvelope = ReadEnvelope<GiftsLedgerData, FinancialCoverage>;
-/** What `readGifts` answers for this ledger: an envelope, a denial, or an unavailable source. */
+/** What `readGifts` answers for this ledger: an envelope, a denial, an unavailable source, or the refusal of the request that was sent. */
 export type GiftsReadResult = ReadResult<GiftsEnvelope>;
 /** What a caller supplies to read the ledger: the authority, the query, and any server-rendered seed. */
 export interface UseGiftsOptions {
@@ -230,19 +209,14 @@ export interface UseGiftsOptions {
   readonly query: GiftsQuery;
   readonly initialEnvelope?: GiftsEnvelope;
 }
-/** Reads `readGifts` for one ledger query in one scope: the result is `envelope | denied | unavailable` as the contract states those three answers, handed on unwrapped so the caller narrows it. */
+/** Reads `readGifts` for one ledger query in one scope: the result is `envelope | denied | unavailable | refused` as the contract states those four answers, handed on unwrapped so the caller narrows it. */
 export function useGifts(options: UseGiftsOptions): UseQueryResult<GiftsReadResult, Error> {
   const { scope, query, initialEnvelope } = options;
   return useQuery<GiftsReadResult, Error>({
     queryKey: [...scopeKey(scope), GIFTS_JOB, query],
     queryFn: () => fetchGifts(query),
     staleTime: GIFTS_STALE_TIME_MS,
-    ...(initialEnvelope === undefined
-      ? {}
-      : {
-          initialData: (): GiftsReadResult => ({ kind: "envelope", envelope: initialEnvelope }),
-          initialDataUpdatedAt: asOfInstant(initialEnvelope.asOf),
-        }),
+    ...(initialEnvelope === undefined ? {} : { initialData: (): GiftsReadResult => ({ kind: "envelope", envelope: initialEnvelope }), initialDataUpdatedAt: asOfInstant(initialEnvelope.asOf) }),
   });
 }
 function noAnswer(status: number, detail: string): Error {
@@ -256,16 +230,9 @@ async function readJsonBody(response: Response): Promise<unknown> {
   }
 }
 async function fetchGifts(query: GiftsQuery): Promise<GiftsReadResult> {
-  // The URL carries the list state; this request states only the filter set the read accepts, so the row a
-  // detail surface locates by `giftId` stays in the address bar rather than travelling as a filter the
-  // read does not declare.
-  const requested = toGiftsParams(query);
-  requested.delete(PARAM.giftId);
-  const response = await fetch(`${GIFTS_ENDPOINT}?${requested.toString()}`, {
-    method: "GET",
-    headers: { accept: "application/json" },
-    credentials: "same-origin",
-  });
+  // The URL carries the list state; this request states exactly the filter set the read declares,
+  // serialised from the query type, so no parameter the transport does not declare can travel.
+  const response = await fetch(`${GIFTS_ENDPOINT}?${toGiftsParams(query).toString()}`, { method: "GET", headers: { accept: "application/json" }, credentials: "same-origin" });
   const body = await readJsonBody(response);
   switch (response.status) {
     case ENVELOPE_STATUS:
@@ -274,6 +241,7 @@ async function fetchGifts(query: GiftsQuery): Promise<GiftsReadResult> {
       }
       return { kind: "envelope", envelope: body };
     case DENIED_STATUS:
+    case SESSION_FAULT_STATUS:
       if (!isDeniedBody(body)) {
         throw noAnswer(response.status, "a body that is not a denial");
       }
@@ -283,6 +251,11 @@ async function fetchGifts(query: GiftsQuery): Promise<GiftsReadResult> {
         throw noAnswer(response.status, "a body that is not an unavailable source");
       }
       return { kind: "unavailable", unavailable: body };
+    case REFUSED_STATUS:
+      if (!isRefusedBody(body)) {
+        throw noAnswer(response.status, "a body that is not a refused request");
+      }
+      return { kind: "refused", refused: body };
     default:
       throw noAnswer(response.status, "a status this read does not answer with");
   }
@@ -292,17 +265,7 @@ function isGiftsEnvelope(value: unknown): value is GiftsEnvelope {
     return false;
   }
   const { data, scope, coverage, valueStates, actions, asOf, revision } = value;
-  return (
-    isRecord(data) &&
-    isRecord(data.report) &&
-    typeof data.grain === "string" &&
-    isRecord(scope) &&
-    isRecord(coverage) &&
-    isRecord(valueStates) &&
-    Array.isArray(actions) &&
-    typeof asOf === "string" &&
-    typeof revision === "string"
-  );
+  return isRecord(data) && isRecord(data.report) && typeof data.grain === "string" && isRecord(scope) && isRecord(coverage) && isRecord(valueStates) && Array.isArray(actions) && typeof asOf === "string" && typeof revision === "string";
 }
 function isDeniedBody(value: unknown): value is DeniedOutcome {
   if (!isRecord(value)) {
@@ -315,14 +278,13 @@ function isUnavailableBody(value: unknown): value is UnavailableOutcome {
     return false;
   }
   const source = value.source;
-  return (
-    value.outcome === "unavailable" &&
-    typeof value.operationId === "string" &&
-    typeof value.guidance === "string" &&
-    isRecord(source) &&
-    typeof source.system === "string" &&
-    typeof source.reference === "string"
-  );
+  return value.outcome === "unavailable" && typeof value.operationId === "string" && typeof value.guidance === "string" && isRecord(source) && typeof source.system === "string" && typeof source.reference === "string";
+}
+function isRefusedBody(value: unknown): value is InvalidOutcome {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return value.outcome === "invalid" && typeof value.operationId === "string" && isRecord(value.fields);
 }
 function asOfInstant(asOf: string): number | undefined {
   const instant = Date.parse(asOf);

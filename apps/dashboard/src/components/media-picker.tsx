@@ -1,7 +1,4 @@
 "use client";
-/**
- * The one image and video picker and placement form.
- */
 import { FilmIcon, ImageUpIcon, TriangleAlertIcon, UploadIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ChangeEvent, type DragEvent, type ReactElement } from "react";
 import { FormField, FormFieldGroup, fieldErrorsFromInvalid, type FieldErrorLookup } from "@/components/form-field";
@@ -18,48 +15,18 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
 import { mediaStateReason, type MediaPreparationState } from "@/modules/media/asset";
-// The two kinds, the descriptor and the transport shapes
-//
-// These are declared structurally, in the payload shapes the content family's own schemas validate,
-// so a feature passes what it already has and maps it into its four-field mutation input itself. No
-// schema, no scope and no revision appears here: only the feature knows those.
-/** The two kinds one placement can show. */
+// The two kinds, the descriptor and the transport shapes, declared structurally in the payload shapes the content family's schemas validate: no schema, scope or revision appears here, because only the feature knows those.
 export type MediaPickerKind = "image" | "video";
-/** The numbers the picker read from the chosen file's own metadata: the decoded dimensions of a still, and the container's duration and display dimensions for a video. */
-export interface MediaProbe {
-  readonly width?: number;
-  readonly height?: number;
-  readonly durationSeconds?: number;
-}
-/** What one placement says about the media it shows: the descriptor a placement carries, exactly as the content family's payload validates it. */
-export interface MediaPlacementDescriptor {
-  readonly altText: string;
-  readonly caption?: string;
-  readonly credit?: string;
-  readonly transcript?: string;
-  readonly language?: string;
-  readonly posterAssetId?: string;
-}
-/** An existing placement, as the caller already holds it: the descriptor plus the identity it carries on the variant. */
+export type MediaProbe = { readonly width?: number; readonly height?: number; readonly durationSeconds?: number };
+export type MediaPlacementDescriptor = { readonly altText: string; readonly caption?: string; readonly credit?: string; readonly transcript?: string; readonly language?: string; readonly posterAssetId?: string };
 export interface MediaPlacement extends MediaPlacementDescriptor {
   readonly placementId?: string;
 }
-/** What one call to the caller's registration transport carries: the chosen file, what this browser could measure about it, and the descriptor its placement will carry. */
-export interface MediaRegisterInput {
-  readonly kind: MediaPickerKind;
-  readonly file: File;
-  readonly probe?: MediaProbe;
-  readonly placement: MediaPlacementDescriptor;
-}
-/** One already registered poster rendition a video placement may name, as the caller offers it. */
-export interface MediaPosterOption {
-  readonly assetId: string;
-  readonly label: string;
-}
+export type MediaRegisterInput = { readonly kind: MediaPickerKind; readonly file: File; readonly probe?: MediaProbe; readonly placement: MediaPlacementDescriptor };
+export type MediaPosterOption = { readonly assetId: string; readonly label: string };
 /** The outcome every transport answers with, taken from the one receipt that renders it. */
 export type MediaPickerOutcome = OperationResultProps["outcome"];
-/** Props of {@link MediaPicker}. */
-export interface MediaPickerProps {
+export type MediaPickerProps = {
   readonly kind: MediaPickerKind;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -70,40 +37,14 @@ export interface MediaPickerProps {
   readonly posterAssets?: readonly MediaPosterOption[];
   readonly onSettled?: (outcome: MediaPickerOutcome) => void;
   readonly className?: string;
-}
-// The published limits, shown before the work begins
-//
-// The authoritative numbers belong to `@/modules/media/image` and `@/modules/media/video`, which enforce
-// them on the bytes. This file restates them only to disclose what the person choosing is up against
-// before anything is sent, and it never refuses a file on them: a warning can be wrong by a rounding and
-// cost nothing, where a refusal based on a mirrored constant would block a file the profile admits.
-//
-// Restating them is the one place this file departs from Rule 1 clause 2's ban on copies of dependency
-// source, because the two profile modules are not part of this component's declared dependencies and a
-// picker that could not state the ceiling before a file was chosen would fail the reason the limits exist.
-// They stay display-only for the same reason: the profiles, not this mirror, decide what is admitted.
+};
+// Published limits, disclosed before the work begins: `@/modules/media/image` and `@/modules/media/video` enforce the real numbers on the bytes, and this display-only mirror departs from the ban on copies of dependency source so the ceiling is visible before a file is chosen.
 const MEBIBYTE = 1024 * 1024;
-
-const IMAGE_LIMITS = Object.freeze({
-  bytes: 10 * MEBIBYTE,
-  edgePx: 8_000,
-  formats: "JPEG, PNG or a still WebP image",
-});
-const VIDEO_LIMITS = Object.freeze({
-  bytes: 100 * MEBIBYTE,
-  durationS: 180,
-  width: 1_920,
-  height: 1_080,
-  formats: "MP4 with H.264 video and AAC audio, or WebM with VP8 or VP9 video and Vorbis or Opus audio",
-});
-const ACCEPT_HINT: Readonly<Record<MediaPickerKind, string>> = Object.freeze({
-  image: "image/jpeg,image/png,image/webp",
-  video: "video/mp4,video/webm",
-});
+const IMAGE_LIMITS = Object.freeze({ bytes: 10 * MEBIBYTE, edgePx: 8_000, formats: "JPEG, PNG or a still WebP image" });
+const VIDEO_LIMITS = Object.freeze({ bytes: 100 * MEBIBYTE, durationS: 180, width: 1_920, height: 1_080, formats: "MP4 with H.264 video and AAC audio, or WebM with VP8 or VP9 video and Vorbis or Opus audio" });
+const ACCEPT_HINT: Readonly<Record<MediaPickerKind, string>> = Object.freeze({ image: "image/jpeg,image/png,image/webp", video: "video/mp4,video/webm" });
 const VIDEO_PROBE_TIMEOUT_MS = 15_000;
-
 const COUNT_FORMAT = new Intl.NumberFormat("en-US");
-
 const FIELD_LABELS: Readonly<Record<string, string>> = Object.freeze({
   file: "File",
   probe: "File details",
@@ -117,7 +58,6 @@ const FIELD_LABELS: Readonly<Record<string, string>> = Object.freeze({
   "placement.language": "Language",
   "placement.posterAssetId": "Poster",
 });
-// Formatting, so a measured number is always shown beside the limit it is measured against
 function formatBytes(bytes: number): string {
   const mebibytes = bytes / MEBIBYTE;
   const shown = Number.isInteger(mebibytes) ? String(mebibytes) : mebibytes.toFixed(1);
@@ -129,13 +69,11 @@ function formatDuration(seconds: number): string {
   const remainder = whole % 60;
   if (minutes === 0) return `${remainder} seconds`;
   const plural = minutes === 1 ? "minute" : "minutes";
-  if (remainder === 0) return `${minutes} ${plural}`;
-  return `${minutes} ${plural} ${remainder} seconds`;
+  return remainder === 0 ? `${minutes} ${plural}` : `${minutes} ${plural} ${remainder} seconds`;
 }
 function formatPixels(width: number, height: number): string {
   return `${COUNT_FORMAT.format(width)} × ${COUNT_FORMAT.format(height)} pixels`;
 }
-// Reading the chosen file in this browser
 async function probeImage(file: File): Promise<MediaProbe | undefined> {
   if (typeof createImageBitmap !== "function") return undefined;
   let bitmap: ImageBitmap | null = null;
@@ -167,11 +105,7 @@ function probeVideo(file: File): Promise<MediaProbe | undefined> {
     timer = window.setTimeout(() => finish(undefined), VIDEO_PROBE_TIMEOUT_MS);
     element.onloadedmetadata = () => {
       const duration = Number.isFinite(element.duration) && element.duration > 0 ? element.duration : undefined;
-      finish({
-        ...(element.videoWidth > 0 ? { width: element.videoWidth } : {}),
-        ...(element.videoHeight > 0 ? { height: element.videoHeight } : {}),
-        ...(duration === undefined ? {} : { durationSeconds: duration }),
-      });
+      finish({ ...(element.videoWidth > 0 ? { width: element.videoWidth } : {}), ...(element.videoHeight > 0 ? { height: element.videoHeight } : {}), ...(duration === undefined ? {} : { durationSeconds: duration }) });
     };
     element.onerror = () => finish(undefined);
     element.preload = "metadata";
@@ -183,23 +117,9 @@ async function probeChosenFile(file: File, kind: MediaPickerKind): Promise<Media
   return kind === "image" ? probeImage(file) : probeVideo(file);
 }
 // The form's own state, kept as text so every control stays controlled and nothing is lost to a re-render
-interface PlacementDraft {
-  readonly altText: string;
-  readonly caption: string;
-  readonly credit: string;
-  readonly language: string;
-  readonly transcript: string;
-  readonly posterAssetId: string;
-}
+type PlacementDraft = { readonly altText: string; readonly caption: string; readonly credit: string; readonly language: string; readonly transcript: string; readonly posterAssetId: string };
 function draftFromPlacement(placement: MediaPlacement | undefined): PlacementDraft {
-  return {
-    altText: placement?.altText ?? "",
-    caption: placement?.caption ?? "",
-    credit: placement?.credit ?? "",
-    language: placement?.language ?? "",
-    transcript: placement?.transcript ?? "",
-    posterAssetId: placement?.posterAssetId ?? "",
-  };
+  return { altText: placement?.altText ?? "", caption: placement?.caption ?? "", credit: placement?.credit ?? "", language: placement?.language ?? "", transcript: placement?.transcript ?? "", posterAssetId: placement?.posterAssetId ?? "" };
 }
 function composePlacement(draft: PlacementDraft, kind: MediaPickerKind): MediaPlacementDescriptor {
   const altText = draft.altText.trim();
@@ -208,46 +128,17 @@ function composePlacement(draft: PlacementDraft, kind: MediaPickerKind): MediaPl
   const language = draft.language.trim();
   const transcript = draft.transcript.trim();
   const posterAssetId = draft.posterAssetId.trim();
-  return {
-    altText,
-    ...(caption === "" ? {} : { caption }),
-    ...(credit === "" ? {} : { credit }),
-    ...(kind === "video" && transcript !== "" ? { transcript } : {}),
-    ...(language === "" ? {} : { language }),
-    ...(kind === "video" && posterAssetId !== "" ? { posterAssetId } : {}),
-  };
+  return { altText, ...(caption === "" ? {} : { caption }), ...(credit === "" ? {} : { credit }), ...(kind === "video" && transcript !== "" ? { transcript } : {}), ...(language === "" ? {} : { language }), ...(kind === "video" && posterAssetId !== "" ? { posterAssetId } : {}) };
 }
-function mediaStateForOutcome(outcome: MediaPickerOutcome): MediaPreparationState | null {
-  switch (outcome.outcome) {
-    case "accepted":
-    case "alreadyAccepted":
-    case "unchanged":
-      return "ready";
-    case "invalid":
-      return "rejected";
-    case "unavailable":
-      return "unavailable";
-    case "conflict":
-    case "denied":
-    case "unknown":
-      return null;
-  }
-}
-function keepsFormVisible(outcome: MediaPickerOutcome): boolean {
-  return outcome.outcome === "invalid" || outcome.outcome === "conflict" || outcome.outcome === "unknown" || outcome.outcome === "unavailable";
-}
-function mayReplaySameWork(outcome: MediaPickerOutcome | null): boolean {
-  return outcome !== null && (outcome.outcome === "unavailable" || outcome.outcome === "unknown");
-}
+const MEDIA_STATE_BY_OUTCOME: Readonly<Record<MediaPickerOutcome["outcome"], MediaPreparationState | null>> = { accepted: "ready", alreadyAccepted: "ready", unchanged: "ready", invalid: "rejected", unavailable: "unavailable", conflict: null, denied: null, unknown: null };
+const mediaStateForOutcome = (outcome: MediaPickerOutcome): MediaPreparationState | null => MEDIA_STATE_BY_OUTCOME[outcome.outcome];
+const keepsFormVisible = (outcome: MediaPickerOutcome): boolean => outcome.outcome === "invalid" || outcome.outcome === "conflict" || outcome.outcome === "unknown" || outcome.outcome === "unavailable";
+const mayReplaySameWork = (outcome: MediaPickerOutcome | null): boolean => outcome !== null && (outcome.outcome === "unavailable" || outcome.outcome === "unknown");
 function mergeMessages(first: readonly string[] | undefined, second: readonly string[] | undefined): readonly string[] | undefined {
   const messages = [...(first ?? []), ...(second ?? [])];
   return messages.length === 0 ? undefined : messages;
 }
-function missingAltText(kind: MediaPickerKind): string {
-  return kind === "image"
-    ? "Describe what this image shows. It is read aloud in place of the picture."
-    : "Describe what this video shows. It stays as the text alternative when the video cannot play.";
-}
+const missingAltText = (kind: MediaPickerKind): string => (kind === "image" ? "Describe what this image shows. It is read aloud in place of the picture." : "Describe what this video shows. It stays as the text alternative when the video cannot play.");
 type PickerPhase =
   | { readonly name: "choosing" }
   | { readonly name: "preparing"; readonly stage: "measuring" | "submitting" }
@@ -260,7 +151,7 @@ const OPENING_SENTENCE: Readonly<Record<MediaPickerKind, string>> = Object.freez
   image: "Choose an image from this device and describe what it shows. It is placed in the draft you are editing; nothing is published and no address is made public.",
   video: "Choose a video from this device and describe what it shows. It is placed in the draft you are editing; nothing is published and no address is made public.",
 });
-// The component
+type FooterAction = { readonly label: string; readonly onClick?: () => void; readonly variant?: "default" | "destructive"; readonly disabled?: boolean; readonly className?: string };
 /** The single image and video picker and placement form. */
 export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, onReplace, onRemove, posterAssets, onSettled, className }: MediaPickerProps): ReactElement {
   const instructionsId = useId();
@@ -284,6 +175,15 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
   const replaceId = onReplace === undefined ? undefined : placement?.placementId;
   const removeId = onRemove === undefined ? undefined : placement?.placementId;
   const posterChoices = kind === "video" ? (posterAssets ?? []) : [];
+  const clearAttempt = (): void => {
+    setFile(null);
+    setProbe(undefined);
+    setOutcome(null);
+    setServerErrors(null);
+    setLocalErrors({});
+    setStoppedWaiting(false);
+    setFaulted(false);
+  };
   useEffect(() => {
     placementRef.current = placement;
   }, [placement]);
@@ -293,15 +193,9 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
     if (open && !wasOpen) {
       returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       attemptRef.current += 1;
-      setPhase({ name: "choosing" });
-      setFile(null);
-      setProbe(undefined);
+      clearAttempt();
       setDraft(draftFromPlacement(placementRef.current));
-      setLocalErrors({});
-      setServerErrors(null);
-      setOutcome(null);
-      setStoppedWaiting(false);
-      setFaulted(false);
+      setPhase({ name: "choosing" });
       return;
     }
     if (!open && wasOpen) {
@@ -322,13 +216,8 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
     if (chosen === null) return;
     attemptRef.current += 1;
     const attempt = attemptRef.current;
+    clearAttempt();
     setFile(chosen);
-    setProbe(undefined);
-    setOutcome(null);
-    setServerErrors(null);
-    setLocalErrors({});
-    setStoppedWaiting(false);
-    setFaulted(false);
     setPhase({ name: "preparing", stage: "measuring" });
     const measured = await probeChosenFile(chosen, kind);
     if (attemptRef.current !== attempt) return;
@@ -356,12 +245,7 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
     busyRef.current = true;
     lastAttemptRef.current = "register";
     setPhase({ name: "preparing", stage: "submitting" });
-    const input: MediaRegisterInput = {
-      kind,
-      file,
-      ...(probe === undefined ? {} : { probe }),
-      placement: composed,
-    };
+    const input: MediaRegisterInput = { kind, file, ...(probe === undefined ? {} : { probe }), placement: composed };
     try {
       const settled = replaceId !== undefined && onReplace !== undefined ? await onReplace({ placementId: replaceId, ...input }) : await onRegister(input);
       finishAttempt(settled);
@@ -403,13 +287,7 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
   };
   const backToChoosing = (): void => {
     attemptRef.current += 1;
-    setFile(null);
-    setProbe(undefined);
-    setOutcome(null);
-    setServerErrors(null);
-    setLocalErrors({});
-    setFaulted(false);
-    setStoppedWaiting(false);
+    clearAttempt();
     setPhase({ name: "choosing" });
   };
   const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>): void => {
@@ -421,17 +299,11 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
     event.preventDefault();
     void chooseFile(event.dataTransfer.files[0] ?? null);
   };
-  // Choosing: the limits, then the file, then what this browser measured
   function renderLimits(): ReactElement {
     const limits =
       kind === "image"
         ? [IMAGE_LIMITS.formats, `No more than ${formatBytes(IMAGE_LIMITS.bytes)}.`, `No more than ${COUNT_FORMAT.format(IMAGE_LIMITS.edgePx)} pixels on either side.`]
-        : [
-            VIDEO_LIMITS.formats,
-            `No more than ${formatBytes(VIDEO_LIMITS.bytes)}.`,
-            `No longer than ${formatDuration(VIDEO_LIMITS.durationS)}.`,
-            `No larger than ${formatPixels(VIDEO_LIMITS.width, VIDEO_LIMITS.height)}.`,
-          ];
+        : [VIDEO_LIMITS.formats, `No more than ${formatBytes(VIDEO_LIMITS.bytes)}.`, `No longer than ${formatDuration(VIDEO_LIMITS.durationS)}.`, `No larger than ${formatPixels(VIDEO_LIMITS.width, VIDEO_LIMITS.height)}.`];
     return (
       <div className="flex flex-col gap-1">
         <p id={instructionsId} className="text-sm font-medium">
@@ -450,12 +322,7 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
     if (file === null) return null;
     const withinBytes = file.size <= (kind === "image" ? IMAGE_LIMITS.bytes : VIDEO_LIMITS.bytes);
     const byteLimit = formatBytes(kind === "image" ? IMAGE_LIMITS.bytes : VIDEO_LIMITS.bytes);
-    const measured =
-      kind === "image"
-        ? probe?.width !== undefined && probe.height !== undefined
-          ? `Measured at ${formatPixels(probe.width, probe.height)}.`
-          : "Its dimensions could not be read in this browser, so they are checked when the file is added."
-        : renderVideoMeasurement();
+    const measured = kind === "image" ? (probe?.width !== undefined && probe.height !== undefined ? `Measured at ${formatPixels(probe.width, probe.height)}.` : "Its dimensions could not be read in this browser, so they are checked when the file is added.") : renderVideoMeasurement();
     return (
       <div className="flex flex-col gap-1 text-sm">
         <p className="wrap-anywhere">
@@ -473,9 +340,7 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
     );
   }
   function renderVideoMeasurement(): string {
-    if (probe === undefined) {
-      return "Its length and dimensions could not be read in this browser, so they are checked when the file is added.";
-    }
+    if (probe === undefined) return "Its length and dimensions could not be read in this browser, so they are checked when the file is added.";
     const parts: string[] = [];
     if (probe.durationSeconds !== undefined) {
       parts.push(`Runs ${formatDuration(probe.durationSeconds)} of the ${formatDuration(VIDEO_LIMITS.durationS)} admitted.`);
@@ -527,25 +392,11 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
     event.preventDefault();
   };
   function renderFileStep(): ReactElement {
-    const description =
-      kind === "image"
-        ? `Choose a file from this device, or drop one on this field. ${IMAGE_LIMITS.formats}, no more than ${formatBytes(IMAGE_LIMITS.bytes)}.`
-        : `Choose a file from this device, or drop one on this field. ${VIDEO_LIMITS.formats}, no more than ${formatBytes(VIDEO_LIMITS.bytes)}.`;
+    const description = kind === "image" ? `Choose a file from this device, or drop one on this field. ${IMAGE_LIMITS.formats}, no more than ${formatBytes(IMAGE_LIMITS.bytes)}.` : `Choose a file from this device, or drop one on this field. ${VIDEO_LIMITS.formats}, no more than ${formatBytes(VIDEO_LIMITS.bytes)}.`;
     return (
       <div className="flex flex-col gap-4" onDragOver={handleDragOver} onDrop={handleDrop}>
         <FormField label="File" name="file" description={description} error={mergeMessages(errorsFor("file"), errorsFor("probe"))} required>
-          {({ id, describedBy, invalid, required }) => (
-            <Input
-              id={id}
-              type="file"
-              accept={ACCEPT_HINT[kind]}
-              aria-describedby={describedBy === undefined ? limitsId : `${describedBy} ${limitsId}`}
-              aria-invalid={invalid}
-              aria-required={required}
-              className="h-auto cursor-pointer py-2"
-              onChange={handleFileInputChange}
-            />
-          )}
+          {({ id, describedBy, invalid, required }) => <Input id={id} type="file" accept={ACCEPT_HINT[kind]} aria-describedby={describedBy === undefined ? limitsId : `${describedBy} ${limitsId}`} aria-invalid={invalid} aria-required={required} className="h-auto cursor-pointer py-2" onChange={handleFileInputChange} />}
         </FormField>
         <p className="flex items-start gap-2 text-sm text-muted-foreground">
           <UploadIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
@@ -556,12 +407,8 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
       </div>
     );
   }
-  // Preparing, and the outcome's own state line
   function renderPreparing(stage: "measuring" | "submitting"): ReactElement {
-    const sentence =
-      stage === "measuring"
-        ? "Reading this file's own details in this browser so the form can show them beside the limit."
-        : "Preparing this file with the local media pipeline: it is decoded, checked, re-encoded so its metadata is removed, and stored. Nothing is published.";
+    const sentence = stage === "measuring" ? "Reading this file's own details in this browser so the form can show them beside the limit." : "Preparing this file with the local media pipeline: it is decoded, checked, re-encoded so its metadata is removed, and stored. Nothing is published.";
     return (
       <div aria-busy={true} className="flex flex-col gap-3">
         <Progress value={null} aria-label={`Preparing this ${kind}`} />
@@ -577,46 +424,30 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
   }
   function renderCurrentPlacement(): ReactElement | null {
     if (placement === undefined) return null;
+    const rows = [
+      { label: "Alternative text", node: <bdi>{placement.altText}</bdi>, wrap: true },
+      { label: "Caption", node: placement.caption === undefined ? null : <bdi>{placement.caption}</bdi>, wrap: true },
+      { label: "Credit", node: placement.credit === undefined ? null : <bdi>{placement.credit}</bdi>, wrap: true },
+      { label: "Language", node: placement.language === undefined ? null : <bdi>{placement.language}</bdi>, wrap: false },
+      { label: "Poster", node: placement.posterAssetId === undefined ? null : <bdi className="mono-identifier">{placement.posterAssetId}</bdi>, wrap: true },
+    ].filter((row) => row.node !== null);
     return (
       <Card size="sm" data-slot="media-picker-current">
         <CardHeader>
           <CardTitle>What this placement says now</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-1 text-sm">
-          <p className="wrap-anywhere">
-            <span className="text-muted-foreground">Alternative text: </span>
-            <bdi>{placement.altText}</bdi>
-          </p>
-          {placement.caption === undefined ? null : (
-            <p className="wrap-anywhere">
-              <span className="text-muted-foreground">Caption: </span>
-              <bdi>{placement.caption}</bdi>
+          {rows.map((row) => (
+            <p key={row.label} className={row.wrap ? "wrap-anywhere" : undefined}>
+              <span className="text-muted-foreground">{`${row.label}: `}</span>
+              {row.node}
             </p>
-          )}
-          {placement.credit === undefined ? null : (
-            <p className="wrap-anywhere">
-              <span className="text-muted-foreground">Credit: </span>
-              <bdi>{placement.credit}</bdi>
-            </p>
-          )}
-          {placement.language === undefined ? null : (
-            <p>
-              <span className="text-muted-foreground">Language: </span>
-              <bdi>{placement.language}</bdi>
-            </p>
-          )}
-          {placement.posterAssetId === undefined ? null : (
-            <p className="wrap-anywhere">
-              <span className="text-muted-foreground">Poster: </span>
-              <bdi className="mono-identifier">{placement.posterAssetId}</bdi>
-            </p>
-          )}
+          ))}
           <p className="text-muted-foreground">Replacing keeps this placement and swaps the file and the description below.</p>
         </CardContent>
       </Card>
     );
   }
-  // Describing: the placement form
   function renderDescriptorForm(): ReactElement | null {
     if (file === null) return null;
     return (
@@ -629,102 +460,23 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
           label="Alternative text"
           name="placement.altText"
           required
-          description={
-            kind === "image"
-              ? "What this image shows, in your words. It is read aloud in place of the picture."
-              : "What this video shows, in your words. It stays as the text alternative when the video cannot play."
-          }
+          description={kind === "image" ? "What this image shows, in your words. It is read aloud in place of the picture." : "What this video shows, in your words. It stays as the text alternative when the video cannot play."}
           error={errorsFor("placement.altText")}
         >
-          {({ id, describedBy, invalid, required }) => (
-            <Textarea
-              id={id}
-              ref={altTextRef}
-              rows={3}
-              value={draft.altText}
-              aria-describedby={describedBy}
-              aria-invalid={invalid}
-              aria-required={required}
-              onChange={(event) => {
-                update("altText", event.target.value);
-              }}
-            />
-          )}
+          {({ id, describedBy, invalid, required }) => <Textarea id={id} ref={altTextRef} rows={3} value={draft.altText} aria-describedby={describedBy} aria-invalid={invalid} aria-required={required} onChange={(event) => update("altText", event.target.value)} />}
         </FormField>
-        <FormField
-          label="Caption"
-          name="placement.caption"
-          optionalHint
-          description="Shown beneath the media. Leave it empty when a caption would only repeat the alternative text."
-          error={errorsFor("placement.caption")}
-        >
-          {({ id, describedBy, invalid }) => (
-            <Input
-              id={id}
-              value={draft.caption}
-              aria-describedby={describedBy}
-              aria-invalid={invalid}
-              onChange={(event) => {
-                update("caption", event.target.value);
-              }}
-            />
-          )}
+        <FormField label="Caption" name="placement.caption" optionalHint description="Shown beneath the media. Leave it empty when a caption would only repeat the alternative text." error={errorsFor("placement.caption")}>
+          {({ id, describedBy, invalid }) => <Input id={id} value={draft.caption} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("caption", event.target.value)} />}
         </FormField>
         <FormField label="Credit" name="placement.credit" optionalHint description="Who made or supplied this media, as it should read beside it." error={errorsFor("placement.credit")}>
-          {({ id, describedBy, invalid }) => (
-            <Input
-              id={id}
-              value={draft.credit}
-              aria-describedby={describedBy}
-              aria-invalid={invalid}
-              onChange={(event) => {
-                update("credit", event.target.value);
-              }}
-            />
-          )}
+          {({ id, describedBy, invalid }) => <Input id={id} value={draft.credit} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("credit", event.target.value)} />}
         </FormField>
-        <FormField
-          label="Language"
-          name="placement.language"
-          optionalHint
-          description="The language this media is in, as a tag such as en or ar, or as a name. It is the media's language, never this interface's."
-          error={errorsFor("placement.language")}
-        >
-          {({ id, describedBy, invalid }) => (
-            <Input
-              id={id}
-              value={draft.language}
-              autoComplete="off"
-              spellCheck={false}
-              className="font-mono"
-              aria-describedby={describedBy}
-              aria-invalid={invalid}
-              onChange={(event) => {
-                update("language", event.target.value);
-              }}
-            />
-          )}
+        <FormField label="Language" name="placement.language" optionalHint description="The language this media is in, as a tag such as en or ar, or as a name. It is the media's language, never this interface's." error={errorsFor("placement.language")}>
+          {({ id, describedBy, invalid }) => <Input id={id} value={draft.language} autoComplete="off" spellCheck={false} className="font-mono" aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("language", event.target.value)} />}
         </FormField>
         {kind === "video" ? (
-          <FormField
-            label="Transcript"
-            name="placement.transcript"
-            optionalHint
-            description="The video's words as text, for a reader who cannot play it. It is stored and shown as content, never as trusted metadata."
-            error={errorsFor("placement.transcript")}
-          >
-            {({ id, describedBy, invalid }) => (
-              <Textarea
-                id={id}
-                rows={4}
-                value={draft.transcript}
-                aria-describedby={describedBy}
-                aria-invalid={invalid}
-                onChange={(event) => {
-                  update("transcript", event.target.value);
-                }}
-              />
-            )}
+          <FormField label="Transcript" name="placement.transcript" optionalHint description="The video's words as text, for a reader who cannot play it. It is stored and shown as content, never as trusted metadata." error={errorsFor("placement.transcript")}>
+            {({ id, describedBy, invalid }) => <Textarea id={id} rows={4} value={draft.transcript} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("transcript", event.target.value)} />}
           </FormField>
         ) : null}
         {renderPosterChoices()}
@@ -734,37 +486,14 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
   function renderPosterChoices(): ReactElement | null {
     if (posterChoices.length === 0) return null;
     return (
-      <FormFieldGroup
-        legend="Poster"
-        name="placement.posterAssetId"
-        optionalHint
-        description="An image already registered in this draft, shown before the video plays."
-        error={errorsFor("placement.posterAssetId")}
-      >
+      <FormFieldGroup legend="Poster" name="placement.posterAssetId" optionalHint description="An image already registered in this draft, shown before the video plays." error={errorsFor("placement.posterAssetId")}>
         {() => (
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant={draft.posterAssetId === "" ? "default" : "outline"}
-              aria-pressed={draft.posterAssetId === ""}
-              onClick={() => {
-                update("posterAssetId", "");
-              }}
-            >
+            <Button type="button" size="sm" variant={draft.posterAssetId === "" ? "default" : "outline"} aria-pressed={draft.posterAssetId === ""} onClick={() => update("posterAssetId", "")}>
               No poster
             </Button>
             {posterChoices.map((choice) => (
-              <Button
-                key={choice.assetId}
-                type="button"
-                size="sm"
-                variant={draft.posterAssetId === choice.assetId ? "default" : "outline"}
-                aria-pressed={draft.posterAssetId === choice.assetId}
-                onClick={() => {
-                  update("posterAssetId", choice.assetId);
-                }}
-              >
+              <Button key={choice.assetId} type="button" size="sm" variant={draft.posterAssetId === choice.assetId ? "default" : "outline"} aria-pressed={draft.posterAssetId === choice.assetId} onClick={() => update("posterAssetId", choice.assetId)}>
                 <bdi>{choice.label}</bdi>
               </Button>
             ))}
@@ -773,11 +502,8 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
       </FormFieldGroup>
     );
   }
-  // Terminal states, the receipt and the removal confirmation
   function renderCancelled(): ReactElement {
-    const description = stoppedWaiting
-      ? "You stopped waiting. The request had already been sent, so its result appears here when it arrives. Nothing in your draft was changed."
-      : mediaStateReason("cancelled").label;
+    const description = stoppedWaiting ? "You stopped waiting. The request had already been sent, so its result appears here when it arrives. Nothing in your draft was changed." : mediaStateReason("cancelled").label;
     return <StateNotice kind="empty" title="No media added" description={description} action={{ label: "Choose another file", onClick: backToChoosing }} />;
   }
   function renderFaulted(): ReactElement | null {
@@ -841,7 +567,6 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
       </div>
     );
   }
-  // Which panel and which controls this stage shows
   function renderBody(): ReactElement {
     switch (phase.name) {
       case "choosing":
@@ -872,120 +597,47 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
         return renderReceipt(phase.outcome);
     }
   }
-  function renderFooter(): ReactElement {
+  function footerActions(): readonly FooterAction[] {
     const close = (): void => {
       onOpenChange(false);
     };
     const removeOffered = removeId !== undefined && onRemove !== undefined;
+    const confirmRemoval = (): void => {
+      setFaulted(false);
+      setPhase({ name: "confirming-removal" });
+    };
+    const leading: readonly FooterAction[] = removeOffered && (phase.name === "choosing" || phase.name === "described") ? [{ label: "Remove placement", variant: "destructive", className: "sm:me-auto", onClick: confirmRemoval }] : [];
     switch (phase.name) {
       case "choosing":
-        return (
-          <DialogFooter>
-            {removeOffered ? (
-              <Button
-                type="button"
-                variant="destructive"
-                className="sm:me-auto"
-                onClick={() => {
-                  setFaulted(false);
-                  setPhase({ name: "confirming-removal" });
-                }}
-              >
-                Remove placement
-              </Button>
-            ) : null}
-            <Button type="button" variant="outline" onClick={close}>
-              Cancel
-            </Button>
-          </DialogFooter>
-        );
+        return [...leading, { label: "Cancel", onClick: close }];
       case "preparing":
-        return (
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={cancelPreparation}>
-              {phase.stage === "measuring" ? "Cancel" : "Stop waiting"}
-            </Button>
-          </DialogFooter>
-        );
+        return [{ label: phase.stage === "measuring" ? "Cancel" : "Stop waiting", onClick: cancelPreparation }];
       case "described":
-        return (
-          <DialogFooter>
-            {removeOffered ? (
-              <Button
-                type="button"
-                variant="destructive"
-                className="sm:me-auto"
-                onClick={() => {
-                  setFaulted(false);
-                  setPhase({ name: "confirming-removal" });
-                }}
-              >
-                Remove placement
-              </Button>
-            ) : null}
-            <Button type="button" variant="outline" onClick={backToChoosing}>
-              Choose another file
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                void submitPlacement();
-              }}
-            >
-              {replaceId === undefined ? `Add this ${kind}` : `Replace this ${kind}`}
-            </Button>
-          </DialogFooter>
-        );
+        return [...leading, { label: "Choose another file", onClick: backToChoosing }, { label: replaceId === undefined ? `Add this ${kind}` : `Replace this ${kind}`, variant: "default", onClick: () => void submitPlacement() }];
       case "cancelled":
-        return (
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={close}>
-              Close
-            </Button>
-          </DialogFooter>
-        );
+        return [{ label: "Close", onClick: close }];
       case "confirming-removal":
-        return (
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setPhase(file === null ? { name: "choosing" } : { name: "described" });
-              }}
-            >
-              Keep it
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => {
-                void removePlacement();
-              }}
-            >
-              Remove placement
-            </Button>
-          </DialogFooter>
-        );
+        return [
+          { label: "Keep it", onClick: () => setPhase(file === null ? { name: "choosing" } : { name: "described" }) },
+          { label: "Remove placement", variant: "destructive", onClick: () => void removePlacement() },
+        ];
       case "removing":
-        return (
-          <DialogFooter>
-            <Button type="button" variant="outline" disabled>
-              Removing&hellip;
-            </Button>
-          </DialogFooter>
-        );
+        return [{ label: "Removing…", disabled: true }];
       case "settled":
-        return (
-          <DialogFooter>
-            <Button type="button" onClick={close}>
-              Done
-            </Button>
-          </DialogFooter>
-        );
+        return [{ label: "Done", variant: "default", onClick: close }];
     }
   }
-  // The dialog itself
+  function renderFooter(): ReactElement {
+    return (
+      <DialogFooter>
+        {footerActions().map((action) => (
+          <Button key={action.label} type="button" variant={action.variant ?? "outline"} disabled={action.disabled} className={action.className} onClick={action.onClick}>
+            {action.label}
+          </Button>
+        ))}
+      </DialogFooter>
+    );
+  }
   const replacing = replaceId !== undefined;
   const removing = phase.name === "confirming-removal" || phase.name === "removing";
   const title = removing ? `Remove this ${kind}` : replacing ? `Replace this ${kind}` : kind === "image" ? "Add an image" : "Add a video";
@@ -1002,12 +654,7 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
             : OPENING_SENTENCE[kind];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        data-slot="media-picker"
-        data-kind={kind}
-        data-phase={phase.name}
-        className={cn("max-sm:inset-0 max-sm:max-h-dvh max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none", className)}
-      >
+      <DialogContent data-slot="media-picker" data-kind={kind} data-phase={phase.name} className={cn("max-sm:inset-0 max-sm:max-h-dvh max-sm:max-w-full max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-none", className)}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {kind === "image" ? <ImageUpIcon aria-hidden="true" className="size-4 shrink-0" /> : <FilmIcon aria-hidden="true" className="size-4 shrink-0" />}

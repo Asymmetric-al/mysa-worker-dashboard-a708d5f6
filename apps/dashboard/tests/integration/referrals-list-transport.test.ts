@@ -1,17 +1,4 @@
-/**
- * The referrals list transport reads the wire the handler actually writes.
- *
- * One response builder answers every read, and it flattens the read result onto the status: 200
- * carries the envelope itself, 403 the denial and 503 the outage, and none of the three is wrapped in
- * a `kind`. A transport that only looked for the wrapped form would call every real answer an outage,
- * so all three lists would render as a source that never answered — which is the one thing a list
- * that could not be read must never be confused with. These cases pin the handler's four real
- * answers, plus the ways a request ends without one, against a stubbed `fetch`: no store, no
- * server, no network and no clock, so the file proves the transport's own reading and nothing else.
- *
- * The flat envelope below is hand-written to the shape `GET /api/referrals` answers with, and its row
- * is one the list read really builds: what the transport owes the view is that payload, intact.
- */
+/** The referrals list transport reads the wire the handler actually writes. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchReferralRead, REFERRALS_ENDPOINT, type ReferralListPage } from "@/features/referrals/hooks/use-referrals";
 // The transport's import graph holds one React client module — the query key's scope segments, which
@@ -40,11 +27,7 @@ const LIST_PAGE = {
       status: "active",
       statusReason: null,
       consumed: false,
-      continuation: {
-        available: false,
-        reason: "This referral's window has not ended, so there is nothing to continue.",
-        cycle: { consumed: false, successorId: null },
-      },
+      continuation: { available: false, reason: "This referral's window has not ended, so there is nothing to continue.", cycle: { consumed: false, successorId: null } },
     },
   ],
   total: 1,
@@ -55,12 +38,7 @@ const LIST_PAGE = {
 /** The whole body a 200 `GET /api/referrals` answers with: the envelope itself, with no `kind` around it. */
 const FLAT_ENVELOPE = {
   data: LIST_PAGE,
-  scope: {
-    organizationId: "org-harbour",
-    ministryId: "min-harbour-youth",
-    supportSubjectId: "sup-harbour-youth",
-    principalId: "principal-established-worker",
-  },
+  scope: { organizationId: "org-harbour", ministryId: "min-harbour-youth", supportSubjectId: "sup-harbour-youth", principalId: "principal-established-worker" },
   source: { system: "local-store", reference: "outreach" },
   revision: "rev-2",
   asOf: "2026-11-20T00:00:00Z",
@@ -72,18 +50,13 @@ const FLAT_ENVELOPE = {
   ],
 } as const;
 /** The body a 403 carries: the denial the service built, and nothing about the records it refused. */
-const DENIED_BODY = {
-  outcome: "denied",
-  operationId: "read",
-  reasonCode: "no-permission",
-} as const;
+const DENIED_BODY = { outcome: "denied", operationId: "read", reasonCode: "no-permission" } as const;
+/** The body a 401 carries: the same denial, keyed to the session's own fault rather than to the caller's authority. */
+const SESSION_DENIED_BODY = { outcome: "denied", operationId: "read", reasonCode: "session-expired" } as const;
 /** The body a 503 carries: the outage naming the source that did not answer. */
-const UNAVAILABLE_BODY = {
-  outcome: "unavailable",
-  operationId: "read",
-  source: { system: "local-store", reference: "outreach" },
-  guidance: "The referral records could not be read from the store. Retry this view.",
-} as const;
+const UNAVAILABLE_BODY = { outcome: "unavailable", operationId: "read", source: { system: "local-store", reference: "outreach" }, guidance: "The referral records could not be read from the store. Retry this view." } as const;
+/** The body a 422 carries: the field-keyed refusal of a request the read does not admit, keyed at the caller's own field. */
+const REFUSED_BODY = { outcome: "invalid", operationId: "read", fields: { page: ["State the page as a whole number from 1."] } } as const;
 /** The source the folder's own outage names, so a reader is told which source did not answer. */
 const FOLDER_SOURCE = { system: "local-store", reference: "outreach" };
 const ORIGINAL_FETCH = globalThis.fetch;
@@ -128,6 +101,18 @@ describe("the referrals list transport", () => {
     expect(result.denied).toEqual(DENIED_BODY);
     expect("envelope" in result).toBe(false);
   });
+  it("reads a 401 session denial as denied, never as an outage", async () => {
+    answerWith(async () => jsonAnswer(401, SESSION_DENIED_BODY));
+    const result = await fetchReferralRead<ReferralListPage>(LIST_PATH);
+    expect(result.kind).toBe("denied");
+    if (result.kind !== "denied") {
+      throw new Error(`The session denial was read as ${result.kind}.`);
+    }
+    // A session that expired is a refusal, not a source that did not answer: rendering it as an outage
+    // would offer a retry that cannot help, and would lose the reason code that says why.
+    expect(result.denied).toEqual(SESSION_DENIED_BODY);
+    expect("envelope" in result).toBe(false);
+  });
   it("reads a 503 outage as unavailable, carrying the source that did not answer", async () => {
     answerWith(async () => jsonAnswer(503, UNAVAILABLE_BODY));
     const result = await fetchReferralRead<ReferralListPage>(LIST_PATH);
@@ -137,6 +122,19 @@ describe("the referrals list transport", () => {
     }
     expect(result.unavailable).toEqual(UNAVAILABLE_BODY);
     expect("envelope" in result).toBe(false);
+  });
+  it("reads a 422 refused request as refused, never as an outage", async () => {
+    answerWith(async () => jsonAnswer(422, REFUSED_BODY));
+    const result = await fetchReferralRead<ReferralListPage>(LIST_PATH);
+    // The page this request stated is not one the list read admits. Reporting it as an outage would tell
+    // the worker the referral records failed to arrive when the request was what had to be corrected.
+    expect(result.kind).toBe("refused");
+    if (result.kind !== "refused") {
+      throw new Error(`The refusal was read as ${result.kind}.`);
+    }
+    expect(result.refused).toEqual(REFUSED_BODY);
+    expect("envelope" in result).toBe(false);
+    expect("unavailable" in result).toBe(false);
   });
   it.each([
     { answer: "a request that never reaches the application", reply: () => Promise.reject(new TypeError("fetch failed")) },

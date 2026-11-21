@@ -1,8 +1,4 @@
 "use client";
-/**
- * What one release attempt produced, reported per edition: the receipt for the operation as a whole
- * and, below it, one row for every edition the submission selected.
- */
 import { useId, type ReactElement, type ReactNode } from "react";
 import { DraftStatus, lifecycleOf, type VariantReleaseOutcome } from "@/components/draft-status";
 import { fieldErrorsFromInvalid } from "@/components/form-field";
@@ -14,145 +10,60 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
 import { AUDIENCE_LABELS, LOCALE_DISPLAY_NAMES, REVIEW_ROUND_NOTE, WITHDRAWAL_WORDING } from "../copy/updates-copy";
-// The records this surface reads, named by the module that owns them
 type PublishingVariant = Parameters<typeof lifecycleOf>[0];
-
 type PublishingRelease = NonNullable<Parameters<typeof lifecycleOf>[1]>;
-// The per-edition result, as the release payload reports it
-/** The four results one edition can report from one release attempt, listed once so the closed set has a runtime form as well as a type. */
 export const PUBLISH_EDITION_STATES = ["released", "failed-with-prior-good-head", "needs-attention", "withdrawn"] as const;
-/** One result of one release attempt, for one edition. */
 export type PublishEditionState = (typeof PUBLISH_EDITION_STATES)[number];
-/** What the notice submission for one edition came to, when a notice was requested with the release. */
-export interface PublishedEditionNotice {
-  readonly state: SendStatus;
-  readonly detail?: string;
-}
-/** One edition's result, as the publish payload reports it and as the caller holds the records. */
-export interface PublishedEdition {
-  readonly variant: PublishingVariant;
-  readonly state: PublishEditionState;
-  readonly release?: PublishingRelease;
-  readonly reasonCode?: string;
-  readonly reason?: string;
-  readonly notice?: PublishedEditionNotice;
-}
-// The wording this surface owns
+export type PublishedEditionNotice = { readonly state: SendStatus; readonly detail?: string };
+export type PublishedEdition = { readonly variant: PublishingVariant; readonly state: PublishEditionState; readonly release?: PublishingRelease; readonly reasonCode?: string; readonly reason?: string; readonly notice?: PublishedEditionNotice };
 const EDITIONS_HEADING = "Result for each edition";
-
 const EDITIONS_INTRO = "Each edition below reports its own result, and editions can differ, so they are read one at a " + "time rather than as one result for the whole submission.";
-
 const REPLAY_NOTE = "These rows are the result stored for that operation, not a new effect: nothing was released a " + "second time and no revision advanced.";
-
-const NOTICE_HONESTY_NOTE =
-  "A notice that was accepted is not a delivered message and not a read one: acceptance states only " +
-  "that this application took the submission, and nothing here states that a message arrived or was " +
-  "opened.";
-const RETRY_INTENT_NOTE =
-  "If this page offers to retry, it resubmits this same operation rather than starting a new one, so " + "work that was already accepted answers with its stored result instead of happening twice.";
+const NOTICE_HONESTY_NOTE = "A notice that was accepted is not a delivered message and not a read one: acceptance states only " + "that this application took the submission, and nothing here states that a message arrived or was " + "opened.";
+const RETRY_INTENT_NOTE = "If this page offers to retry, it resubmits this same operation rather than starting a new one, so " + "work that was already accepted answers with its stored result instead of happening twice.";
 const NO_EDITIONS_TITLE = "No result for each edition was reported";
-
-const NO_EDITIONS_DESCRIPTION =
-  "The submission was recorded, and the service reported no result for the editions it covered. " + "Nothing here summarises them, because a summary would state what the service did not.";
+const NO_EDITIONS_DESCRIPTION = "The submission was recorded, and the service reported no result for the editions it covered. " + "Nothing here summarises them, because a summary would state what the service did not.";
 const UPDATES_LIST = { label: "Open the Updates list", href: "/communication" } as const;
-
 const REFUSED_WITH_FIELDS = "No edition was released or attempted: correct the fields the summary above names and submit the " + "release again.";
-
 const REFUSED_WITHOUT_FIELDS = "No edition was released or attempted, and the refusal named no field to correct, so nothing here " + "can say which edition to change.";
-
-const RECEIPT_HEADING: Readonly<Partial<Record<MutationOutcome["outcome"], string>>> = {
-  accepted: "Release result",
-  alreadyAccepted: "Release result for the earlier submission",
-};
+const RECEIPT_HEADING: Readonly<Partial<Record<MutationOutcome["outcome"], string>>> = { accepted: "Release result", alreadyAccepted: "Release result for the earlier submission" };
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
-
-const RELEASED_REVISION_LABEL = "Revision released";
-
-const KEPT_REVISION_LABEL = "Earlier revision still published";
-
-const WITHDRAWN_REVISION_LABEL = "Revision withdrawn";
-
+const PUBLICATION_LABEL: Readonly<Record<PublishEditionState, string>> = { released: "Revision released", "failed-with-prior-good-head": "Earlier revision still published", "needs-attention": "Earlier revision still published", withdrawn: "Revision withdrawn" };
 const NO_REVISION_STATE = "No revision is published for this edition.";
-// Reading one attempt, without computing anything the service owns
 function synthesisOf(editions: readonly PublishedEdition[]): readonly VariantReleaseOutcome[] {
   const evidence: VariantReleaseOutcome[] = [];
   for (const edition of editions) {
-    if (edition.state === "withdrawn") {
-      continue;
-    }
+    if (edition.state === "withdrawn") continue;
     if (edition.state === "released") {
-      if (edition.release !== undefined) {
-        evidence.push({
-          variantId: edition.variant.variantId,
-          outcome: { status: "released", release: edition.release },
-        });
-      }
+      if (edition.release !== undefined) evidence.push({ variantId: edition.variant.variantId, outcome: { status: "released", release: edition.release } });
       continue;
     }
-    evidence.push({
-      variantId: edition.variant.variantId,
-      outcome: { status: "failed", reason: edition.reason?.trim() ?? "" },
-    });
+    evidence.push({ variantId: edition.variant.variantId, outcome: { status: "failed", reason: edition.reason?.trim() ?? "" } });
   }
   return evidence;
 }
-interface EditionPublication {
-  readonly label: string;
-  readonly revisionId: string;
-}
-function publicationOf(edition: PublishedEdition): EditionPublication | null {
+type EditionPublication = { readonly label: string; readonly revisionId: string };
+const publicationOf = (edition: PublishedEdition): EditionPublication | null => {
   const revisionId = edition.release?.revisionId.trim() ?? "";
-  if (revisionId === "") {
-    return null;
-  }
-  switch (edition.state) {
-    case "released":
-      return { label: RELEASED_REVISION_LABEL, revisionId };
-    case "failed-with-prior-good-head":
-    case "needs-attention":
-      return { label: KEPT_REVISION_LABEL, revisionId };
-    case "withdrawn":
-      return { label: WITHDRAWN_REVISION_LABEL, revisionId };
-    default: {
-      const unhandled: never = edition.state;
-      throw new Error(`Unhandled per-edition publish state: ${String(unhandled)}`);
-    }
-  }
-}
-function narrativeOf(state: PublishEditionState, publishesRevision: boolean): string {
-  switch (state) {
-    case "released":
-      return publishesRevision
-        ? "This attempt released this edition for its audience and language, and the revision " + "above is the one it now publishes."
-        : "This attempt reports this edition as released and the service named no published " + "revision for it, so nothing on this page can state which revision a reader is served.";
-    case "failed-with-prior-good-head":
-      return publishesRevision
-        ? "This attempt did not release this edition. The revision above is its earlier publication " +
-            "and is still the one an authorised reader is served, and the editions that did release " +
-            "in this attempt stand as they are — this is not a rollback of them."
-        : "This attempt did not release this edition, and it has no earlier publication, so no " + "reader is served a revision of it. No other edition in this attempt was changed by it.";
-    case "needs-attention":
-      return publishesRevision
-        ? "This attempt left this edition needing attention, so no new revision was released for " +
-            "it. The revision above is its earlier publication and is still the one an authorised " +
-            "reader is served. A result that needs attention is a complete result, not a pending one."
-        : "This attempt left this edition needing attention, so no revision was released for it and " +
-            "no reader is served it yet. A result that needs attention is complete: it names what to " +
-            "look at rather than an error that stopped the run.";
-    case "withdrawn":
-      return "This attempt released nothing for this edition, and the edition is withdrawn: this " + "application does not serve it to that audience.";
-    default: {
-      const unhandled: never = state;
-      throw new Error(`Unhandled per-edition publish state: ${String(unhandled)}`);
-    }
-  }
-}
-// One edition's row
-interface EditionRowProps {
-  readonly edition: PublishedEdition;
-  readonly synthesis: readonly VariantReleaseOutcome[];
-  readonly renderAction?: ((edition: PublishedEdition) => ReactNode) | undefined;
-}
+  return revisionId === "" ? null : { label: PUBLICATION_LABEL[edition.state], revisionId };
+};
+const NARRATIVES: Readonly<Record<PublishEditionState, { readonly published: string; readonly unpublished: string }>> = {
+  released: {
+    published: "This attempt released this edition for its audience and language, and the revision " + "above is the one it now publishes.",
+    unpublished: "This attempt reports this edition as released and the service named no published " + "revision for it, so nothing on this page can state which revision a reader is served.",
+  },
+  "failed-with-prior-good-head": {
+    published: "This attempt did not release this edition. The revision above is its earlier publication " + "and is still the one an authorised reader is served, and the editions that did release " + "in this attempt stand as they are — this is not a rollback of them.",
+    unpublished: "This attempt did not release this edition, and it has no earlier publication, so no " + "reader is served a revision of it. No other edition in this attempt was changed by it.",
+  },
+  "needs-attention": {
+    published: "This attempt left this edition needing attention, so no new revision was released for " + "it. The revision above is its earlier publication and is still the one an authorised " + "reader is served. A result that needs attention is a complete result, not a pending one.",
+    unpublished: "This attempt left this edition needing attention, so no revision was released for it and " + "no reader is served it yet. A result that needs attention is complete: it names what to " + "look at rather than an error that stopped the run.",
+  },
+  withdrawn: { published: "This attempt released nothing for this edition, and the edition is withdrawn: this " + "application does not serve it to that audience.", unpublished: "This attempt released nothing for this edition, and the edition is withdrawn: this " + "application does not serve it to that audience." },
+};
+const narrativeOf = (state: PublishEditionState, publishesRevision: boolean): string => (publishesRevision ? NARRATIVES[state].published : NARRATIVES[state].unpublished);
+type EditionRowProps = { readonly edition: PublishedEdition; readonly synthesis: readonly VariantReleaseOutcome[]; readonly renderAction?: ((edition: PublishedEdition) => ReactNode) | undefined };
 function EditionRow({ edition, synthesis, renderAction }: EditionRowProps): ReactElement {
   const { variant, state } = edition;
   const lifecycle = lifecycleOf(variant, edition.release, { synthesis });
@@ -172,7 +83,6 @@ function EditionRow({ edition, synthesis, renderAction }: EditionRowProps): Reac
           <bdi>{localeName}</bdi>
         </span>
       </p>
-      {/* The edition's own state, from the one derivation the Updates and Pages families share. */}
       <DraftStatus state={lifecycle} />
       {publication === null ? (
         <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{NO_REVISION_STATE}</p>
@@ -183,10 +93,7 @@ function EditionRow({ edition, synthesis, renderAction }: EditionRowProps): Reac
         </p>
       )}
       <p className="text-sm text-pretty wrap-anywhere">{narrativeOf(state, publication !== null)}</p>
-      {/* What a withdrawal claims and, decisively, what it does not: it never states that a submitted
-       * notice was taken back or that a copy someone holds was retrieved. The copy module's other
-       * withdrawal sentence is left out here on purpose — it names a Page's locale editions, which is
-       * not this family's shape. */}
+      {/* A withdrawal never claims a notice was taken back or a copy retrieved, so the Page-shaped withdrawal sentence is deliberately not used here. */}
       {state === "withdrawn" ? <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{WITHDRAWAL_WORDING.whatItDoesNotDo}</p> : null}
       {reason === "" ? null : <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{reason}</p>}
       {reasonCode === "" ? null : (
@@ -206,8 +113,6 @@ function EditionRow({ edition, synthesis, renderAction }: EditionRowProps): Reac
     </li>
   );
 }
-// The result of one release attempt
-/** Props of {@link PublishResults}. */
 export interface PublishResultsProps {
   readonly outcome: MutationOutcome;
   readonly editions?: readonly PublishedEdition[];
@@ -218,7 +123,6 @@ export interface PublishResultsProps {
   readonly headingLevel?: ReceiptHeadingLevel;
   readonly className?: string;
 }
-/** The result of one release attempt: the receipt for the operation, then what it produced for each edition it covered. */
 export function PublishResults({ outcome, editions, onCheckResult, onReapply, fieldLabels, renderEditionAction, headingLevel = 2, className }: PublishResultsProps): ReactElement {
   const titleId = useId();
   const Heading = HEADING_TAG[headingLevel];
@@ -229,15 +133,8 @@ export function PublishResults({ outcome, editions, onCheckResult, onReapply, fi
   const anyUnfinished = reported.some((edition) => edition.state === "failed-with-prior-good-head" || edition.state === "needs-attention");
   const refused = outcome.outcome === "invalid" ? fieldErrorsFromInvalid(outcome) : undefined;
   const operationId = outcome.operationId;
-  const checkResult = (): void => {
-    void onCheckResult(operationId);
-  };
-  const notes: readonly string[] = [
-    ...(outcome.outcome === "alreadyAccepted" ? [REPLAY_NOTE] : []),
-    REVIEW_ROUND_NOTE.approvalIsPerVariant,
-    ...(anyNotice ? [NOTICE_HONESTY_NOTE] : []),
-    ...(anyUnfinished ? [RETRY_INTENT_NOTE] : []),
-  ];
+  const checkResult = (): void => void onCheckResult(operationId);
+  const notes: readonly string[] = [...(outcome.outcome === "alreadyAccepted" ? [REPLAY_NOTE] : []), REVIEW_ROUND_NOTE.approvalIsPerVariant, ...(anyNotice ? [NOTICE_HONESTY_NOTE] : []), ...(anyUnfinished ? [RETRY_INTENT_NOTE] : [])];
   return (
     <div data-slot="publish-results" data-outcome={outcome.outcome} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <OperationResult outcome={outcome} heading={RECEIPT_HEADING[outcome.outcome]} headingLevel={headingLevel} onCheckResult={checkResult} onReapply={onReapply} fieldLabels={fieldLabels} />

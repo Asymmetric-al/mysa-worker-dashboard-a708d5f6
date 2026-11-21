@@ -1,14 +1,10 @@
 "use client";
-/**
- * The commitments list's own browser read: the controlled query state the list owns, the two pure URL
- * helpers that keep that state across a commitment-detail visit, and the one TanStack Query hook that
- * wraps the service's `readCommitments`.
- */
+/** The commitments list's own browser read: the controlled query state the list owns, the two pure URL helpers that keep that state across a commitment-detail visit, and the one TanStack Query hook … */
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { scopeKey } from "@/components/context-switch-guard";
 import type { reads } from "@/modules/data-service";
 import type { Scope } from "@/modules/data-service/envelope";
-import type { DeniedOutcome, UnavailableOutcome } from "@/modules/data-service/outcome";
+import type { DeniedOutcome, InvalidOutcome, UnavailableOutcome } from "@/modules/data-service/outcome";
 // The read, and the two names its answer goes by
 const COMMITMENTS_JOB = "commitments";
 
@@ -34,10 +30,7 @@ export const DEFAULT_COMMITMENTS_PAGE_SIZE = 50;
 /** The largest page a list may state; the read clamps a larger one to this (AAP 0.8.7). */
 export const MAX_COMMITMENTS_PAGE_SIZE = 200;
 /** The list before anything is chosen: the first page at the default size, the offer unanswered. */
-export const DEFAULT_COMMITMENTS_QUERY: CommitmentsQuery = {
-  showAdditionalTypes: false,
-  page: { index: 0, size: DEFAULT_COMMITMENTS_PAGE_SIZE },
-};
+export const DEFAULT_COMMITMENTS_QUERY: CommitmentsQuery = { showAdditionalTypes: false, page: { index: 0, size: DEFAULT_COMMITMENTS_PAGE_SIZE } };
 // The URL, which is where that state survives a detail visit
 const PARAM_PAGE_INDEX = "page.index";
 const PARAM_PAGE_SIZE = "page.size";
@@ -83,23 +76,20 @@ export function toCommitmentsParams(query: CommitmentsQuery): URLSearchParams {
 /** Reads the list state back from a URL, applying the same two page rules so a round trip through {@link toCommitmentsParams} returns an equal query. */
 export function parseCommitmentsQuery(source: URLSearchParams | string): CommitmentsQuery {
   const params = typeof source === "string" ? new URLSearchParams(source) : source;
-  const page = normalisePage({
-    index: numberFrom(params, PARAM_PAGE_INDEX),
-    size: numberFrom(params, PARAM_PAGE_SIZE),
-  });
+  const page = normalisePage({ index: numberFrom(params, PARAM_PAGE_INDEX), size: numberFrom(params, PARAM_PAGE_SIZE) });
   const commitmentId = idOrUndefined(params.get(PARAM_COMMITMENT_ID));
-  return {
-    showAdditionalTypes: params.get(PARAM_SHOW_ADDITIONAL_TYPES) === FLAG_ON,
-    page,
-    ...(commitmentId === undefined ? {} : { commitmentId }),
-  };
+  return { showAdditionalTypes: params.get(PARAM_SHOW_ADDITIONAL_TYPES) === FLAG_ON, page, ...(commitmentId === undefined ? {} : { commitmentId }) };
 }
 // Reading the wire answer back into the contract's three arms
 const COMMITMENTS_ENDPOINT = "/api/support/commitments";
 
 const ENVELOPE_STATUS = 200;
 const DENIED_STATUS = 403;
+/** A session that expired or could not be established answers 401 with the same denial, which is a session fault rather than a permission refusal. */
+const SESSION_FAULT_STATUS = 401;
 const UNAVAILABLE_STATUS = 503;
+/** A query this list does not admit answers 422 with the field-keyed refusal, which is the request's own fault and not a source that did not answer. */
+const REFUSED_STATUS = 422;
 
 function noAnswer(path: string, status: number, detail: string): Error {
   return new Error(`${path} answered ${status} with ${detail}, so the commitment read has no answer to state.`);
@@ -119,18 +109,7 @@ function isCommitmentsEnvelope(value: unknown): value is CommitmentsEnvelope {
     return false;
   }
   const { data, scope, coverage, valueStates, actions, asOf, revision } = value;
-  return (
-    isRecord(data) &&
-    Array.isArray(data.commitments) &&
-    typeof data.total === "number" &&
-    isRecord(data.page) &&
-    isRecord(scope) &&
-    isRecord(coverage) &&
-    isRecord(valueStates) &&
-    Array.isArray(actions) &&
-    typeof asOf === "string" &&
-    typeof revision === "string"
-  );
+  return isRecord(data) && Array.isArray(data.commitments) && typeof data.total === "number" && isRecord(data.page) && isRecord(scope) && isRecord(coverage) && isRecord(valueStates) && Array.isArray(actions) && typeof asOf === "string" && typeof revision === "string";
 }
 function isDeniedBody(value: unknown): value is DeniedOutcome {
   if (!isRecord(value)) {
@@ -143,23 +122,18 @@ function isUnavailableBody(value: unknown): value is UnavailableOutcome {
     return false;
   }
   const source = value.source;
-  return (
-    value.outcome === "unavailable" &&
-    typeof value.operationId === "string" &&
-    typeof value.guidance === "string" &&
-    isRecord(source) &&
-    typeof source.system === "string" &&
-    typeof source.reference === "string"
-  );
+  return value.outcome === "unavailable" && typeof value.operationId === "string" && typeof value.guidance === "string" && isRecord(source) && typeof source.system === "string" && typeof source.reference === "string";
+}
+function isRefusedBody(value: unknown): value is InvalidOutcome {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return value.outcome === "invalid" && typeof value.operationId === "string" && isRecord(value.fields);
 }
 async function fetchCommitments(query: CommitmentsQuery): Promise<CommitmentsReadResult> {
   const queryString = toCommitmentsParams(query).toString();
   const path = queryString.length === 0 ? COMMITMENTS_ENDPOINT : `${COMMITMENTS_ENDPOINT}?${queryString}`;
-  const response = await fetch(path, {
-    method: "GET",
-    headers: { accept: "application/json" },
-    credentials: "same-origin",
-  });
+  const response = await fetch(path, { method: "GET", headers: { accept: "application/json" }, credentials: "same-origin" });
   const body = await readJsonBody(path, response);
   switch (response.status) {
     case ENVELOPE_STATUS:
@@ -168,6 +142,7 @@ async function fetchCommitments(query: CommitmentsQuery): Promise<CommitmentsRea
       }
       return { kind: "envelope", envelope: body };
     case DENIED_STATUS:
+    case SESSION_FAULT_STATUS:
       if (!isDeniedBody(body)) {
         throw noAnswer(path, response.status, "a body that is not a denial");
       }
@@ -177,6 +152,11 @@ async function fetchCommitments(query: CommitmentsQuery): Promise<CommitmentsRea
         throw noAnswer(path, response.status, "a body that is not an unavailable source");
       }
       return { kind: "unavailable", unavailable: body };
+    case REFUSED_STATUS:
+      if (!isRefusedBody(body)) {
+        throw noAnswer(path, response.status, "a body that is not a refused request");
+      }
+      return { kind: "refused", refused: body };
     default:
       throw noAnswer(path, response.status, "a status this read does not answer with");
   }
@@ -203,17 +183,6 @@ function statedInstantOf(asOf: string): number {
 }
 /** Reads the commitments in one scope: wraps `readCommitments` through `GET /api/support/commitments`, which answers with an envelope, a denial or an unavailable source. */
 export function useCommitments({ scope, query, initialEnvelope }: UseCommitmentsInput): CommitmentsQueryState {
-  const seeded: CommitmentsSeed | undefined =
-    initialEnvelope === undefined
-      ? undefined
-      : {
-          initialData: { kind: "envelope", envelope: initialEnvelope },
-          initialDataUpdatedAt: statedInstantOf(initialEnvelope.asOf),
-        };
-  return useQuery<CommitmentsReadResult, Error>({
-    queryKey: [...scopeKey(scope), COMMITMENTS_JOB, query],
-    queryFn: () => fetchCommitments(query),
-    staleTime: COMMITMENTS_STALE_TIME_MS,
-    ...seeded,
-  });
+  const seeded: CommitmentsSeed | undefined = initialEnvelope === undefined ? undefined : { initialData: { kind: "envelope", envelope: initialEnvelope }, initialDataUpdatedAt: statedInstantOf(initialEnvelope.asOf) };
+  return useQuery<CommitmentsReadResult, Error>({ queryKey: [...scopeKey(scope), COMMITMENTS_JOB, query], queryFn: () => fetchCommitments(query), staleTime: COMMITMENTS_STALE_TIME_MS, ...seeded });
 }

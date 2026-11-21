@@ -1,7 +1,3 @@
-/**
- * The one reading surface for a produced message: the HTML and the plain-text alternative of one
- * notification, and the link-only form a protected notice takes.
- */
 import type { ReactElement } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,42 +9,17 @@ import StatusBadge, { SEND_STATUS, type SendStatus, type StatusTone } from "@/co
 import { INBOX_TAB_LABELS, PROTECTED_NOTICE_COPY } from "@/features/audience/copy/inbox";
 import { cn } from "@/lib/cn";
 import { destinationProblemOf } from "@/lib/destination";
-/** The two writing directions a message body renders in. */
 export type MessageDirection = "ltr" | "rtl";
-
 const RENDERED_PROSE = cn(
-  "text-sm leading-relaxed break-words",
-  "[&_p]:mb-3 [&_p:last-child]:mb-0",
-  "[&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:font-heading [&_h2]:text-base [&_h2]:font-medium [&_h2:first-child]:mt-0",
-  "[&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:font-heading [&_h3]:text-sm [&_h3]:font-medium",
-  "[&_h4]:mt-4 [&_h4]:mb-2 [&_h4]:font-heading [&_h4]:text-sm [&_h4]:font-medium",
-  "[&_ul]:mb-3 [&_ul]:list-disc [&_ul]:ps-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:ps-5 [&_li]:mb-1",
-  "[&_blockquote]:my-3 [&_blockquote]:border-s-2 [&_blockquote]:border-border [&_blockquote]:ps-3",
-  "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4",
-  "[&_strong]:font-semibold [&_em]:italic",
-  "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:text-xs",
-  "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3",
-  "[&_hr]:my-4 [&_hr]:border-border",
-  "[&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg",
+  "text-sm leading-relaxed break-words [&_p]:mb-3 [&_p:last-child]:mb-0 [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:font-heading [&_h2]:text-base [&_h2]:font-medium [&_h2:first-child]:mt-0 [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:font-heading [&_h3]:text-sm [&_h3]:font-medium [&_h4]:mt-4 [&_h4]:mb-2 [&_h4]:font-heading [&_h4]:text-sm [&_h4]:font-medium [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:ps-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:ps-5 [&_li]:mb-1 [&_blockquote]:my-3 [&_blockquote]:border-s-2 [&_blockquote]:border-border [&_blockquote]:ps-3 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4 [&_strong]:font-semibold [&_em]:italic [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:text-xs [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_hr]:my-4 [&_hr]:border-border [&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg",
 );
 const TAB_LIST_LABEL = "Message rendering";
-
 const PROTECTED_LINK_LABEL = "Open the protected Update";
-/** Props of {@link ServerHtml}. */
-export interface ServerHtmlProps {
-  readonly html: string;
-  readonly direction: MessageDirection;
-  readonly lang?: string;
-  readonly className?: string;
-}
-/** The audience feature's reading block for one produced message. */
+export type ServerHtmlProps = { readonly html: string; readonly direction: MessageDirection; readonly lang?: string; readonly className?: string };
 export function ServerHtml({ html, direction, lang, className }: ServerHtmlProps): ReactElement | null {
-  if (html.trim().length === 0) {
-    return null;
-  }
+  if (html.trim().length === 0) return null;
   return <RenderedContent html={html} direction={direction} lang={lang} className={cn(RENDERED_PROSE, className)} />;
 }
-/** Props of {@link MessageReader}. */
 export interface MessageReaderProps {
   readonly sender: string;
   readonly subject: string;
@@ -64,22 +35,7 @@ export interface MessageReaderProps {
   readonly sendState: SendStatus;
   readonly className?: string;
 }
-/** Renders one produced message: who it came from, what it is called, what state it is in, and its HTML or its plain text — or, for a protected notice, the link that stands in for both. */
-export function MessageReader({
-  sender,
-  subject,
-  asOfLabel,
-  audienceLabel,
-  audienceTone,
-  languageTag,
-  direction,
-  protected: isProtected,
-  html,
-  plainText,
-  noticeHref,
-  sendState,
-  className,
-}: MessageReaderProps): ReactElement {
+export function MessageReader({ sender, subject, asOfLabel, audienceLabel, audienceTone, languageTag, direction, protected: isProtected, html, plainText, noticeHref, sendState, className }: MessageReaderProps): ReactElement {
   const subjectLabel = subject.trim();
   const send = SEND_STATUS[sendState];
   return (
@@ -144,8 +100,7 @@ export function MessageReader({
 }
 function ProtectedNotice({ href }: { readonly href?: string }): ReactElement {
   const link = href === undefined ? "" : href.trim();
-  // The anchor is the one place in this boundary where a value from the message becomes a link, so
-  // the shared guard decides it and a destination the guard refuses is not rendered at all.
+  // The one place a message value becomes a link: the shared guard decides it, and a refused destination is not rendered.
   const linkIsFollowable = destinationProblemOf(link) === undefined;
   return (
     <div className="flex flex-col gap-2">
@@ -165,18 +120,12 @@ function ProtectedNotice({ href }: { readonly href?: string }): ReactElement {
     </div>
   );
 }
-function initialsOf(displayValue: string): string {
+const initialsOf = (displayValue: string): string => {
   const parts = displayValue
     .trim()
     .split(/\s+/u)
     .filter((part) => part.length > 0);
-  const first = parts[0];
-  if (first === undefined) {
-    return "";
-  }
-  const last = parts.length === 1 ? undefined : parts[parts.length - 1];
-  const firstLetter = Array.from(first)[0] ?? "";
-  const lastLetter = last === undefined ? "" : (Array.from(last)[0] ?? "");
-  return `${firstLetter}${lastLetter}`.toUpperCase();
-}
+  const last = parts.length === 1 ? "" : (parts[parts.length - 1] ?? "");
+  return `${Array.from(parts[0] ?? "")[0] ?? ""}${Array.from(last)[0] ?? ""}`.toUpperCase();
+};
 export default MessageReader;

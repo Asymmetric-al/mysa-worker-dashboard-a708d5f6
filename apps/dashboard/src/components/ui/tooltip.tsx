@@ -1,10 +1,6 @@
 "use client";
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
-/**
- * The registry item ships `import { cn } from "cn"`, which resolves to an unrelated npm package of
- * that name. The class merge must be the project's own @/lib/cn, or tooltip classes stop merging
- * against the token utilities declared in src/styles/globals.css.
- */
+/** The registry item ships `import { cn } from "cn"`, which resolves to an unrelated npm package of that name. */
 import { cn } from "@/lib/cn";
 import { useDirection } from "@/components/ui/direction";
 function TooltipProvider({ delay = 0, ...props }: TooltipPrimitive.Provider.Props) {
@@ -16,17 +12,8 @@ function Tooltip({ ...props }: TooltipPrimitive.Root.Props) {
 function TooltipTrigger({ ...props }: TooltipPrimitive.Trigger.Props) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
 }
-function TooltipContent({
-  className,
-  side = "top",
-  sideOffset = 4,
-  align = "center",
-  alignOffset = 0,
-  children,
-  ...props
-}: TooltipPrimitive.Popup.Props & Pick<TooltipPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset">) {
-  // The direction provider is React context only, so portalled content would otherwise follow
-  // the page rather than the application. Stating it here keeps the tooltip in that direction.
+function TooltipContent({ className, side = "top", sideOffset = 4, align = "center", alignOffset = 0, children, ...props }: TooltipPrimitive.Popup.Props & Pick<TooltipPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset">) {
+  // The direction provider is React context only, so portalled content would otherwise follow the page rather than the application. Stating it here keeps the tooltip in that direction.
   const direction = useDirection();
   return (
     <TooltipPrimitive.Portal>

@@ -1,30 +1,4 @@
-/**
- * Enforces the two invariants Oxlint 1.94.0 has no rule for, as part of `bun run lint`. AAP 0.4.3 declares
- * `src/styles/globals.css` the one token source and forbids a component to introduce a colour literal; AAP 0.8.1
- * requires that no floating-point arithmetic touches a financial value; AAP 0.5.1 names `bun run lint` as where
- * both are enforced. Oxlint 1.94.0 ships no `no-restricted-syntax`, so its `react/style-prop-object`, palette
- * import and `no-restricted-properties` rules only approximate them, and the manual review the lint gap register
- * recorded was run by nothing. This script is that substitute; no linter, plugin package or wrapper is added.
- *
- * Colour — every .ts and .tsx under src/components, src/features and src/app, outside comments, for a Tailwind
- * arbitrary colour value (`text-[#ff0000]`), a CSS colour function literal (`oklch(`, `oklab(`, `rgb(`, `rgba(`,
- * `hsl(`, `hsla(`) and a bare 6- or 8-digit hex colour. `bg-[color-mix(in_oklch,var(--x),…)]` is not one: it
- * names no colour of its own.
- *
- * Money — every .ts under src/modules/money, src/modules/support and src/modules/export, outside comments, for
- * `parseFloat(`, `.toFixed(`, `Math.round(` and a numeric literal that is not an integer. src/modules/money
- * additionally may not use `Math.ceil(` or `Math.trunc(`; every `Math.floor(…)` argument must contain a `/`,
- * because a floored integer division is that module's one exact-integer idiom; and every `/` operator must sit
- * inside a `Math.floor(…)` call on the same line.
- *
- * It reads text, not meaning, so it proves none of these: that a colour reaches a component only through a token
- * (a value built from parts, through a helper, or in a `.css`/`.svg` asset is not read); that a division outside
- * src/modules/money is floored; that no floating-point value arrives as parsed data rather than as a literal
- * here; that arithmetic inside a named helper in another module is exact; or anything about a `Math.floor`
- * argument spanning lines, a regular-expression literal inside src/modules/money, a hex split across two
- * concatenated strings, or a numeric literal inside a template-literal expression, which this scan reads as
- * string text. Exit 0 clean, 1 on any violation, 2 when the application source tree cannot be read.
- */
+/** Enforces the two invariants Oxlint 1.94.0 has no rule for, as part of `bun run lint`. */
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 

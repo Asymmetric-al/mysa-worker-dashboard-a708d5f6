@@ -1,8 +1,5 @@
 "use client";
-/**
- * The one development control surface: the scenario this session runs in, the controllable clock, the
- * single armed failure plan, and the destructive reset.
- */
+/** The one development control surface: the scenario this session runs in, the controllable clock, the single armed failure plan, and the destructive reset. */
 import { useCallback, useId, useRef, useState, type ReactElement } from "react";
 import ActionReview, { mayReplay, type ActionReviewProps, type MutationSubmit } from "@/components/action-review";
 import OperationResult from "@/components/operation-result";
@@ -18,14 +15,9 @@ import { cn } from "@/lib/cn";
 import type { DevState } from "@/modules/data-service/reads/dev";
 import { isOutcome, outcomeFromError, type MutationOutcome } from "@/modules/data-service/outcome";
 import { MODE_LABEL, type DemonstrableTarget, type FailureMode } from "@/modules/dev-runtime/failures";
-// The vocabulary the panel works in
 const UNREACHED_ATTEMPT = "dev-panel";
-
-function isFailureMode(value: string): value is FailureMode {
-  return Object.hasOwn(MODE_LABEL, value);
-}
+const isFailureMode = (value: string): value is FailureMode => Object.hasOwn(MODE_LABEL, value);
 const FAILURE_MODES: readonly FailureMode[] = Object.keys(MODE_LABEL).filter(isFailureMode);
-
 const CLOCK_UNITS = [
   { id: "seconds", singular: "second", plural: "seconds", milliseconds: 1_000 },
   { id: "minutes", singular: "minute", plural: "minutes", milliseconds: 60_000 },
@@ -33,37 +25,22 @@ const CLOCK_UNITS = [
   { id: "days", singular: "day", plural: "days", milliseconds: 86_400_000 },
 ] as const;
 type ClockUnit = (typeof CLOCK_UNITS)[number];
-
 type ClockUnitId = ClockUnit["id"];
-
 const DESCENDING_UNITS: readonly ClockUnit[] = [...CLOCK_UNITS].reverse();
-
-function clockUnitFor(id: string): ClockUnit | undefined {
-  return CLOCK_UNITS.find((unit) => unit.id === id);
-}
+const clockUnitFor = (id: string): ClockUnit | undefined => CLOCK_UNITS.find((unit) => unit.id === id);
 function joinWords(parts: readonly string[]): string {
-  if (parts.length === 0) {
-    return "no time at all";
-  }
-  if (parts.length === 1) {
-    return parts[0] ?? "";
-  }
+  if (parts.length === 0) return "no time at all";
+  if (parts.length === 1) return parts[0] ?? "";
   return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1] ?? ""}`;
 }
 function describeOffset(milliseconds: number): string {
-  if (!Number.isFinite(milliseconds)) {
-    return "an unreadable offset";
-  }
-  if (milliseconds === 0) {
-    return "no offset, so the clock sits at the seed instant";
-  }
+  if (!Number.isFinite(milliseconds)) return "an unreadable offset";
+  if (milliseconds === 0) return "no offset, so the clock sits at the seed instant";
   const parts: string[] = [];
   let remaining = Math.abs(milliseconds);
   for (const unit of DESCENDING_UNITS) {
     const count = Math.floor(remaining / unit.milliseconds);
-    if (count === 0) {
-      continue;
-    }
+    if (count === 0) continue;
     remaining -= count * unit.milliseconds;
     parts.push(`${String(count)} ${count === 1 ? unit.singular : unit.plural}`);
   }
@@ -71,24 +48,26 @@ function describeOffset(milliseconds: number): string {
   return `${joinWords(parts)} ${direction} the seed instant`;
 }
 const INSTANT_LOCALE = "en-GB";
-
+type ClockAmount = { readonly unit: ClockUnit; readonly amount: number; readonly offset: number };
+function clockProblem(value: string, unitId: ClockUnitId, noun: string, minimum: number | null): ClockAmount | string {
+  const unit = clockUnitFor(unitId);
+  if (unit === undefined) return `Choose the unit the ${noun} is stated in.`;
+  const amount = wholeNumber(value);
+  if (amount === null) return `Enter a whole number of ${unit.plural}, with no decimal point or separator.`;
+  if (minimum !== null && amount < minimum) return `Advancing moves the clock forward, so enter at least one ${unit.singular}.`;
+  const offset = amount * unit.milliseconds;
+  if (!Number.isSafeInteger(offset)) return `That many ${unit.plural} is further than the clock can carry.`;
+  return { unit, amount, offset };
+}
 function zoneOf(iso: string): string {
-  if (iso.endsWith("Z") || iso.endsWith("z")) {
-    return "UTC";
-  }
+  if (iso.endsWith("Z") || iso.endsWith("z")) return "UTC";
   return /([+-]\d{2}:\d{2})$/.exec(iso)?.[1] ?? "UTC";
 }
 function describeInstantWords(iso: string): string | null {
   const milliseconds = Date.parse(iso);
-  if (!Number.isFinite(milliseconds)) {
-    return null;
-  }
+  if (!Number.isFinite(milliseconds)) return null;
   try {
-    return new Intl.DateTimeFormat(INSTANT_LOCALE, {
-      dateStyle: "long",
-      timeStyle: "long",
-      timeZone: zoneOf(iso),
-    }).format(milliseconds);
+    return new Intl.DateTimeFormat(INSTANT_LOCALE, { dateStyle: "long", timeStyle: "long", timeZone: zoneOf(iso) }).format(milliseconds);
   } catch {
     // A zone the runtime will not format states nothing rather than falling back to a guessed one.
     return null;
@@ -96,25 +75,13 @@ function describeInstantWords(iso: string): string | null {
 }
 function wholeNumber(text: string): number | null {
   const trimmed = text.trim();
-  if (!/^-?\d+$/.test(trimmed)) {
-    return null;
-  }
+  if (!/^-?\d+$/.test(trimmed)) return null;
   const parsed = Number(trimmed);
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
-// Props
-/** One failure to arm: a mode and the single named call it is injected into. */
-export interface DevFailureArming {
-  readonly mode: FailureMode;
-  readonly target: DemonstrableTarget;
-}
-/** The reset the panel confirms, in the shape the shared review step submits. */
-export interface DevResetTransport {
-  readonly input: ActionReviewProps<unknown>["input"];
-  readonly submit: MutationSubmit<unknown>;
-}
-/** Props of {@link DevPanel}. */
-export interface DevPanelProps {
+export type DevFailureArming = { readonly mode: FailureMode; readonly target: DemonstrableTarget };
+export type DevResetTransport = { readonly input: ActionReviewProps<unknown>["input"]; readonly submit: MutationSubmit<unknown> };
+export type DevPanelProps = {
   readonly devState: DevState;
   readonly onSetScenario: (scenarioId: DevState["scenario"]["id"]) => Promise<MutationOutcome>;
   readonly onSetClock: (offsetMilliseconds: number) => Promise<MutationOutcome>;
@@ -122,34 +89,26 @@ export interface DevPanelProps {
   readonly onSetFailurePlan: (arming: DevFailureArming | null) => Promise<MutationOutcome>;
   readonly reset: DevResetTransport;
   readonly className?: string;
-}
-// The panel's own bookkeeping
+};
 const DEV_PANEL_ACTIONS = ["switch-scenario", "set-clock", "advance-clock", "arm-failure", "disarm-failure"] as const;
-
 type DevPanelAction = (typeof DEV_PANEL_ACTIONS)[number];
-
-interface DevPanelResult {
-  readonly action: DevPanelAction;
-  readonly settledHeading: string | null;
-  readonly outcome: MutationOutcome;
-}
-interface DevPanelAttempt {
-  readonly action: DevPanelAction;
-  readonly settledHeading: string | null;
-  readonly run: () => Promise<MutationOutcome>;
-}
-const CLOCK_BOUNDARY_SENTENCE =
-  "Every boundary is evaluated when a read or a command runs against this instant: the referral " +
-  "window, the coaching cutoff, notification usefulness, confirmation expiry and recurrence all " +
-  "decide from it at the moment they are asked.";
-const CLOCK_IMMEDIATE_SENTENCE =
-  "Nothing here is scheduled. There is no run-at time, no timer and no background job, so advancing " + "is an immediate act and the only two controls that move time are the two below.";
+type DevPanelResult = { readonly action: DevPanelAction; readonly settledHeading: string | null; readonly outcome: MutationOutcome };
+type DevPanelAttempt = { readonly action: DevPanelAction; readonly settledHeading: string | null; readonly run: () => Promise<MutationOutcome> };
+const CLOCK_BOUNDARY_SENTENCE = "Every boundary is evaluated when a read or a command runs against this instant: the referral " + "window, the coaching cutoff, notification usefulness, confirmation expiry and recurrence all " + "decide from it at the moment they are asked.";
+const CLOCK_IMMEDIATE_SENTENCE = "Nothing here is scheduled. There is no run-at time, no timer and no background job, so advancing " + "is an immediate act and the only two controls that move time are the two below.";
 const ARMED_DISARM_SENTENCE = "Disarm this plan before arming another: exactly one failure is active at a time, and the " + "development route refuses a second arming rather than replacing this one.";
-
 const DISARMED_SENTENCE = "No failure is armed, so every read and every mutation answers from the application's own behaviour.";
-
 const PENDING_SENTENCE = "Applying that change to this development session and waiting for the answer.";
-
+const CLOCK_ROW_CLASS = "flex min-w-0 flex-wrap items-end gap-2";
+const CLOCK_FIELD_CLASS = "flex min-w-0 flex-col gap-2";
+const CLOCK_INPUT_CLASS = "w-24 sm:w-28";
+const CLOCK_SELECT_CLASS = "w-full sm:w-auto";
+const CLOCK_HINT_CLASS = "text-sm text-pretty text-muted-foreground";
+const CLOCK_ERROR_CLASS = "text-sm text-pretty text-destructive";
+const chooseClockUnit = (value: string, select: (unit: ClockUnitId) => void): void => {
+  const next = clockUnitFor(value);
+  if (next !== undefined) select(next.id);
+};
 const RESET_DESCRIPTION =
   "The synthetic store is deleted and every seeded session is written again from the deterministic " +
   "seed, so the same readable records come back and a journey can be repeated from the same starting " +
@@ -158,12 +117,8 @@ const RESET_DESCRIPTION =
   "armed failure plan is cleared with the document that held it. Every stored session is " +
   "discarded before the seeded ones are written, so a reset that fails part way can leave " +
   "sessions discarded or only partly written. Running it again restores the seeded world.";
-const RESET_CONSEQUENCE =
-  "This discards the current synthetic store and cannot be undone from the interface. Nothing is " + "sent, published or charged: the reset replaces this application's own data only.";
-function isSettled(outcome: MutationOutcome): boolean {
-  return outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged";
-}
-/** The one development control surface. */
+const RESET_CONSEQUENCE = "This discards the current synthetic store and cannot be undone from the interface. Nothing is " + "sent, published or charged: the reset replaces this application's own data only.";
+const isSettled = (outcome: MutationOutcome): boolean => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged";
 export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, onSetFailurePlan, reset, className }: DevPanelProps): ReactElement {
   const idPrefix = useId();
   const titleId = `${idPrefix}-title`;
@@ -203,9 +158,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
   const seedWords = describeInstantWords(clock.seedInstant);
   const armedWords = plan.armedAt === null ? null : describeInstantWords(plan.armedAt);
   const runAction = useCallback(async (action: DevPanelAction, settledHeading: string | null, run: () => Promise<MutationOutcome>): Promise<void> => {
-    if (pendingRef.current !== null) {
-      return;
-    }
+    if (pendingRef.current !== null) return;
     pendingRef.current = action;
     setPending(action);
     lastAttempt.current = { action, settledHeading, run };
@@ -222,72 +175,34 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
   }, []);
   const retryLastAttempt = useCallback((): void => {
     const attempt = lastAttempt.current;
-    if (attempt === null) {
-      return;
-    }
+    if (attempt === null) return;
     void runAction(attempt.action, attempt.settledHeading, attempt.run);
   }, [runAction]);
   const switchScenario = (): void => {
-    if (chosenScenario === undefined || !scenarioChangePending) {
-      return;
-    }
+    if (chosenScenario === undefined || !scenarioChangePending) return;
     const target = chosenScenario;
     void runAction("switch-scenario", `Scenario: ${target.label}`, () => onSetScenario(target.id));
   };
   const applyClockOffset = (): void => {
-    const unit = clockUnitFor(offsetUnit);
-    if (unit === undefined) {
-      setOffsetError("Choose the unit the offset is stated in.");
-      return;
-    }
-    const amount = wholeNumber(offsetValue);
-    if (amount === null) {
-      setOffsetError(`Enter a whole number of ${unit.plural}, with no decimal point or separator.`);
-      return;
-    }
-    const offset = amount * unit.milliseconds;
-    if (!Number.isSafeInteger(offset)) {
-      setOffsetError(`That many ${unit.plural} is further than the clock can carry.`);
-      return;
-    }
+    const settled = clockProblem(offsetValue, offsetUnit, "offset", null);
+    if (typeof settled === "string") return setOffsetError(settled);
     setOffsetError(null);
-    void runAction("set-clock", `Clock: ${describeOffset(offset)}`, () => onSetClock(offset));
+    void runAction("set-clock", `Clock: ${describeOffset(settled.offset)}`, () => onSetClock(settled.offset));
   };
   const advanceClock = (): void => {
-    const unit = clockUnitFor(advanceUnit);
-    if (unit === undefined) {
-      setAdvanceError("Choose the unit the amount is stated in.");
-      return;
-    }
-    const amount = wholeNumber(advanceValue);
-    if (amount === null) {
-      setAdvanceError(`Enter a whole number of ${unit.plural}, with no decimal point or separator.`);
-      return;
-    }
-    if (amount <= 0) {
-      setAdvanceError(`Advancing moves the clock forward, so enter at least one ${unit.singular}.`);
-      return;
-    }
-    const advance = amount * unit.milliseconds;
-    if (!Number.isSafeInteger(advance)) {
-      setAdvanceError(`That many ${unit.plural} is further than the clock can carry.`);
-      return;
-    }
+    const settled = clockProblem(advanceValue, advanceUnit, "amount", 1);
+    if (typeof settled === "string") return setAdvanceError(settled);
     setAdvanceError(null);
-    const stated = `${String(amount)} ${amount === 1 ? unit.singular : unit.plural}`;
-    void runAction("advance-clock", `Clock advanced by ${stated}`, () => onAdvanceClock(advance));
+    const stated = `${String(settled.amount)} ${settled.amount === 1 ? settled.unit.singular : settled.unit.plural}`;
+    void runAction("advance-clock", `Clock advanced by ${stated}`, () => onAdvanceClock(settled.offset));
   };
   const armFailure = (): void => {
-    if (chosenTarget === undefined || plan.armed) {
-      return;
-    }
+    if (chosenTarget === undefined || plan.armed) return;
     const target = chosenTarget;
     void runAction("arm-failure", `Failure armed: ${MODE_LABEL[mode]} on ${target.name}`, () => onSetFailurePlan({ mode, target }));
   };
   const disarmFailure = (): void => {
-    if (!plan.armed) {
-      return;
-    }
+    if (!plan.armed) return;
     void runAction("disarm-failure", "No failure is armed", () => onSetFailurePlan(null));
   };
   const receiptHeading = result !== null && isSettled(result.outcome) ? result.settledHeading : null;
@@ -299,16 +214,15 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
           Development runtime
         </h2>
         <p id={introId} className="text-sm text-pretty text-muted-foreground">
-          The scenario, the clock, one armed failure and the reset for this development session. These are development controls: the namespaced development route refuses them on the server outside a
-          development session, so hiding this panel is not what protects them. The Development data label stays visible beside it, and nothing here is a production feature.
+          The scenario, the clock, one armed failure and the reset for this development session. These are development controls: the namespaced development route refuses them on the server outside a development session, so hiding this panel is not what protects them. The Development data label stays visible beside it,
+          and nothing here is a production feature.
         </p>
       </div>
       {plan.armed && plan.mode !== null && plan.target !== null ? (
         <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 p-3">
           <Badge variant="outline">Armed</Badge>
           <p className="min-w-0 flex-1 text-sm text-pretty">
-            {plan.modeLabel} is armed on <bdi className="mono-identifier wrap-anywhere">{plan.target.name}</bdi>, so any request to that {plan.target.kind} answers with the injected outcome. Disarm it
-            before you judge any other behaviour.
+            {plan.modeLabel} is armed on <bdi className="mono-identifier wrap-anywhere">{plan.target.name}</bdi>, so any request to that {plan.target.kind} answers with the injected outcome. Disarm it before you judge any other behaviour.
           </p>
         </div>
       ) : null}
@@ -323,10 +237,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
           <CardTitle>
             <h3>Scenario</h3>
           </CardTitle>
-          <CardDescription>
-            The seeded world this session runs in. A scenario decides which source is unavailable, so a demonstration proves something; switching it loads a different world and changes no record on
-            its own.
-          </CardDescription>
+          <CardDescription>The seeded world this session runs in. A scenario decides which source is unavailable, so a demonstration proves something; switching it loads a different world and changes no record on its own.</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
           <div className="flex min-w-0 flex-col gap-1 text-sm text-pretty">
@@ -338,16 +249,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
           <div className="flex min-w-0 flex-col gap-2">
             <Label htmlFor={scenarioSelectId}>Switch to</Label>
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <NativeSelect
-                id={scenarioSelectId}
-                className="w-full sm:w-72"
-                value={chosenScenarioId}
-                aria-describedby={scenarioHintId}
-                disabled={busy}
-                onChange={(event) => {
-                  setScenarioChoice(event.currentTarget.value);
-                }}
-              >
+              <NativeSelect id={scenarioSelectId} className="w-full sm:w-72" value={chosenScenarioId} aria-describedby={scenarioHintId} disabled={busy} onChange={(event) => setScenarioChoice(event.currentTarget.value)}>
                 {devState.scenarios.map((choice) => (
                   <NativeSelectOption key={choice.id} value={choice.id}>
                     {choice.label}
@@ -359,9 +261,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
               </Button>
             </div>
             <p id={scenarioHintId} className="text-sm text-pretty text-muted-foreground">
-              {chosenScenario !== undefined && scenarioChangePending
-                ? `This session runs ${scenario.label} now. Switching loads ${chosenScenario.label}: ${chosenScenario.description}`
-                : "Choosing a scenario changes nothing until you switch to it."}
+              {chosenScenario !== undefined && scenarioChangePending ? `This session runs ${scenario.label} now. Switching loads ${chosenScenario.label}: ${chosenScenario.description}` : "Choosing a scenario changes nothing until you switch to it."}
             </p>
           </div>
         </CardContent>
@@ -371,9 +271,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
           <CardTitle>
             <h3>Clock</h3>
           </CardTitle>
-          <CardDescription>
-            The scenario instant every boundary is measured against. It is an offset from one fixed seed instant rather than a second clock, and the only ways to move it are on this panel.
-          </CardDescription>
+          <CardDescription>The scenario instant every boundary is measured against. It is an offset from one fixed seed instant rather than a second clock, and the only ways to move it are on this panel.</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
           <dl className="flex min-w-0 flex-col gap-3 text-sm">
@@ -403,8 +301,8 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
           <Separator />
           <fieldset className="flex min-w-0 flex-col gap-3">
             <legend className="text-sm font-medium">Set the offset from the seed instant</legend>
-            <div className="flex min-w-0 flex-wrap items-end gap-2">
-              <div className="flex min-w-0 flex-col gap-2">
+            <div className={CLOCK_ROW_CLASS}>
+              <div className={CLOCK_FIELD_CLASS}>
                 <Label htmlFor={offsetId}>Offset</Label>
                 <Input
                   id={offsetId}
@@ -415,26 +313,13 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
                   disabled={busy}
                   aria-invalid={offsetError === null ? undefined : true}
                   aria-describedby={offsetError === null ? offsetHintId : `${offsetHintId} ${offsetErrorId}`}
-                  className="w-24 sm:w-28"
-                  onChange={(event) => {
-                    setOffsetValue(event.currentTarget.value);
-                  }}
+                  className={CLOCK_INPUT_CLASS}
+                  onChange={(event) => setOffsetValue(event.currentTarget.value)}
                 />
               </div>
-              <div className="flex min-w-0 flex-col gap-2">
+              <div className={CLOCK_FIELD_CLASS}>
                 <Label htmlFor={offsetUnitId}>Unit</Label>
-                <NativeSelect
-                  id={offsetUnitId}
-                  className="w-full sm:w-auto"
-                  value={offsetUnit}
-                  disabled={busy}
-                  onChange={(event) => {
-                    const next = clockUnitFor(event.currentTarget.value);
-                    if (next !== undefined) {
-                      setOffsetUnit(next.id);
-                    }
-                  }}
-                >
+                <NativeSelect id={offsetUnitId} className={CLOCK_SELECT_CLASS} value={offsetUnit} disabled={busy} onChange={(event) => chooseClockUnit(event.currentTarget.value, setOffsetUnit)}>
                   {CLOCK_UNITS.map((unit) => (
                     <NativeSelectOption key={unit.id} value={unit.id}>
                       {unit.plural}
@@ -446,19 +331,19 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
                 Set the clock offset
               </Button>
             </div>
-            <p id={offsetHintId} className="text-sm text-pretty text-muted-foreground">
+            <p id={offsetHintId} className={CLOCK_HINT_CLASS}>
               Units are elapsed time: a day here is 24 hours, and no unit on this panel is a calendar day. A negative offset places the instant before the seed.
             </p>
             {offsetError === null ? null : (
-              <p id={offsetErrorId} className="text-sm text-pretty text-destructive">
+              <p id={offsetErrorId} className={CLOCK_ERROR_CLASS}>
                 {offsetError}
               </p>
             )}
           </fieldset>
           <fieldset className="flex min-w-0 flex-col gap-3">
             <legend className="text-sm font-medium">Advance the clock</legend>
-            <div className="flex min-w-0 flex-wrap items-end gap-2">
-              <div className="flex min-w-0 flex-col gap-2">
+            <div className={CLOCK_ROW_CLASS}>
+              <div className={CLOCK_FIELD_CLASS}>
                 <Label htmlFor={advanceId}>Advance by</Label>
                 <Input
                   id={advanceId}
@@ -470,26 +355,13 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
                   disabled={busy}
                   aria-invalid={advanceError === null ? undefined : true}
                   aria-describedby={advanceError === null ? advanceHintId : `${advanceHintId} ${advanceErrorId}`}
-                  className="w-24 sm:w-28"
-                  onChange={(event) => {
-                    setAdvanceValue(event.currentTarget.value);
-                  }}
+                  className={CLOCK_INPUT_CLASS}
+                  onChange={(event) => setAdvanceValue(event.currentTarget.value)}
                 />
               </div>
-              <div className="flex min-w-0 flex-col gap-2">
+              <div className={CLOCK_FIELD_CLASS}>
                 <Label htmlFor={advanceUnitId}>Unit</Label>
-                <NativeSelect
-                  id={advanceUnitId}
-                  className="w-full sm:w-auto"
-                  value={advanceUnit}
-                  disabled={busy}
-                  onChange={(event) => {
-                    const next = clockUnitFor(event.currentTarget.value);
-                    if (next !== undefined) {
-                      setAdvanceUnit(next.id);
-                    }
-                  }}
-                >
+                <NativeSelect id={advanceUnitId} className={CLOCK_SELECT_CLASS} value={advanceUnit} disabled={busy} onChange={(event) => chooseClockUnit(event.currentTarget.value, setAdvanceUnit)}>
                   {CLOCK_UNITS.map((unit) => (
                     <NativeSelectOption key={unit.id} value={unit.id}>
                       {unit.plural}
@@ -501,12 +373,11 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
                 Advance the clock
               </Button>
             </div>
-            <p id={advanceHintId} className="text-sm text-pretty text-muted-foreground">
-              Advancing moves the instant forward by elapsed time only. 24 hours reaches the notification deadline exactly; 168 hours reaches the confirmation deadline exactly, which is where both are
-              refused.
+            <p id={advanceHintId} className={CLOCK_HINT_CLASS}>
+              Advancing moves the instant forward by elapsed time only. 24 hours reaches the notification deadline exactly; 168 hours reaches the confirmation deadline exactly, which is where both are refused.
             </p>
             {advanceError === null ? null : (
-              <p id={advanceErrorId} className="text-sm text-pretty text-destructive">
+              <p id={advanceErrorId} className={CLOCK_ERROR_CLASS}>
                 {advanceError}
               </p>
             )}
@@ -518,9 +389,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
           <CardTitle>
             <h3>Failure plan</h3>
           </CardTitle>
-          <CardDescription>
-            One simulated failure, injected into one named read or mutation. Exactly one plan is active at a time, so a demonstration cannot confuse which failure it is watching.
-          </CardDescription>
+          <CardDescription>One simulated failure, injected into one named read or mutation. Exactly one plan is active at a time, so a demonstration cannot confuse which failure it is watching.</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
           {plan.armed && plan.target !== null && plan.mode !== null ? (
@@ -585,9 +454,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
                         value={chosenTarget?.name ?? ""}
                         aria-describedby={chosenTarget === undefined ? undefined : targetHintId}
                         onValueChange={(next: unknown) => {
-                          if (typeof next === "string") {
-                            setTargetName(next);
-                          }
+                          if (typeof next === "string") setTargetName(next);
                         }}
                       >
                         {eligibleTargets.map((target) => {
@@ -622,16 +489,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
         </CardContent>
       </Card>
       {devState.reset.available ? (
-        <ActionReview
-          title="Reset the development data"
-          headingLevel={3}
-          consequential
-          confirmLabel="Reset and re-seed"
-          input={reset.input}
-          submit={reset.submit}
-          description={<p>{RESET_DESCRIPTION}</p>}
-          consequence={<p>{RESET_CONSEQUENCE}</p>}
-        />
+        <ActionReview title="Reset the development data" headingLevel={3} consequential confirmLabel="Reset and re-seed" input={reset.input} submit={reset.submit} description={<p>{RESET_DESCRIPTION}</p>} consequence={<p>{RESET_CONSEQUENCE}</p>} />
       ) : (
         <Card className="min-w-0">
           <CardHeader>

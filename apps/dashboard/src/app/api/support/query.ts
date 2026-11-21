@@ -1,12 +1,8 @@
-/**
- * The one server-side reader for the Support job's browser transports: the search-parameter grammar
- * the four Support reads share, the page window `readCommitments` accepts, and the JSON body the two
- * report-shaped posts carry.
- */
+/** The one server-side reader for the Support job's browser transports: the search-parameter grammar the four Support reads share, the page window `readCommitments` accepts, and the JSON body the two … */
 import { z } from "zod";
 import { err, ok, type Result } from "@/lib/result";
 import type { reads } from "@/modules/data-service";
-import { REPORT_IDS } from "@/modules/support/report";
+import { REPORT_IDS, SORT_DIRECTIONS, SORT_FIELDS } from "@/modules/support/report";
 /** The bounded filter set the query-shaped Support reads accept, taken from a read's own signature rather than restated: a member the service adds, renames or withdraws reaches this file by. */
 export type SupportQuery = NonNullable<Parameters<typeof reads.support.readGifts>[0]>;
 /** The window `readCommitments` accepts, taken from that read's own signature. */
@@ -18,19 +14,16 @@ export type ParsedQuery<Query> = Result<Query, z.ZodError>;
 // One search parameter, as the URL carries it
 const PAGE_NUMBER = /^\d{1,9}$/u;
 
-const AMOUNT_BOUND = /^-?\d{1,15}$/u;
+// An amount bound: a whole count of minor units, which may be a correction and so may be negative.
+// The pattern admits every magnitude the read's own minor-unit vocabulary admits, and no more: a
+// bound of 16 digits reaches the safe-integer ceiling the open-ended band states, and the value is
+// taken exactly as written rather than rounded or clamped to it.
+const AMOUNT_BOUND = /^-?\d{1,16}$/u;
 
 function firstValue(search: URLSearchParams, name: string): string | undefined {
   return search.get(name) ?? undefined;
 }
-/**
- * Every name the request stated, with the value it stated, so the closed grammar below decides which
- * names a read admits instead of a fixed list of names quietly discarding the rest. A name stated twice
- * keeps its first value: one search parameter states one thing. The names gather in a map first, so a
- * name such as `__proto__` arrives at the grammar as an ordinary key and is refused by name like any
- * other: assigned to a plain object, that name would change the object's prototype and the parameter
- * would vanish, answering the request as though it had stated no such thing.
- */
+/** Every name the request stated, with the value it stated, so the closed grammar below decides which names a read admits instead of a fixed list of names quietly discarding the rest. */
 function statedSearchValues(search: URLSearchParams): Record<string, string> {
   const stated = new Map<string, string>();
   for (const name of new Set(search.keys())) {
@@ -51,6 +44,7 @@ function amountBound(message: string) {
   return z
     .string()
     .regex(AMOUNT_BOUND, message)
+    .refine((value) => Number.isSafeInteger(Number(value)), message)
     .transform((value) => Number(value));
 }
 // The ledger's search grammar
@@ -64,12 +58,13 @@ const MESSAGES = {
   pageSize: "State the page size as a whole number of rows.",
   pageSizeNeedsPage: "State the page a size applies to: a size with no page would be read as the first page or ignored, and neither is the page that was asked for.",
   commitmentId: "State the commitment as a non-empty identifier, or omit it: the identifier is compared with the rows the read reports and is never parsed into one.",
-  showAdditionalTypes:
-    "State the additional-types display choice as 1 to ask the source for additional commitment types, as 0 for the list without that choice, or omit it: no other value states a choice this read can carry.",
+  showAdditionalTypes: "State the additional-types display choice as 1 to ask the source for additional commitment types, as 0 for the list without that choice, or omit it: no other value states a choice this read can carry.",
   amountBound: "State an amount bound as a whole number of the selected currency's minor units.",
   amountRangeNeedsBoth: "State both bounds of an amount range: a range compares the minor units of one currency, and one bound alone states no range for the read to apply.",
   periodNeedsBoth: "State both ends of the period, each as a calendar day: one day is not a range, and the ledger's figures are read over a range.",
   sortNeedsBoth: "State the sort field and its direction together: a field with no direction, or a direction with no field, orders the ledger by nothing the worker chose.",
+  sortField: "A result is sorted by the gift's own date, its amount or its designation. State one of those fields.",
+  sortDirection: "A sort runs ascending or descending. State asc or desc.",
   recipientUnknown: `State the attribution filter as ${RECIPIENT_PARTNER}, ${RECIPIENT_ANONYMOUS} or ${RECIPIENT_UNRESOLVED}.`,
   recipientCombined: `The ledger's combined "anonymous-or-unresolved" choice names two attributions the read selects one at a time: anonymous support and support that supplied no attribution are separate filters, so state ${RECIPIENT_ANONYMOUS} or ${RECIPIENT_UNRESOLVED}. Narrowing the pair to one member here would drop the other's rows while presenting the filter as applied.`,
   recipientNeedsPartner: "State the partner a partner attribution names: the filter narrows to one record's own reference, and a kind with no reference would narrow to nothing.",
@@ -80,11 +75,7 @@ function unadmittedSearchParameterMessage(name: string): string {
   return `This read accepts no search parameter named "${name}", so remove it: a name the read does not declare is refused rather than ignored, because a read that ignored it would answer a page or a result the caller did not ask for.`;
 }
 
-/**
- * Re-keys the grammar's single rejected-names issue onto each name it carries, so a caller is told which
- * search parameter to remove instead of reading one message that lists several. Every other issue passes
- * through untouched.
- */
+/** Re-keys the grammar's single rejected-names issue onto each name it carries, so a caller is told which search parameter to remove instead of reading one message that lists several. */
 function refusedSearchParameters(error: z.ZodError): z.ZodError {
   type Issue = NonNullable<ConstructorParameters<typeof z.ZodError>[0]>[number];
   const issues: Issue[] = [];
@@ -112,65 +103,37 @@ const supportSearchSchema = z
     designation: z.string().optional(),
     method: z.string().optional(),
     search: z.string().optional(),
-    sortField: z.string().min(1, MESSAGES.sortNeedsBoth).optional(),
-    sortDirection: z.string().min(1, MESSAGES.sortNeedsBoth).optional(),
+    sortField: z.enum(SORT_FIELDS, { error: MESSAGES.sortField }).optional(),
+    sortDirection: z.enum(SORT_DIRECTIONS, { error: MESSAGES.sortDirection }).optional(),
     page: wholeNumber(MESSAGES.pageNumber).optional(),
     pageSize: wholeNumber(MESSAGES.pageSize).optional(),
   })
   .superRefine((params, context) => {
     if (params.pageSize !== undefined && params.page === undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["pageSize"],
-        message: MESSAGES.pageSizeNeedsPage,
-      });
+      context.addIssue({ code: "custom", path: ["pageSize"], message: MESSAGES.pageSizeNeedsPage });
     }
     if ((params.from === undefined) !== (params.to === undefined)) {
-      context.addIssue({
-        code: "custom",
-        path: ["from"],
-        message: MESSAGES.periodNeedsBoth,
-      });
+      context.addIssue({ code: "custom", path: ["from"], message: MESSAGES.periodNeedsBoth });
     }
     if ((params.amountMin === undefined) !== (params.amountMax === undefined)) {
-      context.addIssue({
-        code: "custom",
-        path: ["amountMin"],
-        message: MESSAGES.amountRangeNeedsBoth,
-      });
+      context.addIssue({ code: "custom", path: ["amountMin"], message: MESSAGES.amountRangeNeedsBoth });
     }
     if ((params.sortField === undefined) !== (params.sortDirection === undefined)) {
-      context.addIssue({
-        code: "custom",
-        path: ["sortField"],
-        message: MESSAGES.sortNeedsBoth,
-      });
+      context.addIssue({ code: "custom", path: ["sortField"], message: MESSAGES.sortNeedsBoth });
     }
     const { recipient, partnerId } = params;
     if (recipient === undefined) {
       if (partnerId !== undefined) {
-        context.addIssue({
-          code: "custom",
-          path: ["partnerId"],
-          message: MESSAGES.partnerNeedsRecipient,
-        });
+        context.addIssue({ code: "custom", path: ["partnerId"], message: MESSAGES.partnerNeedsRecipient });
       }
       return;
     }
     if (recipient !== RECIPIENT_PARTNER && recipient !== RECIPIENT_ANONYMOUS && recipient !== RECIPIENT_UNRESOLVED) {
-      context.addIssue({
-        code: "custom",
-        path: ["recipient"],
-        message: recipient === RECIPIENT_ANONYMOUS_OR_UNRESOLVED ? MESSAGES.recipientCombined : MESSAGES.recipientUnknown,
-      });
+      context.addIssue({ code: "custom", path: ["recipient"], message: recipient === RECIPIENT_ANONYMOUS_OR_UNRESOLVED ? MESSAGES.recipientCombined : MESSAGES.recipientUnknown });
       return;
     }
     if (recipient === RECIPIENT_PARTNER && (partnerId === undefined || partnerId.trim() === "")) {
-      context.addIssue({
-        code: "custom",
-        path: ["partnerId"],
-        message: MESSAGES.recipientNeedsPartner,
-      });
+      context.addIssue({ code: "custom", path: ["partnerId"], message: MESSAGES.recipientNeedsPartner });
     }
   });
 type SupportSearchParams = z.output<typeof supportSearchSchema>;
@@ -259,11 +222,7 @@ const commitmentsSearchSchema = z
   })
   .superRefine((params, context) => {
     if (params["page.size"] !== undefined && params["page.index"] === undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["page.size"],
-        message: MESSAGES.pageSizeNeedsPage,
-      });
+      context.addIssue({ code: "custom", path: ["page.size"], message: MESSAGES.pageSizeNeedsPage });
     }
   });
 /** Reads the commitments list's page window, the commitment a detail names and the additional-types display choice out of the request's search parameters, refusing by name every parameter the grammar does not declare. */
@@ -277,10 +236,7 @@ export function supportPageFromSearch(search: URLSearchParams): ParsedQuery<Supp
   const index = parsed.data["page.index"];
   const size = parsed.data["page.size"];
   const { commitmentId, showAdditionalTypes } = parsed.data;
-  const narrowing: SupportPageQuery = {
-    ...(commitmentId === undefined ? {} : { commitmentId }),
-    ...(showAdditionalTypes === undefined ? {} : { showAdditionalTypes }),
-  };
+  const narrowing: SupportPageQuery = { ...(commitmentId === undefined ? {} : { commitmentId }), ...(showAdditionalTypes === undefined ? {} : { showAdditionalTypes }) };
   if (index === undefined) {
     return ok(narrowing);
   }
@@ -304,36 +260,14 @@ const reportIdentitySchema = z.enum(REPORT_IDS, { error: BODY_MESSAGES.reportId 
 
 const periodBodySchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("preset"), preset: z.string() }),
-  z.strictObject({
-    kind: z.literal("explicit"),
-    from: z.string().min(1, BODY_MESSAGES.period),
-    to: z.string().min(1, BODY_MESSAGES.period),
-  }),
+  z.strictObject({ kind: z.literal("explicit"), from: z.string().min(1, BODY_MESSAGES.period), to: z.string().min(1, BODY_MESSAGES.period) }),
   z.strictObject({ kind: z.literal("year"), year: z.int({ error: BODY_MESSAGES.year }) }),
 ]);
-const currencyBodySchema = z.union([z.string(), z.strictObject({ kind: z.literal("one"), currency: z.string().min(1, BODY_MESSAGES.currency) }), z.strictObject({ kind: z.literal("all") })], {
-  error: BODY_MESSAGES.currency,
-});
-const amountRangeBodySchema = z.strictObject({
-  minMinor: z.int({ error: BODY_MESSAGES.amountRange }),
-  maxMinor: z.int({ error: BODY_MESSAGES.amountRange }),
-});
-const partnerBodySchema = z.discriminatedUnion("kind", [
-  z.strictObject({
-    kind: z.literal("partner"),
-    partnerId: z.string().min(1, BODY_MESSAGES.partner),
-  }),
-  z.strictObject({ kind: z.literal("anonymous") }),
-  z.strictObject({ kind: z.literal("unresolved") }),
-]);
-const sortBodySchema = z.strictObject({
-  field: z.string().min(1, BODY_MESSAGES.sort).optional(),
-  direction: z.string().min(1, BODY_MESSAGES.sort).optional(),
-});
-const pageBodySchema = z.strictObject({
-  index: z.int({ error: BODY_MESSAGES.page }).optional(),
-  size: z.int({ error: BODY_MESSAGES.page }).optional(),
-});
+const currencyBodySchema = z.union([z.string(), z.strictObject({ kind: z.literal("one"), currency: z.string().min(1, BODY_MESSAGES.currency) }), z.strictObject({ kind: z.literal("all") })], { error: BODY_MESSAGES.currency });
+const amountRangeBodySchema = z.strictObject({ minMinor: z.int({ error: BODY_MESSAGES.amountRange }), maxMinor: z.int({ error: BODY_MESSAGES.amountRange }) });
+const partnerBodySchema = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("partner"), partnerId: z.string().min(1, BODY_MESSAGES.partner) }), z.strictObject({ kind: z.literal("anonymous") }), z.strictObject({ kind: z.literal("unresolved") })]);
+const sortBodySchema = z.strictObject({ field: z.string().min(1, BODY_MESSAGES.sort).optional(), direction: z.string().min(1, BODY_MESSAGES.sort).optional() });
+const pageBodySchema = z.strictObject({ index: z.int({ error: BODY_MESSAGES.page }).optional(), size: z.int({ error: BODY_MESSAGES.page }).optional() });
 const POSTED_FILTER_FIELDS = {
   period: periodBodySchema.optional(),
   currency: currencyBodySchema.optional(),
@@ -350,23 +284,9 @@ const postedScopeField = z.unknown().optional();
 
 const snapshotIdSchema = z.string().min(1, BODY_MESSAGES.snapshotId).optional();
 /** The body `POST /api/report` reads: which of the four reports, the filters it is computed under, and the caller's own request identity. */
-export const reportRequestSchema = z.strictObject({
-  query: z.strictObject({
-    reportId: reportIdentitySchema,
-    scope: postedScopeField,
-    ...POSTED_FILTER_FIELDS,
-  }),
-  snapshotId: snapshotIdSchema,
-});
+export const reportRequestSchema = z.strictObject({ query: z.strictObject({ reportId: reportIdentitySchema, scope: postedScopeField, ...POSTED_FILTER_FIELDS }), snapshotId: snapshotIdSchema });
 /** The body `POST /api/export` reads: the same shape, whose query needs no report identity. */
-export const exportRequestSchema = z.strictObject({
-  query: z.strictObject({
-    reportId: reportIdentitySchema.optional(),
-    scope: postedScopeField,
-    ...POSTED_FILTER_FIELDS,
-  }),
-  snapshotId: snapshotIdSchema,
-});
+export const exportRequestSchema = z.strictObject({ query: z.strictObject({ reportId: reportIdentitySchema.optional(), scope: postedScopeField, ...POSTED_FILTER_FIELDS }), snapshotId: snapshotIdSchema });
 /** A posted query as the broader of the two bodies reads it. */
 export type PostedQuery = z.output<typeof exportRequestSchema>["query"];
 

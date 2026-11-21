@@ -1,10 +1,4 @@
 "use client";
-/**
- * One target's recorded progress, drawn through the application's single chart-with-alternative
- * pattern: `components/chart-figure` owns the caption, the prose summary and the data table, so a
- * period the read could not state a figure for reaches it as `null` and never as a zero, and nothing
- * here interpolates between periods.
- */
 import type { ReactElement } from "react";
 import { ChartFigure, type ChartPoint, type ChartSeries, type ChartTable } from "@/components/chart-figure";
 import { StateNotice } from "@/components/state-notice";
@@ -16,102 +10,43 @@ import type { TargetMeasure, TargetState } from "@/modules/coaching/target";
 import type { Coverage, ValueState } from "@/modules/data-service/envelope";
 import { serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
 import { COACHING_COPY, MEASURE_COPY, TARGET_STATE_COPY } from "../copy";
-/** Props of {@link TargetProgress}. */
-export interface TargetProgressProps {
+export type TargetProgressProps = {
   readonly progress: {
     readonly measure: TargetMeasure;
     readonly quantity: number;
-    readonly recorded: ReadonlyArray<{
-      readonly periodLabel: string;
-      readonly periodStart: CivilDate;
-      readonly periodEnd: CivilDate;
-      readonly value: number | null;
-      readonly valueState: ValueState;
-    }>;
+    readonly recorded: ReadonlyArray<{ readonly periodLabel: string; readonly periodStart: CivilDate; readonly periodEnd: CivilDate; readonly value: number | null; readonly valueState: ValueState }>;
     readonly coverage: Coverage;
     readonly asOf: string;
     readonly state: TargetState;
   } | null;
-  readonly comparison?: ReadonlyArray<{
-    readonly measure: TargetMeasure;
-    readonly recorded: number;
-    readonly target: number;
-    readonly valueState: ValueState;
-  }>;
+  readonly comparison?: ReadonlyArray<{ readonly measure: TargetMeasure; readonly recorded: number; readonly target: number; readonly valueState: ValueState }>;
   readonly locale: string;
   readonly className?: string;
-}
+};
 type Progress = NonNullable<TargetProgressProps["progress"]>;
-
 type RecordedPeriod = Progress["recorded"][number];
-
 type ComparisonRow = NonNullable<TargetProgressProps["comparison"]>[number];
-
 type BanneredState = Exclude<TargetState, "no-target" | "unavailable">;
-// Where the surface points, and what it says
 const TARGET_FORM_HREF = "/coaching/targets#target-form";
-
 const SET_TARGET_LABEL = "Set a target";
-
 const COMPARISON_HEADING = "The four measures";
-
 const COMPARISON_DESCRIPTION = "Each measure is counted on its own from the activity you recorded, so a conversation inside a " + "call is counted as a conversation and the call remains one call.";
-
 const NO_SUM_NOTE = "These four are stated separately and are never added together, ranked or turned into a score: " + "none of them measures effort, and no worker is compared with another.";
-
 const TABLE_COLUMNS = [
   { key: "period", label: "Period" },
   { key: "dates", label: "Dates" },
   { key: "recorded", label: "Recorded" },
 ] as const;
-// How one recorded figure is worded
-interface RecordedReading {
-  readonly word: string | null;
-  readonly showsFigure: boolean;
-  readonly qualifier: string | null;
-  readonly sentence: string | null;
-}
+type RecordedReading = { readonly word: string | null; readonly showsFigure: boolean; readonly qualifier: string | null; readonly sentence: string | null };
 const RECORDED_READING: Readonly<Record<ValueState, RecordedReading>> = {
   value: { word: null, showsFigure: true, qualifier: null, sentence: null },
-  zero: {
-    word: TARGET_STATE_COPY["zero-recorded"].label,
-    showsFigure: true,
-    qualifier: null,
-    sentence: TARGET_STATE_COPY["zero-recorded"].description,
-  },
-  unknown: {
-    word: "Unknown",
-    showsFigure: false,
-    qualifier: null,
-    sentence: "The activity source did not establish a count for this period, so no figure is stated. " + "Unknown is not a zero.",
-  },
-  withheld: {
-    word: "Withheld",
-    showsFigure: false,
-    qualifier: null,
-    sentence: "A count exists for this period but is not shown on this surface. Withheld is neither a zero " + "nor an empty period.",
-  },
-  unavailable: {
-    word: TARGET_STATE_COPY.unavailable.label,
-    showsFigure: false,
-    qualifier: null,
-    sentence: TARGET_STATE_COPY.unavailable.description,
-  },
-  "incomplete-subtotal": {
-    word: "Incomplete subtotal",
-    showsFigure: true,
-    qualifier: "incomplete subtotal",
-    sentence: COACHING_COPY.targets.partial,
-  },
+  zero: { word: TARGET_STATE_COPY["zero-recorded"].label, showsFigure: true, qualifier: null, sentence: TARGET_STATE_COPY["zero-recorded"].description },
+  unknown: { word: "Unknown", showsFigure: false, qualifier: null, sentence: "The activity source did not establish a count for this period, so no figure is stated. " + "Unknown is not a zero." },
+  withheld: { word: "Withheld", showsFigure: false, qualifier: null, sentence: "A count exists for this period but is not shown on this surface. Withheld is neither a zero " + "nor an empty period." },
+  unavailable: { word: TARGET_STATE_COPY.unavailable.label, showsFigure: false, qualifier: null, sentence: TARGET_STATE_COPY.unavailable.description },
+  "incomplete-subtotal": { word: "Incomplete subtotal", showsFigure: true, qualifier: "incomplete subtotal", sentence: COACHING_COPY.targets.partial },
 };
-const STATE_BADGE_VARIANT: Readonly<Record<BanneredState, "secondary" | "outline">> = {
-  active: "secondary",
-  ended: "secondary",
-  paused: "outline",
-  unplaced: "outline",
-  "zero-recorded": "outline",
-};
-// What the figure states
+const STATE_BADGE_VARIANT: Readonly<Record<BanneredState, "secondary" | "outline">> = { active: "secondary", ended: "secondary", paused: "outline", unplaced: "outline", "zero-recorded": "outline" };
 function datesOf(period: RecordedPeriod): string {
   return `${serialiseCivilDate(period.periodStart)} to ${serialiseCivilDate(period.periodEnd)}`;
 }
@@ -142,7 +77,6 @@ function coverageSentence(coverage: Coverage): string {
 function statesAFigure(progress: Progress): boolean {
   return progress.recorded.some((period) => RECORDED_READING[period.valueState].showsFigure);
 }
-// The state a reader sees before the figures
 function StateStatement({ state }: { readonly state: BanneredState }): ReactElement {
   const copy = TARGET_STATE_COPY[state];
   return (
@@ -153,36 +87,15 @@ function StateStatement({ state }: { readonly state: BanneredState }): ReactElem
   );
 }
 function NoTargetNotice(): ReactElement {
-  return (
-    <StateNotice
-      kind="empty"
-      title={TARGET_STATE_COPY["no-target"].label}
-      description={TARGET_STATE_COPY["no-target"].description}
-      action={{ label: SET_TARGET_LABEL, href: TARGET_FORM_HREF }}
-      headingLevel={2}
-    />
-  );
+  return <StateNotice kind="empty" title={TARGET_STATE_COPY["no-target"].label} description={TARGET_STATE_COPY["no-target"].description} action={{ label: SET_TARGET_LABEL, href: TARGET_FORM_HREF }} headingLevel={2} />;
 }
-// The figure
 function ProgressFigure({ progress, locale }: { readonly progress: Progress; readonly locale: string }): ReactElement {
   const measureLabel = MEASURE_COPY[progress.measure].label;
   const measureNoun = measureLabel.toLowerCase();
   const quantity = String(progress.quantity);
-  const points: readonly ChartPoint[] = progress.recorded.map((period) => ({
-    bucket: period.periodLabel,
-    value: period.value,
-    state: period.valueState,
-  }));
+  const points: readonly ChartPoint[] = progress.recorded.map((period) => ({ bucket: period.periodLabel, value: period.value, state: period.valueState }));
   const series: readonly ChartSeries[] = [{ key: progress.measure, label: measureLabel, points }];
-  const table: ChartTable = {
-    caption: `${measureLabel} recorded in each period, against a target of ${quantity}.`,
-    columns: TABLE_COLUMNS,
-    rows: progress.recorded.map((period) => ({
-      period: period.periodLabel,
-      dates: datesOf(period),
-      recorded: recordedCell(period),
-    })),
-  };
+  const table: ChartTable = { caption: `${measureLabel} recorded in each period, against a target of ${quantity}.`, columns: TABLE_COLUMNS, rows: progress.recorded.map((period) => ({ period: period.periodLabel, dates: datesOf(period), recorded: recordedCell(period) })) };
   return (
     <ChartFigure
       title={`${measureLabel} recorded against a target of ${quantity}`}
@@ -203,7 +116,6 @@ function ProgressFigure({ progress, locale }: { readonly progress: Progress; rea
     />
   );
 }
-// The four measures, side by side
 function ComparisonRegion({ rows }: { readonly rows: ReadonlyArray<ComparisonRow> }): ReactElement {
   return (
     <Card>
@@ -246,8 +158,6 @@ function ComparisonRegion({ rows }: { readonly rows: ReadonlyArray<ComparisonRow
     </Card>
   );
 }
-// The surface
-/** A target's recorded progress: the state word above the figures it does not change, the chart figure with its caption, prose summary and data-table alternative, and the four measures stated. */
 export default function TargetProgress({ progress, comparison, locale, className }: TargetProgressProps): ReactElement {
   const comparisonRows = comparison ?? [];
   const comparisonRegion = comparisonRows.length === 0 ? null : <ComparisonRegion rows={comparisonRows} />;
@@ -267,11 +177,7 @@ export default function TargetProgress({ progress, comparison, locale, className
   const showsFigure = progress.state !== "unavailable" || statesAFigure(progress);
   return (
     <section className={cn("flex min-w-0 flex-col gap-4", className)} data-interface-locale={locale}>
-      {progress.state === "unavailable" ? (
-        <StateNotice kind="unavailable" title={TARGET_STATE_COPY.unavailable.label} description={TARGET_STATE_COPY.unavailable.description} headingLevel={2} />
-      ) : (
-        <StateStatement state={progress.state} />
-      )}
+      {progress.state === "unavailable" ? <StateNotice kind="unavailable" title={TARGET_STATE_COPY.unavailable.label} description={TARGET_STATE_COPY.unavailable.description} headingLevel={2} /> : <StateStatement state={progress.state} />}
       {showsFigure ? <ProgressFigure progress={progress} locale={locale} /> : null}
       {comparisonRegion}
     </section>

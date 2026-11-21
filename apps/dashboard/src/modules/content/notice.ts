@@ -1,7 +1,4 @@
-/**
- * The notification notice: which single rendition an already-eligible recipient is pinned to, and what
- * the message that points at it may say.
- */
+/** The notification notice: which single rendition an already-eligible recipient is pinned to, and what the message that points at it may say. */
 import { Temporal } from "temporal-polyfill";
 import { isNonEmptyString } from "@/lib/guards";
 import { directionOfTag } from "@/modules/content/locale";
@@ -9,23 +6,8 @@ import { isDirectlyReadable, type ReachableEdition } from "@/modules/content/rea
 import { escapeHtml, isolateValue } from "@/modules/content/render";
 import { VARIANT_AUDIENCES, type VariantAudience, type VariantLocale } from "@/modules/content/variant";
 import type { MediaRenditionPurpose } from "@/modules/media/asset";
-// The recipient, the candidate and the poster a notice may carry
-/** One recipient a notice may be produced for, as the audience module admitted them. */
-export interface NoticeRecipient {
-  readonly recipientId: string;
-  readonly admittedAudiences: readonly VariantAudience[];
-  readonly languagePreference?: string;
-}
-/** The poster of a public video placement, with the evidence that admits it in a notice. */
-export interface NoticeVideoPoster {
-  readonly releaseId: string;
-  readonly renditionId: string;
-  readonly purpose: MediaRenditionPurpose;
-  readonly path: string;
-  readonly admittedPublic: boolean;
-  readonly release: ReachableEdition;
-}
-/** One rendition a recipient could be given: an admitted, non-withdrawn release of one variant, as the caller enumerated it for one publication intent. */
+export type NoticeRecipient = { readonly recipientId: string; readonly admittedAudiences: readonly VariantAudience[]; readonly languagePreference?: string };
+export type NoticeVideoPoster = { readonly releaseId: string; readonly renditionId: string; readonly purpose: MediaRenditionPurpose; readonly path: string; readonly admittedPublic: boolean; readonly release: ReachableEdition };
 export interface RenditionCandidate {
   readonly variantId: string;
   readonly releaseId: string;
@@ -38,68 +20,30 @@ export interface RenditionCandidate {
   readonly withdrawnAt?: Temporal.Instant | string | null;
   readonly videoPoster?: NoticeVideoPoster;
 }
-/** The one rendition a recipient is pinned to: the identity a caller stores on the send record. */
-export interface PinnedRendition {
-  readonly variantId: string;
-  readonly releaseId: string;
-  readonly revisionId: string;
-  readonly audience: VariantAudience;
-  readonly locale: VariantLocale;
-  readonly renditionId?: string;
-  readonly checksum: string;
-}
-/** Why a recipient could not be pinned to any rendition. */
+export type PinnedRendition = { readonly variantId: string; readonly releaseId: string; readonly revisionId: string; readonly audience: VariantAudience; readonly locale: VariantLocale; readonly renditionId?: string; readonly checksum: string };
 export const RENDITION_REFUSAL_REASONS = ["no-candidates", "no-readable-edition", "audience-not-admitted"] as const;
-/** One refusal reason, derived from {@link RENDITION_REFUSAL_REASONS}. */
 export type RenditionRefusalReason = (typeof RENDITION_REFUSAL_REASONS)[number];
-/** The answer one pinning question gives: exactly one pin with the poster the message may carry, or one refusal with its reason. */
-export type NoticeRenditionResolution =
-  | {
-      readonly status: "pinned";
-      readonly rendition: PinnedRendition;
-      readonly videoPoster?: NoticeVideoPoster;
-    }
-  | {
-      readonly status: "no-eligible-rendition";
-      readonly reason: RenditionRefusalReason;
-    };
-/** Everything one pinning question needs: the admitted recipient, the candidates and the Site default. */
-export interface ResolveRenditionInput {
-  readonly recipient: NoticeRecipient;
-  readonly candidates: readonly RenditionCandidate[];
-  readonly siteDefaultLocale: string;
-}
-// Guards: one identity stated, one instant read, one tag compared
-const AUDIENCE_SPECIFICITY: Record<VariantAudience, number> = {
-  "approved-supporter": 0,
-  public: 1,
-};
+export type NoticeRenditionResolution = { readonly status: "pinned"; readonly rendition: PinnedRendition; readonly videoPoster?: NoticeVideoPoster } | { readonly status: "no-eligible-rendition"; readonly reason: RenditionRefusalReason };
+export type ResolveRenditionInput = { readonly recipient: NoticeRecipient; readonly candidates: readonly RenditionCandidate[]; readonly siteDefaultLocale: string };
+const AUDIENCE_SPECIFICITY: Record<VariantAudience, number> = { "approved-supporter": 0, public: 1 };
 const AUDIENCE_ORDER: readonly VariantAudience[] = [...VARIANT_AUDIENCES].sort((left, right) => AUDIENCE_SPECIFICITY[left] - AUDIENCE_SPECIFICITY[right]);
 
 function identityOf(value: unknown): string | undefined {
-  if (!isNonEmptyString(value)) {
-    return undefined;
-  }
+  if (!isNonEmptyString(value)) return undefined;
   const trimmed = value.trim();
   return trimmed.length === 0 ? undefined : trimmed;
 }
 function instantOf(value: Temporal.Instant | string): Temporal.Instant | undefined {
-  if (typeof value !== "string") {
-    return value;
-  }
+  if (typeof value !== "string") return value;
   const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return undefined;
-  }
+  if (trimmed.length === 0) return undefined;
   try {
     return Temporal.Instant.from(trimmed);
   } catch {
     return undefined;
   }
 }
-function comparableTag(value: unknown): string | undefined {
-  return identityOf(value)?.toLowerCase();
-}
+const comparableTag = (value: unknown): string | undefined => identityOf(value)?.toLowerCase();
 function primaryLanguage(comparable: string): string {
   const [language] = comparable.split("-");
   return language ?? comparable;
@@ -109,41 +53,25 @@ function isWithdrawn(candidate: RenditionCandidate): boolean {
   return withdrawnAt !== undefined && withdrawnAt !== null;
 }
 function compareCodeUnits(left: string, right: string): number {
-  if (left === right) {
-    return 0;
-  }
+  if (left === right) return 0;
   return left < right ? -1 : 1;
 }
 function statedTagOf(candidate: RenditionCandidate): unknown {
   const locale: unknown = candidate.locale;
-  if (typeof locale !== "object" || locale === null) {
-    return undefined;
-  }
+  if (typeof locale !== "object" || locale === null) return undefined;
   return (locale as { readonly tag?: unknown }).tag;
 }
-// The candidates a pin may be chosen from
-interface ReadableCandidate {
-  readonly candidate: RenditionCandidate;
-  readonly tag: string;
-  readonly language: string;
-  readonly publishedAt: Temporal.Instant;
-}
+type ReadableCandidate = { readonly candidate: RenditionCandidate; readonly tag: string; readonly language: string; readonly publishedAt: Temporal.Instant };
 function readableCandidates(candidates: readonly RenditionCandidate[]): ReadableCandidate[] {
   const seenReleases = new Set<string>();
   const readable: ReadableCandidate[] = [];
   for (const candidate of candidates) {
     const releaseId = identityOf(candidate.releaseId);
-    if (releaseId === undefined || identityOf(candidate.variantId) === undefined || identityOf(candidate.revisionId) === undefined || identityOf(candidate.contentChecksum) === undefined) {
-      continue;
-    }
-    if (isWithdrawn(candidate) || seenReleases.has(releaseId)) {
-      continue;
-    }
+    if (releaseId === undefined || identityOf(candidate.variantId) === undefined || identityOf(candidate.revisionId) === undefined || identityOf(candidate.contentChecksum) === undefined) continue;
+    if (isWithdrawn(candidate) || seenReleases.has(releaseId)) continue;
     const tag = comparableTag(statedTagOf(candidate));
     const publishedAt = instantOf(candidate.publishedAt);
-    if (tag === undefined || publishedAt === undefined) {
-      continue;
-    }
+    if (tag === undefined || publishedAt === undefined) continue;
     seenReleases.add(releaseId);
     readable.push({ candidate, tag, language: primaryLanguage(tag), publishedAt });
   }
@@ -151,27 +79,17 @@ function readableCandidates(candidates: readonly RenditionCandidate[]): Readable
 }
 function comparePreference(left: ReadableCandidate, right: ReadableCandidate): number {
   const byPublication = Temporal.Instant.compare(right.publishedAt, left.publishedAt);
-  if (byPublication !== 0) {
-    return byPublication;
-  }
+  if (byPublication !== 0) return byPublication;
   const byVariant = compareCodeUnits(left.candidate.variantId, right.candidate.variantId);
-  if (byVariant !== 0) {
-    return byVariant;
-  }
+  if (byVariant !== 0) return byVariant;
   return compareCodeUnits(left.candidate.releaseId, right.candidate.releaseId);
 }
 function languageRank(entry: ReadableCandidate, preference: string | undefined, siteDefault: string | undefined): number {
   if (preference !== undefined) {
-    if (entry.tag === preference) {
-      return 0;
-    }
-    if (entry.language === primaryLanguage(preference)) {
-      return 1;
-    }
+    if (entry.tag === preference) return 0;
+    if (entry.language === primaryLanguage(preference)) return 1;
   }
-  if (siteDefault !== undefined && entry.tag === siteDefault) {
-    return 2;
-  }
+  if (siteDefault !== undefined && entry.tag === siteDefault) return 2;
   return 3;
 }
 function chooseInGroup(group: readonly ReadableCandidate[], preference: string | undefined, siteDefault: string | undefined): ReadableCandidate | undefined {
@@ -181,34 +99,21 @@ function chooseInGroup(group: readonly ReadableCandidate[], preference: string |
 function admittedAudiencesOf(recipient: NoticeRecipient): ReadonlySet<VariantAudience> {
   const admitted = new Set<VariantAudience>();
   const stated: unknown = recipient.admittedAudiences;
-  if (!Array.isArray(stated)) {
-    return admitted;
-  }
+  if (!Array.isArray(stated)) return admitted;
   for (const value of stated) {
     const audience = VARIANT_AUDIENCES.find((candidate) => candidate === value);
-    if (audience !== undefined) {
-      admitted.add(audience);
-    }
+    if (audience !== undefined) admitted.add(audience);
   }
   return admitted;
 }
 function admittedPoster(candidate: RenditionCandidate): NoticeVideoPoster | undefined {
-  if (candidate.audience !== "public") {
-    return undefined;
-  }
+  if (candidate.audience !== "public") return undefined;
   const poster = candidate.videoPoster;
-  if (poster === undefined || poster.purpose !== "poster" || !poster.admittedPublic) {
-    return undefined;
-  }
-  if (identityOf(poster.releaseId) !== identityOf(candidate.releaseId)) {
-    return undefined;
-  }
-  if (!isDirectlyReadable(poster.release)) {
-    return undefined;
-  }
+  if (poster === undefined || poster.purpose !== "poster" || !poster.admittedPublic) return undefined;
+  if (identityOf(poster.releaseId) !== identityOf(candidate.releaseId)) return undefined;
+  if (!isDirectlyReadable(poster.release)) return undefined;
   return poster;
 }
-// The pin: one candidate in, one identity out
 /** Pins one candidate: its identity as the record a caller stores on the send and compares on a replay, or `undefined` when the candidate names no usable edition. */
 export function pinRendition(candidate: RenditionCandidate): PinnedRendition | undefined {
   const variantId = identityOf(candidate.variantId);
@@ -217,86 +122,36 @@ export function pinRendition(candidate: RenditionCandidate): PinnedRendition | u
   const checksum = identityOf(candidate.contentChecksum);
   const tag = identityOf(statedTagOf(candidate));
   const audience = VARIANT_AUDIENCES.find((value) => value === candidate.audience);
-  if (variantId === undefined || releaseId === undefined || revisionId === undefined || checksum === undefined || tag === undefined || audience === undefined) {
-    return undefined;
-  }
-  return {
-    variantId,
-    releaseId,
-    revisionId,
-    audience,
-    locale: { tag, direction: directionOfTag(tag) },
-    renditionId: identityOf(candidate.renditionId),
-    checksum,
-  };
+  if (variantId === undefined || releaseId === undefined || revisionId === undefined || checksum === undefined || tag === undefined || audience === undefined) return undefined;
+  return { variantId, releaseId, revisionId, audience, locale: { tag, direction: directionOfTag(tag) }, renditionId: identityOf(candidate.renditionId), checksum };
 }
-// Resolution: exactly one rendition for one admitted recipient
-/** Resolves the one rendition an already-eligible recipient receives, and the poster the message may carry with it. */
 export function resolveRendition(input: ResolveRenditionInput): NoticeRenditionResolution {
   const { recipient, candidates, siteDefaultLocale } = input;
-  if (candidates.length === 0) {
-    return { status: "no-eligible-rendition", reason: "no-candidates" };
-  }
+  if (candidates.length === 0) return { status: "no-eligible-rendition", reason: "no-candidates" };
   const readable = readableCandidates(candidates);
-  if (readable.length === 0) {
-    return { status: "no-eligible-rendition", reason: "no-readable-edition" };
-  }
+  if (readable.length === 0) return { status: "no-eligible-rendition", reason: "no-readable-edition" };
   const admitted = admittedAudiencesOf(recipient);
   const served = readable.filter((entry) => admitted.has(entry.candidate.audience));
-  if (served.length === 0) {
-    return { status: "no-eligible-rendition", reason: "audience-not-admitted" };
-  }
+  if (served.length === 0) return { status: "no-eligible-rendition", reason: "audience-not-admitted" };
   const preference = comparableTag(recipient.languagePreference);
   const siteDefault = comparableTag(siteDefaultLocale);
   for (const audience of AUDIENCE_ORDER) {
     const group = served.filter((entry) => entry.candidate.audience === audience);
-    if (group.length === 0) {
-      continue;
-    }
+    if (group.length === 0) continue;
     const chosen = chooseInGroup(group, preference, siteDefault);
-    if (chosen === undefined) {
-      continue;
-    }
+    if (chosen === undefined) continue;
     const rendition = pinRendition(chosen.candidate);
-    if (rendition === undefined) {
-      continue;
-    }
+    if (rendition === undefined) continue;
     const videoPoster = admittedPoster(chosen.candidate);
     return videoPoster === undefined ? { status: "pinned", rendition } : { status: "pinned", rendition, videoPoster };
   }
-  // Unreachable: a non-empty admitted set always has a group, and every candidate in it already proved
-  // the identities `pinRendition` re-checks. Stated so the return is total under
-  // `noUncheckedIndexedAccess` instead of asserting a value the guards above proved.
+  // Unreachable: a non-empty admitted set always has a group, and every candidate already proved the identities `pinRendition` re-checks; stated so the return is total under `noUncheckedIndexedAccess`.
   return { status: "no-eligible-rendition", reason: "no-readable-edition" };
 }
-// The message: a minimal, link-only notice
-/** The publisher a notice speaks for: the ministry identity whose updates the recipient asked to hear about. */
-export interface NoticePublisher {
-  readonly displayName: string;
-}
-/** The sender a notice is produced from: the publisher's own configured sending identity. */
-export interface NoticeSender {
-  readonly name: string;
-  readonly address: string;
-}
-/** Everything one notice is built from: the pinned copy, the publisher and sender it speaks for, the receiving link and, for a public video placement, the admitted poster. */
-export interface NoticeInput {
-  readonly publisher: NoticePublisher;
-  readonly purpose: string;
-  readonly pinned: PinnedRendition;
-  readonly sender: NoticeSender;
-  readonly link: string;
-  readonly videoPoster?: NoticeVideoPoster;
-}
-/** The message a recipient is sent: who it is from, what it says, and the copy it points at. */
-export interface Notice {
-  readonly sender: string;
-  readonly subject: string;
-  readonly textBody: string;
-  readonly htmlBody: string;
-  readonly link: string;
-  readonly pinned: PinnedRendition;
-}
+export type NoticePublisher = { readonly displayName: string };
+export type NoticeSender = { readonly name: string; readonly address: string };
+export type NoticeInput = { readonly publisher: NoticePublisher; readonly purpose: string; readonly pinned: PinnedRendition; readonly sender: NoticeSender; readonly link: string; readonly videoPoster?: NoticeVideoPoster };
+export type Notice = { readonly sender: string; readonly subject: string; readonly textBody: string; readonly htmlBody: string; readonly link: string; readonly pinned: PinnedRendition };
 const NOTICE_COPY = {
   subjectLead: "New update from",
   anonymousSubject: "New update",
@@ -309,146 +164,76 @@ const NOTICE_COPY = {
   signIn: "Opening the link checks that you are signed in.",
   preferences: "You can turn these notices off in your notification preferences.",
 } as const;
-const PURPOSE_PHRASES: Readonly<Record<string, string>> = {
-  "update-email": "updates by email",
-};
+const PURPOSE_PHRASES: Readonly<Record<string, string>> = { "update-email": "updates by email" };
 const DEFAULT_PURPOSE_PHRASE = "notices";
-
 const NOTICE_LANGUAGE = "en";
-
 const NOTICE_DIRECTION = "ltr";
-
-interface NoticePresenters {
-  readonly value: (text: string) => string;
-  readonly link: (path: string) => string;
-  readonly image?: (path: string) => string;
-}
-const TEXT_PRESENTERS: NoticePresenters = {
-  value: (text) => text,
-  link: (path) => `${NOTICE_COPY.linkLabel}: ${path}`,
-};
-const HTML_PRESENTERS: NoticePresenters = {
-  value: isolateValue,
-  link: (path) => `<a href="${escapeHtml(path)}">${NOTICE_COPY.linkLabel}</a>`,
-  image: (path) => `<img src="${escapeHtml(path)}" alt="" />`,
-};
-function isControlOrSpace(codePoint: number): boolean {
-  return codePoint <= 0x20 || codePoint === 0x7f;
-}
+type NoticePresenters = { readonly value: (text: string) => string; readonly link: (path: string) => string; readonly image?: (path: string) => string };
+const TEXT_PRESENTERS: NoticePresenters = { value: (text) => text, link: (path) => `${NOTICE_COPY.linkLabel}: ${path}` };
+const HTML_PRESENTERS: NoticePresenters = { value: isolateValue, link: (path) => `<a href="${escapeHtml(path)}">${NOTICE_COPY.linkLabel}</a>`, image: (path) => `<img src="${escapeHtml(path)}" alt="" />` };
+const isControlOrSpace = (codePoint: number): boolean => codePoint <= 0x20 || codePoint === 0x7f;
 function hasControlOrSpace(value: string): boolean {
-  for (const character of value) {
-    if (isControlOrSpace(character.codePointAt(0) ?? 0)) {
-      return true;
-    }
-  }
+  for (const character of value) if (isControlOrSpace(character.codePointAt(0) ?? 0)) return true;
   return false;
 }
 function singleLine(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
+  if (typeof value !== "string") return undefined;
   let flattened = "";
-  for (const character of value) {
-    flattened += isControlOrSpace(character.codePointAt(0) ?? 0) ? " " : character;
-  }
+  for (const character of value) flattened += isControlOrSpace(character.codePointAt(0) ?? 0) ? " " : character;
   const collapsed = flattened.replace(/\s+/g, " ").trim();
   return collapsed.length === 0 ? undefined : collapsed;
 }
 function addressOf(value: unknown): string | undefined {
   const address = singleLine(value);
-  if (address === undefined) {
-    return undefined;
-  }
-  if (address.includes("<") || address.includes(">") || address.includes(",")) {
-    return undefined;
-  }
-  if (address.includes(";")) {
-    return undefined;
-  }
+  if (address === undefined) return undefined;
+  if (address.includes("<") || address.includes(">") || address.includes(",")) return undefined;
+  if (address.includes(";")) return undefined;
   const at = address.indexOf("@");
-  if (at < 1 || at === address.length - 1) {
-    return undefined;
-  }
+  if (at < 1 || at === address.length - 1) return undefined;
   return address.indexOf("@", at + 1) === -1 ? address : undefined;
 }
 function senderLineOf(sender: NoticeSender): string {
   const stated: unknown = sender;
-  if (typeof stated !== "object" || stated === null) {
-    return "";
-  }
+  if (typeof stated !== "object" || stated === null) return "";
   const record = stated as { readonly name?: unknown; readonly address?: unknown };
   const name = singleLine(record.name);
   const address = addressOf(record.address);
-  if (name !== undefined && address !== undefined) {
-    return `${name} <${address}>`;
-  }
+  if (name !== undefined && address !== undefined) return `${name} <${address}>`;
   return address ?? name ?? "";
 }
 function publisherNameOf(publisher: NoticePublisher): string | undefined {
   const stated: unknown = publisher;
-  if (typeof stated !== "object" || stated === null) {
-    return undefined;
-  }
+  if (typeof stated !== "object" || stated === null) return undefined;
   return singleLine((stated as { readonly displayName?: unknown }).displayName);
 }
 function purposePhraseOf(purpose: unknown): string {
   const key = singleLine(purpose)?.toLowerCase();
-  if (key === undefined) {
-    return DEFAULT_PURPOSE_PHRASE;
-  }
+  if (key === undefined) return DEFAULT_PURPOSE_PHRASE;
   return PURPOSE_PHRASES[key] ?? DEFAULT_PURPOSE_PHRASE;
 }
 function sameOriginPath(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
+  if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
-  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) {
-    return undefined;
-  }
-  if (trimmed.includes("?") || trimmed.includes("#") || trimmed.includes("\\")) {
-    return undefined;
-  }
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return undefined;
+  if (trimmed.includes("?") || trimmed.includes("#") || trimmed.includes("\\")) return undefined;
   return hasControlOrSpace(trimmed) ? undefined : trimmed;
 }
 function posterPathOf(pinned: PinnedRendition, poster: NoticeVideoPoster | undefined): string | undefined {
-  if (poster === undefined || pinned.audience !== "public") {
-    return undefined;
-  }
-  if (poster.purpose !== "poster" || !poster.admittedPublic) {
-    return undefined;
-  }
-  if (identityOf(poster.releaseId) !== identityOf(pinned.releaseId)) {
-    return undefined;
-  }
-  if (!isDirectlyReadable(poster.release)) {
-    return undefined;
-  }
+  if (poster === undefined || pinned.audience !== "public") return undefined;
+  if (poster.purpose !== "poster" || !poster.admittedPublic) return undefined;
+  if (identityOf(poster.releaseId) !== identityOf(pinned.releaseId)) return undefined;
+  if (!isDirectlyReadable(poster.release)) return undefined;
   return sameOriginPath(poster.path);
 }
-function subjectOf(publisher: string | undefined): string {
-  return publisher === undefined ? NOTICE_COPY.anonymousSubject : `${NOTICE_COPY.subjectLead} ${publisher}`;
-}
-function composeParagraphs(input: {
-  readonly publisher: string | undefined;
-  readonly phrase: string;
-  readonly link: string | undefined;
-  readonly posterPath: string | undefined;
-  readonly protectedCopy: boolean;
-  readonly presenters: NoticePresenters;
-}): readonly string[] {
+const subjectOf = (publisher: string | undefined): string => (publisher === undefined ? NOTICE_COPY.anonymousSubject : `${NOTICE_COPY.subjectLead} ${publisher}`);
+function composeParagraphs(input: { readonly publisher: string | undefined; readonly phrase: string; readonly link: string | undefined; readonly posterPath: string | undefined; readonly protectedCopy: boolean; readonly presenters: NoticePresenters }): readonly string[] {
   const { publisher, phrase, link, posterPath, protectedCopy, presenters } = input;
   const lead = protectedCopy ? NOTICE_COPY.protectedLead : NOTICE_COPY.publicLead;
   const anonymousLead = protectedCopy ? NOTICE_COPY.anonymousProtectedLead : NOTICE_COPY.anonymousPublicLead;
   const headline = publisher === undefined ? anonymousLead : `${presenters.value(publisher)} ${lead}`;
-  const reason =
-    publisher === undefined
-      ? `You are receiving ${phrase} because you asked to hear from this publisher.`
-      : `You are receiving ${phrase} from ${presenters.value(publisher)} because you asked to ` + "hear from them.";
+  const reason = publisher === undefined ? `You are receiving ${phrase} because you asked to hear from this publisher.` : `You are receiving ${phrase} from ${presenters.value(publisher)} because you asked to ` + "hear from them.";
   const paragraphs: string[] = [headline, link === undefined ? NOTICE_COPY.noLink : presenters.link(link)];
-  if (posterPath !== undefined && presenters.image !== undefined) {
-    paragraphs.push(presenters.image(posterPath));
-  }
+  if (posterPath !== undefined && presenters.image !== undefined) paragraphs.push(presenters.image(posterPath));
   paragraphs.push(`${protectedCopy ? `${NOTICE_COPY.signIn} ` : ""}${reason} ${NOTICE_COPY.preferences}`);
   return paragraphs;
 }
@@ -464,12 +249,5 @@ export function buildNotice(input: NoticeInput): Notice {
   const htmlParagraphs = composeParagraphs({ ...shared, presenters: HTML_PRESENTERS })
     .map((paragraph) => `<p>${paragraph}</p>`)
     .join("\n");
-  return {
-    sender: senderLineOf(input.sender),
-    subject: subjectOf(publisher),
-    textBody: composeParagraphs({ ...shared, presenters: TEXT_PRESENTERS }).join("\n\n"),
-    htmlBody: `<div lang="${NOTICE_LANGUAGE}" dir="${NOTICE_DIRECTION}">\n${htmlParagraphs}\n</div>`,
-    link: link ?? "",
-    pinned,
-  };
+  return { sender: senderLineOf(input.sender), subject: subjectOf(publisher), textBody: composeParagraphs({ ...shared, presenters: TEXT_PRESENTERS }).join("\n\n"), htmlBody: `<div lang="${NOTICE_LANGUAGE}" dir="${NOTICE_DIRECTION}">\n${htmlParagraphs}\n</div>`, link: link ?? "", pinned };
 }

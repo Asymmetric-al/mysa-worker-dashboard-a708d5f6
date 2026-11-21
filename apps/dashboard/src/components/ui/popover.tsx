@@ -9,16 +9,8 @@ function Popover({ ...props }: PopoverPrimitive.Root.Props) {
 function PopoverTrigger({ ...props }: PopoverPrimitive.Trigger.Props) {
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
 }
-function PopoverContent({
-  className,
-  align = "center",
-  alignOffset = 0,
-  side = "bottom",
-  sideOffset = 4,
-  ...props
-}: PopoverPrimitive.Popup.Props & Pick<PopoverPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset">) {
-  // The direction provider is React context only, so portalled content would otherwise follow
-  // the page rather than the application. Stating it here keeps the popover in that direction.
+function PopoverContent({ className, align = "center", alignOffset = 0, side = "bottom", sideOffset = 4, ...props }: PopoverPrimitive.Popup.Props & Pick<PopoverPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset">) {
+  // The direction provider is React context only, so portalled content would otherwise follow the page rather than the application. Stating it here keeps the popover in that direction.
   const direction = useDirection();
   return (
     <PopoverPrimitive.Portal>

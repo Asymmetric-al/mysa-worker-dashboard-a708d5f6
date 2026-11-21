@@ -15,25 +15,10 @@ const badgeVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
       },
     },
-    defaultVariants: {
-      variant: "default",
-    },
+    defaultVariants: { variant: "default" },
   },
 );
 function Badge({ className, variant = "default", render, ...props }: useRender.ComponentProps<"span"> & VariantProps<typeof badgeVariants>) {
-  return useRender({
-    defaultTagName: "span",
-    props: mergeProps<"span">(
-      {
-        className: cn(badgeVariants({ variant }), className),
-      },
-      props,
-    ),
-    render,
-    state: {
-      slot: "badge",
-      variant,
-    },
-  });
+  return useRender({ defaultTagName: "span", props: mergeProps<"span">({ className: cn(badgeVariants({ variant }), className) }, props), render, state: { slot: "badge", variant } });
 }
 export { Badge, badgeVariants };

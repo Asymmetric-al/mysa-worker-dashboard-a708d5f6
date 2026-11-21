@@ -1,23 +1,4 @@
-/**
- * Proves the outreach initiative model (success criterion 14): a reviewed working list that holds
- * only the partners somebody explicitly chose, three member states that stay three, a stage that is
- * a human assessment and nothing more, a Request whose answer binds to the terms version it answers,
- * an agreement that creates no gift, pledge, commitment, task or message, results that state their
- * own denominator, and a close that fences new solicitation without resolving the work it leaves.
- *
- * Recorded divergences from the brief this file was written against:
- * - The service states a *revised* ask as a second Request whose terms carry the next version,
- *   because a recorded presentation is never overwritten. The seeded world supplies the other
- *   arrangement for the same rule: one Request whose terms are `terms-v2` while its presentation
- *   and its recorded answer cite `terms-v1`.
- * - A response kind is spelled `needs clarification` on input and stored as `needs-clarification`;
- *   the closed set is therefore asserted from what the read reports.
- * - The store is file-backed, so the deterministic seed's own documents are laid down through the
- *   store's own `resetSession`, its only creating path, under this file's private session id, and the
- *   one absence the criterion turns on — no gift, pledge, commitment, task or message was created — is
- *   counted from that session's stored records before and after the change. They are laid down again
- *   before every case, so each case starts from the seeded initiative in whatever order the cases run.
- */
+/** Proves the outreach initiative model (success criterion 14): a reviewed working list that holds only the partners somebody explicitly chose, three member states that stay three, a stage that is a … */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { isOutcome, type InvalidOutcome, type MutationOutcome, type ReadResult } from "@/modules/data-service/outcome";
@@ -27,58 +8,28 @@ import type { Money } from "@/modules/money/amount";
 import { readSession, resetSession } from "@/modules/store/repository";
 /** This file's own session: a private id, so no other suite's seeded world is shared or disturbed. */
 const SESSION_ID = "domain-outreach";
-
 const SOURCE = { sessionId: SESSION_ID } as const;
-
-/** The seeded initiative whose Request carries the earlier terms version. */
 const SEEDED_INITIATIVE = "initiative-autumn-appeal";
-
-/** The seeded member a first approach must never silently include again. */
 const EXCLUDED_PARTNER = "partner-marcus-webb";
-
-/** A seeded paused series: a stage assessment must not resume it. */
 const PAUSED_SERIES = "series-fortnightly-newsletter";
-
 /** The membership a `subscribed` column could be mistaken for: recorded, and off rather than consented. */
 const SUBSCRIBED_COLUMN_MEMBERSHIP = "membership-subscribed-column";
-
 function required<T>(value: T | undefined, what: string): T {
-  if (value === undefined) {
-    throw new Error(`The seeded world carries no ${what}, so this case cannot start from it.`);
-  }
+  if (value === undefined) throw new Error(`The seeded world carries no ${what}, so this case cannot start from it.`);
   return value;
 }
-// The world: the deterministic seed, laid down under this file's private session id
 let seededScope: Scope | undefined;
-
 /** The seeded document set every case is laid down from, captured once so each case starts from the seed. */
 let seededDocuments: SeededSessionDocuments | undefined;
-
-/** The authority the seeded context gives this session: every change below is made under it. */
 function scope(): Scope {
-  if (seededScope === undefined) {
-    throw new Error("The seeded world was not laid down before this case ran.");
-  }
+  if (seededScope === undefined) throw new Error("The seeded world was not laid down before this case ran.");
   return seededScope;
 }
 function scopeOf(state: SessionStateDocument): Scope {
   const { context: stored } = state;
-  if (stored.selectedOrganizationId === null || stored.selectedMinistryId === null || stored.selectedSupportSubjectId === null) {
-    throw new Error("The seeded session selects no context, so no initiative can be read or changed under an authority it never chose.");
-  }
-  return {
-    organizationId: stored.selectedOrganizationId,
-    ministryId: stored.selectedMinistryId,
-    supportSubjectId: stored.selectedSupportSubjectId,
-    principalId: stored.principalId,
-  };
+  if (stored.selectedOrganizationId === null || stored.selectedMinistryId === null || stored.selectedSupportSubjectId === null) throw new Error("The seeded session selects no context, so no initiative can be read or changed under an authority it never chose.");
+  return { organizationId: stored.selectedOrganizationId, ministryId: stored.selectedMinistryId, supportSubjectId: stored.selectedSupportSubjectId, principalId: stored.principalId };
 }
-/**
- * Lays this file's session down from the seeded documents. The seeded initiative, its presented
- * Request and its unanswered answer are facts these cases assert as readily as the state they record
- * themselves, so the session is restored to the seed before every case: no case may inherit a close, a
- * reopen or a recorded answer from a sibling case, whatever order the cases run in.
- */
 async function layDownSeededSession(): Promise<void> {
   const documents = required(seededDocuments, "the seeded session's documents");
   await resetSession(SESSION_ID, documents);
@@ -95,37 +46,27 @@ beforeAll(async () => {
 });
 beforeEach(layDownSeededSession);
 afterAll(async () => {
-  // Only this session's own documents are removed: the directory holds other suites' worlds.
   await resetSession(SESSION_ID);
 });
-// Reading the outcome set without guessing at it
 function outcomeIs(outcome: MutationOutcome, expected: MutationOutcome["outcome"]): MutationOutcome {
   expect(isOutcome(outcome)).toBe(true);
   expect(outcome.outcome).toBe(expected);
   return outcome;
 }
 function acceptedOutcome(outcome: MutationOutcome): Extract<MutationOutcome, { outcome: "accepted" }> {
-  if (outcome.outcome !== "accepted") {
-    throw new Error(`This change was expected to be applied once and was answered with ${JSON.stringify(outcome)}.`);
-  }
+  if (outcome.outcome !== "accepted") throw new Error(`This change was expected to be applied once and was answered with ${JSON.stringify(outcome)}.`);
   return outcome;
 }
 function invalidOutcome(outcome: MutationOutcome): InvalidOutcome {
-  if (outcome.outcome !== "invalid") {
-    throw new Error(`This change was expected to be refused by validation and was answered with ${JSON.stringify(outcome)}.`);
-  }
+  if (outcome.outcome !== "invalid") throw new Error(`This change was expected to be refused by validation and was answered with ${JSON.stringify(outcome)}.`);
   return outcome;
 }
-/** The field paths of an `invalid` outcome: what a form places its messages against. */
 function fieldPathsOf(outcome: InvalidOutcome): readonly string[] {
   return Object.keys(outcome.fields).sort();
 }
-/** Unwraps a read: a refusal is a failure of the case, never a value a test may assert on by accident. */
 async function envelopeOf<T>(pending: Promise<ReadResult<T>>, what: string): Promise<T> {
   const result = await pending;
-  if (result.kind !== "envelope") {
-    throw new Error(`${what} was refused rather than answered: ${JSON.stringify(result)}`);
-  }
+  if (result.kind !== "envelope") throw new Error(`${what} was refused rather than answered: ${JSON.stringify(result)}`);
   return result.envelope;
 }
 function attempt<P>(payload: P, expectedRevision: string, acting: Scope = scope()): MutationInput<P> {
@@ -137,7 +78,6 @@ async function initiativeDetail(initiativeId: string) {
 async function initiativeResults(initiativeId: string) {
   return envelopeOf(reads.outreach.readInitiativeResults(initiativeId, SOURCE), `readInitiativeResults(${initiativeId})`);
 }
-// The record families a response could have touched, counted from this session's own stored records
 interface RecordCounts {
   readonly partners: number;
   readonly interactions: number;
@@ -155,31 +95,21 @@ interface RecordCounts {
   readonly membershipStates: Readonly<Record<string, string>>;
 }
 function readArrayMember(document: unknown, key: string): readonly unknown[] {
-  if (typeof document !== "object" || document === null) {
-    throw new Error("This session's state document is not an object, so its records cannot be counted.");
-  }
+  if (typeof document !== "object" || document === null) throw new Error("This session's state document is not an object, so its records cannot be counted.");
   const member: unknown = Reflect.get(document, key);
-  if (!Array.isArray(member)) {
-    throw new Error(`This session's state document holds no "${key}" collection, so a created record there could not be seen.`);
-  }
+  if (!Array.isArray(member)) throw new Error(`This session's state document holds no "${key}" collection, so a created record there could not be seen.`);
   return member;
 }
 function identifierAndStateOf(value: unknown): readonly [string, string] {
-  if (typeof value !== "object" || value === null) {
-    throw new Error("A stored membership record is not an object, so its state cannot be compared.");
-  }
+  if (typeof value !== "object" || value === null) throw new Error("A stored membership record is not an object, so its state cannot be compared.");
   const membershipId: unknown = Reflect.get(value, "membershipId");
   const state: unknown = Reflect.get(value, "state");
-  if (typeof membershipId !== "string" || typeof state !== "string") {
-    throw new Error("A stored membership record holds no string id and state, so it cannot be compared by identity.");
-  }
+  if (typeof membershipId !== "string" || typeof state !== "string") throw new Error("A stored membership record holds no string id and state, so it cannot be compared by identity.");
   return [membershipId, state];
 }
 async function recordCounts(): Promise<RecordCounts> {
   const stored = await readSession(SESSION_ID);
-  if (stored === undefined) {
-    throw new Error("This session is absent from the store, so its records cannot be counted.");
-  }
+  if (stored === undefined) throw new Error("This session is absent from the store, so its records cannot be counted.");
   const document: unknown = stored.state;
   const memberships = readArrayMember(document, "memberships");
   const membershipStates: Record<string, string> = {};
@@ -203,7 +133,6 @@ async function recordCounts(): Promise<RecordCounts> {
     membershipStates,
   };
 }
-/** A working-list row, named by the partner it carries: the ids the fixture uses are chosen here, not guessed. */
 type WorkingListRows = Awaited<ReturnType<typeof initiativeDetail>>["data"]["workingList"]["items"];
 
 function memberRowFor(rows: WorkingListRows, partnerId: string) {
@@ -241,28 +170,22 @@ async function answerAsk(initiativeId: string, requestId: string, facts: { reado
   const row = requestRowFor(detail.data.requests.items, requestId);
   return mutations.outreach.recordRequestResponse(attempt({ requestId, response: { ...facts, standingEvidence: null } }, row.revision), SOURCE);
 }
-/** The requested amount as the terms rows carry it: an exact count of minor units and the currency they belong to. */
 function requestedAmount(currency: string, minorUnits: number): Money {
   return { currency, minorUnits: minorUnits as Money["minorUnits"] };
 }
-// Phase A — the working list is explicit, and three states stay three
 describe("a reviewed working list holds only the partners somebody chose", () => {
   it("joins the selected partners and nothing a later filter happens to match", async () => {
     const initiativeId = await createInitiative("Autumn visits", "Invite partners to a visit round.");
     const empty = await initiativeDetail(initiativeId);
     expect(empty.data.workingList.total).toBe(0);
-
-    // A filter that matches Ruth exists before any membership does: matching is not joining.
     const matched = await envelopeOf(reads.partners.findPartners({ search: "Okafor" }, SOURCE), "findPartners");
     expect(matched.data.total).toBe(1);
     expect(required(matched.data.rows[0], "matched roster row").partner.partnerId).toBe("partner-ruth-okafor");
     expect((await initiativeDetail(initiativeId)).data.workingList.total).toBe(0);
-
     const added = acceptedOutcome(
       await addPartners(initiativeId, [
         "partner-ruth-okafor",
         "partner-church-st-aidan",
-        // A worker-private preparation record is a different record class: it is never approached.
         "partner-prep-sunday-visitor",
         // A partner this roster does not carry is refused per item rather than failing the whole list.
         "partner-not-on-the-roster",
@@ -272,13 +195,10 @@ describe("a reviewed working list holds only the partners somebody chose", () =>
     expect(items.filter((item) => item.state === "accepted").map((item) => item.targetId)).toEqual(["partner-ruth-okafor", "partner-church-st-aidan"]);
     expect(items.filter((item) => item.state === "excluded").map((item) => item.reasonCode)).toEqual(["not-eligible", "not-eligible"]);
     expect(added.created).toHaveLength(2);
-
     const listed = await initiativeDetail(initiativeId);
     expect(listed.data.workingList.total).toBe(2);
     expect(listed.data.workingList.items.map((row) => row.partnerId).sort()).toEqual(["partner-church-st-aidan", "partner-ruth-okafor"]);
     expect(listed.data.workingList.items.filter((row) => row.partnerId === "partner-prep-sunday-visitor")).toEqual([]);
-
-    // The filter still matches the same partner, and still joins nobody.
     const matchedAgain = await envelopeOf(reads.partners.findPartners({ search: "Okafor" }, SOURCE), "findPartners");
     expect(matchedAgain.data.total).toBe(1);
     expect((await initiativeDetail(initiativeId)).data.workingList.total).toBe(2);
@@ -291,7 +211,6 @@ describe("a reviewed working list holds only the partners somebody chose", () =>
     for (const state of states) {
       expect(["included", "removed", "excluded"]).toContain(state);
     }
-    // Every one of the three is reachable from the seeded world, and the counts add up to the list.
     const counts = detail.data.initiative.memberStates;
     expect(Object.keys(counts).sort()).toEqual(["excluded", "included", "removed"]);
     expect(counts.included + counts.removed + counts.excluded).toBe(detail.data.workingList.total);
@@ -304,39 +223,27 @@ describe("a reviewed working list holds only the partners somebody chose", () =>
     acceptedOutcome(await addPartners(initiativeId, ["partner-grace-adeyemi"]));
     const added = await initiativeDetail(initiativeId);
     const member = memberRowFor(added.data.workingList.items, "partner-grace-adeyemi");
-
     const seededBefore = await initiativeDetail(SEEDED_INITIATIVE);
     const seededMember = memberRowFor(seededBefore.data.workingList.items, "partner-grace-adeyemi");
     expect(seededBefore.data.nextWork.items.map((task) => task.taskId)).toContain("task-meeting-grace");
     const tasksBefore = (await recordCounts()).tasks;
-
-    const removed = acceptedOutcome(
-      await mutations.outreach.removeMember(attempt({ initiativeId, memberId: member.memberId, reason: "Asked us to wait until the new year." }, member.revision), SOURCE),
-    );
+    const removed = acceptedOutcome(await mutations.outreach.removeMember(attempt({ initiativeId, memberId: member.memberId, reason: "Asked us to wait until the new year." }, member.revision), SOURCE));
     expect(removed.changed).toEqual([member.memberId]);
-
     const after = await initiativeDetail(initiativeId);
     const removedRow = memberRowFor(after.data.workingList.items, "partner-grace-adeyemi");
     expect(removedRow.state).toBe("removed");
-    // The removal is recorded beside the inclusion, never in place of it.
     expect(removedRow.history.length).toBe(member.history.length + 1);
     expect(removedRow.history.map((entry) => entry.state)).toEqual(["included", "removed"]);
     expect(removedRow.history[0]?.reason).toBe("Added from the reviewed working list.");
     expect(removedRow.history[1]?.reason).toBe("Asked us to wait until the new year.");
-
-    // An open task on the same partner, and the same partner's membership of another initiative,
-    // are obligations this initiative does not own.
     const seededAfter = await initiativeDetail(SEEDED_INITIATIVE);
     const seededAfterMember = memberRowFor(seededAfter.data.workingList.items, "partner-grace-adeyemi");
     expect(seededAfterMember.state).toBe("included");
     expect(seededAfterMember.revision).toBe(seededMember.revision);
     expect(seededAfter.data.nextWork.items.find((task) => task.taskId === "task-meeting-grace")?.status).toBe("open");
     expect((await recordCounts()).tasks).toBe(tasksBefore);
-
     // With nobody left on the list there is nothing to plan against, so planning is not offered.
     expect(after.actions.find((action) => action.name === "setStage")?.available).toBe(false);
-
-    // Returning restores planning only: the earlier assessment, and nothing else, comes back with it.
     const countsBeforeReturn = await recordCounts();
     const returned = acceptedOutcome(await mutations.outreach.returnMember(attempt({ initiativeId, memberId: removedRow.memberId }, removedRow.revision), SOURCE));
     const restoredDetail = await initiativeDetail(initiativeId);
@@ -346,7 +253,6 @@ describe("a reviewed working list holds only the partners somebody chose", () =>
     expect(restored.state).toBe("included");
     expect(restored.stage).toBeNull();
     expect(restored.history.map((entry) => entry.state)).toEqual(["included", "removed", "included"]);
-    // Plannable again, and only plannable: no consent, no assessment and no Update audience came with it.
     expect(restoredDetail.actions.find((action) => action.name === "setStage")?.available).toBe(true);
     expect(countsAfterReturn.membershipStates).toEqual(countsBeforeReturn.membershipStates);
     expect(countsAfterReturn.memberships).toBe(countsBeforeReturn.memberships);
@@ -360,11 +266,8 @@ describe("a reviewed working list holds only the partners somebody chose", () =>
     const before = await recordCounts();
     expect(before.membershipStates[SUBSCRIBED_COLUMN_MEMBERSHIP]).toBe("off");
     const scopeOverviewBefore = await envelopeOf(reads.support.readSupportOverview({}, SOURCE), "readSupportOverview");
-
     acceptedOutcome(await addPartners(initiativeId, ["partner-hana-nakamura"]));
-
     const after = await recordCounts();
-    // Inclusion is not Asked: no stage assessment is recorded by it.
     expect(memberRowFor((await initiativeDetail(initiativeId)).data.workingList.items, "partner-hana-nakamura").stage).toBeNull();
     // Inclusion is not consent and not Update membership: the purpose-specific memberships are untouched,
     // including the one a `subscribed` column would have created, which is off and stays off.
@@ -372,7 +275,6 @@ describe("a reviewed working list holds only the partners somebody chose", () =>
     expect(after.memberships).toBe(before.memberships);
     expect(after.notificationIntents).toBe(before.notificationIntents);
     expect(after.notificationResults).toBe(before.notificationResults);
-    // Nor is it money or work.
     expect(after.gifts).toBe(before.gifts);
     expect(after.commitments).toBe(before.commitments);
     expect(after.tasks).toBe(before.tasks);
@@ -380,16 +282,13 @@ describe("a reviewed working list holds only the partners somebody chose", () =>
     expect((await envelopeOf(reads.support.readSupportOverview({}, SOURCE), "readSupportOverview")).data).toEqual(scopeOverviewBefore.data);
   });
 });
-// Phase B — a stage is an assessment
 describe("a stage records an assessment and predicts nothing", () => {
   it("accepts only a stage the source approves", async () => {
     const initiativeId = await createInitiative("Approved stages", "Check which stages are offered.");
     acceptedOutcome(await addPartners(initiativeId, ["partner-ruth-okafor"]));
     const member = memberRowFor((await initiativeDetail(initiativeId)).data.workingList.items, "partner-ruth-okafor");
-
     const approved = (await initiativeDetail(initiativeId)).data.stages.filter((option) => option.admitted).map((option) => option.value);
     expect(approved.length).toBeGreaterThan(0);
-    // A list position is not a workflow: no stage admits, predicts or closes anything.
     for (const value of approved) {
       expect(value).not.toMatch(/won|lost|closed|converted|pledged|gave|donated/iu);
     }
@@ -400,25 +299,19 @@ describe("a stage records an assessment and predicts nothing", () => {
       expect(messages.length).toBeGreaterThan(0);
       expect(messages.every((message) => message.trim().length > 0)).toBe(true);
     }
-    // Nothing was recorded by the refusal.
     expect(memberRowFor((await initiativeDetail(initiativeId)).data.workingList.items, "partner-ruth-okafor").stage).toBeNull();
   });
   it("treats the same assessment again as no change at all", async () => {
     const initiativeId = await createInitiative("Repeated assessment", "Record the same stage twice.");
     acceptedOutcome(await addPartners(initiativeId, ["partner-kenji-nakamura"]));
     const member = memberRowFor((await initiativeDetail(initiativeId)).data.workingList.items, "partner-kenji-nakamura");
-
     const recorded = acceptedOutcome(await mutations.outreach.setStage(attempt({ initiativeId, memberId: member.memberId, stage: "Follow up due" }, member.revision), SOURCE));
     const afterFirst = memberRowFor((await initiativeDetail(initiativeId)).data.workingList.items, "partner-kenji-nakamura");
     expect(afterFirst.stage).toBe("Follow up due");
     expect(afterFirst.stageState).toBe("admitted");
     expect(afterFirst.revision).not.toBe(member.revision);
-
     const repeated = outcomeIs(await mutations.outreach.setStage(attempt({ initiativeId, memberId: member.memberId, stage: "Follow up due" }, afterFirst.revision), SOURCE), "unchanged");
-    if (repeated.outcome !== "unchanged") {
-      throw new Error("A repeated assessment was expected to answer unchanged.");
-    }
-    // `unchanged` alone is not proof: the revision must not have moved and no history may be written.
+    if (repeated.outcome !== "unchanged") throw new Error("A repeated assessment was expected to answer unchanged.");
     expect(repeated.revision).toBe(afterFirst.revision);
     expect(recorded.revision).toBe(afterFirst.revision);
     const afterSecond = memberRowFor((await initiativeDetail(initiativeId)).data.workingList.items, "partner-kenji-nakamura");
@@ -433,12 +326,9 @@ describe("a stage records an assessment and predicts nothing", () => {
     const nextWorkBefore = (await initiativeDetail(initiativeId)).data.nextWork.total;
     const pausedBefore = await envelopeOf(reads.series.readSeries({ seriesId: PAUSED_SERIES }, SOURCE), "readSeries");
     expect(pausedBefore.data.state).toBe("paused");
-
     acceptedOutcome(await mutations.outreach.setStage(attempt({ initiativeId, memberId: member.memberId, stage: "Asked" }, member.revision), SOURCE));
-
     expect((await recordCounts()).tasks).toBe(tasksBefore);
     expect((await initiativeDetail(initiativeId)).data.nextWork.total).toBe(nextWorkBefore);
-    // A human assessment unpauses nothing: a paused series is still paused afterwards.
     expect((await envelopeOf(reads.series.readSeries({ seriesId: PAUSED_SERIES }, SOURCE), "readSeries")).data.state).toBe("paused");
   });
   it("carries the stage identity and its assessment, and no outcome beside them", async () => {
@@ -446,9 +336,6 @@ describe("a stage records an assessment and predicts nothing", () => {
     acceptedOutcome(await addPartners(initiativeId, ["partner-ruth-okafor"]));
     const detail = await initiativeDetail(initiativeId);
     const member = memberRowFor(detail.data.workingList.items, "partner-ruth-okafor");
-
-    // The offered stages are a flat list of values and whether the source still admits them: there is
-    // no ordering, ranking or board position for a stage to occupy.
     for (const option of detail.data.stages) {
       expect(Object.keys(option).sort()).toEqual(["admitted", "value"]);
     }
@@ -458,31 +345,18 @@ describe("a stage records an assessment and predicts nothing", () => {
     expect(JSON.stringify(recorded)).not.toMatch(/won|lost|closed|converted|pledge/iu);
   });
 });
-// Phase C — a Request answers a version
 describe("a Request answers the terms version it was presented", () => {
   it("keeps both versions and records the version each presentation showed", async () => {
     const initiativeId = await createInitiative("Versioned asks", "Ask in two versions.");
-    const first = await draftAsk(initiativeId, {
-      recipientPartnerId: "partner-ruth-okafor",
-      representedOrganizationId: "partner-church-st-aidan",
-      terms: { version: 1, currency: "USD", minorUnits: 2500, cadence: "Monthly", term: "12 months" },
-    });
-    // The person and the organization they represent are two references, and two records.
+    const first = await draftAsk(initiativeId, { recipientPartnerId: "partner-ruth-okafor", representedOrganizationId: "partner-church-st-aidan", terms: { version: 1, currency: "USD", minorUnits: 2500, cadence: "Monthly", term: "12 months" } });
     const drafted = requestRowFor((await initiativeDetail(initiativeId)).data.requests.items, first);
     expect(drafted.terms.version).toBe("terms-v1");
     expect(drafted.recipientPartnerId).toBe("partner-ruth-okafor");
     expect(drafted.representedOrganizationId).toBe("partner-church-st-aidan");
     expect(drafted.representedOrganizationId).not.toBe(drafted.recipientPartnerId);
-
     acceptedOutcome(await presentAsk(initiativeId, first, "2026-11-02", "terms-v1"));
-
-    // A revised ask is stated as its own Request: a recorded presentation is never rewritten.
-    const second = await draftAsk(initiativeId, {
-      recipientPartnerId: "partner-ruth-okafor",
-      terms: { version: 2, nonFinancial: { description: "Prayer support for the visit team" } },
-    });
+    const second = await draftAsk(initiativeId, { recipientPartnerId: "partner-ruth-okafor", terms: { version: 2, nonFinancial: { description: "Prayer support for the visit team" } } });
     acceptedOutcome(await presentAsk(initiativeId, second, "2026-11-09", "terms-v2"));
-
     const detail = await initiativeDetail(initiativeId);
     expect(detail.data.requests.total).toBe(2);
     const firstRow = requestRowFor(detail.data.requests.items, first);
@@ -504,14 +378,11 @@ describe("a Request answers the terms version it was presented", () => {
     expect(seededRequest.terms.version).toBe("terms-v2");
     expect(seededRequest.presentation?.versionRef).toBe("terms-v1");
     expect(before.data.initiative.state).toBe("open");
-
     // An answer to a version that was never presented is refused rather than relabelled.
     const wrongVersion = invalidOutcome(await answerAsk(SEEDED_INITIATIVE, "request-autumn-grace", { kind: "agreed", respondentId: "partner-grace-adeyemi", termsVersionRef: "terms-v2" }));
     expect(fieldPathsOf(wrongVersion)).toEqual(["response.termsVersionRef"]);
-
     const recorded = acceptedOutcome(await answerAsk(SEEDED_INITIATIVE, "request-autumn-grace", { kind: "agreed", respondentId: "partner-grace-adeyemi", termsVersionRef: "terms-v1" }));
     expect(recorded.changed).toEqual(["request-autumn-grace"]);
-
     const after = await initiativeDetail(SEEDED_INITIATIVE);
     const answered = requestRowFor(after.data.requests.items, "request-autumn-grace");
     expect(answered.response?.kind).toBe("agreed");
@@ -519,11 +390,9 @@ describe("a Request answers the terms version it was presented", () => {
     expect(answered.response?.termsVersionRef).not.toBe(answered.terms.version);
     expect(answered.answeredEarlierTermsVersion).toBe(true);
     expect(answered.response?.answersCurrentVersion).toBe(false);
-    // A late answer is recordable while the initiative stands exactly where it stood.
     expect(after.data.initiative.state).toBe("open");
     expect(after.data.initiative.lifecycle).toBe("open");
     expect(after.data.history.some((entry) => entry.kind === "request-response" && entry.termsVersionRef === "terms-v1")).toBe(true);
-
     // The results name the superseded version rather than folding it into the current one.
     const results = await initiativeResults(SEEDED_INITIATIVE);
     const versions = new Map(results.data.termsVersions.map((version) => [version.termsVersion, version]));
@@ -536,11 +405,9 @@ describe("a Request answers the terms version it was presented", () => {
     expect(kinds).toHaveLength(7);
     expect(new Set(kinds).size).toBe(7);
     expect([...kinds]).toEqual(["agreed", "conditional", "partial", "deferred", "declined", "unanswered", "needs-clarification"]);
-
     // The answer the refused eighth kind must leave alone is one this case records itself, so the case
     // holds whatever order the cases run in.
     acceptedOutcome(await answerAsk(SEEDED_INITIATIVE, "request-autumn-grace", { kind: "agreed", respondentId: "partner-grace-adeyemi", termsVersionRef: "terms-v1" }));
-
     const before = await recordCounts();
     const eighth = invalidOutcome(await answerAsk(SEEDED_INITIATIVE, "request-autumn-grace", { kind: "accepted", respondentId: "partner-grace-adeyemi", termsVersionRef: "terms-v1" }));
     expect(fieldPathsOf(eighth)).toEqual(["response.kind"]);
@@ -550,21 +417,15 @@ describe("a Request answers the terms version it was presented", () => {
     expect(unchangedRow.response?.kind).toBe("agreed");
   });
 });
-// Phase D — agreement is not money, not work, not a message
 describe("an agreement creates nothing but an answer", () => {
   it("records the answer without creating a gift, a pledge, a task or a message", async () => {
     const initiativeId = await createInitiative("Agreement leaves no trace", "Record an agreed answer in it.");
-    const ask = await draftAsk(initiativeId, {
-      recipientPartnerId: "partner-church-st-aidan",
-      terms: { version: 1, currency: "USD", minorUnits: 12000, cadence: "One-off", term: "This year" },
-    });
+    const ask = await draftAsk(initiativeId, { recipientPartnerId: "partner-church-st-aidan", terms: { version: 1, currency: "USD", minorUnits: 12000, cadence: "One-off", term: "This year" } });
     acceptedOutcome(await presentAsk(initiativeId, ask, "2026-11-05", "terms-v1"));
     const nextWorkBefore = (await initiativeDetail(initiativeId)).data.nextWork.total;
     const before = await recordCounts();
-
     const recorded = acceptedOutcome(await answerAsk(initiativeId, ask, { kind: "agreed", respondentId: "partner-church-st-aidan", termsVersionRef: "terms-v1" }));
     expect(recorded.changed).toEqual([ask]);
-
     const after = await recordCounts();
     expect(after.gifts).toBe(before.gifts);
     expect(after.commitments).toBe(before.commitments);
@@ -573,28 +434,20 @@ describe("an agreement creates nothing but an answer", () => {
     expect(after.notificationIntents).toBe(before.notificationIntents);
     expect(after.notificationResults).toBe(before.notificationResults);
     expect(after.partners).toBe(before.partners);
-
     const detail = await initiativeDetail(initiativeId);
     expect(detail.data.nextWork.total).toBe(nextWorkBefore);
     const answered = requestRowFor(detail.data.requests.items, ask);
     expect(answered.response?.kind).toBe("agreed");
-    // Work an answer suggests is recorded by the work family, never inferred into the ask.
     expect(answered.nextWorkIds).toEqual([]);
-    // The respondent is the recipient, and never becomes the organization they represent.
     expect(answered.response?.respondentId).toBe(answered.recipientPartnerId);
   });
   it("keeps requested terms out of every received-support figure", async () => {
     const overviewBefore = await envelopeOf(reads.support.readSupportOverview({}, SOURCE), "readSupportOverview");
     const initiativeId = await createInitiative("Requested only", "Ask for an amount nobody has given.");
-    const ask = await draftAsk(initiativeId, {
-      recipientPartnerId: "partner-ruth-okafor",
-      terms: { version: 1, currency: "USD", minorUnits: 987654, cadence: "Monthly", term: "24 months" },
-    });
+    const ask = await draftAsk(initiativeId, { recipientPartnerId: "partner-ruth-okafor", terms: { version: 1, currency: "USD", minorUnits: 987654, cadence: "Monthly", term: "24 months" } });
     acceptedOutcome(await presentAsk(initiativeId, ask, "2026-11-06", "terms-v1"));
     acceptedOutcome(await answerAsk(initiativeId, ask, { kind: "agreed", respondentId: "partner-ruth-okafor", termsVersionRef: "terms-v1" }));
-
     const row = requestRowFor((await initiativeDetail(initiativeId)).data.requests.items, ask);
-    // Requested terms are labelled as such: an ask is not income.
     expect(row.terms.basis).toBe("requested-terms");
     expect(row.terms.money).toMatchObject(requestedAmount("USD", 987654));
     const overviewAfter = await envelopeOf(reads.support.readSupportOverview({}, SOURCE), "readSupportOverview");
@@ -604,69 +457,31 @@ describe("an agreement creates nothing but an answer", () => {
   it("states a non-financial ask with no amount beside it", async () => {
     const initiativeId = await createInitiative("Non-financial ask", "Ask for something that is not money.");
     const before = await recordCounts();
-    const ask = await draftAsk(initiativeId, {
-      recipientPartnerId: "partner-ruth-okafor",
-      terms: { version: 3, nonFinancial: { description: "A reference for the youth programme" } },
-    });
+    const ask = await draftAsk(initiativeId, { recipientPartnerId: "partner-ruth-okafor", terms: { version: 3, nonFinancial: { description: "A reference for the youth programme" } } });
     const row = requestRowFor((await initiativeDetail(initiativeId)).data.requests.items, ask);
     expect(row.terms.nonFinancial).toBe("A reference for the youth programme");
-    // Absent, not zero: there is no amount to mistake for a request for nothing.
     expect(row.terms.money).toBeNull();
     expect(JSON.stringify(row.terms)).not.toContain("minorUnits");
-
     // An ask cannot be both: the mixed shape is refused rather than reduced to one half.
     const mixed = invalidOutcome(
-      await mutations.outreach.draftRequest(
-        attempt(
-          {
-            initiativeId,
-            recipientPartnerId: "partner-ruth-okafor",
-            purpose: "Ask set by this case",
-            terms: { version: 4, currency: "USD", minorUnits: 500, nonFinancial: { description: "And prayer" } },
-          },
-          (await initiativeDetail(initiativeId)).revision,
-        ),
-        SOURCE,
-      ),
+      await mutations.outreach.draftRequest(attempt({ initiativeId, recipientPartnerId: "partner-ruth-okafor", purpose: "Ask set by this case", terms: { version: 4, currency: "USD", minorUnits: 500, nonFinancial: { description: "And prayer" } } }, (await initiativeDetail(initiativeId)).revision), SOURCE),
     );
     expect(fieldPathsOf(mixed)).toEqual(["terms.nonFinancial"]);
     expect((await recordCounts()).requests).toBe(before.requests + 1);
   });
   it("respects a currency's exponent and never defaults an unknown one", async () => {
     const initiativeId = await createInitiative("Currency exponents", "Ask in currencies with three and zero decimals.");
-    const threeDecimal = await draftAsk(initiativeId, {
-      recipientPartnerId: "partner-ruth-okafor",
-      terms: { version: 1, currency: "KWD", minorUnits: 1250 },
-    });
-    const zeroDecimal = await draftAsk(initiativeId, {
-      recipientPartnerId: "partner-ruth-okafor",
-      terms: { version: 1, currency: "JPY", minorUnits: 5000 },
-    });
+    const threeDecimal = await draftAsk(initiativeId, { recipientPartnerId: "partner-ruth-okafor", terms: { version: 1, currency: "KWD", minorUnits: 1250 } });
+    const zeroDecimal = await draftAsk(initiativeId, { recipientPartnerId: "partner-ruth-okafor", terms: { version: 1, currency: "JPY", minorUnits: 5000 } });
     const detail = await initiativeDetail(initiativeId);
     expect(requestRowFor(detail.data.requests.items, threeDecimal).terms.money?.currencyExponent).toBe(3);
     expect(requestRowFor(detail.data.requests.items, zeroDecimal).terms.money?.currencyExponent).toBe(0);
-
     const before = await recordCounts();
-    const unknownCurrency = invalidOutcome(
-      await mutations.outreach.draftRequest(
-        attempt(
-          {
-            initiativeId,
-            recipientPartnerId: "partner-ruth-okafor",
-            purpose: "Ask set by this case",
-            terms: { version: 2, currency: "ZZZ", minorUnits: 100 },
-          },
-          (await initiativeDetail(initiativeId)).revision,
-        ),
-        SOURCE,
-      ),
-    );
+    const unknownCurrency = invalidOutcome(await mutations.outreach.draftRequest(attempt({ initiativeId, recipientPartnerId: "partner-ruth-okafor", purpose: "Ask set by this case", terms: { version: 2, currency: "ZZZ", minorUnits: 100 } }, (await initiativeDetail(initiativeId)).revision), SOURCE));
     expect(fieldPathsOf(unknownCurrency)).toEqual(["terms.currency"]);
-    // An amount in a currency this build holds no exponent for is never defaulted to two decimals.
     expect((await recordCounts()).requests).toBe(before.requests);
   });
 });
-// Phase E — results state their denominator
 describe("results state every count over its own base", () => {
   it("reports each count with the denominator it was measured against", async () => {
     const results = await initiativeResults(SEEDED_INITIATIVE);
@@ -687,88 +502,44 @@ describe("results state every count over its own base", () => {
   it("states no rate at all when the denominator is zero", async () => {
     const emptyId = await createInitiative("Nothing asked yet", "Read results before any ask exists.");
     const results = await initiativeResults(emptyId);
-    const measured = [
-      results.data.workingList.included,
-      results.data.workingList.removed,
-      results.data.workingList.excluded,
-      results.data.requests.presented,
-      results.data.requests.answered,
-      results.data.requests.unanswered,
-      ...results.data.responseKinds,
-    ];
+    const measured = [results.data.workingList.included, results.data.workingList.removed, results.data.workingList.excluded, results.data.requests.presented, results.data.requests.answered, results.data.requests.unanswered, ...results.data.responseKinds];
     for (const entry of measured) {
       expect(entry.denominator).toBe(0);
       expect(entry.count).toBe(0);
-      // No percentage is invented: a zero denominator is not a zero rate.
       expect(entry.percentage).toBeUndefined();
       expect("percentage" in entry).toBe(false);
     }
   });
 });
-// Phase F — close and reopen
 describe("closing fences new solicitation and resolves nothing", () => {
   it("refuses a close that says nothing about the work it leaves", async () => {
     const before = await initiativeDetail(SEEDED_INITIATIVE);
-    const handoffOnly = invalidOutcome(
-      await mutations.outreach.closeInitiative(attempt({ initiativeId: SEEDED_INITIATIVE, handoff: { kind: "none", reason: "Nothing outstanding" } }, before.revision), SOURCE),
-    );
+    const handoffOnly = invalidOutcome(await mutations.outreach.closeInitiative(attempt({ initiativeId: SEEDED_INITIATIVE, handoff: { kind: "none", reason: "Nothing outstanding" } }, before.revision), SOURCE));
     expect(fieldPathsOf(handoffOnly)).toEqual(["disposition"]);
-    // A refused close closes nothing.
     const after = await initiativeDetail(SEEDED_INITIATIVE);
     expect(after.data.initiative.state).toBe("open");
     expect(after.revision).toBe(before.revision);
   });
   it("closes with a disposition, fences new solicitation and still takes a late answer", async () => {
-    const presentedBeforeClose = await draftAsk(SEEDED_INITIATIVE, {
-      recipientPartnerId: "partner-ruth-okafor",
-      terms: { version: 2, currency: "USD", minorUnits: 3000, cadence: "Monthly", term: "6 months" },
-    });
-    const unpresented = await draftAsk(SEEDED_INITIATIVE, {
-      recipientPartnerId: "partner-hana-nakamura",
-      terms: { version: 2, currency: "USD", minorUnits: 1000, cadence: "Monthly", term: "6 months" },
-    });
+    const presentedBeforeClose = await draftAsk(SEEDED_INITIATIVE, { recipientPartnerId: "partner-ruth-okafor", terms: { version: 2, currency: "USD", minorUnits: 3000, cadence: "Monthly", term: "6 months" } });
+    const unpresented = await draftAsk(SEEDED_INITIATIVE, { recipientPartnerId: "partner-hana-nakamura", terms: { version: 2, currency: "USD", minorUnits: 1000, cadence: "Monthly", term: "6 months" } });
     acceptedOutcome(await presentAsk(SEEDED_INITIATIVE, presentedBeforeClose, "2026-11-10", "terms-v2"));
-
     const open = await initiativeDetail(SEEDED_INITIATIVE);
-    const closed = acceptedOutcome(
-      await mutations.outreach.closeInitiative(
-        attempt({ initiativeId: SEEDED_INITIATIVE, disposition: "Closed for this year", handoff: { kind: "none", reason: "No further visits planned" } }, open.revision),
-        SOURCE,
-      ),
-    );
-    // The open work the initiative owns is reported as still open: closing is not completing it.
+    const closed = acceptedOutcome(await mutations.outreach.closeInitiative(attempt({ initiativeId: SEEDED_INITIATIVE, disposition: "Closed for this year", handoff: { kind: "none", reason: "No further visits planned" } }, open.revision), SOURCE));
     expect(closed.items?.map((item) => item.targetId)).toContain("task-meeting-grace");
     expect(closed.items?.every((item) => item.state !== "accepted")).toBe(true);
-
     const after = await initiativeDetail(SEEDED_INITIATIVE);
     expect(after.data.initiative.state).toBe("closed");
     expect(after.data.initiative.lifecycle).toBe("closed");
     expect(after.data.initiative.closureDisposition).toContain("Closed for this year");
     expect(after.data.nextWork.items.find((task) => task.taskId === "task-meeting-grace")?.status).toBe("open");
     expect(after.actions.find((action) => action.name === "presentRequest")?.available).toBe(false);
-
-    // New solicitation is fenced: neither a new ask nor the presentation of one made earlier.
-    const drafted = invalidOutcome(
-      await mutations.outreach.draftRequest(
-        attempt(
-          {
-            initiativeId: SEEDED_INITIATIVE,
-            recipientPartnerId: "partner-ruth-okafor",
-            purpose: "One more ask",
-            terms: { version: 2, currency: "USD", minorUnits: 700 },
-          },
-          after.revision,
-        ),
-        SOURCE,
-      ),
-    );
+    const drafted = invalidOutcome(await mutations.outreach.draftRequest(attempt({ initiativeId: SEEDED_INITIATIVE, recipientPartnerId: "partner-ruth-okafor", purpose: "One more ask", terms: { version: 2, currency: "USD", minorUnits: 700 } }, after.revision), SOURCE));
     expect(fieldPathsOf(drafted)).toEqual(["initiativeId"]);
     const presentedLate = invalidOutcome(await presentAsk(SEEDED_INITIATIVE, unpresented, "2026-11-12", "terms-v2"));
     expect(fieldPathsOf(presentedLate)).toEqual(["initiativeId"]);
     const joinedLate = invalidOutcome(await addPartners(SEEDED_INITIATIVE, ["partner-kenji-nakamura"]));
     expect(fieldPathsOf(joinedLate)).toEqual(["initiativeId"]);
-
-    // An answer to an ask presented before the close is still recordable, and closes nothing again.
     const answered = acceptedOutcome(await answerAsk(SEEDED_INITIATIVE, presentedBeforeClose, { kind: "deferred", respondentId: "partner-ruth-okafor", termsVersionRef: "terms-v2" }));
     expect(answered.changed).toEqual([presentedBeforeClose]);
     const stillClosed = await initiativeDetail(SEEDED_INITIATIVE);
@@ -779,36 +550,26 @@ describe("closing fences new solicitation and resolves nothing", () => {
     // The arrangement this case turns on — a closed initiative — is one it makes for itself, with the
     // same close the closed-initiative case performs, so the case does not depend on that case running first.
     const open = await initiativeDetail(SEEDED_INITIATIVE);
-    acceptedOutcome(
-      await mutations.outreach.closeInitiative(
-        attempt({ initiativeId: SEEDED_INITIATIVE, disposition: "Closed for this year", handoff: { kind: "none", reason: "No further visits planned" } }, open.revision),
-        SOURCE,
-      ),
-    );
+    acceptedOutcome(await mutations.outreach.closeInitiative(attempt({ initiativeId: SEEDED_INITIATIVE, disposition: "Closed for this year", handoff: { kind: "none", reason: "No further visits planned" } }, open.revision), SOURCE));
     const closed = await initiativeDetail(SEEDED_INITIATIVE);
     expect(closed.data.initiative.lifecycle).toBe("closed");
     const disposition = closed.data.initiative.closureDisposition;
     const excludedBefore = memberRowFor(closed.data.workingList.items, EXCLUDED_PARTNER);
     expect(excludedBefore.state).toBe("excluded");
-
     const reopened = acceptedOutcome(await mutations.outreach.reopenInitiative(attempt({ initiativeId: SEEDED_INITIATIVE, reason: "A late answer arrived" }, closed.revision), SOURCE));
     expect(reopened.changed).toEqual([SEEDED_INITIATIVE]);
-
     const after = await initiativeDetail(SEEDED_INITIATIVE);
     expect(after.data.initiative.state).toBe("open");
     expect(after.data.initiative.lifecycle).toBe("reopened");
     // The earlier close is preserved rather than rewritten by the reopen.
     expect(after.data.initiative.closureDisposition).toBe(disposition);
-    // An exclusion is a decision about approaching somebody; reopening does not undo it.
     const excludedAfter = memberRowFor(after.data.workingList.items, EXCLUDED_PARTNER);
     expect(excludedAfter.state).toBe("excluded");
     expect(excludedAfter.revision).toBe(excludedBefore.revision);
     const returnedExcluded = invalidOutcome(await mutations.outreach.returnMember(attempt({ initiativeId: SEEDED_INITIATIVE, memberId: excludedAfter.memberId }, excludedAfter.revision), SOURCE));
     expect(fieldPathsOf(returnedExcluded)).toEqual(["memberId"]);
     const readded = outcomeIs(await addPartners(SEEDED_INITIATIVE, [EXCLUDED_PARTNER]), "unchanged");
-    if (readded.outcome !== "unchanged") {
-      throw new Error("Selecting an excluded partner again was expected to change nothing.");
-    }
+    if (readded.outcome !== "unchanged") throw new Error("Selecting an excluded partner again was expected to change nothing.");
     expect(readded.revision).toBe(after.revision);
     const stillExcluded = memberRowFor((await initiativeDetail(SEEDED_INITIATIVE)).data.workingList.items, EXCLUDED_PARTNER);
     expect(stillExcluded.state).toBe("excluded");

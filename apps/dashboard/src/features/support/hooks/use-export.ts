@@ -1,17 +1,12 @@
 "use client";
-/**
- * The one browser transport that takes a support query out of the application as a CSV file.
- */
+/** The one browser transport that takes a support query out of the application as a CSV file. */
 import { useMutation, type UseMutationResult } from "@tanstack/react-query";
 import type { reads } from "@/modules/data-service";
 import { isOutcome, isReadResult, type ReadResult } from "@/modules/data-service/outcome";
 import type { ReportQuery } from "@/modules/support/report";
 const EXPORT_PATH = "/api/export";
-/** What `readExport` answers, derived from the read itself: `ReadResult<ReadEnvelope<SupportExportData, FinancialCoverage>>`. */
 export type ExportAnswer = Awaited<ReturnType<typeof reads.export.readExport>>;
-/** The envelope arm of {@link ExportAnswer}: the CSV text with the facts that state what it is. */
 export type ExportEnvelope = Extract<ExportAnswer, { readonly kind: "envelope" }>["envelope"];
-/** One export request: the query on screen and the identity of the result on screen. */
 export interface ExportRequest {
   readonly query: ReportQuery;
   readonly snapshotId: string;
@@ -49,6 +44,9 @@ async function readAnswer(response: Response): Promise<ReadResult<ExportEnvelope
     if (body.kind === "unavailable") {
       return { kind: "unavailable", unavailable: body.unavailable };
     }
+    if (body.kind === "refused") {
+      return { kind: "refused", refused: body.refused };
+    }
     if (isExportEnvelope(body.envelope)) {
       return { kind: "envelope", envelope: body.envelope };
     }
@@ -60,23 +58,25 @@ async function readAnswer(response: Response): Promise<ReadResult<ExportEnvelope
     }
     throw noAnswer(response.status, "a body that is not the export envelope");
   }
-  if (response.status === 403 && isOutcome(body) && body.outcome === "denied") {
+  // A session that expired or could not be established answers 401 with the same denial a refused authority
+  // gets at 403, so both statuses are read as the denial they carry.
+  if ((response.status === 401 || response.status === 403) && isOutcome(body) && body.outcome === "denied") {
     return { kind: "denied", denied: body };
   }
   if (response.status === 503 && isOutcome(body) && body.outcome === "unavailable") {
     return { kind: "unavailable", unavailable: body };
+  }
+  // The query the export was asked for is not one this read admits: the field-keyed refusal is the
+  // caller's to correct, and no file was produced because none was asked for.
+  if (response.status === 422 && isOutcome(body) && body.outcome === "invalid") {
+    return { kind: "refused", refused: body };
   }
   throw noAnswer(response.status, "a body that is not one of this read's answers");
 }
 async function requestExport(request: ExportRequest): Promise<ExportAnswer> {
   let response: Response;
   try {
-    response = await fetch(EXPORT_PATH, {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({ query: request.query, snapshotId: request.snapshotId }),
-    });
+    response = await fetch(EXPORT_PATH, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, credentials: "same-origin", body: JSON.stringify({ query: request.query, snapshotId: request.snapshotId }) });
   } catch (cause) {
     throw new Error(`The export request to ${EXPORT_PATH} did not reach the application, so no file was produced.`, { cause });
   }

@@ -1,9 +1,4 @@
-/**
- * Proves the money module's exact-integer contract at the currency boundary: an amount whose currency
- * has no exponent is refused by every operation the module header names — negation included — and
- * survives only as the distinct fact `sumMinor` hands back in `unsurmmed`, while a known currency is
- * negated, summed and split with no unit created, lost or defaulted.
- */
+/** Proves the money module's exact-integer contract at the currency boundary: an amount whose currency has no exponent is refused by every operation the module header names — negation included. */
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -18,35 +13,22 @@ function refusalCode(operation: () => unknown): MoneyOperationErrorCode {
   try {
     operation();
   } catch (error) {
-    if (error instanceof MoneyOperationError) {
-      return error.code;
-    }
+    if (error instanceof MoneyOperationError) return error.code;
     throw error;
   }
   throw new Error("expected the operation to be refused, but it returned a value");
 }
 const UNLISTED_CURRENCY = "ZZZ";
-
 type Rendering = ReturnType<typeof formatMinor>;
 
-const ALL_VALUE_STATES: Readonly<Record<ValueState, true>> = {
-  value: true,
-  zero: true,
-  unknown: true,
-  withheld: true,
-  unavailable: true,
-  "incomplete-subtotal": true,
-};
+const ALL_VALUE_STATES: Readonly<Record<ValueState, true>> = { value: true, zero: true, unknown: true, withheld: true, unavailable: true, "incomplete-subtotal": true };
 const VALUE_STATE_ORDER = Object.keys(ALL_VALUE_STATES) as readonly ValueState[];
-
 function renderEveryState(amount: Money): ReadonlyMap<ValueState, Rendering> {
   return new Map<ValueState, Rendering>(VALUE_STATE_ORDER.map((state) => [state, formatMinor(amount, state, "en-US")] as const));
 }
 function renderingOf(renderings: ReadonlyMap<ValueState, Rendering>, state: ValueState): Rendering {
   const rendering = renderings.get(state);
-  if (rendering === undefined) {
-    throw new Error(`no rendering was produced for the value state "${state}"`);
-  }
+  if (rendering === undefined) throw new Error(`no rendering was produced for the value state "${state}"`);
   return rendering;
 }
 function fractionalDigitsOf(rendering: Rendering): number {
@@ -72,44 +54,27 @@ describe("the currency table", () => {
     { currency: "USD", exponent: 2 },
     { currency: "EUR", exponent: 2 },
   ])("resolves $currency to $exponent decimal places", ({ currency, exponent }) => {
-    // The seeded widths of AAP 0.8.7 and assumption A14 are asserted through the table rather than
-    // through a literal rendering, so a table that gained a wrong width cannot hide behind
-    // formatting that assumed two decimals everywhere.
     expect(exponentOf(currency)).toBe(exponent);
     expect(isKnownCurrency(currency)).toBe(true);
   });
   it("keeps an exponent of zero distinct from an absent exponent", () => {
-    // JPY is the case an `if (!exponent)` shortcut gets wrong: `0` is a resolved exponent, and only
-    // an absent one means the currency is unknown. A seven-digit JPY amount would otherwise be
-    // rendered as though it were a major-unit figure with no minor unit at all.
     expect(exponentOf("JPY")).toBe(0);
     expect(exponentOf("JPY")).not.toBeUndefined();
     expect(isKnownCurrency("JPY")).toBe(true);
   });
   it.each([UNKNOWN_CURRENCY, UNLISTED_CURRENCY, "usd", ""])('holds no exponent and no recognition for "$currency"', (currency) => {
-    // A code the table does not hold yields no exponent at all, which is what stops the amount
-    // from being rendered, summed or compared as though it had two decimals. The non-canonical
-    // `usd` is here because the table matches exactly: normalising it would let a stored code
-    // differ from the one trusted at read time.
     expect(exponentOf(currency)).toBeUndefined();
     expect(isKnownCurrency(currency)).toBe(false);
   });
 });
 describe("an amount whose currency has no exponent", () => {
-  it.each([UNKNOWN_CURRENCY, UNLISTED_CURRENCY].flatMap((currency) => REFUSALS.map(({ operation, run }) => ({ operation, currency, run }))))(
-    "refuses $operation for a $currency amount",
-    ({ currency, run }) => {
-      const amount = money(currency, 1250);
-      // Both assertions matter: the refusal is this module's one error type, and `unknown-currency`
-      // is the reason a caller can map to an honest outcome instead of reading a message.
-      expect(() => run(amount)).toThrow(MoneyOperationError);
-      expect(refusalCode(() => run(amount))).toBe("unknown-currency");
-    },
-  );
+  it.each([UNKNOWN_CURRENCY, UNLISTED_CURRENCY].flatMap((currency) => REFUSALS.map(({ operation, run }) => ({ operation, currency, run }))))("refuses $operation for a $currency amount", ({ currency, run }) => {
+    const amount = money(currency, 1250);
+    expect(() => run(amount)).toThrow(MoneyOperationError);
+    expect(refusalCode(() => run(amount))).toBe("unknown-currency");
+  });
   it("survives only in sumMinor's unsurmmed list, in input order beside the known total", () => {
     const { totals, unsurmmed } = sumMinor([money("USD", 500), money(UNKNOWN_CURRENCY, 1250), money("USD", 700), money(UNLISTED_CURRENCY, 40)]);
-    // The known currency folds into one total and nothing unknown is folded into it, so the
-    // unknown facts are never presented as part of a USD figure.
     expect(totals).toEqual([{ currency: "USD", minorUnits: 1200 }]);
     expect(unsurmmed.map((amount) => amount.currency)).toEqual([UNKNOWN_CURRENCY, UNLISTED_CURRENCY]);
     expect(unsurmmed.map((amount) => amount.minorUnits)).toEqual([1250, 40]);
@@ -124,9 +89,6 @@ describe("exact integer arithmetic", () => {
     expect(Number.isInteger(total.minorUnits)).toBe(true);
   });
   it("stays exact over a hundred repeated additions", () => {
-    // An accumulator of major-unit floats would leave a binary fraction inside this total, and the
-    // fraction would then have to be rounded away somewhere. A count of minor units cannot produce
-    // it, so the total is compared against the exact integer rather than against a tolerance.
     let running = money("USD", 0);
     for (let index = 0; index < 100; index += 1) {
       running = addMinor(running, money("USD", 1));
@@ -139,8 +101,6 @@ describe("exact integer arithmetic", () => {
     const total = addMinor(money("USD", Number.MAX_SAFE_INTEGER - 1), money("USD", 1));
     expect(total.minorUnits).toBe(Number.MAX_SAFE_INTEGER);
     expect(Number.isInteger(total.minorUnits)).toBe(true);
-    // A major-unit number would already have lost a cent at this magnitude and a float well before
-    // it, so the total is exact or it is refused — never approximated.
     expect(refusalCode(() => addMinor(money("USD", Number.MAX_SAFE_INTEGER), money("USD", 1)))).toBe("unsafe-minor-units");
   });
   it("orders amounts through compareMinor's -1, 0 and 1, and sorts by it", () => {
@@ -156,13 +116,8 @@ describe("exact integer arithmetic", () => {
   it("refuses KWD against JPY rather than truncating one to the other's exponent", () => {
     const kwd = money("KWD", 1250);
     const jpy = money("JPY", 1250);
-    // `1250` means 1.250 KWD and also 1250 JPY, so adding or ordering the two would need a rate
-    // this application does not hold. Truncating KWD to whole dinars would silently discard 250
-    // fils, which is why the answer is a refusal and not a value.
     expect(refusalCode(() => addMinor(kwd, jpy))).toBe("currency-mismatch");
     expect(refusalCode(() => compareMinor(kwd, jpy))).toBe("currency-mismatch");
-    // The refusal returned no value at all, so nothing was rebased on the way: both operands still
-    // carry the exact integer their own currency's exponent gives them meaning in.
     expect(kwd.minorUnits).toBe(1250);
     expect(jpy.minorUnits).toBe(1250);
     expect(exponentOf(kwd.currency)).toBe(3);
@@ -170,9 +125,6 @@ describe("exact integer arithmetic", () => {
   });
   it("partitions a mixed-currency sum per currency and never totals across them", () => {
     const result = sumMinor([money("USD", 500), money("EUR", 300), money("USD", 700)]);
-    // One figure across these currencies would state a number this application cannot know, so the
-    // partition is the only honest answer — and the result carries no combined field that a
-    // surface could present as one.
     expect(result.totals).toEqual([
       { currency: "EUR", minorUnits: 300 },
       { currency: "USD", minorUnits: 1200 },
@@ -192,7 +144,6 @@ describe("negating a known currency", () => {
     expect(result.minorUnits).toBe(expected);
   });
   it("keeps a zero JPY amount a canonical zero rather than a negative zero", () => {
-    // A 0-decimal currency is the case where an exponent of `0` must not be read as "unknown".
     expect(exponentOf("JPY")).toBe(0);
     const result = negateMinor(money("JPY", 0));
     expect(result.currency).toBe("JPY");
@@ -201,8 +152,6 @@ describe("negating a known currency", () => {
     expect(Object.is(result.minorUnits, 0)).toBe(true);
   });
   it("keeps a KWD amount on its own three-decimal code", () => {
-    // The negation re-bases nothing: the amount keeps the currency whose exponent gives it
-    // meaning, rather than being restated at another currency's precision.
     expect(exponentOf("KWD")).toBe(3);
     const result = negateMinor(money("KWD", 1250));
     expect(result.currency).toBe("KWD");
@@ -215,8 +164,6 @@ describe("splitting an amount", () => {
     const parts = allocateMinor(total, [40, 60]);
     expect(parts.map((part) => part.minorUnits)).toEqual([40, 60]);
     expect(parts.every((part) => part.currency === "USD")).toBe(true);
-    // The parts recombine to the original total through the module's own arithmetic, which is what
-    // lets a view holding both grain levels count the gift once.
     expect(parts.reduce((sum, part) => sum + part.minorUnits, 0)).toBe(total.minorUnits);
     expect(sumMinor(parts).totals).toEqual([{ currency: "USD", minorUnits: 100 }]);
     expect(sumMinor(parts).unsurmmed).toEqual([]);
@@ -240,9 +187,6 @@ describe("rendering an amount through its currency exponent", () => {
     { currency: "EUR", exponent: 2 },
   ])("writes $currency with exactly $exponent fractional digits", ({ currency, exponent }) => {
     const rendering = formatMinor(money(currency, 1250), "value", "en-US");
-    // The count is compared against the table's own exponent as well as the expected one, so a
-    // formatter that assumed two decimals would fail here for KWD and for JPY rather than pass a
-    // literal string that happened to match.
     expect(fractionalDigitsOf(rendering)).toBe(exponent);
     expect(fractionalDigitsOf(rendering)).toBe(exponentOf(currency));
   });
@@ -261,8 +205,6 @@ describe("rendering an amount through its currency exponent", () => {
     expect(formatMinor(money("JPY", 5), "value", "en-US").plain.split(" ")[0]).toBe("5");
   });
   it("states the currency code it was given rather than a symbol of its own choosing", () => {
-    // No symbol table exists beside the currency table, so the code is always shown as stored and
-    // two amounts of different currencies can never be made to look alike.
     expect(formatMinor(money("EUR", 1250), "value", "en-US").plain).toBe("12.50 EUR");
     expect(formatMinor(money("USD", 1250), "value", "en-US").plain).toBe("12.50 USD");
     expect(formatMinor(money("KWD", 1250), "value", "en-US").plain).toBe("1.250 KWD");
@@ -272,8 +214,6 @@ describe("rendering an amount through its currency exponent", () => {
 describe("every value state renders as its own fact", () => {
   const renderings = renderEveryState(money("KWD", 1250));
   it("covers all six members of the read envelope's union, and no seventh", () => {
-    // Derived from the `Record<ValueState, true>` annotation, so this number is the union's own
-    // size rather than a count written down here.
     expect(VALUE_STATE_ORDER).toHaveLength(6);
   });
   it("keeps the six states distinct as text and as accessible labels", () => {
@@ -281,11 +221,7 @@ describe("every value state renders as its own fact", () => {
       for (const rightState of VALUE_STATE_ORDER.slice(index + 1)) {
         const left = renderingOf(renderings, leftState);
         const right = renderingOf(renderings, rightState);
-        // A genuine zero, an unknown amount, a withheld amount and an unavailable source must
-        // never share a rendering: an equality here is the defect the criterion names.
         expect(left.text).not.toBe(right.text);
-        // The label carries the distinction for a screen-reader user, so it is asserted separately
-        // rather than assumed to follow the visible text.
         expect(left.accessibleLabel).not.toBe(right.accessibleLabel);
       }
     }
@@ -295,7 +231,6 @@ describe("every value state renders as its own fact", () => {
       const rendering = renderingOf(renderings, state);
       expect(rendering.text.length).toBeGreaterThan(0);
       expect(rendering.plain.length).toBeGreaterThan(0);
-      // The label names the fact in a sentence, so it is always longer than the value it names.
       expect(rendering.accessibleLabel.length).toBeGreaterThan(rendering.text.length);
     }
   });
@@ -310,15 +245,12 @@ describe("every value state renders as its own fact", () => {
       const rendering = renderingOf(renderings, state);
       expect(carriesDigits(rendering)).toBe(false);
       expect(/\d/.test(rendering.plain)).toBe(false);
-      // No other state's words stand in for this one.
       expect(rendering.text).not.toBe(renderingOf(renderings, "zero").text);
     }
   });
   it("marks an incomplete subtotal as a number that is not a complete total", () => {
     const incomplete = renderingOf(renderings, "incomplete-subtotal");
     expect(carriesDigits(incomplete)).toBe(true);
-    // The state is derived by the read envelope from a partial period and is never chosen by a
-    // caller; this case proves only that, once it arrives, the figure cannot pass as a total.
     expect(incomplete.text).not.toBe(renderingOf(renderings, "value").text);
     expect(incomplete.text.toLowerCase()).toContain("incomplete");
     expect(incomplete.accessibleLabel.toLowerCase()).toContain("incomplete");
@@ -328,8 +260,6 @@ describe("an amount of an unknown currency", () => {
   const amount = money(UNKNOWN_CURRENCY, 1250);
   it("renders as an unknown-currency amount rather than a two-decimal one", () => {
     const rendering = formatMinor(amount, "value", "en-US");
-    // No exponent exists for this code, so there is no fractional part and no default to fall back
-    // on: the exact integer minor units, the code as stored, and an explicit statement.
     expect(rendering.plain).not.toMatch(/^\d+\.\d{2}\b/);
     expect(rendering.plain).toContain("1250");
     expect(rendering.plain).toContain(UNKNOWN_CURRENCY);
@@ -346,8 +276,6 @@ describe("an amount of an unknown currency", () => {
   it("cannot be summed or compared with a known currency", () => {
     const known = money("USD", 500);
     const { totals, unsurmmed } = sumMinor([amount, known]);
-    // The known amount stands alone and the unknown one is handed back, so it is rendered as an
-    // unknown-currency fact rather than folded into — or dropped from — the USD figure.
     expect(totals).toEqual([{ currency: "USD", minorUnits: 500 }]);
     expect(unsurmmed).toEqual([amount]);
     expect(refusalCode(() => addMinor(amount, known))).toBe("unknown-currency");
@@ -355,15 +283,7 @@ describe("an amount of an unknown currency", () => {
   });
 });
 describe("the financial modules' source", () => {
-  const FINANCIAL_MODULES = [
-    "../../src/modules/support/report.ts",
-    "../../src/modules/support/goal.ts",
-    "../../src/modules/support/buckets.ts",
-    "../../src/modules/support/basis.ts",
-    "../../src/modules/data-service/reads/support.ts",
-    "../../src/modules/export/csv.ts",
-    "../../src/modules/export/neutralize.ts",
-  ] as const;
+  const FINANCIAL_MODULES = ["../../src/modules/support/report.ts", "../../src/modules/support/goal.ts", "../../src/modules/support/buckets.ts", "../../src/modules/support/basis.ts", "../../src/modules/data-service/reads/support.ts", "../../src/modules/export/csv.ts", "../../src/modules/export/neutralize.ts"] as const;
   const REQUIRED_FILES = ["currency.ts", "amount.ts", "format.ts", "report.ts", "goal.ts", "buckets.ts", "basis.ts", "support.ts", "csv.ts", "neutralize.ts"] as const;
   const FLOATING_POINT_SHAPES: readonly RegExp[] = [/\bparseFloat\b/, /\.\s*toFixed\s*\(/, /\bNumber\s*\([^()]*\)\s*\/\s*100\b/];
   function sourceFiles(): readonly URL[] {

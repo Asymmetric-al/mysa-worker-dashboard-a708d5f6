@@ -1,8 +1,4 @@
 "use client";
-/**
- * Fixed report 2: one chosen year's monthly history of received support, drawn through the
- * application's single chart pattern and left countable through that figure's own data table.
- */
 import { useId, type ChangeEvent, type ReactElement } from "react";
 import ChartFigure, { type ChartKind, type ChartPoint, type ChartSeries, type ChartTable } from "@/components/chart-figure";
 import StateNotice from "@/components/state-notice";
@@ -10,74 +6,31 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { cn } from "@/lib/cn";
-/**
- * The figure's data-table alternative states every month's amount, and it must state the same words
- * the screen, the CSV and the print model state for that query. So the cells are formatted by the
- * application's one money formatter rather than by anything this file does: handing the table raw
- * minor units, or formatting them here, would make this file a second money formatter that prints
- * integers where the export prints amounts — and the chart, its table and the export of one query
- * would then disagree in exactly the way this report exists to prevent.
- */
 import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { formatMinor } from "@/modules/money/format";
 import type { ReportResult, SeriesPoint } from "@/modules/support/report";
 import { CHART_CAPTIONS, EMPTY_STATES, MEASURE_LABELS, REPORT_COPY, fillTemplate } from "../copy";
-// What the caller passes
-/** Props of {@link ReportHistory}. */
-export type ReportHistoryProps = {
-  readonly result: ReportResult;
-  readonly locale: string;
-  readonly dir?: "ltr" | "rtl";
-  readonly year: number;
-  readonly years: readonly number[];
-  readonly onSelectYear: (year: number) => void;
-  readonly className?: string;
-};
-// Wording, read from the family's single source
+export type ReportHistoryProps = { readonly result: ReportResult; readonly locale: string; readonly dir?: "ltr" | "rtl"; readonly year: number; readonly years: readonly number[]; readonly onSelectYear: (year: number) => void; readonly className?: string };
 const SERIES_LABEL: string = MEASURE_LABELS["received-gifts"];
-
 const YEAR_LABEL = "Year";
-
 const PARTITION_HEADING_LEAD = "Amounts in";
-
 const CHART_KIND: ChartKind = "bar";
-
-const CHART_SHAPE_WORD: Readonly<Record<ChartKind, string>> = {
-  bar: "Bar chart",
-  line: "Line chart",
-  area: "Area chart",
-};
+const CHART_SHAPE_WORD: Readonly<Record<ChartKind, string>> = { bar: "Bar chart", line: "Line chart", area: "Area chart" };
 const MONTH_BUCKET_FORMAT: Intl.DateTimeFormatOptions = { month: "short" };
-
 const MONTH_COLUMN_KEY = "month";
-const MONTH_COLUMN_LABEL = "Month";
-
 const AMOUNT_COLUMN_KEY = "amount";
-
-const GAP_CELL_WORD = "No recorded value";
-
 const TITLE_TEMPLATE = `${REPORT_COPY.history.title} for {year} — {currency}`;
-
-const CHART_ALT_TEMPLATE = "{shape} of {series} in {currency} for each month of {year}.";
-
 const TAKEAWAY_TEMPLATE = "each month of {year} is drawn from the amount the source recorded in it, and a month it " + "recorded nothing in is left undrawn and named below rather than drawn at zero";
-
-const TABLE_CAPTION_TEMPLATE =
-  `${REPORT_COPY.history.title} for {year}, amounts in {currency}: one row per month of the year, ` + "and a month the source recorded nothing in states that rather than a zero.";
-// Wording helpers
+const TABLE_CAPTION_TEMPLATE = `${REPORT_COPY.history.title} for {year}, amounts in {currency}: one row per month of the year, ` + "and a month the source recorded nothing in states that rather than a zero.";
 function monthLabel(date: SeriesPoint["bucketStart"], locale: string): string {
   try {
     return date.toLocaleString(locale, MONTH_BUCKET_FORMAT);
   } catch (error) {
-    if (!(error instanceof RangeError)) {
-      throw error;
-    }
+    if (!(error instanceof RangeError)) throw error;
     return String(date);
   }
 }
-// The result, prepared for the figure
 type StatedAmount = SeriesPoint["value"];
-
 interface CurrencyPartition {
   readonly currency: string;
   readonly points: readonly SeriesPoint[];
@@ -97,69 +50,35 @@ function currencyPartitions(series: readonly SeriesPoint[]): readonly CurrencyPa
   return order.map((currency) => ({ currency, points: byCurrency.get(currency) ?? [] }));
 }
 function chartPoints(points: readonly SeriesPoint[], locale: string): readonly ChartPoint[] {
-  return points.map((point) => ({
-    bucket: monthLabel(point.bucketStart, locale),
-    value: point.value.minorUnits,
-    state: point.value.valueState,
-    gap: point.gap,
-  }));
+  return points.map((point) => ({ bucket: monthLabel(point.bucketStart, locale), value: point.value.minorUnits, state: point.value.valueState, gap: point.gap }));
 }
 function chartSeries(partition: CurrencyPartition, locale: string): ChartSeries {
-  return {
-    key: `${partition.currency}-received`,
-    label: SERIES_LABEL,
-    currency: partition.currency,
-    points: chartPoints(partition.points, locale),
-  };
+  return { key: `${partition.currency}-received`, label: SERIES_LABEL, currency: partition.currency, points: chartPoints(partition.points, locale) };
 }
 function amountCell(value: StatedAmount, currency: string, gap: boolean, locale: string): string {
-  if (gap && value.minorUnits === null) {
-    return GAP_CELL_WORD;
-  }
+  if (gap && value.minorUnits === null) return "No recorded value";
   const money: Money = { currency, minorUnits: value.minorUnits ?? minorUnitsOf(0) };
   return formatMinor(money, value.valueState, locale).text;
 }
 function chartTable(partition: CurrencyPartition, year: number, locale: string): ChartTable {
   return {
-    caption: fillTemplate(TABLE_CAPTION_TEMPLATE, {
-      year: String(year),
-      currency: partition.currency,
-    }),
+    caption: fillTemplate(TABLE_CAPTION_TEMPLATE, { year: String(year), currency: partition.currency }),
     columns: [
-      { key: MONTH_COLUMN_KEY, label: MONTH_COLUMN_LABEL },
+      { key: MONTH_COLUMN_KEY, label: "Month" },
       { key: AMOUNT_COLUMN_KEY, label: SERIES_LABEL },
     ],
-    rows: partition.points.map((point) => ({
-      [MONTH_COLUMN_KEY]: monthLabel(point.bucketStart, locale),
-      [AMOUNT_COLUMN_KEY]: amountCell(point.value, partition.currency, point.gap, locale),
-    })),
+    rows: partition.points.map((point) => ({ [MONTH_COLUMN_KEY]: monthLabel(point.bucketStart, locale), [AMOUNT_COLUMN_KEY]: amountCell(point.value, partition.currency, point.gap, locale) })),
   };
 }
-// One currency's figure
-interface CurrencyHistoryFigureProps {
-  readonly partition: CurrencyPartition;
-  readonly year: number;
-  readonly coverage: ReportResult["snapshot"]["coverage"];
-  readonly asOf: string;
-  readonly locale: string;
-}
+type CurrencyHistoryFigureProps = { readonly partition: CurrencyPartition; readonly year: number; readonly coverage: ReportResult["snapshot"]["coverage"]; readonly asOf: string; readonly locale: string };
 function CurrencyHistoryFigure({ partition, year, coverage, asOf, locale }: CurrencyHistoryFigureProps): ReactElement {
   const yearText = String(year);
   const currency = partition.currency;
   return (
     <ChartFigure
       title={fillTemplate(TITLE_TEMPLATE, { year: yearText, currency })}
-      summary={fillTemplate(CHART_CAPTIONS.summaryOpener, {
-        series: SERIES_LABEL,
-        currency,
-        takeaway: fillTemplate(TAKEAWAY_TEMPLATE, { year: yearText }),
-      })}
-      caption={fillTemplate(CHART_ALT_TEMPLATE, {
-        shape: CHART_SHAPE_WORD[CHART_KIND],
-        series: SERIES_LABEL,
-        currency,
-        year: yearText,
-      })}
+      summary={fillTemplate(CHART_CAPTIONS.summaryOpener, { series: SERIES_LABEL, currency, takeaway: fillTemplate(TAKEAWAY_TEMPLATE, { year: yearText }) })}
+      caption={fillTemplate("{shape} of {series} in {currency} for each month of {year}.", { shape: CHART_SHAPE_WORD[CHART_KIND], series: SERIES_LABEL, currency, year: yearText })}
       kind={CHART_KIND}
       series={[chartSeries(partition, locale)]}
       units={fillTemplate(CHART_CAPTIONS.unit, { currency })}
@@ -170,16 +89,13 @@ function CurrencyHistoryFigure({ partition, year, coverage, asOf, locale }: Curr
     />
   );
 }
-// The report
 /** The year's monthly history, one figure per currency, with the year control the report is asked for. */
 export function ReportHistory({ result, locale, dir, year, years, onSelectYear, className }: ReportHistoryProps): ReactElement {
   const selectId = useId();
   const partitions = currencyPartitions(result.series);
   const handleYearChange = (event: ChangeEvent<HTMLSelectElement>): void => {
     const chosen = years.find((candidate) => String(candidate) === event.currentTarget.value);
-    if (chosen !== undefined) {
-      onSelectYear(chosen);
-    }
+    if (chosen !== undefined) onSelectYear(chosen);
   };
   return (
     <div dir={dir} className={cn("flex w-full min-w-0 flex-col gap-6", className)}>
@@ -196,22 +112,12 @@ export function ReportHistory({ result, locale, dir, year, years, onSelectYear, 
         </div>
       )}
       {partitions.length === 0 ? (
-        <StateNotice
-          kind="empty"
-          // Level 2, so this notice replaces the per-currency `<h2>` sections at the same depth of
-          // the outline rather than skipping a level under the report frame's heading.
-          headingLevel={2}
-          title={EMPTY_STATES.gifts.title}
-          description={EMPTY_STATES.gifts.body}
-          action={EMPTY_STATES.gifts.action}
-        />
+        <StateNotice kind="empty" headingLevel={2} title={EMPTY_STATES.gifts.title} description={EMPTY_STATES.gifts.body} action={EMPTY_STATES.gifts.action} />
       ) : (
         partitions.map((partition) => (
           <Card key={partition.currency} size="sm">
             <CardHeader>
               <CardTitle>
-                {/* A real heading, naming the region, so a screen-reader user can reach this
-                    currency's figures directly instead of tabbing through the one before it. */}
                 <h2>
                   {`${PARTITION_HEADING_LEAD} `}
                   <bdi>{partition.currency}</bdi>

@@ -1,9 +1,6 @@
-/**
- * The Worker and Project Pages family's cache keys — the only place this feature composes one.
- */
+/** The Worker and Project Pages family's cache keys — the only place this feature composes one. */
 import { scopeKey } from "@/components/context-switch-guard";
 import type { Scope } from "@/modules/data-service";
-/** The variables one inert preview is keyed by: every member its query function reads, so previews of different revisions or locales are separate cache entries and neither answers the other. */
 export interface PagePreviewKeyParams {
   readonly documentId: string;
   readonly variantId: string;
@@ -35,10 +32,5 @@ export function pagePreviewKey(scope: Scope, params: PagePreviewKeyParams): read
   return [...pageKey(scope, params.documentId), "preview", previewParams(params)];
 }
 function previewParams(params: PagePreviewKeyParams): PagePreviewKeyParams {
-  return {
-    documentId: params.documentId,
-    variantId: params.variantId,
-    ...(params.revisionId === undefined ? {} : { revisionId: params.revisionId }),
-    ...(params.locale === undefined ? {} : { locale: params.locale }),
-  };
+  return { documentId: params.documentId, variantId: params.variantId, ...(params.revisionId === undefined ? {} : { revisionId: params.revisionId }), ...(params.locale === undefined ? {} : { locale: params.locale }) };
 }

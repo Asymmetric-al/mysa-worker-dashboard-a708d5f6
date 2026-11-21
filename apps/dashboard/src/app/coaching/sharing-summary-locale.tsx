@@ -1,7 +1,5 @@
 "use client";
-/**
- * The locale-aware composition of the coaching sharing summary, rendered by the `/coaching` route.
- */
+/** The locale-aware composition of the coaching sharing summary, rendered by the `/coaching` route. */
 import type { ReactElement } from "react";
 import SharingSummary, { type CoachingGrantView } from "@/features/coaching/components/sharing-summary";
 import { useViewerPreferences } from "@/features/shell/components/viewer-preferences-provider";

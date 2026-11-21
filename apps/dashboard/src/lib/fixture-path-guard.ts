@@ -1,32 +1,20 @@
-/**
- * The one decision about the committed media-fixture directory: whether a request path resolves into
- * it.
- */
-/**
- * Percent-decoding passes a path is unwrapped through before it is taken as it stands. Each pass
- * either changes the path or ends the loop, and five is already more nesting than the framework
- * decodes into a file name, so a deeper spelling names no file this application serves.
- */
+/** The one decision about the committed media-fixture directory: whether a request path resolves into it. */
+/** Percent-decoding passes a path is unwrapped through before it is taken as it stands. */
 const MAX_DECODE_PASSES = 5;
-
 function decodeSegment(segment: string): string {
   try {
     return decodeURIComponent(segment);
   } catch {
-    // A malformed escape (`%`, `%ZZ`, a truncated UTF-8 sequence) does not decode into a different file
-    // name for the framework either, so the segment is judged in the form it arrived in.
+    // A malformed escape (`%`, `%ZZ`, a truncated UTF-8 sequence) does not decode into a different file name for the framework either, so the segment is judged in the form it arrived in.
     return segment;
   }
 }
 function unwrapEncodedPath(rawPath: string): string {
   let path = rawPath;
   for (let pass = 0; pass < MAX_DECODE_PASSES; pass += 1) {
-    // Decoding segment by segment keeps one malformed escape from hiding the well-formed escapes beside
-    // it: only the segment that carries it stays as it stands.
+    // Decoding segment by segment keeps one malformed escape from hiding the well-formed escapes beside it: only the segment that carries it stays as it stands.
     const decoded = path.split("/").map(decodeSegment).join("/");
-    if (decoded === path) {
-      return path;
-    }
+    if (decoded === path) return path;
     path = decoded;
   }
   return path;
@@ -34,9 +22,7 @@ function unwrapEncodedPath(rawPath: string): string {
 function resolvedSegments(path: string): string[] {
   const segments: string[] = [];
   for (const segment of path.replaceAll("\\", "/").toLowerCase().split("/")) {
-    if (segment === "" || segment === ".") {
-      continue;
-    }
+    if (segment === "" || segment === ".") continue;
     if (segment === "..") {
       segments.pop();
       continue;

@@ -1,7 +1,3 @@
-/**
- * Fixed report 4 — the period comparison: two periods per currency, stated as the signed difference
- * between them together with the contributor changes that reconcile it.
- */
 import type { ReactElement } from "react";
 import StateNotice from "@/components/state-notice";
 import { Badge } from "@/components/ui/badge";
@@ -11,70 +7,26 @@ import { cn } from "@/lib/cn";
 import type { ReportComparison as ComparisonResult, ReportResult } from "@/modules/support/report";
 import { EMPTY_STATES, NO_PERCENTAGE, REPORT_COPY, type NoPercentageReason } from "../copy";
 import AmountValue from "./amount-value";
-/** Props of {@link ReportComparison}. */
-export type ReportComparisonProps = {
-  result: ReportResult;
-  locale: string;
-  dir?: "ltr" | "rtl";
-  className?: string;
-};
+export type ReportComparisonProps = { result: ReportResult; locale: string; dir?: "ltr" | "rtl"; className?: string };
 type CurrencyFigure = ComparisonResult["perCurrency"][number];
-
 type ContributorChange = ComparisonResult["contributorDeltas"][number];
-
 type DifferenceDirection = CurrencyFigure["direction"];
-
 type AttributionKind = NonNullable<ContributorChange["attribution"]>["kind"];
-
-const DIRECTION_WORDS: Readonly<Record<DifferenceDirection, string>> = {
-  increase: "Increased by",
-  decrease: "Decreased by",
-  unchanged: "Unchanged at",
-};
-const FIELD_LABELS = {
-  current: "This period",
-  baseline: "Earlier period",
-  difference: "Difference",
-} as const;
-const COLUMN_HEADINGS = {
-  contributor: "Contributor",
-  change: "Change",
-} as const;
-const PARTNER_PREFIX = "Partner";
-
-const ATTRIBUTION_LABELS: Readonly<Record<AttributionKind, string>> = {
-  partner: "A partner the report names only by reference",
-  anonymous: "Anonymous support",
-  unresolved: "Support with no attribution stated",
-};
-const NOT_LIKE_FOR_LIKE = {
-  badge: "Not like-for-like",
-  text:
-    "The two periods are not the same number of days, so this difference sets a longer span against " +
-    "a shorter one. The report states that rather than presenting the figures as an equal-elapsed " +
-    "comparison.",
-} as const;
+const DIRECTION_WORDS: Readonly<Record<DifferenceDirection, string>> = { increase: "Increased by", decrease: "Decreased by", unchanged: "Unchanged at" };
+const FIELD_LABELS = { current: "This period", baseline: "Earlier period", difference: "Difference" } as const;
+const COLUMN_HEADINGS = { contributor: "Contributor", change: "Change" } as const;
+const ATTRIBUTION_LABELS: Readonly<Record<AttributionKind, string>> = { partner: "A partner the report names only by reference", anonymous: "Anonymous support", unresolved: "Support with no attribution stated" };
+const NOT_LIKE_FOR_LIKE = { badge: "Not like-for-like", text: "The two periods are not the same number of days, so this difference sets a longer span against " + "a shorter one. The report states that rather than presenting the figures as an equal-elapsed " + "comparison." } as const;
 const NOT_RECONCILED = {
   badge: "Contributors do not add up",
-  text:
-    "The contributor changes below and the difference do not agree exactly for at least one currency " +
-    "in this comparison. The report says so instead of adding a balancing entry, so no figure on " +
-    "this surface has been adjusted to make the list add up.",
+  text: "The contributor changes below and the difference do not agree exactly for at least one currency " + "in this comparison. The report says so instead of adding a balancing entry, so no figure on " + "this surface has been adjusted to make the list add up.",
 } as const;
-const NO_CONTRIBUTOR_CHANGE =
-  "The report states no contributor change in this currency: a contributor whose amount is the same " + "in both periods is left out of this list rather than shown as a zero.";
+const NO_CONTRIBUTOR_CHANGE = "The report states no contributor change in this currency: a contributor whose amount is the same " + "in both periods is left out of this list rather than shown as a zero.";
 const CHANGE_MEANING_NOTE =
-  "A change here is a fact about the records of two periods, not about anyone's intention. A " +
-  "contributor who gave in the earlier period and not in this one is an earlier-only contributor, " +
-  "not a lost partner: this report names nobody as lost, ranks nobody and infers no motive from a " +
-  "figure.";
+  "A change here is a fact about the records of two periods, not about anyone's intention. A " + "contributor who gave in the earlier period and not in this one is an earlier-only contributor, " + "not a lost partner: this report names nobody as lost, ranks nobody and infers no motive from a " + "figure.";
 function noPercentageReason(entry: CurrencyFigure): NoPercentageReason | "default" | null {
-  if (entry.valueState === "unknown" || entry.valueState === "unavailable") {
-    return "unknown-denominator";
-  }
-  if (entry.valueState === "withheld" || entry.baselineMinor === 0) {
-    return "default";
-  }
+  if (entry.valueState === "unknown" || entry.valueState === "unavailable") return "unknown-denominator";
+  if (entry.valueState === "withheld" || entry.baselineMinor === 0) return "default";
   return null;
 }
 function ContributorLabel({ change }: { readonly change: ContributorChange }): ReactElement {
@@ -82,7 +34,7 @@ function ContributorLabel({ change }: { readonly change: ContributorChange }): R
   if (partnerId !== undefined) {
     return (
       <>
-        <span className="text-muted-foreground">{PARTNER_PREFIX} </span>
+        <span className="text-muted-foreground">{"Partner"} </span>
         <bdi className="mono-identifier">{partnerId}</bdi>
       </>
     );
@@ -100,14 +52,10 @@ interface CurrencyPartitionProps {
   readonly locale: string;
 }
 function CurrencyPartition({ entry, current, baseline, deltas, locale }: CurrencyPartitionProps): ReactElement {
-  // Derived rather than generated: one currency appears once in one comparison, so the server render
-  // and a client render agree on the id and no `useId` hook is needed in a pure component.
   const headingId = `report-comparison-${entry.currency}`;
   const percentageReason = noPercentageReason(entry);
   const contributors = deltas.filter((change) => change.currency === entry.currency);
   return (
-    // A named section: the heading names the region, so a screen-reader user can reach "Amounts in
-    // USD" directly without a `role` attribute standing in for the element.
     <section aria-labelledby={headingId} className="min-w-0">
       <Card>
         <CardHeader>
@@ -166,15 +114,9 @@ function CurrencyPartition({ entry, current, baseline, deltas, locale }: Currenc
               <TableBody>
                 {contributors.map((change) => (
                   <TableRow key={`${change.currency}:${change.partnerId ?? change.attribution?.kind ?? "unresolved"}`}>
-                    {/* A row header rather than a cell: the contributor names the row's change, and
-                        the cell wraps instead of overflowing so a long opaque reference never makes
-                        the page scroll at a phone width. */}
                     <TableHead scope="row" className="whitespace-normal break-words">
                       <ContributorLabel change={change} />
                     </TableHead>
-                    {/* The amount keeps the table's own single-line cell so a figure never breaks
-                        between its digits and its currency code; the contributor column above wraps
-                        instead, which is the column that can. */}
                     <TableCell className="text-end">
                       <AmountValue money={{ currency: change.currency, minorUnits: change.minorUnits }} valueState={entry.valueState} locale={locale} />
                     </TableCell>

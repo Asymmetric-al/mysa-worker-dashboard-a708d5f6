@@ -1,8 +1,5 @@
 "use client";
-/**
- * The browser transport for the one piece of work a gift may lead to: the thank-you follow-up the gift
- * detail offers, submitted as the named mutation `createTask` over `POST /api/tasks`.
- */
+/** The browser transport for the one piece of work a gift may lead to: the thank-you follow-up the gift detail offers, submitted as the named mutation `createTask` over `POST /api/tasks`. */
 import { useMutation, useQueryClient, type UseMutationResult } from "@tanstack/react-query";
 import { useRef } from "react";
 import { scopeKey } from "@/components/context-switch-guard";
@@ -12,18 +9,15 @@ import { invalid, isOutcome, unknown as unknownOutcome, type MutationOutcome } f
 import { followUpTaskPayloadSchema, type FollowUpTaskInput, type FollowUpTaskPayload } from "../schemas";
 // The one handler, and the cache segments a created task can appear under
 const TASKS_ENDPOINT = "/api/tasks";
-
 const TASKS_JOB = "tasks";
 const AGENDA_JOB = "agenda";
 // What one submission needs
-/** The input one follow-up submission presents, before this hook adds the attempt identity. */
 export interface FollowUpTaskVariables {
   readonly scope: Scope;
   readonly expectedRevision: string;
   readonly payload: FollowUpTaskInput;
   readonly operationId?: string;
 }
-/** What the gift detail holds: the mutation, whose data is the outcome and nothing else. */
 export type FollowUpTaskMutation = UseMutationResult<MutationOutcome, Error, FollowUpTaskVariables>;
 
 interface FollowUpAttempt {
@@ -35,18 +29,7 @@ function intentText(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 function intentKeyOf(scope: Scope, expectedRevision: string, payload: FollowUpTaskInput): string {
-  return JSON.stringify([
-    scope.organizationId,
-    scope.ministryId,
-    scope.supportSubjectId,
-    scope.principalId,
-    expectedRevision,
-    intentText(payload.title),
-    intentText(payload.category),
-    intentText(payload.dueOn),
-    intentText(payload.partnerId),
-    intentText(payload.kind),
-  ]);
+  return JSON.stringify([scope.organizationId, scope.ministryId, scope.supportSubjectId, scope.principalId, expectedRevision, intentText(payload.title), intentText(payload.category), intentText(payload.dueOn), intentText(payload.partnerId), intentText(payload.kind)]);
 }
 // Reading the answer
 async function readJsonBody(response: Response): Promise<unknown> {

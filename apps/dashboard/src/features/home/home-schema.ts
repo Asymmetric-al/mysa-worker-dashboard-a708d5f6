@@ -1,28 +1,14 @@
-/**
- * Home's own vocabulary, and the boundary validator that makes "a reason and a destination on every
- * item" enforceable rather than assumed.
- */
+/** Home's own vocabulary, and the boundary validator that makes "a reason and a destination on every item" enforceable rather than assumed. */
 import { z } from "zod";
 import type { ContentLifecycleState } from "@/components/draft-status";
 import type { SimulatedEffect } from "@/components/simulation-label";
 import { destinationProblemOf, type DestinationProblem } from "@/lib/destination";
-// Text a reader must be able to see
 function requiredText(invalidMessage: string, emptyMessage: string): z.ZodString {
-  return z.string({ error: invalidMessage }).refine((value) => value.trim().length > 0, {
-    error: emptyMessage,
-  });
+  return z.string({ error: invalidMessage }).refine((value) => value.trim().length > 0, { error: emptyMessage });
 }
-// The three sections, in the order Home renders them
-/** Home's three sections, in display order. */
 export const HOME_SECTION_KEYS = ["attention", "information", "unfinished-work"] as const;
-/** One section of Home: the group an item is triaged into. */
 export type HomeSectionKey = (typeof HOME_SECTION_KEYS)[number];
-/** Validates the section an item or a section group belongs to against the closed set. */
-export const homeSectionKeySchema = z.enum(HOME_SECTION_KEYS, {
-  error: "A Home section is Attention, Information or Unfinished work.",
-});
-// Why an item is on Home
-/** The closed set of short reason labels this family renders, grouped the way the sections use them. */
+export const homeSectionKeySchema = z.enum(HOME_SECTION_KEYS, { error: "A Home section is Attention, Information or Unfinished work." });
 export const HOME_REASON_CODES = [
   "overdue",
   "due-today",
@@ -42,13 +28,8 @@ export const HOME_REASON_CODES = [
   "referral-window-active",
   "referral-window-expired",
 ] as const;
-/** One reason Home labels an item with. */
 export type HomeReasonCode = (typeof HOME_REASON_CODES)[number];
-/** Validates a reason code against the closed set this family labels. */
-export const homeReasonCodeSchema = z.enum(HOME_REASON_CODES, {
-  error: "A Home reason code is one of the short labels this surface renders.",
-});
-// Where an item takes the worker
+export const homeReasonCodeSchema = z.enum(HOME_REASON_CODES, { error: "A Home reason code is one of the short labels this surface renders." });
 const HOME_DESTINATION_PROBLEM_TEXT: Readonly<Record<DestinationProblem, string>> = {
   empty: "A destination needs the route it opens.",
   "not-relative": "A destination is a route in this application, so it begins with a slash.",
@@ -56,7 +37,6 @@ const HOME_DESTINATION_PROBLEM_TEXT: Readonly<Record<DestinationProblem, string>
   backslash: "A destination uses forward slashes only, because a backslash can name another site.",
   "control-character": "A destination carries no control characters, because a route is read as written.",
 };
-/** A destination: the route Home opens for an item, with the words the worker reads on the way out. */
 export const homeDestinationSchema = z.strictObject({
   href: requiredText("A destination is a route in this application, so it is text.", HOME_DESTINATION_PROBLEM_TEXT.empty).superRefine((href, context) => {
     const problem = destinationProblemOf(href);
@@ -66,21 +46,9 @@ export const homeDestinationSchema = z.strictObject({
   }),
   label: requiredText("A destination label is the words the worker reads, so it is text.", "A destination needs a label, because a route with no words cannot be followed or read."),
 });
-/** One destination an item opens. */
 export type HomeDestination = z.infer<typeof homeDestinationSchema>;
-// The lifecycle states and simulated effects an item may carry
-const HOME_LIFECYCLE_STATES = [
-  "not-started",
-  "draft",
-  "candidate",
-  "released",
-  "partially-released",
-  "withdrawn",
-  "superseded-head",
-  "stale-translation",
-] as const satisfies readonly ContentLifecycleState[];
+const HOME_LIFECYCLE_STATES = ["not-started", "draft", "candidate", "released", "partially-released", "withdrawn", "superseded-head", "stale-translation"] as const satisfies readonly ContentLifecycleState[];
 const HOME_SIMULATED_EFFECTS = ["mail-submission", "publication-reach", "giving-destination", "importer-safety", "media-preparation"] as const satisfies readonly SimulatedEffect[];
-// One item, as a row renders it
 /** The minimum an item may render — and the mechanism behind "a reason and a destination on every item". */
 export const homeItemViewSchema = z.strictObject({
   id: requiredText("An item identity is the text the envelope gave it.", "An item needs the identity it arrived with, because a row without one cannot be opened."),
@@ -89,66 +57,26 @@ export const homeItemViewSchema = z.strictObject({
   reasonCode: requiredText("A reason code is a short text value.", "An item needs a reason code beside its sentence, so a row can label it without inventing a label."),
   destination: homeDestinationSchema,
   statusWord: requiredText("A status word is one short text value.", "A status word needs a character, or leave it out so the row composes its own wording.").optional(),
-  lifecycle: z
-    .enum(HOME_LIFECYCLE_STATES, {
-      error: "A lifecycle state is one of the states the shared draft indicator renders.",
-    })
-    .optional(),
-  simulatedEffect: z
-    .enum(HOME_SIMULATED_EFFECTS, {
-      error: "A simulated effect is one of the five effects the interface has a label for.",
-    })
-    .optional(),
+  lifecycle: z.enum(HOME_LIFECYCLE_STATES, { error: "A lifecycle state is one of the states the shared draft indicator renders." }).optional(),
+  simulatedEffect: z.enum(HOME_SIMULATED_EFFECTS, { error: "A simulated effect is one of the five effects the interface has a label for." }).optional(),
   detail: z.string({ error: "A detail line is text, so read the item again." }).optional(),
 });
-/** One item as a row renders it: the parsed, validated view, never a raw envelope member. */
 export type HomeItemView = z.infer<typeof homeItemViewSchema>;
-// One section: its items, its count and the state it is in
-/** The states a Home section can be in, listed once so the closed set has a runtime form as well as a type. */
 export const HOME_SECTION_STATES = ["available", "unavailable", "denied", "unknown"] as const;
-/** One state a Home section is in. */
 export type HomeSectionState = (typeof HOME_SECTION_STATES)[number];
-
-const homeSectionStateSchema = z.enum(HOME_SECTION_STATES, {
-  error: "A section is available, unavailable, denied or unknown.",
-});
-const homeSectionNoticeSchema = z.strictObject({
-  title: requiredText("A section notice heading is text.", "A section notice needs a heading, so the notice joins the page outline."),
-  body: requiredText("A section notice sentence is text.", "A section notice needs a sentence saying what happened."),
-});
-const homeSectionSourceSchema = z.strictObject({
-  system: requiredText("A source reference names its system as text.", "A source reference names the system that issued it."),
-  reference: requiredText("A source reference carries its identifier as text.", "A source reference carries the identifier that system issued."),
-});
-const UNREADABLE_SECTION_NOTICE = Object.freeze({
-  title: "This section could not be read",
-  body: "Its contents did not arrive in a form Home can show. Reloading asks for them again, and nothing here was changed.",
-});
-/** A section group as it arrives, before anything is normalised. */
+const homeSectionStateSchema = z.enum(HOME_SECTION_STATES, { error: "A section is available, unavailable, denied or unknown." });
+const homeSectionNoticeSchema = z.strictObject({ title: requiredText("A section notice heading is text.", "A section notice needs a heading, so the notice joins the page outline."), body: requiredText("A section notice sentence is text.", "A section notice needs a sentence saying what happened.") });
+const homeSectionSourceSchema = z.strictObject({ system: requiredText("A source reference names its system as text.", "A source reference names the system that issued it."), reference: requiredText("A source reference carries its identifier as text.", "A source reference carries the identifier that system issued.") });
+const UNREADABLE_SECTION_NOTICE = Object.freeze({ title: "This section could not be read", body: "Its contents did not arrive in a form Home can show. Reloading asks for them again, and nothing here was changed." });
 export const homeSectionGroupSchema = z.strictObject({
-  items: z
-    .array(z.unknown(), {
-      error: "A section's items arrive as a list, so read the section again.",
-    })
-    .default([]),
-  count: z
-    .number({ error: "A section's count is the number the envelope stated." })
-    .int({ error: "A section's count is a whole number of records." })
-    .min(0, { error: "A section's count cannot be negative." })
-    .optional(),
+  items: z.array(z.unknown(), { error: "A section's items arrive as a list, so read the section again." }).default([]),
+  count: z.number({ error: "A section's count is the number the envelope stated." }).int({ error: "A section's count is a whole number of records." }).min(0, { error: "A section's count cannot be negative." }).optional(),
   state: homeSectionStateSchema.optional(),
   notice: homeSectionNoticeSchema.optional(),
   source: homeSectionSourceSchema.optional(),
 });
 /** A section group as a section renders it: parsed, and with a state always stated. */
-export interface HomeSectionGroup {
-  readonly items: readonly unknown[];
-  readonly count?: number;
-  readonly state: HomeSectionState;
-  readonly notice?: { readonly title: string; readonly body: string };
-  readonly source?: { readonly system: string; readonly reference: string };
-}
-/** Parses one section group, and never throws. */
+export type HomeSectionGroup = { readonly items: readonly unknown[]; readonly count?: number; readonly state: HomeSectionState; readonly notice?: { readonly title: string; readonly body: string }; readonly source?: { readonly system: string; readonly reference: string } };
 export function parseHomeSectionGroup(candidate: unknown): HomeSectionGroup {
   if (candidate === undefined || candidate === null) {
     return { items: [], state: "available" };
@@ -158,18 +86,10 @@ export function parseHomeSectionGroup(candidate: unknown): HomeSectionGroup {
     return { items: [], state: "unknown", notice: UNREADABLE_SECTION_NOTICE };
   }
   const { items, count, state, notice, source } = parsed.data;
-  return {
-    items,
-    state: state ?? "available",
-    ...(count === undefined ? {} : { count }),
-    ...(notice === undefined ? {} : { notice }),
-    ...(source === undefined ? {} : { source }),
-  };
+  return { items, state: state ?? "available", ...(count === undefined ? {} : { count }), ...(notice === undefined ? {} : { notice }), ...(source === undefined ? {} : { source }) };
 }
-// One item, parsed at the row that renders it
 /** What parsing one item answers: the validated view, or the fact that the item cannot be rendered plus whatever subject and reason text could still be read off it. */
 export type HomeItemParseResult = { readonly ok: true; readonly item: HomeItemView } | { readonly ok: false; readonly title?: string; readonly reason?: string };
-
 function readableText(candidate: unknown, key: "title" | "reason"): string | undefined {
   if (typeof candidate !== "object" || candidate === null) {
     return undefined;
@@ -177,7 +97,6 @@ function readableText(candidate: unknown, key: "title" | "reason"): string | und
   const value: unknown = Reflect.get(candidate, key);
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
-/** Validates one item, and never throws. */
 export function parseHomeItem(candidate: unknown): HomeItemParseResult {
   const parsed = homeItemViewSchema.safeParse(candidate);
   if (parsed.success) {
@@ -185,9 +104,5 @@ export function parseHomeItem(candidate: unknown): HomeItemParseResult {
   }
   const title = readableText(candidate, "title");
   const reason = readableText(candidate, "reason");
-  return {
-    ok: false,
-    ...(title === undefined ? {} : { title }),
-    ...(reason === undefined ? {} : { reason }),
-  };
+  return { ok: false, ...(title === undefined ? {} : { title }), ...(reason === undefined ? {} : { reason }) };
 }

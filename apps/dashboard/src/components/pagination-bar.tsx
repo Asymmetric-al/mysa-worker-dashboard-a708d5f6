@@ -31,17 +31,14 @@ export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageCh
   const pageSizeFieldId = useId();
   const totalCount = Number.isFinite(total) ? Math.max(0, Math.trunc(total)) : 0;
   const options = normalisePageSizeOptions(pageSizeOptions);
-  const smallestPageSize = options[0] ?? SMALLEST_DEFAULT_PAGE_SIZE;
   const currentPageSize = clampPageSize(pageSize, options);
   const pageCount = pageCountFor(totalCount, currentPageSize);
   const currentPage = clampPage(page, pageCount);
-  // One page at the smallest offered size has nothing to page, so the bar stays out of the way
-  // and a twelve-partner roster carries no pager. An empty result still renders: "No partners"
-  // is the one honest statement a zero-row list needs, and hiding it would leave the reader
-  // unable to tell an empty result from a failed one.
-  if (totalCount > 0 && pageCount === 1 && currentPageSize === smallestPageSize) {
-    return null;
-  }
+  // The count line and the page size are stated at every result size, because a list must state
+  // its total and its page size: a result of ten rows still reads "Showing 1-10 of 10 gifts"
+  // beside the rows-per-page control. Only the page list waits for a second page, which the
+  // condition further down already asks of it, and a zero-row result still states "No <itemNoun>"
+  // so an empty result is never mistaken for a failed read.
   const firstRow = totalCount === 0 ? 0 : (currentPage - 1) * currentPageSize + 1;
   const lastRow = Math.min(currentPage * currentPageSize, totalCount);
   const countText = totalCount === 0 ? `No ${itemNoun}` : `Showing ${countFormat.format(firstRow)}\u2013${countFormat.format(lastRow)} of ${countFormat.format(totalCount)} ${itemNoun}`;
@@ -171,18 +168,7 @@ export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageCh
 function DirectionalChevron({ direction }: { direction: "previous" | "next" }) {
   const pointsLeft = direction === "previous";
   return (
-    <svg
-      aria-hidden="true"
-      focusable="false"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-4"
-      data-icon={pointsLeft ? "inline-start" : "inline-end"}
-    >
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="size-4" data-icon={pointsLeft ? "inline-start" : "inline-end"}>
       <path d={pointsLeft ? "m15 18-6-6 6-6" : "m9 18 6-6-6-6"} className="rtl:hidden" />
       <path d={pointsLeft ? "m9 18 6-6-6-6" : "m15 18-6-6 6-6"} className="hidden rtl:block" />
     </svg>

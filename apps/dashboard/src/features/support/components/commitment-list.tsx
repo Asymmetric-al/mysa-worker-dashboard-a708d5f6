@@ -1,43 +1,9 @@
 "use client";
-/**
- * `/support/commitments` — the recurring outcomes and commitments the source reports, read-only.
- *
- * **What a row states.** One commitment per row, in the source's own terms: which of the three kinds
- * it is, its cadence, the amount it collects per occurrence, the recurring outcome the source places
- * the occurrence in, the day it last collected, the day it is next eligible and whether it is paused.
- * A fixed total states its four amounts — promised, fulfilled, released and remaining — each from its
- * own minor units and its own value state, and the four are never added together or turned into a
- * percentage here.
- *
- * **The partition this surface must not blur.** An occurrence sits in exactly one of the five
- * recurring outcomes — Received, Processing, Upcoming, Recovery needs attention and Not received — or
- * outside all five when the evidence behind it is unknown or stale. The sixth badge is not a sixth
- * outcome: its own words say it sits outside the five, and the sentence beside it says it is counted
- * in none of them. The figures above the list are the read's whole-result partition rather than a
- * count of the page, so no badge can be read as a share of the rows on screen.
- *
- * **Why no control here changes anything.** Commitments belong to the finance owner behind the seam,
- * so nothing on this surface posts, retries, pauses, resumes, cancels or corrects a payment, and no
- * action here creates a gift, a message or a task. The list says so in words rather than leaving the
- * reader to infer it from the absence of buttons.
- *
- * **What it never computes.** Every amount arrives as exact minor units with a currency exponent and
- * is rendered by the one amount component from its own value state, so a zero, an unknown, a withheld
- * value, an unavailable source and an incomplete subtotal stay five different renderings here as they
- * do everywhere else. A commitment is not received cash: the family's received-support basis and
- * grain are stated once, framed as the measure these rows are deliberately kept outside of, so the
- * two are never read as one figure.
- *
- * **Where its state lives, and the one optional choice.** The page window is carried in the URL, so a
- * commitment-detail visit returns to the same list state, and it is answered by `useCommitments`, which
- * wraps the same service read the server render uses. The read also publishes the additional-types
- * capability, with the reason it cannot change a row, in the envelope's actions: the option is stated
- * to the reader here with that reason, and it is offered as a live choice only when the read reports
- * it available.
- */
+/** `/support/commitments` — the recurring outcomes and commitments the source reports, read-only. **What a row states.** One commitment per row, in the source's own terms: which of the three kinds it … */
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { refusalSummary } from "@/components/form-field";
 import { RecordList, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { BUCKET_STATUS, type StatusTone } from "@/components/status-badge";
@@ -54,47 +20,25 @@ import { parseCommitmentsQuery, toCommitmentsParams, useCommitments, type Commit
 import AmountValue from "./amount-value";
 import SnapshotStatement from "./snapshot-statement";
 // The envelope's own shapes, taken from the read rather than restated
-/** One commitment exactly as the read states it. */
 type CommitmentView = CommitmentsEnvelope["data"]["commitments"][number];
-/** One recurring-outcome figure of the whole-result partition. */
 type BucketFigure = CommitmentsEnvelope["data"]["buckets"][number];
-/** One commitment-kind figure of the whole-result partition. */
 type KindFigure = CommitmentsEnvelope["data"]["commitmentKinds"][number];
-/** One commitment's source-stated monthly equivalent. */
 type MonthlyEquivalentView = NonNullable<CommitmentView["monthlyEquivalent"]>;
-/** The four amounts a fixed total states. */
 type FixedTotalView = NonNullable<CommitmentView["fixedTotal"]>;
-/** Whether a commitment is running or paused. */
 type PauseState = CommitmentView["pause"]["state"];
-/** The column-visibility slice the list preset controls, named from its own query state. */
 type ColumnVisibility = RecordListQueryState["columnVisibility"];
 // Props
 /** Props of {@link CommitmentList}. */
-export type CommitmentListProps = {
-  readonly scope: Scope;
-  readonly locale: string;
-  readonly dir?: "ltr" | "rtl";
-  readonly initialEnvelope?: ReadEnvelope<unknown>;
-  readonly className?: string;
-};
+/** The one optional display choice this list offers, as the read names it. */
+const SHOW_ADDITIONAL_TYPES_ACTION = "showAdditionalTypes";
+
+export type CommitmentListProps = { readonly scope: Scope; readonly locale: string; readonly dir?: "ltr" | "rtl"; readonly initialEnvelope?: ReadEnvelope<unknown>; readonly className?: string };
 // Fixed values
-/** The list's own name: the table caption, the scroll region's label and the heading of every state. */
 const SURFACE_LABEL = "Commitments";
-/** What one row is called, in the count line and in the empty state. */
 const ITEM_NOUN = "commitments";
-/** Where a commitment's own detail route lives, so the list state travels with the visit. */
 const DETAILS_PATH = "/support/commitments";
 /** The word the outcome badge carries before the bucket's own label, so a badge is never just a colour. */
 const OUTCOME_SR_PREFIX = "Recurring outcome";
-/**
- * The capability the envelope states for the one optional display choice. The read publishes it, with
- * its own reason, whenever the source supplies no additional commitment type, and this surface states
- * the option with that reason rather than leaving the capability unmentioned: the control is offered as
- * a live choice only when the read reports it available, and a reader meets an explained absence
- * instead of a promise this surface cannot keep.
- */
-const SHOW_ADDITIONAL_TYPES_ACTION = "showAdditionalTypes";
-/** The label of that one choice, stated in the source's own terms. */
 const SHOW_ADDITIONAL_TYPES_LABEL = "Show additional source-supplied commitment types";
 /** What the choice does, in the one thing this surface can honestly promise about it. */
 const SHOW_ADDITIONAL_TYPES_NOTE = "The choice is carried with the request to the source, so the list below states exactly the commitments the read answers with.";
@@ -104,35 +48,23 @@ const READ_ONLY_BODY = [
   "Commitments come from the source that owns them. This screen reads them and cannot post, retry, pause, resume, cancel or correct a payment, and no control here creates a gift, a message or a task.",
   "A commitment is not received cash. A settled occurrence is stated as the source's own outcome, a collection in flight is not counted as received, and nothing on this surface is added to a received-support figure.",
 ] as const;
-/** The heading of the panel that states the shared basis, coverage and read instant. */
 const SNAPSHOT_TITLE = "The family basis, the coverage and the read instant";
 /** The framing sentence that keeps the received-support basis and these commitment rows apart. */
 const SNAPSHOT_FRAMING =
   "A commitment is not received cash: these rows state the source's own cadence, currency and occurrence state, and none is counted in a received-support figure. The statement below names the one received-support basis and grain this application reports on — the measure these rows are deliberately kept outside of — with the coverage of the records behind this read and the instant it was evaluated at.";
-/** The sentence that introduces the whole-result partition. */
-const PARTITION_INTRO =
-  "Every commitment the source reports sits in exactly one of five recurring outcomes, or outside all five when the evidence behind it is unknown or stale. These figures cover the whole list rather than the page shown.";
-/** The two group labels of the partition panel. */
+const PARTITION_INTRO = "Every commitment the source reports sits in exactly one of five recurring outcomes, or outside all five when the evidence behind it is unknown or stale. These figures cover the whole list rather than the page shown.";
 const PARTITION_GROUP_LABELS = { outcomes: "Recurring outcomes", kinds: "Commitment kinds" } as const;
-/** What this surface says about a source it could not read at all. */
 const READ_FAILED_DESCRIPTION = "The read answered in a form this surface cannot state as a result, so no commitment, count or empty list stands in its place.";
 const RETRY_LABEL = "Try again";
 /** The word a kind the three do not cover is stated as, instead of a blank cell. */
 const UNRECOGNISED_KIND = "Unrecognised commitment type";
 /** Pause is two states, and neither is left to colour: each carries its own word. */
-const PAUSE_STATUS: Readonly<Record<PauseState, { readonly label: string; readonly tone: StatusTone }>> = {
-  active: { label: "Active", tone: "positive" },
-  paused: { label: "Paused", tone: "neutral" },
-};
-/** The text a date the source did not state is rendered as. */
+const PAUSE_STATUS: Readonly<Record<PauseState, { readonly label: string; readonly tone: StatusTone }>> = { active: { label: "Active", tone: "positive" }, paused: { label: "Paused", tone: "neutral" } };
 const NO_DATE_STATED = "No date stated";
 /** The text a fixed total's absence is rendered as, for the reader who cannot see the dash. */
 const NO_FIXED_TOTAL = "No fixed total on this commitment";
-/** The text a monthly equivalent the source does not state is rendered as. */
 const NO_MONTHLY_EQUIVALENT = "Not stated by the source";
-/** The resume line, stated whether or not the source named a day to resume on. */
 const RESUME_LABEL = "Resumes";
-const NO_RESUME_DATE = "No resume date stated";
 /** The state a value the read states nothing about is rendered as: never a plain number. */
 const UNSTATED_VALUE_STATE: ValueState = "unknown";
 /** The list never sorts in the browser, because the service states the order of every commitment. */
@@ -145,19 +77,12 @@ const NO_VALUE_STATES: Readonly<Record<string, ValueState>> = {};
 /** The read states each commitment's own currency and no list-wide currency, so the snapshot states none rather than deriving one from the loaded page. */
 const NO_CURRENCIES: readonly string[] = [];
 /** The identity column's link, sized so the target is at least 24 CSS px tall (WCAG 2.5.8). */
-const IDENTIFIER_LINK_CLASS =
-  "inline-flex min-h-6 max-w-full items-center break-words underline underline-offset-3 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
-/**
- * A bucket badge inside the count panel, allowed to wrap. The badge's own shape holds one line and
- * clips what does not fit, and the longest outcome name ("Unknown or stale — outside the five
- * outcomes") is wider than a 320 CSS px column, so at phone width the label wraps inside the badge
- * rather than poking out of the panel that states it.
- */
+const IDENTIFIER_LINK_CLASS = "inline-flex min-h-6 max-w-full items-center break-words underline underline-offset-3 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+/** A bucket badge inside the count panel, allowed to wrap. */
 const PARTITION_BADGE_CLASS = "h-auto min-h-5 max-w-full py-0.5 text-start whitespace-normal";
 /** The monthly equivalent's column heading, named from the one measure vocabulary rather than written again. */
 const MONTHLY_EQUIVALENT_HEADER = MEASURE_LABELS["monthly-equivalent-support"];
 // Reading the envelope's own statements
-/** The value state the read records for one field of one commitment, or `undefined` when it states none. */
 function recordedState(valueStates: Readonly<Record<string, ValueState>>, commitmentRowId: string, field: string): ValueState | undefined {
   return valueStates[`commitments.${commitmentRowId}.${field}`];
 }
@@ -166,7 +91,6 @@ function moneyOf(amount: MonthlyEquivalentView): Money {
   const { minorUnits } = amount;
   return { currency: amount.currency, minorUnits: minorUnits !== null && Number.isSafeInteger(minorUnits) ? minorUnitsOf(minorUnits) : minorUnitsOf(0) };
 }
-/** The one URL a row opens, carrying the list state so the detail can return to the same page and choice. */
 function detailHref(commitmentRowId: string, query: CommitmentsQuery): string {
   const search = toCommitmentsParams(query).toString();
   const path = `${DETAILS_PATH}/${encodeURIComponent(commitmentRowId)}`;
@@ -176,28 +100,14 @@ function detailHref(commitmentRowId: string, query: CommitmentsQuery): string {
 function rowIdOf(row: CommitmentView): string {
   return row.commitmentRowId;
 }
-/**
- * Admits a server render's envelope as a seed only when it carries the members this surface reads.
- * The prop is deliberately untyped — a route may pass anything it has — so the guard is the contract,
- * and an envelope that is not this read's seeds nothing rather than poisoning the cache with it.
- */
+/** Admits a server render's envelope as a seed only when it carries the members this surface reads. */
 function seedOf(candidate: ReadEnvelope<unknown> | undefined): CommitmentsEnvelope | undefined {
-  if (candidate === undefined) {
-    return undefined;
-  }
+  if (candidate === undefined) return undefined;
   const { data } = candidate;
-  if (typeof data !== "object" || data === null) {
-    return undefined;
-  }
-  if (!("commitments" in data) || !("total" in data) || !("page" in data) || !("buckets" in data) || !("commitmentKinds" in data)) {
-    return undefined;
-  }
-  if (!Array.isArray(data.commitments) || typeof data.total !== "number" || !Array.isArray(data.buckets) || !Array.isArray(data.commitmentKinds)) {
-    return undefined;
-  }
-  if (typeof data.page !== "object" || data.page === null) {
-    return undefined;
-  }
+  if (typeof data !== "object" || data === null) return undefined;
+  if (!("commitments" in data) || !("total" in data) || !("page" in data) || !("buckets" in data) || !("commitmentKinds" in data)) return undefined;
+  if (!Array.isArray(data.commitments) || typeof data.total !== "number" || !Array.isArray(data.buckets) || !Array.isArray(data.commitmentKinds)) return undefined;
+  if (typeof data.page !== "object" || data.page === null) return undefined;
   return candidate as CommitmentsEnvelope;
 }
 // The small figures a cell is made of
@@ -212,7 +122,6 @@ function StatedDate({ value }: { readonly value: string | null }): ReactElement 
     </time>
   );
 }
-/** Whether a commitment is running or paused, with the day the source says it resumes when it says one. */
 function PauseFigure({ pause }: { readonly pause: CommitmentView["pause"] }): ReactElement {
   const status = PAUSE_STATUS[pause.state];
   return (
@@ -221,7 +130,7 @@ function PauseFigure({ pause }: { readonly pause: CommitmentView["pause"] }): Re
       {pause.state === "paused" ? (
         <span className="text-xs text-muted-foreground">
           {pause.resumeOn === null ? (
-            NO_RESUME_DATE
+            "No resume date stated"
           ) : (
             <>
               {RESUME_LABEL} <StatedDate value={pause.resumeOn} />
@@ -233,17 +142,7 @@ function PauseFigure({ pause }: { readonly pause: CommitmentView["pause"] }): Re
   );
 }
 /** A fixed total's four amounts, each from its own minor units and its own value state, and the four never combined. */
-function FixedTotalFigures({
-  commitmentRowId,
-  fixedTotal,
-  valueStates,
-  locale,
-}: {
-  readonly commitmentRowId: string;
-  readonly fixedTotal: FixedTotalView;
-  readonly valueStates: Readonly<Record<string, ValueState>>;
-  readonly locale: string;
-}): ReactElement {
+function FixedTotalFigures({ commitmentRowId, fixedTotal, valueStates, locale }: { readonly commitmentRowId: string; readonly fixedTotal: FixedTotalView; readonly valueStates: Readonly<Record<string, ValueState>>; readonly locale: string }): ReactElement {
   return (
     <dl className="flex min-w-0 flex-col gap-1">
       {FIXED_TOTAL_FIELDS.map(({ field, label }) => (
@@ -266,7 +165,6 @@ function CountValue({ count, valueState }: { readonly count: number; readonly va
   // subtotal are never read as ordinary numbers.
   return <StatusBadge label={String(count)} valueState={valueState} />;
 }
-/** The whole-result partition: the five outcomes plus `outside-partition`, and the three kinds. */
 function PartitionFigures({ buckets, kinds, outsideMeaning }: { readonly buckets: readonly BucketFigure[]; readonly kinds: readonly KindFigure[]; readonly outsideMeaning: string }): ReactElement {
   const labelBase = useId();
   const outcomesLabelId = `${labelBase}-outcomes`;
@@ -327,10 +225,7 @@ function ReadOnlyStatement(): ReactElement {
 }
 
 // The surface
-/**
- * The recurring outcomes and commitments the source reports, read-only, with every figure rendered
- * from its own value state and every bucket stated in words rather than by colour.
- */
+/** The recurring outcomes and commitments the source reports, read-only, with every figure rendered from its own value state and every bucket stated in words rather than by colour. */
 export function CommitmentList({ scope, locale, dir, initialEnvelope, className }: CommitmentListProps): ReactElement {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -365,12 +260,7 @@ export function CommitmentList({ scope, locale, dir, initialEnvelope, className 
           </Link>
         ),
       },
-      {
-        id: "kind",
-        header: "Kind",
-        enableSorting: false,
-        cell: ({ row }) => <>{COMMITMENT_KIND_LABELS[row.original.kind] ?? UNRECOGNISED_KIND}</>,
-      },
+      { id: "kind", header: "Kind", enableSorting: false, cell: ({ row }) => <>{COMMITMENT_KIND_LABELS[row.original.kind] ?? UNRECOGNISED_KIND}</> },
       {
         id: "cadence",
         header: "Cadence",
@@ -381,14 +271,7 @@ export function CommitmentList({ scope, locale, dir, initialEnvelope, className 
           </span>
         ),
       },
-      {
-        id: "perOccurrence",
-        header: "Per occurrence",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <AmountValue money={row.original.perOccurrence} valueState={recordedState(valueStates, row.original.commitmentRowId, "perOccurrence") ?? UNSTATED_VALUE_STATE} locale={locale} />
-        ),
-      },
+      { id: "perOccurrence", header: "Per occurrence", enableSorting: false, cell: ({ row }) => <AmountValue money={row.original.perOccurrence} valueState={recordedState(valueStates, row.original.commitmentRowId, "perOccurrence") ?? UNSTATED_VALUE_STATE} locale={locale} /> },
       {
         id: "outcome",
         header: OUTCOME_SR_PREFIX,
@@ -402,24 +285,9 @@ export function CommitmentList({ scope, locale, dir, initialEnvelope, className 
           </div>
         ),
       },
-      {
-        id: "lastSuccessful",
-        header: "Last successful",
-        enableSorting: false,
-        cell: ({ row }) => <StatedDate value={row.original.lastSuccessfulOn} />,
-      },
-      {
-        id: "nextEligible",
-        header: "Next eligible",
-        enableSorting: false,
-        cell: ({ row }) => <StatedDate value={row.original.nextEligibleOn} />,
-      },
-      {
-        id: "pause",
-        header: "Pause state",
-        enableSorting: false,
-        cell: ({ row }) => <PauseFigure pause={row.original.pause} />,
-      },
+      { id: "lastSuccessful", header: "Last successful", enableSorting: false, cell: ({ row }) => <StatedDate value={row.original.lastSuccessfulOn} /> },
+      { id: "nextEligible", header: "Next eligible", enableSorting: false, cell: ({ row }) => <StatedDate value={row.original.nextEligibleOn} /> },
+      { id: "pause", header: "Pause state", enableSorting: false, cell: ({ row }) => <PauseFigure pause={row.original.pause} /> },
       {
         id: "fixedTotal",
         header: "Fixed total",
@@ -458,24 +326,14 @@ export function CommitmentList({ scope, locale, dir, initialEnvelope, className 
   }, [locale, query, rows, valueStates]);
   // The preset's page is one-based while the URL's index is zero-based, so the two are converted here
   // once rather than in the pager and in the read.
-  const listQueryState = useMemo<RecordListQueryState>(
-    () => ({ sort: NO_SORT, page: query.page.index + 1, pageSize: query.page.size, columnVisibility }),
-    [query.page.index, query.page.size, columnVisibility],
-  );
+  const listQueryState = useMemo<RecordListQueryState>(() => ({ sort: NO_SORT, page: query.page.index + 1, pageSize: query.page.size, columnVisibility }), [query.page.index, query.page.size, columnVisibility]);
   /** Replaces the list state in the URL, so the browser back button does not step through every page. */
   function commitQuery(next: CommitmentsQuery): void {
     const search = toCommitmentsParams(next).toString();
     router.replace(search.length === 0 ? pathname : `${pathname}?${search}`, { scroll: false });
   }
-  /**
-   * Applies the two changes the preset can raise. Column visibility is presentation and stays in this
-   * component; a page or page-size change belongs to the service, so it is committed to the URL. A
-   * sort is never dispatched, because every column refuses one.
-   */
   function handleQueryStateChange(next: RecordListQueryState): void {
-    if (next.columnVisibility !== columnVisibility) {
-      setColumnVisibility(next.columnVisibility);
-    }
+    if (next.columnVisibility !== columnVisibility) setColumnVisibility(next.columnVisibility);
     const pageIndex = Math.max(0, next.page - 1);
     if (pageIndex !== query.page.index || next.pageSize !== query.page.size) {
       commitQuery({ ...query, page: { index: pageIndex, size: next.pageSize } });
@@ -495,26 +353,14 @@ export function CommitmentList({ scope, locale, dir, initialEnvelope, className 
   if (result === undefined && read.error !== null) {
     // A read that answered in a form this surface cannot state is reported as such: never as an
     // empty list, and never with a zero or a count standing in for what could not be read.
-    return surface(
-      <StateNotice kind="unavailable" headingLevel={2} title={`${SURFACE_LABEL} could not be read`} description={READ_FAILED_DESCRIPTION} retry={{ label: RETRY_LABEL, onClick: retry }} />,
-    );
+    return surface(<StateNotice kind="unavailable" headingLevel={2} title={`${SURFACE_LABEL} could not be read`} description={READ_FAILED_DESCRIPTION} retry={{ label: RETRY_LABEL, onClick: retry }} />);
   }
   if (result === undefined) {
     // The preset's own loading state: a skeleton table under the same statement, never an empty list.
     return surface(
       <>
         <ReadOnlyStatement />
-        <RecordList
-          label={SURFACE_LABEL}
-          columns={columns}
-          rows={NO_ROWS}
-          rowCount={0}
-          queryState={listQueryState}
-          onQueryStateChange={handleQueryStateChange}
-          getRowId={rowIdOf}
-          isLoading
-          itemNoun={ITEM_NOUN}
-        />
+        <RecordList label={SURFACE_LABEL} columns={columns} rows={NO_ROWS} rowCount={0} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={rowIdOf} isLoading itemNoun={ITEM_NOUN} />
       </>,
     );
   }
@@ -523,16 +369,12 @@ export function CommitmentList({ scope, locale, dir, initialEnvelope, className 
     return surface(<StateNotice kind="denied" headingLevel={2} title={SURFACE_LABEL} reasonCode={result.denied.reasonCode} />);
   }
   if (result.kind === "unavailable") {
-    return surface(
-      <StateNotice
-        kind="unavailable"
-        headingLevel={2}
-        title={`${SURFACE_LABEL} could not be read`}
-        description={result.unavailable.guidance}
-        source={result.unavailable.source}
-        retry={{ label: RETRY_LABEL, onClick: retry }}
-      />,
-    );
+    return surface(<StateNotice kind="unavailable" headingLevel={2} title={`${SURFACE_LABEL} could not be read`} description={result.unavailable.guidance} source={result.unavailable.source} retry={{ label: RETRY_LABEL, onClick: retry }} />);
+  }
+  if (result.kind === "refused") {
+    // The filters this list sent are ones the read does not admit: the field-keyed refusal is the answer,
+    // and no source behind the commitments failed.
+    return surface(<StateNotice kind="refused" headingLevel={2} title="This list's request was refused" description={refusalSummary(result.refused)} />);
   }
   const { data, actions, asOf, coverage } = result.envelope;
   if (data.total === 0) {
@@ -586,16 +428,7 @@ export function CommitmentList({ scope, locale, dir, initialEnvelope, className 
         <p className="text-sm text-muted-foreground">{PARTITION_INTRO}</p>
         <PartitionFigures buckets={data.buckets} kinds={data.commitmentKinds} outsideMeaning={BUCKET_MEANING["outside-partition"]} />
       </div>
-      <RecordList
-        label={SURFACE_LABEL}
-        columns={columns}
-        rows={data.commitments}
-        rowCount={data.total}
-        queryState={listQueryState}
-        onQueryStateChange={handleQueryStateChange}
-        getRowId={rowIdOf}
-        itemNoun={ITEM_NOUN}
-      />
+      <RecordList label={SURFACE_LABEL} columns={columns} rows={data.commitments} rowCount={data.total} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={rowIdOf} itemNoun={ITEM_NOUN} />
     </>,
   );
 }

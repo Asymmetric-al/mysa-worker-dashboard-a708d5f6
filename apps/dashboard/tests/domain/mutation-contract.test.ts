@@ -1,53 +1,12 @@
-/**
- * The closed mutation contract, proven at the service boundary: the four fields every named mutation
- * presents, the eight outcomes it may answer with, and the rejection paths that make that set
- * trustworthy — replay, stale revision, changed intent, the no-op, schema refusal, denial, the lost
- * acknowledgement and the source fault.
- *
- * The value of this file is in its negative assertions. An outcome name can be returned by a broken
- * implementation, so every accepted case also proves that a replay advances no revision and repeats no
- * effect, every refusal also proves that the record it acted on is unchanged, and every rejection also
- * proves that nothing was recorded under the attempt's identity — which is exactly what stops a refused
- * attempt being replayed into an acceptance.
- *
- * Divergences from the file brief, each settled by the modules as they stand:
- *
- * - A session exists only in the store, and the service is the only path to it, so the seeded world is
- *   laid down through the development runtime's one reset (`resetSeed`) instead of by importing the
- *   store, which no test may do. The seed owns its session ids, so this file acts as the seeded
- *   sessions: `established-worker` (admitted to two ministries, holding `canEditGoal`) and
- *   `second-worker` (another principal in another ministry, whose calls must be refused).
- * - `toResponse` lives in `response.ts` rather than `outcome.ts`; the data-service index re-exports it,
- *   which is where this file imports it from, together with the outcome guards and `outcomeFromError`.
- * - Denial cannot be armed on a mutation. The failure registry arms `denied` on reads only and refuses
- *   a mode a target cannot demonstrate, so mutation denial is proven with the second worker's real
- *   identity and the armed plan proves the read-side denial.
- */
+/** The closed mutation contract, proven at the service boundary: the four fields every named mutation presents, the eight outcomes it may answer with, and the rejection paths that make that set … */
 import { Buffer } from "node:buffer";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ZodError, z } from "zod";
 import { newOperationId } from "@/lib/ids";
+import { REDACTED } from "@/lib/redaction";
 import { mutations, reads, toResponse, type MutationInput, type Scope } from "@/modules/data-service";
 import { OPERATION_OUTCOME_NAMES, mutationInputSchema, type OperationOutcomeName, type OperationRecord } from "@/modules/data-service/envelope";
-import {
-  DENIAL_REASONS,
-  LOCAL_STORE_SYSTEM,
-  ROOT_FIELD_KEY,
-  accepted,
-  alreadyAccepted,
-  conflict,
-  denied,
-  invalid,
-  isOutcome,
-  isReadResult,
-  outcomeFromError,
-  unavailable,
-  unchanged,
-  unknown,
-  type MutationOutcome,
-  type MutationResult,
-  type ReadResult,
-} from "@/modules/data-service/outcome";
+import { DENIAL_REASONS, LOCAL_STORE_SYSTEM, ROOT_FIELD_KEY, accepted, alreadyAccepted, conflict, denied, invalid, isOutcome, isReadResult, outcomeFromError, refusedRead, unavailable, unchanged, unknown, type MutationOutcome, type MutationResult, type ReadResult } from "@/modules/data-service/outcome";
 import { begin, emptyLedger, intentHash, lookup, record, type OperationLedger } from "@/modules/data-service/operations";
 import { resolveSession, type ResolvedSession, type SessionSource } from "@/modules/data-service/authorize";
 import { resetSeed } from "@/modules/dev-runtime/reset";
@@ -63,26 +22,14 @@ const PARTNER = "partner-jo-mbeki";
 const UPDATE_DOCUMENT = "doc-update-autumn";
 /** The seeded publisher whose Update-email purpose the audience mutations address. */
 const PUBLISHER = "publisher-harbour";
-/**
- * The revision token an attempt presents when it creates a record rather than changing one. The runner
- * compares no revision for a creation, because there is no stored value a stale expectation could
- * overwrite; the token is stated rather than omitted because the envelope has four fields and no fewer.
- */
+/** The revision token an attempt presents when it creates a record rather than changing one. */
 const NO_RECORD = "rev-none";
 // The world
-/**
- * Lays the seeded world down before every case. The run therefore starts from the same bytes each
- * time — including an empty operation ledger, so an identity minted in one case can never be a replay
- * in the next — and a case that arms a failure or writes a record cannot reach the cases beside it.
- */
+/** Lays the seeded world down before every case. */
 beforeEach(async () => {
   await resetSeed();
 });
-/**
- * Clears the armed failure after every case, whatever the case did with it. A plan left armed would
- * silently answer a later case with an injected outcome, so the world is disarmed even when the case
- * itself failed.
- */
+/** Clears the armed failure after every case, whatever the case did with it. */
 afterEach(async () => {
   const state = await reads.dev.readDevState(HERO);
   if (state.kind !== "envelope" || !state.envelope.data.failurePlan.armed) {
@@ -149,11 +96,7 @@ async function armFailure(mode: FailureMode, kind: FailureTargetKind, name: stri
 }
 // The outcome shapes a case narrows to
 type Accepted = Extract<MutationOutcome, { readonly outcome: "accepted" }>;
-/**
- * Drives one attempt to `accepted` and then replays it twice. A replay reports the change's own
- * revision and identifiers and adds nothing: a fresh result with a new revision would be a second
- * effect dressed up as a recovery, and the stored result is what a lost caller recovers.
- */
+/** Drives one attempt to `accepted` and then replays it twice. */
 async function acceptedThenReplayed<P>(run: (input: MutationInput<P>) => Promise<MutationOutcome>, input: MutationInput<P>): Promise<Accepted> {
   const first = await run(input);
   expect(isOutcome(first)).toBe(true);
@@ -222,9 +165,13 @@ describe("the named inventory", () => {
     for (const entry of namedMembersOf(mutations)) {
       expect(typeof entry.member, `${entry.group}.${entry.name} is a named mutation`).toBe("function");
     }
-    // 52 and 94 are the unique names: any missing name fails here, and so does any name added for a
-    // job the plan does not hold.
-    expect(new Set(memberNamesOf(reads)).size).toBe(52);
+    // 53 and 94 are the unique names: any missing name fails here, and so does any name added for a
+    // job the plan does not hold. Two reads explain the count beyond the base inventory:
+    // `readPartnerRecord` folds the record body, its activity and the caller's own preparation into the
+    // single envelope the record transport answers with, so that fold is the service's rather than a
+    // handler's; and `findContentDocuments` is the content family's listing read, reachable from both
+    // content jobs.
+    expect(new Set(memberNamesOf(reads)).size).toBe(53);
     expect(new Set(memberNamesOf(mutations)).size).toBe(94);
   });
 
@@ -236,7 +183,7 @@ describe("the named inventory", () => {
     expect(duplicateNamesOf(memberNamesOf(mutations))).toEqual(["approveCandidate", "createVariant", "publishVariants", "requestChanges", "saveDraft", "submitForReview", "withdrawLocale"]);
     // The deliberate re-uses are counted here too, so a lost or an extra entry fails even where the
     // unique total happens to survive it.
-    expect(memberNamesOf(reads).length).toBe(54);
+    expect(memberNamesOf(reads).length).toBe(55);
     expect(memberNamesOf(mutations).length).toBe(101);
   });
 
@@ -254,11 +201,7 @@ describe("the named inventory", () => {
 });
 
 // The envelope, the payload, and the order between them
-type GoalSavePayload = {
-  readonly amount: { readonly currency: string; readonly minorUnits: number };
-  readonly measure: "received-gifts";
-  readonly effectiveFrom: string;
-};
+type GoalSavePayload = { readonly amount: { readonly currency: string; readonly minorUnits: number }; readonly measure: "received-gifts"; readonly effectiveFrom: string };
 function goalPayload(minorUnits: number): GoalSavePayload {
   return { amount: { currency: "USD", minorUnits }, measure: "received-gifts", effectiveFrom: "2026-11-20" };
 }
@@ -288,13 +231,16 @@ describe("the four-field input", () => {
     }
     expect(parsed.data).toEqual(input);
     // Nothing else travels with it: a fifth member is a field no named mutation reads, so accepting it
-    // would let a caller believe it had asked for something.
+    // would let a caller believe it had asked for something. The refusal names that member at the field
+    // path it occupies, so a form can point at the input to remove rather than at the whole body.
     const extra = ENVELOPE_SCHEMA.safeParse({ ...input, comment: "a field no mutation reads" });
     expect(extra.success).toBe(false);
     if (extra.success) {
       throw new Error("A request carrying a field beyond the four was accepted.");
     }
-    expect(Object.keys(invalid({ operationId: input.operationId, fields: extra.error }).fields)).toEqual([ROOT_FIELD_KEY]);
+    const surplus = invalid({ operationId: input.operationId, fields: extra.error }).fields;
+    expect(Object.keys(surplus)).toEqual(["comment"]);
+    expect(Object.keys(surplus)).not.toContain(ROOT_FIELD_KEY);
   });
 
   it.each(ENVELOPE_MEMBERS)("refuses a request that states no %s, keyed by the field path", async (member) => {
@@ -348,31 +294,11 @@ const FOREIGN_TASK = "task-river-invite-owen";
 /** The private tag these cases apply. The seed sets no task tags at all, so the first attempt writes it. */
 const BULK_TAG = "contract-bulk";
 /** One row of a bulk action's answer, as the stored result carries it. */
-const BULK_ROW_SCHEMA = z.object({
-  taskId: z.string(),
-  state: z.enum(["accepted", "unchanged", "excluded", "failed"]),
-  revision: z.string().nullable(),
-  createdTaskId: z.string().nullable(),
-  reasonCode: z.string().nullable(),
-  reason: z.string().nullable(),
-});
+const BULK_ROW_SCHEMA = z.object({ taskId: z.string(), state: z.enum(["accepted", "unchanged", "excluded", "failed"]), revision: z.string().nullable(), createdTaskId: z.string().nullable(), reasonCode: z.string().nullable(), reason: z.string().nullable() });
 /** A bulk action's own answer: one row per selected task, the counts derived from those rows, and the tasks created. */
-const BULK_ANSWER_SCHEMA = z.object({
-  items: z.array(BULK_ROW_SCHEMA),
-  acceptedCount: z.number().int(),
-  unchangedCount: z.number().int(),
-  excludedCount: z.number().int(),
-  failedCount: z.number().int(),
-  createdTaskIds: z.array(z.string()),
-});
+const BULK_ANSWER_SCHEMA = z.object({ items: z.array(BULK_ROW_SCHEMA), acceptedCount: z.number().int(), unchangedCount: z.number().int(), excludedCount: z.number().int(), failedCount: z.number().int(), createdTaskIds: z.array(z.string()) });
 type BulkAnswer = z.infer<typeof BULK_ANSWER_SCHEMA>;
-/**
- * The answer a caller recovers after losing the acknowledgement: re-querying the accepted identity
- * returns the stored result, which is where the per-item rows live — each row's state, the task it
- * created and the reason code that explains a row left alone — beside the counts derived from them.
- * The rows are what a bulk action owes instead of one aggregate result, so they are read and checked
- * here rather than summarised.
- */
+/** The answer a caller recovers after losing the acknowledgement: re-querying the accepted identity returns the stored result, which is where the per-item rows live — each row's state, the task it … */
 async function recoveredBulkAnswer<P>(run: (input: MutationInput<P>) => Promise<MutationOutcome>, input: MutationInput<P>): Promise<BulkAnswer> {
   const recovered = await run(input);
   expect(recovered.outcome).toBe("alreadyAccepted");
@@ -431,10 +357,7 @@ describe("accepted, then replayed", () => {
     const switched = await acceptedThenReplayed((input) => mutations.context.selectContext(input, HERO), attempt(current, stale.currentRevision, switchPayload));
     expect(switched.revision).not.toBe(stale.currentRevision);
     // The switch is exercised and then returned, so the seeded context still stands for every case after.
-    const returned = await mutations.context.selectContext(
-      attempt(current, switched.revision, { organizationId: current.organizationId, ministryId: current.ministryId, supportSubjectId: current.supportSubjectId }),
-      HERO,
-    );
+    const returned = await mutations.context.selectContext(attempt(current, switched.revision, { organizationId: current.organizationId, ministryId: current.ministryId, supportSubjectId: current.supportSubjectId }), HERO);
     expect(returned.outcome).toBe("accepted");
   });
 
@@ -448,12 +371,7 @@ describe("accepted, then replayed", () => {
     if (target === undefined) {
       throw new Error("The seeded worker is admitted to one ministry, so this case cannot ask to switch away.");
     }
-    const heldPayload = {
-      organizationId: target.organizationId,
-      ministryId: target.ministryId,
-      supportSubjectId: target.supportSubjectId,
-      resolveUnsavedWork: "stay" as const,
-    };
+    const heldPayload = { organizationId: target.organizationId, ministryId: target.ministryId, supportSubjectId: target.supportSubjectId, resolveUnsavedWork: "stay" as const };
     // The context record's own revision, learned the way the shell learns it: an attempt on a revision
     // the caller never read is answered with the conflict that states the current one.
     const stale = await mutations.context.selectContext(attempt(current, "rev-unread", heldPayload), HERO);
@@ -625,10 +543,7 @@ describe("accepted, then replayed", () => {
 
   it("answers accepted and replays through the outreach job, creating one initiative", async () => {
     const scope = await scopeOf(HERO);
-    const first = await acceptedThenReplayed(
-      (input) => mutations.outreach.createInitiative(input, HERO),
-      attempt(scope, NO_RECORD, { name: "Autumn reconnection", purpose: "Reconnect with supporters who have not been in touch since the spring appeal." }),
-    );
+    const first = await acceptedThenReplayed((input) => mutations.outreach.createInitiative(input, HERO), attempt(scope, NO_RECORD, { name: "Autumn reconnection", purpose: "Reconnect with supporters who have not been in touch since the spring appeal." }));
     expect(first.created?.length).toBe(1);
   });
 
@@ -656,10 +571,7 @@ describe("accepted, then replayed", () => {
   it("answers accepted and replays through the audience job, opening one membership for the caller", async () => {
     const scope = await scopeOf(HERO);
     const session = await sessionOf(HERO);
-    const first = await acceptedThenReplayed(
-      (input) => mutations.audience.signupForPurpose(input, HERO),
-      attempt(scope, NO_RECORD, { publisherId: PUBLISHER, purpose: "update-email", email: "worker@example.org" } as const),
-    );
+    const first = await acceptedThenReplayed((input) => mutations.audience.signupForPurpose(input, HERO), attempt(scope, NO_RECORD, { publisherId: PUBLISHER, purpose: "update-email", email: "worker@example.org" } as const));
     // The identity a membership is keyed by is the caller's own principal. The address is a value on the
     // membership and never the key: an equal-looking email address joins nothing to anything.
     expect(first.created).toEqual([session.principalId]);
@@ -667,10 +579,7 @@ describe("accepted, then replayed", () => {
 
   it("answers accepted and replays through the coaching job, setting one target", async () => {
     const scope = await scopeOf(HERO);
-    const first = await acceptedThenReplayed(
-      (input) => mutations.coaching.saveTarget(input, HERO),
-      attempt(scope, NO_RECORD, { measure: "calls-made", quantity: 4, privateLabel: "Calls this week" } as const),
-    );
+    const first = await acceptedThenReplayed((input) => mutations.coaching.saveTarget(input, HERO), attempt(scope, NO_RECORD, { measure: "calls-made", quantity: 4, privateLabel: "Calls this week" } as const));
     expect(first.created?.length).toBe(1);
   });
 
@@ -706,15 +615,7 @@ describe("accepted, then replayed", () => {
     expect(begin(ledger, input.operationId, digest).state).toBe("fresh");
     // The ledger's own three answers, stated directly: a recorded attempt is looked up by identity, and
     // the same identity with another intent is a conflict rather than a second effect.
-    const entry: OperationRecord = {
-      operationId: input.operationId,
-      intentHash: digest,
-      scope,
-      outcome: "accepted",
-      result: { partnerId: PARTNER, tag: "ledger-probe" },
-      revision: first.revision,
-      at: "2026-11-20T00:00:00Z",
-    };
+    const entry: OperationRecord = { operationId: input.operationId, intentHash: digest, scope, outcome: "accepted", result: { partnerId: PARTNER, tag: "ledger-probe" }, revision: first.revision, at: "2026-11-20T00:00:00Z" };
     const recorded = record(ledger, entry);
     expect(lookup(recorded, input.operationId)).toEqual(entry);
     expect(begin(recorded, input.operationId, digest).state).toBe("replay");
@@ -880,30 +781,10 @@ async function goalSnapshot(): Promise<unknown> {
   return { revision: envelope.revision, data: envelope.data };
 }
 const INVALID_CASES: readonly InvalidCase[] = [
-  {
-    label: "work.createTask with a blank title",
-    field: "title",
-    run: (scope, operationId) => mutations.work.createTask({ operationId, scope, expectedRevision: NO_RECORD, payload: { title: "   " } }, HERO),
-    snapshot: taskTotal,
-  },
-  {
-    label: "work.createTask with a due date the calendar does not have",
-    field: "dueOn",
-    run: (scope, operationId) => mutations.work.createTask({ operationId, scope, expectedRevision: NO_RECORD, payload: { title: "Call", dueOn: "2026-02-30" } }, HERO),
-    snapshot: taskTotal,
-  },
-  {
-    label: "support.saveGoal with a fractional minor-unit amount",
-    field: "amount.minorUnits",
-    run: (scope, operationId) => mutations.support.saveGoal({ operationId, scope, expectedRevision: NO_RECORD, payload: goalPayload(12.5) }, HERO),
-    snapshot: goalSnapshot,
-  },
-  {
-    label: "import.proposeImport with no file named",
-    field: "fileName",
-    run: (scope, operationId) => mutations.import.proposeImport({ operationId, scope, expectedRevision: NO_RECORD, payload: { fileName: "", contentBase64: "" } }, HERO),
-    snapshot: proposalSnapshot,
-  },
+  { label: "work.createTask with a blank title", field: "title", run: (scope, operationId) => mutations.work.createTask({ operationId, scope, expectedRevision: NO_RECORD, payload: { title: "   " } }, HERO), snapshot: taskTotal },
+  { label: "work.createTask with a due date the calendar does not have", field: "dueOn", run: (scope, operationId) => mutations.work.createTask({ operationId, scope, expectedRevision: NO_RECORD, payload: { title: "Call", dueOn: "2026-02-30" } }, HERO), snapshot: taskTotal },
+  { label: "support.saveGoal with a fractional minor-unit amount", field: "amount.minorUnits", run: (scope, operationId) => mutations.support.saveGoal({ operationId, scope, expectedRevision: NO_RECORD, payload: goalPayload(12.5) }, HERO), snapshot: goalSnapshot },
+  { label: "import.proposeImport with no file named", field: "fileName", run: (scope, operationId) => mutations.import.proposeImport({ operationId, scope, expectedRevision: NO_RECORD, payload: { fileName: "", contentBase64: "" } }, HERO), snapshot: proposalSnapshot },
 ];
 describe("invalid, keyed by field and free of side effects", () => {
   it.each(INVALID_CASES)("refuses $label and records nothing under the attempt's identity", async ({ run, field, snapshot }) => {
@@ -939,19 +820,72 @@ describe("invalid, keyed by field and free of side effects", () => {
   });
 });
 
-function interactionPayload(date: string) {
-  return {
-    partnerId: PARTNER,
-    type: "call" as const,
-    occurredOn: { precision: "date" as const, date },
-    outcome: "Caught up briefly",
-    participants: [{ partnerId: PARTNER, role: "Person" }],
-  };
+// One convention for a name a job does not admit, and one bound on the identity a refusal echoes
+/** The wording every path uses for a name the job it calls does not declare. */
+function unadmittedKeyMessage(name: string): string {
+  return `This request does not accept "${name}": every name it sends must be one the job declares, so remove it rather than having it silently ignored.`;
 }
-/**
- * Reads the interaction id off the stored result. The ledger holds the result as the opaque JSON value
- * the mutation chose to return, so the id is read through a plain-object check rather than assumed.
- */
+/** A strict payload under the shared envelope, so a surplus member can be refused at either depth. */
+const STRICT_TASK_BODY = mutationInputSchema(z.strictObject({ title: z.string() }));
+/** The two depths one fault class can arrive at: a member of the request envelope itself, and a member inside the payload the envelope carries. */
+const SURPLUS_KEY_CASES = [
+  { label: "a member of the request envelope", surplus: "comment", body: (complete: Record<string, unknown>): Record<string, unknown> => ({ ...complete, comment: "a field no mutation reads" }) },
+  { label: "a member inside the payload", surplus: "audience", body: (complete: Record<string, unknown>): Record<string, unknown> => ({ ...complete, payload: { title: "A follow-up call", audience: "public" } }) },
+] as const;
+describe("a refusal names the field to fix, under a bounded attempt identity", () => {
+  it.each(SURPLUS_KEY_CASES)("keys $label at its own path, never at the root of the body", async ({ body, surplus }) => {
+    const scope = await scopeOf(HERO);
+    const complete: Record<string, unknown> = { ...attempt(scope, "rev-1", { title: "A follow-up call" }) };
+    const refused = STRICT_TASK_BODY.safeParse(body(complete));
+    expect(refused.success).toBe(false);
+    if (refused.success) {
+      throw new Error(`A request carrying "${surplus}" was accepted, so there is no refusal to read a field key from.`);
+    }
+    const answered = toResponse(invalid({ operationId: newOperationId(), fields: refused.error }));
+    expect(answered.status).toBe(422);
+    const payload: unknown = await answered.json();
+    expect(isOutcome(payload)).toBe(true);
+    if (!isOutcome(payload) || payload.outcome !== "invalid") {
+      throw new Error(`A strict object's surplus member was answered as something other than the field-keyed refusal it is: ${JSON.stringify(payload)}`);
+    }
+    // The name is the field a caller has to remove, and one wording serves the family: the same fault
+    // at a different depth must not read differently to the form that has to fix it.
+    expect(Object.keys(payload.fields)).toEqual([surplus]);
+    expect(Object.keys(payload.fields)).not.toContain(ROOT_FIELD_KEY);
+    expect(payload.fields[surplus]).toEqual([unadmittedKeyMessage(surplus)]);
+  });
+
+  it("echoes at most sixty-four characters of an operation id, on every outcome and over the wire", async () => {
+    // An id a refusal carries is read off a body that failed validation, so it is the caller's own text
+    // rather than the canonical UUID an accepted attempt presents. Echoing it unbounded would let one
+    // request write a multi-kilobyte answer.
+    const claimed = "a".repeat(3_000);
+    for (const name of OPERATION_OUTCOME_NAMES) {
+      expect(OUTCOME_CONSTRUCTORS[name](claimed).operationId.length, `the operation id "${name}" echoes`).toBeLessThanOrEqual(64);
+    }
+    // The bound is a refusal's, not a success's: the UUID an accepted attempt carries comes back whole.
+    const canonical = newOperationId();
+    expect(OUTCOME_CONSTRUCTORS.accepted(canonical).operationId).toBe(canonical);
+    const refusal = outcomeFromError(claimed, new ZodError([{ code: "custom", path: ["title"], message: "Give this task a title." }]));
+    expect(refusal.outcome).toBe("invalid");
+    if (refusal.outcome !== "invalid") {
+      throw new Error(`A schema failure was answered "${refusal.outcome}" rather than refused as invalid.`);
+    }
+    expect(refusal.operationId).toBe(claimed.slice(0, 64));
+    const answered = toResponse(refusal);
+    const payload: unknown = await answered.json();
+    expect(isOutcome(payload)).toBe(true);
+    if (!isOutcome(payload)) {
+      throw new Error("The refusal answered over the wire is not one of the eight outcomes.");
+    }
+    expect(payload.operationId).toBe(claimed.slice(0, 64));
+  });
+});
+
+function interactionPayload(date: string) {
+  return { partnerId: PARTNER, type: "call" as const, occurredOn: { precision: "date" as const, date }, outcome: "Caught up briefly", participants: [{ partnerId: PARTNER, role: "Person" }] };
+}
+/** Reads the interaction id off the stored result. */
 function interactionIdOf(result: MutationResult): string {
   const shaped = typeof result === "object" && result !== null && !Array.isArray(result);
   const fields: Readonly<Record<string, MutationResult>> = shaped ? (result as Readonly<Record<string, MutationResult>>) : {};
@@ -1093,11 +1027,7 @@ describe("unknown and unavailable", () => {
   });
 
   it("keeps an outage from reading as an empty result", () => {
-    const outage = unavailable({
-      operationId: newOperationId(),
-      source: { system: LOCAL_STORE_SYSTEM, reference: "unreadable-ledger" },
-      guidance: "Retry the same request with the same operation id.",
-    });
+    const outage = unavailable({ operationId: newOperationId(), source: { system: LOCAL_STORE_SYSTEM, reference: "unreadable-ledger" }, guidance: "Retry the same request with the same operation id." });
     expect(isOutcome(outage)).toBe(true);
     // An envelope-shaped answer would let a surface render an outage as an empty list or a zero. The
     // outage is its own answer, it names the source, and it carries no data member at all.
@@ -1114,6 +1044,8 @@ const STATUS_BY_OUTCOME: Readonly<Record<OperationOutcomeName, number>> = {
   alreadyAccepted: 200,
   unchanged: 200,
   conflict: 409,
+  // A refused authority. A session that expired or could not be established answers 401 with the same
+  // body, which the cases below pin.
   denied: 403,
   invalid: 422,
   unavailable: 503,
@@ -1143,11 +1075,83 @@ describe("never a bare boolean", () => {
     expect(envelopeResponse.headers.get("cache-control")).toBe("no-store");
     const refusedResponse = toResponse({ kind: "denied", denied: denied({ operationId: newOperationId(), reasonCode: "no-permission" }) });
     expect(refusedResponse.status).toBe(403);
-    const outageResponse = toResponse({
-      kind: "unavailable",
-      unavailable: unavailable({ operationId: newOperationId(), source: { system: LOCAL_STORE_SYSTEM, reference: "read" }, guidance: "Retry." }),
-    });
+    const outageResponse = toResponse({ kind: "unavailable", unavailable: unavailable({ operationId: newOperationId(), source: { system: LOCAL_STORE_SYSTEM, reference: "read" }, guidance: "Retry." }) });
     expect(outageResponse.status).toBe(503);
+  });
+
+  it("answers a session fault with 401 and a refused authority with 403, from the one redacted denial", async () => {
+    // The status separates a session that expired or could not be established from a permission refusal;
+    // the body does not, because both are the one redacted `denied` outcome the closed set defines. A
+    // client that reads the reason code is unaffected, and one that reads the status can tell a stale
+    // session from a permission the caller never held.
+    const permissionRefusal = toResponse(denied({ operationId: "response-probe", reasonCode: "no-permission" }));
+    expect(permissionRefusal.status).toBe(403);
+    for (const reasonCode of ["session-expired", "session-unavailable"] as const) {
+      const response = toResponse(denied({ operationId: "response-probe", reasonCode }));
+      expect(response.status, `the response for "${reasonCode}"`).toBe(401);
+      expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
+      const body: unknown = await response.json();
+      expect(body).toEqual({ outcome: "denied", operationId: "response-probe", reasonCode });
+    }
+    // Redaction belongs to the mapper rather than to the status: a denial built by hand still loses its
+    // existence and size evidence on a 401 exactly as it does on a 403.
+    const handBuilt = { outcome: "denied", operationId: "response-probe", reasonCode: "session-expired", exists: true, count: 3 } as unknown as MutationOutcome;
+    const handBuiltResponse = toResponse(handBuilt);
+    expect(handBuiltResponse.status).toBe(401);
+    expect(await handBuiltResponse.json()).toEqual({ outcome: "denied", operationId: "response-probe", reasonCode: "session-expired", exists: REDACTED, count: REDACTED });
+    // A read's refusal is the same answer, because one mapper decides the status of every refusal.
+    const readRefusal = toResponse({ kind: "denied", denied: denied({ operationId: "read", reasonCode: "session-expired" }) });
+    expect(readRefusal.status).toBe(401);
+  });
+
+  it("answers unknown with 202 and states the effect's fate in the body, which is the recorded decision", async () => {
+    const response = toResponse(unknown({ operationId: "response-probe" }));
+    expect(response.status).toBe(202);
+    const body: unknown = await response.json();
+    expect(body).toEqual({ outcome: "unknown", operationId: "response-probe" });
+    // The status states that the exchange succeeded, never that the effect did: a 200 would claim an
+    // acceptance nobody observed, and a non-2xx would claim a failure the caller cannot support. The body
+    // is the authoritative statement, and `docs/architecture.md` records the choice.
+    if (!isOutcome(body) || body.outcome !== "unknown") {
+      throw new Error("The 202 body did not state the unknown outcome, so the decision was left in the status.");
+    }
+  });
+
+  it("answers a read's refused request with the same field-keyed body a malformed mutation earns, at 422", async () => {
+    // One expression writes both bodies, so a read whose own query is wrong is answered exactly as a
+    // malformed payload is: the caller is told which field to correct, and nothing claims a source failed.
+    const operationId = newOperationId();
+    const refused = refusedRead(
+      operationId,
+      new ZodError([
+        { code: "custom", path: ["payload", "page"], message: "State the page as a whole number from 1.", input: "abc" },
+        { code: "custom", path: ["payload", "sort", "0"], message: "State the order as field:direction.", input: "name" },
+      ]),
+    );
+    expect(refused.kind).toBe("refused");
+    const response = toResponse(refused);
+    expect(response.status).toBe(422);
+    expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    const body: unknown = await response.json();
+    // The keys are payload-relative: the envelope path every mutation carries is re-based away, so a read
+    // and a mutation naming the same fault name it at the same key.
+    expect(body).toEqual({ outcome: "invalid", operationId, fields: { page: ["State the page as a whole number from 1."], "sort.0": ["State the order as field:direction."] } });
+    // It is neither of the two answers a read could be mistaken for: no source is named, and no reason code.
+    expect(body).not.toHaveProperty("source");
+    expect(body).not.toHaveProperty("reasonCode");
+  });
+
+  it("accepts a read's refused request as a read result and refuses a member that is not one", () => {
+    // The arm is admitted only when it carries the one outcome a read's own refusal is: a body claiming it
+    // around an acceptance, a denial or an outage is not a refused request, and reading it as one would let
+    // a client that cannot place a fault state it as the caller's own.
+    const refused = refusedRead("response-probe", { page: ["State the page as a whole number from 1."] });
+    expect(isReadResult(refused)).toBe(true);
+    expect(isOutcome(refused)).toBe(false);
+    expect(isReadResult({ kind: "refused" })).toBe(false);
+    expect(isReadResult({ kind: "refused", refused: { outcome: "accepted", operationId: "response-probe", revision: "rev-1" } })).toBe(false);
+    expect(isReadResult({ kind: "refused", refused: { outcome: "denied", operationId: "response-probe", reasonCode: "no-permission" } })).toBe(false);
+    expect(isReadResult({ kind: "refused", refused: { outcome: "invalid", operationId: "response-probe", fields: { page: ["Correct this."] } } })).toBe(true);
   });
 
   it("narrows a call by its predicate, never by the truthiness of its answer", async () => {

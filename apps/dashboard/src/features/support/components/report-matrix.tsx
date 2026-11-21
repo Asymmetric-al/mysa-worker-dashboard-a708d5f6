@@ -1,7 +1,3 @@
-/**
- * Fixed report 3, the partner-by-month matrix: one table of partners against months in which every
- * cell that states an amount also opens the exact records behind it.
- */
 import Link from "next/link";
 import type { ReactElement } from "react";
 import { ScrollRegion } from "@/components/scroll-region";
@@ -12,94 +8,41 @@ import type { ValueState } from "@/modules/data-service/envelope";
 import type { Matrix, MatrixCell, MatrixRow, ReportResult } from "@/modules/support/report";
 import { EMPTY_STATES, REPORT_COPY, VALUE_STATE_MEANING } from "../copy";
 import AmountValue from "./amount-value";
-/** Props of {@link ReportMatrix}. */
-export type ReportMatrixProps = {
-  readonly result: ReportResult;
-  readonly locale: string;
-  readonly dir?: "ltr" | "rtl";
-  readonly drilldownHref: (cell: MatrixCell) => string;
-  readonly className?: string;
-};
-interface MonthColumn {
-  readonly key: string;
-  readonly longLabel: string;
-  readonly shortLabel: string;
-}
+export type ReportMatrixProps = { readonly result: ReportResult; readonly locale: string; readonly dir?: "ltr" | "rtl"; readonly drilldownHref: (cell: MatrixCell) => string; readonly className?: string };
+type MonthColumn = { readonly key: string; readonly longLabel: string; readonly shortLabel: string };
 interface PartitionRow {
   readonly key: string;
   readonly label: string;
   readonly opaqueReference: boolean;
   readonly cellsByMonth: ReadonlyMap<string, MatrixCell>;
 }
-interface StatedCell {
-  readonly row: PartitionRow;
-  readonly cell: MatrixCell;
-}
-interface AmountlessMarker {
-  readonly word: string;
-  readonly explanation: string;
-}
+type StatedCell = { readonly row: PartitionRow; readonly cell: MatrixCell };
+type AmountlessMarker = { readonly word: string; readonly explanation: string };
 const MONTH_HEADING_FORMAT: Intl.DateTimeFormatOptions = { month: "long", year: "numeric" };
 const MONTH_COLUMN_FORMAT: Intl.DateTimeFormatOptions = { month: "short", year: "numeric" };
-
-const GAP_CELL_WORD = "No gift";
-
-const PARTNER_COLUMN_HEADING = "Partner or support";
-
-const NAME_SEPARATOR = " — ";
-
-const DRILLDOWN_LINK_CLASS = "inline-flex min-h-6 min-w-6 items-center justify-end rounded-sm underline-offset-4 hover:underline";
-
 const NUMERIC_CELL_CLASS = "text-end";
-
 const QUIET_TEXT_CLASS = "text-sm text-muted-foreground";
-
-const AMOUNTS_IN = "Amounts are in";
-
 const GAP_SENTENCE = "A month the source recorded no gift in is a gap, not a zero.";
-
 const CAPTION_GRAIN = "one row is one partner or support attribution, one column is one month, and every cell states " + "the authorised allocations the source recorded in it";
-
 const PERIOD_WITHOUT_AMOUNT_NOTE = "No amount is stated for this month: either the source recorded no gift, or it did not establish " + "the value. Neither is a zero.";
-
-const ABSENT_MATRIX_TITLE = "This result carries no partner-by-month matrix";
-const ABSENT_MATRIX_DESCRIPTION =
-  "The partners-by-month matrix is computed for that one report, so a result from another report has " +
-  "no cells to show here. Nothing is substituted for it, because a table that looked like this one " +
-  "while describing different records would be worse than no table at all.";
+const ABSENT_MATRIX_DESCRIPTION = "The partners-by-month matrix is computed for that one report, so a result from another report has " + "no cells to show here. Nothing is substituted for it, because a table that looked like this one " + "while describing different records would be worse than no table at all.";
 type MatrixMonth = Matrix["months"][number];
-
 function civilLabel(date: MatrixMonth["start"], locale: string, format: Intl.DateTimeFormatOptions): string {
   try {
     return date.toLocaleString(locale, format);
   } catch (error) {
-    if (!(error instanceof RangeError)) {
-      throw error;
-    }
+    if (!(error instanceof RangeError)) throw error;
     return String(date);
   }
 }
 function monthsOf(matrix: Matrix, locale: string): readonly MonthColumn[] {
-  return matrix.months.map((month) => ({
-    key: String(month.start),
-    longLabel: civilLabel(month.start, locale, MONTH_HEADING_FORMAT),
-    shortLabel: civilLabel(month.start, locale, MONTH_COLUMN_FORMAT),
-  }));
+  return matrix.months.map((month) => ({ key: String(month.start), longLabel: civilLabel(month.start, locale, MONTH_HEADING_FORMAT), shortLabel: civilLabel(month.start, locale, MONTH_COLUMN_FORMAT) }));
 }
 function rowsOf(matrix: Matrix, currency: string): readonly PartitionRow[] {
   return matrix.rows.map((row) => {
     const cellsByMonth = new Map<string, MatrixCell>();
-    for (const cell of row.cells) {
-      if (cell.currency === currency) {
-        cellsByMonth.set(String(cell.bucketStart), cell);
-      }
-    }
-    return {
-      key: rowKeyOf(row),
-      label: row.label,
-      opaqueReference: row.partnerId !== undefined,
-      cellsByMonth,
-    };
+    for (const cell of row.cells) if (cell.currency === currency) cellsByMonth.set(String(cell.bucketStart), cell);
+    return { key: rowKeyOf(row), label: row.label, opaqueReference: row.partnerId !== undefined, cellsByMonth };
   });
 }
 function rowKeyOf(row: MatrixRow): string {
@@ -128,7 +71,6 @@ function statedCells(rows: readonly PartitionRow[], month: MonthColumn): readonl
   }
   return stated;
 }
-// The two compositions of one currency partition
 interface MatrixCompositionProps {
   readonly currency: string;
   readonly months: readonly MonthColumn[];
@@ -144,28 +86,18 @@ function AmountlessValue({ marker }: { readonly marker: AmountlessMarker }): Rea
     </span>
   );
 }
-function MatrixCellContent({
-  cell,
-  scopeName,
-  locale,
-  drilldownHref,
-}: {
-  readonly cell: MatrixCell | undefined;
-  readonly scopeName: string;
-  readonly locale: string;
-  readonly drilldownHref: (cell: MatrixCell) => string;
-}): ReactElement {
+function MatrixCellContent({ cell, scopeName, locale, drilldownHref }: { readonly cell: MatrixCell | undefined; readonly scopeName: string; readonly locale: string; readonly drilldownHref: (cell: MatrixCell) => string }): ReactElement {
   if (cell === undefined || cell.gap) {
-    return <span className={QUIET_TEXT_CLASS}>{GAP_CELL_WORD}</span>;
+    return <span className={QUIET_TEXT_CLASS}>No gift</span>;
   }
   const { minorUnits, valueState } = cell.value;
   if (minorUnits === null) {
     return <AmountlessValue marker={markerFor(valueState)} />;
   }
   return (
-    <Link href={drilldownHref(cell)} className={DRILLDOWN_LINK_CLASS}>
+    <Link href={drilldownHref(cell)} className="inline-flex min-h-6 min-w-6 items-center justify-end rounded-sm underline-offset-4 hover:underline">
       <AmountValue money={{ currency: cell.currency, minorUnits }} valueState={valueState} locale={locale} />
-      <span className="sr-only">{`${NAME_SEPARATOR}${scopeName}`}</span>
+      <span className="sr-only">{` — ${scopeName}`}</span>
     </Link>
   );
 }
@@ -180,7 +112,7 @@ function WideMatrix({ currency, months, rows, locale, drilldownHref }: MatrixCom
         </TableCaption>
         <TableHeader>
           <TableRow>
-            <TableHead scope="col">{PARTNER_COLUMN_HEADING}</TableHead>
+            <TableHead scope="col">Partner or support</TableHead>
             {months.map((month) => (
               <TableHead key={month.key} scope="col" className={NUMERIC_CELL_CLASS}>
                 <bdi>{month.shortLabel}</bdi>
@@ -210,7 +142,7 @@ function PeriodFirstMatrix({ currency, months, rows, locale, drilldownHref }: Ma
   return (
     <section aria-label={`${REPORT_COPY.matrix.title} in ${currency}, by period`} className="flex min-w-0 flex-col gap-4 md:hidden" data-slot="report-matrix-periods">
       <p className={QUIET_TEXT_CLASS}>
-        {`${AMOUNTS_IN} `}
+        {"Amounts are in "}
         <bdi className="mono-identifier">{currency}</bdi>
         {`. ${GAP_SENTENCE}`}
       </p>
@@ -239,40 +171,20 @@ function PeriodFirstMatrix({ currency, months, rows, locale, drilldownHref }: Ma
     </section>
   );
 }
-// The matrix
 /** Renders fixed report 3: one partner-by-month matrix per currency, each with a cell-level drilldown. */
 export function ReportMatrix({ result, locale, dir, drilldownHref, className }: ReportMatrixProps): ReactElement {
   const matrix = result.matrix;
   if (matrix === undefined) {
     return (
       <div data-slot="report-matrix" dir={dir} className={cn("min-w-0", className)}>
-        <StateNotice
-          kind="empty"
-          title={ABSENT_MATRIX_TITLE}
-          description={ABSENT_MATRIX_DESCRIPTION}
-          action={{
-            label: EMPTY_STATES.reports.action.label,
-            href: EMPTY_STATES.reports.action.href,
-          }}
-        />
+        <StateNotice kind="empty" title="This result carries no partner-by-month matrix" description={ABSENT_MATRIX_DESCRIPTION} action={{ label: EMPTY_STATES.reports.action.label, href: EMPTY_STATES.reports.action.href }} />
       </div>
     );
   }
-  // With no authorised row there is no attribution to show, and with no currency partition there is
-  // no figure the application could state. Both use the Gifts surface's own empty wording, which
-  // explains that a period the source does not cover is a gap rather than a zero.
   if (matrix.rows.length === 0 || matrix.currencies.length === 0) {
     return (
       <div data-slot="report-matrix" dir={dir} className={cn("min-w-0", className)}>
-        <StateNotice
-          kind="empty"
-          title={EMPTY_STATES.gifts.title}
-          description={EMPTY_STATES.gifts.body}
-          action={{
-            label: EMPTY_STATES.gifts.action.label,
-            href: EMPTY_STATES.gifts.action.href,
-          }}
-        />
+        <StateNotice kind="empty" title={EMPTY_STATES.gifts.title} description={EMPTY_STATES.gifts.body} action={{ label: EMPTY_STATES.gifts.action.label, href: EMPTY_STATES.gifts.action.href }} />
       </div>
     );
   }
@@ -283,11 +195,6 @@ export function ReportMatrix({ result, locale, dir, drilldownHref, className }: 
         const rows = rowsOf(matrix, currency);
         return (
           <div key={currency} data-slot="report-matrix-partition" className="flex min-w-0 flex-col gap-4">
-            {/*
-              Two compositions of one partition with opposite responsive display utilities, so
-              `display: none` removes the other from the accessibility tree: a reader meets the table
-              or the period-first sequence, never both and never neither.
-            */}
             <div className="hidden min-w-0 md:block">
               <WideMatrix currency={currency} months={months} rows={rows} locale={locale} drilldownHref={drilldownHref} />
             </div>

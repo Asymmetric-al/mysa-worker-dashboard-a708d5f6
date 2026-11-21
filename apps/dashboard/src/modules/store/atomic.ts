@@ -1,9 +1,4 @@
-/**
- * The store's filesystem mechanism: one deterministic JSON serialiser, one atomic temp-then-rename
- * writer, one absence probe, one absence-aware reader and one tolerant single-document delete. Policy
- * — which document, when, and under which lock — belongs to `repository.ts`, and no module outside
- * this one and `repository.ts` touches disk.
- */
+/** The store's filesystem mechanism: one deterministic JSON serialiser, one atomic temp-then-rename writer, one absence probe, one absence-aware reader and one tolerant single-document delete. */
 import { randomUUID } from "node:crypto";
 import { access, mkdir, open, readFile, rename, rm, type FileHandle } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -11,30 +6,24 @@ import { dirname } from "node:path";
 export class CorruptJsonError extends Error {
   readonly file: string;
   constructor(file: string, cause: unknown) {
-    // The message names the path but never quotes the bytes: a corrupt document may hold a
-    // private note body or a check-in answer, and this store is upstream of redaction.
+    // The message names the path but never quotes the bytes: a corrupt document may hold a private note body or a check-in answer, and this store is upstream of redaction.
     super(`Corrupt JSON document at ${file}: the bytes could not be decoded as JSON`, { cause });
     this.name = "CorruptJsonError";
     this.file = file;
   }
 }
-/** Serialises a document to the store's canonical bytes: two-space indent, keys sorted at every depth, one trailing newline. */
 export function serialiseJson(value: unknown): string {
   const text = JSON.stringify(sortKeysDeep(value, new WeakSet<object>()), null, 2);
-  if (text === undefined) {
-    throw new Error("serialiseJson: the value is not JSON-serialisable (JSON.stringify produced no text)");
-  }
+  if (text === undefined) throw new Error("serialiseJson: the value is not JSON-serialisable (JSON.stringify produced no text)");
   return `${text}\n`;
 }
 /** Writes a document through a same-directory temp file and a rename, so a crash leaves the previous document or the new one; always writes, so change detection stays with the caller. */
 export async function writeJsonAtomic(file: string, value: unknown): Promise<void> {
-  // Serialising before any I/O is what keeps a rejected value from leaving behind a file,
-  // a temp file or a truncated document.
+  // Serialising before any I/O is what keeps a rejected value from leaving behind a file, a temp file or a truncated document.
   const contents = serialiseJson(value);
   const directory = dirname(file);
   await mkdir(directory, { recursive: true });
-  // The temp file must share the target's directory: a rename across devices is a copy,
-  // which is not atomic.
+  // The temp file must share the target's directory: a rename across devices is a copy, which is not atomic.
   const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
   let handle: FileHandle | undefined;
   try {
@@ -57,8 +46,7 @@ export async function readJson<T = unknown>(file: string): Promise<T | undefined
   try {
     bytes = await readFile(file);
   } catch (error) {
-    // Absence is the only outcome that is not an error: it stays distinct from a fault and
-    // from a corrupt body, so no view can render unavailable as empty or as zero.
+    // Absence is the only outcome that is not an error: it stays distinct from a fault and from a corrupt body, so no view can render unavailable as empty or as zero.
     if (isNotFound(error)) return undefined;
     throw error;
   }
@@ -85,12 +73,10 @@ export async function existsOnDisk(target: string): Promise<boolean> {
     throw error;
   }
 }
-/** Deletes one document, tolerating one that is already gone; clearing the data root belongs to the reset path. */
 export async function removeIfExists(file: string): Promise<void> {
   await rm(file, { force: true });
 }
 const CIRCULAR_MESSAGE = "Converting circular structure to JSON";
-
 function sortKeysDeep(value: unknown, ancestors: WeakSet<object>): unknown {
   if (Array.isArray(value)) {
     if (ancestors.has(value)) throw new TypeError(CIRCULAR_MESSAGE);
@@ -105,8 +91,7 @@ function sortKeysDeep(value: unknown, ancestors: WeakSet<object>): unknown {
   if (ancestors.has(value)) throw new TypeError(CIRCULAR_MESSAGE);
   ancestors.add(value);
   try {
-    // fromEntries, not bracket assignment: an own "__proto__" key parsed from a document
-    // must stay ordinary data instead of being taken as a prototype.
+    // fromEntries, not bracket assignment: an own "__proto__" key parsed from a document must stay ordinary data instead of being taken as a prototype.
     return Object.fromEntries(
       Object.entries(value)
         .sort(compareKeyEntries)
@@ -142,8 +127,7 @@ async function syncDirectory(directory: string): Promise<void> {
       await ignoreFailure(handle.close());
     }
   } catch {
-    // The rename already put the new document in place; only its directory entry may be
-    // unflushed, which this platform does not let us force.
+    // The rename already put the new document in place; only its directory entry may be unflushed, which this platform does not let us force.
   }
 }
 function isNotFound(error: unknown): boolean {

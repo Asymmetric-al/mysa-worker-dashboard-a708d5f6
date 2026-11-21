@@ -1,20 +1,9 @@
-/**
- * The only place in this application where money is added, compared, negated, summed or split, and the
- * only place a financial value acquires its type. Every amount is an integer count of a currency's
- * minor units paired with the ISO 4217 code whose exponent `./currency` owns, so no major-unit decimal
- * and no floating-point value enters a financial path. The screen total, chart series, table rows,
- * drilldown, CSV and print must agree exactly in minor units per currency, and that is only possible
- * when all six take their numbers from here, from integers.
- */
+/** The only place in this application where money is added, compared, negated, summed or split, and the only place a financial value acquires its type. */
 import { exponentOf, isKnownCurrency } from "./currency";
 /** An exact amount: an integer count of a currency's minor units, branded so a bare `number` cannot reach an amount field. */
 export type MinorUnits = number & { readonly __brand: "MinorUnits" };
 /** A currency code and an integer count of that currency's minor units. */
-export interface Money {
-  readonly currency: string;
-  readonly minorUnits: MinorUnits;
-}
-/** The closed set of reasons a money operation is refused. */
+export type Money = { readonly currency: string; readonly minorUnits: MinorUnits };
 export type MoneyOperationErrorCode = "fractional-minor-units" | "unsafe-minor-units" | "currency-mismatch" | "unknown-currency" | "allocation-mismatch";
 /** The single refusal this module raises, so a caller maps one error type to the closed outcome set instead of guessing from a message. */
 export class MoneyOperationError extends Error {
@@ -29,44 +18,20 @@ function refuse(code: MoneyOperationErrorCode, message: string): never {
   throw new MoneyOperationError(code, message);
 }
 type WholeNumber<T extends number> = number extends T ? number : `${T}` extends `${string}.${string}` ? never : T;
-
-function isMinorUnitsAmount(value: number): value is MinorUnits {
-  return Number.isSafeInteger(value) && !Object.is(value, -0);
-}
+const isMinorUnitsAmount = (value: number): value is MinorUnits => Number.isSafeInteger(value) && !Object.is(value, -0);
 function assertMinorUnits(value: number, operation: string): MinorUnits {
-  if (isMinorUnitsAmount(value)) {
-    return value;
-  }
-  if (Number.isFinite(value) && !Number.isInteger(value)) {
-    return refuse(
-      "fractional-minor-units",
-      `${operation}: a fractional value is refused as a count of minor units rather than rounded or truncated, because either would change a financial amount. Minor units are whole numbers.`,
-    );
-  }
-  return refuse(
-    "unsafe-minor-units",
-    `${operation}: minor units must be a safe integer (at most ${Number.MAX_SAFE_INTEGER} in magnitude, and never negative zero), so this value is refused rather than used at a precision that would drift.`,
-  );
+  if (isMinorUnitsAmount(value)) return value;
+  if (Number.isFinite(value) && !Number.isInteger(value)) return refuse("fractional-minor-units", `${operation}: a fractional value is refused as a count of minor units rather than rounded or truncated, because either would change a financial amount. Minor units are whole numbers.`);
+  return refuse("unsafe-minor-units", `${operation}: minor units must be a safe integer (at most ${Number.MAX_SAFE_INTEGER} in magnitude, and never negative zero), so this value is refused rather than used at a precision that would drift.`);
 }
 function assertKnownCurrency(currencyCode: string, operation: string): void {
-  if (exponentOf(currencyCode) === undefined) {
-    refuse(
-      "unknown-currency",
-      `${operation}: currency "${currencyCode}" has no minor-unit exponent, so its amounts are never summed, compared, split or defaulted to two decimals; it stays an unknown-currency amount.`,
-    );
-  }
+  if (exponentOf(currencyCode) === undefined) refuse("unknown-currency", `${operation}: currency "${currencyCode}" has no minor-unit exponent, so its amounts are never summed, compared, split or defaulted to two decimals; it stays an unknown-currency amount.`);
 }
 function assertSameKnownCurrency(a: Money, b: Money, operation: string): void {
   assertKnownCurrency(a.currency, operation);
   assertKnownCurrency(b.currency, operation);
-  if (a.currency !== b.currency) {
-    refuse(
-      "currency-mismatch",
-      `${operation}: "${a.currency}" and "${b.currency}" are different currencies, so their amounts are never added or compared — this application holds no exchange rate and converts nothing.`,
-    );
-  }
+  if (a.currency !== b.currency) refuse("currency-mismatch", `${operation}: "${a.currency}" and "${b.currency}" are different currencies, so their amounts are never added or compared — this application holds no exchange rate and converts nothing.`);
 }
-/** Returns `value` as `MinorUnits` when it is a safe integer, refusing it otherwise. */
 export function minorUnitsOf<T extends number>(value: WholeNumber<T>): MinorUnits;
 export function minorUnitsOf(value: number): MinorUnits {
   return assertMinorUnits(value, "minorUnitsOf");
@@ -77,9 +42,7 @@ export function addMinor(a: Money, b: Money): Money {
   const left = assertMinorUnits(a.minorUnits, "addMinor");
   const right = assertMinorUnits(b.minorUnits, "addMinor");
   const total = left + right;
-  if (!Number.isSafeInteger(total)) {
-    return refuse("unsafe-minor-units", `addMinor: the total of these ${a.currency} amounts is beyond the safe-integer range, so it is refused rather than kept at a precision that would drift.`);
-  }
+  if (!Number.isSafeInteger(total)) return refuse("unsafe-minor-units", `addMinor: the total of these ${a.currency} amounts is beyond the safe-integer range, so it is refused rather than kept at a precision that would drift.`);
   return { currency: a.currency, minorUnits: minorUnitsOf(total) };
 }
 /** Compares two amounts of the same currency, returning `-1`, `0` or `1`. */
@@ -87,28 +50,19 @@ export function compareMinor(a: Money, b: Money): -1 | 0 | 1 {
   assertSameKnownCurrency(a, b, "compareMinor");
   const left = assertMinorUnits(a.minorUnits, "compareMinor");
   const right = assertMinorUnits(b.minorUnits, "compareMinor");
-  if (left < right) {
-    return -1;
-  }
-  if (left > right) {
-    return 1;
-  }
+  if (left < right) return -1;
+  if (left > right) return 1;
   return 0;
 }
 /** Reverses the sign of an amount, keeping its currency — the correction case, such as a refund that offsets a gift. */
 export function negateMinor(a: Money): Money {
   assertKnownCurrency(a.currency, "negateMinor");
   const amount = assertMinorUnits(a.minorUnits, "negateMinor");
-  if (amount === 0) {
-    return { currency: a.currency, minorUnits: minorUnitsOf(0) };
-  }
+  if (amount === 0) return { currency: a.currency, minorUnits: minorUnitsOf(0) };
   return { currency: a.currency, minorUnits: minorUnitsOf(-amount) };
 }
 /** Sums amounts into one total per currency, plus the amounts that could not be summed at all. */
-export function sumMinor(items: readonly Money[]): {
-  readonly totals: readonly Money[];
-  readonly unsurmmed: readonly Money[];
-} {
+export function sumMinor(items: readonly Money[]): { readonly totals: readonly Money[]; readonly unsurmmed: readonly Money[] } {
   const running = new Map<string, Money>();
   const unsurmmed: Money[] = [];
   for (const item of items) {
@@ -121,9 +75,7 @@ export function sumMinor(items: readonly Money[]): {
     running.set(item.currency, current === undefined ? { currency: item.currency, minorUnits: amount } : addMinor(current, { currency: item.currency, minorUnits: amount }));
   }
   const totals = [...running.values()].sort((left, right) => {
-    if (left.currency === right.currency) {
-      return 0;
-    }
+    if (left.currency === right.currency) return 0;
     return left.currency < right.currency ? -1 : 1;
   });
   return { totals, unsurmmed };
@@ -132,36 +84,18 @@ export function sumMinor(items: readonly Money[]): {
 export function allocateMinor(total: Money, weights: readonly number[]): readonly Money[] {
   const totalUnits = assertMinorUnits(total.minorUnits, "allocateMinor");
   assertKnownCurrency(total.currency, "allocateMinor");
-  if (weights.length === 0) {
-    return refuse("allocation-mismatch", "allocateMinor: at least one weight is needed to split an amount, so an empty weight list is refused rather than yielding no parts.");
-  }
+  if (weights.length === 0) return refuse("allocation-mismatch", "allocateMinor: at least one weight is needed to split an amount, so an empty weight list is refused rather than yielding no parts.");
   let weightTotal = 0;
   let largestWeight = 0;
   for (const weight of weights) {
-    if (!Number.isSafeInteger(weight) || weight < 0) {
-      return refuse(
-        "allocation-mismatch",
-        `allocateMinor: every weight must be a non-negative whole number, so a fractional, negative or non-finite weight cannot divide these ${total.currency} amounts exactly.`,
-      );
-    }
-    if (weight > largestWeight) {
-      largestWeight = weight;
-    }
+    if (!Number.isSafeInteger(weight) || weight < 0) return refuse("allocation-mismatch", `allocateMinor: every weight must be a non-negative whole number, so a fractional, negative or non-finite weight cannot divide these ${total.currency} amounts exactly.`);
+    if (weight > largestWeight) largestWeight = weight;
     weightTotal += weight;
-    if (!Number.isSafeInteger(weightTotal)) {
-      return refuse("allocation-mismatch", `allocateMinor: these weights sum beyond the safe-integer range, so their ${total.currency} amounts cannot be apportioned exactly.`);
-    }
+    if (!Number.isSafeInteger(weightTotal)) return refuse("allocation-mismatch", `allocateMinor: these weights sum beyond the safe-integer range, so their ${total.currency} amounts cannot be apportioned exactly.`);
   }
-  if (weightTotal === 0) {
-    return refuse("allocation-mismatch", `allocateMinor: weights summing to zero cannot divide an amount, so these ${total.currency} amounts are not split into empty parts.`);
-  }
+  if (weightTotal === 0) return refuse("allocation-mismatch", `allocateMinor: weights summing to zero cannot divide an amount, so these ${total.currency} amounts are not split into empty parts.`);
   // Keeps `weightTotal * largestWeight` — and so every product below — within the safe range.
-  if (!Number.isSafeInteger(weightTotal * largestWeight)) {
-    return refuse(
-      "allocation-mismatch",
-      `allocateMinor: these weights are too large to apportion ${total.currency} amounts exactly in integer arithmetic, so the split is refused rather than rounded.`,
-    );
-  }
+  if (!Number.isSafeInteger(weightTotal * largestWeight)) return refuse("allocation-mismatch", `allocateMinor: these weights are too large to apportion ${total.currency} amounts exactly in integer arithmetic, so the split is refused rather than rounded.`);
   const magnitude = Math.abs(totalUnits);
   const share = Math.floor(magnitude / weightTotal);
   const remainder = magnitude - share * weightTotal;
@@ -169,35 +103,20 @@ export function allocateMinor(total: Money, weights: readonly number[]): readonl
     const wholeShare = share * weight;
     const scaledRemainder = remainder * weight;
     const extra = Math.floor(scaledRemainder / weightTotal);
-    return {
-      index,
-      units: wholeShare + extra,
-      fraction: scaledRemainder - extra * weightTotal,
-    };
+    return { index, units: wholeShare + extra, fraction: scaledRemainder - extra * weightTotal };
   });
   const floored = parts.reduce((sum, part) => sum + part.units, 0);
   const leftover = magnitude - floored;
-  if (leftover < 0 || leftover >= parts.length) {
-    return refuse("allocation-mismatch", `allocateMinor: these ${total.currency} amounts could not be apportioned exactly, so no parts are returned.`);
-  }
+  if (leftover < 0 || leftover >= parts.length) return refuse("allocation-mismatch", `allocateMinor: these ${total.currency} amounts could not be apportioned exactly, so no parts are returned.`);
   if (leftover > 0) {
     const byLargestFraction = [...parts].sort((left, right) => {
-      if (left.fraction === right.fraction) {
-        return left.index - right.index;
-      }
+      if (left.fraction === right.fraction) return left.index - right.index;
       return right.fraction > left.fraction ? 1 : -1;
     });
-    for (const part of byLargestFraction.slice(0, leftover)) {
-      part.units += 1;
-    }
+    for (const part of byLargestFraction.slice(0, leftover)) part.units += 1;
   }
   const allocated = parts.reduce((sum, part) => sum + part.units, 0);
-  if (allocated !== magnitude) {
-    return refuse("allocation-mismatch", `allocateMinor: these ${total.currency} amounts could not be apportioned exactly, so no parts are returned.`);
-  }
+  if (allocated !== magnitude) return refuse("allocation-mismatch", `allocateMinor: these ${total.currency} amounts could not be apportioned exactly, so no parts are returned.`);
   const negative = totalUnits < 0;
-  return parts.map((part) => ({
-    currency: total.currency,
-    minorUnits: negative && part.units !== 0 ? minorUnitsOf(-part.units) : minorUnitsOf(part.units),
-  }));
+  return parts.map((part) => ({ currency: total.currency, minorUnits: negative && part.units !== 0 ? minorUnitsOf(-part.units) : minorUnitsOf(part.units) }));
 }

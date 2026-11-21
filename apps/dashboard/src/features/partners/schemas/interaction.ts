@@ -1,10 +1,5 @@
-/**
- * The Partners family's `logInteraction` payload schema, plus the follow-up task the same form offers
- * as a *second* operation.
- */
 import { z } from "zod";
 import type { InteractionRecord } from "@/modules/data-service/envelope";
-// Wording
 const INTERACTION_MESSAGES = {
   partnerReferenceInvalid: "A record reference is text, so open the contact again and retry from its own page.",
   partnerReferenceRequired: "Name the contact this interaction is about, because an interaction is recorded against one record.",
@@ -34,37 +29,21 @@ const INTERACTION_MESSAGES = {
   linkInvalid: "Choose the linked contact from the list, so a link names a record rather than typed text.",
   taskNoteInvalid: "A note is text, so write a short reminder or leave it empty.",
 } as const;
-// Field primitives
 function requiredReference(invalidMessage: string, emptyMessage: string): z.ZodString {
   return z.string({ error: invalidMessage }).min(1, emptyMessage);
 }
 function requiredText(invalidMessage: string, emptyMessage: string): z.ZodString {
   return z.string({ error: invalidMessage }).refine((value) => value.trim().length > 0, { error: emptyMessage });
 }
-// The kind of contact that took place
-/** The closed set of things that actually happened with a partner. */
 export const INTERACTION_KINDS = ["conversation", "visit", "call", "meeting", "written-exchange", "other"] as const;
-/** One kind of contact a worker may record. */
 export type InteractionKind = (typeof INTERACTION_KINDS)[number];
-/** Validates the kind of contact that took place against the closed set. */
-export const interactionKindSchema = z.enum(INTERACTION_KINDS, {
-  error: INTERACTION_MESSAGES.kindInvalid,
-});
-// How precisely the day is known
+export const interactionKindSchema = z.enum(INTERACTION_KINDS, { error: INTERACTION_MESSAGES.kindInvalid });
 type InteractionDatePrecision = InteractionRecord["precision"];
-/** The three precisions a recorded interaction day may carry. */
 export const INTERACTION_PRECISIONS = ["date", "approximate", "unknown"] as const satisfies readonly InteractionDatePrecision[];
-/** One precision an interaction day may be stated at. */
 export type InteractionPrecision = (typeof INTERACTION_PRECISIONS)[number];
-/** Validates how precisely the day of an interaction is known. */
-export const interactionPrecisionSchema = z.enum(INTERACTION_PRECISIONS, {
-  error: INTERACTION_MESSAGES.precisionInvalid,
-});
-// A civil date, judged arithmetically
+export const interactionPrecisionSchema = z.enum(INTERACTION_PRECISIONS, { error: INTERACTION_MESSAGES.precisionInvalid });
 const MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const;
-
 const CIVIL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
-
 function isLeapYear(year: number): boolean {
   return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
 }
@@ -81,71 +60,34 @@ function civilDateExists(value: string): boolean {
   const monthLength = month === 2 && isLeapYear(year) ? 29 : (MONTH_LENGTHS[month - 1] ?? 0);
   return day >= 1 && day <= monthLength;
 }
-/** Validates a calendar day carried as `YYYY-MM-DD`. */
 export const civilDateSchema = z.string({ error: INTERACTION_MESSAGES.dateInvalid }).refine(civilDateExists, { error: INTERACTION_MESSAGES.dateInvalid });
-// The day, with the precision it is known to
-/** Validates when the interaction happened: the day and how precisely it is known. */
-export const interactionOccurredOnSchema = z
-  .strictObject({
-    precision: interactionPrecisionSchema,
-    date: civilDateSchema.optional(),
-  })
-  .superRefine((value, context) => {
-    if (value.precision === "unknown" && value.date !== undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["date"],
-        message: INTERACTION_MESSAGES.unknownPrecisionCarriesNoDate,
-      });
-      return;
-    }
-    if (value.precision !== "unknown" && value.date === undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["date"],
-        message: INTERACTION_MESSAGES.dateRequired,
-      });
-    }
-  });
-/** The validated day of an interaction: its civil date, when there is one, beside its precision. */
-export type InteractionOccurredOn = z.infer<typeof interactionOccurredOnSchema>;
-// Who took part
-/** One participant in the interaction: the record a person is known by, and the worker's own word for how they took part. */
-export const interactionParticipantSchema = z.strictObject({
-  partnerId: requiredReference(INTERACTION_MESSAGES.participantReferenceInvalid, INTERACTION_MESSAGES.participantReferenceRequired),
-  role: requiredText(INTERACTION_MESSAGES.participantRoleInvalid, INTERACTION_MESSAGES.participantRoleRequired),
+export const interactionOccurredOnSchema = z.strictObject({ precision: interactionPrecisionSchema, date: civilDateSchema.optional() }).superRefine((value, context) => {
+  if (value.precision === "unknown" && value.date !== undefined) {
+    context.addIssue({ code: "custom", path: ["date"], message: INTERACTION_MESSAGES.unknownPrecisionCarriesNoDate });
+    return;
+  }
+  if (value.precision !== "unknown" && value.date === undefined) {
+    context.addIssue({ code: "custom", path: ["date"], message: INTERACTION_MESSAGES.dateRequired });
+  }
 });
-/** One validated participant: the record that took part and the role the worker gives them. */
+export type InteractionOccurredOn = z.infer<typeof interactionOccurredOnSchema>;
+export const interactionParticipantSchema = z.strictObject({ partnerId: requiredReference(INTERACTION_MESSAGES.participantReferenceInvalid, INTERACTION_MESSAGES.participantReferenceRequired), role: requiredText(INTERACTION_MESSAGES.participantRoleInvalid, INTERACTION_MESSAGES.participantRoleRequired) });
 export type InteractionParticipantInput = z.infer<typeof interactionParticipantSchema>;
-// The note the worker attaches
-/** Validates the text of the note attached to an interaction. */
 export const interactionNoteBodySchema = requiredText(INTERACTION_MESSAGES.noteInvalid, INTERACTION_MESSAGES.noteEmpty);
-// The payload
-/** Validates what `logInteraction` submits: one record, the kind of contact, the day with its precision, what came of it, who took part and an optional note. */
 export const logInteractionPayloadSchema = z.strictObject({
   partnerId: requiredReference(INTERACTION_MESSAGES.partnerReferenceInvalid, INTERACTION_MESSAGES.partnerReferenceRequired),
   type: interactionKindSchema,
   occurredOn: interactionOccurredOnSchema,
   outcome: requiredText(INTERACTION_MESSAGES.outcomeInvalid, INTERACTION_MESSAGES.outcomeRequired),
-  participants: z.array(interactionParticipantSchema, {
-    error: INTERACTION_MESSAGES.participantsInvalid,
-  }),
+  participants: z.array(interactionParticipantSchema, { error: INTERACTION_MESSAGES.participantsInvalid }),
   note: interactionNoteBodySchema.optional(),
 });
-/** The validated `logInteraction` payload: the members the service's own input schema accepts. */
 export type LogInteractionPayload = z.infer<typeof logInteractionPayloadSchema>;
-// The follow-up task
-/** The two kinds of work a follow-up can be, listed against the task record's own vocabulary. */
 export const NEXT_TASK_KINDS = ["default", "meeting"] as const;
-/** One kind of follow-up work. */
 export type NextTaskKind = (typeof NEXT_TASK_KINDS)[number];
-/** Validates the kind of follow-up work. */
-export const nextTaskKindSchema = z.enum(NEXT_TASK_KINDS, {
-  error: INTERACTION_MESSAGES.taskKindInvalid,
-});
+export const nextTaskKindSchema = z.enum(NEXT_TASK_KINDS, { error: INTERACTION_MESSAGES.taskKindInvalid });
 const PLANNED_CLOCK_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/u;
 const PLANNED_DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/u;
-
 function plannedDayOf(value: string): string | null {
   return PLANNED_DATE_TIME_PATTERN.test(value) ? value.slice(0, 10) : null;
 }
@@ -156,57 +98,32 @@ function isPlannedTime(value: string): boolean {
   const day = plannedDayOf(value);
   return day !== null && civilDateExists(day);
 }
-/** Validates a meeting's planned wall-clock time, by shape and calendar alone. */
 export const nextTaskPlannedTimeSchema = z.string({ error: INTERACTION_MESSAGES.plannedTimeInvalid }).refine(isPlannedTime, { error: INTERACTION_MESSAGES.plannedTimeInvalid });
-/** Validates the zone a planned time is stated in. */
 export const nextTaskTimeZoneSchema = z.string({ error: INTERACTION_MESSAGES.timeZoneInvalid }).refine((value) => value.trim().length > 0, { error: INTERACTION_MESSAGES.timeZoneInvalid });
-
-type NextTaskPlan = {
-  readonly kind?: NextTaskKind | undefined;
-  readonly dueOn?: string | undefined;
-  readonly plannedTime?: string | undefined;
-  readonly timeZone?: string | undefined;
-};
+type NextTaskPlan = { readonly kind?: NextTaskKind | undefined; readonly dueOn?: string | undefined; readonly plannedTime?: string | undefined; readonly timeZone?: string | undefined };
 function refineNextTaskPlan(value: NextTaskPlan, context: z.RefinementCtx): void {
   const statedTime = (value.plannedTime ?? "").trim().length > 0 ? value.plannedTime : undefined;
   const hasTime = statedTime !== undefined;
   const hasZone = (value.timeZone ?? "").trim().length > 0;
   if ((value.kind ?? "default") === "default") {
     if (hasTime || hasZone) {
-      context.addIssue({
-        code: "custom",
-        path: ["plannedTime"],
-        message: INTERACTION_MESSAGES.planOnlyForMeeting,
-      });
+      context.addIssue({ code: "custom", path: ["plannedTime"], message: INTERACTION_MESSAGES.planOnlyForMeeting });
     }
     return;
   }
   if (hasTime && !hasZone) {
-    context.addIssue({
-      code: "custom",
-      path: ["timeZone"],
-      message: INTERACTION_MESSAGES.timeZoneRequired,
-    });
+    context.addIssue({ code: "custom", path: ["timeZone"], message: INTERACTION_MESSAGES.timeZoneRequired });
     return;
   }
   if (!hasTime && hasZone) {
-    context.addIssue({
-      code: "custom",
-      path: ["plannedTime"],
-      message: INTERACTION_MESSAGES.timeZoneRequired,
-    });
+    context.addIssue({ code: "custom", path: ["plannedTime"], message: INTERACTION_MESSAGES.timeZoneRequired });
     return;
   }
   const plannedDay = statedTime === undefined ? null : plannedDayOf(statedTime);
   if (plannedDay !== null && value.dueOn !== undefined && plannedDay !== value.dueOn) {
-    context.addIssue({
-      code: "custom",
-      path: ["plannedTime"],
-      message: INTERACTION_MESSAGES.planTimeOtherDay,
-    });
+    context.addIssue({ code: "custom", path: ["plannedTime"], message: INTERACTION_MESSAGES.planTimeOtherDay });
   }
 }
-/** Validates the follow-up task the interaction form offers as a second operation. */
 export const nextTaskPayloadSchema = z
   .strictObject({
     operation: z.literal("createTask").default("createTask"),
@@ -220,5 +137,4 @@ export const nextTaskPayloadSchema = z
     note: z.string({ error: INTERACTION_MESSAGES.taskNoteInvalid }).optional(),
   })
   .superRefine(refineNextTaskPlan);
-/** The validated follow-up task payload: the members `createTask` accepts from this form. */
 export type NextTaskPayload = z.infer<typeof nextTaskPayloadSchema>;

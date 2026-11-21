@@ -1,7 +1,4 @@
-/**
- * The Referrals family's browser-side payload schemas — recording an original introduction date, and
- * continuing one expired cycle — plus the one normaliser for the three referral lists' query state.
- */
+/** The Referrals family's browser-side payload schemas — recording an original introduction date, and continuing one expired cycle — plus the one normaliser for the three referral lists' query state. */
 import { z } from "zod";
 import type { ReferralCycleRecord } from "@/modules/data-service";
 // Wording
@@ -25,10 +22,7 @@ export const INTRODUCTION_MESSAGES = {
   referenceTooLong: "A source reference is at most 200 characters.",
 } as const;
 /** The refusals the `continueReferral` payload states, exported so the Continue confirmation and the schema cannot word the same refusal two ways. */
-export const CONTINUE_MESSAGES = {
-  referralRequired: "This change is missing the referral it belongs to, so reload the referral and try again.",
-  referralTooLong: "A referral reference is at most 200 characters.",
-} as const;
+export const CONTINUE_MESSAGES = { referralRequired: "This change is missing the referral it belongs to, so reload the referral and try again.", referralTooLong: "A referral reference is at most 200 characters." } as const;
 /** The refusals the referral list query state states, exported so the toolbar that shows them and the normaliser that raises them cannot drift apart. */
 export const LIST_QUERY_MESSAGES = {
   viewInvalid: "Choose one of the referral lists: Active, Incomplete date or Expired.",
@@ -42,9 +36,7 @@ export const DATE_PRECISION_VALUES = ["date", "approximate", "unknown"] as const
 /** One date precision, derived from {@link DATE_PRECISION_VALUES}. */
 export type DatePrecisionValue = (typeof DATE_PRECISION_VALUES)[number];
 /** Validates the precision an introduction date is known to. */
-export const datePrecisionSchema = z.enum(DATE_PRECISION_VALUES, {
-  error: INTRODUCTION_MESSAGES.precisionRequired,
-}) satisfies z.ZodType<ReferralCycleRecord["datePrecision"]>;
+export const datePrecisionSchema = z.enum(DATE_PRECISION_VALUES, { error: INTRODUCTION_MESSAGES.precisionRequired }) satisfies z.ZodType<ReferralCycleRecord["datePrecision"]>;
 // A civil date, checked against the calendar
 const CIVIL_DATE_SHAPE = /^(\d{4})-(\d{2})-(\d{2})$/u;
 
@@ -87,63 +79,32 @@ function referenceFieldSchema(required: string, tooLong: string): z.ZodString {
 /** Validates an opaque, source-qualified reference: `{ system, reference }`. */
 export const sourceReferenceSchema = z.strictObject({
   system: z.string({ error: INTRODUCTION_MESSAGES.sourceSystemRequired }).trim().min(1, INTRODUCTION_MESSAGES.sourceSystemRequired).max(MAX_SYSTEM_LENGTH, INTRODUCTION_MESSAGES.systemTooLong),
-  reference: z
-    .string({ error: INTRODUCTION_MESSAGES.sourceReferenceRequired })
-    .trim()
-    .min(1, INTRODUCTION_MESSAGES.sourceReferenceRequired)
-    .max(MAX_REFERENCE_LENGTH, INTRODUCTION_MESSAGES.referenceTooLong),
+  reference: z.string({ error: INTRODUCTION_MESSAGES.sourceReferenceRequired }).trim().min(1, INTRODUCTION_MESSAGES.sourceReferenceRequired).max(MAX_REFERENCE_LENGTH, INTRODUCTION_MESSAGES.referenceTooLong),
 });
 const ZONE_SHAPE = /^(?:[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*|[+-]\d{2}:\d{2})$/u;
 
-const sourceZoneSchema = z
-  .string({ error: INTRODUCTION_MESSAGES.zoneRequired })
-  .trim()
-  .min(1, INTRODUCTION_MESSAGES.zoneRequired)
-  .max(MAX_ZONE_LENGTH, INTRODUCTION_MESSAGES.zoneInvalid)
-  .regex(ZONE_SHAPE, INTRODUCTION_MESSAGES.zoneInvalid);
+const sourceZoneSchema = z.string({ error: INTRODUCTION_MESSAGES.zoneRequired }).trim().min(1, INTRODUCTION_MESSAGES.zoneRequired).max(MAX_ZONE_LENGTH, INTRODUCTION_MESSAGES.zoneInvalid).regex(ZONE_SHAPE, INTRODUCTION_MESSAGES.zoneInvalid);
 // recordIntroduction: the original introduction date, with the precision it is known to
 /** Validates the `recordIntroduction` payload: the partner, the original introduction date, the precision that date is known to, the zone it is known in, and the source that issued it. */
 export const introductionPayloadSchema = z
-  .strictObject({
-    partnerId: referenceFieldSchema(INTRODUCTION_MESSAGES.partnerRequired, INTRODUCTION_MESSAGES.partnerTooLong),
-    originalIntroductionOn: civilDateSchema.nullable().optional(),
-    datePrecision: datePrecisionSchema,
-    sourceZone: sourceZoneSchema,
-    sourceReference: sourceReferenceSchema,
-  })
+  .strictObject({ partnerId: referenceFieldSchema(INTRODUCTION_MESSAGES.partnerRequired, INTRODUCTION_MESSAGES.partnerTooLong), originalIntroductionOn: civilDateSchema.nullable().optional(), datePrecision: datePrecisionSchema, sourceZone: sourceZoneSchema, sourceReference: sourceReferenceSchema })
   .superRefine((payload, context) => {
     if (payload.datePrecision === "unknown") {
       if (payload.originalIntroductionOn !== null && payload.originalIntroductionOn !== undefined) {
-        context.addIssue({
-          code: "custom",
-          path: ["originalIntroductionOn"],
-          message: INTRODUCTION_MESSAGES.unknownStatesNoDate,
-        });
+        context.addIssue({ code: "custom", path: ["originalIntroductionOn"], message: INTRODUCTION_MESSAGES.unknownStatesNoDate });
       }
       return;
     }
     if (payload.originalIntroductionOn === null || payload.originalIntroductionOn === undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["originalIntroductionOn"],
-        message: INTRODUCTION_MESSAGES.dateRequired,
-      });
+      context.addIssue({ code: "custom", path: ["originalIntroductionOn"], message: INTRODUCTION_MESSAGES.dateRequired });
     }
   })
-  .transform((payload) => ({
-    partnerId: payload.partnerId,
-    originalIntroductionOn: payload.originalIntroductionOn ?? null,
-    datePrecision: payload.datePrecision,
-    sourceZone: payload.sourceZone,
-    sourceReference: payload.sourceReference,
-  }));
+  .transform((payload) => ({ partnerId: payload.partnerId, originalIntroductionOn: payload.originalIntroductionOn ?? null, datePrecision: payload.datePrecision, sourceZone: payload.sourceZone, sourceReference: payload.sourceReference }));
 /** The validated `recordIntroduction` payload: the original introduction date and its provenance. */
 export type IntroductionPayload = z.infer<typeof introductionPayloadSchema>;
 // continueReferral: one consumed cycle, and nothing the service resolves
 /** Validates the `continueReferral` payload: the expired cycle the continuation acts on. */
-export const continueReferralPayloadSchema = z.strictObject({
-  referralId: referenceFieldSchema(CONTINUE_MESSAGES.referralRequired, CONTINUE_MESSAGES.referralTooLong),
-});
+export const continueReferralPayloadSchema = z.strictObject({ referralId: referenceFieldSchema(CONTINUE_MESSAGES.referralRequired, CONTINUE_MESSAGES.referralTooLong) });
 /** The validated `continueReferral` payload: the identity of the one expired cycle to continue. */
 export type ContinueReferralPayload = z.infer<typeof continueReferralPayloadSchema>;
 // The three lists, and the query state an address carries for them
@@ -192,11 +153,7 @@ export interface ReferralListQuery {
   readonly page: number;
   readonly pageSize: number;
 }
-/**
- * Validates and normalises a referral list query, whether it arrives as an address's strings or as the numbers a table already holds.
- *
- * This grammar is the `GET /api/referrals` query grammar — `list`, `search`, `page`, `pageSize` — so the state it answers serialises to an address that route parses, and a change on either side is visible against the other.
- */
+/** Validates and normalises a referral list query, whether it arrives as an address's strings or as the numbers a table already holds. */
 export const referralListQuerySchema = z
   .strictObject({
     list: z.enum(REFERRAL_VIEWS, { error: LIST_QUERY_MESSAGES.viewInvalid }).optional(),
@@ -204,12 +161,7 @@ export const referralListQuerySchema = z
     page: pageFieldSchema.optional(),
     pageSize: pageSizeFieldSchema.optional(),
   })
-  .transform((raw): ReferralListQuery => ({
-    list: raw.list ?? DEFAULT_REFERRAL_VIEW,
-    search: raw.search ?? "",
-    page: raw.page ?? 1,
-    pageSize: raw.pageSize ?? DEFAULT_REFERRAL_PAGE_SIZE,
-  }));
+  .transform((raw): ReferralListQuery => ({ list: raw.list ?? DEFAULT_REFERRAL_VIEW, search: raw.search ?? "", page: raw.page ?? 1, pageSize: raw.pageSize ?? DEFAULT_REFERRAL_PAGE_SIZE }));
 /** Messages keyed by field path, the shape the service's `invalid` outcome also carries, so a control renders a refusal this file raised and a refusal the service returned identically. */
 export type ReferralListQueryFieldErrors = Readonly<Record<string, readonly string[]>>;
 /** The result of reading an address into referral query state: the normalised query, or messages keyed by the field path a control shows them against. */

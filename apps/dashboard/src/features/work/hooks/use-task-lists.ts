@@ -1,30 +1,12 @@
 "use client";
-/**
- * The Work surface's one browser read of the five task lists: the client half of
- * `reads.work.listTasks`, answering `envelope | denied | unavailable` exactly as that read answers.
- *
- * **What it does not do.** It computes nothing. Which list a row belongs to, the whole-result `total`,
- * the coverage and the `asOf` instant all arrive in the envelope, because the service filters, sorts
- * and pages over the whole authorised dataset (AAP 0.8.1) and a second computation here is how a
- * list starts disagreeing with the report beside it. It reads no clock — a caller that needs "now"
- * reads `asOf` from the envelope — it derives no scope, and it adds no freshness window of its own,
- * so a list mounted after the scenario clock moves is read again rather than served from a page that
- * is no longer true.
- *
- * **Why the wire decodes the three arms instead of asserting them.** `toResponse` flattens a read
- * onto the status: 200 carries the envelope itself with no `kind` wrapper, 403 the denial and 503 the
- * outage. Asserting the body as the read's result would therefore hand a caller a value whose `kind`
- * is `undefined`, so a denial or an outage would render as a task list — the thing Rule 1 clause 3
- * forbids. The three arms are rebuilt here from the status, and a status or body this read does not
- * answer with is thrown as the fault it is rather than invented as an empty list.
- */
+/** The Work surface's one browser read of the five task lists: the client half of `reads.work.listTasks`, answering `envelope | denied | unavailable | refused` exactly as that read answers. **What it … */
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { scopeKey } from "@/components/context-switch-guard";
 import { isRecord } from "@/lib/guards";
 // Type-only, like every data-service import here: these are the read's own contract, and the client
 // bundle takes the types without loading the modules that produce them.
 import type { Scope, reads } from "@/modules/data-service";
-import type { DeniedOutcome, UnavailableOutcome } from "@/modules/data-service/outcome";
+import type { DeniedOutcome, InvalidOutcome, UnavailableOutcome } from "@/modules/data-service/outcome";
 
 // ---------------------------------------------------------------------------------------------
 // The read's own contract, derived rather than restated
@@ -54,18 +36,8 @@ const READ_PARAM = "read";
 
 const TASKS_READ = "listTasks";
 
-/**
- * Every member of the query and the request field that carries it. Typed as a total map over
- * `keyof TaskListsQuery`, so a member added to the read's query fails to compile here rather than
- * being silently left out of the request while still present in the cache key.
- */
-const WIRE_PARAM = {
-  list: "list",
-  displayTimeZone: "displayTimeZone",
-  page: "page",
-  pageSize: "pageSize",
-  sort: "sort",
-} as const satisfies Record<keyof TaskListsQuery, string>;
+/** Every member of the query and the request field that carries it. */
+const WIRE_PARAM = { list: "list", displayTimeZone: "displayTimeZone", page: "page", pageSize: "pageSize", sort: "sort" } as const satisfies Record<keyof TaskListsQuery, string>;
 
 /** How one ordering instruction is stated on the wire: the handler's own `field:direction` token. */
 const SORT_TOKEN_SEPARATOR = ":";
@@ -74,12 +46,15 @@ const ENVELOPE_STATUS = 200;
 
 const DENIED_STATUS = 403;
 
+/** A session that expired or could not be established answers 401 with the same denial, which is a session fault rather than a permission refusal. */
+const SESSION_FAULT_STATUS = 401;
+
 const UNAVAILABLE_STATUS = 503;
 
-/**
- * Writes a list query as the handler's search string: every member stated rather than paraphrased,
- * with the ordering sent as one repeated token per instruction — the grammar `GET /api/tasks` reads.
- */
+/** A query this list does not admit answers 422 with the field-keyed refusal, which is the request's own fault and not a source that did not answer. */
+const REFUSED_STATUS = 422;
+
+/** Writes a list query as the handler's search string: every member stated rather than paraphrased, with the ordering sent as one repeated token per instruction — the grammar `GET /api/tasks` reads. */
 function toTaskListSearch(query: TaskListsQuery): string {
   const search = new URLSearchParams();
   search.set(READ_PARAM, TASKS_READ);
@@ -109,12 +84,7 @@ function noAnswer(status: number, detail: string): Error {
 async function fetchTaskLists(query: TaskListsQuery, signal: AbortSignal): Promise<TaskListsResult> {
   let response: Response;
   try {
-    response = await fetch(`${TASKS_ENDPOINT}?${toTaskListSearch(query)}`, {
-      method: "GET",
-      headers: { accept: "application/json" },
-      credentials: "same-origin",
-      signal,
-    });
+    response = await fetch(`${TASKS_ENDPOINT}?${toTaskListSearch(query)}`, { method: "GET", headers: { accept: "application/json" }, credentials: "same-origin", signal });
   } catch (cause) {
     throw new Error(`GET ${TASKS_ENDPOINT} could not be completed.`, { cause });
   }
@@ -131,6 +101,7 @@ async function fetchTaskLists(query: TaskListsQuery, signal: AbortSignal): Promi
       }
       return { kind: "envelope", envelope: payload };
     case DENIED_STATUS:
+    case SESSION_FAULT_STATUS:
       if (!isDeniedBody(payload)) {
         throw noAnswer(response.status, "a body that is not a denial");
       }
@@ -140,6 +111,11 @@ async function fetchTaskLists(query: TaskListsQuery, signal: AbortSignal): Promi
         throw noAnswer(response.status, "a body that is not an unavailable source");
       }
       return { kind: "unavailable", unavailable: payload };
+    case REFUSED_STATUS:
+      if (!isRefusedBody(payload)) {
+        throw noAnswer(response.status, "a body that is not a refused request");
+      }
+      return { kind: "refused", refused: payload };
     default:
       throw noAnswer(response.status, "a status this read does not answer with");
   }
@@ -178,25 +154,21 @@ function isUnavailableBody(value: unknown): value is UnavailableOutcome {
     return false;
   }
   const source = value.source;
-  return (
-    value.outcome === "unavailable" &&
-    typeof value.operationId === "string" &&
-    typeof value.guidance === "string" &&
-    isRecord(source) &&
-    typeof source.system === "string" &&
-    typeof source.reference === "string"
-  );
+  return value.outcome === "unavailable" && typeof value.operationId === "string" && typeof value.guidance === "string" && isRecord(source) && typeof source.system === "string" && typeof source.reference === "string";
+}
+
+function isRefusedBody(value: unknown): value is InvalidOutcome {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return value.outcome === "invalid" && typeof value.operationId === "string" && isRecord(value.fields);
 }
 
 // ---------------------------------------------------------------------------------------------
 // The hook
 // ---------------------------------------------------------------------------------------------
 
-/**
- * Reads one of the five task lists for the given scope and query: `reads.work.listTasks` over
- * `GET /api/tasks`, returning the read's `envelope | denied | unavailable` unchanged so a caller
- * narrows on it and never sees a denial or an outage as a list.
- */
+/** Reads one of the five task lists for the given scope and query: */
 export function useTaskLists(scope: Scope, query: TaskListsQuery): UseQueryResult<TaskListsResult> {
   return useQuery({
     // The whole query sits in the key, because the request sends the whole query: no two different

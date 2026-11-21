@@ -1,0 +1,198 @@
+"use client";
+/**
+ * Contact import, step five — Results: what became of every row of one completed import, read back by
+ * the operation's own identity.
+ *
+ * **What this step shows and what it never claims.** Every row states its decision, the result the
+ * service recorded for it, the service's own reason in its own words, and where it leads: a row that
+ * became or extended a contact names that contact's destination, and a row that was not applied states
+ * that it was not applied and why, without offering a control that would apply it now. A processed
+ * import's decisions cannot be changed, so this step offers no way to change one — only the stop control
+ * for the rows nothing has been applied to yet, which is the shared review step over the cancellation
+ * transport.
+ *
+ * **Where the counts come from.** The per-decision counts and the count of rows left alone are the read's
+ * own summary; the per-state counts are stated only when the read states them, and a read that states none
+ * shows none rather than a table of zeros.
+ *
+ * **Nothing here is accepted before the service says so.** The rows are the receipt of an operation that
+ * already ran; this file starts no change of its own, and every outcome it can show — including a
+ * cancellation — is the shared operation receipt rather than a message this family wrote.
+ */
+import Link from "next/link";
+import { type ReactElement } from "react";
+import { PaginationBar } from "@/components/pagination-bar";
+import { ScrollRegion } from "@/components/scroll-region";
+import SimulationLabel from "@/components/simulation-label";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import type { ImportRowState } from "@/modules/data-service/envelope";
+import type { ImportProposalRowRoute, ImportRowWindow } from "@/modules/data-service/reads/import";
+import type { RowResultCopyEntry } from "../copy";
+import { IMPORT_SIMULATION_EFFECT, JOURNEY_COPY, RESULTS_COPY, RESULT_STATE_HEADINGS, ROW_RESULT_COPY, TABLE_LABELS, chosenFileSize, resultCorrectionStatement, resultPartnerLinkLabel, resultStoppableRowSentence, resultWindowSentence } from "../copy";
+import { IMPORT_ROW_RESULT_STATES } from "@/modules/import/receipt";
+import { StopImportReview, type ImportStopControl } from "./step-review";
+/** The destination of one row that became or extended a contact. */
+const PARTNER_HREF_PREFIX = "/partners/";
+
+/** One row of a completed import, in the words the read reported: what was decided, what became of it, why, and where it leads. */
+export interface ImportResultsRow {
+  readonly rowNumber: number;
+  readonly decisionLabel: string;
+  readonly state: ImportRowState | null;
+  readonly stateLabel: string | null;
+  readonly reason: string | null;
+  readonly route: ImportProposalRowRoute | null;
+}
+/**
+ * One completed import, in the one shape a completed proposal and a receipt both project onto: the file it
+ * read, the counts acceptance decided, the count of rows it left alone, and the window of rows it returned.
+ */
+export interface ImportResultsView {
+  readonly importOperationId: string;
+  readonly file: { readonly name: string; readonly bytes: number; readonly rowCount: number; readonly columnCount: number };
+  readonly summary: { readonly create: number; readonly reuse: number; readonly skip: number; readonly unresolved: number; readonly rowCount: number };
+  /** The rows the read returned for this window. */
+  readonly rows: readonly ImportResultsRow[];
+  readonly rowWindow: ImportRowWindow;
+  /** How many rows the read states it left alone and can still be stopped. */
+  readonly stoppableRows: number;
+  /** How many rows ended in each result state, when the read states it; `null` when it states no such count. */
+  readonly stateCounts: Readonly<Record<ImportRowState, number>> | null;
+}
+/** Props of {@link StepResults}. */
+export interface StepResultsProps {
+  readonly results: ImportResultsView;
+  readonly onPageChange: (page: number) => void;
+  readonly onPageSizeChange: (pageSize: number) => void;
+  /** The stop control for the rows nothing has been applied to yet, composed from the cancellation transport. */
+  readonly stop: ImportStopControl;
+  /** Clears this import from the page and returns the journey to its first step. */
+  readonly onStartAnother: () => void;
+  /** Whether the results were recovered from this page's own address rather than reached by accepting here. */
+  readonly recovered: boolean;
+}
+/** The result vocabulary a state's words are read from, or `null` when the state names none of the five. */
+function rowResultCopyOf(state: ImportRowState | null): RowResultCopyEntry | null {
+  if (state === null) {
+    return null;
+  }
+  return Object.hasOwn(ROW_RESULT_COPY, state) ? ROW_RESULT_COPY[state] : null;
+}
+function FactRow({ label, value }: { readonly label: string; readonly value: string }): ReactElement {
+  return (
+    <div className="flex min-w-0 flex-wrap gap-x-1">
+      <dt className="text-muted-foreground">{label}:</dt>
+      <dd className="min-w-0 wrap-anywhere">
+        <bdi>{value}</bdi>
+      </dd>
+    </div>
+  );
+}
+/** Step five of the contact import: the per-row result of one completed operation, its counts and its routes. */
+export default function StepResults({ results, onPageChange, onPageSizeChange, stop, onStartAnother, recovered }: StepResultsProps): ReactElement {
+  const stateCounts = results.stateCounts;
+  return (
+    <div className="flex min-w-0 flex-col gap-6">
+      <p className="text-sm text-pretty text-muted-foreground">{RESULTS_COPY.lead}</p>
+      {recovered ? (
+        <div className="flex min-w-0 flex-col gap-1 text-sm">
+          <p className="font-medium">{JOURNEY_COPY.reload.completedHeading}</p>
+          <p className="text-pretty text-muted-foreground">{JOURNEY_COPY.reload.completedStatement}</p>
+        </div>
+      ) : null}
+      {/* The importer's simulated boundary is stated on its result as well as beside the file control. */}
+      <SimulationLabel effect={IMPORT_SIMULATION_EFFECT} context="block" />
+      <div className="flex min-w-0 flex-col gap-1 text-sm">
+        <p className="font-medium">{RESULTS_COPY.fileHeading}</p>
+        <dl className="flex min-w-0 flex-col gap-1">
+          <FactRow label={RESULTS_COPY.fileLabels.name} value={results.file.name} />
+          <FactRow label={RESULTS_COPY.fileLabels.size} value={chosenFileSize(results.file.bytes)} />
+          <FactRow label={RESULTS_COPY.fileLabels.rows} value={String(results.file.rowCount)} />
+          <FactRow label={RESULTS_COPY.fileLabels.columns} value={String(results.file.columnCount)} />
+        </dl>
+      </div>
+      <div className="flex min-w-0 flex-col gap-1 text-sm">
+        <p className="font-medium">{RESULTS_COPY.summaryHeading}</p>
+        <dl className="flex min-w-0 flex-col gap-1">
+          <FactRow label={RESULTS_COPY.summaryLabels.rowCount} value={String(results.summary.rowCount)} />
+          <FactRow label={RESULTS_COPY.summaryLabels.create} value={String(results.summary.create)} />
+          <FactRow label={RESULTS_COPY.summaryLabels.reuse} value={String(results.summary.reuse)} />
+          <FactRow label={RESULTS_COPY.summaryLabels.skip} value={String(results.summary.skip)} />
+          <FactRow label={RESULTS_COPY.summaryLabels.unresolved} value={String(results.summary.unresolved)} />
+        </dl>
+      </div>
+      {stateCounts === null ? null : (
+        <div className="flex min-w-0 flex-col gap-1 text-sm">
+          <p className="font-medium">{RESULTS_COPY.stateCountsHeading}</p>
+          <dl className="flex min-w-0 flex-col gap-1">
+            {IMPORT_ROW_RESULT_STATES.map((state) => (
+              <FactRow key={state} label={RESULT_STATE_HEADINGS[state]} value={String(stateCounts[state])} />
+            ))}
+          </dl>
+        </div>
+      )}
+      <p className="text-sm text-pretty text-muted-foreground">{resultWindowSentence(results.rowWindow)}</p>
+      {/* One scroll port for this one table, exactly as the review step has: the region carries the
+       * accessible name and the table scrolls inside it rather than the page scrolling sideways. */}
+      <ScrollRegion label={TABLE_LABELS.results}>
+        <Table>
+          <TableCaption className="sr-only">{TABLE_LABELS.results}</TableCaption>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead scope="col">{RESULTS_COPY.column.row}</TableHead>
+              <TableHead scope="col">{RESULTS_COPY.column.decision}</TableHead>
+              <TableHead scope="col">{RESULTS_COPY.column.state}</TableHead>
+              <TableHead scope="col">{RESULTS_COPY.column.reason}</TableHead>
+              <TableHead scope="col">{RESULTS_COPY.column.route}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {results.rows.map((row) => {
+              const result = rowResultCopyOf(row.state);
+              return (
+                <TableRow key={row.rowNumber}>
+                  <TableHead scope="row" className="whitespace-normal align-top">
+                    Row <bdi>{String(row.rowNumber)}</bdi>
+                  </TableHead>
+                  <TableCell className="whitespace-normal align-top">{row.decisionLabel}</TableCell>
+                  <TableCell className="whitespace-normal align-top">
+                    <Badge variant={result === null ? "outline" : result.badgeVariant}>{result === null ? (row.stateLabel ?? RESULTS_COPY.noState) : result.label}</Badge>
+                  </TableCell>
+                  <TableCell className="whitespace-normal align-top">
+                    <span className="block text-pretty">{row.reason === null ? RESULTS_COPY.noReason : row.reason}</span>
+                  </TableCell>
+                  <TableCell className="whitespace-normal align-top">
+                    {row.route === null ? (
+                      <span className="text-muted-foreground">{RESULTS_COPY.noRoute}</span>
+                    ) : row.route.kind === "partner" ? (
+                      <Link className="underline underline-offset-4" href={`${PARTNER_HREF_PREFIX}${encodeURIComponent(row.route.partnerId)}`}>
+                        {resultPartnerLinkLabel(row.rowNumber)}
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground">{resultCorrectionStatement(row.route.rowNumber)}</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </ScrollRegion>
+      <PaginationBar total={results.rowWindow.total} page={results.rowWindow.page} pageSize={results.rowWindow.pageSize} itemNoun="rows" onPageChange={onPageChange} onPageSizeChange={onPageSizeChange} />
+      {results.stoppableRows <= 0 ? null : (
+        <div className="flex min-w-0 flex-col gap-2">
+          <p className="text-sm text-pretty text-muted-foreground">{resultStoppableRowSentence(results.stoppableRows)}</p>
+          <StopImportReview stop={stop} />
+        </div>
+      )}
+      <div className="flex min-w-0 flex-col gap-2">
+        <Button type="button" variant="outline" className="w-fit" onClick={onStartAnother}>
+          {JOURNEY_COPY.startAnotherLabel}
+        </Button>
+        <p className="text-sm text-pretty text-muted-foreground">{JOURNEY_COPY.startAnotherStatement}</p>
+      </div>
+    </div>
+  );
+}

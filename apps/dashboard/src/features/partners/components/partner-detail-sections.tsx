@@ -1,11 +1,7 @@
 "use client";
-/**
- * The partner record's section bodies: the facts one partner record shows, handed to
- * `@/components/record-detail`, which owns the shell for the direct route, the desktop side panel and
- * the phone page.
- */
 import Link from "next/link";
 import type { ReactElement, ReactNode } from "react";
+import { refusalSummary } from "@/components/form-field";
 import RecordDetail, { type RecordDetailBreadcrumbEntry, type RecordDetailIdentity, type RecordDetailLayout, type RecordDetailSectionSlots } from "@/components/record-detail";
 import StateNotice, { type NoticeAction, type NoticeHeadingLevel, type NoticeRetry, type StateNoticeProps } from "@/components/state-notice";
 import StatusBadge, { BUCKET_STATUS, statusBadgeProps, valueStateWord, type StatusBadgeSpec } from "@/components/status-badge";
@@ -14,106 +10,38 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
-import type {
-  CommitmentRowRecord,
-  ContactMethodKind,
-  Coverage,
-  GiftRowRecord,
-  InteractionRecord,
-  PartnerKind,
-  PartnerRecord,
-  PrivateNoteRecord,
-  ReadEnvelope,
-  TaskRecord,
-  ValueState,
-} from "@/modules/data-service/envelope";
+import type { CommitmentRowRecord, ContactMethodKind, Coverage, GiftRowRecord, InteractionRecord, PartnerKind, PartnerRecord, PrivateNoteRecord, ReadEnvelope, TaskRecord, ValueState } from "@/modules/data-service/envelope";
+import type { FieldMessages } from "@/modules/data-service/outcome";
 import { formatMinor } from "@/modules/money/format";
 import { FACET_VALUE_LABELS, PERMISSION_FACT_COPY } from "../copy/facets";
 import { ARCHIVE_COPY, AUDIENCE_LABEL_COPY, IDENTITY_COPY, INTERACTION_COPY, PRIVATE_RECORD_COPY } from "../copy/privacy";
 import { PARTNER_ACTION_LABELS, SURFACE_STATE_COPY, VALUE_STATE_COPY, type PartnersSurface, type SurfaceState } from "../copy/states";
-// The contract with the route
 type ReadSource = NonNullable<StateNoticeProps["source"]>;
-
 type DenialCode = NonNullable<StateNoticeProps["reasonCode"]>;
-/** One read this body renders. */
 export type PartnerReadResult<T> =
   | { readonly kind: "loading" }
   | { readonly kind: "read"; readonly envelope: ReadEnvelope<T> }
   | { readonly kind: "unavailable"; readonly source?: ReadSource; readonly onRetry?: () => void }
-  | {
-      readonly kind: "denied";
-      readonly reasonCode?: DenialCode;
-      readonly onSwitchContext?: () => void;
-    };
-/** One record this partner is related to, as the read stated the relationship. */
-export interface PartnerRelationship {
-  readonly label: string;
-  readonly counterpart?: {
-    readonly partnerId: string;
-    readonly kind: PartnerKind;
-    readonly displayName: string;
-    readonly href?: string;
-  };
-  readonly detail?: string;
-}
-/** One money figure of the support-history section. */
-export interface PartnerSupportFigure {
-  readonly path: string;
-  readonly label: string;
-  readonly amount: GiftRowRecord["amount"];
-  readonly href?: string;
-}
-/** One received gift or allocation row of the support-history section. */
-export interface PartnerSupportGift {
-  readonly gift: GiftRowRecord;
-  readonly amountPath: string;
-}
-/** One recurring commitment the source states for this partner, read-only. */
-export interface PartnerSupportCommitment {
-  readonly commitment: CommitmentRowRecord;
-  readonly amountPath: string;
-}
-/** The authorised support history of one partner record. */
-export interface PartnerSupportHistory {
+  | { readonly kind: "denied"; readonly reasonCode?: DenialCode; readonly onSwitchContext?: () => void }
+  | { readonly kind: "refused"; readonly fields: FieldMessages };
+export type PartnerRelationship = { readonly label: string; readonly counterpart?: { readonly partnerId: string; readonly kind: PartnerKind; readonly displayName: string; readonly href?: string }; readonly detail?: string };
+export type PartnerSupportFigure = { readonly path: string; readonly label: string; readonly amount: GiftRowRecord["amount"]; readonly href?: string };
+export type PartnerSupportGift = { readonly gift: GiftRowRecord; readonly amountPath: string };
+export type PartnerSupportCommitment = { readonly commitment: CommitmentRowRecord; readonly amountPath: string };
+export type PartnerSupportHistory = {
   readonly basis: string;
-  readonly periodLabel: string;
+  readonly periodLabel?: string;
   readonly figures: readonly PartnerSupportFigure[];
   readonly gifts?: readonly PartnerSupportGift[];
   readonly commitments?: readonly PartnerSupportCommitment[];
   readonly ledgerHref?: string;
-}
-/** What one partner read carries for this record body. */
-export interface PartnerDetailData {
-  readonly partner: PartnerRecord;
-  readonly secondaryName?: string;
-  readonly avatarSrc?: string;
-  readonly relationshipContext: readonly PartnerRelationship[];
-  readonly openTasks: readonly TaskRecord[];
-  readonly supportHistory?: PartnerSupportHistory;
-}
-/** What the private read carries for this record. */
-export interface PartnerPrivateData {
-  readonly notes: readonly PrivateNoteRecord[];
-  readonly preparation?: {
-    readonly partnerId: string;
-    readonly archived: boolean;
-  };
-}
-/** The controls the route mounts, passed in rather than imported. */
-export interface PartnerDetailActions {
-  readonly bar?: ReactNode;
-  readonly status?: ReactNode;
-  readonly privateNote?: ReactNode;
-  readonly interaction?: ReactNode;
-}
-/** The destinations a section's real first action needs, supplied by the route. */
-export interface PartnerDetailLinks {
-  readonly logInteraction?: string;
-  readonly createTask?: string;
-  readonly addPreparation?: string;
-}
-/** Props of {@link PartnerDetailSections}. */
-export interface PartnerDetailSectionsProps {
+  readonly outage?: { readonly system: string; readonly reference: string; readonly guidance: string };
+};
+export type PartnerDetailData = { readonly partner: PartnerRecord; readonly secondaryName?: string; readonly avatarSrc?: string; readonly relationshipContext: readonly PartnerRelationship[]; readonly openTasks: readonly TaskRecord[]; readonly supportHistory?: PartnerSupportHistory };
+export type PartnerPrivateData = { readonly notes: readonly PrivateNoteRecord[]; readonly preparation?: { readonly partnerId: string; readonly archived: boolean } };
+export type PartnerDetailActions = { readonly bar?: ReactNode; readonly status?: ReactNode; readonly privateNote?: ReactNode; readonly interaction?: ReactNode };
+export type PartnerDetailLinks = { readonly logInteraction?: string; readonly createTask?: string; readonly addPreparation?: string };
+export type PartnerDetailSectionsProps = {
   readonly partner: PartnerReadResult<PartnerDetailData>;
   readonly privatePreparation?: PartnerReadResult<PartnerPrivateData>;
   readonly interactions?: PartnerReadResult<readonly InteractionRecord[]>;
@@ -122,8 +50,7 @@ export interface PartnerDetailSectionsProps {
   readonly actions?: PartnerDetailActions;
   readonly links?: PartnerDetailLinks;
   readonly breadcrumb?: readonly RecordDetailBreadcrumbEntry[];
-}
-// Wording this file alone owns
+};
 const READING_RECORD_TITLE = "Reading this partner record";
 const NO_RESTRICTION_RECORDED = "No restriction is recorded for this relationship.";
 const NO_RELATIONSHIP_RECORDED = "No relationship label is recorded for this record.";
@@ -145,30 +72,11 @@ const TASKS_PROVE_NOTHING = "A completed task records that the work was closed. 
 const SUPPORT_BASIS_LEAD = "Received support on the named basis";
 const COMMITMENTS_GROUP_TITLE = "Recurring commitments the source states";
 const SUPPORT_LEDGER_LINK_LABEL = "See every gift recorded for this partner";
-
-const CONTACT_METHOD_KIND_LABELS: Readonly<Record<ContactMethodKind, string>> = {
-  email: "Email address",
-  phone: "Phone number",
-  postal: "Postal address",
-};
-const PRECISION_WORDS: Readonly<Record<InteractionRecord["precision"], string>> = {
-  date: "Date recorded",
-  approximate: "Approximate date",
-  unknown: "Date not known",
-};
-const TASK_STATUS_LABELS: Readonly<Record<TaskRecord["status"], StatusBadgeSpec>> = {
-  open: { label: "Open", tone: "info" },
-  completed: { label: "Completed", tone: "positive" },
-  reopened: { label: "Reopened", tone: "caution" },
-  cancelled: { label: "Cancelled", tone: "muted" },
-};
-const NOTICE_HEADING_BY_LAYOUT: Readonly<Record<RecordDetailLayout, NoticeHeadingLevel>> = {
-  page: 3,
-  panel: 4,
-  sheet: 4,
-};
+const CONTACT_METHOD_KIND_LABELS: Readonly<Record<ContactMethodKind, string>> = { email: "Email address", phone: "Phone number", postal: "Postal address" };
+const PRECISION_WORDS: Readonly<Record<InteractionRecord["precision"], string>> = { date: "Date recorded", approximate: "Approximate date", unknown: "Date not known" };
+const TASK_STATUS_LABELS: Readonly<Record<TaskRecord["status"], StatusBadgeSpec>> = { open: { label: "Open", tone: "info" }, completed: { label: "Completed", tone: "positive" }, reopened: { label: "Reopened", tone: "caution" }, cancelled: { label: "Cancelled", tone: "muted" } };
+const NOTICE_HEADING_BY_LAYOUT: Readonly<Record<RecordDetailLayout, NoticeHeadingLevel>> = { page: 3, panel: 4, sheet: 4 };
 const STATES_WITH_A_NUMBER: ReadonlySet<ValueState> = new Set<ValueState>(["value", "zero", "incomplete-subtotal"]);
-// Small readers of the data
 function partnerKindLabel(kind: PartnerKind): string {
   return FACET_VALUE_LABELS["contact-type"][kind] ?? kind;
 }
@@ -181,7 +89,6 @@ function retryOf(onRetry: (() => void) | undefined): NoticeRetry | undefined {
 function coverageNoticeOf(coverage: Coverage): SectionNoticeState | undefined {
   return coverage.state === "complete" ? undefined : "partial-coverage";
 }
-// The one amount rendering of this body
 function PartnerAmount({ amount, valueState, locale }: { readonly amount: GiftRowRecord["amount"]; readonly valueState: ValueState; readonly locale: string }): ReactElement {
   const formatted = formatMinor(amount, valueState, locale);
   const word = valueStateWord(valueState);
@@ -208,15 +115,7 @@ function PartnerAmount({ amount, valueState, locale }: { readonly amount: GiftRo
     </span>
   );
 }
-function SupportFigures({
-  figures,
-  valueStates,
-  locale,
-}: {
-  readonly figures: readonly PartnerSupportFigure[];
-  readonly valueStates: Readonly<Record<string, ValueState>>;
-  readonly locale: string;
-}): ReactElement {
+function SupportFigures({ figures, valueStates, locale }: { readonly figures: readonly PartnerSupportFigure[]; readonly valueStates: Readonly<Record<string, ValueState>>; readonly locale: string }): ReactElement {
   return (
     <dl className="flex flex-col gap-2 text-sm">
       {figures.map((figure, index) => {
@@ -259,10 +158,8 @@ function ValueStateNotes({ states }: { readonly states: readonly ValueState[] })
     </ul>
   );
 }
-// The four states a section renders instead of its content
-type SectionNoticeState = Extract<SurfaceState, "empty" | "unavailable" | "denied" | "partial-coverage">;
-
-interface SectionNoticeProps {
+type SectionNoticeState = Extract<SurfaceState, "empty" | "unavailable" | "denied" | "refused" | "partial-coverage">;
+type SectionNoticeProps = {
   readonly surface: PartnersSurface;
   readonly state: SectionNoticeState;
   readonly headingLevel: NoticeHeadingLevel;
@@ -274,11 +171,10 @@ interface SectionNoticeProps {
   readonly reasonCode?: DenialCode;
   readonly description?: string;
   readonly className?: string;
-}
+};
 function SectionNotice({ surface, state, headingLevel, actionHref, onAction, source, retry, coverage, reasonCode, description, className }: SectionNoticeProps): ReactElement {
   const copy = SURFACE_STATE_COPY[surface][state];
-  const action: NoticeAction | undefined =
-    copy.actionLabel === undefined || (actionHref === undefined && onAction === undefined) ? undefined : { label: copy.actionLabel, href: actionHref, onClick: onAction };
+  const action: NoticeAction | undefined = copy.actionLabel === undefined || (actionHref === undefined && onAction === undefined) ? undefined : { label: copy.actionLabel, href: actionHref, onClick: onAction };
   return (
     <StateNotice
       kind={state}
@@ -296,15 +192,7 @@ function SectionNotice({ surface, state, headingLevel, actionHref, onAction, sou
     />
   );
 }
-function ReadNotice<T>({
-  read,
-  surface,
-  headingLevel,
-}: {
-  readonly read: Exclude<PartnerReadResult<T>, { kind: "read" }>;
-  readonly surface: PartnersSurface;
-  readonly headingLevel: NoticeHeadingLevel;
-}): ReactElement {
+function ReadNotice<T>({ read, surface, headingLevel }: { readonly read: Exclude<PartnerReadResult<T>, { kind: "read" }>; readonly surface: PartnersSurface; readonly headingLevel: NoticeHeadingLevel }): ReactElement {
   switch (read.kind) {
     case "loading":
       return <StateNotice kind="loading" title={READING_RECORD_TITLE} headingLevel={headingLevel} loadingLines={4} />;
@@ -312,9 +200,12 @@ function ReadNotice<T>({
       return <SectionNotice surface={surface} state="unavailable" headingLevel={headingLevel} source={read.source} retry={retryOf(read.onRetry)} />;
     case "denied":
       return <SectionNotice surface={surface} state="denied" headingLevel={headingLevel} reasonCode={read.reasonCode} onAction={read.onSwitchContext} />;
+    case "refused":
+      // The request this section's read was asked to serve is not one it admits, so the refusal's own
+      // words replace the section rather than an outage claim about the partner source.
+      return <SectionNotice surface={surface} state="refused" headingLevel={headingLevel} description={refusalSummary(read)} />;
   }
 }
-// Section bodies, in the order `RecordDetail` fixes
 function ContactMethodsBody({ partner }: { readonly partner: PartnerRecord }): ReactElement {
   return (
     <div className="flex flex-col gap-3">
@@ -328,11 +219,7 @@ function ContactMethodsBody({ partner }: { readonly partner: PartnerRecord }): R
               {/* An address, a number and a postal line are weak-direction values, so each is
                   isolated: a right-to-left neighbour cannot reorder it, and a leading zero survives. */}
               <bdi className="mono-identifier text-sm">{method.value}</bdi>
-              <StatusBadge
-                label={method.permitted ? CONTACT_METHOD_PERMITTED : CONTACT_METHOD_NOT_PERMITTED}
-                tone={method.permitted ? "positive" : "muted"}
-                srPrefix={CONTACT_METHOD_KIND_LABELS[method.kind]}
-              />
+              <StatusBadge label={method.permitted ? CONTACT_METHOD_PERMITTED : CONTACT_METHOD_NOT_PERMITTED} tone={method.permitted ? "positive" : "muted"} srPrefix={CONTACT_METHOD_KIND_LABELS[method.kind]} />
             </li>
           ))}
         </ul>
@@ -452,17 +339,7 @@ function InteractionItem({ interaction }: { readonly interaction: InteractionRec
     </li>
   );
 }
-function ActivityBody({
-  read,
-  headingLevel,
-  composer,
-  links,
-}: {
-  readonly read: PartnerReadResult<readonly InteractionRecord[]>;
-  readonly headingLevel: NoticeHeadingLevel;
-  readonly composer?: ReactNode;
-  readonly links: PartnerDetailLinks;
-}): ReactElement {
+function ActivityBody({ read, headingLevel, composer, links }: { readonly read: PartnerReadResult<readonly InteractionRecord[]>; readonly headingLevel: NoticeHeadingLevel; readonly composer?: ReactNode; readonly links: PartnerDetailLinks }): ReactElement {
   if (read.kind !== "read") {
     return <ReadNotice read={read} surface="interactions" headingLevel={headingLevel} />;
   }
@@ -502,17 +379,7 @@ function PrivateNoteItem({ note }: { readonly note: PrivateNoteRecord }): ReactE
     </li>
   );
 }
-function PrivateNotesBody({
-  read,
-  headingLevel,
-  composer,
-  links,
-}: {
-  readonly read: PartnerReadResult<PartnerPrivateData>;
-  readonly headingLevel: NoticeHeadingLevel;
-  readonly composer?: ReactNode;
-  readonly links: PartnerDetailLinks;
-}): ReactElement {
+function PrivateNotesBody({ read, headingLevel, composer, links }: { readonly read: PartnerReadResult<PartnerPrivateData>; readonly headingLevel: NoticeHeadingLevel; readonly composer?: ReactNode; readonly links: PartnerDetailLinks }): ReactElement {
   if (read.kind !== "read") {
     return <ReadNotice read={read} surface="private-preparation" headingLevel={headingLevel} />;
   }
@@ -583,17 +450,7 @@ function TaskItem({ task }: { readonly task: TaskRecord }): ReactElement {
     </li>
   );
 }
-function OpenTasksBody({
-  tasks,
-  coverage,
-  headingLevel,
-  links,
-}: {
-  readonly tasks: readonly TaskRecord[];
-  readonly coverage: Coverage;
-  readonly headingLevel: NoticeHeadingLevel;
-  readonly links: PartnerDetailLinks;
-}): ReactElement {
+function OpenTasksBody({ tasks, coverage, headingLevel, links }: { readonly tasks: readonly TaskRecord[]; readonly coverage: Coverage; readonly headingLevel: NoticeHeadingLevel; readonly links: PartnerDetailLinks }): ReactElement {
   const partial = coverageNoticeOf(coverage);
   return (
     <div className="flex flex-col gap-3">
@@ -664,38 +521,28 @@ function CommitmentItem({ row, valueState, locale }: { readonly row: PartnerSupp
     </li>
   );
 }
-function SupportHistoryBody({
-  history,
-  coverage,
-  valueStates,
-  locale,
-  headingLevel,
-}: {
-  readonly history: PartnerSupportHistory;
-  readonly coverage: Coverage;
-  readonly valueStates: Readonly<Record<string, ValueState>>;
-  readonly locale: string;
-  readonly headingLevel: NoticeHeadingLevel;
-}): ReactElement {
+function SupportHistoryBody({ history, coverage, valueStates, locale, headingLevel }: { readonly history: PartnerSupportHistory; readonly coverage: Coverage; readonly valueStates: Readonly<Record<string, ValueState>>; readonly locale: string; readonly headingLevel: NoticeHeadingLevel }): ReactElement {
+  const outage = history.outage;
+  if (outage !== undefined) {
+    // The source is reported down for this session, so the section states that fact with the source it
+    // could not read and the way back to it. No figure list and no period line is rendered: an empty
+    // figure list under a period would read as "no received support", which is the one thing a declared
+    // outage is not, and the module's own unavailable wording already carries the heading.
+    return <SectionNotice surface="support-history" state="unavailable" headingLevel={headingLevel} source={{ system: outage.system, reference: outage.reference }} description={outage.guidance} />;
+  }
   const gifts = history.gifts ?? [];
   const commitments = history.commitments ?? [];
   const partial = coverageNoticeOf(coverage);
-  const states: ValueState[] = [
-    ...history.figures.map((figure) => valueStateOf(valueStates, figure.path)),
-    ...gifts.map((row) => valueStateOf(valueStates, row.amountPath)),
-    ...commitments.map((row) => valueStateOf(valueStates, row.amountPath)),
-  ];
+  const states: ValueState[] = [...history.figures.map((figure) => valueStateOf(valueStates, figure.path)), ...gifts.map((row) => valueStateOf(valueStates, row.amountPath)), ...commitments.map((row) => valueStateOf(valueStates, row.amountPath))];
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
-        {SUPPORT_BASIS_LEAD}: <bdi>{history.basis}</bdi> — {history.periodLabel}
+        {SUPPORT_BASIS_LEAD}: <bdi>{history.basis}</bdi>
+        {/* A section that reaches this line resolved a period: the outage arm returned above. */}
+        {history.periodLabel === undefined ? null : <> — {history.periodLabel}</>}
       </p>
       {partial === undefined ? null : <SectionNotice surface="support-history" state={partial} headingLevel={headingLevel} coverage={coverage} />}
-      {history.figures.length === 0 ? (
-        <SectionNotice surface="support-history" state="empty" headingLevel={headingLevel} />
-      ) : (
-        <SupportFigures figures={history.figures} valueStates={valueStates} locale={locale} />
-      )}
+      {history.figures.length === 0 ? <SectionNotice surface="support-history" state="empty" headingLevel={headingLevel} /> : <SupportFigures figures={history.figures} valueStates={valueStates} locale={locale} />}
       <ValueStateNotes states={states} />
       {gifts.length === 0 ? null : (
         <>
@@ -726,7 +573,6 @@ function SupportHistoryBody({
     </div>
   );
 }
-// The body
 function RecordAudienceStatus({ record }: { readonly record: PartnerRecord }): ReactElement {
   const audienceLabel = FACET_VALUE_LABELS["preparation-state"][record.audience] ?? record.audience;
   return (
@@ -736,7 +582,6 @@ function RecordAudienceStatus({ record }: { readonly record: PartnerRecord }): R
     </div>
   );
 }
-/** One partner record, in the single detail body every presentation renders. */
 export default function PartnerDetailSections({ partner, privatePreparation, interactions, layout, locale, actions, links = {}, breadcrumb }: PartnerDetailSectionsProps): ReactElement {
   const headingLevel = NOTICE_HEADING_BY_LAYOUT[layout];
   // A record that was refused or never arrived is reported as that fact, never as a body with no
@@ -747,13 +592,7 @@ export default function PartnerDetailSections({ partner, privatePreparation, int
   }
   const { envelope } = partner;
   const { partner: record } = envelope.data;
-  const identity: RecordDetailIdentity = {
-    displayName: record.displayName,
-    secondaryName: envelope.data.secondaryName,
-    kind: partnerKindLabel(record.kind),
-    avatarSrc: envelope.data.avatarSrc,
-    reference: record.source ?? undefined,
-  };
+  const identity: RecordDetailIdentity = { displayName: record.displayName, secondaryName: envelope.data.secondaryName, kind: partnerKindLabel(record.kind), avatarSrc: envelope.data.avatarSrc, reference: record.source ?? undefined };
   const sections: RecordDetailSectionSlots = {
     contactMethods: <ContactMethodsBody partner={record} />,
     restrictions: <RestrictionsBody partner={record} />,
@@ -761,10 +600,7 @@ export default function PartnerDetailSections({ partner, privatePreparation, int
     activity: interactions === undefined ? undefined : <ActivityBody read={interactions} headingLevel={headingLevel} composer={actions?.interaction} links={links} />,
     privateNotes: privatePreparation === undefined ? undefined : <PrivateNotesBody read={privatePreparation} headingLevel={headingLevel} composer={actions?.privateNote} links={links} />,
     openTasks: <OpenTasksBody tasks={envelope.data.openTasks} coverage={envelope.coverage} headingLevel={headingLevel} links={links} />,
-    supportHistory:
-      envelope.data.supportHistory === undefined ? undefined : (
-        <SupportHistoryBody history={envelope.data.supportHistory} coverage={envelope.coverage} valueStates={envelope.valueStates} locale={locale} headingLevel={headingLevel} />
-      ),
+    supportHistory: envelope.data.supportHistory === undefined ? undefined : <SupportHistoryBody history={envelope.data.supportHistory} coverage={envelope.coverage} valueStates={envelope.valueStates} locale={locale} headingLevel={headingLevel} />,
   };
   return <RecordDetail layout={layout} identity={identity} sections={sections} breadcrumb={breadcrumb} status={actions?.status ?? <RecordAudienceStatus record={record} />} actions={actions?.bar} />;
 }

@@ -1,18 +1,10 @@
 "use client";
-/**
- * The commitment detail body: one commitment as the source states it — its kind, cadence and
- * per-occurrence amount, the outcome it currently sits in together with what that outcome means, the
- * dates the source reports for it, a fixed total's four figures, the outcome partition this read
- * states, its provenance and the snapshot it was read in.
- *
- * The surface is read-only by construction, not by convention: it holds no control that posts,
- * retries, pauses, resumes or corrects a payment, so nothing here can change a commitment, and a
- * commitment is never presented as received cash.
- */
+/** The commitment detail body: one commitment as the source states it — its kind, cadence and per-occurrence amount, the outcome it currently sits in together with what that outcome means, the dates … */
 import { ArrowLeftIcon } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, type ReactElement, type ReactNode } from "react";
+import { refusalSummary } from "@/components/form-field";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { BUCKET_STATUS, statusBadgeProps, valueStateWord, type StatusTone } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -30,13 +22,10 @@ import { parseCommitmentsQuery, toCommitmentsParams, useCommitments, type Commit
 import AmountValue from "./amount-value";
 import SnapshotStatement from "./snapshot-statement";
 // The shapes this surface reads, taken from the read rather than restated
-/** One commitment as the commitments read states it. */
 type CommitmentRowFigure = CommitmentsEnvelope["data"]["commitments"][number];
-/** The four amounts a fixed total states. */
 type FixedTotalFigure = NonNullable<CommitmentRowFigure["fixedTotal"]>;
 /** One of those four amounts, named rather than numbered. */
 type FixedTotalField = keyof FixedTotalFigure;
-/** One entry of the outcome partition the read states beside the commitments themselves. */
 type OutcomeBucketFigure = CommitmentsEnvelope["data"]["buckets"][number];
 // What a caller passes
 /** Props of {@link CommitmentDetail}. */
@@ -51,10 +40,7 @@ export type CommitmentDetailProps = {
   readonly className?: string;
 };
 // The words this surface owns, and no state vocabulary it would duplicate
-const UNRECOGNISED_KIND_WORD = "A kind of commitment this read does not name";
-
 const LIST_ROUTE = "/support/commitments";
-
 const OVERVIEW_HEADING_ID = "commitment-overview-heading";
 const DATES_HEADING_ID = "commitment-dates-heading";
 const FIXED_TOTAL_HEADING_ID = "commitment-fixed-total-heading";
@@ -77,33 +63,18 @@ const LABELS = {
   principal: "Acting principal",
 } as const;
 
-const HEADINGS = {
-  dates: "Live dates",
-  fixedTotal: "Fixed total progress",
-  outcomes: "Outcome history",
-  provenance: "Provenance and snapshot",
-} as const;
-
+const HEADINGS = { dates: "Live dates", fixedTotal: "Fixed total progress", outcomes: "Outcome history", provenance: "Provenance and snapshot" } as const;
 const RETURN_LABEL = "Commitments";
 const RETURN_ACCESSIBLE_NAME = "Return to the commitments list with the filters and page you came from";
 const LIST_ACTION_LABEL = "Open the commitments list";
 const READING_LABEL = "Reading this commitment…";
 const CURRENT_ROW_MARKER = "This commitment's outcome";
 const NOT_STATED_DATE = "The source states no date";
-/**
- * The one override the shared badge needs here: its label can be a whole sentence ("Unknown or stale —
- * outside the five outcomes"), and the component's own `whitespace-nowrap` over `overflow-hidden` would
- * cut that label off at 320 CSS px. Allowing the label to wrap keeps every word readable instead.
- */
+/** The one override the shared badge needs here: its label can be a whole sentence ("Unknown or stale — outside the five outcomes"), and the component's own `whitespace-nowrap` over `overflow-hidden` … */
 const WRAPPING_BADGE_CLASS = "h-auto max-w-full shrink whitespace-normal text-start";
-
 const READ_ONLY_STATEMENT = "This page is read-only: it cannot post, retry, pause, resume or correct a payment, and no control on it changes anything at the source.";
-const NOT_CASH_STATEMENT =
-  "A commitment is the source's standing arrangement, not received cash: this amount is never counted as " +
-  "money received, and the outcome beside it states where the collection stands rather than what arrived.";
-const FIXED_TOTAL_STATEMENT =
-  "These are the four amounts the source states for this fixed total, each shown as its own fact: this page " +
-  "does not subtract one from another, does not state a fifth figure and does not present a share of the total.";
+const NOT_CASH_STATEMENT = "A commitment is the source's standing arrangement, not received cash: this amount is never counted as " + "money received, and the outcome beside it states where the collection stands rather than what arrived.";
+const FIXED_TOTAL_STATEMENT = "These are the four amounts the source states for this fixed total, each shown as its own fact: this page " + "does not subtract one from another, does not state a fifth figure and does not present a share of the total.";
 const OUTCOME_LEAD =
   "The source states this commitment's current outcome, and one count per outcome across every commitment " +
   "this read states in this context. It states no occurrence-by-occurrence history, so no history row is " +
@@ -112,37 +83,23 @@ const OUTCOME_LEAD =
 
 const DENIED_TITLE = "This commitment is not shown in this context";
 const DENIED_DESCRIPTION = "The read was refused for the context this session is admitted to. Nothing here states whether a commitment carries that identifier, what it would be, or how large it is.";
-
+const REFUSED_TITLE = "This commitment's request was refused";
 const UNAVAILABLE_TITLE = "This commitment could not be read";
 const UNAVAILABLE_RETRY_LABEL = "Read this commitment again";
-
 const NO_ANSWER_TITLE = "This commitment has no answer to state";
-const NO_ANSWER_DESCRIPTION =
-  "The request for this commitment did not come back as an answer this page can present, so nothing is shown " + "and no amount stands in for it: this is not zero and not an empty result.";
-
+const NO_ANSWER_DESCRIPTION = "The request for this commitment did not come back as an answer this page can present, so nothing is shown " + "and no amount stands in for it: this is not zero and not an empty result.";
 const NOT_IN_PAGE_TITLE = "No commitment in this read carries that identifier";
-const NOT_IN_PAGE_DESCRIPTION =
-  "The commitments read states one page of the source's commitments, and no commitment in the page it " +
-  "returned carries this identifier. Either no commitment in this context carries it, or it stands on a page " +
-  "this read did not return. Nothing is filled in for it either way.";
-
-const UNSTATED_PAUSE_WORD = "State not stated";
+const NOT_IN_PAGE_DESCRIPTION = "The commitments read states one page of the source's commitments, and no commitment in the page it " + "returned carries this identifier. Either no commitment in this context carries it, or it stands on a page " + "this read did not return. Nothing is filled in for it either way.";
 // Reading one fact out of the read's own vocabularies
 function kindLabelOf(kind: CommitmentKind): string {
-  return Object.hasOwn(COMMITMENT_KIND_LABELS, kind) ? COMMITMENT_KIND_LABELS[kind] : UNRECOGNISED_KIND_WORD;
+  return Object.hasOwn(COMMITMENT_KIND_LABELS, kind) ? COMMITMENT_KIND_LABELS[kind] : "A kind of commitment this read does not name";
 }
-/**
- * The state the read declared for one value. A path the read did not state is `unknown` rather than a
- * plain number: an unstated value is never presented as a value.
- */
 function valueStateAt(valueStates: Readonly<Record<string, ValueState>>, path: string): ValueState {
   return valueStates[path] ?? "unknown";
 }
-/** The path the commitments read records one fixed-total amount's state under. */
 function fixedTotalStatePath(commitmentId: string, field: FixedTotalField): string {
   return `commitments.${commitmentId}.fixedTotal.${field}`;
 }
-/** The path the commitments read records one commitment's per-occurrence amount's state under. */
 function perOccurrenceStatePath(commitmentId: string): string {
   return `commitments.${commitmentId}.perOccurrence`;
 }
@@ -162,13 +119,10 @@ function currenciesOf(row: CommitmentRowFigure): readonly string[] {
   const seen = new Set<string>();
   seen.add(row.perOccurrence.currency);
   if (row.fixedTotal !== null) {
-    for (const { field } of FIXED_TOTAL_FIELDS) {
-      seen.add(row.fixedTotal[field].currency);
-    }
+    for (const { field } of FIXED_TOTAL_FIELDS) seen.add(row.fixedTotal[field].currency);
   }
   return [...seen];
 }
-/** The list state to return to: the same page and facet answer, without the narrowed commitment. */
 function returnPathOf(listQuery: CommitmentsQuery): string {
   const params = toCommitmentsParams({ showAdditionalTypes: listQuery.showAdditionalTypes, page: listQuery.page });
   return `${LIST_ROUTE}?${params.toString()}`;
@@ -185,24 +139,11 @@ function pauseReadingOf(pause: CommitmentRowFigure["pause"]): PauseReading {
     case "active":
       return { label: "Running", tone: "positive", sentence: "The source reports this commitment running, so no pause stands in front of the next date it states.", resumeOn: null };
     case "paused":
-      return {
-        label: "Paused",
-        tone: "caution",
-        resumeOn: pause.resumeOn,
-        sentence:
-          pause.resumeOn === null
-            ? "The source reports this commitment paused and states no date for resuming."
-            : "The source reports this commitment paused; the date it states for resuming is stated below.",
-      };
+      return { label: "Paused", tone: "caution", resumeOn: pause.resumeOn, sentence: pause.resumeOn === null ? "The source reports this commitment paused and states no date for resuming." : "The source reports this commitment paused; the date it states for resuming is stated below." };
     default:
       // The stored union has two members, so this arm only runs for a value this build does not know:
       // it states that honestly instead of guessing which of the two it might have meant.
-      return {
-        label: UNSTATED_PAUSE_WORD,
-        tone: "muted",
-        sentence: "The state the source reported for this commitment is not one this page can present, so no pause or active reading is given to it.",
-        resumeOn: null,
-      };
+      return { label: "State not stated", tone: "muted", sentence: "The state the source reported for this commitment is not one this page can present, so no pause or active reading is given to it.", resumeOn: null };
   }
 }
 // Small presentational pieces
@@ -424,11 +365,7 @@ function OutcomeHistoryCard({ buckets, total, current, locale }: OutcomeHistoryP
               const isCurrent = figure.bucket === current;
               const isOutside = figure.bucket === OUTSIDE_PARTITION;
               return (
-                <li
-                  key={figure.bucket}
-                  data-outcome={figure.bucket}
-                  className={cn("flex min-w-0 flex-col gap-1.5 rounded-lg border border-border p-3", isOutside && "bg-muted/40", isCurrent && "ring-1 ring-ring")}
-                >
+                <li key={figure.bucket} data-outcome={figure.bucket} className={cn("flex min-w-0 flex-col gap-1.5 rounded-lg border border-border p-3", isOutside && "bg-muted/40", isCurrent && "ring-1 ring-ring")}>
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <StatusBadge {...statusBadgeProps(BUCKET_STATUS, figure.bucket)} srPrefix={LABELS.outcome} className={WRAPPING_BADGE_CLASS} />
                     <CountFigure count={figure.count} valueState={figure.valueState} locale={locale} />
@@ -445,11 +382,7 @@ function OutcomeHistoryCard({ buckets, total, current, locale }: OutcomeHistoryP
   );
 }
 // Where the record came from and the snapshot it was read in
-interface ProvenanceCardProps {
-  readonly envelope: CommitmentsEnvelope;
-  readonly row: CommitmentRowFigure;
-  readonly locale: string;
-}
+type ProvenanceCardProps = { readonly envelope: CommitmentsEnvelope; readonly row: CommitmentRowFigure; readonly locale: string };
 function ProvenanceCard({ envelope, row, locale }: ProvenanceCardProps): ReactElement {
   return (
     <section aria-labelledby={PROVENANCE_HEADING_ID} className="min-w-0">
@@ -491,12 +424,7 @@ function ProvenanceCard({ envelope, row, locale }: ProvenanceCardProps): ReactEl
 }
 
 // The body once the read has answered
-interface EnvelopeBodyProps {
-  readonly envelope: CommitmentsEnvelope;
-  readonly commitmentId: string;
-  readonly locale: string;
-  readonly returnHref: string;
-}
+type EnvelopeBodyProps = { readonly envelope: CommitmentsEnvelope; readonly commitmentId: string; readonly locale: string; readonly returnHref: string };
 function EnvelopeBody({ envelope, commitmentId, locale, returnHref }: EnvelopeBodyProps): ReactElement {
   const { commitments, buckets, total } = envelope.data;
   const row = commitments.find((candidate) => candidate.commitmentRowId === commitmentId);
@@ -550,9 +478,7 @@ function CommitmentDetailBody({ scope, commitmentId, locale, dir, listQuery, cla
   } else if (answer.kind === "denied") {
     // No identifier, count, title or size reaches this notice: the answer is the same whether or not a
     // commitment carries the identifier the address named.
-    content = (
-      <StateNotice kind="denied" headingLevel={1} title={DENIED_TITLE} description={DENIED_DESCRIPTION} reasonCode={answer.denied.reasonCode} action={{ label: LIST_ACTION_LABEL, href: returnHref }} />
-    );
+    content = <StateNotice kind="denied" headingLevel={1} title={DENIED_TITLE} description={DENIED_DESCRIPTION} reasonCode={answer.denied.reasonCode} action={{ label: LIST_ACTION_LABEL, href: returnHref }} />;
   } else if (answer.kind === "unavailable") {
     content = (
       <StateNotice
@@ -570,6 +496,10 @@ function CommitmentDetailBody({ scope, commitmentId, locale, dir, listQuery, cla
         }}
       />
     );
+  } else if (answer.kind === "refused") {
+    // The address this surface asked for is not one the read admits: the refusal names the value to
+    // correct, and the commitments behind it answered rather than failing.
+    content = <StateNotice kind="refused" headingLevel={1} title={REFUSED_TITLE} description={refusalSummary(answer.refused)} action={{ label: LIST_ACTION_LABEL, href: returnHref }} />;
   } else {
     content = <EnvelopeBody envelope={answer.envelope} commitmentId={commitmentId} locale={locale} returnHref={returnHref} />;
   }
@@ -581,22 +511,14 @@ function CommitmentDetailBody({ scope, commitmentId, locale, dir, listQuery, cla
     </div>
   );
 }
-/**
- * The detail for a route that hands over no parsed list state: the return path is read back out of the
- * address, so the list reopens with the same page and the same facet answer it was left in.
- */
+/** The detail for a route that hands over no parsed list state: the return path is read back out of the address, so the list reopens with the same page and the same facet answer it was left in. */
 function UrlDerivedDetail(props: CommitmentDetailProps): ReactElement {
   const searchParams = useSearchParams();
   const search = searchParams.toString();
   const listQuery = useMemo(() => parseCommitmentsQuery(new URLSearchParams(search)), [search]);
   return <CommitmentDetailBody {...props} listQuery={listQuery} />;
 }
-/**
- * One commitment, read-only: its kind, cadence, per-occurrence amount, the outcome it sits in and what
- * that outcome means, the dates the source states, a fixed total's four figures, the outcome partition
- * this read states, its provenance and the snapshot it was read in. It cannot post, retry, pause,
- * resume or correct a payment.
- */
+/** One commitment, read-only: its kind, cadence, per-occurrence amount, the outcome it sits in and what that outcome means, the dates the source states, a fixed total's four figures, the outcome … */
 export function CommitmentDetail(props: CommitmentDetailProps): ReactElement {
   const { listQuery } = props;
   if (listQuery !== undefined) {

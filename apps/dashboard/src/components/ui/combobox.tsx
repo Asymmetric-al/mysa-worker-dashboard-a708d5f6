@@ -1,9 +1,5 @@
 "use client";
-/**
- * The shadcn 4.23.0 `base-maia` registry source for `combobox`, emitted by `bunx shadcn@4.23.0 add
- * combobox` with the `lucide` icon library. Every class name, element structure and handler is the
- * registry's own. Two things differ:
- */
+/** The shadcn 4.23.0 `base-maia` registry source for `combobox`, emitted by `bunx shadcn@4.23.0 add combobox` with the `lucide` icon library. */
 import * as React from "react";
 import { Combobox as ComboboxPrimitive } from "@base-ui/react";
 import { cn } from "@/lib/cn";
@@ -12,7 +8,6 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "
 import { useDirection } from "@/components/ui/direction";
 import { ChevronDownIcon, XIcon, CheckIcon } from "lucide-react";
 const Combobox = ComboboxPrimitive.Root;
-
 function ComboboxValue({ ...props }: ComboboxPrimitive.Value.Props) {
   return <ComboboxPrimitive.Value data-slot="combobox-value" {...props} />;
 }
@@ -20,9 +15,7 @@ function ComboboxTrigger({ className, children, "aria-label": ariaLabel, ...prop
   return (
     <ComboboxPrimitive.Trigger
       data-slot="combobox-trigger"
-      // The registry draws only a chevron here, and an icon is not a name. A caller that renders
-      // words in the trigger keeps them as its visible name; an icon-only trigger takes the default
-      // so the control is never announced as an unnamed button.
+      // The registry draws only a chevron here, and an icon is not a name. A caller that renders words in the trigger keeps them as its visible name; an icon-only trigger takes the default so the control is never announced as an unnamed button.
       aria-label={ariaLabel ?? (children == null ? "Show options" : undefined)}
       className={cn("[&_svg:not([class*='size-'])]:size-4", className)}
       {...props}
@@ -36,8 +29,7 @@ function ComboboxClear({ className, ...props }: ComboboxPrimitive.Clear.Props) {
   return (
     <ComboboxPrimitive.Clear
       data-slot="combobox-clear"
-      // Icon-only, so the name cannot come from visible text. Props spread last, letting a caller
-      // state its own wording for the selection it clears.
+      // Icon-only, so the name cannot come from visible text. Props spread last, letting a caller state its own wording for the selection it clears.
       aria-label="Clear selection"
       render={<InputGroupButton variant="ghost" size="icon-xs" />}
       className={cn(className)}
@@ -47,48 +39,20 @@ function ComboboxClear({ className, ...props }: ComboboxPrimitive.Clear.Props) {
     </ComboboxPrimitive.Clear>
   );
 }
-function ComboboxInput({
-  className,
-  children,
-  disabled = false,
-  showTrigger = true,
-  showClear = false,
-  ...props
-}: ComboboxPrimitive.Input.Props & {
-  showTrigger?: boolean;
-  showClear?: boolean;
-}) {
+function ComboboxInput({ className, children, disabled = false, showTrigger = true, showClear = false, ...props }: ComboboxPrimitive.Input.Props & { showTrigger?: boolean; showClear?: boolean }) {
   return (
     <InputGroup className={cn("w-auto", className)}>
       <ComboboxPrimitive.Input render={<InputGroupInput disabled={disabled} />} {...props} />
       <InputGroupAddon align="inline-end">
-        {showTrigger && (
-          <InputGroupButton
-            size="icon-xs"
-            variant="ghost"
-            render={<ComboboxTrigger />}
-            data-slot="input-group-button"
-            className="group-has-data-[slot=combobox-clear]/input-group:hidden data-pressed:bg-transparent"
-            disabled={disabled}
-          />
-        )}
+        {showTrigger && <InputGroupButton size="icon-xs" variant="ghost" render={<ComboboxTrigger />} data-slot="input-group-button" className="group-has-data-[slot=combobox-clear]/input-group:hidden data-pressed:bg-transparent" disabled={disabled} />}
         {showClear && <ComboboxClear disabled={disabled} />}
       </InputGroupAddon>
       {children}
     </InputGroup>
   );
 }
-function ComboboxContent({
-  className,
-  side = "bottom",
-  sideOffset = 6,
-  align = "start",
-  alignOffset = 0,
-  anchor,
-  ...props
-}: ComboboxPrimitive.Popup.Props & Pick<ComboboxPrimitive.Positioner.Props, "side" | "align" | "sideOffset" | "alignOffset" | "anchor">) {
-  // The direction provider is React context only, so portalled content would otherwise follow
-  // the page rather than the application. Stating it here keeps the combobox in that direction.
+function ComboboxContent({ className, side = "bottom", sideOffset = 6, align = "start", alignOffset = 0, anchor, ...props }: ComboboxPrimitive.Popup.Props & Pick<ComboboxPrimitive.Positioner.Props, "side" | "align" | "sideOffset" | "alignOffset" | "anchor">) {
+  // The direction provider is React context only, so portalled content would otherwise follow the page rather than the application. Stating it here keeps the combobox in that direction.
   const direction = useDirection();
   return (
     <ComboboxPrimitive.Portal>
@@ -108,16 +72,7 @@ function ComboboxContent({
   );
 }
 function ComboboxList({ className, ...props }: ComboboxPrimitive.List.Props) {
-  return (
-    <ComboboxPrimitive.List
-      data-slot="combobox-list"
-      className={cn(
-        "no-scrollbar max-h-[min(calc(--spacing(72)---spacing(9)),calc(var(--available-height)---spacing(9)))] scroll-py-1 overflow-y-auto overscroll-contain p-1 data-empty:p-0",
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <ComboboxPrimitive.List data-slot="combobox-list" className={cn("no-scrollbar max-h-[min(calc(--spacing(72)---spacing(9)),calc(var(--available-height)---spacing(9)))] scroll-py-1 overflow-y-auto overscroll-contain p-1 data-empty:p-0", className)} {...props} />;
 }
 function ComboboxItem({ className, children, ...props }: ComboboxPrimitive.Item.Props) {
   return (
@@ -146,13 +101,7 @@ function ComboboxCollection({ ...props }: ComboboxPrimitive.Collection.Props) {
   return <ComboboxPrimitive.Collection data-slot="combobox-collection" {...props} />;
 }
 function ComboboxEmpty({ className, ...props }: ComboboxPrimitive.Empty.Props) {
-  return (
-    <ComboboxPrimitive.Empty
-      data-slot="combobox-empty"
-      className={cn("hidden w-full justify-center py-2 text-center text-sm text-muted-foreground group-data-empty/combobox-content:flex", className)}
-      {...props}
-    />
-  );
+  return <ComboboxPrimitive.Empty data-slot="combobox-empty" className={cn("hidden w-full justify-center py-2 text-center text-sm text-muted-foreground group-data-empty/combobox-content:flex", className)} {...props} />;
 }
 function ComboboxSeparator({ className, ...props }: ComboboxPrimitive.Separator.Props) {
   return <ComboboxPrimitive.Separator data-slot="combobox-separator" className={cn("-mx-1 my-1 h-px bg-border/50", className)} {...props} />;
@@ -169,14 +118,7 @@ function ComboboxChips({ className, ...props }: React.ComponentPropsWithRef<type
     />
   );
 }
-function ComboboxChip({
-  className,
-  children,
-  showRemove = true,
-  ...props
-}: ComboboxPrimitive.Chip.Props & {
-  showRemove?: boolean;
-}) {
+function ComboboxChip({ className, children, showRemove = true, ...props }: ComboboxPrimitive.Chip.Props & { showRemove?: boolean }) {
   return (
     <ComboboxPrimitive.Chip
       data-slot="combobox-chip"
@@ -190,8 +132,7 @@ function ComboboxChip({
       {showRemove && (
         <ComboboxPrimitive.ChipRemove
           render={<Button variant="ghost" size="icon-xs" />}
-          // The chip states its value as text; the remove control is a second icon-only button, so
-          // its name repeats that value instead of leaving the sole way out of a selection unnamed.
+          // The chip states its value as text; the remove control is a second icon-only button, so its name repeats that value instead of leaving the sole way out of a selection unnamed.
           aria-label={typeof children === "string" ? `Remove ${children}` : "Remove selection"}
           className="-ms-1 opacity-50 hover:opacity-100"
           data-slot="combobox-chip-remove"
@@ -205,24 +146,5 @@ function ComboboxChip({
 function ComboboxChipsInput({ className, ...props }: ComboboxPrimitive.Input.Props) {
   return <ComboboxPrimitive.Input data-slot="combobox-chip-input" className={cn("min-w-16 flex-1 outline-none", className)} {...props} />;
 }
-function useComboboxAnchor() {
-  return React.useRef<HTMLDivElement | null>(null);
-}
-export {
-  Combobox,
-  ComboboxInput,
-  ComboboxContent,
-  ComboboxList,
-  ComboboxItem,
-  ComboboxGroup,
-  ComboboxLabel,
-  ComboboxCollection,
-  ComboboxEmpty,
-  ComboboxSeparator,
-  ComboboxChips,
-  ComboboxChip,
-  ComboboxChipsInput,
-  ComboboxTrigger,
-  ComboboxValue,
-  useComboboxAnchor,
-};
+const useComboboxAnchor = () => React.useRef<HTMLDivElement | null>(null);
+export { Combobox, ComboboxInput, ComboboxContent, ComboboxList, ComboboxItem, ComboboxGroup, ComboboxLabel, ComboboxCollection, ComboboxEmpty, ComboboxSeparator, ComboboxChips, ComboboxChip, ComboboxChipsInput, ComboboxTrigger, ComboboxValue, useComboboxAnchor };

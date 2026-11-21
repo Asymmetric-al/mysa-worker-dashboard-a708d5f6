@@ -1,12 +1,7 @@
-/**
- * The Support family's two form payload schemas — the goal save and the thank-you follow-up task a
- * gift may lead to — and the one reader that turns a typed amount into exact minor units.
- */
 import { z } from "zod";
 import { minorUnitsOf, type MinorUnits } from "@/modules/money/amount";
 import { exponentOf, isKnownCurrency, UNKNOWN_CURRENCY } from "@/modules/money/currency";
 import { GOAL_MEASURE, type GoalAmountInput } from "@/modules/support/goal";
-// The wording a worker reads
 const MESSAGES = {
   amountRequired: "Enter the amount you want to set as the goal.",
   amountNotFigures: "Enter the amount in figures, such as 1200 or 1200.50 — with a full stop before the decimals and no letters or symbols.",
@@ -30,15 +25,10 @@ function fractionRefusedMessage(currency: string, exponent: number): string {
   const places = exponent === 1 ? "decimal place" : "decimal places";
   return `Use no more than ${exponent} ${places} for this currency.`;
 }
-// The typed amount
 const PLAIN_DIGITS = /^\d+$/u;
-
 const GROUPED_DIGITS = /^\d{1,3}(?:[,\u00A0\u202F ]\d{3})+$/u;
-
 const GROUPING_MARKS = /[,\u00A0\u202F ]/gu;
-
 const NEGATIVE_SIGN = /^[-\u2212]/u;
-
 const FRACTION_DIGITS = /^\d+$/u;
 /** Reads the amount a worker typed as an exact count of `currency`'s minor units — the one place in this application where a typed amount becomes money. */
 export function parseMajorToMinor(input: string, currency: string): { ok: true; minorUnits: MinorUnits } | { ok: false; message: string } {
@@ -77,31 +67,21 @@ export function parseMajorToMinor(input: string, currency: string): { ok: true; 
   }
   return { ok: true, minorUnits: minorUnitsOf(count) };
 }
-// A day on the calendar
 const CIVIL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
-
 function isLeapYear(year: number): boolean {
   return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 }
 function daysInMonth(year: number, month: number): number {
-  if (month === 2) {
-    return isLeapYear(year) ? 29 : 28;
-  }
-  if (month === 4 || month === 6 || month === 9 || month === 11) {
-    return 30;
-  }
+  if (month === 2) return isLeapYear(year) ? 29 : 28;
+  if (month === 4 || month === 6 || month === 9 || month === 11) return 30;
   return 31;
 }
 function isCalendarDay(value: string): boolean {
-  if (!CIVIL_DATE_PATTERN.test(value)) {
-    return false;
-  }
+  if (!CIVIL_DATE_PATTERN.test(value)) return false;
   const year = Number.parseInt(value.slice(0, 4), 10);
   const month = Number.parseInt(value.slice(5, 7), 10);
   const day = Number.parseInt(value.slice(8, 10), 10);
-  if (month < 1 || month > 12) {
-    return false;
-  }
+  if (month < 1 || month > 12) return false;
   return day >= 1 && day <= daysInMonth(year, month);
 }
 function refineCalendarDay(value: string, ctx: z.RefinementCtx): void {
@@ -110,48 +90,26 @@ function refineCalendarDay(value: string, ctx: z.RefinementCtx): void {
   }
 }
 const civilDaySchema = z.string({ error: MESSAGES.dateRequired }).trim().superRefine(refineCalendarDay);
-
-const optionalCivilDaySchema = z.preprocess(
-  (value) => (typeof value === "string" && value.trim().length === 0 ? undefined : value),
-  z.string({ error: MESSAGES.dateInvalid }).trim().superRefine(refineCalendarDay).optional(),
-);
-// saveGoal
+const optionalCivilDaySchema = z.preprocess((value) => (typeof value === "string" && value.trim().length === 0 ? undefined : value), z.string({ error: MESSAGES.dateInvalid }).trim().superRefine(refineCalendarDay).optional());
 function isReportedCurrency(value: string): boolean {
   return value !== UNKNOWN_CURRENCY && isKnownCurrency(value);
 }
 const goalSaveFormSchema = z.strictObject({
-  currency: z.string({ error: MESSAGES.currencyRequired }).refine(isReportedCurrency, {
-    error: MESSAGES.currencyRequired,
-  }),
+  currency: z.string({ error: MESSAGES.currencyRequired }).refine(isReportedCurrency, { error: MESSAGES.currencyRequired }),
   amount: z.string({ error: MESSAGES.amountRequired }),
   measure: z.literal(GOAL_MEASURE, { error: MESSAGES.measureInvalid }).default(GOAL_MEASURE),
   effectiveFrom: civilDaySchema,
 });
-/** Validates the `saveGoal` payload, turning the typed amount into the goal record's amount. */
 export const goalSavePayloadSchema = goalSaveFormSchema.transform((form, ctx) => {
   const parsed = parseMajorToMinor(form.amount, form.currency);
   if (!parsed.ok) {
     ctx.addIssue({ code: "custom", message: parsed.message, path: ["amount"] });
     return z.NEVER;
   }
-  const amount: GoalAmountInput = {
-    currency: form.currency,
-    minorUnits: parsed.minorUnits,
-  };
-  return {
-    currency: form.currency,
-    amount,
-    measure: form.measure,
-    effectiveFrom: form.effectiveFrom,
-  };
+  const amount: GoalAmountInput = { currency: form.currency, minorUnits: parsed.minorUnits };
+  return { currency: form.currency, amount, measure: form.measure, effectiveFrom: form.effectiveFrom };
 });
-/** The validated `saveGoal` payload. */
 export type GoalSavePayload = z.infer<typeof goalSavePayloadSchema>;
-// The thank-you follow-up a gift may lead to
-const TITLE_MAX_LENGTH = 200;
-
-const CATEGORY_MAX_LENGTH = 60;
-
 function codePointLength(value: string): number {
   return Array.from(value).length;
 }
@@ -162,7 +120,7 @@ const titleSchema = z
     const length = codePointLength(value);
     if (length === 0) {
       ctx.addIssue({ code: "custom", message: MESSAGES.titleRequired });
-    } else if (length > TITLE_MAX_LENGTH) {
+    } else if (length > 200) {
       ctx.addIssue({ code: "custom", message: MESSAGES.titleTooLong });
     }
   });
@@ -170,18 +128,15 @@ const categorySchema = z
   .string({ error: MESSAGES.categoryInvalid })
   .trim()
   .superRefine((value, ctx) => {
-    if (codePointLength(value) > CATEGORY_MAX_LENGTH) {
+    if (codePointLength(value) > 60) {
       ctx.addIssue({ code: "custom", message: MESSAGES.categoryTooLong });
     }
   })
   .optional()
   .transform((value) => (value === undefined || value.length === 0 ? undefined : value));
 const partnerIdSchema = z.string({ error: MESSAGES.partnerInvalid }).trim().min(1, MESSAGES.partnerInvalid);
-
 type FollowUpTaskKind = "default" | "meeting";
-
 const FOLLOW_UP_TASK_KINDS = ["default", "meeting"] as const satisfies readonly FollowUpTaskKind[];
-/** Validates the `createTask` payload of the thank-you follow-up a gift may lead to. */
 export const followUpTaskPayloadSchema = z.strictObject({
   operation: z.literal("createTask").default("createTask"),
   title: titleSchema,
@@ -190,7 +145,6 @@ export const followUpTaskPayloadSchema = z.strictObject({
   partnerId: partnerIdSchema.optional(),
   kind: z.enum(FOLLOW_UP_TASK_KINDS, { error: MESSAGES.kindInvalid }).default("default"),
 });
-/** The validated `createTask` payload for a gift's thank-you follow-up. */
 export type FollowUpTaskPayload = z.infer<typeof followUpTaskPayloadSchema>;
 /** The same payload as a caller states it: the task's own fields, with the routing discriminant absent because this schema supplies it. */
 export type FollowUpTaskInput = z.input<typeof followUpTaskPayloadSchema>;

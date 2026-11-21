@@ -1,49 +1,4 @@
-/**
- * Proves the authorisation boundary of success criteria 3 and 19 at the service: a refused read
- * discloses no count, title, existence flag or size; a search, a sort or a page cannot be turned into
- * a disclosure oracle; a private note and a private preparation never reach a shared projection, an
- * export or a coach; two records that look identical stay two records because nothing joins on a name,
- * an email address or a postal address; and the envelope's value-state map keeps a genuine zero,
- * an unknown, a withheld value, an unavailable source and the derived incomplete subtotal five
- * separate facts.
- *
- * The second worker and the unauthorized reader reach the service through `resolveSession` over their
- * own seeded sessions, which is what makes "authorisation precedes enumeration" a property of the
- * service rather than of a screen.
- *
- * Divergences from the file brief, each settled where the service fixed a detail the brief left open:
- *
- * - The partner, interaction, support and coach-subject reads take a `SessionSource`, so a second
- *   identity is driven as a genuinely different seeded session rather than a hand-built scope. The
- *   audience and receiving reads, and the coach portfolio read, take no source at all: they resolve the
- *   request cookie. A framework-free test has no request, so the protected-read refusal is asserted
- *   through `canReadProtected`, the one function those reads authorise with (`reads/audience.ts` calls
- *   it), and the store-backed form belongs to `tests/integration/coach-read-boundary.test.ts`.
- * - No read accepts a `scope`: scope is resolved from the session, which is exactly the property under
- *   test. A claimed scope exists only on the write path, so "the scope is never taken from the request
- *   body" is asserted there, on the one input that could carry a claim.
- * - The seed states no financial value as `withheld`, and no seeded read records one, so that member is
- *   asserted on `buildEnvelope` — the single function that derives the map — beside the six-member
- *   vocabulary and the boundary schema that refuses the derived member. The seeded `zero` and
- *   `incomplete-subtotal` values, and the `unavailable` read result, are asserted on real reads.
- * - The seed carries no two records sharing a display name, an email address and a postal address, so
- *   the pair is created deliberately through two `createPrivatePreparation` attempts, then searched for.
- * - The seed copies one ministry's records into each identity's own world, and every seeded private note
- *   is authored by the principal whose session holds it, so no seeded session can put a colleague in
- *   front of another principal's note. The colleague's private read is therefore driven through a
- *   session laid down as the worker's record set under the colleague's own metadata: one ministry's
- *   store, two principals, which is the state the per-note principal test exists for.
- * - `resolveSession` answers a session whose core documents are incomplete with the store outage it is,
- *   which is the one honest route to the `unavailable` arm; the fixture that demonstrates it holds a
- *   state and a meta document and no operation ledger, so the store itself raises the fault.
- * - The protected-media arm lays the world the receiving reads answer a reader from under the literal
- *   session id they name, through `resetSession` and from the seed's own documents, plus one protected
- *   edition and the one membership row that edition's grant names. The seed's own video asset is placed
- *   by a public page edition, so every reader is genuinely admitted to it; a second asset, in a custody
- *   lane of its own and placed by the protected edition alone, is what makes an edition's media
- *   protected. Its bytes are the committed fixtures, copied with `writeMediaBytes` — the copy a reset's
- *   own branch performs — because a whole-store reset is not this file's to run.
- */
+/** Proves the authorisation boundary of success criteria 3 and 19 at the service: a refused read discloses no count, title, existence flag or size; a search, a sort or a page cannot be turned into a … */
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -52,15 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { UPDATE_EMAIL_PURPOSE } from "@/modules/audience/membership";
 import { mutations, reads } from "@/modules/data-service";
 import { canExport, canReadProtected, canView, resolveSession, type ResolvedSession, type SessionSource } from "@/modules/data-service/authorize";
-import {
-  VALUE_STATES,
-  buildEnvelope,
-  recordedValueStateSchema,
-  sameScope,
-  type PartnerRecord,
-  type Scope,
-  type ValueState,
-} from "@/modules/data-service/envelope";
+import { VALUE_STATES, buildEnvelope, recordedValueStateSchema, sameScope, type PartnerRecord, type Scope, type ValueState } from "@/modules/data-service/envelope";
 import { DENIAL_REASONS, isOutcome, isReadResult, type DeniedOutcome, type MutationOutcome, type ReadResult } from "@/modules/data-service/outcome";
 import { DEFAULT_SESSION_ID, SEEDED_MEDIA_BYTES, seed, type SeededSessionDocuments, type SessionStateDocument } from "@/modules/dev-runtime/seed";
 import { removeIfExists } from "@/modules/store/atomic";
@@ -231,11 +178,7 @@ function expectMembersAbsent(value: object, members: readonly string[], what: st
 }
 /** Asserts a refusal carries none of the evidence a disclosure would need. */
 function expectNoDisclosure(denial: DeniedOutcome, what: string): void {
-  expectMembersAbsent(
-    denial,
-    ["data", "envelope", "total", "totalCount", "count", "size", "bytes", "length", "title", "name", "displayName", "label", "partnerId", "id", "ids", "rows", "records", "items", "exists", "found", "revision", "scope", "source", "asOf", "coverage", "valueStates", "actions"],
-    what,
-  );
+  expectMembersAbsent(denial, ["data", "envelope", "total", "totalCount", "count", "size", "bytes", "length", "title", "name", "displayName", "label", "partnerId", "id", "ids", "rows", "records", "items", "exists", "found", "revision", "scope", "source", "asOf", "coverage", "valueStates", "actions"], what);
 }
 /** Asserts a text carries none of the needles, naming the one that would have leaked. */
 function expectNoText(haystack: string, needles: readonly string[], what: string): void {
@@ -280,10 +223,7 @@ describe("authorisation precedes enumeration", () => {
     const membership = first(stateOf(WORKER).memberships, "seeded membership");
     // The refusal is asked of the one function the receiving reads authorise with, using an empty
     // membership list: the reader holds no membership of this publisher for this purpose.
-    const grant = {
-      audience: "approved-supporter" as const,
-      reader: { recipientId: String(reader.principalId), publisherId: membership.publisherId, purpose: membership.purpose, memberships: [] },
-    };
+    const grant = { audience: "approved-supporter" as const, reader: { recipientId: String(reader.principalId), publisherId: membership.publisherId, purpose: membership.purpose, memberships: [] } };
     const decision = canReadProtected(reader, grant);
     expect(decision.allowed).toBe(false);
     if (decision.allowed) {
@@ -454,10 +394,7 @@ describe("a private record stays private", () => {
     // so no preparation field, note body, count or existence hint reaches them.
     const preparationNotes = stateOf(WORKER).privateNotes.filter((note) => note.partnerId === preparation.partnerId);
     expect(preparationNotes.length).toBeGreaterThan(0);
-    const colleaguePreparation = denialOf(
-      await reads.partners.readPrivatePreparation({ partnerId: preparation.partnerId }, sourceOf(COLLEAGUE_WORLD)),
-      "the colleague's private read of the preparation record",
-    );
+    const colleaguePreparation = denialOf(await reads.partners.readPrivatePreparation({ partnerId: preparation.partnerId }, sourceOf(COLLEAGUE_WORLD)), "the colleague's private read of the preparation record");
     expect(colleaguePreparation.reasonCode).toBe("no-permission");
     expectNoDisclosure(colleaguePreparation, "a colleague's private-preparation refusal");
     // The same colleague, on the shared person the worker's note is about, is refused the note and shown no preparation field.
@@ -512,10 +449,16 @@ describe("a private record stays private", () => {
       "active coaching grant",
     );
     const subject = envelopeOf(await reads.coach.readCoachSubject({ grantId: grant.grantId }, sourceOf(COACH)), "the coach's subject read");
-    const labels = stateOf(COACH).coachingTargets.map((target) => target.privateLabel).filter((label) => label.length > 0);
+    const labels = stateOf(COACH)
+      .coachingTargets.map((target) => target.privateLabel)
+      .filter((label) => label.length > 0);
     expect(labels.length).toBeGreaterThan(0);
     expectNoText(textOf(subject.data), labels, "the coach projection");
-    expectNoText(textOf(subject.data), stateOf(WORKER).privateNotes.map((note) => note.body), "the coach projection");
+    expectNoText(
+      textOf(subject.data),
+      stateOf(WORKER).privateNotes.map((note) => note.body),
+      "the coach projection",
+    );
     // The admitted module set is the grant's own, so a module the worker kept unselected is not even
     // named in the answer.
     const sharedModules = Object.entries(grant.modules)
@@ -611,15 +554,7 @@ describe("equal-looking identifiers never join", () => {
     expect(sameScope(workerScope, swapped)).toBe(false);
     const record = firstScopePartner();
     const before = envelopeOf(await reads.partners.readPartner(record.partnerId, {}, sourceOf(WORKER)), "the record before a swapped write");
-    const outcome = await mutations.partnerPreparation.saveContactEdits(
-      {
-        operationId: randomUUID(),
-        scope: swapped,
-        expectedRevision: before.revision,
-        payload: { partnerId: record.partnerId, displayName: "A name nothing may adopt" },
-      },
-      sourceOf(WORKER),
-    );
+    const outcome = await mutations.partnerPreparation.saveContactEdits({ operationId: randomUUID(), scope: swapped, expectedRevision: before.revision, payload: { partnerId: record.partnerId, displayName: "A name nothing may adopt" } }, sourceOf(WORKER));
     // No membership admits the mixed triplet, so the write is refused before the record is opened.
     expect(deniedOutcome(outcome, "a write in a scope no membership admits").reasonCode).toBe("no-membership");
     const after = envelopeOf(await reads.partners.readPartner(record.partnerId, {}, sourceOf(WORKER)), "the record after a swapped write");
@@ -629,12 +564,13 @@ describe("equal-looking identifiers never join", () => {
 });
 
 describe("linking work never copies private text into shared history", () => {
-  it("strips a private interaction note from the shared activity and copies no private text onto a linked task", async () => {
+  it("keeps a private interaction note with its author, and copies no private text onto a linked task", async () => {
     const privateInteraction = required(
       stateOf(WORKER).interactions.find((interaction) => interaction.note !== null && interaction.note.audience === "private"),
       "interaction carrying a private note",
     );
     const interactionNote = required(privateInteraction.note, "private note body of that interaction");
+    const noteAuthor = required(interactionNote.authorPrincipalId, "author recorded on that private note");
     const privateNote = required(
       stateOf(WORKER).privateNotes.find((note) => note.partnerId === privateInteraction.partnerId),
       "private note about the same record",
@@ -644,24 +580,30 @@ describe("linking work never copies private text into shared history", () => {
       shared.data.interactions.find((interaction) => interaction.interactionId === privateInteraction.interactionId),
       "the same interaction in the shared activity read",
     );
-    // Removed, not shortened: a private-audience note reaches the shared read as no note at all.
-    expect(sameInteraction.note).toBeNull();
-    expectNoText(textOf(shared.data), [interactionNote.body, interactionNote.body.slice(0, 28), privateNote.body, privateNote.body.slice(0, 28)], "the shared activity read");
-    // Any note that is present is a shared one, so the read has one rule and it holds for every row.
+    // Kept, and kept private: the author reads back the note they wrote, labelled with the audience
+    // that holds it, because a note stored for nobody would be silent data loss rather than a decision
+    // about who may read it.
+    expect(sameInteraction.note?.audience).toBe("private");
+    expect(sameInteraction.note?.body).toBe(interactionNote.body);
+    // A private-note record is a different record class from an interaction's note, and no read of
+    // activity carries its body.
+    expectNoText(textOf(shared.data), [privateNote.body, privateNote.body.slice(0, 28)], "the shared activity read");
+    // Every note the read does carry is shared activity, or a private one whose author is this caller.
     const notesShown = shared.data.interactions.map((interaction) => interaction.note).filter((note) => note !== null);
     for (const shown of notesShown) {
-      expect(shown.audience).toBe("shared");
+      expect(shown.audience === "shared" || shown.authorPrincipalId === sessionOf(WORKER).principalId).toBe(true);
     }
+    // A principal who did not write the note is refused it by the one authority the read consults, so
+    // the rule is stated here as this file states the others the store cannot show: through the
+    // function that owns it.
+    const colleague = canView(sessionOf(FUNDRAISER), { kind: "private-note", scope: selectedScopeOf(FUNDRAISER), authorPrincipalId: noteAuthor });
+    expect(colleague.allowed).toBe(false);
+    if (colleague.allowed) {
+      throw new Error("A principal who did not write the interaction note was granted it.");
+    }
+    expect(colleague.denial.reasonCode).toBe("no-permission");
     const title = "Follow up after the visit";
-    const outcome = await mutations.work.createTask(
-      {
-        operationId: randomUUID(),
-        scope: selectedScopeOf(WORKER),
-        expectedRevision: shared.revision,
-        payload: { title, partnerId: privateInteraction.partnerId },
-      },
-      { sessionId: WORKER },
-    );
+    const outcome = await mutations.work.createTask({ operationId: randomUUID(), scope: selectedScopeOf(WORKER), expectedRevision: shared.revision, payload: { title, partnerId: privateInteraction.partnerId } }, { sessionId: WORKER });
     acceptedOutcome(outcome, "linking a task to a record that carries private preparation");
     const detail = envelopeOf(await reads.partners.readPartner(privateInteraction.partnerId, {}, sourceOf(WORKER)), "the record after a task was linked");
     expect(detail.data.openTasks.some((task) => task.title === title)).toBe(true);
@@ -724,13 +666,7 @@ describe("the value-state map keeps each non-value its own fact", () => {
       revision: base.revision,
       asOf: base.asOf,
       coverage: { from: null, to: null, state: "complete" },
-      valueStates: {
-        "summary.USD.received": "withheld",
-        "summary.USD.giftCount": "unavailable",
-        "summary.USD.donorCount": "unknown",
-        "summary.USD.allocationCount": "value",
-        "rows.0.amount": "zero",
-      },
+      valueStates: { "summary.USD.received": "withheld", "summary.USD.giftCount": "unavailable", "summary.USD.donorCount": "unknown", "summary.USD.allocationCount": "value", "rows.0.amount": "zero" },
       actions: [],
     });
     expect(envelope.valueStates["summary.USD.received"]).toBe("withheld");
@@ -754,26 +690,8 @@ describe("the value-state map keeps each non-value its own fact", () => {
       expect(recordedValueStateSchema.safeParse(state).success, `"${state}" is a state a read may record`).toBe(true);
     }
     const base = envelopeOf(await reads.partners.findPartners({}, sourceOf(WORKER)), "the worker's roster");
-    const complete = buildEnvelope({
-      data: {},
-      scope: base.scope,
-      source: base.source,
-      revision: base.revision,
-      asOf: base.asOf,
-      coverage: { from: null, to: null, state: "complete" },
-      valueStates: { total: "value" },
-      actions: [],
-    });
-    const partial = buildEnvelope({
-      data: {},
-      scope: base.scope,
-      source: base.source,
-      revision: base.revision,
-      asOf: base.asOf,
-      coverage: { from: null, to: null, state: "partial" },
-      valueStates: { total: "value" },
-      actions: [],
-    });
+    const complete = buildEnvelope({ data: {}, scope: base.scope, source: base.source, revision: base.revision, asOf: base.asOf, coverage: { from: null, to: null, state: "complete" }, valueStates: { total: "value" }, actions: [] });
+    const partial = buildEnvelope({ data: {}, scope: base.scope, source: base.source, revision: base.revision, asOf: base.asOf, coverage: { from: null, to: null, state: "partial" }, valueStates: { total: "value" }, actions: [] });
     expect(complete.valueStates.total).toBe("value");
     expect(partial.valueStates.total).toBe("incomplete-subtotal");
   });
@@ -806,15 +724,7 @@ describe("the resolver is the only entry to a scope", () => {
     expect(sameScope(secondRoster.scope, workerScope)).toBe(false);
     const record = firstScopePartner();
     const before = envelopeOf(await reads.partners.readPartner(record.partnerId, {}, sourceOf(WORKER)), "the record before a claimed scope");
-    const outcome = await mutations.partnerPreparation.saveContactEdits(
-      {
-        operationId: randomUUID(),
-        scope: selectedScopeOf(SECOND_WORKER),
-        expectedRevision: before.revision,
-        payload: { partnerId: record.partnerId, displayName: "A name the other organisation may not set" },
-      },
-      sourceOf(WORKER),
-    );
+    const outcome = await mutations.partnerPreparation.saveContactEdits({ operationId: randomUUID(), scope: selectedScopeOf(SECOND_WORKER), expectedRevision: before.revision, payload: { partnerId: record.partnerId, displayName: "A name the other organisation may not set" } }, sourceOf(WORKER));
     // The claim names another principal as well as another ministry, so the authority is refused before
     // the payload is looked at, and the record keeps the name it had.
     expect(deniedOutcome(outcome, "a write claiming another scope").reasonCode).toBe("not-admitted");
@@ -825,15 +735,7 @@ describe("the resolver is the only entry to a scope", () => {
   it("refuses a write that names a record outside the caller's scope, and leaves that record unchanged", async () => {
     const foreign = first(stateOf(SECOND_WORKER).partners, "partner in the second scope");
     const before = envelopeOf(await reads.partners.readPartner(foreign.partnerId, {}, sourceOf(SECOND_WORKER)), "the second worker's record before a foreign write");
-    const outcome = await mutations.partnerPreparation.saveContactEdits(
-      {
-        operationId: randomUUID(),
-        scope: selectedScopeOf(WORKER),
-        expectedRevision: before.revision,
-        payload: { partnerId: foreign.partnerId, displayName: "A name from another ministry" },
-      },
-      sourceOf(WORKER),
-    );
+    const outcome = await mutations.partnerPreparation.saveContactEdits({ operationId: randomUUID(), scope: selectedScopeOf(WORKER), expectedRevision: before.revision, payload: { partnerId: foreign.partnerId, displayName: "A name from another ministry" } }, sourceOf(WORKER));
     // Inside its own scope and naming a record it cannot see, the service refuses exactly as it refuses
     // a record that does not exist.
     expect(deniedOutcome(outcome, "a write naming a record outside the caller's scope").reasonCode).toBe("no-permission");
@@ -873,11 +775,7 @@ const PROTECTED_RENDITIONS = [
 ] as const;
 /** The directory the committed media fixtures live in, which is the one a reset materialises its bytes from. */
 const MEDIA_FIXTURE_DIRECTORY = fileURLToPath(new URL("../../public/fixtures/media/", import.meta.url));
-/**
- * Copies one committed fixture to the custody reference a rendition records. This is what a reset's own
- * copy branch does for the bytes it serves, done here for the two assets this arm reads, because a
- * whole-store reset is not this file's to run.
- */
+/** Copies one committed fixture to the custody reference a rendition records. */
 async function materialiseCopiedBytes(assetId: string, file: string, fixture: string): Promise<void> {
   const bytes = new Uint8Array(await readFile(join(MEDIA_FIXTURE_DIRECTORY, fixture)));
   if (bytes.byteLength === 0) {
@@ -903,12 +801,7 @@ function protectedWorld(): SeededSessionDocuments {
     profileCheck: { container: "mp4", codec: "avc1.64001f", durationSeconds: 5.055, width: 960, height: 540 },
     // The private original the served renditions are produced from: it is never served and never echoed.
     sourceOriginalRef: "media-originals/supporter-briefing-raw.mp4",
-    renditions: PROTECTED_RENDITIONS.map((record) => ({
-      renditionId: record.renditionId,
-      purpose: record.purpose,
-      bytesRef: seededMediaReference(PROTECTED_ASSET, record.file),
-      mimeType: record.mimeType,
-    })),
+    renditions: PROTECTED_RENDITIONS.map((record) => ({ renditionId: record.renditionId, purpose: record.purpose, bytesRef: seededMediaReference(PROTECTED_ASSET, record.file), mimeType: record.mimeType })),
     scope,
     tagVerification: { checked: true, residualTags: [] },
     revision: "rev-1",
@@ -949,30 +842,14 @@ function protectedWorld(): SeededSessionDocuments {
 /** The same world with its protected edition withdrawn, which is all a withdrawal sets on a release. */
 function withdrawnWorld(): SeededSessionDocuments {
   const world = protectedWorld();
-  return {
-    ...world,
-    state: {
-      ...world.state,
-      releases: world.state.releases.map((release) => (release.releaseId === PROTECTED_RELEASE ? { ...release, withdrawnAt: WITHDRAWN_AT } : release)),
-    },
-  };
+  return { ...world, state: { ...world.state, releases: world.state.releases.map((release) => (release.releaseId === PROTECTED_RELEASE ? { ...release, withdrawnAt: WITHDRAWN_AT } : release)) } };
 }
 /** The same world with the placing Page edition's reach set to `not-public`, which is all a reach change sets on a release. */
 function notPublicWorld(): SeededSessionDocuments {
   const world = protectedWorld();
-  return {
-    ...world,
-    state: {
-      ...world.state,
-      releases: world.state.releases.map((release) => (release.releaseId === NOT_PUBLIC_RELEASE ? { ...release, reach: "not-public" } : release)),
-    },
-  };
+  return { ...world, state: { ...world.state, releases: world.state.releases.map((release) => (release.releaseId === NOT_PUBLIC_RELEASE ? { ...release, reach: "not-public" } : release)) } };
 }
-/**
- * Asserts the caller is refused this address, and that the refusal is the one an address that was never
- * recorded receives — the same members, the same reason and the same serialised answer — so a retained
- * rendition address cannot be told apart from one that never existed. Answers the refusal it asserted.
- */
+/** Asserts the caller is refused this address, and that the refusal is the one an address that was never recorded receives — the same members, the same reason and the same serialised answer — so a … */
 async function expectNeutralRefusal(source: SessionSource, assetId: string, rendition: string, what: string, rangeHeader: string | null = null): Promise<DeniedOutcome> {
   const ask = (asked: string) => (rangeHeader === null ? reads.media.readMediaAsset({ assetId: asked, rendition }, source) : reads.media.readMediaAsset({ assetId: asked, rendition, rangeHeader }, source));
   const refusedRecorded = await ask(assetId);

@@ -1,32 +1,18 @@
 "use client";
-/**
- * The shadcn 4.23.0 `base-maia` registry source for `select`, emitted by `bunx shadcn@4.23.0 add
- * select` with the `lucide` icon library. The registry ships its `cn` import as the bare specifier
- * `cn`, which resolves only inside shadcn's own app, so that one specifier is rebased onto this
- * repository's `@/lib/cn`. Every other byte, including the stripped `cn-menu-*` utilities and the
- * resolved icon imports, is the registry's own output.
- */
+/** The shadcn 4.23.0 `base-maia` registry source for `select`, emitted by `bunx shadcn@4.23.0 add select` with the `lucide` icon library. */
 import * as React from "react";
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { cn } from "@/lib/cn";
 import { useDirection } from "@/components/ui/direction";
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react";
 const Select = SelectPrimitive.Root;
-
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return <SelectPrimitive.Group data-slot="select-group" className={cn("scroll-my-1 p-1", className)} {...props} />;
 }
 function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
   return <SelectPrimitive.Value data-slot="select-value" className={cn("flex flex-1 text-start", className)} {...props} />;
 }
-function SelectTrigger({
-  className,
-  size = "default",
-  children,
-  ...props
-}: SelectPrimitive.Trigger.Props & {
-  size?: "sm" | "default";
-}) {
+function SelectTrigger({ className, size = "default", children, ...props }: SelectPrimitive.Trigger.Props & { size?: "sm" | "default" }) {
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
@@ -42,18 +28,8 @@ function SelectTrigger({
     </SelectPrimitive.Trigger>
   );
 }
-function SelectContent({
-  className,
-  children,
-  side = "bottom",
-  sideOffset = 4,
-  align = "center",
-  alignOffset = 0,
-  alignItemWithTrigger = true,
-  ...props
-}: SelectPrimitive.Popup.Props & Pick<SelectPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger">) {
-  // The direction provider is React context only, so portalled content would otherwise follow
-  // the page rather than the application. Stating it here keeps the select in that direction.
+function SelectContent({ className, children, side = "bottom", sideOffset = 4, align = "center", alignOffset = 0, alignItemWithTrigger = true, ...props }: SelectPrimitive.Popup.Props & Pick<SelectPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger">) {
+  // The direction provider is React context only, so portalled content would otherwise follow the page rather than the application. Stating it here keeps the select in that direction.
   const direction = useDirection();
   return (
     <SelectPrimitive.Portal>
@@ -101,22 +77,14 @@ function SelectSeparator({ className, ...props }: SelectPrimitive.Separator.Prop
 }
 function SelectScrollUpButton({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.ScrollUpArrow>) {
   return (
-    <SelectPrimitive.ScrollUpArrow
-      data-slot="select-scroll-up-button"
-      className={cn("top-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4", className)}
-      {...props}
-    >
+    <SelectPrimitive.ScrollUpArrow data-slot="select-scroll-up-button" className={cn("top-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4", className)} {...props}>
       <ChevronUpIcon />
     </SelectPrimitive.ScrollUpArrow>
   );
 }
 function SelectScrollDownButton({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.ScrollDownArrow>) {
   return (
-    <SelectPrimitive.ScrollDownArrow
-      data-slot="select-scroll-down-button"
-      className={cn("bottom-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4", className)}
-      {...props}
-    >
+    <SelectPrimitive.ScrollDownArrow data-slot="select-scroll-down-button" className={cn("bottom-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4", className)} {...props}>
       <ChevronDownIcon />
     </SelectPrimitive.ScrollDownArrow>
   );

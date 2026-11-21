@@ -46,17 +46,7 @@ export const SESSION_COOKIE = "dashboard_session";
 export type SeededPersonaKind = "coach" | "reader" | "reviewer" | "worker";
 
 /** The ten seeded identities a spec may act as, named the way the seed's persona roster names them. */
-export type PersonaName =
-  | "new-worker"
-  | "established-worker"
-  | "second-worker"
-  | "fundraiser"
-  | "coach"
-  | "reviewer"
-  | "reader-public"
-  | "reader-approved-supporter"
-  | "reader-unauthorized"
-  | "subscriber";
+export type PersonaName = "new-worker" | "established-worker" | "second-worker" | "fundraiser" | "coach" | "reviewer" | "reader-public" | "reader-approved-supporter" | "reader-unauthorized" | "subscriber";
 
 /** One seeded identity: the session its cookie names, and the words the application uses for it. */
 export interface SeededPersona {
@@ -89,76 +79,16 @@ export interface SeededPersona {
  * runner puts that session id in the cookie, and the application resolves the rest.
  */
 export const SEEDED_PERSONAS: Readonly<Record<PersonaName, SeededPersona>> = {
-  "new-worker": {
-    sessionId: "new-worker",
-    resetSessionId: "new-worker",
-    label: "New worker",
-    kind: "worker",
-    description: "A worker with no gifts, goal, subscription or integration, starting from a private contact and a task.",
-  },
-  "established-worker": {
-    sessionId: "established-worker",
-    resetSessionId: "established-worker",
-    label: "Established worker",
-    kind: "worker",
-    description: "A worker with years of support, recurring gifts, partners, drafts and pages, across two ministries.",
-  },
-  "second-worker": {
-    sessionId: "second-worker",
-    resetSessionId: "second-worker",
-    label: "Second worker",
-    kind: "worker",
-    description: "A worker in another organization, whose scope shares nothing with the first.",
-  },
-  fundraiser: {
-    sessionId: "deputized-fundraiser",
-    resetSessionId: "deputized-fundraiser",
-    label: "Deputized fundraiser",
-    kind: "worker",
-    description: "Someone deputized to act inside one admitted ministry, and nowhere else.",
-  },
-  coach: {
-    sessionId: "coach",
-    resetSessionId: "established-worker",
-    label: "Coach",
-    kind: "coach",
-    description: "A coach admitted read-only to exactly the modules and periods a worker has shared, until the frozen cutoff.",
-  },
-  reviewer: {
-    sessionId: "content-reviewer",
-    resetSessionId: "content-reviewer",
-    label: "Content reviewer",
-    kind: "reviewer",
-    description: "A reviewer who approves or returns the exact frozen revisions a candidate carries, and nothing else.",
-  },
-  "reader-public": {
-    sessionId: "reader-public",
-    resetSessionId: "established-worker",
-    label: "Public reader",
-    kind: "reader",
-    description: "A reader of the public edition, appearing only in the in-app receiving preview.",
-  },
-  "reader-approved-supporter": {
-    sessionId: "reader-approved-supporter",
-    resetSessionId: "established-worker",
-    label: "Approved-supporter reader",
-    kind: "reader",
-    description: "A reader admitted to the approved-supporter edition and refused anything else.",
-  },
-  "reader-unauthorized": {
-    sessionId: "reader-unauthorized",
-    resetSessionId: "established-worker",
-    label: "Unauthorized reader",
-    kind: "reader",
-    description: "A reader with no grant: the refusal discloses no count, title, size or existence hint.",
-  },
-  subscriber: {
-    sessionId: "subscriber",
-    resetSessionId: "established-worker",
-    label: "Subscriber",
-    kind: "reader",
-    description: "A reader with a purpose-specific membership, choosing Off or Immediate for that purpose alone.",
-  },
+  "new-worker": { sessionId: "new-worker", resetSessionId: "new-worker", label: "New worker", kind: "worker", description: "A worker with no gifts, goal, subscription or integration, starting from a private contact and a task." },
+  "established-worker": { sessionId: "established-worker", resetSessionId: "established-worker", label: "Established worker", kind: "worker", description: "A worker with years of support, recurring gifts, partners, drafts and pages, across two ministries." },
+  "second-worker": { sessionId: "second-worker", resetSessionId: "second-worker", label: "Second worker", kind: "worker", description: "A worker in another organization, whose scope shares nothing with the first." },
+  fundraiser: { sessionId: "deputized-fundraiser", resetSessionId: "deputized-fundraiser", label: "Deputized fundraiser", kind: "worker", description: "Someone deputized to act inside one admitted ministry, and nowhere else." },
+  coach: { sessionId: "coach", resetSessionId: "established-worker", label: "Coach", kind: "coach", description: "A coach admitted read-only to exactly the modules and periods a worker has shared, until the frozen cutoff." },
+  reviewer: { sessionId: "content-reviewer", resetSessionId: "content-reviewer", label: "Content reviewer", kind: "reviewer", description: "A reviewer who approves or returns the exact frozen revisions a candidate carries, and nothing else." },
+  "reader-public": { sessionId: "reader-public", resetSessionId: "established-worker", label: "Public reader", kind: "reader", description: "A reader of the public edition, appearing only in the in-app receiving preview." },
+  "reader-approved-supporter": { sessionId: "reader-approved-supporter", resetSessionId: "established-worker", label: "Approved-supporter reader", kind: "reader", description: "A reader admitted to the approved-supporter edition and refused anything else." },
+  "reader-unauthorized": { sessionId: "reader-unauthorized", resetSessionId: "established-worker", label: "Unauthorized reader", kind: "reader", description: "A reader with no grant: the refusal discloses no count, title, size or existence hint." },
+  subscriber: { sessionId: "subscriber", resetSessionId: "established-worker", label: "Subscriber", kind: "reader", description: "A reader with a purpose-specific membership, choosing Off or Immediate for that purpose alone." },
 };
 
 /** The persona a spec acts as when it names none: the established worker, which the seed makes its default session. */
@@ -213,24 +143,13 @@ export async function resetSeed(request: APIRequestContext, persona: PersonaName
     read = await readDevState(request, cookie);
   }
   if (read.kind === "refused") {
-    throw new Error(
-      `resetSeed could not read the development state as the ${seededPersona(persona).label} persona, whose reset runs as ${resetSessionId}, from ${RESET_URL}: HTTP ${String(read.status)} ${read.outcome} — ${read.detail}`,
-    );
+    throw new Error(`resetSeed could not read the development state as the ${seededPersona(persona).label} persona, whose reset runs as ${resetSessionId}, from ${RESET_URL}: HTTP ${String(read.status)} ${read.outcome} — ${read.detail}`);
   }
   // `scope` and `expectedRevision` are the envelope's own, and the acting principal is the session
   // cookie's: the service re-authorises the scope, answers `conflict` for a revision that no longer
   // stands, and never lets a request nominate the person it acts for. One fresh operationId per call,
   // because each reset is its own attempt rather than a replay of the last one.
-  const response = await request.post(RESET_URL, {
-    headers: { cookie },
-    data: {
-      action: RESET_ACTION,
-      operationId: crypto.randomUUID(),
-      scope: read.state.scope,
-      expectedRevision: read.state.revision,
-      payload: {},
-    },
-  });
+  const response = await request.post(RESET_URL, { headers: { cookie }, data: { action: RESET_ACTION, operationId: crypto.randomUUID(), scope: read.state.scope, expectedRevision: read.state.revision, payload: {} } });
   const text = await response.text();
   const outcome = outcomeOf(parseJson(text));
   if (!response.ok() || (outcome !== "accepted" && outcome !== "alreadyAccepted")) {
@@ -248,9 +167,7 @@ function cookieHeaderFor(sessionId: string): string {
 /** The roster row a persona names, refusing a name the roster does not hold so a mistyped persona cannot reset a session no spec asked for. */
 function seededPersona(persona: PersonaName): SeededPersona {
   if (!Object.hasOwn(SEEDED_PERSONAS, persona)) {
-    throw new Error(
-      `No seeded persona is named ${JSON.stringify(persona)}. This runner seeds ${Object.keys(SEEDED_PERSONAS).join(", ")}, so a spec states one of those and the reset acts for the session that persona's cookie names.`,
-    );
+    throw new Error(`No seeded persona is named ${JSON.stringify(persona)}. This runner seeds ${Object.keys(SEEDED_PERSONAS).join(", ")}, so a spec states one of those and the reset acts for the session that persona's cookie names.`);
   }
   return SEEDED_PERSONAS[persona];
 }
@@ -296,9 +213,7 @@ function repositoryRootFrom(startDirectory: string): string {
     }
     const parent = dirname(current);
     if (parent === current) {
-      throw new Error(
-        `No directory up to the filesystem root from ${JSON.stringify(startDirectory)} holds both ${REPOSITORY_ROOT_MARKERS.join(" and ")}, so this runner cannot find the checkout whose store it has to seed. Run the specs from inside the checkout.`,
-      );
+      throw new Error(`No directory up to the filesystem root from ${JSON.stringify(startDirectory)} holds both ${REPOSITORY_ROOT_MARKERS.join(" and ")}, so this runner cannot find the checkout whose store it has to seed. Run the specs from inside the checkout.`);
     }
     current = parent;
   }
@@ -311,9 +226,7 @@ function portFrom(environment: Readonly<Record<string, string | undefined>>): nu
   }
   const parsed = Number(stated);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535) {
-    throw new Error(
-      `PORT must be a whole TCP port between 1 and 65535, and this run states ${JSON.stringify(stated)}. State the port this clone was given, so the runner drives the server it starts.`,
-    );
+    throw new Error(`PORT must be a whole TCP port between 1 and 65535, and this run states ${JSON.stringify(stated)}. State the port this clone was given, so the runner drives the server it starts.`);
   }
   return parsed;
 }

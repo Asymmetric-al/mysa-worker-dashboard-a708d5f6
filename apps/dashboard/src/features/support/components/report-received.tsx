@@ -1,12 +1,5 @@
-/**
- * Fixed report 1: monthly and year-to-date received support, with the equal-elapsed-period comparison.
- */
 import type { ReactElement, ReactNode } from "react";
 import StateNotice from "@/components/state-notice";
-// The application's one status vocabulary. A value state's word is a promise about what a figure is
-// ("Unknown", "Withheld", "Incomplete subtotal"), so this surface reads the shared `StatusBadge`
-// rather than retyping five words of its own; a second list would let the same fact be spelled two
-// ways.
 import StatusBadge from "@/components/status-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -16,24 +9,12 @@ import type { ValueState } from "@/modules/data-service/envelope";
 import type { CurrencySummary, ReportComparison, ReportResult } from "@/modules/support/report";
 import { CHART_CAPTIONS, EMPTY_STATES, IN_PROGRESS_NOTE, NO_PERCENTAGE, REPORT_COPY, fillTemplate } from "../copy";
 import AmountValue from "./amount-value";
-// The shapes this layout reads, taken from the result rather than restated
 type PeriodState = ReportResult["snapshot"]["period"];
-
 type StatedAmount = CurrencySummary["received"];
-
 type MonthPoint = ReportResult["series"][number];
-
 type CurrencyChange = ReportComparison["perCurrency"][number];
-
 type ContributorChange = ReportComparison["contributorDeltas"][number];
-/** Props of {@link ReportReceived}. */
-export type ReportReceivedProps = {
-  readonly result: ReportResult;
-  readonly locale: string;
-  readonly dir?: "ltr" | "rtl";
-  readonly className?: string;
-};
-// Wording
+export type ReportReceivedProps = { readonly result: ReportResult; readonly locale: string; readonly dir?: "ltr" | "rtl"; readonly className?: string };
 const LABELS = {
   received: "Received in the period",
   period: "Period",
@@ -48,33 +29,14 @@ const LABELS = {
   inProgress: "In progress",
   unidentifiedCurrency: "Currency not identified",
 } as const;
-const MONTHLY_CAPTION = {
-  lead: "one row per month of the period, in the order the months occur, at the authorised-allocation grain",
-  gap: "a month the source does not cover is a gap rather than a zero",
-} as const;
+const MONTHLY_CAPTION = { lead: "one row per month of the period, in the order the months occur, at the authorised-allocation grain", gap: "a month the source does not cover is a gap rather than a zero" } as const;
 const GAP_WORD = "No gift recorded — a gap, not a zero";
-
 const NO_MONTH_WORD = "No month of this period is stated in this currency — each one is a gap, not a zero";
-
 const NO_COMPARISON_NOTE = "No comparison is stated for this currency, because an amount of a currency with no minor-unit " + "exponent cannot be differenced.";
-
-const NOT_EQUAL_ELAPSED_NOTE = "The two spans this result compared are not the same length, so no difference is drawn from them.";
-
-const RECONCILES_NOTE = "The contributor changes add up exactly to this difference.";
 const DOES_NOT_RECONCILE_NOTE = "The contributor changes do not add up to this difference, and no balancing entry is invented to " + "hide it.";
-
-const CONTRIBUTOR_MORE = "gave more in this period than in the earlier one.";
-const CONTRIBUTOR_LESS = "gave less in this period, or gave only in the earlier period — neither is a judgement about them.";
-
-const CHANGE_WORDS: Readonly<Record<CurrencyChange["direction"], string>> = {
-  increase: "Higher than the earlier period",
-  decrease: "Lower than the earlier period",
-  unchanged: "Unchanged from the earlier period",
-};
-const ANONYMOUS_WORD = "Anonymous support";
+const CHANGE_WORDS: Readonly<Record<CurrencyChange["direction"], string>> = { increase: "Higher than the earlier period", decrease: "Lower than the earlier period", unchanged: "Unchanged from the earlier period" };
 const UNATTRIBUTED_WORD = "Unattributed source support";
 const PARTNER_WORD = "Partner";
-// Readers
 function partitionId(currency: string): string {
   return `report-received-${currency}`;
 }
@@ -91,7 +53,6 @@ function contributorValueState(change: CurrencyChange): ValueState {
   const state = change.valueState;
   return state === "unknown" || state === "incomplete-subtotal" ? state : "value";
 }
-// One figure, and one fact about it
 interface StatedFigureProps {
   readonly amount: StatedAmount;
   readonly currency: string;
@@ -113,7 +74,6 @@ function Fact({ label, children }: { readonly label: string; readonly children: 
     </div>
   );
 }
-// The equal-elapsed comparison
 interface ComparisonBlockProps {
   readonly comparison: ReportComparison | undefined;
   readonly currency: string;
@@ -122,9 +82,7 @@ interface ComparisonBlockProps {
 }
 function contributorName(delta: ContributorChange): ReactNode {
   const attribution = delta.attribution;
-  if (attribution === undefined) {
-    return UNATTRIBUTED_WORD;
-  }
+  if (attribution === undefined) return UNATTRIBUTED_WORD;
   switch (attribution.kind) {
     case "partner":
       return (
@@ -134,7 +92,7 @@ function contributorName(delta: ContributorChange): ReactNode {
         </>
       );
     case "anonymous":
-      return ANONYMOUS_WORD;
+      return "Anonymous support";
     case "unresolved":
       return UNATTRIBUTED_WORD;
   }
@@ -145,9 +103,7 @@ function contributorKey(delta: ContributorChange): string {
   return `${delta.currency}:${identity}`;
 }
 function noPercentageSentence(change: CurrencyChange): string | undefined {
-  if (change.valueState === "unknown") {
-    return NO_PERCENTAGE["unknown-denominator"];
-  }
+  if (change.valueState === "unknown") return NO_PERCENTAGE["unknown-denominator"];
   return change.baselineMinor === 0 ? NO_PERCENTAGE.default : undefined;
 }
 function ComparisonBlock({ comparison, currency, locale, headingId }: ComparisonBlockProps): ReactElement {
@@ -158,7 +114,7 @@ function ComparisonBlock({ comparison, currency, locale, headingId }: Comparison
   );
   const change = comparison === undefined ? undefined : comparison.perCurrency.find((entry) => entry.currency === currency);
   if (comparison === undefined || !comparison.equalElapsed || change === undefined) {
-    const reason = comparison === undefined || change === undefined ? NO_COMPARISON_NOTE : NOT_EQUAL_ELAPSED_NOTE;
+    const reason = comparison === undefined || change === undefined ? NO_COMPARISON_NOTE : "The two spans this result compared are not the same length, so no difference is drawn from them.";
     return (
       <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
         {heading}
@@ -192,18 +148,17 @@ function ComparisonBlock({ comparison, currency, locale, headingId }: Comparison
                 <span className="min-w-0 break-words">{contributorName(delta)}</span>
                 <span className="flex min-w-0 flex-wrap items-baseline gap-2">
                   <AmountValue money={{ currency, minorUnits: delta.minorUnits }} valueState={contributorState} locale={locale} />
-                  <span className="text-sm text-muted-foreground">{delta.minorUnits > 0 ? CONTRIBUTOR_MORE : CONTRIBUTOR_LESS}</span>
+                  <span className="text-sm text-muted-foreground">{delta.minorUnits > 0 ? "gave more in this period than in the earlier one." : "gave less in this period, or gave only in the earlier period — neither is a judgement about them."}</span>
                 </span>
               </li>
             ))}
           </ul>
-          <p className="text-sm text-muted-foreground">{comparison.reconciles ? RECONCILES_NOTE : DOES_NOT_RECONCILE_NOTE}</p>
+          <p className="text-sm text-muted-foreground">{comparison.reconciles ? "The contributor changes add up exactly to this difference." : DOES_NOT_RECONCILE_NOTE}</p>
         </div>
       )}
     </section>
   );
 }
-// The monthly table
 interface MonthlyTableProps {
   readonly months: readonly MonthPoint[];
   readonly currency: string;
@@ -243,9 +198,7 @@ function MonthlyTable({ months, currency, locale, headingId }: MonthlyTableProps
                 <TableCell className="whitespace-normal">
                   <bdi>{monthText(point)}</bdi>
                 </TableCell>
-                <TableCell className="text-end">
-                  {point.gap ? <span className="text-muted-foreground">{GAP_WORD}</span> : <StatedFigure amount={point.value} currency={currency} locale={locale} />}
-                </TableCell>
+                <TableCell className="text-end">{point.gap ? <span className="text-muted-foreground">{GAP_WORD}</span> : <StatedFigure amount={point.value} currency={currency} locale={locale} />}</TableCell>
               </TableRow>
             ))
           )}
@@ -254,7 +207,6 @@ function MonthlyTable({ months, currency, locale, headingId }: MonthlyTableProps
     </section>
   );
 }
-// One currency's partition
 interface CurrencyPartitionProps {
   readonly summary: CurrencySummary;
   readonly months: readonly MonthPoint[];
@@ -292,7 +244,6 @@ function CurrencyPartition({ summary, months, comparison, period, locale }: Curr
     </section>
   );
 }
-// The report
 /** Received support for the period, month by month, with the equal-elapsed-period comparison. */
 export function ReportReceived({ result, locale, dir, className }: ReportReceivedProps): ReactElement {
   const { summary, series, comparison, snapshot } = result;
@@ -309,16 +260,7 @@ export function ReportReceived({ result, locale, dir, className }: ReportReceive
       {summary.length === 0 ? (
         <StateNotice kind="empty" title={EMPTY_STATES.gifts.title} description={EMPTY_STATES.gifts.body} action={EMPTY_STATES.gifts.action} headingLevel={3} />
       ) : (
-        summary.map((entry) => (
-          <CurrencyPartition
-            key={entry.currency}
-            summary={entry}
-            months={series.filter((point) => point.currency === entry.currency)}
-            comparison={comparison}
-            period={snapshot.period}
-            locale={locale}
-          />
-        ))
+        summary.map((entry) => <CurrencyPartition key={entry.currency} summary={entry} months={series.filter((point) => point.currency === entry.currency)} comparison={comparison} period={snapshot.period} locale={locale} />)
       )}
     </div>
   );

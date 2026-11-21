@@ -1,7 +1,5 @@
 "use client";
-/**
- * The one search, facet and saved-view toolbar that every list and report composes.
- */
+/** The one search, facet and saved-view toolbar that every list and report composes. */
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { BookmarkIcon, ChevronDownIcon, Columns3Icon, SearchIcon, WrenchIcon, XIcon } from "lucide-react";
@@ -128,8 +126,7 @@ const TOOLBAR_COPY = {
   repairView: "Repair",
   inUse: "In use",
   drifted: "Needs repair",
-  driftExplanation:
-    "This view refers to a filter this context no longer offers, so it is not applied as it stands. Repairing saves the selection again; the view and every record are otherwise unchanged.",
+  driftExplanation: "This view refers to a filter this context no longer offers, so it is not applied as it stands. Repairing saves the selection again; the view and every record are otherwise unchanged.",
   viewActionLabel: (action: string, view: string): string => `${action}: ${view}`,
   columns: "Columns",
   columnsTitle: "Columns",
@@ -239,24 +236,19 @@ function singleSelectedValue(applied: Readonly<Record<string, readonly string[]>
   const [only] = values;
   return only === undefined ? null : only;
 }
-interface AppliedChip {
-  readonly facetId: string;
-  readonly valueId: string;
-  readonly facetLabel: string;
-  readonly valueLabel: string;
-}
-function appliedChips(facets: readonly FacetSpec[], applied: Readonly<Record<string, readonly string[]>>): readonly AppliedChip[] {
+type AppliedChip = { readonly kind: "facet"; readonly facetId: string; readonly valueId: string; readonly facetLabel: string; readonly valueLabel: string } | { readonly kind: "search"; readonly facetLabel: string; readonly valueLabel: string };
+// The search narrows the list exactly as a facet value does, so it is stated in the same list, and it
+// is listed first because it is the filter the worker typed rather than one the read offered.
+function appliedChips(facets: readonly FacetSpec[], applied: Readonly<Record<string, readonly string[]>>, searchText: string): readonly AppliedChip[] {
   const chips: AppliedChip[] = [];
+  if (searchText.length > 0) {
+    chips.push({ kind: "search", facetLabel: TOOLBAR_COPY.searchLabel, valueLabel: searchText });
+  }
   const offered = new Set<string>();
   for (const facet of facets) {
     offered.add(facet.id);
     for (const valueId of appliedValuesOf(applied, facet.id)) {
-      chips.push({
-        facetId: facet.id,
-        valueId,
-        facetLabel: facet.label,
-        valueLabel: labelOfValue(facet, valueId),
-      });
+      chips.push({ kind: "facet", facetId: facet.id, valueId, facetLabel: facet.label, valueLabel: labelOfValue(facet, valueId) });
     }
   }
   for (const [facetId, values] of Object.entries(applied)) {
@@ -264,30 +256,19 @@ function appliedChips(facets: readonly FacetSpec[], applied: Readonly<Record<str
       continue;
     }
     for (const valueId of values) {
-      chips.push({ facetId, valueId, facetLabel: facetId, valueLabel: valueId });
+      chips.push({ kind: "facet", facetId, valueId, facetLabel: facetId, valueLabel: valueId });
     }
   }
   return chips;
 }
-type FacetCountView =
-  | { readonly kind: "number"; readonly text: string }
-  | {
-      readonly kind: "number-with-state";
-      readonly text: string;
-      readonly label: string;
-      readonly tone: StatusTone;
-    }
-  | { readonly kind: "word"; readonly label: string; readonly tone: StatusTone }
-  | { readonly kind: "none" };
+type FacetCountView = { readonly kind: "number"; readonly text: string } | { readonly kind: "number-with-state"; readonly text: string; readonly label: string; readonly tone: StatusTone } | { readonly kind: "word"; readonly label: string; readonly tone: StatusTone } | { readonly kind: "none" };
 function countViewOf(value: FacetValueSpec): FacetCountView {
   const state = value.countState;
   const counted = value.count !== undefined && Number.isFinite(value.count) ? countFormat.format(Math.max(0, Math.trunc(value.count))) : undefined;
   if (state !== undefined && state !== "value" && state !== "zero") {
     const word = valueStateWord(state);
     if (word !== undefined) {
-      return state === "incomplete-subtotal" && counted !== undefined
-        ? { kind: "number-with-state", text: counted, label: word.label, tone: word.tone }
-        : { kind: "word", label: word.label, tone: word.tone };
+      return state === "incomplete-subtotal" && counted !== undefined ? { kind: "number-with-state", text: counted, label: word.label, tone: word.tone } : { kind: "word", label: word.label, tone: word.tone };
     }
   }
   if (counted !== undefined) {
@@ -369,19 +350,7 @@ function FacetLoading(): ReactNode {
 function LayerNote({ children }: { readonly children: ReactNode }): ReactNode {
   return <p className="text-sm leading-snug text-muted-foreground">{children}</p>;
 }
-function ViewNameForm({
-  fieldLabel,
-  submitLabel,
-  defaultValue = "",
-  onSubmit,
-  onCancel,
-}: {
-  readonly fieldLabel: string;
-  readonly submitLabel: string;
-  readonly defaultValue?: string;
-  readonly onSubmit: (name: string) => void;
-  readonly onCancel: () => void;
-}): ReactNode {
+function ViewNameForm({ fieldLabel, submitLabel, defaultValue = "", onSubmit, onCancel }: { readonly fieldLabel: string; readonly submitLabel: string; readonly defaultValue?: string; readonly onSubmit: (name: string) => void; readonly onCancel: () => void }): ReactNode {
   const fieldId = useId();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [name, setName] = useState(defaultValue);
@@ -477,10 +446,7 @@ function MultiFacetControl({ facet, selected, onSelectionChange, pending, open, 
   const optionBaseId = useId();
   const values = facet.values;
   const labels = useMemo(() => values.map((value) => value.label), [values]);
-  const roving = useRovingFocus({
-    orientation: "vertical",
-    preferred: (key) => selected.includes(key),
-  });
+  const roving = useRovingFocus({ orientation: "vertical", preferred: (key) => selected.includes(key) });
   const currentIndex = (): number => {
     const activeKey = roving.activeKey;
     if (activeKey === null) {
@@ -509,9 +475,7 @@ function MultiFacetControl({ facet, selected, onSelectionChange, pending, open, 
   }
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger
-        render={<Button variant="outline" size="sm" className="max-w-full" aria-label={selected.length > 0 ? `${facet.label}, ${TOOLBAR_COPY.appliedCount(selected.length)}` : facet.label} />}
-      >
+      <PopoverTrigger render={<Button variant="outline" size="sm" className="max-w-full" aria-label={selected.length > 0 ? `${facet.label}, ${TOOLBAR_COPY.appliedCount(selected.length)}` : facet.label} />}>
         <FacetTriggerContent facet={facet} selectedCount={selected.length} />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)]">
@@ -690,14 +654,7 @@ function SavedViewRow({
         </p>
       ) : null}
       <div className="flex flex-wrap gap-1.5">
-        <Button
-          size="xs"
-          variant="outline"
-          disabled={drift.drifted}
-          aria-describedby={drift.drifted ? driftId : undefined}
-          aria-label={TOOLBAR_COPY.viewActionLabel(TOOLBAR_COPY.applyView, view.name)}
-          onClick={onApply}
-        >
+        <Button size="xs" variant="outline" disabled={drift.drifted} aria-describedby={drift.drifted ? driftId : undefined} aria-label={TOOLBAR_COPY.viewActionLabel(TOOLBAR_COPY.applyView, view.name)} onClick={onApply}>
           {TOOLBAR_COPY.applyView}
         </Button>
         {onUpdate === undefined ? null : (
@@ -760,9 +717,7 @@ function SavedViewsControl({
   }
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger
-        render={<Button variant="outline" size="sm" className="max-w-full" aria-label={driftedCount === 0 ? TOOLBAR_COPY.savedViews : `${TOOLBAR_COPY.savedViews}, ${driftedCount} needs repair`} />}
-      >
+      <PopoverTrigger render={<Button variant="outline" size="sm" className="max-w-full" aria-label={driftedCount === 0 ? TOOLBAR_COPY.savedViews : `${TOOLBAR_COPY.savedViews}, ${driftedCount} needs repair`} />}>
         <BookmarkIcon aria-hidden="true" className="size-3.5" />
         <span className="truncate">{TOOLBAR_COPY.savedViews}</span>
         {driftedCount > 0 ? (
@@ -851,15 +806,7 @@ function SavedViewsControl({
   );
 }
 // Columns
-function ColumnsControl({
-  columns,
-  columnVisibility,
-  onChange,
-}: {
-  readonly columns: readonly ColumnSpec[];
-  readonly columnVisibility: ColumnVisibility;
-  readonly onChange: (next: Record<string, boolean>) => void;
-}): ReactNode {
+function ColumnsControl({ columns, columnVisibility, onChange }: { readonly columns: readonly ColumnSpec[]; readonly columnVisibility: ColumnVisibility; readonly onChange: (next: Record<string, boolean>) => void }): ReactNode {
   const visible = visibleColumnIds(columns, columnVisibility);
   function setColumn(columnId: string, shown: boolean): void {
     const next: Record<string, boolean> = {};
@@ -871,11 +818,7 @@ function ColumnsControl({
   }
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button variant="outline" size="sm" className="max-w-full" aria-label={`${TOOLBAR_COPY.columns}, ${countFormat.format(visible.length)} of ${countFormat.format(columns.length)} shown`} />
-        }
-      >
+      <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="max-w-full" aria-label={`${TOOLBAR_COPY.columns}, ${countFormat.format(visible.length)} of ${countFormat.format(columns.length)} shown`} />}>
         <Columns3Icon aria-hidden="true" className="size-3.5" />
         <span className="hidden sm:inline">{TOOLBAR_COPY.columns}</span>
         <ChevronDownIcon aria-hidden="true" className="size-3" />
@@ -958,10 +901,7 @@ export function QueryToolbar({
 }: QueryToolbarProps): ReactNode {
   const searchFieldId = useId();
   const [openLayer, setOpenLayer] = useState<string | null>(null);
-  const [searchState, setSearchState] = useState<SearchState>({
-    external: search.value,
-    text: search.value,
-  });
+  const [searchState, setSearchState] = useState<SearchState>({ external: search.value, text: search.value });
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emitRef = useRef(search.onChange);
   const debounceMs = search.debounceMs ?? DEFAULT_SEARCH_DEBOUNCE_MS;
@@ -1010,14 +950,8 @@ export function QueryToolbar({
     }
     onAppliedChange(withFacetValues(applied, rangeFacetId, []));
   }, [applied, hasRangeValues, onAppliedChange, rangeFacet, rangeFacetId, singleCurrency]);
-  const chips = appliedChips(facets, applied);
-  const currentQuery: SavedViewQuery = hasColumns
-    ? {
-        search: searchText,
-        applied: plainSelection(applied),
-        columnVisibility: { ...columnVisibility },
-      }
-    : { search: searchText, applied: plainSelection(applied) };
+  const chips = appliedChips(facets, applied, searchText);
+  const currentQuery: SavedViewQuery = hasColumns ? { search: searchText, applied: plainSelection(applied), columnVisibility: { ...columnVisibility } } : { search: searchText, applied: plainSelection(applied) };
   function updateSearchText(next: string): void {
     setSearchState((previous) => (previous.text === next ? previous : { external: previous.external, text: next }));
   }
@@ -1152,7 +1086,7 @@ export function QueryToolbar({
           />
         ) : null}
         {hasColumns ? <ColumnsControl columns={columns} columnVisibility={columnVisibility} onChange={onColumnVisibilityChange} /> : null}
-        {chips.length === 0 && searchText.length === 0 ? null : (
+        {chips.length === 0 ? null : (
           <Button variant="ghost" size="sm" onClick={clearAll}>
             {TOOLBAR_COPY.clearAll}
           </Button>
@@ -1161,10 +1095,14 @@ export function QueryToolbar({
       {chips.length > 0 ? (
         <ul aria-label={TOOLBAR_COPY.activeFilters} className="flex flex-wrap items-center gap-2">
           {chips.map((chip) => (
-            <li key={`${chip.facetId}\u001f${chip.valueId}`}>
+            <li key={chip.kind === "search" ? "search" : `${chip.facetId}\u001f${chip.valueId}`}>
               <FilterChip
                 chip={chip}
                 onRemove={() => {
+                  if (chip.kind === "search") {
+                    clearSearchText();
+                    return;
+                  }
                   setFacetValues(chip.facetId, withValueRemoved(appliedValuesOf(applied, chip.facetId), chip.valueId));
                 }}
               />

@@ -1,9 +1,5 @@
 "use client";
-/**
- * The one form and field-error presentation: a labelled-control wrapper, the same contract for a group
- * of controls, the aggregate summary of a failed submit, and the one mapping from a validation outcome
- * to the messages a field shows.
- */
+/** The one form and field-error presentation: a labelled-control wrapper, the same contract for a group of controls, the aggregate summary of a failed submit, and the one mapping from a validation … */
 import { CircleAlertIcon } from "lucide-react";
 import { useEffect, useId, useRef, type ReactElement, type ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -51,6 +47,16 @@ export function fieldErrorsFromInvalid(outcome: Pick<InvalidOutcome, "fields">):
   }
   return { byField, form, count: Object.keys(byField).length + form.length };
 }
+/** The one sentence a refused request is summarised by: each field the refusal names, with the message that says what to correct in it. */
+export function refusalSummary(outcome: Pick<InvalidOutcome, "fields">): string {
+  const { byField, form } = fieldErrorsFromInvalid(outcome);
+  const sentences: string[] = [];
+  for (const [path, messages] of Object.entries(byField)) {
+    sentences.push(`${path}: ${messages.join(" ")}`);
+  }
+  sentences.push(...form);
+  return sentences.length === 0 ? "The request stated no field this view can name, so it has to be corrected before the read can run." : sentences.join(" ");
+}
 /** What a {@link FormField} hands its control. */
 export interface FormFieldControl {
   readonly id: string;
@@ -58,7 +64,6 @@ export interface FormFieldControl {
   readonly invalid: boolean;
   readonly required: boolean;
 }
-/** Props of {@link FormField}. */
 export interface FormFieldProps {
   readonly label: string;
   readonly name: string;
@@ -126,7 +131,6 @@ export interface FormFieldGroupControl {
   readonly required: boolean;
   readonly legendId: string;
 }
-/** Props of {@link FormFieldGroup}. */
 export interface FormFieldGroupProps {
   readonly legend: string;
   readonly name: string;
@@ -164,11 +168,7 @@ export function FormFieldGroup({ legend, name, description, error, required = fa
 /** The heading levels a surrounding page can need; the level is the caller's, not the summary's. */
 export type SummaryHeadingLevel = 2 | 3 | 4;
 
-const SUMMARY_HEADING_TAG: Readonly<Record<SummaryHeadingLevel, "h2" | "h3" | "h4">> = {
-  2: "h2",
-  3: "h3",
-  4: "h4",
-};
+const SUMMARY_HEADING_TAG: Readonly<Record<SummaryHeadingLevel, "h2" | "h3" | "h4">> = { 2: "h2", 3: "h3", 4: "h4" };
 const DEFAULT_SUMMARY_TITLE = "There is a problem with this form";
 
 interface SummaryEntry {
@@ -176,7 +176,6 @@ interface SummaryEntry {
   readonly label: string;
   readonly messages: readonly string[];
 }
-/** Props of {@link FormErrorSummary}. */
 export interface FormErrorSummaryProps {
   readonly errors: FieldErrorLookup | null | undefined;
   readonly labels?: Readonly<Record<string, string | undefined>>;
@@ -199,11 +198,7 @@ function buildEntries(errors: FieldErrorLookup | null | undefined, labels: Reado
   if (errors === null || errors === undefined) {
     return [];
   }
-  const entries: SummaryEntry[] = errors.form.map((message) => ({
-    path: null,
-    label: "",
-    messages: [message],
-  }));
+  const entries: SummaryEntry[] = errors.form.map((message) => ({ path: null, label: "", messages: [message] }));
   for (const path of orderedPaths(errors.byField, order)) {
     const messages = errors.byField[path] ?? [];
     if (messages.length === 0) {

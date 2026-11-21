@@ -1,30 +1,4 @@
-/**
- * The variant and release identity model (success criterion 17), proven at the service boundary:
- * a draft, a candidate and a release are three separate identities; a candidate freezes the exact
- * revision a reviewer answered, so a later save cannot move what was approved; each edition's release
- * head is its own, so a sibling's failure leaves a prior-good head standing and no batch rolls back;
- * review is exactly one step, only where the contributor policy requires it, and approval of one
- * edition approves no other.
- *
- * Every case below asserts revision and release *identities*, never rendered content: two revisions
- * holding identical text are still two revisions, so a content comparison would pass while the
- * identity model was broken.
- *
- * Recorded divergences from the brief this file was written against:
- * - The development failure plan arms one mode against one *named call*, so a failure cannot be armed
- *   for a single edition inside `publishVariants`. The per-edition partial failure is therefore
- *   produced by the application's own cause — an edition still awaiting its one review — and the
- *   plan's `unknown` mode on `publishVariants` is asserted separately, as the lost acknowledgement
- *   that still advances exactly the sibling able to release. The plan's own registry is read first, so
- *   the armed pairing is the registry's rather than this file's guess.
- * - The store is file-backed, so the deterministic seed's documents are laid down under private session
- *   ids — through the store's own `resetSession`, its only creating path — one per world, and every read
- *   and change runs through the service against those ids. Laying them down again before every case is
- *   what makes each case start from the seeded world, in whatever order the cases run.
- * - Durable recovery under the original `operationId` across a persisted store, and heads surviving a
- *   store reopen, belong to `tests/integration/publish-partial-failure.test.ts`. This file asserts the
- *   identity consequence: which head remains the head, and which frozen revision an answer bound to.
- */
+/** The variant and release identity model (success criterion 17), proven at the service boundary: a draft, a candidate and a release are three separate identities; a candidate freezes the exact … */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { mutations, reads, type MutationInput, type Scope } from "@/modules/data-service";
@@ -34,62 +8,22 @@ import { REVIEW_STEPS_PER_CANDIDATE, VARIANT_AUDIENCES, type ContentRevision } f
 import { DEMONSTRABLE_TARGETS } from "@/modules/dev-runtime/failures";
 import { DEFAULT_SESSION_ID, seed, type SeededSessionDocuments, type SessionStateDocument } from "@/modules/dev-runtime/seed";
 import { resetSession } from "@/modules/store/repository";
-// The worlds these cases start from: two private sessions, each laid down from one seeded session
-/** The canonical Update every case in the baseline world works on. */
 const DOCUMENT_ID = "doc-update-autumn";
-
-/** The English public edition: released, and the source the French edition was translated from. */
 const EN_EDITION = "variant-update-autumn-en-public";
-
-/** The French public edition: released, and a manual translation of the English edition. */
 const FR_EDITION = "variant-update-autumn-fr-public";
-
-/** The Arabic public edition: one draft, one frozen candidate and — in the partial-release world — a prior-good release head. */
 const AR_EDITION = "variant-update-autumn-ar-public";
-
-/** The seeded Arabic draft revision. */
 const AR_DRAFT_REVISION = "rev-update-ar-draft-1";
-
-/** The seeded Arabic candidate: the exact revision its reviewer is answering. */
 const AR_CANDIDATE = "rev-update-ar-candidate-1";
-
-/** The Arabic edition's release in the partial-release world: the head a sibling's failure left standing. */
 const AR_PRIOR_RELEASE = "release-update-ar-1";
-
-/** The English edition's second release in the partial-release world. */
 const EN_SECOND_RELEASE = "release-update-en-2";
-
-/** The French edition's release, which no edit of another locale may advance. */
 const FR_RELEASE = "release-update-fr-1";
-
-/**
- * What `publishVariants` presents. Releasing reads no current record, so it compares no revision and
- * this token is never matched against stored state; it stands only because the four-field contract
- * carries the field. Every other content write in this file presents the revision its own read
- * published — the edition record's `recordRevision`, taken at the moment of the call — because that is
- * the value the draft, candidate and release reads advertise, and the one the service compares. A
- * stored content revision's own token never advances, so presenting it would conflict on every write
- * after the first.
- */
 const UNCOMPARED_REVISION = "rev-1";
-
-/** This file's own session for the baseline world, the partial-release world and the reviewer identity. */
 const CONTROL_SESSION_ID = "domain-variant-release";
-
 const PARTIAL_SESSION_ID = "domain-variant-release-partial";
-
 const REVIEWER_SESSION_ID = "domain-variant-release-reviewer";
-
-/** This file's own session for a world whose session states it may not read the ministry's content. */
 const BLIND_SESSION_ID = "domain-variant-release-blind";
-
-/** The seeded session the partial-release world is laid down from. */
 const PARTIAL_SEEDED_SESSION = "established-worker-partial-release";
-
-/** The seeded session the reviewer identity is laid down from. */
 const REVIEWER_SEEDED_SESSION = "content-reviewer";
-
-/** One laid-down world: the session it runs as, the source every named call names, and its authority. */
 interface World {
   readonly sessionId: string;
   readonly source: { readonly sessionId: string };
@@ -97,20 +31,11 @@ interface World {
 }
 function scopeOf(state: SessionStateDocument): Scope {
   const { context } = state;
-  if (context.selectedOrganizationId === null || context.selectedMinistryId === null || context.selectedSupportSubjectId === null) {
-    throw new Error("The seeded session selects no context, so no edition of it can be read or changed under an authority it never chose.");
-  }
-  return {
-    organizationId: context.selectedOrganizationId,
-    ministryId: context.selectedMinistryId,
-    supportSubjectId: context.selectedSupportSubjectId,
-    principalId: context.principalId,
-  };
+  if (context.selectedOrganizationId === null || context.selectedMinistryId === null || context.selectedSupportSubjectId === null) throw new Error("The seeded session selects no context, so no edition of it can be read or changed under an authority it never chose.");
+  return { organizationId: context.selectedOrganizationId, ministryId: context.selectedMinistryId, supportSubjectId: context.selectedSupportSubjectId, principalId: context.principalId };
 }
 function required<T>(value: T | undefined, what: string): T {
-  if (value === undefined) {
-    throw new Error(`The seeded world carries no ${what}, so this case cannot start from it.`);
-  }
+  if (value === undefined) throw new Error(`The seeded world carries no ${what}, so this case cannot start from it.`);
   return value;
 }
 async function layDown(sessionId: string, documents: SeededSessionDocuments): Promise<World> {
@@ -126,15 +51,6 @@ let baselineDocuments: SeededSessionDocuments;
 let partialDocuments: SeededSessionDocuments;
 let reviewerDocuments: SeededSessionDocuments;
 const laidDownSessions = [CONTROL_SESSION_ID, PARTIAL_SESSION_ID, REVIEWER_SESSION_ID, BLIND_SESSION_ID];
-/**
- * Re-lays every world from the seed. A case asserts the seeded identities as readily as one it
- * creates, so no case may inherit the edition, draft, review, release head or withdrawal a sibling case
- * left behind: the session is restored to the seed before every case, whatever order the cases run in.
- *
- * The blind world holds the same content records as the baseline world, read by a session that states it
- * may not act in this ministry: the refusal has to come from the session itself, before any record is
- * enumerated, or a denial would be indistinguishable from an empty workspace.
- */
 async function layDownWorlds(): Promise<void> {
   control = await layDown(CONTROL_SESSION_ID, baselineDocuments);
   partial = await layDown(PARTIAL_SESSION_ID, partialDocuments);
@@ -168,7 +84,6 @@ afterEach(async () => {
   }
 });
 afterAll(async () => {
-  // Only this file's own documents are removed: the directory holds other suites' worlds.
   for (const sessionId of laidDownSessions) {
     await resetSession(sessionId);
   }
@@ -179,36 +94,27 @@ function sourceOf(world: World): { readonly sessionId: string } {
 function attempt<P>(payload: P, expectedRevision: string, acting: Scope): MutationInput<P> {
   return { operationId: newOperationId(), scope: acting, expectedRevision, payload };
 }
-// Reading the closed outcome set without guessing at it
 function outcomeIs(outcome: MutationOutcome, expected: MutationOutcome["outcome"]): MutationOutcome {
   expect(isOutcome(outcome)).toBe(true);
   expect(outcome.outcome).toBe(expected);
   return outcome;
 }
 function acceptedOutcome(outcome: MutationOutcome): Extract<MutationOutcome, { outcome: "accepted" }> {
-  if (outcome.outcome !== "accepted") {
-    throw new Error(`This change was expected to be applied once and was answered with ${JSON.stringify(outcome)}.`);
-  }
+  if (outcome.outcome !== "accepted") throw new Error(`This change was expected to be applied once and was answered with ${JSON.stringify(outcome)}.`);
   return outcome;
 }
 function alreadyAcceptedOutcome(outcome: MutationOutcome): Extract<MutationOutcome, { outcome: "alreadyAccepted" }> {
-  if (outcome.outcome !== "alreadyAccepted") {
-    throw new Error(`This attempt was expected to be recognised as a replay and was answered with ${JSON.stringify(outcome)}.`);
-  }
+  if (outcome.outcome !== "alreadyAccepted") throw new Error(`This attempt was expected to be recognised as a replay and was answered with ${JSON.stringify(outcome)}.`);
   return outcome;
 }
 function invalidOutcome(outcome: MutationOutcome): InvalidOutcome {
-  if (outcome.outcome !== "invalid") {
-    throw new Error(`This change was expected to be refused by validation and was answered with ${JSON.stringify(outcome)}.`);
-  }
+  if (outcome.outcome !== "invalid") throw new Error(`This change was expected to be refused by validation and was answered with ${JSON.stringify(outcome)}.`);
   return outcome;
 }
 /** The per-edition results of one release, which an aggregate answer would not carry at all. */
 function itemsOf(outcome: Extract<MutationOutcome, { outcome: "accepted" }>): readonly PerItemResult[] {
   const items = outcome.items;
-  if (items === undefined) {
-    throw new Error("This change reports no per-item results, so no edition's own outcome could be asserted.");
-  }
+  if (items === undefined) throw new Error("This change reports no per-item results, so no edition's own outcome could be asserted.");
   return items;
 }
 function itemFor(items: readonly PerItemResult[], variantId: string): PerItemResult {
@@ -220,36 +126,22 @@ function itemFor(items: readonly PerItemResult[], variantId: string): PerItemRes
 function isPlainRecord(value: JsonValue): value is { readonly [field: string]: JsonValue } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-/**
- * The release modes a stored release result states, one per edition: read from the replayed attempt
- * rather than from the surface, because the mode a submission recorded is the fact this file checks
- * survived the reviewer's step.
- */
+/** The release modes a stored release result states, one per edition: read from the replayed attempt rather than from the surface, because the mode a submission recorded is the fact this file checks … */
 function notifyModesOf(result: JsonValue): readonly (string | null)[] {
-  if (!isPlainRecord(result)) {
-    throw new Error("A release attempt's stored result is an object carrying its per-edition outcomes.");
-  }
+  if (!isPlainRecord(result)) throw new Error("A release attempt's stored result is an object carrying its per-edition outcomes.");
   const editions = result["editions"];
-  if (!Array.isArray(editions)) {
-    throw new Error("A release attempt's stored result carries one entry per selected edition.");
-  }
+  if (!Array.isArray(editions)) throw new Error("A release attempt's stored result carries one entry per selected edition.");
   return editions.map((entry) => {
-    if (!isPlainRecord(entry)) {
-      throw new Error("Every stored per-edition outcome is an object.");
-    }
+    if (!isPlainRecord(entry)) throw new Error("Every stored per-edition outcome is an object.");
     const mode = entry["notifyMode"];
     return typeof mode === "string" ? mode : null;
   });
 }
-/** Unwraps a read: a refusal is a failure of the case, never a value a test may assert on by accident. */
 async function envelopeOf<T>(pending: Promise<ReadResult<T>>, what: string): Promise<T> {
   const result = await pending;
-  if (result.kind !== "envelope") {
-    throw new Error(`${what} was refused rather than answered: ${JSON.stringify(result)}`);
-  }
+  if (result.kind !== "envelope") throw new Error(`${what} was refused rather than answered: ${JSON.stringify(result)}`);
   return result.envelope;
 }
-// The content reads these cases assert identities through
 async function overviewOf(world: World) {
   return envelopeOf(reads.updates.readVariantOverview({ documentId: DOCUMENT_ID, session: sourceOf(world) }), `readVariantOverview(${DOCUMENT_ID})`);
 }
@@ -261,11 +153,9 @@ function editionOf(overview: OverviewEnvelope, variantId: string): EditionView {
     `an edition ${variantId} of ${DOCUMENT_ID}`,
   );
 }
-/** The revision a change to the document itself must present: creating, releasing and withdrawing all name it. */
 async function documentRevision(world: World): Promise<string> {
   return (await overviewOf(world)).revision;
 }
-/** The revision a change to one edition must present: the edition record's own, which its draft, candidate and release reads all publish. */
 async function editionRevision(world: World, variantId: string): Promise<string> {
   return editionOf(await overviewOf(world), variantId).recordRevision;
 }
@@ -274,9 +164,7 @@ async function draftOf(world: World, variantId: string) {
 }
 type DraftView = Awaited<ReturnType<typeof draftOf>>;
 function draftRevisionOf(view: DraftView): ContentRevision {
-  if (view.status !== "draft") {
-    throw new Error(`This edition was expected to hold a saved draft, and its draft read reported "${view.status}".`);
-  }
+  if (view.status !== "draft") throw new Error(`This edition was expected to hold a saved draft, and its draft read reported "${view.status}".`);
   return view.revision;
 }
 async function candidateOf(world: World, variantId: string) {
@@ -284,11 +172,8 @@ async function candidateOf(world: World, variantId: string) {
 }
 type CandidateView = Awaited<ReturnType<typeof candidateOf>>;
 type FrozenCandidateView = Extract<CandidateView, { status: "reviewable" }>;
-/** The frozen candidate an edition holds, with the one review step it may receive. */
 function frozenCandidate(view: CandidateView): FrozenCandidateView {
-  if (view.status !== "reviewable") {
-    throw new Error(`This edition was expected to hold a candidate under review, and its candidate read reported "${view.status}".`);
-  }
+  if (view.status !== "reviewable") throw new Error(`This edition was expected to hold a candidate under review, and its candidate read reported "${view.status}".`);
   return view;
 }
 async function releaseOf(world: World, variantId: string) {
@@ -296,39 +181,23 @@ async function releaseOf(world: World, variantId: string) {
 }
 type ReleaseView = Awaited<ReturnType<typeof releaseOf>>;
 function releasedView(view: ReleaseView): Extract<ReleaseView, { status: "released" }> {
-  if (view.status !== "released") {
-    throw new Error(`This edition was expected to serve a release at its head, and its release read reported "${view.status}".`);
-  }
+  if (view.status !== "released") throw new Error(`This edition was expected to serve a release at its head, and its release read reported "${view.status}".`);
   return view;
 }
 function withdrawnReleaseView(view: ReleaseView): Extract<ReleaseView, { status: "withdrawn" }> {
-  if (view.status !== "withdrawn") {
-    throw new Error(`This edition was expected to hold a withdrawn release, and its release read reported "${view.status}".`);
-  }
+  if (view.status !== "withdrawn") throw new Error(`This edition was expected to hold a withdrawn release, and its release read reported "${view.status}".`);
   return view;
 }
 async function devStateOf(world: World) {
   return envelopeOf(reads.dev.readDevState(sourceOf(world)), "readDevState");
 }
-// The authored bodies these cases save, and the prose they carry
-/** One admitted content document: the profile's root node, the version it was written against, its direction and its paragraphs. */
 function body(direction: "ltr" | "rtl", paragraphs: readonly string[]): unknown {
-  return {
-    type: "doc",
-    // The profile version every stored document states (content profile version 1).
-    profileVersion: 1,
-    direction,
-    content: paragraphs.map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })),
-    sections: [],
-  };
+  return { type: "doc", profileVersion: 1, direction, content: paragraphs.map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })), sections: [] };
 }
-/** Every text run in an authored body, in authored order: used only to show a copy kept its prose under a new identity. */
 function textOfDocument(content: ContentRevision["body"]): readonly string[] {
   const collected: string[] = [];
   const walk = (node: unknown): void => {
-    if (typeof node !== "object" || node === null) {
-      return;
-    }
+    if (typeof node !== "object" || node === null) return;
     if (Reflect.get(node, "type") === "text") {
       const text: unknown = Reflect.get(node, "text");
       if (typeof text === "string") {
@@ -346,43 +215,22 @@ function textOfDocument(content: ContentRevision["body"]): readonly string[] {
   walk(content);
   return collected;
 }
-// The changes these cases make, one named job at a time
 /** Creates one more edition of the canonical document, so a case that needs a fresh identity never competes for a seeded one. */
-async function createEdition(
-  world: World,
-  input: {
-    readonly locale: string;
-    readonly audience?: "public" | "approved-supporter";
-    readonly translationSource?: { readonly variantId: string; readonly revisionId: string };
-  },
-): Promise<string> {
+async function createEdition(world: World, input: { readonly locale: string; readonly audience?: "public" | "approved-supporter"; readonly translationSource?: { readonly variantId: string; readonly revisionId: string } }): Promise<string> {
   const created = acceptedOutcome(
     await mutations.updates.createVariant(
       world.sessionId,
-      attempt(
-        {
-          documentId: DOCUMENT_ID,
-          locale: input.locale,
-          ...(input.audience === undefined ? {} : { audience: input.audience }),
-          ...(input.translationSource === undefined ? {} : { translationSource: input.translationSource }),
-        },
-        await documentRevision(world),
-        world.scope,
-      ),
+      attempt({ documentId: DOCUMENT_ID, locale: input.locale, ...(input.audience === undefined ? {} : { audience: input.audience }), ...(input.translationSource === undefined ? {} : { translationSource: input.translationSource }) }, await documentRevision(world), world.scope),
     ),
   );
   return required(created.created?.[0], `the identity of the ${input.locale} edition it created`);
 }
-/** Saves one working revision and answers with its new identity. */
 async function saveDraftText(world: World, variantId: string, paragraphs: readonly string[], direction: "ltr" | "rtl" = "ltr"): Promise<string> {
   const saved = acceptedOutcome(await mutations.updates.saveDraft(world.sessionId, attempt({ variantId, body: body(direction, paragraphs) }, await editionRevision(world, variantId), world.scope)));
   return required(saved.created?.[0], `the identity of the revision it saved for ${variantId}`);
 }
-/** Freezes one exact revision for review and answers with the candidate's identity. */
 async function submitEdition(world: World, variantId: string, revisionId: string, notifyMode?: "publish-only" | "publish-and-notify"): Promise<string> {
-  const submitted = acceptedOutcome(
-    await mutations.updates.submitForReview(world.sessionId, attempt({ variantId, revisionId, ...(notifyMode === undefined ? {} : { notifyMode }) }, await editionRevision(world, variantId), world.scope)),
-  );
+  const submitted = acceptedOutcome(await mutations.updates.submitForReview(world.sessionId, attempt({ variantId, revisionId, ...(notifyMode === undefined ? {} : { notifyMode }) }, await editionRevision(world, variantId), world.scope)));
   return required(submitted.created?.[0], `the candidate ${variantId} submitted`);
 }
 interface ReleaseSelectionInput {
@@ -399,9 +247,7 @@ describe("three identities, never collapsed", () => {
     const overview = await overviewOf(partial);
     const arabic = editionOf(overview, AR_EDITION);
     expect(overview.data.document.documentId).toBe(DOCUMENT_ID);
-    // The vocabulary the model declares: an Update serves these audiences and no others.
     expect([...overview.data.audiences]).toEqual([...VARIANT_AUDIENCES]);
-    // What an edition's identity is a key of: its document, its permitted audience, its exact locale.
     expect(arabic.audience).toBe("public");
     expect(arabic.locale).toEqual({ tag: "ar", direction: "rtl" });
     expect(arabic.draftRevisionId).toBe(AR_DRAFT_REVISION);
@@ -410,7 +256,6 @@ describe("three identities, never collapsed", () => {
     const identities = [arabic.draftRevisionId, arabic.candidateId, arabic.releaseHeadId];
     expect(identities.every((identity) => typeof identity === "string" && identity.length > 0)).toBe(true);
     expect(new Set(identities).size).toBe(3);
-    // Each pointer resolves to its own record: three identities, not one record seen three ways.
     expect(draftRevisionOf(await draftOf(partial, AR_EDITION)).revisionId).toBe(arabic.draftRevisionId);
     expect(frozenCandidate(await candidateOf(partial, AR_EDITION)).candidate.revisionId).toBe(arabic.candidateId);
     expect(releasedView(await releaseOf(partial, AR_EDITION)).release.releaseId).toBe(arabic.releaseHeadId);
@@ -435,9 +280,7 @@ describe("three identities, never collapsed", () => {
   it("records the revising principal and the reviewing principal as two identities", async () => {
     const contributor = await resolveSession({ sessionId: control.sessionId });
     const reviewing = await resolveSession({ sessionId: reviewer.sessionId });
-    if (!contributor.ok || !reviewing.ok) {
-      throw new Error("Both seeded identities were expected to resolve, and one was refused.");
-    }
+    if (!contributor.ok || !reviewing.ok) throw new Error("Both seeded identities were expected to resolve, and one was refused.");
     expect(contributor.session.principalId).not.toBe(reviewing.session.principalId);
     // A revision names the principal who wrote it, so the writer is never inferred from whichever
     // identity happens to approve the candidate afterwards.
@@ -453,14 +296,12 @@ describe("a candidate freezes the exact revision", () => {
     const edition = await createEdition(control, { locale: "sv" });
     const frozen = await saveDraftText(control, edition, ["Svenskt utkast, första versionen."]);
     const candidateId = await submitEdition(control, edition, frozen);
-    // A candidate is identified by the revision it froze, which is what makes a decision bind to bytes.
     expect(candidateId).toBe(frozen);
     const first = frozenCandidate(await candidateOf(control, edition));
     expect(first.candidate.revisionId).toBe(frozen);
     expect(REVIEW_STEPS_PER_CANDIDATE).toBe(1);
     expect(first.review.steps).toBe(REVIEW_STEPS_PER_CANDIDATE);
     expect(first.review.round).toBe(REVIEW_STEPS_PER_CANDIDATE);
-    // The editor saves over the draft; the candidate does not move.
     const later = await saveDraftText(control, edition, ["Svenskt utkast, andra versionen."]);
     expect(later).not.toBe(frozen);
     const afterSave = frozenCandidate(await candidateOf(control, edition));
@@ -480,7 +321,6 @@ describe("a candidate freezes the exact revision", () => {
     acceptedOutcome(await mutations.updates.approveCandidate(control.sessionId, attempt({ candidateId: frozen }, await editionRevision(control, edition), control.scope)));
     const answered = frozenCandidate(await candidateOf(control, edition));
     expect(answered.review.decision).toBe("approved");
-    // What the reviewer approved is the frozen revision, while the edition's draft is another one.
     expect(answered.candidate.revisionId).toBe(frozen);
     const draft = draftRevisionOf(await draftOf(control, edition));
     expect(draft.revisionId).toBe(later);
@@ -492,7 +332,6 @@ describe("a candidate freezes the exact revision", () => {
     const second = await saveDraftText(control, edition, ["Onnur útgáva."]);
     const restored = acceptedOutcome(await mutations.updates.restoreRevisionAsDraft(control.sessionId, attempt({ revisionId: first }, await editionRevision(control, edition), control.scope)));
     const restoredId = required(restored.created?.[0], "the identity of the restored draft");
-    // A restore never resurrects an identity: it writes a new revision that holds the same prose.
     expect(restoredId).not.toBe(first);
     expect(restoredId).not.toBe(second);
     const draft = draftRevisionOf(await draftOf(control, edition));
@@ -511,12 +350,10 @@ describe("one edition cannot advance or overwrite another", () => {
     expect(arabicDraftBefore).toBe(AR_DRAFT_REVISION);
     await saveDraftText(control, EN_EDITION, ["Autumn at Harbour Youth, revised for the next release."]);
     const after = await overviewOf(control);
-    // The French edition publishes exactly the release it published, by identity.
     expect(editionOf(after, FR_EDITION).headRelease?.releaseId).toBe(FR_RELEASE);
     expect(releasedView(await releaseOf(control, FR_EDITION)).release.releaseId).toBe(FR_RELEASE);
     // A shared-draft implementation would move this pointer as well.
     expect(editionOf(after, AR_EDITION).draftRevisionId).toBe(arabicDraftBefore);
-    // The only effect an English save has on the French edition is that its translation reports the move.
     expect(editionOf(after, FR_EDITION).translation.status).toBe("stale");
   });
   it("records the source revision a manual translation copied, and reports staleness without withdrawing it", async () => {
@@ -527,20 +364,14 @@ describe("one edition cannot advance or overwrite another", () => {
     const published = acceptedOutcome(await publishEditions(control, [{ variantId: translation }]));
     const translationRelease = required(itemFor(itemsOf(published), translation).revision, `the release identity of ${translation}`);
     const fresh = editionOf(await overviewOf(control), translation);
-    if (fresh.translation.status !== "fresh") {
-      throw new Error(`A translation of the current source revision was expected to read fresh, and it read "${fresh.translation.status}".`);
-    }
-    // The provenance is the exact source revision, not merely the source edition.
+    if (fresh.translation.status !== "fresh") throw new Error(`A translation of the current source revision was expected to read fresh, and it read "${fresh.translation.status}".`);
     expect(fresh.translation.sourceRevisionId).toBe(sourceRevision);
     const revisedSource = await saveDraftText(control, source, ["Norsk bokmål, andre utkast."]);
     expect(revisedSource).not.toBe(sourceRevision);
     const stale = editionOf(await overviewOf(control), translation);
-    if (stale.translation.status !== "stale") {
-      throw new Error(`A translation of a superseded source revision was expected to read stale, and it read "${stale.translation.status}".`);
-    }
+    if (stale.translation.status !== "stale") throw new Error(`A translation of a superseded source revision was expected to read stale, and it read "${stale.translation.status}".`);
     expect(stale.translation.sourceRevisionId).toBe(revisedSource);
     expect(stale.translation.translatedFromRevisionId).toBe(sourceRevision);
-    // Staleness is reported, never acted on: the translation's own head still stands, not withdrawn.
     expect(stale.headRelease?.releaseId).toBe(translationRelease);
     expect(stale.headRelease?.withdrawnAt).toBeUndefined();
     expect(releasedView(await releaseOf(control, translation)).release.releaseId).toBe(translationRelease);
@@ -556,16 +387,12 @@ describe("review is exactly one step, and it cannot be widened", () => {
     expect(submitted.review.steps).toBe(1);
     expect(submitted.review.round).toBe(1);
     expect(submitted.review.decision).toBeNull();
-    // Approval of one edition is stated to be that edition's alone.
     expect(submitted.review.approvalScope).toBe("this-variant-only");
     acceptedOutcome(await mutations.updates.approveCandidate(control.sessionId, attempt({ candidateId: first }, await editionRevision(control, edition), control.scope)));
     expect(frozenCandidate(await candidateOf(control, edition)).review.decision).toBe("approved");
-    // The same answer twice is the same answer, not a second review.
     expect(outcomeIs(await mutations.updates.approveCandidate(control.sessionId, attempt({ candidateId: first }, await editionRevision(control, edition), control.scope)), "unchanged").outcome).toBe("unchanged");
-    // A different answer to the same candidate is refused: the single step was already taken.
     const reanswered = invalidOutcome(await mutations.updates.requestChanges(control.sessionId, attempt({ candidateId: first }, await editionRevision(control, edition), control.scope)));
     expect(Object.keys(reanswered.fields)).toContain("candidateId");
-    // Nor may the same revision be submitted again: a second round is a new submission, by identity.
     const resubmitted = invalidOutcome(await mutations.updates.submitForReview(control.sessionId, attempt({ variantId: edition, revisionId: first }, await editionRevision(control, edition), control.scope)));
     expect(Object.keys(resubmitted.fields)).toContain("revisionId");
     const secondRound = await saveDraftText(control, edition, ["Dansk udkast, anden runde."]);
@@ -581,9 +408,7 @@ describe("review is exactly one step, and it cannot be widened", () => {
     const revision = await saveDraftText(control, edition, ["Ελληνικό σχέδιο."]);
     await submitEdition(control, edition, revision);
     // The mode belongs to the submission, so the reviewer's own step refuses to widen it.
-    const widened = invalidOutcome(
-      await mutations.updates.approveCandidate(control.sessionId, attempt({ candidateId: revision, notifyMode: "publish-and-notify" }, await editionRevision(control, edition), control.scope)),
-    );
+    const widened = invalidOutcome(await mutations.updates.approveCandidate(control.sessionId, attempt({ candidateId: revision, notifyMode: "publish-and-notify" }, await editionRevision(control, edition), control.scope)));
     expect(Object.keys(widened.fields)).toContain("notifyMode");
     acceptedOutcome(await mutations.updates.approveCandidate(control.sessionId, attempt({ candidateId: revision }, await editionRevision(control, edition), control.scope)));
     // A sibling that needs no review, so the batch does release something and reports per edition.
@@ -595,20 +420,15 @@ describe("review is exactly one step, and it cannot be widened", () => {
     expect(refusedEntry.state).toBe("needs-attention");
     expect(refusedEntry.reasonCode).toBe("notify-mode-not-approved");
     expect(itemFor(entries, sibling).state).toBe("released");
-    // Released under the mode the submission did record.
     const releaseInput = attempt({ documentId: DOCUMENT_ID, variants: [{ variantId: edition }] }, UNCOMPARED_REVISION, control.scope);
     const released = acceptedOutcome(await mutations.updates.publishVariants(control.sessionId, releaseInput));
     expect(itemFor(itemsOf(released), edition).state).toBe("released");
-    // Replayed, the stored result states the mode the release was made under: still Publish only.
     const replay = alreadyAcceptedOutcome(await mutations.updates.publishVariants(control.sessionId, releaseInput));
     expect(notifyModesOf(replay.result)).toEqual(["publish-only"]);
   });
   it("reviews only the edition whose contributor policy requires a review", async () => {
     const edition = await createEdition(control, { locale: "fi" });
     const draft = await saveDraftText(control, edition, ["Suomalainen luonnos."]);
-    // "Exactly one review step, and only where the contributor policy requires it": an edition with no
-    // submission is released from its saved draft. That is the one step applied to zero required rounds,
-    // not a bypass of it — the submission cases above are what prove the step itself.
     expect((await candidateOf(control, edition)).status).toBe("none");
     const released = acceptedOutcome(await publishEditions(control, [{ variantId: edition }]));
     expect(itemFor(itemsOf(released), edition).state).toBe("released");
@@ -640,9 +460,7 @@ describe("a decided candidate reads as the decision on record", () => {
     const candidateId = await submitEdition(control, edition, frozen);
     const note = "Please name the venue in the first paragraph.";
     const contributor = await resolveSession({ sessionId: control.sessionId });
-    if (!contributor.ok) {
-      throw new Error("The seeded contributor identity was expected to resolve, and it was refused.");
-    }
+    if (!contributor.ok) throw new Error("The seeded contributor identity was expected to resolve, and it was refused.");
     acceptedOutcome(await mutations.updates.requestChanges(control.sessionId, attempt({ candidateId, note }, await editionRevision(control, edition), control.scope)));
     // A requested change clears the edition's candidate pointer, so the review record is the only place
     // the answered candidate is still paired with its edition. The identity the review surface was
@@ -654,13 +472,10 @@ describe("a decided candidate reads as the decision on record", () => {
     expect(decided.candidate.revisionId).toBe(frozen);
     expect(decided.review.decision).toBe("changes-requested");
     const record = decided.review.recorded;
-    if (record === null) {
-      throw new Error("An answered candidate was expected to carry the record of its answer, and it carried none.");
-    }
+    if (record === null) throw new Error("An answered candidate was expected to carry the record of its answer, and it carried none.");
     expect(record.decision).toBe("changes-requested");
     expect(record.note).toBe(note);
     expect(record.decidedByPrincipalId).toBe(contributor.session.principalId);
-    // The instant is the record's own, an ISO 8601 instant and not a placeholder.
     expect(record.decidedAt ?? "").toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/);
     // The edition itself holds no candidate once it has been answered, so the edition's own identity
     // still states exactly that: the two identities answer two different questions.
@@ -668,16 +483,12 @@ describe("a decided candidate reads as the decision on record", () => {
     // Authorisation precedes enumeration: the same candidate identity, read by a session that states it
     // may not act in this ministry, is refused rather than resolved, and the refusal names nothing.
     const blindRead = await reads.updates.readCandidate({ variantId: candidateId, session: sourceOf(blind) });
-    if (blindRead.kind !== "denied") {
-      throw new Error(`A session that may not read the edition was expected to be refused, and the read answered "${blindRead.kind}".`);
-    }
+    if (blindRead.kind !== "denied") throw new Error(`A session that may not read the edition was expected to be refused, and the read answered "${blindRead.kind}".`);
     expect(blindRead.denied.reasonCode).toBe("not-admitted");
     // An identity no record names is refused by the same closed reason the review surface already
     // states, so a decision on record and a candidate that never existed stay indistinguishable.
     const namelessRead = await reads.updates.readCandidate({ variantId: "rev-no-record-names-this", session: sourceOf(control) });
-    if (namelessRead.kind !== "denied") {
-      throw new Error(`An identity no record names was expected to be refused, and the read answered "${namelessRead.kind}".`);
-    }
+    if (namelessRead.kind !== "denied") throw new Error(`An identity no record names was expected to be refused, and the read answered "${namelessRead.kind}".`);
     expect(namelessRead.denied.reasonCode).toBe("no-permission");
   });
 });
@@ -712,22 +523,14 @@ describe("independent release heads and the partial failure", () => {
     expect(englishEntry.state).toBe("released");
     expect(arabicEntry.state).toBe("needs-attention");
     expect(arabicEntry.reasonCode).toBe("awaiting-review");
-    // No release identity is claimed for the edition that did not release.
     expect(arabicEntry.revision).toBeUndefined();
-    // The caller cannot read the failure as a release: the two entries state different outcomes, and
-    // nothing in the answer says both editions were released.
     expect(new Set(entries.map((entry) => entry.state)).size).toBe(2);
     expect(entries.some((entry) => entry.targetId === AR_EDITION && entry.state === "released")).toBe(false);
-    // No batch rollback: the sibling that could release keeps the head it has just advanced.
     const advancedReleaseId = required(englishEntry.revision, `the release identity of ${EN_EDITION}`);
     const englishHead = releasedView(await releaseOf(partial, EN_EDITION));
     expect(englishHead.release.releaseId).toBe(advancedReleaseId);
     expect(englishHead.release.revisionId).toBe(englishDraft);
     expect(englishHead.release.releaseId).not.toBe(EN_SECOND_RELEASE);
-    // Prior-good head preserved: the failed edition's head is the release it already had, by identity.
-    // Recovery under the original operationId across the persisted store is
-    // tests/integration/publish-partial-failure.test.ts; this case asserts the identity consequence —
-    // which head remains the head.
     expect(releasedView(await releaseOf(partial, AR_EDITION)).release.releaseId).toBe(AR_PRIOR_RELEASE);
   });
   it("takes a lost acknowledgement as no claim of success, and still advances only the edition that could release", async () => {
@@ -737,9 +540,7 @@ describe("independent release heads and the partial failure", () => {
     );
     expect(registry.modes).toContain("unknown");
     const devBefore = await devStateOf(partial);
-    acceptedOutcome(
-      await mutations.dev.setFailurePlan(attempt({ mode: "unknown", target: { kind: "mutation", name: "publishVariants" } } as const, devBefore.revision, partial.scope), partial.source),
-    );
+    acceptedOutcome(await mutations.dev.setFailurePlan(attempt({ mode: "unknown", target: { kind: "mutation", name: "publishVariants" } } as const, devBefore.revision, partial.scope), partial.source));
     const armed = (await devStateOf(partial)).data;
     expect(armed.failurePlan.armed).toBe(true);
     expect(armed.failurePlan.mode).toBe("unknown");
@@ -748,11 +549,8 @@ describe("independent release heads and the partial failure", () => {
     const arabicBefore = releasedView(await releaseOf(partial, AR_EDITION)).release.releaseId;
     const draft = await saveDraftText(partial, EN_EDITION, ["Autumn at Harbour Youth, after a lost acknowledgement."]);
     const withheld = outcomeIs(await publishEditions(partial, [{ variantId: EN_EDITION }]), "unknown");
-    // Neither success nor failure is claimed, and no per-edition result is offered to be misread.
     expect("items" in withheld).toBe(false);
     expect("created" in withheld).toBe(false);
-    // The identity consequence stands whatever the answer said: the edition that could release advanced,
-    // and the edition that could not kept the head it had.
     const englishAfter = releasedView(await releaseOf(partial, EN_EDITION));
     expect(englishAfter.release.releaseId).not.toBe(englishBefore);
     expect(englishAfter.release.revisionId).toBe(draft);
@@ -773,16 +571,13 @@ describe("withdrawing one locale leaves the others", () => {
     const arabic = withdrawnReleaseView(await releaseOf(partial, AR_EDITION));
     expect(arabic.release.releaseId).toBe(AR_PRIOR_RELEASE);
     expect(arabic.release.withdrawnAt.length).toBeGreaterThan(0);
-    // Every other locale's release is exactly the one it was, by identity.
     expect(releasedView(await releaseOf(partial, EN_EDITION)).release.releaseId).toBe(englishHead);
     expect(releasedView(await releaseOf(partial, FR_EDITION)).release.releaseId).toBe(frenchHead);
-    // The three states stay three: a withdrawn release is neither a deleted draft nor an archived candidate.
     expect(draftRevisionOf(await draftOf(partial, AR_EDITION)).revisionId).toBe(AR_DRAFT_REVISION);
     expect(frozenCandidate(await candidateOf(partial, AR_EDITION)).candidate.revisionId).toBe(AR_CANDIDATE);
     const arabicEdition = editionOf(await overviewOf(partial), AR_EDITION);
     expect(arabicEdition.releaseHeadId).toBe(AR_PRIOR_RELEASE);
     expect(arabicEdition.headRelease?.withdrawnAt).toBeDefined();
-    // Withdrawing the same edition again is not a second withdrawal.
     const afterWithdrawal = await overviewOf(partial);
     const again = await mutations.updates.withdrawLocale(partial.sessionId, attempt({ variantId: AR_EDITION }, afterWithdrawal.revision, partial.scope));
     expect(outcomeIs(again, "unchanged").outcome).toBe("unchanged");

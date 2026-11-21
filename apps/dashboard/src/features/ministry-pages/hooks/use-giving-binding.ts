@@ -1,12 +1,5 @@
 "use client";
-/**
- * The Give placement's browser read: the one approved giving Designation a Page release may show, or
- * the *Giving unavailable* state with its cause and no fallback fund.
- *
- * The family reaches its reads through one `view` discriminator on `GET /api/pages`. This hook is the
- * only caller that sends `view=giving-binding`, and it is the only place that answer is parsed, so an
- * envelope, a denial and an outage stay three distinguishable results all the way to the placement.
- */
+/** The Give placement's browser read: the one approved giving Designation a Page release may show, or the *Giving unavailable* state with its cause and no fallback fund. */
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { isNonEmptyString, isRecord } from "@/lib/guards";
 import { assertNever } from "@/lib/result";
@@ -25,17 +18,12 @@ const GIVING_VIEW = "giving-binding";
 const ENVELOPE_STATUS = 200;
 /** The key segment that stands for "no Page named": such a query is disabled and never issues a request, and a real Page identifier is never empty. */
 const UNNAMED_DOCUMENT = "";
-const TRANSPORT_GUIDANCE =
-  "The giving-binding read did not complete, so this placement has no giving destination to show. Reload the placement to try again; no fallback designation and no amount is shown in the meantime.";
+const TRANSPORT_GUIDANCE = "The giving-binding read did not complete, so this placement has no giving destination to show. Reload the placement to try again; no fallback designation and no amount is shown in the meantime.";
 const UNRECOGNISED_GUIDANCE = "The giving-binding read answered with nothing this placement can read, so giving is unavailable here. Reload the placement to try again.";
-const REFUSED_GUIDANCE =
-  "The giving-binding read was refused before it read anything, so this placement has no giving destination to show. Reload the placement; nothing about this Page's giving is assumed in the meantime.";
+const REFUSED_GUIDANCE = "The giving-binding read was refused before it read anything, so this placement has no giving destination to show. Reload the placement; nothing about this Page's giving is assumed in the meantime.";
 const UNNAMED_GUIDANCE = "No Page was named, so there is no giving placement to read and no designation is assumed.";
 // Types, taken from the read the service performs
-/**
- * The whole answer `reads.pages.readGivingBinding` gives, taken from the service so the payload shape
- * cannot drift from it: the payload is the service's own, never a restatement of it here.
- */
+/** The whole answer `reads.pages.readGivingBinding` gives, taken from the service so the payload shape cannot drift from it: the payload is the service's own, never a restatement of it here. */
 type GivingBindingAnswer = Awaited<ReturnType<typeof reads.pages.readGivingBinding>>;
 /** What a giving read states: the Page, the release it belongs to, the placement's binding and the progress the source qualifies. */
 export type GivingBindingData = Extract<GivingBindingAnswer, { readonly kind: "envelope" }>["envelope"]["data"];
@@ -49,10 +37,7 @@ export type GivingUnavailableCause = Extract<GivingBindingState, { readonly stat
 export type GivingBindingReadResult = ReadResult<GivingBindingEnvelope>;
 /** What the placement's query hands back: the result above, and no error, because every failure is one of its three answers. */
 export type UseGivingBindingResult = UseQueryResult<GivingBindingReadResult, never>;
-/**
- * The causes as the service sends them, listed once so a value outside this set is refused at the
- * boundary instead of reaching a surface that would have to invent a fourth state for it.
- */
+/** The causes as the service sends them, listed once so a value outside this set is refused at the boundary instead of reaching a surface that would have to invent a fourth state for it. */
 const GIVING_UNAVAILABLE_CAUSES = ["missing", "revoked", "incompatible"] as const satisfies readonly GivingUnavailableCause[];
 const GIVING_UNAVAILABLE_CAUSE_SET: ReadonlySet<string> = new Set<string>(GIVING_UNAVAILABLE_CAUSES);
 
@@ -79,31 +64,14 @@ function isGivingBindingEnvelope(value: unknown): value is GivingBindingEnvelope
     return false;
   }
   const { data, scope, source, coverage, valueStates, actions, asOf, revision } = value;
-  return (
-    isRecord(data) &&
-    isGivingBindingState(data.binding) &&
-    isRecord(scope) &&
-    isRecord(source) &&
-    isRecord(coverage) &&
-    isRecord(valueStates) &&
-    Array.isArray(actions) &&
-    isNonEmptyString(asOf) &&
-    isNonEmptyString(revision)
-  );
+  return isRecord(data) && isGivingBindingState(data.binding) && isRecord(scope) && isRecord(source) && isRecord(coverage) && isRecord(valueStates) && Array.isArray(actions) && isNonEmptyString(asOf) && isNonEmptyString(revision);
 }
 // The one request
 function givingBindingPath(documentId: string): string {
   return `${PAGES_ENDPOINT}?view=${GIVING_VIEW}&documentId=${encodeURIComponent(documentId)}`;
 }
 function handlerUnavailable(reference: string, guidance: string): GivingBindingReadResult {
-  return {
-    kind: "unavailable",
-    unavailable: unavailable({
-      operationId: READ_ATTEMPT_ID,
-      source: { system: HANDLER_SOURCE_SYSTEM, reference },
-      guidance,
-    }),
-  };
+  return { kind: "unavailable", unavailable: unavailable({ operationId: READ_ATTEMPT_ID, source: { system: HANDLER_SOURCE_SYSTEM, reference }, guidance }) };
 }
 async function readJsonBody(response: Response): Promise<unknown> {
   try {
@@ -124,16 +92,13 @@ function wrappedResultOf(result: ReadResult<unknown>, path: string): GivingBindi
       return { kind: "denied", denied: result.denied };
     case "unavailable":
       return { kind: "unavailable", unavailable: result.unavailable };
+    case "refused":
+      return { kind: "refused", refused: result.refused };
     default:
       return assertNever(result, "Unhandled giving-binding read result");
   }
 }
-/**
- * Reads one answer as the giving placement's result. The handler states a read's three answers in two
- * forms — a wrapped `ReadResult` and the bare envelope or outcome the service's own response mapping
- * writes — and both are accepted here: a denial stays a denial, an outage stays an outage, and
- * anything else is an outage rather than an empty binding or a substitute fund.
- */
+/** Reads one answer as the giving placement's result. */
 function givingBindingResultOf(body: unknown, status: number, path: string): GivingBindingReadResult {
   if (isReadResult(body)) {
     return wrappedResultOf(body, path);
@@ -144,10 +109,16 @@ function givingBindingResultOf(body: unknown, status: number, path: string): Giv
         return { kind: "denied", denied: body };
       case "unavailable":
         return { kind: "unavailable", unavailable: body };
+      case "invalid":
+        // The identifier this placement was asked for is not one the read admits: the field-keyed refusal
+        // is handed on as the read's own answer, because the source behind it answered and only the
+        // request was wrong.
+        return { kind: "refused", refused: body };
       default:
-        // A read is refused as `denied`, outaged as `unavailable` or answered as an envelope. Any
-        // other outcome means the request never became a read of this placement, which is reported as
-        // the source being unavailable to this read rather than as permission or as an empty binding.
+        // A read is refused as `denied`, outaged as `unavailable`, answered as an envelope or refused as
+        // `refused`. Any other outcome means the request never became a read of this placement, which is
+        // reported as the source being unavailable to this read rather than as permission or as an empty
+        // binding.
         return handlerUnavailable(path, REFUSED_GUIDANCE);
     }
   }
@@ -163,26 +134,14 @@ async function fetchGivingBinding(documentId: string | undefined): Promise<Givin
   const path = givingBindingPath(documentId);
   let response: Response;
   try {
-    response = await fetch(path, {
-      method: "GET",
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: { accept: "application/json" },
-    });
+    response = await fetch(path, { method: "GET", credentials: "same-origin", cache: "no-store", headers: { accept: "application/json" } });
   } catch {
     return handlerUnavailable(path, TRANSPORT_GUIDANCE);
   }
   const body = await readJsonBody(response);
   return givingBindingResultOf(body, response.status, path);
 }
-/**
- * Reads the Page's one approved giving Designation, or the *Giving unavailable* state with its cause
- * and no fallback fund; returns an envelope or a `denied`/`unavailable` outcome.
- *
- * The read is keyed beneath the Page's own key, so a Page mutation re-reads it. Nothing is computed or
- * formatted here: the designation label and the qualified progress are the service's own values,
- * passed through verbatim, and the read only decides which of its three answers arrived.
- */
+/** Reads the Page's one approved giving Designation, or the *Giving unavailable* state with its cause and no fallback fund; returns an envelope or a `denied`/`unavailable` outcome. */
 export function useGivingBinding(scope: Scope, documentId: string | undefined): UseGivingBindingResult {
   return useQuery<GivingBindingReadResult, never>({
     queryKey: givingBindingKey(scope, documentId ?? UNNAMED_DOCUMENT),

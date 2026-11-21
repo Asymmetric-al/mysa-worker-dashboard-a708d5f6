@@ -1,8 +1,4 @@
 "use client";
-/**
- * The three viewer presentation preferences — appearance, interface language and display time zone —
- * and nothing else.
- */
 import { useCallback, useId, useMemo, useState, useSyncExternalStore } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,50 +8,16 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { VIEWER_APPEARANCES, canResolveTimeZone, useViewerPreferences, type ViewerAppearance } from "./viewer-preferences-provider";
 const APPEARANCE_COPY: Record<ViewerAppearance, { readonly label: string; readonly description: string }> = {
-  system: {
-    label: "Match your device",
-    description: "Follows your operating system's light or dark setting while this page is open.",
-  },
-  light: {
-    label: "Light",
-    description: "Always shows this application's light colour scheme.",
-  },
-  dark: {
-    label: "Dark",
-    description: "Always shows this application's dark colour scheme.",
-  },
+  system: { label: "Match your device", description: "Follows your operating system's light or dark setting while this page is open." },
+  light: { label: "Light", description: "Always shows this application's light colour scheme." },
+  dark: { label: "Dark", description: "Always shows this application's dark colour scheme." },
 };
 const LANGUAGE_SHORTLIST: readonly string[] = ["en-GB", "en-US", "en-AU", "en-CA", "fr-FR", "de-DE", "es-ES", "pt-BR", "ar", "he", "ko-KR", "ja-JP"];
-
-const TIME_ZONE_SHORTLIST: readonly string[] = [
-  "UTC",
-  "Europe/London",
-  "Europe/Berlin",
-  "Europe/Paris",
-  "Europe/Madrid",
-  "Europe/Warsaw",
-  "Africa/Lagos",
-  "Africa/Nairobi",
-  "America/New_York",
-  "America/Chicago",
-  "America/Denver",
-  "America/Los_Angeles",
-  "America/Sao_Paulo",
-  "Asia/Dubai",
-  "Asia/Kolkata",
-  "Asia/Singapore",
-  "Asia/Seoul",
-  "Asia/Tokyo",
-  "Australia/Sydney",
-  "Pacific/Auckland",
-];
-interface IntlNames {
-  of: (code: string) => string | undefined;
-}
+const TIME_ZONE_SHORTLIST: readonly string[] =
+  "UTC Europe/London Europe/Berlin Europe/Paris Europe/Madrid Europe/Warsaw Africa/Lagos Africa/Nairobi America/New_York America/Chicago America/Denver America/Los_Angeles America/Sao_Paulo Asia/Dubai Asia/Kolkata Asia/Singapore Asia/Seoul Asia/Tokyo Australia/Sydney Pacific/Auckland".split(" ");
+type IntlNames = { of: (code: string) => string | undefined };
 type IntlNamesConstructor = new (locales: readonly string[], options: { readonly type: string }) => IntlNames;
-
 const namesCache = new Map<string, IntlNames | null>();
-
 function intlNames(type: "language" | "region" | "script"): IntlNames | null {
   const cached = namesCache.get(type);
   if (cached !== undefined) {
@@ -109,11 +71,7 @@ function languageChoices(current: string): readonly string[] {
   return choices;
 }
 type TimeZoneMode = "enumerated" | "documented" | "text";
-
-interface TimeZoneChoices {
-  readonly common: readonly string[];
-  readonly all: readonly string[];
-}
+type TimeZoneChoices = { readonly common: readonly string[]; readonly all: readonly string[] };
 function enumerableTimeZones(): readonly string[] {
   try {
     const supportedValuesOf = (Intl as unknown as { supportedValuesOf?: (key: string) => unknown }).supportedValuesOf;
@@ -149,24 +107,16 @@ function timeZoneChoices(current: string, mode: TimeZoneMode): TimeZoneChoices {
   const listed = new Set(common);
   return { common, all: enumerableTimeZones().filter((zone) => !listed.has(zone)) };
 }
-const noSubscription = (): void => {};
-
-function subscribeToPlatform(): () => void {
-  return noSubscription;
-}
-function readPlatformReady(): boolean {
-  return true;
-}
-function readServerPlatformReady(): boolean {
-  return false;
-}
-function usePlatformReady(): boolean {
-  return useSyncExternalStore(subscribeToPlatform, readPlatformReady, readServerPlatformReady);
-}
+const subscribeToPlatform = (): (() => void) => () => {};
+const usePlatformReady = (): boolean =>
+  useSyncExternalStore(
+    subscribeToPlatform,
+    () => true,
+    () => false,
+  );
 function isAppearanceChoice(value: string): value is ViewerAppearance {
   return (VIEWER_APPEARANCES as readonly string[]).includes(value);
 }
-/** Shows the three presentation preferences of the person using this browser and applies each change the moment it is made. */
 export function SettingsPreferencePanel() {
   const { appearance, interfaceLocale, displayTimeZone, setAppearance, setInterfaceLocale, setDisplayTimeZone } = useViewerPreferences();
   const platformReady = usePlatformReady();
@@ -220,10 +170,7 @@ export function SettingsPreferencePanel() {
         <CardTitle>
           <h2>Appearance, language and time zone</h2>
         </CardTitle>
-        <CardDescription>
-          These are presentation preferences for this browser. They change only how dates, times and numbers are formatted on screen — not which records you can see, the ministry you are working in,
-          or anything a partner receives.
-        </CardDescription>
+        <CardDescription>These are presentation preferences for this browser. They change only how dates, times and numbers are formatted on screen — not which records you can see, the ministry you are working in, or anything a partner receives.</CardDescription>
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-6">
         <fieldset className="min-w-0">

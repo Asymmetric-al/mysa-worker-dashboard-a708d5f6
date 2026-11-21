@@ -3,15 +3,7 @@ import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { RadioGroup as RadioGroupPrimitive } from "@base-ui/react/radio-group";
 import { cn } from "@/lib/cn";
 function RadioGroup({ className, orientation = "vertical", ...props }: RadioGroupPrimitive.Props & { orientation?: "vertical" | "horizontal" }) {
-  return (
-    <RadioGroupPrimitive
-      data-slot="radio-group"
-      data-orientation={orientation}
-      aria-orientation={orientation}
-      className={cn("group/radio-group w-full", orientation === "horizontal" ? "flex flex-wrap items-center gap-x-6 gap-y-3" : "grid gap-3", className)}
-      {...props}
-    />
-  );
+  return <RadioGroupPrimitive data-slot="radio-group" data-orientation={orientation} aria-orientation={orientation} className={cn("group/radio-group w-full", orientation === "horizontal" ? "flex flex-wrap items-center gap-x-6 gap-y-3" : "grid gap-3", className)} {...props} />;
 }
 function RadioGroupItem({ className, ...props }: RadioPrimitive.Root.Props) {
   return (

@@ -1,8 +1,4 @@
-/**
- * Measures the repository's tracked line count with the request's own pipeline — `git ls-files`, with
- * `bun.lock` as its only exclusion, piped through `xargs wc -l` — and exits by the 100,000-line limit.
- * Implements AAP 0.9.1 (`bun run lines`), 0.11.1 and the 0.12.3 measurement behind criterion 22.
- */
+/** Measures the repository's tracked line count with the request's own pipeline — `git ls-files`, with `bun.lock` as its only exclusion, piped through `xargs wc -l` — and exits by the 100,000-line limit. */
 import path from "node:path";
 const COMMAND = "git ls-files | grep -v -e '^bun.lock$' | xargs wc -l";
 
@@ -35,11 +31,7 @@ async function main(): Promise<number> {
   let stderr: string;
   let exitStatus: number;
   try {
-    const run = Bun.spawn(["/bin/sh", "-c", COMMAND], {
-      cwd: ROOT,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const run = Bun.spawn(["/bin/sh", "-c", COMMAND], { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
     [stdout, stderr, exitStatus] = await Promise.all([new Response(run.stdout).text(), new Response(run.stderr).text(), run.exited]);
   } catch (error) {
     // A pipeline that cannot be started is a measurement failure (2), never the over-limit verdict (1).
@@ -68,9 +60,7 @@ async function main(): Promise<number> {
   }
   const total = totals.reduce((sum, value) => sum + value, 0);
   const batches = totals.length > 1 ? ` (summed across ${String(totals.length)} wc batches)` : "";
-  process.stdout.write(
-    `\ncommand: ${COMMAND}\n` + `tracked files counted: ${String(tracked)}\n` + `TOTAL ${String(total)}${batches}\n` + `LIMIT ${String(LIMIT)}\n` + `STATUS ${total < LIMIT ? "PASS" : "FAIL"}\n`,
-  );
+  process.stdout.write(`\ncommand: ${COMMAND}\n` + `tracked files counted: ${String(tracked)}\n` + `TOTAL ${String(total)}${batches}\n` + `LIMIT ${String(LIMIT)}\n` + `STATUS ${total < LIMIT ? "PASS" : "FAIL"}\n`);
   if (total < LIMIT) return 0;
   process.stdout.write(`OVERAGE ${String(total - LIMIT)}\n`);
   return 1;

@@ -1,8 +1,5 @@
 "use client";
-/**
- * The one chart in the application: a figure that says what it shows, draws it, and carries the same
- * data beneath it as a real table.
- */
+/** The one chart in the application: a figure that says what it shows, draws it, and carries the same data beneath it as a real table. */
 import { useId, useSyncExternalStore, type ReactElement } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ScrollRegion } from "@/components/scroll-region";
@@ -13,36 +10,13 @@ import { cn } from "@/lib/cn";
 import type { Coverage, ValueState } from "@/modules/data-service/envelope";
 import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { formatMinor } from "@/modules/money/format";
-// What a caller passes
 /** The three shapes this release draws, listed once so the closed set has a runtime form as well as a type. */
 export type ChartKind = "bar" | "line" | "area";
-/** One bucket of one series: the amount the read recorded for it, and the state that says what kind of value it is. */
-export interface ChartPoint {
-  readonly bucket: string;
-  readonly value: number | null;
-  readonly state: ValueState;
-  readonly gap?: boolean;
-}
-/** One drawn series. */
-export interface ChartSeries {
-  readonly key: string;
-  readonly label: string;
-  readonly currency?: string;
-  readonly points: readonly ChartPoint[];
-}
-/** One column of the data-table alternative: the row field it reads and the header it shows. */
-export interface ChartTableColumn {
-  readonly key: string;
-  readonly label: string;
-}
-/** The data-table alternative to the chart: the same buckets, formatted by the caller. */
-export interface ChartTable {
-  readonly caption: string;
-  readonly columns: readonly ChartTableColumn[];
-  readonly rows: readonly Readonly<Record<string, string>>[];
-}
-/** Props of {@link ChartFigure}. */
-export interface ChartFigureProps {
+export type ChartPoint = { readonly bucket: string; readonly value: number | null; readonly state: ValueState; readonly gap?: boolean };
+export type ChartSeries = { readonly key: string; readonly label: string; readonly currency?: string; readonly points: readonly ChartPoint[] };
+export type ChartTableColumn = { readonly key: string; readonly label: string };
+export type ChartTable = { readonly caption: string; readonly columns: readonly ChartTableColumn[]; readonly rows: readonly Readonly<Record<string, string>>[] };
+export type ChartFigureProps = {
   readonly title: string;
   readonly summary: string;
   readonly caption: string;
@@ -55,134 +29,54 @@ export interface ChartFigureProps {
   readonly table: ChartTable;
   readonly locale: string;
   readonly className?: string;
-}
-// The design system's own values
-const SERIES_PAINTS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"] as const;
-
-type SeriesPaint = (typeof SERIES_PAINTS)[number];
-
-const SERIES_SWATCH: Readonly<Record<SeriesPaint, string>> = {
-  "var(--chart-1)": "bg-chart-1",
-  "var(--chart-2)": "bg-chart-2",
-  "var(--chart-3)": "bg-chart-3",
-  "var(--chart-4)": "bg-chart-4",
-  "var(--chart-5)": "bg-chart-5",
 };
+const SERIES_PAINTS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"] as const;
+type SeriesPaint = (typeof SERIES_PAINTS)[number];
+const SERIES_SWATCH: Readonly<Record<SeriesPaint, string>> = { "var(--chart-1)": "bg-chart-1", "var(--chart-2)": "bg-chart-2", "var(--chart-3)": "bg-chart-3", "var(--chart-4)": "bg-chart-4", "var(--chart-5)": "bg-chart-5" };
 const GRID_PAINT = "var(--border)";
-
 const AXIS_TEXT = { fill: "var(--muted-foreground)", fontSize: 12 } as const;
-
 const TOOLTIP_CURSOR = { fill: "var(--muted)" } as const;
-
 const AREA_FILL_OPACITY = 0.35;
-
 const DEFAULT_CHART_HEIGHT = 240;
-
 const INITIAL_PLOT_WIDTH = 640;
-
 const BUCKET_DATA_KEY = "bucket";
 // One point, as it will be drawn and read
-interface PlottedPoint {
-  readonly bucket: string;
-  readonly plot: number | null;
-  readonly text: string;
-  readonly state: ValueState;
-  readonly gap: boolean;
-}
-interface PlottedSeries {
-  readonly key: string;
-  readonly label: string;
-  readonly dataKey: string;
-  readonly paint: SeriesPaint;
-  readonly swatch: string;
-  readonly points: ReadonlyMap<string, PlottedPoint>;
-  readonly plottable: number;
-  readonly incomplete: number;
-}
+type PlottedPoint = { readonly bucket: string; readonly plot: number | null; readonly text: string; readonly state: ValueState; readonly gap: boolean };
+type PlottedSeries = { readonly key: string; readonly label: string; readonly dataKey: string; readonly paint: SeriesPaint; readonly swatch: string; readonly points: ReadonlyMap<string, PlottedPoint>; readonly plottable: number; readonly incomplete: number };
 type ChartRow = Readonly<Record<string, string | number | null>>;
-
-interface ChartGroup {
-  readonly currency: string | undefined;
-  readonly series: readonly PlottedSeries[];
-  readonly rows: readonly ChartRow[];
-  readonly plottable: number;
-}
-function isNumericState(state: ValueState): boolean {
-  return state === "value" || state === "zero" || state === "incomplete-subtotal";
-}
+type ChartGroup = { readonly currency: string | undefined; readonly series: readonly PlottedSeries[]; readonly rows: readonly ChartRow[]; readonly plottable: number };
+const isNumericState = (state: ValueState): boolean => state === "value" || state === "zero" || state === "incomplete-subtotal";
 function plotValue(point: ChartPoint): number | null {
-  if (point.value === null || !Number.isFinite(point.value)) {
-    return null;
-  }
-  if (!isNumericState(point.state)) {
-    return null;
-  }
+  if (point.value === null || !Number.isFinite(point.value)) return null;
+  if (!isNumericState(point.state)) return null;
   return point.state === "zero" ? 0 : point.value;
 }
 function amountOf(currency: string, point: ChartPoint): Money {
   const carried = isNumericState(point.state) && point.value !== null ? point.value : 0;
   return { currency, minorUnits: minorUnitsOf(carried === 0 ? 0 : carried) };
 }
-function stateWord(state: ValueState): string {
-  switch (state) {
-    case "value":
-      return "";
-    case "zero":
-      return VALUE_STATE_WORDS.zero.label;
-    case "unknown":
-      return VALUE_STATE_WORDS.unknown.label;
-    case "withheld":
-      return VALUE_STATE_WORDS.withheld.label;
-    case "unavailable":
-      return VALUE_STATE_WORDS.unavailable.label;
-    case "incomplete-subtotal":
-      return VALUE_STATE_WORDS["incomplete-subtotal"].label;
-  }
-}
+const stateWord = (state: ValueState): string => (state === "value" ? "" : VALUE_STATE_WORDS[state].label);
 function countText(point: ChartPoint): string {
-  if (!isNumericState(point.state) || point.value === null || !Number.isFinite(point.value)) {
-    return stateWord(point.state === "value" ? "unknown" : point.state);
-  }
+  if (!isNumericState(point.state) || point.value === null || !Number.isFinite(point.value)) return stateWord(point.state === "value" ? "unknown" : point.state);
   const shown = point.state === "zero" ? 0 : point.value;
   return point.state === "incomplete-subtotal" ? `${String(shown)} (${VALUE_STATE_WORDS["incomplete-subtotal"].label})` : String(shown);
 }
-function pointText(currency: string | undefined, point: ChartPoint, locale: string): string {
-  return currency === undefined ? countText(point) : formatMinor(amountOf(currency, point), point.state, locale).text;
-}
+const pointText = (currency: string | undefined, point: ChartPoint, locale: string): string => (currency === undefined ? countText(point) : formatMinor(amountOf(currency, point), point.state, locale).text);
 function normaliseSeries(series: ChartSeries, index: number, locale: string): PlottedSeries {
   const paint = SERIES_PAINTS[index % SERIES_PAINTS.length] ?? SERIES_PAINTS[0];
   const points = new Map<string, PlottedPoint>();
   let plottable = 0;
   let incomplete = 0;
   for (const point of series.points) {
-    if (points.has(point.bucket)) {
-      continue;
-    }
+    if (points.has(point.bucket)) continue;
     const plot = plotValue(point);
     if (plot !== null) {
       plottable += 1;
-      if (point.state === "incomplete-subtotal") {
-        incomplete += 1;
-      }
+      if (point.state === "incomplete-subtotal") incomplete += 1;
     }
-    points.set(point.bucket, {
-      bucket: point.bucket,
-      plot,
-      text: pointText(series.currency, point, locale),
-      state: point.state,
-      gap: point.gap === true,
-    });
+    points.set(point.bucket, { bucket: point.bucket, plot, text: pointText(series.currency, point, locale), state: point.state, gap: point.gap === true });
   }
-  return {
-    key: series.key,
-    label: series.label,
-    dataKey: `s${String(index)}`,
-    paint,
-    swatch: SERIES_SWATCH[paint],
-    points,
-    plottable,
-    incomplete,
-  };
+  return { key: series.key, label: series.label, dataKey: `s${String(index)}`, paint, swatch: SERIES_SWATCH[paint], points, plottable, incomplete };
 }
 function groupSeries(series: readonly ChartSeries[], locale: string): readonly ChartGroup[] {
   const order: (string | undefined)[] = [];
@@ -212,78 +106,35 @@ function groupSeries(series: readonly ChartSeries[], locale: string): readonly C
     }
     const rows: ChartRow[] = buckets.map((bucket) => {
       const row: Record<string, string | number | null> = { [BUCKET_DATA_KEY]: bucket };
-      for (const member of plotted) {
-        row[member.dataKey] = member.points.get(bucket)?.plot ?? null;
-      }
+      for (const member of plotted) row[member.dataKey] = member.points.get(bucket)?.plot ?? null;
       return row;
     });
-    return {
-      currency,
-      series: plotted,
-      rows,
-      plottable: plotted.reduce((total, member) => total + member.plottable, 0),
-    };
+    return { currency, series: plotted, rows, plottable: plotted.reduce((total, member) => total + member.plottable, 0) };
   });
 }
-// Reduced motion
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
-
 function subscribeToReducedMotion(onStoreChange: () => void): () => void {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return () => undefined;
-  }
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => undefined;
   const query = window.matchMedia(REDUCED_MOTION_QUERY);
   query.addEventListener("change", onStoreChange);
-  return () => {
-    query.removeEventListener("change", onStoreChange);
-  };
+  return () => query.removeEventListener("change", onStoreChange);
 }
 function readReducedMotion(): boolean {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return true;
-  }
-  return window.matchMedia(REDUCED_MOTION_QUERY).matches;
+  return typeof window === "undefined" || typeof window.matchMedia !== "function" ? true : window.matchMedia(REDUCED_MOTION_QUERY).matches;
 }
-function readServerReducedMotion(): boolean {
-  return true;
-}
-function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(subscribeToReducedMotion, readReducedMotion, readServerReducedMotion);
-}
+const readServerReducedMotion = (): boolean => true;
+const usePrefersReducedMotion = (): boolean => useSyncExternalStore(subscribeToReducedMotion, readReducedMotion, readServerReducedMotion);
 // The prose summary the chart owes a reader
 const SUMMARY_CLAUSE_KEYS = ["zero", "gap", "unknown", "withheld", "unavailable"] as const;
-
 type SummaryClauseKey = (typeof SUMMARY_CLAUSE_KEYS)[number];
-
-const SUMMARY_CLAUSE_PHRASE: Readonly<Record<SummaryClauseKey, string>> = {
-  zero: "a recorded zero in",
-  gap: "no recorded value in",
-  unknown: "unknown in",
-  withheld: "withheld in",
-  unavailable: "the source could not be read for",
-};
-const SUMMARY_LEAD =
-  "Buckets the chart does not draw are named here rather than filled in: none of them is treated as " +
-  "a zero and none is estimated from a neighbouring bucket. A recorded zero is drawn at zero and " +
-  "named as a zero.";
-interface SummaryClause {
-  readonly key: SummaryClauseKey;
-  readonly phrase: string;
-  readonly buckets: readonly string[];
-}
+const SUMMARY_CLAUSE_PHRASE: Readonly<Record<SummaryClauseKey, string>> = { zero: "a recorded zero in", gap: "no recorded value in", unknown: "unknown in", withheld: "withheld in", unavailable: "the source could not be read for" };
+const SUMMARY_LEAD = "Buckets the chart does not draw are named here rather than filled in: none of them is treated as " + "a zero and none is estimated from a neighbouring bucket. A recorded zero is drawn at zero and " + "named as a zero.";
+type SummaryClause = { readonly key: SummaryClauseKey; readonly phrase: string; readonly buckets: readonly string[] };
 function summaryClauses(member: PlottedSeries): readonly SummaryClause[] {
-  const buckets: Record<SummaryClauseKey, string[]> = {
-    zero: [],
-    gap: [],
-    unknown: [],
-    withheld: [],
-    unavailable: [],
-  };
+  const buckets: Record<SummaryClauseKey, string[]> = { zero: [], gap: [], unknown: [], withheld: [], unavailable: [] };
   for (const point of member.points.values()) {
     if (point.plot !== null) {
-      if (point.state === "zero") {
-        buckets.zero.push(point.bucket);
-      }
+      if (point.state === "zero") buckets.zero.push(point.bucket);
       continue;
     }
     if (point.gap) {
@@ -302,11 +153,7 @@ function summaryClauses(member: PlottedSeries): readonly SummaryClause[] {
         break;
     }
   }
-  return SUMMARY_CLAUSE_KEYS.filter((key) => buckets[key].length > 0).map((key) => ({
-    key,
-    phrase: SUMMARY_CLAUSE_PHRASE[key],
-    buckets: buckets[key],
-  }));
+  return SUMMARY_CLAUSE_KEYS.filter((key) => buckets[key].length > 0).map((key) => ({ key, phrase: SUMMARY_CLAUSE_PHRASE[key], buckets: buckets[key] }));
 }
 function SummaryClauseLine({ member, clauses }: { readonly member: PlottedSeries; readonly clauses: readonly SummaryClause[] }): ReactElement {
   return (
@@ -372,7 +219,6 @@ function CoverageLine({ coverage, partialFigures }: { readonly coverage: Coverag
     </span>
   );
 }
-// The marks
 function ChartLegend({ series }: { readonly series: readonly PlottedSeries[] }): ReactElement {
   return (
     <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -385,23 +231,15 @@ function ChartLegend({ series }: { readonly series: readonly PlottedSeries[] }):
     </ul>
   );
 }
-interface ChartTooltipProps {
-  readonly group: ChartGroup;
-  readonly active?: boolean;
-  readonly label?: string | number;
-}
+type ChartTooltipProps = { readonly group: ChartGroup; readonly active?: boolean; readonly label?: string | number };
 function ChartTooltip({ group, active, label }: ChartTooltipProps): ReactElement | null {
-  if (active !== true || label === undefined) {
-    return null;
-  }
+  if (active !== true || label === undefined) return null;
   const bucket = String(label);
   const entries = group.series.flatMap((member) => {
     const point = member.points.get(bucket);
     return point === undefined ? [] : [{ member, point }];
   });
-  if (entries.length === 0) {
-    return null;
-  }
+  if (entries.length === 0) return null;
   return (
     <div className="flex flex-col gap-1 rounded-md border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-md">
       <p className="font-medium">
@@ -421,18 +259,10 @@ function ChartTooltip({ group, active, label }: ChartTooltipProps): ReactElement
     </div>
   );
 }
-interface ChartPlotProps {
-  readonly group: ChartGroup;
-  readonly kind: ChartKind;
-  readonly locale: string;
-  readonly animate: boolean;
-}
+type ChartPlotProps = { readonly group: ChartGroup; readonly kind: ChartKind; readonly locale: string; readonly animate: boolean };
 function ChartPlot({ group, kind, locale, animate }: ChartPlotProps): ReactElement {
   const currency = group.currency;
-  const valueTick =
-    currency === undefined
-      ? undefined
-      : (value: number): string => (Number.isFinite(value) && Number.isInteger(value) ? formatMinor({ currency, minorUnits: minorUnitsOf(value) }, "value", locale).text : "");
+  const valueTick = currency === undefined ? undefined : (value: number): string => (Number.isFinite(value) && Number.isInteger(value) ? formatMinor({ currency, minorUnits: minorUnitsOf(value) }, "value", locale).text : "");
   const grid = <CartesianGrid stroke={GRID_PAINT} vertical={false} />;
   const categoryAxis = <XAxis dataKey={BUCKET_DATA_KEY} tick={AXIS_TEXT} tickLine={false} axisLine={{ stroke: GRID_PAINT }} interval="preserveStartEnd" minTickGap={8} />;
   const valueAxis = <YAxis width="auto" tick={AXIS_TEXT} tickLine={false} axisLine={false} allowDecimals={false} tickFormatter={valueTick} />;
@@ -458,18 +288,7 @@ function ChartPlot({ group, kind, locale, animate }: ChartPlotProps): ReactEleme
         {valueAxis}
         {tooltip}
         {group.series.map((member) => (
-          <Area
-            key={member.dataKey}
-            dataKey={member.dataKey}
-            name={member.label}
-            type="linear"
-            stroke={member.paint}
-            fill={member.paint}
-            fillOpacity={AREA_FILL_OPACITY}
-            dot={true}
-            connectNulls={false}
-            isAnimationActive={animate}
-          />
+          <Area key={member.dataKey} dataKey={member.dataKey} name={member.label} type="linear" stroke={member.paint} fill={member.paint} fillOpacity={AREA_FILL_OPACITY} dot={true} connectNulls={false} isAnimationActive={animate} />
         ))}
       </AreaChart>
     );
@@ -517,9 +336,7 @@ function everyPointUnavailable(group: ChartGroup): boolean {
   for (const member of group.series) {
     for (const point of member.points.values()) {
       sawPoint = true;
-      if (point.state !== "unavailable") {
-        return false;
-      }
+      if (point.state !== "unavailable") return false;
     }
   }
   return sawPoint;
@@ -527,34 +344,12 @@ function everyPointUnavailable(group: ChartGroup): boolean {
 function UnplottableNotice({ group }: { readonly group: ChartGroup }): ReactElement {
   const subject = group.currency === undefined ? "This series" : `The ${group.currency} series`;
   if (everyPointUnavailable(group)) {
-    return (
-      <StateNotice
-        kind="unavailable"
-        title={`${subject} could not be read`}
-        description="Every bucket in this series reports that its source could not be read, so no point is drawn. Nothing is filled in with a zero, and the table below states each bucket's own state."
-      />
-    );
+    return <StateNotice kind="unavailable" title={`${subject} could not be read`} description="Every bucket in this series reports that its source could not be read, so no point is drawn. Nothing is filled in with a zero, and the table below states each bucket's own state." />;
   }
-  return (
-    <StateNotice
-      kind="empty"
-      title={`${subject} has no figure to draw`}
-      description="Every bucket in this series is a gap, an unknown value or a withheld one, so there is nothing to plot. None is treated as a zero, and the table below names each bucket's own state."
-    />
-  );
+  return <StateNotice kind="empty" title={`${subject} has no figure to draw`} description="Every bucket in this series is a gap, an unknown value or a withheld one, so there is nothing to plot. None is treated as a zero, and the table below names each bucket's own state." />;
 }
-interface ChartGroupFigureProps {
-  readonly group: ChartGroup;
-  readonly kind: ChartKind;
-  readonly caption: string;
-  readonly height: number;
-  readonly describedBy: string;
-  readonly locale: string;
-  readonly animate: boolean;
-}
-// `jsx-a11y/prefer-tag-over-role` is suppressed for this component and only this component: the marks
-// are SVG the chart library draws, with no `src` an `img` could carry, so the element the rule prefers
-// would leave the plot with no accessible name at all.
+type ChartGroupFigureProps = { readonly group: ChartGroup; readonly kind: ChartKind; readonly caption: string; readonly height: number; readonly describedBy: string; readonly locale: string; readonly animate: boolean };
+// `jsx-a11y/prefer-tag-over-role` is suppressed for this component and only this component: the marks are SVG the chart library draws, with no `src` an `img` could carry, so the element the rule prefers would leave the plot with no accessible name at all.
 /* oxlint-disable jsx-a11y/prefer-tag-over-role */
 function ChartGroupFigure({ group, kind, caption, height, describedBy, locale, animate }: ChartGroupFigureProps): ReactElement {
   const regionLabel = group.currency === undefined ? caption : `${caption} Figures are in ${group.currency}.`;
@@ -564,19 +359,9 @@ function ChartGroupFigure({ group, kind, caption, height, describedBy, locale, a
         <UnplottableNotice group={group} />
       ) : (
         <>
-          {/*
-            The currency is named above the plot that draws it, so a figure with two currencies shows
-            which axis is which. A group with no plot renders no such label: the notice that replaces
-            the plot names its own currency in words, and a bare code above an empty space would be a
-            label for something that is not there.
-          */}
+          {/* The currency is named above the plot that draws it, so a two-currency figure shows which axis is which; a group with no plot renders no label, because its notice names the currency in words. */}
           {group.currency === undefined ? null : <p className="text-xs font-medium text-muted-foreground">{group.currency}</p>}
-          {/*
-            `role="img"` is the region, not the SVG: the plot is one picture with one name, and the
-            table beside it carries the figures. The wrapper is a plain `div` because the region is
-            not interactive — nothing here is focusable, so nothing is reachable only by pointing —
-            and because an `img` element cannot hold the marks it surrounds.
-          */}
+          {/* `role="img"` is the region, not the SVG: the plot is one picture with one name and the table beside it carries the figures, and a plain `div` holds marks an `img` could not. */}
           <div role="img" aria-label={regionLabel} aria-describedby={describedBy}>
             <ResponsiveContainer width="100%" height={height} initialDimension={{ width: INITIAL_PLOT_WIDTH, height }}>
               <ChartPlot group={group} kind={kind} locale={locale} animate={animate} />
@@ -596,13 +381,7 @@ export function ChartFigure({ title, summary, caption, kind, height = DEFAULT_CH
   const reducedMotion = usePrefersReducedMotion();
   const groups = groupSeries(series, locale);
   const partialFigures = groups.some((group) => group.series.some((member) => member.incomplete > 0));
-  const seriesClauses = groups.flatMap((group, groupIndex) =>
-    group.series.map((member, seriesIndex) => ({
-      member,
-      key: `${member.key}-${String(groupIndex)}-${String(seriesIndex)}`,
-      clauses: summaryClauses(member),
-    })),
-  );
+  const seriesClauses = groups.flatMap((group, groupIndex) => group.series.map((member, seriesIndex) => ({ member, key: `${member.key}-${String(groupIndex)}-${String(seriesIndex)}`, clauses: summaryClauses(member) })));
   const named = seriesClauses.filter((entry) => entry.clauses.length > 0);
   return (
     <figure data-slot="chart-figure" className={cn("flex w-full flex-col gap-4", className)}>
@@ -613,24 +392,9 @@ export function ChartFigure({ title, summary, caption, kind, height = DEFAULT_CH
         <span className="text-sm text-muted-foreground">{asOf}</span>
       </figcaption>
       {groups.length === 0 ? (
-        <StateNotice
-          kind="empty"
-          title="This chart has no series"
-          description="No series was supplied, so there is nothing to draw. None is invented in its place, and the summary and the table below state what this figure holds."
-        />
+        <StateNotice kind="empty" title="This chart has no series" description="No series was supplied, so there is nothing to draw. None is invented in its place, and the summary and the table below state what this figure holds." />
       ) : (
-        groups.map((group, index) => (
-          <ChartGroupFigure
-            key={group.currency ?? `counts-${String(index)}`}
-            group={group}
-            kind={kind}
-            caption={caption}
-            height={height}
-            describedBy={`${summaryId} ${tableId}`}
-            locale={locale}
-            animate={!reducedMotion}
-          />
-        ))
+        groups.map((group, index) => <ChartGroupFigure key={group.currency ?? `counts-${String(index)}`} group={group} kind={kind} caption={caption} height={height} describedBy={`${summaryId} ${tableId}`} locale={locale} animate={!reducedMotion} />)
       )}
       <div id={summaryId} className="flex flex-col gap-2 text-sm">
         <p>{summary}</p>
@@ -639,13 +403,7 @@ export function ChartFigure({ title, summary, caption, kind, height = DEFAULT_CH
           <SummaryClauseLine key={entry.key} member={entry.member} clauses={entry.clauses} />
         ))}
       </div>
-      {/*
-        The table's name is shown here, above the scroll region rather than inside the table: a
-        caption laid out inside a table wider than its scroll port is centred across the table's full
-        width and clipped at the region's edge, so on a phone a reader would have to scroll the table
-        sideways to read what the table is. It is hidden from assistive technology because the table's
-        own caption element states the same words once, where a table-navigation command finds them.
-      */}
+      {/* The table's name sits above the scroll region, where it is not clipped at the region's edge on a phone, and is hidden because the table's own caption states the same words once. */}
       <div className="flex flex-col gap-2">
         <p aria-hidden="true" className="text-sm text-muted-foreground">
           {table.caption}

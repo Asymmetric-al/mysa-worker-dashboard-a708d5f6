@@ -7,20 +7,14 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { cn } from "@/lib/cn";
 import type { ContentLocale } from "@/modules/content/locale";
 type ContentDirection = ContentLocale["direction"];
-
-const DIRECTION_WORDS: Readonly<Record<ContentDirection, string>> = {
-  ltr: "left to right",
-  rtl: "right to left",
-};
-/** One edition this control may offer. */
+const DIRECTION_WORDS: Readonly<Record<ContentDirection, string>> = { ltr: "left to right", rtl: "right to left" };
 export interface LocaleEdition extends ContentLocale {
   readonly endonym?: string;
   readonly label?: string;
   readonly releaseId?: string;
   readonly isSiteDefault?: boolean;
 }
-/** Props of {@link LocaleSwitcher}. */
-export interface LocaleSwitcherProps {
+export type LocaleSwitcherProps = {
   readonly locales: readonly LocaleEdition[];
   readonly requested: string;
   readonly served?: string;
@@ -30,25 +24,16 @@ export interface LocaleSwitcherProps {
   readonly unavailable?: boolean;
   readonly label: string;
   readonly className?: string;
-}
-function normaliseTag(tag: string): string {
-  return tag.trim().toLowerCase();
-}
+};
+const normaliseTag = (tag: string): string => tag.trim().toLowerCase();
 function findEdition(locales: readonly LocaleEdition[], tag: string | undefined): LocaleEdition | undefined {
-  if (tag === undefined) {
-    return undefined;
-  }
+  if (tag === undefined) return undefined;
   const wanted = normaliseTag(tag);
-  if (wanted === "") {
-    return undefined;
-  }
-  return locales.find((locale) => normaliseTag(locale.tag) === wanted);
+  return wanted === "" ? undefined : locales.find((locale) => normaliseTag(locale.tag) === wanted);
 }
 function languageNameOf(tag: string): string {
   const trimmed = tag.trim();
-  if (trimmed === "") {
-    return "";
-  }
+  if (trimmed === "") return "";
   const language = (trimmed.split("-")[0] ?? trimmed).toLowerCase();
   try {
     const names = new Intl.DisplayNames([language], { type: "language" });
@@ -60,14 +45,9 @@ function languageNameOf(tag: string): string {
 }
 function displayNameOf(edition: LocaleEdition): string {
   const endonym = edition.endonym?.trim() ?? "";
-  if (endonym !== "") {
-    return endonym;
-  }
+  if (endonym !== "") return endonym;
   const label = edition.label?.trim() ?? "";
-  if (label !== "") {
-    return label;
-  }
-  return languageNameOf(edition.tag);
+  return label !== "" ? label : languageNameOf(edition.tag);
 }
 function optionTextOf(edition: LocaleEdition): string {
   const name = displayNameOf(edition);
@@ -94,21 +74,13 @@ export function LocaleSwitcher({ locales, requested, served, fallbackOccurred = 
     directionHandler.current = onDirectionChange;
   });
   useEffect(() => {
-    if (reportedDirection.current === servedDirection) {
-      return;
-    }
+    if (reportedDirection.current === servedDirection) return;
     reportedDirection.current = servedDirection;
-    if (servedDirection !== undefined) {
-      directionHandler.current?.(servedDirection);
-    }
+    if (servedDirection !== undefined) directionHandler.current?.(servedDirection);
   }, [servedDirection]);
   let servedSentence: ReactNode;
   if (servedEdition === undefined) {
-    servedSentence = isUnavailable ? null : (
-      <span className="min-w-0 text-muted-foreground text-pretty wrap-anywhere">
-        {fallbackOccurred ? "A language other than the one requested is being shown; choose the edition to read below." : "No language is being read yet."}
-      </span>
-    );
+    servedSentence = isUnavailable ? null : <span className="min-w-0 text-muted-foreground text-pretty wrap-anywhere">{fallbackOccurred ? "A language other than the one requested is being shown; choose the edition to read below." : "No language is being read yet."}</span>;
   } else {
     servedSentence = (
       <>
@@ -135,26 +107,18 @@ export function LocaleSwitcher({ locales, requested, served, fallbackOccurred = 
         id={selectId}
         className="w-full max-w-full"
         value={servedTag}
-        // Disabled only when there is nothing to choose. An unavailable language that still has
-        // admitted alternatives keeps the control usable, because switching to one of them is the
-        // reader's recovery; the choice withheld is the requested language itself, which is never
-        // offered as an option.
+        // Disabled only when there is nothing to choose. An unavailable language that still has admitted alternatives keeps the control usable, because switching to one of them is the reader's recovery; the choice withheld is the requested language itself, which is never offered as an option.
         disabled={!hasEditions}
         aria-describedby={servedSentenceId}
         onChange={(event) => {
-          // Admission is re-checked against the list the control was given, so `onRequest` can only
-          // ever receive a tag that is in `locales` — a tampered or stale option value selects
-          // nothing rather than asking for an edition the reader may not read.
+          // Admission is re-checked against the list the control was given, so `onRequest` can only ever receive a tag that is in `locales` — a tampered or stale option value selects nothing rather than asking for an edition the reader may not read.
           const chosen = findEdition(locales, event.target.value);
-          if (chosen === undefined) {
-            return;
-          }
+          if (chosen === undefined) return;
           onRequest(chosen.tag);
         }}
       >
         {servedTag === "" ? (
-          // Named rather than blank, and `disabled` so it cannot be picked as if it were a language:
-          // an empty selection would otherwise read as a control that failed to load.
+          // Named rather than blank, and `disabled` so it cannot be picked as if it were a language: an empty selection would otherwise read as a control that failed to load.
           <NativeSelectOption value="" disabled>
             {isUnavailable ? "No edition in the requested language" : "No language selected"}
           </NativeSelectOption>
@@ -167,11 +131,7 @@ export function LocaleSwitcher({ locales, requested, served, fallbackOccurred = 
       </NativeSelect>
       <output
         id={servedSentenceId}
-        // `output` carries the implicit `status` role and a polite live region, so a change of the
-        // served edition is announced once. `htmlFor` names the control whose value it reports, and
-        // `aria-atomic` keeps the sentence whole instead of announcing only the fragments that
-        // changed. This is the component's only polite region: the unavailable case speaks through
-        // the notice below, so the two never announce the same fact twice.
+        // `output` carries the implicit `status` role and a polite live region, `htmlFor` names the control it reports, and `aria-atomic` keeps the sentence whole; this is the component's only polite region, so no fact is announced twice.
         htmlFor={selectId}
         aria-atomic="true"
         className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-start text-xs"
@@ -181,14 +141,9 @@ export function LocaleSwitcher({ locales, requested, served, fallbackOccurred = 
       {isUnavailable ? (
         <StateNotice
           kind="language-unavailable"
-          // The heading names the missing language and nothing else: no edition title, no count, no
-          // sibling language and no hint that another audience has one.
+          // The heading names the missing language and nothing else: no edition title, no count, no sibling language and no hint that another audience has one.
           title={requestedName === "" ? "Language unavailable" : `Language unavailable: ${requestedName}`}
-          description={
-            hasEditions
-              ? "Choose another language from the list to read this edition in one you are permitted to read."
-              : "No edition you are permitted to read exists in the language you asked for, and there is no other language to offer here."
-          }
+          description={hasEditions ? "Choose another language from the list to read this edition in one you are permitted to read." : "No edition you are permitted to read exists in the language you asked for, and there is no other language to offer here."}
         />
       ) : null}
     </div>

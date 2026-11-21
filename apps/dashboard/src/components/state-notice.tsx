@@ -1,9 +1,7 @@
 "use client";
-/**
- * The single surface for the seven states that are not a result.
- */
+/** The single surface for the eight states that are not a result. */
 import Link from "next/link";
-import { CircleAlertIcon, CloudOffIcon, LanguagesIcon, ShieldAlertIcon, TriangleAlertIcon } from "lucide-react";
+import { CircleAlertIcon, CloudOffIcon, LanguagesIcon, ShieldAlertIcon, SquarePenIcon, TriangleAlertIcon } from "lucide-react";
 import { useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -15,7 +13,7 @@ import { formatSourceReference, type SourceReference } from "@/lib/ids";
 import type { Coverage, CoverageState } from "@/modules/data-service/envelope";
 import type { DenialReason } from "@/modules/data-service/outcome";
 /** Every state this component renders, listed once so the closed set has a runtime form as well as a type. */
-export const NOTICE_KINDS = ["empty", "loading", "unavailable", "unknown", "denied", "partial-coverage", "language-unavailable"] as const;
+export const NOTICE_KINDS = ["empty", "loading", "unavailable", "unknown", "denied", "refused", "partial-coverage", "language-unavailable"] as const;
 /** One state a surface can be in instead of showing a result. */
 export type NoticeKind = (typeof NOTICE_KINDS)[number];
 /** An in-page command a notice may run. */
@@ -33,7 +31,6 @@ export interface NoticeRetry {
 }
 /** The heading levels a surrounding page can need; the level is the caller's, not the notice's. */
 export type NoticeHeadingLevel = 1 | 2 | 3 | 4;
-/** Props of {@link StateNotice}. */
 export interface StateNoticeProps {
   readonly kind: NoticeKind;
   readonly title: string;
@@ -48,12 +45,7 @@ export interface StateNoticeProps {
   readonly loadingLines?: number;
   readonly className?: string;
 }
-const HEADING_TAG: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4">> = {
-  1: "h1",
-  2: "h2",
-  3: "h3",
-  4: "h4",
-};
+const HEADING_TAG: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4">> = { 1: "h1", 2: "h2", 3: "h3", 4: "h4" };
 const LOADING_LINE_WIDTHS = ["w-full", "w-2/3", "w-4/5", "w-1/2"] as const;
 
 const MAX_LOADING_LINES = 12;
@@ -81,10 +73,7 @@ function NoticeHeading({ level, children }: { readonly level: NoticeHeadingLevel
 }
 const NOTICE_CONTROL_CLASS = "h-auto max-w-full whitespace-normal";
 
-const NOTICE_CONTROL_HEIGHT: Readonly<Record<"default" | "sm", string>> = {
-  default: "min-h-9 py-2",
-  sm: "min-h-8 py-1.5",
-};
+const NOTICE_CONTROL_HEIGHT: Readonly<Record<"default" | "sm", string>> = { default: "min-h-9 py-2", sm: "min-h-8 py-1.5" };
 interface NoticeButtonProps {
   readonly action: NoticeAction;
   readonly variant: "default" | "outline";
@@ -134,8 +123,7 @@ function CoverageGapSentence({ coverage }: { readonly coverage: Coverage }): Rea
   }
   return (
     <>
-      The source covers records from <bdi className={COVERAGE_DATE_CLASS}>{from}</bdi> to <bdi className={COVERAGE_DATE_CLASS}>{to}</bdi>; every date before or after that range is outside the covered
-      period.
+      The source covers records from <bdi className={COVERAGE_DATE_CLASS}>{from}</bdi> to <bdi className={COVERAGE_DATE_CLASS}>{to}</bdi>; every date before or after that range is outside the covered period.
     </>
   );
 }
@@ -200,9 +188,7 @@ function renderAlertContent(input: AlertContentInput): AlertContent {
               </p>
             )}
             {description === undefined ? null : <p>{description}</p>}
-            <p>
-              No second attempt starts from here: a check reads what happened, and repeating the same request under the same operation replays its original result rather than repeating the effect.
-            </p>
+            <p>No second attempt starts from here: a check reads what happened, and repeating the same request under the same operation replays its original result rather than repeating the effect.</p>
           </>
         ),
       };
@@ -219,6 +205,17 @@ function renderAlertContent(input: AlertContentInput): AlertContent {
             )}
             {description === undefined ? null : <p>{description}</p>}
             <p>The answer is identical whether or not anything exists here, so nothing on this surface reveals what it cannot show.</p>
+          </>
+        ),
+      };
+    case "refused":
+      return {
+        icon: <SquarePenIcon aria-hidden="true" />,
+        body: (
+          <>
+            <p>This view's own request was refused, so nothing was read and nothing is shown in its place. The source did not fail, and no permission was refused.</p>
+            {description === undefined ? null : <p>{description}</p>}
+            <p>Correct the request and ask again: once it is one this view admits, the read runs unchanged.</p>
           </>
         ),
       };
@@ -245,21 +242,8 @@ function renderAlertContent(input: AlertContentInput): AlertContent {
       };
   }
 }
-/** The one empty, busy, unavailable, unknown, denied, partial-coverage or language-unavailable surface in the application. */
-export function StateNotice({
-  kind,
-  title,
-  description,
-  action,
-  source,
-  retry,
-  operationId,
-  coverage,
-  reasonCode,
-  headingLevel = 3,
-  loadingLines = DEFAULT_LOADING_LINES,
-  className,
-}: StateNoticeProps): ReactElement {
+/** The one empty, busy, unavailable, unknown, denied, refused, partial-coverage or language-unavailable surface in the application. */
+export function StateNotice({ kind, title, description, action, source, retry, operationId, coverage, reasonCode, headingLevel = 3, loadingLines = DEFAULT_LOADING_LINES, className }: StateNoticeProps): ReactElement {
   const regionRef = useRef<HTMLDivElement | null>(null);
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
@@ -286,19 +270,9 @@ export function StateNotice({
     void Promise.resolve(result).then(settle, settle);
   };
   const actionOnClick = action?.onClick;
-  const runAction =
-    actionOnClick === undefined
-      ? undefined
-      : (): void => {
-          run(actionOnClick, false);
-        };
+  const runAction = actionOnClick === undefined ? undefined : (): void => run(actionOnClick, false);
   const retryOnClick = retry?.onClick;
-  const runRetry =
-    retryOnClick === undefined
-      ? undefined
-      : (): void => {
-          run(retryOnClick, true);
-        };
+  const runRetry = retryOnClick === undefined ? undefined : (): void => run(retryOnClick, true);
   const busy = pending ? true : undefined;
   if (kind === "empty") {
     return (
@@ -348,15 +322,7 @@ export function StateNotice({
       </div>
     );
   }
-  const { icon, body } = renderAlertContent({
-    kind,
-    description,
-    source,
-    retry,
-    operationId,
-    coverage,
-    reasonCode,
-  });
+  const { icon, body } = renderAlertContent({ kind, description, source, retry, operationId, coverage, reasonCode });
   const buttons: ReactElement[] = [];
   if (action !== undefined) {
     const actionButton = <NoticeButton key="action" action={action} variant="default" size="sm" pending={pending} onRun={runAction} />;

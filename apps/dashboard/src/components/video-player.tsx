@@ -1,7 +1,5 @@
 "use client";
-/**
- * The one video playback surface in the application.
- */
+/** The one video playback surface in the application. */
 import Image from "next/image";
 import { FilmIcon, TriangleAlertIcon } from "lucide-react";
 import { useId, useState, type ReactElement } from "react";
@@ -12,15 +10,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/cn";
 import type { MediaPreparationState } from "@/modules/media/asset";
-/** One admitted caption track. */
-export interface VideoPlayerCaption {
-  readonly src: string;
-  readonly srcLang: string;
-  readonly label: string;
-  readonly default?: boolean;
-}
-/** Props of {@link VideoPlayer}. */
-export interface VideoPlayerProps {
+export type VideoPlayerCaption = { readonly src: string; readonly srcLang: string; readonly label: string; readonly default?: boolean };
+export type VideoPlayerProps = {
   readonly title: string;
   readonly src?: string;
   readonly poster?: string;
@@ -34,19 +25,13 @@ export interface VideoPlayerProps {
   readonly nextStep?: string;
   readonly onRetry?: () => void;
   readonly className?: string;
-}
+};
 const DEFAULT_REJECTION = "It did not pass this application's local video profile check, so nothing was placed.";
-
 const SELECTED_COPY = "Chosen, and not yet prepared. This video is prepared on this device before it can be played.";
-
 const PREPARING_COPY = "Preparing this video on this device. Nothing is uploaded, and the video can be played once preparation finishes.";
-
 const UNAVAILABLE_COPY = "This placement's video could not be read from its source, so the player is not shown.";
-
 const NO_PLAYBACK_RENDITION = "No playback rendition was supplied for this placement, so there is nothing to play.";
-
-const PLAYBACK_FAILED =
-  "The request for this video did not complete, so it is not offered as playable. A restriction applied since this page was opened has the same effect, because every request is re-checked.";
+const PLAYBACK_FAILED = "The request for this video did not complete, so it is not offered as playable. A restriction applied since this page was opened has the same effect, because every request is re-checked.";
 const TRANSCRIPT_TEXT_CLASS = "text-sm text-muted-foreground whitespace-pre-line wrap-anywhere";
 /** The single video surface, in whichever of its six states the placement is in. */
 export function VideoPlayer({ title, src, poster, captions, transcript, credit, language, state, direction, reason, nextStep, onRetry, className }: VideoPlayerProps): ReactElement {
@@ -62,18 +47,12 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
   const playbackFailed = playableSrc !== undefined && failedSrc === playableSrc;
   const handleRetry = (): void => {
     setFailedSrc(null);
-    if (retry !== undefined) {
-      retry();
-    }
+    if (retry !== undefined) retry();
   };
   function renderPosterFrame(): ReactElement {
     return (
       <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg bg-muted">
-        {poster === undefined ? (
-          <FilmIcon aria-hidden="true" className="size-8 text-muted-foreground" />
-        ) : (
-          <Image src={poster} alt="" aria-hidden="true" fill unoptimized sizes="(max-width: 640px) 100vw, 40rem" className="object-cover" />
-        )}
+        {poster === undefined ? <FilmIcon aria-hidden="true" className="size-8 text-muted-foreground" /> : <Image src={poster} alt="" aria-hidden="true" fill unoptimized sizes="(max-width: 640px) 100vw, 40rem" className="object-cover" />}
       </div>
     );
   }
@@ -81,9 +60,7 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
     return retry === undefined ? undefined : { label: "Try loading the video again", onClick: handleRetry };
   }
   function renderChooseAnotherFile(): ReactElement | null {
-    if (retry === undefined) {
-      return null;
-    }
+    if (retry === undefined) return null;
     return (
       <Button type="button" variant="outline" size="sm" onClick={handleRetry}>
         Choose another file
@@ -137,34 +114,15 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
     );
   }
   function renderPlayable(): ReactElement {
-    if (playableSrc === undefined) {
-      return renderUnavailable(NO_PLAYBACK_RENDITION);
-    }
-    if (playbackFailed) {
-      return renderUnavailable(PLAYBACK_FAILED);
-    }
+    if (playableSrc === undefined) return renderUnavailable(NO_PLAYBACK_RENDITION);
+    if (playbackFailed) return renderUnavailable(PLAYBACK_FAILED);
     return (
       // oxlint-disable-next-line jsx-a11y/media-has-caption
-      <video
-        aria-label={title}
-        className="aspect-video w-full max-w-full rounded-lg bg-muted object-contain"
-        controls
-        onError={() => {
-          setFailedSrc(playableSrc);
-        }}
-        playsInline
-        poster={poster}
-        preload="metadata"
-        src={playableSrc}
-      >
+      <video aria-label={title} className="aspect-video w-full max-w-full rounded-lg bg-muted object-contain" controls onError={() => setFailedSrc(playableSrc)} playsInline poster={poster} preload="metadata" src={playableSrc}>
         {trackList.map((track, index) => (
           <track key={track.src} kind="captions" src={track.src} srcLang={track.srcLang} label={track.label} {...(index === defaultTrackIndex ? { default: true } : {})} />
         ))}
-        <p className="p-4 text-sm text-muted-foreground">
-          {hasTranscript
-            ? "This browser cannot play the video here. The transcript below is the alternative."
-            : "This browser cannot play the video here, and no transcript was admitted for this placement."}
-        </p>
+        <p className="p-4 text-sm text-muted-foreground">{hasTranscript ? "This browser cannot play the video here. The transcript below is the alternative." : "This browser cannot play the video here, and no transcript was admitted for this placement."}</p>
       </video>
     );
   }
@@ -185,9 +143,7 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
     }
   }
   function renderMeta(): ReactElement | null {
-    if (credit === undefined && language === undefined) {
-      return null;
-    }
+    if (credit === undefined && language === undefined) return null;
     return (
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
         {credit === undefined ? null : (
@@ -204,9 +160,7 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
     );
   }
   function renderTranscript(): ReactElement | null {
-    if (transcript === undefined || !hasTranscript) {
-      return null;
-    }
+    if (transcript === undefined || !hasTranscript) return null;
     const collapsible = state === "ready" && playableSrc !== undefined && !playbackFailed;
     if (!collapsible) {
       return (
@@ -220,17 +174,7 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
     }
     return (
       <div className="flex flex-col gap-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-controls={transcriptId}
-          aria-expanded={transcriptOpen}
-          onClick={() => {
-            setTranscriptOpen((open) => !open);
-          }}
-          className="self-start"
-        >
+        <Button type="button" variant="ghost" size="sm" aria-controls={transcriptId} aria-expanded={transcriptOpen} onClick={() => setTranscriptOpen((open) => !open)} className="self-start">
           {transcriptOpen ? "Hide transcript" : "Read transcript"}
         </Button>
         <div id={transcriptId} dir="auto" hidden={!transcriptOpen} className={TRANSCRIPT_TEXT_CLASS}>

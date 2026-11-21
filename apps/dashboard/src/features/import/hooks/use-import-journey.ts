@@ -1,21 +1,14 @@
 "use client";
-/**
- * The contact-import journey's own state: which of the five steps the worker is standing on, what each
- * step has already been given, which steps that work opens, and the one attempt identity for each
- * intent this journey submits.
- */
 import { useMemo, useReducer } from "react";
 import { STEPS, stepIndex, type ImportStepId } from "@/features/import/copy";
 import { newOperationId } from "@/lib/ids";
 import type { ImportCellCorrectionInput, ImportDecisionInput } from "@/modules/import/decide";
 import type { ImportConfirmedMapping } from "@/modules/import/map";
-/** The one file the worker chose, held between steps so that re-opening the first step still shows it. */
 export interface ImportFileSelection {
   readonly fileName: string;
   readonly byteLength: number;
   readonly contentBase64: string;
 }
-/** One worker's position in the five-step import journey, with the work each step has been given. */
 export interface ImportJourney {
   readonly step: ImportStepId;
   readonly canOpen: (step: ImportStepId) => boolean;
@@ -45,32 +38,11 @@ interface JourneyState {
   readonly proposalOperationId: string | undefined;
   readonly decisionOperationIds: Readonly<Record<number, string>>;
 }
-const EMPTY_JOURNEY: JourneyState = {
-  step: FIRST_STEP,
-  file: undefined,
-  mapping: undefined,
-  decisions: {},
-  acknowledged: false,
-  proposalOperationId: undefined,
-  decisionOperationIds: {},
-};
+const EMPTY_JOURNEY: JourneyState = { step: FIRST_STEP, file: undefined, mapping: undefined, decisions: {}, acknowledged: false, proposalOperationId: undefined, decisionOperationIds: {} };
 type JourneyAction =
-  | {
-      readonly type: "file-chosen";
-      readonly selection: ImportFileSelection;
-      readonly operationId: string;
-    }
-  | {
-      readonly type: "mapping-confirmed";
-      readonly mapping: ImportConfirmedMapping;
-      readonly operationId: string;
-    }
-  | {
-      readonly type: "decision-recorded";
-      readonly rowNumber: number;
-      readonly decision: ImportDecisionInput;
-      readonly operationId: string;
-    }
+  | { readonly type: "file-chosen"; readonly selection: ImportFileSelection; readonly operationId: string }
+  | { readonly type: "mapping-confirmed"; readonly mapping: ImportConfirmedMapping; readonly operationId: string }
+  | { readonly type: "decision-recorded"; readonly rowNumber: number; readonly decision: ImportDecisionInput; readonly operationId: string }
   | { readonly type: "acknowledged" }
   | { readonly type: "step-opened"; readonly step: ImportStepId }
   | { readonly type: "reset" };
@@ -132,31 +104,11 @@ function reviewedSnapshotKey(decisions: Readonly<Record<number, ImportDecisionIn
 function reduceJourney(state: JourneyState, action: JourneyAction): JourneyState {
   switch (action.type) {
     case "file-chosen":
-      return settleStep({
-        ...EMPTY_JOURNEY,
-        step: state.step,
-        file: action.selection,
-        proposalOperationId: action.operationId,
-      });
+      return settleStep({ ...EMPTY_JOURNEY, step: state.step, file: action.selection, proposalOperationId: action.operationId });
     case "mapping-confirmed":
-      return settleStep({
-        ...state,
-        mapping: action.mapping,
-        proposalOperationId: action.operationId,
-        decisions: {},
-        decisionOperationIds: {},
-        acknowledged: false,
-      });
+      return settleStep({ ...state, mapping: action.mapping, proposalOperationId: action.operationId, decisions: {}, decisionOperationIds: {}, acknowledged: false });
     case "decision-recorded":
-      return settleStep({
-        ...state,
-        decisions: { ...state.decisions, [action.rowNumber]: action.decision },
-        decisionOperationIds: {
-          ...state.decisionOperationIds,
-          [action.rowNumber]: action.operationId,
-        },
-        acknowledged: false,
-      });
+      return settleStep({ ...state, decisions: { ...state.decisions, [action.rowNumber]: action.decision }, decisionOperationIds: { ...state.decisionOperationIds, [action.rowNumber]: action.operationId }, acknowledged: false });
     case "acknowledged":
       return settleStep({ ...state, acknowledged: true });
     case "step-opened":

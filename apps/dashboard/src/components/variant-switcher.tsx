@@ -9,17 +9,11 @@ import { cn } from "@/lib/cn";
 import type { ContentLocale } from "@/modules/content/locale";
 import { VARIANT_AUDIENCES, variantKeyAllowed, type VariantAudience, type VariantFamily } from "@/modules/content/variant";
 /** The word and tone of each audience a variant may serve, exhaustive over the content module's closed union so a third audience is a compile error rather than an unlabelled chip. */
-export const AUDIENCE_WORDS: Readonly<Record<VariantAudience, StatusBadgeSpec>> = {
-  public: { label: "Public", tone: "neutral" },
-  "approved-supporter": { label: "Approved supporter", tone: "info" },
-};
+export const AUDIENCE_WORDS: Readonly<Record<VariantAudience, StatusBadgeSpec>> = { public: { label: "Public", tone: "neutral" }, "approved-supporter": { label: "Approved supporter", tone: "info" } };
 const NO_EDITION_NOTICE = "No edition you are permitted to read is listed here.";
-
 function languageEndonymOf(tag: string): string {
   const trimmed = tag.trim();
-  if (trimmed === "") {
-    return "";
-  }
+  if (trimmed === "") return "";
   const language = (trimmed.split("-")[0] ?? trimmed).toLowerCase();
   try {
     const names = new Intl.DisplayNames([language], { type: "language" });
@@ -29,23 +23,8 @@ function languageEndonymOf(tag: string): string {
     return trimmed;
   }
 }
-/** One edition this selector may offer: the identity of the variant, the audience it serves, its exact content locale, and the lifecycle state the surface derived for it. */
-export interface VariantTab {
-  readonly variantId: string;
-  readonly audience: VariantAudience;
-  readonly locale: ContentLocale;
-  readonly lifecycle: ContentLifecycleState;
-  readonly staleSince?: string;
-}
-/** Props of {@link VariantSwitcher}. */
-export interface VariantSwitcherProps {
-  readonly family: VariantFamily;
-  readonly variants: readonly VariantTab[];
-  readonly activeVariantId: string;
-  readonly onSelect: (variantId: string) => void;
-  readonly label: string;
-  readonly className?: string;
-}
+export type VariantTab = { readonly variantId: string; readonly audience: VariantAudience; readonly locale: ContentLocale; readonly lifecycle: ContentLifecycleState; readonly staleSince?: string };
+export type VariantSwitcherProps = { readonly family: VariantFamily; readonly variants: readonly VariantTab[]; readonly activeVariantId: string; readonly onSelect: (variantId: string) => void; readonly label: string; readonly className?: string };
 function audienceRank(audience: VariantAudience): number {
   const index = VARIANT_AUDIENCES.indexOf(audience);
   return index === -1 ? VARIANT_AUDIENCES.length : index;
@@ -53,35 +32,23 @@ function audienceRank(audience: VariantAudience): number {
 function compareLocaleTags(left: string, right: string): number {
   const a = left.trim().toLowerCase();
   const b = right.trim().toLowerCase();
-  if (a === b) {
-    return 0;
-  }
+  if (a === b) return 0;
   return a < b ? -1 : 1;
 }
 function compareEditions(left: VariantTab, right: VariantTab): number {
   const byLocale = compareLocaleTags(left.locale.tag, right.locale.tag);
-  if (byLocale !== 0) {
-    return byLocale;
-  }
+  if (byLocale !== 0) return byLocale;
   const byAudience = audienceRank(left.audience) - audienceRank(right.audience);
-  if (byAudience !== 0) {
-    return byAudience;
-  }
-  if (left.variantId === right.variantId) {
-    return 0;
-  }
+  if (byAudience !== 0) return byAudience;
+  if (left.variantId === right.variantId) return 0;
   return left.variantId < right.variantId ? -1 : 1;
 }
 function permittedEditions(family: VariantFamily, variants: readonly VariantTab[]): readonly VariantTab[] {
   const seen = new Set<string>();
   const permitted: VariantTab[] = [];
   for (const variant of variants) {
-    if (!variantKeyAllowed(family, variant.audience)) {
-      continue;
-    }
-    if (variant.variantId.trim() === "" || seen.has(variant.variantId)) {
-      continue;
-    }
+    if (!variantKeyAllowed(family, variant.audience)) continue;
+    if (variant.variantId.trim() === "" || seen.has(variant.variantId)) continue;
     seen.add(variant.variantId);
     permitted.push(variant);
   }
@@ -106,9 +73,7 @@ export function VariantSwitcher({ family, variants, activeVariantId, onSelect, l
   const active = editions.find((edition) => edition.variantId === activeId);
   const requestSelection = (candidate: string): void => {
     const chosen = editions.find((edition) => edition.variantId === candidate);
-    if (chosen === undefined || chosen.variantId === activeId) {
-      return;
-    }
+    if (chosen === undefined || chosen.variantId === activeId) return;
     onSelect(chosen.variantId);
   };
   if (editions.length === 0) {
@@ -136,46 +101,31 @@ export function VariantSwitcher({ family, variants, activeVariantId, onSelect, l
     );
   }
   return (
-    <div
-      data-slot="variant-switcher"
-      data-family={family}
-      data-active-variant={active === undefined ? undefined : active.variantId}
-      data-active-lifecycle={active === undefined ? undefined : active.lifecycle}
-      className={cn("flex min-w-0 flex-col gap-2", className)}
-    >
+    <div data-slot="variant-switcher" data-family={family} data-active-variant={active === undefined ? undefined : active.variantId} data-active-lifecycle={active === undefined ? undefined : active.lifecycle} className={cn("flex min-w-0 flex-col gap-2", className)}>
       <div className="hidden min-w-0 flex-col gap-2 sm:flex">
         <span id={labelId} className="text-start text-sm leading-none font-medium text-pretty wrap-anywhere">
           {label}
         </span>
         <Tabs
-          // `null` rather than `undefined`: Base UI reads `null` as "no tab is active" in a
-          // controlled root, while `undefined` hands the root back to its own default selection and
-          // would mark an edition current that the feature never chose.
+          // `null` rather than `undefined`: Base UI reads `null` as "no tab is active" in a controlled root, while `undefined` hands the root back to its own default selection and would mark an edition current that the feature never chose.
           value={active === undefined ? null : active.variantId}
           onValueChange={(value: unknown, eventDetails: { reason: string }) => {
-            // Only a selection the worker made asks for a different edition. Base UI also reports
-            // automatic changes — an initial or missing-tab fallback — and those must never move a
-            // feature to an edition nobody chose.
-            if (eventDetails.reason !== "none" || typeof value !== "string") {
-              return;
-            }
+            // Only a selection the worker made asks for a different edition. Base UI also reports automatic changes — an initial or missing-tab fallback — and those must never move a feature to an edition nobody chose.
+            if (eventDetails.reason !== "none" || typeof value !== "string") return;
             requestSelection(value);
           }}
           className="min-w-0"
         >
           <TabsList
             aria-labelledby={labelId}
-            // The list wraps instead of scrolling: its own height is released so a second row of
-            // editions is not clipped, and it is bounded by the column so no strip can widen the page.
+            // The list wraps instead of scrolling: its own height is released so a second row of editions is not clipped, and it is bounded by the column so no strip can widen the page.
             className="group-data-horizontal/tabs:h-auto max-w-full flex-wrap justify-start"
           >
             {editions.map((edition) => (
               <TabsTrigger
                 key={edition.variantId}
                 value={edition.variantId}
-                // The visible label is the audience chip, the endonym and the lifecycle word; the
-                // accessible name states the same three parts as one sentence, so a screen-reader
-                // user never confuses two editions of the same document.
+                // The visible label is the audience chip, the endonym and the lifecycle word; the accessible name states the same three parts as one sentence, so a screen-reader user never confuses two editions of the same document.
                 aria-label={spokenNameOf(edition)}
                 className="min-w-0 flex-none items-start whitespace-normal"
               >
@@ -191,16 +141,9 @@ export function VariantSwitcher({ family, variants, activeVariantId, onSelect, l
       </div>
       <div className="flex min-w-0 flex-col gap-2 sm:hidden">
         <Label htmlFor={selectId}>{label}</Label>
-        <NativeSelect
-          id={selectId}
-          className="w-full max-w-full"
-          value={active === undefined ? "" : active.variantId}
-          aria-describedby={announcementId}
-          onChange={(event) => requestSelection(event.target.value)}
-        >
+        <NativeSelect id={selectId} className="w-full max-w-full" value={active === undefined ? "" : active.variantId} aria-describedby={announcementId} onChange={(event) => requestSelection(event.target.value)}>
           {active === undefined ? (
-            // Named rather than blank, and not selectable: an empty option reads as a control that
-            // failed to load, and choosing it would not name an edition.
+            // Named rather than blank, and not selectable: an empty option reads as a control that failed to load, and choosing it would not name an edition.
             <NativeSelectOption value="" disabled>
               No edition selected
             </NativeSelectOption>
@@ -215,10 +158,7 @@ export function VariantSwitcher({ family, variants, activeVariantId, onSelect, l
       <output
         id={announcementId}
         htmlFor={selectId}
-        // `output` is the semantic status element, so it carries the polite live region that announces
-        // a change without a `role` on a generic element. It is this component's only live region: the
-        // tabs announce their own selection and the lifecycle sentence below is not live, so nothing
-        // here is spoken twice. `aria-atomic` keeps the sentence whole.
+        // `output` carries the polite live region that announces a change without a `role` on a generic element; it is this component's only live region, and `aria-atomic` keeps the sentence whole.
         aria-atomic="true"
         className="text-start text-xs text-muted-foreground text-pretty wrap-anywhere"
       >

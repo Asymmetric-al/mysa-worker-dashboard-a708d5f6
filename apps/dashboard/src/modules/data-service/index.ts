@@ -1,48 +1,17 @@
-/**
- * The whole data surface, grouped by visible job.
- */
+/** The whole data surface, grouped by visible job. */
 import { readAudience, readDiscoveryIndex, readInbox, readPreferences, readReceivingList, readReceivingPage, readReceivingPost, readSendResult } from "./reads/audience";
 import { readCheckIns, readCoachPortfolio, readCoachSubject, readCoachingOverview, readTargets, readTaskShares } from "./reads/coaching";
-import {
-  findContentDocuments,
-  readCandidate,
-  readDraft,
-  readGivingBinding,
-  readPage,
-  readPageCatalogues,
-  readPageLocales,
-  readPreview,
-  readRelease,
-  readSharePresentation,
-  readVariantOverview,
-} from "./reads/content";
+import { findContentDocuments, readCandidate, readDraft, readGivingBinding, readPage, readPageCatalogues, readPageLocales, readPreview, readRelease, readSharePresentation, readVariantOverview } from "./reads/content";
 import { readDevState } from "./reads/dev";
 import { readImportProposal, readImportReceipt } from "./reads/import";
 import { readMediaAsset } from "./reads/media";
 import { readInitiative, readInitiativeResults, readInitiatives, readReferral, readReferrals } from "./reads/outreach";
-import { findPartners, readFacets, readInteractions, readPartner, readPrivatePreparation, readSavedViews } from "./reads/partners";
+import { findPartners, readFacets, readInteractions, readPartner, readPartnerRecord, readPrivatePreparation, readSavedViews } from "./reads/partners";
 import { readAdmissionState, readContextChooser, readHome } from "./reads/shell";
 import { readCommitments, readExport, readGifts, readGoal, readReport, readSupportOverview } from "./reads/support";
 import { listTasks, readAgenda, readSeries } from "./reads/tasks";
 import { confirmMembership, setPreference, signupForPurpose, unsubscribe } from "./mutations/audience";
-import {
-  acceptInvitation,
-  editTarget,
-  endCoaching,
-  endTarget,
-  inviteCoach,
-  leaveCoaching,
-  pauseTarget,
-  revokeGrant,
-  saveCheckIn,
-  saveTarget,
-  setModule,
-  shareCheckIn,
-  shareTaskSummary,
-  stopTaskShare,
-  updateSharedCheckIn,
-  withdrawCheckIn,
-} from "./mutations/coaching";
+import { acceptInvitation, editTarget, endCoaching, endTarget, inviteCoach, leaveCoaching, pauseTarget, revokeGrant, saveCheckIn, saveTarget, setModule, shareCheckIn, shareTaskSummary, stopTaskShare, updateSharedCheckIn, withdrawCheckIn } from "./mutations/coaching";
 import {
   addSection,
   applyPreset,
@@ -70,53 +39,10 @@ import {
 } from "./mutations/content";
 import { advanceClock, resetSeed, selectContext, setClock, setFailurePlan, setScenario } from "./mutations/dev";
 import { acceptImportRows, cancelImport, proposeImport, setRowDecision } from "./mutations/import";
-import {
-  addMembers,
-  closeInitiative,
-  continueReferral,
-  createInitiative,
-  draftRequest,
-  presentRequest,
-  recordIntroduction,
-  recordRequestResponse,
-  removeMember,
-  reopenInitiative,
-  returnMember,
-  setStage,
-} from "./mutations/outreach";
-import {
-  archivePreparation,
-  createPrivatePreparation,
-  deleteView,
-  logInteraction,
-  renameView,
-  restorePreparation,
-  saveContactEdits,
-  savePrivateNote,
-  saveView,
-  setFavourite,
-  setTag,
-} from "./mutations/partners";
+import { addMembers, closeInitiative, continueReferral, createInitiative, draftRequest, presentRequest, recordIntroduction, recordRequestResponse, removeMember, reopenInitiative, returnMember, setStage } from "./mutations/outreach";
+import { archivePreparation, createPrivatePreparation, deleteView, logInteraction, renameView, restorePreparation, saveContactEdits, savePrivateNote, saveView, setFavourite, setTag } from "./mutations/partners";
 import { saveGoal } from "./mutations/support";
-import {
-  bulkApplyTag,
-  bulkCompleteTasks,
-  bulkCreateTasks,
-  bulkRemoveTag,
-  cancelTask,
-  completeTask,
-  createSeries,
-  createTask,
-  editOccurrence,
-  editTask,
-  editThisAndFuture,
-  pauseSeries,
-  reopenTask,
-  resolveMissedPlan,
-  resumeSeries,
-  skipOccurrence,
-  stopSeries,
-} from "./mutations/tasks";
+import { bulkApplyTag, bulkCompleteTasks, bulkCreateTasks, bulkRemoveTag, cancelTask, completeTask, createSeries, createTask, editOccurrence, editTask, editThisAndFuture, pauseSeries, reopenTask, resolveMissedPlan, resumeSeries, skipOccurrence, stopSeries } from "./mutations/tasks";
 export type {
   CoachingCheckInRecord,
   CoachingGrantRecord,
@@ -151,15 +77,17 @@ export type {
   TaskSeriesRecord,
   ValueState,
 } from "./envelope";
+// The payload schemas and vocabularies a Route Handler composes: a handler may import nothing below this barrel, so the schemas a body is validated against are re-exported from the mutation that owns them, and the bound and the message a caller is refused with have one author rather than a second copy at the
+// transport.
 export { NOTIFICATION_UNSERVED_REASONS, mutationInputSchema } from "./envelope";
 export { closeInitiativePayloadSchema, draftRequestPayloadSchema, presentRequestPayloadSchema, recordRequestResponsePayloadSchema, reopenInitiativePayloadSchema } from "./mutations/outreach";
+export { archivePreparationInput, deleteViewInput, renameViewInput, restorePreparationInput, saveContactEditsInput, saveViewInput } from "./mutations/partners";
 export type { DenialReason, MutationOutcome, PerItemResult, ReadResult } from "./outcome";
-export { isOutcome, isReadResult, outcomeFromError } from "./outcome";
+export { isOutcome, isReadResult, outcomeFromError, refusedRead } from "./outcome";
 export { toResponse } from "./response";
-/** The named reads, grouped by the job a caller is doing. */
 export const reads = {
   context: { readAdmissionState, readContextChooser, readHome },
-  partners: { findPartners, readPartner, readFacets, readSavedViews, readPrivatePreparation },
+  partners: { findPartners, readPartner, readFacets, readSavedViews, readPrivatePreparation, readPartnerRecord },
   interactions: { readInteractions },
   work: { listTasks, readAgenda },
   series: { readSeries },
@@ -169,8 +97,7 @@ export const reads = {
   support: { readSupportOverview, readGifts, readCommitments, readGoal, readReport },
   export: { readExport },
   updates: {
-    // `findContentDocuments` is the same listing read the Page job uses: one enumeration under one
-    // authorisation, never a second implementation of it.
+    // `findContentDocuments` is the same listing read the Page job uses: one enumeration under one authorisation, never a second implementation of it.
     findContentDocuments,
     readVariantOverview,
     readDraft,
@@ -179,124 +106,32 @@ export const reads = {
     readPreview,
     readSharePresentation,
   },
-  // `readPreview` is the same read the Update job uses: one preview authorisation, reachable from
-  // either family's job, never a second implementation of it.
+  // `readPreview` is the same read the Update job uses: one preview authorisation, reachable from either family's job, never a second implementation of it.
   pages: { findContentDocuments, readPageCatalogues, readPage, readPageLocales, readGivingBinding, readPreview },
   media: { readMediaAsset },
-  audience: {
-    readAudience,
-    readPreferences,
-    readInbox,
-    readReceivingList,
-    readReceivingPost,
-    readDiscoveryIndex,
-    readReceivingPage,
-    readSendResult,
-  },
+  audience: { readAudience, readPreferences, readInbox, readReceivingList, readReceivingPost, readDiscoveryIndex, readReceivingPage, readSendResult },
   coaching: { readCoachingOverview, readTargets, readCheckIns, readTaskShares },
   coach: { readCoachPortfolio, readCoachSubject },
   dev: { readDevState },
 };
-/** The named mutations, grouped by the job a caller is doing. */
 export const mutations = {
   context: { selectContext },
   partners: { saveView, renameView, deleteView, setTag, setFavourite },
-  partnerPreparation: {
-    createPrivatePreparation,
-    saveContactEdits,
-    archivePreparation,
-    restorePreparation,
-    savePrivateNote,
-  },
+  partnerPreparation: { createPrivatePreparation, saveContactEdits, archivePreparation, restorePreparation, savePrivateNote },
   interactions: { logInteraction },
-  work: {
-    createTask,
-    editTask,
-    completeTask,
-    reopenTask,
-    cancelTask,
-    bulkApplyTag,
-    bulkRemoveTag,
-    bulkCreateTasks,
-    bulkCompleteTasks,
-  },
-  series: {
-    createSeries,
-    editOccurrence,
-    editThisAndFuture,
-    skipOccurrence,
-    pauseSeries,
-    resumeSeries,
-    stopSeries,
-    resolveMissedPlan,
-  },
+  work: { createTask, editTask, completeTask, reopenTask, cancelTask, bulkApplyTag, bulkRemoveTag, bulkCreateTasks, bulkCompleteTasks },
+  series: { createSeries, editOccurrence, editThisAndFuture, skipOccurrence, pauseSeries, resumeSeries, stopSeries, resolveMissedPlan },
   import: { proposeImport, setRowDecision, acceptImportRows, cancelImport },
-  outreach: {
-    createInitiative,
-    addMembers,
-    removeMember,
-    returnMember,
-    setStage,
-    draftRequest,
-    presentRequest,
-    recordRequestResponse,
-    closeInitiative,
-    reopenInitiative,
-  },
+  outreach: { createInitiative, addMembers, removeMember, returnMember, setStage, draftRequest, presentRequest, recordRequestResponse, closeInitiative, reopenInitiative },
   referrals: { recordIntroduction, continueReferral },
   // The one financial write in the application: gated by `canEditGoal` and never touching a gift.
   support: { saveGoal },
-  updates: {
-    createVariant,
-    saveDraft,
-    submitForReview,
-    approveCandidate,
-    requestChanges,
-    rejectCandidate,
-    publishVariants,
-    requestNotification,
-    withdrawUpdate,
-    withdrawLocale,
-    restoreRevisionAsDraft,
-  },
-  // The seven variant, draft, review, publish and locale mutations above are the same bindings the
-  // Page family uses; the Page job adds its section, reach and withdrawal writes to them.
-  pages: {
-    createVariant,
-    saveDraft,
-    submitForReview,
-    approveCandidate,
-    requestChanges,
-    publishVariants,
-    withdrawLocale,
-    addSection,
-    moveSection,
-    duplicateSection,
-    removeSection,
-    saveSectionFields,
-    applyPreset,
-    setReach,
-    stopShowingPublicly,
-    withdrawPage,
-  },
+  updates: { createVariant, saveDraft, submitForReview, approveCandidate, requestChanges, rejectCandidate, publishVariants, requestNotification, withdrawUpdate, withdrawLocale, restoreRevisionAsDraft },
+  // The seven variant, draft, review, publish and locale mutations above are the same bindings the Page family uses; the Page job adds its section, reach and withdrawal writes to them.
+  pages: { createVariant, saveDraft, submitForReview, approveCandidate, requestChanges, publishVariants, withdrawLocale, addSection, moveSection, duplicateSection, removeSection, saveSectionFields, applyPreset, setReach, stopShowingPublicly, withdrawPage },
   media: { registerMediaAsset, replacePlacement, removePlacement },
   audience: { signupForPurpose, confirmMembership, setPreference, unsubscribe },
-  coaching: {
-    inviteCoach,
-    revokeGrant,
-    endCoaching,
-    setModule,
-    saveTarget,
-    editTarget,
-    pauseTarget,
-    endTarget,
-    saveCheckIn,
-    shareCheckIn,
-    updateSharedCheckIn,
-    withdrawCheckIn,
-    shareTaskSummary,
-    stopTaskShare,
-  },
+  coaching: { inviteCoach, revokeGrant, endCoaching, setModule, saveTarget, editTarget, pauseTarget, endTarget, saveCheckIn, shareCheckIn, updateSharedCheckIn, withdrawCheckIn, shareTaskSummary, stopTaskShare },
   coach: { acceptInvitation, leaveCoaching },
   dev: { setScenario, setClock, advanceClock, setFailurePlan, resetSeed },
 };

@@ -1,49 +1,5 @@
 "use client";
-/**
- * The Audience family's seven browser reads, and the cache keys its writes invalidate.
- *
- * **Authority.** This is the one place the audience family reads from the browser. AAP 0.15.1 "Data
- * access" splits the two paths — a Server Component calls the service directly, a client interaction
- * calls a Route Handler — and these are the client path for AAP 0.7.1's "Reach readers" row of named
- * reads: `readAudience`, `readPreferences`, `readInbox`, `readReceivingList`, `readReceivingPost`,
- * `readDiscoveryIndex` and `readReceivingPage`. That is all seven and no more: `readSendResult`
- * belongs to the Updates delivery screen and is deliberately absent, because a name the row does not
- * give this family would be a feature this scope did not agree. The folder is the one AAP 0.9.1 and
- * the AAP 0.11.1 row `apps/dashboard/src/features/audience/**` describe, the family is AAP 0.10.1
- * family 10 (criteria 10, 12, 17 and 19), and TanStack Query is the one asynchronous-result cache
- * (AAP 0.3.4), so nothing here keeps a second copy of a result.
- *
- * **Three transport shapes, and why each is the one it is.**
- *
- * 1. `useAudience`, `usePreferences` and `useInbox` fetch a read handler. `usePreferences` sends no
- *    query string at all: the preferences read declares no parameter and `GET /api/preferences`
- *    refuses every one it is given, because a reader's preference is the session's own and is never
- *    selected by a request.
- * 2. `useReceivingList`, `useReceivingPost`, `useDiscoveryIndex` and `useReceivingPage` make no
- *    request. Those four views are Server Components under `src/app/preview/**`, and access is
- *    rechecked on the server every time the route opens; an endpoint of their own would let a client
- *    cache answer a question only the server may answer. Each adopts the envelope its Server
- *    Component produced, replaces it when a new one arrives (a refresh is authoritative), and exposes
- *    `refresh()` for the component to call once a persona or edition change is committed.
- * 3. No context-switch transport lives here. The predicate that decides an answer belongs to a
- *    context this view has left is imported from `@/components/context-switch-guard` — the one
- *    definition of it — and compared with the scope the caller is rendering. Performing the switch
- *    itself is the shell's job: a dispatch built here would be a second transport to the same route.
- *
- * **What the wire carries.** `modules/data-service/response.ts` flattens a read result onto the body:
- * an envelope arrives as the envelope itself, a denial as the denied outcome, an outage as the
- * unavailable outcome. This module therefore parses the body rather than the status, and turns a body
- * it cannot read into `unavailable` — a read is never rendered as empty, as zero, or as a denial it
- * did not receive.
- *
- * **Product rules held here, not computed here** (AAP 0.8.5, 0.8.6, 0.8.7). Off and Immediate are the
- * two choices and this module carries no preference logic. A reading language is separate from consent
- * and travels exactly as the envelope returns it. The confirmation window (168 elapsed hours) and the
- * notification usefulness window (24 hours) are the service's, so no deadline, no window and no clock
- * read appears in this file. The discovery index enumerates only the editions the service decided are
- * listed, and the public reading route's reach decision, `noindex` and tombstone are returned as the
- * service produced them. Counts and `valueStates` are never re-counted, re-shaped or inferred.
- */
+/** The Audience family's seven browser reads, and the cache keys its writes invalidate. **Authority.** This is the one place the audience family reads from the browser. */
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect } from "react";
@@ -51,21 +7,7 @@ import { isStale, queryKey, type QueryParams, type ScopedQueryKey } from "@/comp
 import { isRecord } from "@/lib/guards";
 import type { Scope } from "@/modules/data-service/envelope";
 import { isOutcome, isReadResult, unavailable, type ReadResult } from "@/modules/data-service/outcome";
-import type {
-  AudienceQuery,
-  DiscoveryIndexQuery,
-  InboxQuery,
-  ReceivingListQuery,
-  ReceivingPageQuery,
-  ReceivingPostQuery,
-  readAudience,
-  readDiscoveryIndex,
-  readInbox,
-  readPreferences,
-  readReceivingList,
-  readReceivingPage,
-  readReceivingPost,
-} from "@/modules/data-service/reads/audience";
+import type { AudienceQuery, DiscoveryIndexQuery, InboxQuery, ReceivingListQuery, ReceivingPageQuery, ReceivingPostQuery, readAudience, readDiscoveryIndex, readInbox, readPreferences, readReceivingList, readReceivingPage, readReceivingPost } from "@/modules/data-service/reads/audience";
 // The seven jobs of this family's read row, named once
 /** The publisher's audience view for the one purpose this release keeps memberships for. */
 const AUDIENCE_JOB = "audience";
@@ -75,23 +17,14 @@ const RECEIVING_LIST_JOB = "receiving-list";
 const RECEIVING_POST_JOB = "receiving-post";
 const DISCOVERY_INDEX_JOB = "discovery-index";
 const RECEIVING_PAGE_JOB = "receiving-page";
-/**
- * Every job segment this family keys under, in the order AAP 0.7.1 lists the reads. A writer that
- * invalidates this family's entries iterates the tuple rather than restating a segment, and the caches
- * are keyed `[...scopeKey(scope), segment, params]`, so the segment alone is a prefix that matches
- * every parameter set of its job.
- */
+/** Every job segment this family keys under, in the order AAP 0.7.1 lists the reads. */
 export const AUDIENCE_JOB_SEGMENTS = [AUDIENCE_JOB, PREFERENCES_JOB, INBOX_JOB, RECEIVING_LIST_JOB, RECEIVING_POST_JOB, DISCOVERY_INDEX_JOB, RECEIVING_PAGE_JOB] as const;
 /** One job segment of this family's read row. */
 export type AudienceJob = (typeof AUDIENCE_JOB_SEGMENTS)[number];
 // What each read answers with, taken from the read rather than restated
 /** What a read answered, whether it answered directly or through a promise. */
 type ReadOf<F extends (...args: never[]) => unknown> = Awaited<ReturnType<F>>;
-/**
- * The scoped envelope a read answered with: the envelope arm of its result union, and `never` for a read that
- * could only refuse. The result type is resolved before it is matched, because a conditional written over a
- * still-generic function type is deferred as a whole and would collapse every alias below to `never`.
- */
+/** The scoped envelope a read answered with: the envelope arm of its result union, and `never` for a read that could only refuse. */
 type EnvelopeOf<R> = R extends { readonly kind: "envelope"; readonly envelope: infer E } ? E : never;
 /** The publisher's audience: four membership states, eligible and excluded counts, one page of members. */
 export type AudienceEnvelope = EnvelopeOf<ReadOf<typeof readAudience>>;
@@ -120,57 +53,33 @@ const READ_STALE_TIME_MS = 5_000;
 /** The parameters of a read that declares none, so its key still states a params member rather than a shorter key shape. */
 const NO_PARAMS: QueryParams = Object.freeze({});
 
-const TRANSPORT_GUIDANCE =
-  "The request did not complete, so this read has no answer and is reported unavailable rather than empty. Request it again: nothing was changed, and a source that could not be read is not a source with nothing in it.";
+const TRANSPORT_GUIDANCE = "The request did not complete, so this read has no answer and is reported unavailable rather than empty. Request it again: nothing was changed, and a source that could not be read is not a source with nothing in it.";
 
-const UNREADABLE_GUIDANCE =
-  "The request was answered with a body this read does not recognise, so the result is reported unavailable rather than shown as empty. Request it again; if it keeps happening the response boundary is faulty rather than the records.";
+const UNREADABLE_GUIDANCE = "The request was answered with a body this read does not recognise, so the result is reported unavailable rather than shown as empty. Request it again; if it keeps happening the response boundary is faulty rather than the records.";
 // The parameters each read takes, as both the cache key and the request carry them
-/**
- * The paging window a list read declares, with an absent value omitted rather than stated as a value
- * the read would have to interpret.
- */
+/** The paging window a list read declares, with an absent value omitted rather than stated as a value the read would have to interpret. */
 function pageParams(query: { readonly page?: number; readonly pageSize?: number }): QueryParams {
-  return {
-    ...(query.page === undefined ? {} : { page: query.page }),
-    ...(query.pageSize === undefined ? {} : { pageSize: query.pageSize }),
-  };
+  return { ...(query.page === undefined ? {} : { page: query.page }), ...(query.pageSize === undefined ? {} : { pageSize: query.pageSize }) };
 }
 function audienceParams(query: AudienceQuery): QueryParams {
-  return {
-    ...(query.publisherId === undefined ? {} : { publisherId: query.publisherId }),
-    ...pageParams(query),
-  };
+  return { ...(query.publisherId === undefined ? {} : { publisherId: query.publisherId }), ...pageParams(query) };
 }
 function inboxParams(query: InboxQuery): QueryParams {
   return pageParams(query);
 }
 function receivingListParams(query: ReceivingListQuery): QueryParams {
-  return {
-    ...(query.locale === undefined ? {} : { locale: query.locale }),
-    ...pageParams(query),
-  };
+  return { ...(query.locale === undefined ? {} : { locale: query.locale }), ...pageParams(query) };
 }
 function receivingPostParams(query: ReceivingPostQuery): QueryParams {
-  return {
-    updateId: query.updateId,
-    ...(query.locale === undefined ? {} : { locale: query.locale }),
-  };
+  return { updateId: query.updateId, ...(query.locale === undefined ? {} : { locale: query.locale }) };
 }
 function discoveryIndexParams(query: DiscoveryIndexQuery): QueryParams {
   return pageParams(query);
 }
 function receivingPageParams(query: ReceivingPageQuery): QueryParams {
-  return {
-    pageId: query.pageId,
-    ...(query.locale === undefined ? {} : { locale: query.locale }),
-  };
+  return { pageId: query.pageId, ...(query.locale === undefined ? {} : { locale: query.locale }) };
 }
-/**
- * The query string one request carries, built from the same params object the key holds, so a key and
- * its request cannot drift apart. Every parameter these hooks build is a string, number or boolean; a
- * structured value has no query-string form and is therefore not a value these reads take.
- */
+/** The query string one request carries, built from the same params object the key holds, so a key and its request cannot drift apart. */
 function searchOf(params: QueryParams): string {
   const search = new URLSearchParams();
   for (const name of Object.keys(params).sort()) {
@@ -213,31 +122,15 @@ export function receivingPageKey(scope: Scope, params: QueryParams): ScopedQuery
 }
 
 // Reading an answer
-/**
- * Reports whether a body carries the facts every envelope carries. This checks the envelope's own
- * members and never the payload's fields: the payload's shape belongs to the read that built it, so a
- * browser re-describing it would be a second owner of a contract it does not hold.
- */
+/** Reports whether a body carries the facts every envelope carries. */
 function isEnvelopeBody(value: unknown): boolean {
   return isRecord(value) && "data" in value && isRecord(value.scope) && isRecord(value.valueStates) && typeof value.asOf === "string" && typeof value.revision === "string";
 }
 /** The outage a read answers with when its request produced no answer it can state: the handler is the source, and no record, count or title is named. */
 function outage<T>(endpoint: string, guidance: string): ReadResult<T> {
-  return {
-    kind: "unavailable",
-    unavailable: unavailable({
-      operationId: READ_ATTEMPT_ID,
-      source: { system: HANDLER_SOURCE_SYSTEM, reference: endpoint },
-      guidance,
-    }),
-  };
+  return { kind: "unavailable", unavailable: unavailable({ operationId: READ_ATTEMPT_ID, source: { system: HANDLER_SOURCE_SYSTEM, reference: endpoint }, guidance }) };
 }
-/**
- * The read result one body states: the envelope the handler sent, the denial or the outage it sent, and
- * `unavailable` for a body that is none of them. `denied` and `unavailable` are the only two refusals a
- * read may carry (AAP 0.7.1), so a body this module cannot read becomes an outage rather than an
- * invented outcome or an empty result.
- */
+/** The read result one body states: the envelope the handler sent, the denial, the refusal or the outage it sent, and `unavailable` for a body that is none of them. */
 function readResultOf<T>(body: unknown, endpoint: string): ReadResult<T> {
   if (isReadResult(body)) {
     return body as ReadResult<T>;
@@ -248,6 +141,11 @@ function readResultOf<T>(body: unknown, endpoint: string): ReadResult<T> {
   if (isOutcome(body) && body.outcome === "unavailable") {
     return { kind: "unavailable", unavailable: body };
   }
+  if (isOutcome(body) && body.outcome === "invalid") {
+    // The request this read issued is one the handler does not admit: the field-keyed refusal is the
+    // answer, because the source behind it answered and only the request was wrong.
+    return { kind: "refused", refused: body };
+  }
   if (isEnvelopeBody(body)) {
     return { kind: "envelope", envelope: body as T };
   }
@@ -257,21 +155,11 @@ function readResultOf<T>(body: unknown, endpoint: string): ReadResult<T> {
 function staleTimeOf(result: ReadResult<unknown> | undefined): number {
   return result?.kind === "envelope" ? READ_STALE_TIME_MS : 0;
 }
-/**
- * One GET of one read handler, answered as a read result. The three endpoints this module serves are
- * the ones its own hooks name — there is no dispatcher here, no caller-supplied path and no second
- * transport. Nothing is thrown: a request that did not complete and a body that cannot be read are both
- * outages, which is what the surface shows beside its own retry.
- */
+/** One GET of one read handler, answered as a read result. */
 async function readOnce<T>(endpoint: string, params: QueryParams): Promise<ReadResult<T>> {
   let answer: Response;
   try {
-    answer = await fetch(`${endpoint}${searchOf(params)}`, {
-      method: "GET",
-      headers: { accept: "application/json" },
-      cache: "no-store",
-      credentials: "same-origin",
-    });
+    answer = await fetch(`${endpoint}${searchOf(params)}`, { method: "GET", headers: { accept: "application/json" }, cache: "no-store", credentials: "same-origin" });
   } catch {
     return outage<T>(endpoint, TRANSPORT_GUIDANCE);
   }
@@ -309,12 +197,7 @@ export interface UsePreferencesParams {
 }
 /** Reads the reader's own Off or Immediate choice, reading language, membership state and proof state as four separate facts. Answers `envelope`, `denied` or `unavailable`, unchanged. */
 export function usePreferences({ scope }: UsePreferencesParams): UseQueryResult<ReadResult<PreferencesEnvelope>> {
-  return useQuery<ReadResult<PreferencesEnvelope>>({
-    queryKey: preferencesKey(scope),
-    queryFn: () => readOnce<PreferencesEnvelope>(PREFERENCES_ENDPOINT, NO_PARAMS),
-    retry: false,
-    staleTime: (entry) => staleTimeOf(entry.state.data),
-  });
+  return useQuery<ReadResult<PreferencesEnvelope>>({ queryKey: preferencesKey(scope), queryFn: () => readOnce<PreferencesEnvelope>(PREFERENCES_ENDPOINT, NO_PARAMS), retry: false, staleTime: (entry) => staleTimeOf(entry.state.data) });
 }
 /** What {@link useInbox} needs: the authority to read under, and the read's own paging state. */
 export interface UseInboxParams {
@@ -324,12 +207,7 @@ export interface UseInboxParams {
 /** Reads one page of this reader's synthetic inbox: one message per recipient and notification intent, each with its HTML and plain text. Answers `envelope`, `denied` or `unavailable`, unchanged. */
 export function useInbox({ scope, query = {} }: UseInboxParams): UseQueryResult<ReadResult<InboxEnvelope>> {
   const params = inboxParams(query);
-  return useQuery<ReadResult<InboxEnvelope>>({
-    queryKey: inboxKey(scope, params),
-    queryFn: () => readOnce<InboxEnvelope>(INBOX_ENDPOINT, params),
-    retry: false,
-    staleTime: (entry) => staleTimeOf(entry.state.data),
-  });
+  return useQuery<ReadResult<InboxEnvelope>>({ queryKey: inboxKey(scope, params), queryFn: () => readOnce<InboxEnvelope>(INBOX_ENDPOINT, params), retry: false, staleTime: (entry) => staleTimeOf(entry.state.data) });
 }
 
 // The four reads that arrive with their route
@@ -340,12 +218,7 @@ export interface RouteEnvelope<T> {
   readonly refresh: () => void;
   readonly isFetching: boolean;
 }
-/**
- * The one mechanism behind the four views that arrive with their route. It never fetches: no handler
- * exists for these reads, and `enabled` is false, so the only ways an answer changes are a new envelope
- * from a server render and the component's own `refresh()` — which is what keeps access rechecked on the
- * server on every open (criteria 12, 17 and 19).
- */
+/** The one mechanism behind the four views that arrive with their route. */
 function useRouteEnvelope<T extends { readonly scope: Scope }>(scope: Scope, key: ScopedQueryKey, initialEnvelope: ReadResult<T>): RouteEnvelope<T> {
   const queryClient = useQueryClient();
   const router = useRouter();

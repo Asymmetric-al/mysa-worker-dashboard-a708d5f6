@@ -1,12 +1,5 @@
 "use client";
-/**
- * The one review surface for both content families: the frozen revision a reviewer answers, and the
- * single decision they can give it.
- *
- * A candidate whose answer is already recorded is reported as that record, with no decision offered:
- * the review step answers a submission once, and a surface that kept asking would offer an action the
- * review mutations refuse.
- */
+/** The one review surface for both content families: the frozen revision a reviewer answers, and the single decision they can give it. */
 import { useId, useState, type ReactElement } from "react";
 import ActionReview from "@/components/action-review";
 import { LIFECYCLE_STATUS, type ContentLifecycleState, type LifecycleSpec } from "@/components/draft-status";
@@ -24,15 +17,12 @@ import { cn } from "@/lib/cn";
 import { REVIEW_DECISIONS, variantKeyAllowed, type ReviewDecision, type VariantAudience, type VariantFamily, type VariantLocale } from "@/modules/content/variant";
 import type { MediaAssetRenditionPurpose, MutationInput, Scope } from "@/modules/data-service/envelope";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
-// The frozen candidate, as the service returns it
 /** What a stored rendition is for, taken from the envelope's closed set rather than restated. */
 export type RenditionPurpose = MediaAssetRenditionPurpose;
-/** One scoped rendition the candidate's rendering referenced, with the URL the read admitted. */
 export interface CandidateMediaRendition {
   readonly purpose: RenditionPurpose;
   readonly url: string;
 }
-/** The decision recorded for one candidate: what was answered, by which principal identity, when, and the note left with it. */
 export interface RecordedCandidateDecision {
   readonly decision: ReviewDecision;
   /** The principal identity that gave this answer, or `null` when the record states none. */
@@ -42,7 +32,6 @@ export interface RecordedCandidateDecision {
   /** The note the reviewer left for the author, or `null` when they left none. */
   readonly note: string | null;
 }
-/** One frozen candidate, exactly as the review read returned it. */
 export interface CandidateView {
   readonly variantId: string;
   readonly audience: VariantAudience;
@@ -51,25 +40,12 @@ export interface CandidateView {
   readonly contentChecksum: string;
   readonly renderedHtml: string;
   readonly mediaRenditions: readonly CandidateMediaRendition[];
-  /**
-   * The state this edition's own records state — its draft, its candidate, its release head — derived
-   * through the one lifecycle implementation, so the badge never reports a decision in place of a fact
-   * about what this edition has published.
-   */
+  /** The state this edition's own records state — its draft, its candidate, its release head — derived through the one lifecycle implementation, so the badge never reports a decision in place of a fact … */
   readonly lifecycle: ContentLifecycleState;
   readonly staleTranslation?: boolean;
-  /**
-   * The decision the reviewer recorded for this candidate, as the read states it, or `null` while its
-   * record still stands at `submitted` — the one state in which the decision is the reviewer's to give.
-   *
-   * This is the answer in one place: the word, the principal that gave it, the instant and the note.
-   * Nothing here is inferred from the session reading the page, so an identity or instant the record
-   * does not carry is reported as not stated rather than filled in.
-   */
+  /** The decision the reviewer recorded for this candidate, as the read states it, or `null` while its record still stands at `submitted` — the one state in which the decision is the reviewer's to give. */
   readonly decisionRecord: RecordedCandidateDecision | null;
 }
-// The decision's payload
-/** The decision the reviewer gave, and the frozen identity it answers. */
 export interface ApprovedDecisionPayload {
   readonly decision: "approved";
   readonly variantId: string;
@@ -90,12 +66,8 @@ export interface RejectedDecisionPayload {
   readonly revisionId: string;
   readonly note: string;
 }
-/** One review answer with the frozen identity it answers. */
 export type ReviewDecisionPayload = ApprovedDecisionPayload | ChangesRequestedDecisionPayload | RejectedDecisionPayload;
-// The panel's props
-/** The two content families a review serves. */
 export type ReviewFamily = "update" | "page";
-/** What another edition of the same document stands in after a release attempt. */
 export interface ReviewSiblingStanding {
   readonly variantId: string;
   readonly audience: VariantAudience;
@@ -103,7 +75,6 @@ export interface ReviewSiblingStanding {
   readonly lifecycle: ContentLifecycleState;
   readonly heldPriorGoodRelease?: boolean;
 }
-/** Props of {@link ReviewPanel}. */
 export interface ReviewPanelProps {
   readonly family: ReviewFamily;
   readonly candidates: readonly CandidateView[];
@@ -116,61 +87,25 @@ export interface ReviewPanelProps {
   readonly expectedRevision: string;
   readonly onDecide: (input: MutationInput<ReviewDecisionPayload>) => Promise<MutationOutcome>;
   readonly siblingStanding?: readonly ReviewSiblingStanding[];
-  /**
-   * The level this panel's own title occupies on the page that composes it.
-   *
-   * The caller owns the page outline, so the shared panel never states a level of its own: a route
-   * that renders no title of its own takes level 1 and the panel is the screen's top-level heading,
-   * while a route that already states one asks for level 2. Every section below the title steps down
-   * exactly one level from whatever is asked for, so no level is skipped either way.
-   */
+  /** The level this panel's own title occupies on the page that composes it. */
   readonly headingLevel?: 1 | 2 | 3;
   readonly className?: string;
 }
-// Words: this surface's vocabulary, declared once
 /** The longest note a reviewer may leave. */
 export const REVIEW_NOTE_MAX_CHARS = 2000;
-
 const SHORT_CHECKSUM_LENGTH = 12;
-
-const NOT_STATED_TEXT = "Not stated";
-
 const PANEL_HEADING_TAG = { 1: "h1", 2: "h2", 3: "h3" } as const;
-
 const SUB_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
-
 type SubHeadingLevel = keyof typeof SUB_HEADING_TAG;
-
 /** The level the panel's own sections take: one below its title, so the outline never skips a level. */
-function subHeadingLevelOf(panelLevel: keyof typeof PANEL_HEADING_TAG): SubHeadingLevel {
-  switch (panelLevel) {
-    case 1:
-      return 2;
-    case 2:
-      return 3;
-    case 3:
-      return 4;
-  }
-}
+const subHeadingLevelOf = (panelLevel: keyof typeof PANEL_HEADING_TAG): SubHeadingLevel => (panelLevel === 1 ? 2 : panelLevel === 2 ? 3 : 4);
 interface FamilyCopy {
   readonly title: string;
   readonly introduction: string;
 }
 const FAMILY_COPY: Readonly<Record<ReviewFamily, FamilyCopy>> = {
-  update: {
-    title: "Review this Update",
-    introduction:
-      "A review answers the exact revision the author submitted, for one audience and one language. " +
-      "Approving it publishes nothing and notifies nobody: the release is a separate step, and a " +
-      "simulated notice is separate again.",
-  },
-  page: {
-    title: "Review this Page",
-    introduction:
-      "A review answers the exact revision the author submitted for one language edition of this " +
-      "Page. Approving it publishes nothing and makes the Page public to nobody: release, reach and " +
-      "withdrawal stay separate steps on the Page's own surface.",
-  },
+  update: { title: "Review this Update", introduction: "A review answers the exact revision the author submitted, for one audience and one language. " + "Approving it publishes nothing and notifies nobody: the release is a separate step, and a " + "simulated notice is separate again." },
+  page: { title: "Review this Page", introduction: "A review answers the exact revision the author submitted for one language edition of this " + "Page. Approving it publishes nothing and makes the Page public to nobody: release, reach and " + "withdrawal stay separate steps on the Page's own surface." },
 };
 interface DecisionCopy {
   readonly label: string;
@@ -181,13 +116,7 @@ interface DecisionCopy {
   readonly consequence?: string;
 }
 const DECISION_COPY: Readonly<Record<ReviewDecision, DecisionCopy>> = {
-  approved: {
-    label: "Approve",
-    description: "The frozen revision is approved for this audience and language and can be published as it " + "stands. Approval itself publishes nothing.",
-    title: "Approve the frozen revision",
-    confirmLabel: "Approve this revision",
-    consequential: false,
-  },
+  approved: { label: "Approve", description: "The frozen revision is approved for this audience and language and can be published as it " + "stands. Approval itself publishes nothing.", title: "Approve the frozen revision", confirmLabel: "Approve this revision", consequential: false },
   "changes-requested": {
     label: "Request changes",
     description: "The author reads your note and submits a new revision. This candidate is answered, not " + "re-reviewed, and its earlier submission stays on record.",
@@ -208,130 +137,54 @@ interface RecordedDecisionCopy {
   readonly title: string;
   readonly sentence: string;
 }
-/** The words for a candidate that has been answered, so the surface states the record instead of the decision form. */
 const RECORDED_DECISION_COPY: Readonly<Record<ReviewDecision, RecordedDecisionCopy>> = {
-  approved: {
-    title: "This candidate is approved",
-    sentence:
-      "The reviewer's answer is recorded as an approval for this audience and language. Approval " +
-      "publishes nothing and notifies nobody: releasing the edition is a separate step on its own " +
-      "surface, and a simulated notice is separate again.",
-  },
-  "changes-requested": {
-    title: "A change to this candidate was requested",
-    sentence:
-      "The reviewer's answer is recorded as a request for changes, so the author's next attempt is a " +
-      "new submission with a new revision. This candidate is answered, not re-reviewed, and its earlier " +
-      "submission stays on record.",
-  },
-  rejected: {
-    title: "This candidate was rejected",
-    sentence:
-      "The reviewer's answer is recorded as a rejection, so this candidate ends and the author's next " +
-      "attempt is a new submission. Nothing is deleted, no release is withdrawn and no message is sent " +
-      "to anyone.",
-  },
+  approved: { title: "This candidate is approved", sentence: "The reviewer's answer is recorded as an approval for this audience and language. Approval " + "publishes nothing and notifies nobody: releasing the edition is a separate step on its own " + "surface, and a simulated notice is separate again." },
+  "changes-requested": { title: "A change to this candidate was requested", sentence: "The reviewer's answer is recorded as a request for changes, so the author's next attempt is a " + "new submission with a new revision. This candidate is answered, not re-reviewed, and its earlier " + "submission stays on record." },
+  rejected: { title: "This candidate was rejected", sentence: "The reviewer's answer is recorded as a rejection, so this candidate ends and the author's next " + "attempt is a new submission. Nothing is deleted, no release is withdrawn and no message is sent " + "to anyone." },
 };
-const RECORDED_DECISION_HEADING = "The decision on record";
-
-const DECIDED_BY_LABEL = "Decided by";
-
-const DECIDED_AT_LABEL = "Decided at";
-
-const DECISION_NOTE_LABEL = "Note for the author";
-
-const NO_DECISION_NOTE_TEXT = "No note was left with this answer.";
-
-/**
- * Why the instant is printed as it is stored.
- *
- * An instant formatted for a locale and a zone is formatted twice — once on the server and once in the
- * browser — and the two can differ, so a decision would appear to have been given at two times. The
- * record's own ISO 8601 instant is stated unchanged instead: it names the same moment wherever it is
- * read, and it is precise enough to tell two answers apart.
- */
-const DECISION_INSTANT_SENTENCE = "The instant is stated exactly as the record holds it, in ISO 8601 (UTC), so the same answer reads the same on every device.";
-
-const NO_FURTHER_DECISION_SENTENCE = "No further decision is offered here: this candidate has already been answered, so a further review needs a new submission with a new revision.";
-const RENDITION_PURPOSE_WORDS: Readonly<Record<RenditionPurpose, string>> = {
-  display: "Display image",
-  playback: "Playback video",
-  poster: "Poster image",
-  captions: "Caption track",
-  transcript: "Transcript",
-};
-const NO_CANDIDATE_NOTICE = "No revision is frozen for review here, so there is nothing to approve or refuse.";
-
-const NO_ACTIVE_NOTICE = "No edition under review is selected here. Choose the edition you mean from the list above; " + "nothing is approved until you decide on the edition on screen.";
-
-const EDITION_LABEL = "Edition under review";
-
-const FROZEN_HEADING = "The revision you are reviewing";
-
-const FROZEN_EXPLANATION =
-  "These identify the exact revision the author submitted. A later save is a different revision " +
-  "with a different checksum, so content written after this submission cannot become the revision " +
-  "you approve.";
-const INTENT_HEADING = "What approval lets happen";
-
-const PUBLISH_ONLY_BADGE = "Publish only";
-
-const NOTIFY_BADGE = "Publish and notify now";
-
-const PUBLISH_ONLY_SENTENCE = "The author chose to publish this edition without notifying anyone.";
-
-const NOTIFY_SENTENCE = "The author chose to publish this edition and then notify the subscribers who are currently " + "eligible for this publisher's Update email purpose.";
-
-const REVIEWER_CANNOT_FLIP_SENTENCE =
-  "This is the author's choice, shown as a fact. A reviewer cannot turn Publish only into Publish " +
-  "and notify now, or the reverse; if the other choice is the right one, ask for changes and say so " +
-  "in the note.";
-const PREVIEW_HEADING = "What a released reader would see";
-
-const PREVIEW_EXPLANATION =
-  "Shown in its own frame so nothing in the revision can act on this page: it runs no scripts, " +
-  "cannot navigate, submit a form or open a window, and loads only the renditions this review was " +
-  "admitted to read.";
-const MEDIA_LABEL = "Media in this revision";
-
-const NO_RENDERED_BODY_NOTICE =
-  "This revision arrived without a rendered body, so what a released reader would see cannot be " +
-  "shown here. Nothing has been approved; the read that supplied this candidate should be repeated " +
-  "before a decision is given.";
-const SIBLING_HEADING = "Other editions in this document";
-
-const HELD_PRIOR_GOOD_SENTENCE = "Not rolled back: this edition still publishes the revision it published before that attempt, and " + "the failure belongs to the edition the attempt named.";
-
-const APPROVAL_IS_PER_VARIANT_SENTENCE = "This decision answers the edition named above only: approving one language or audience approves " + "no other edition of this document.";
-
-const APPROVAL_IS_NOT_DELIVERY_SENTENCE = "A decision is not a publication and not a delivery. It sends no message, and nothing here proves " + "that any reader received or opened anything.";
-
-const DECISION_LEGEND = "Your decision";
-
-const DECISION_DESCRIPTION = "One decision, given once. If something needs to change, the author's next attempt is a new " + "submission with a new revision — this candidate is not re-reviewed.";
-
-const NOTE_LABEL = "Note for the author";
-
-const NOTE_REQUIRED_DESCRIPTION = `Required for this decision: say what the author needs to know, in up to ${REVIEW_NOTE_MAX_CHARS} characters.`;
-
-const NOTE_OPTIONAL_DESCRIPTION =
-  "Approving needs no note. Anything typed here stays on this page and is sent only if you choose " + `Request changes or Reject. Up to ${REVIEW_NOTE_MAX_CHARS} characters.`;
-const POLICY_NOT_REQUIRED_HEADING = "Review is not required for this document";
-
-const POLICY_NOT_REQUIRED_SENTENCE =
-  "Contributor policy for this document requires no review, so this page offers no decision: there " + "is no candidate to approve, no second round to run and nothing for a reviewer to confirm.";
-const POLICY_NOT_REQUIRED_NOTHING_APPROVED = "Nothing is approved, published or notified from here. The author's own surface reports what " + "happened when the edition was released.";
-
-const NOTE_FIELD_LABELS: Readonly<Record<string, string | undefined>> = {
-  note: NOTE_LABEL,
-  reason: NOTE_LABEL,
-};
-const OPEN_RENDITION_PREFIX = "Open the";
-// Reading the values the records carry
+const RENDITION_PURPOSE_WORDS: Readonly<Record<RenditionPurpose, string>> = { display: "Display image", playback: "Playback video", poster: "Poster image", captions: "Caption track", transcript: "Transcript" };
+/** This surface's vocabulary, declared once. */
+const COPY = {
+  notStated: "Not stated",
+  recordedDecisionHeading: "The decision on record",
+  decidedByLabel: "Decided by",
+  decidedAtLabel: "Decided at",
+  decisionNoteLabel: "Note for the author",
+  noDecisionNoteText: "No note was left with this answer.",
+  decisionInstantSentence: "The instant is stated exactly as the record holds it, in ISO 8601 (UTC), so the same answer reads the same on every device.",
+  noFurtherDecisionSentence: "No further decision is offered here: this candidate has already been answered, so a further review needs a new submission with a new revision.",
+  noCandidateNotice: "No revision is frozen for review here, so there is nothing to approve or refuse.",
+  noActiveNotice: "No edition under review is selected here. Choose the edition you mean from the list above; " + "nothing is approved until you decide on the edition on screen.",
+  editionLabel: "Edition under review",
+  frozenHeading: "The revision you are reviewing",
+  frozenExplanation: "These identify the exact revision the author submitted. A later save is a different revision " + "with a different checksum, so content written after this submission cannot become the revision " + "you approve.",
+  intentHeading: "What approval lets happen",
+  publishOnlyBadge: "Publish only",
+  notifyBadge: "Publish and notify now",
+  publishOnlySentence: "The author chose to publish this edition without notifying anyone.",
+  notifySentence: "The author chose to publish this edition and then notify the subscribers who are currently " + "eligible for this publisher's Update email purpose.",
+  reviewerCannotFlipSentence: "This is the author's choice, shown as a fact. A reviewer cannot turn Publish only into Publish " + "and notify now, or the reverse; if the other choice is the right one, ask for changes and say so " + "in the note.",
+  previewHeading: "What a released reader would see",
+  previewExplanation: "Shown in its own frame so nothing in the revision can act on this page: it runs no scripts, " + "cannot navigate, submit a form or open a window, and loads only the renditions this review was " + "admitted to read.",
+  mediaLabel: "Media in this revision",
+  noRenderedBodyNotice: "This revision arrived without a rendered body, so what a released reader would see cannot be " + "shown here. Nothing has been approved; the read that supplied this candidate should be repeated " + "before a decision is given.",
+  siblingHeading: "Other editions in this document",
+  heldPriorGoodSentence: "Not rolled back: this edition still publishes the revision it published before that attempt, and " + "the failure belongs to the edition the attempt named.",
+  approvalIsPerVariantSentence: "This decision answers the edition named above only: approving one language or audience approves " + "no other edition of this document.",
+  approvalIsNotDeliverySentence: "A decision is not a publication and not a delivery. It sends no message, and nothing here proves " + "that any reader received or opened anything.",
+  decisionLegend: "Your decision",
+  decisionDescription: "One decision, given once. If something needs to change, the author's next attempt is a new " + "submission with a new revision — this candidate is not re-reviewed.",
+  noteLabel: "Note for the author",
+  noteRequiredDescription: `Required for this decision: say what the author needs to know, in up to ${REVIEW_NOTE_MAX_CHARS} characters.`,
+  noteOptionalDescription: "Approving needs no note. Anything typed here stays on this page and is sent only if you choose " + `Request changes or Reject. Up to ${REVIEW_NOTE_MAX_CHARS} characters.`,
+  policyNotRequiredHeading: "Review is not required for this document",
+  policyNotRequiredSentence: "Contributor policy for this document requires no review, so this page offers no decision: there " + "is no candidate to approve, no second round to run and nothing for a reviewer to confirm.",
+  policyNotRequiredNothingApproved: "Nothing is approved, published or notified from here. The author's own surface reports what " + "happened when the edition was released.",
+  noteFieldLabels: { note: "Note for the author", reason: "Note for the author" },
+  openRenditionPrefix: "Open the",
+} as const;
 function reviewDecisionOf(value: unknown): ReviewDecision | null {
-  if (typeof value !== "string") {
-    return null;
-  }
+  if (typeof value !== "string") return null;
   const named = REVIEW_DECISIONS.find((decision) => decision === value);
   return named ?? null;
 }
@@ -341,33 +194,16 @@ function lifecycleSpecOf(state: ContentLifecycleState): LifecycleSpec {
 }
 function shortChecksumOf(checksum: string): string {
   const trimmed = checksum.trim();
-  if (trimmed.length <= SHORT_CHECKSUM_LENGTH) {
-    return trimmed;
-  }
+  if (trimmed.length <= SHORT_CHECKSUM_LENGTH) return trimmed;
   return `${trimmed.slice(0, SHORT_CHECKSUM_LENGTH)}…`;
 }
 function escapeAttribute(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 function previewDocumentOf(html: string, locale: VariantLocale, title: string): string {
-  return (
-    "<!doctype html>" +
-    `<html lang="${escapeAttribute(locale.tag)}" dir="${escapeAttribute(locale.direction)}">` +
-    `<head><meta charset="utf-8"><title>${escapeAttribute(title)}</title></head>` +
-    `<body>${html}</body>` +
-    "</html>"
-  );
+  return "<!doctype html>" + `<html lang="${escapeAttribute(locale.tag)}" dir="${escapeAttribute(locale.direction)}">` + `<head><meta charset="utf-8"><title>${escapeAttribute(title)}</title></head>` + `<body>${html}</body>` + "</html>";
 }
-/**
- * The lifecycle word the edition carries on this surface.
- *
- * The edition's own records decide every state but one: an approved candidate keeps its pointer in
- * place until the edition is released, so the records alone still read "submitted for review" for a
- * candidate that has already been answered. The answer is what moves that edition on, so approval is
- * stated here rather than left to the store. A requested change and a rejection clear the pointer
- * themselves, so the records state the state and this surface restates it unchanged: an edition that
- * published before keeps saying so, and nothing claims a review that has already been given.
- */
+/** The lifecycle word the edition carries on this surface. */
 function lifecycleOfDecision(decision: ReviewDecision | null, edition: ContentLifecycleState): ContentLifecycleState {
   return decision === "approved" ? "approved" : edition;
 }
@@ -376,12 +212,7 @@ function decisionOf(candidate: CandidateView): ReviewDecision | null {
   return candidate.decisionRecord === null ? null : candidate.decisionRecord.decision;
 }
 function variantTabsOf(candidates: readonly CandidateView[]): readonly VariantTab[] {
-  return candidates.map((candidate) => ({
-    variantId: candidate.variantId,
-    audience: candidate.audience,
-    locale: candidate.locale,
-    lifecycle: lifecycleOfDecision(decisionOf(candidate), candidate.lifecycle),
-  }));
+  return candidates.map((candidate) => ({ variantId: candidate.variantId, audience: candidate.audience, locale: candidate.locale, lifecycle: lifecycleOfDecision(decisionOf(candidate), candidate.lifecycle) }));
 }
 function switcherFamilyOf(family: ReviewFamily): VariantFamily {
   return family === "update" ? "update" : "worker-page";
@@ -391,25 +222,17 @@ function reviewableCandidatesOf(family: ReviewFamily, candidates: readonly Candi
   return candidates.filter((candidate) => variantKeyAllowed(permitted, candidate.audience));
 }
 function decisionPayloadFor(decision: ReviewDecision, candidate: CandidateView, note: string): ReviewDecisionPayload {
-  const identity = {
-    variantId: candidate.variantId,
-    revisionId: candidate.revisionId,
-  } as const;
+  const identity = { variantId: candidate.variantId, revisionId: candidate.revisionId } as const;
   const trimmedNote = note.trim();
   switch (decision) {
     case "approved":
-      return {
-        decision: "approved",
-        ...identity,
-        contentChecksum: candidate.contentChecksum,
-      };
+      return { decision: "approved", ...identity, contentChecksum: candidate.contentChecksum };
     case "changes-requested":
       return { decision: "changes-requested", ...identity, note: trimmedNote };
     case "rejected":
       return { decision: "rejected", ...identity, note: trimmedNote };
   }
 }
-// The frozen revision, as the record holds it
 function FrozenRevision({ candidate, level }: { readonly candidate: CandidateView; readonly level: SubHeadingLevel }): ReactElement {
   const titleId = useId();
   const checksumId = useId();
@@ -423,15 +246,9 @@ function FrozenRevision({ candidate, level }: { readonly candidate: CandidateVie
   const revision = candidate.revisionId.trim();
   const variant = candidate.variantId.trim();
   return (
-    <section
-      aria-labelledby={titleId}
-      data-slot="review-frozen-revision"
-      data-candidate-audience={candidate.audience}
-      data-candidate-locale={candidate.locale.tag}
-      className="flex min-w-0 flex-col gap-3"
-    >
+    <section aria-labelledby={titleId} data-slot="review-frozen-revision" data-candidate-audience={candidate.audience} data-candidate-locale={candidate.locale.tag} className="flex min-w-0 flex-col gap-3">
       <Heading id={titleId} className="text-base font-medium text-pretty">
-        {FROZEN_HEADING}
+        {COPY.frozenHeading}
       </Heading>
       <dl className="grid min-w-0 gap-x-4 gap-y-2 text-sm sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
         <dt className="text-muted-foreground">Edition</dt>
@@ -442,13 +259,13 @@ function FrozenRevision({ candidate, level }: { readonly candidate: CandidateVie
           </bdi>
         </dd>
         <dt className="text-muted-foreground">Variant</dt>
-        <dd className="min-w-0 wrap-anywhere">{variant === "" ? <span className="text-muted-foreground">{NOT_STATED_TEXT}</span> : <bdi className="mono-identifier">{variant}</bdi>}</dd>
+        <dd className="min-w-0 wrap-anywhere">{variant === "" ? <span className="text-muted-foreground">{COPY.notStated}</span> : <bdi className="mono-identifier">{variant}</bdi>}</dd>
         <dt className="text-muted-foreground">Revision under review</dt>
-        <dd className="min-w-0 wrap-anywhere">{revision === "" ? <span className="text-muted-foreground">{NOT_STATED_TEXT}</span> : <bdi className="mono-identifier">{revision}</bdi>}</dd>
+        <dd className="min-w-0 wrap-anywhere">{revision === "" ? <span className="text-muted-foreground">{COPY.notStated}</span> : <bdi className="mono-identifier">{revision}</bdi>}</dd>
         <dt className="text-muted-foreground">Content checksum</dt>
         <dd className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           {checksum === "" ? (
-            <span className="text-muted-foreground">{NOT_STATED_TEXT}</span>
+            <span className="text-muted-foreground">{COPY.notStated}</span>
           ) : (
             <bdi id={checksumId} className="mono-identifier min-w-0 wrap-anywhere">
               {shownChecksum}
@@ -471,7 +288,7 @@ function FrozenRevision({ candidate, level }: { readonly candidate: CandidateVie
           ) : null}
         </dd>
       </dl>
-      <p className="text-sm text-muted-foreground text-pretty">{FROZEN_EXPLANATION}</p>
+      <p className="text-sm text-muted-foreground text-pretty">{COPY.frozenExplanation}</p>
       {candidate.staleTranslation === true ? (
         <Alert variant="default" role={undefined} data-slot="review-stale-translation">
           <AlertTitle>This is a translation of an edition that has changed</AlertTitle>
@@ -484,30 +301,21 @@ function FrozenRevision({ candidate, level }: { readonly candidate: CandidateVie
     </section>
   );
 }
-// The author's publish choice, as a fact
-function PublishIntent({
-  notifyRequestedByAuthor,
-  protectedNoticeScope,
-  level,
-}: {
-  readonly notifyRequestedByAuthor: boolean;
-  readonly protectedNoticeScope?: string;
-  readonly level: SubHeadingLevel;
-}): ReactElement {
+function PublishIntent({ notifyRequestedByAuthor, protectedNoticeScope, level }: { readonly notifyRequestedByAuthor: boolean; readonly protectedNoticeScope?: string; readonly level: SubHeadingLevel }): ReactElement {
   const titleId = useId();
   const Heading = SUB_HEADING_TAG[level];
   const scope = protectedNoticeScope?.trim() ?? "";
   return (
     <section aria-labelledby={titleId} data-slot="review-publish-intent" data-notify-requested={notifyRequestedByAuthor ? "true" : "false"} className="flex min-w-0 flex-col gap-3">
       <Heading id={titleId} className="text-base font-medium text-pretty">
-        {INTENT_HEADING}
+        {COPY.intentHeading}
       </Heading>
       <div className="flex min-w-0 flex-col gap-2 text-sm">
         <p className="flex min-w-0 flex-wrap items-center gap-2">
-          <StatusBadge label={notifyRequestedByAuthor ? NOTIFY_BADGE : PUBLISH_ONLY_BADGE} tone={notifyRequestedByAuthor ? "info" : "neutral"} />
-          <span className="min-w-0 text-pretty">{notifyRequestedByAuthor ? NOTIFY_SENTENCE : PUBLISH_ONLY_SENTENCE}</span>
+          <StatusBadge label={notifyRequestedByAuthor ? COPY.notifyBadge : COPY.publishOnlyBadge} tone={notifyRequestedByAuthor ? "info" : "neutral"} />
+          <span className="min-w-0 text-pretty">{notifyRequestedByAuthor ? COPY.notifySentence : COPY.publishOnlySentence}</span>
         </p>
-        <p className="text-muted-foreground text-pretty">{REVIEWER_CANNOT_FLIP_SENTENCE}</p>
+        <p className="text-muted-foreground text-pretty">{COPY.reviewerCannotFlipSentence}</p>
         {notifyRequestedByAuthor && scope !== "" ? <p className="text-muted-foreground text-pretty">{`The notices would carry only this: ${scope}`}</p> : null}
       </div>
       <SimulationLabel effect="publication-reach" />
@@ -515,7 +323,6 @@ function PublishIntent({
     </section>
   );
 }
-// The candidate, as the renderer produced it
 function CandidatePreview({ candidate, level }: { readonly candidate: CandidateView; readonly level: SubHeadingLevel }): ReactElement {
   const titleId = useId();
   const mediaLabelId = useId();
@@ -526,27 +333,20 @@ function CandidatePreview({ candidate, level }: { readonly candidate: CandidateV
   return (
     <section aria-labelledby={titleId} data-slot="review-preview" className="flex min-w-0 flex-col gap-3">
       <Heading id={titleId} className="text-base font-medium text-pretty">
-        {PREVIEW_HEADING}
+        {COPY.previewHeading}
       </Heading>
       {candidate.renderedHtml.trim() === "" ? (
-        <p className="text-sm text-muted-foreground text-pretty">{NO_RENDERED_BODY_NOTICE}</p>
+        <p className="text-sm text-muted-foreground text-pretty">{COPY.noRenderedBodyNotice}</p>
       ) : (
         <div dir={candidate.locale.direction} className="min-w-0 overflow-hidden rounded-lg border border-border">
-          <iframe
-            title={frameTitle}
-            srcDoc={frameDocument}
-            sandbox="allow-same-origin"
-            referrerPolicy="no-referrer"
-            data-slot="review-candidate-frame"
-            className="block h-96 max-h-[70svh] min-h-64 w-full border-0 bg-background"
-          />
+          <iframe title={frameTitle} srcDoc={frameDocument} sandbox="allow-same-origin" referrerPolicy="no-referrer" data-slot="review-candidate-frame" className="block h-96 max-h-[70svh] min-h-64 w-full border-0 bg-background" />
         </div>
       )}
-      <p className="text-sm text-muted-foreground text-pretty">{PREVIEW_EXPLANATION}</p>
+      <p className="text-sm text-muted-foreground text-pretty">{COPY.previewExplanation}</p>
       {candidate.mediaRenditions.length === 0 ? null : (
         <div className="flex min-w-0 flex-col gap-2 text-sm">
           <p id={mediaLabelId} className="font-medium text-pretty">
-            {MEDIA_LABEL}
+            {COPY.mediaLabel}
           </p>
           <ul aria-labelledby={mediaLabelId} className="flex min-w-0 flex-col gap-1">
             {candidate.mediaRenditions.map((rendition) => {
@@ -557,7 +357,7 @@ function CandidatePreview({ candidate, level }: { readonly candidate: CandidateV
                   {/* A supplied address, used as it stands. It opens away from this page so the
                    * note a reviewer has typed is still here when they come back. */}
                   <a href={rendition.url} target="_blank" rel="noreferrer" className="inline-flex min-h-target items-center underline underline-offset-4 wrap-anywhere">
-                    {`${OPEN_RENDITION_PREFIX} ${purpose.toLowerCase()}`}
+                    {`${COPY.openRenditionPrefix} ${purpose.toLowerCase()}`}
                   </a>
                 </li>
               );
@@ -568,27 +368,16 @@ function CandidatePreview({ candidate, level }: { readonly candidate: CandidateV
     </section>
   );
 }
-// The other editions, when a release attempt left one where it stood
-function SiblingStanding({
-  standing,
-  activeVariantId,
-  level,
-}: {
-  readonly standing: readonly ReviewSiblingStanding[];
-  readonly activeVariantId: string;
-  readonly level: SubHeadingLevel;
-}): ReactElement | null {
+function SiblingStanding({ standing, activeVariantId, level }: { readonly standing: readonly ReviewSiblingStanding[]; readonly activeVariantId: string; readonly level: SubHeadingLevel }): ReactElement | null {
   const titleId = useId();
   const Heading = SUB_HEADING_TAG[level];
   const activeId = activeVariantId.trim();
   const others = standing.filter((edition) => edition.variantId !== activeId);
-  if (others.length === 0) {
-    return null;
-  }
+  if (others.length === 0) return null;
   return (
     <section aria-labelledby={titleId} data-slot="review-sibling-standing" className="flex min-w-0 flex-col gap-3">
       <Heading id={titleId} className="text-base font-medium text-pretty">
-        {SIBLING_HEADING}
+        {COPY.siblingHeading}
       </Heading>
       <ul className="flex min-w-0 flex-col gap-3 text-sm">
         {others.map((edition) => {
@@ -604,7 +393,7 @@ function SiblingStanding({
                 <StatusBadge label={lifecycle.label} tone={lifecycle.tone} />
               </span>
               {lifecycle.explanation.trim() === "" ? null : <span className="text-pretty text-muted-foreground">{lifecycle.explanation}</span>}
-              {edition.heldPriorGoodRelease === true ? <span className="text-pretty">{HELD_PRIOR_GOOD_SENTENCE}</span> : null}
+              {edition.heldPriorGoodRelease === true ? <span className="text-pretty">{COPY.heldPriorGoodSentence}</span> : null}
             </li>
           );
         })}
@@ -612,20 +401,7 @@ function SiblingStanding({
     </section>
   );
 }
-// The decision
-function DecisionStep({
-  candidate,
-  scope,
-  expectedRevision,
-  onDecide,
-  level,
-}: {
-  readonly candidate: CandidateView;
-  readonly scope: Scope;
-  readonly expectedRevision: string;
-  readonly onDecide: (input: MutationInput<ReviewDecisionPayload>) => Promise<MutationOutcome>;
-  readonly level: SubHeadingLevel;
-}): ReactElement {
+function DecisionStep({ candidate, scope, expectedRevision, onDecide, level }: { readonly candidate: CandidateView; readonly scope: Scope; readonly expectedRevision: string; readonly onDecide: (input: MutationInput<ReviewDecisionPayload>) => Promise<MutationOutcome>; readonly level: SubHeadingLevel }): ReactElement {
   const idPrefix = useId();
   const [decision, setDecision] = useState<ReviewDecision>("approved");
   const [note, setNote] = useState("");
@@ -635,7 +411,7 @@ function DecisionStep({
   const payload = decisionPayloadFor(decision, candidate, note);
   return (
     <div data-slot="review-decision" data-decision={decision} data-answered={settled ? "true" : "false"} className="flex min-w-0 flex-col gap-5">
-      <FormFieldGroup legend={DECISION_LEGEND} name="review.decision" description={DECISION_DESCRIPTION} required>
+      <FormFieldGroup legend={COPY.decisionLegend} name="review.decision" description={COPY.decisionDescription} required>
         {({ describedBy, invalid, required, legendId }) => (
           <RadioGroup
             value={decision}
@@ -670,7 +446,7 @@ function DecisionStep({
           </RadioGroup>
         )}
       </FormFieldGroup>
-      <FormField label={NOTE_LABEL} name="review.note" description={requiresNote ? NOTE_REQUIRED_DESCRIPTION : NOTE_OPTIONAL_DESCRIPTION} required={requiresNote} optionalHint={!requiresNote}>
+      <FormField label={COPY.noteLabel} name="review.note" description={requiresNote ? COPY.noteRequiredDescription : COPY.noteOptionalDescription} required={requiresNote} optionalHint={!requiresNote}>
         {(field) => (
           <Textarea
             id={field.id}
@@ -689,17 +465,13 @@ function DecisionStep({
           />
         )}
       </FormField>
-      {settled ? (
-        <p className="text-sm text-muted-foreground text-pretty">
-          This candidate is answered, so its decision is fixed. Anything further comes from the author as a new submission with a new revision.
-        </p>
-      ) : null}
+      {settled ? <p className="text-sm text-muted-foreground text-pretty">This candidate is answered, so its decision is fixed. Anything further comes from the author as a new submission with a new revision.</p> : null}
       <ActionReview<ReviewDecisionPayload>
         title={copy.title}
         description={
           <>
-            <p className="text-pretty">{APPROVAL_IS_PER_VARIANT_SENTENCE}</p>
-            <p className="text-pretty">{APPROVAL_IS_NOT_DELIVERY_SENTENCE}</p>
+            <p className="text-pretty">{COPY.approvalIsPerVariantSentence}</p>
+            <p className="text-pretty">{COPY.approvalIsNotDeliverySentence}</p>
           </>
         }
         consequence={copy.consequence}
@@ -707,7 +479,7 @@ function DecisionStep({
         consequential={copy.consequential}
         input={{ scope, expectedRevision, payload }}
         submit={onDecide}
-        fieldLabels={NOTE_FIELD_LABELS}
+        fieldLabels={COPY.noteFieldLabels}
         headingLevel={level}
         onSettled={(outcome) => {
           if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") {
@@ -718,7 +490,6 @@ function DecisionStep({
     </div>
   );
 }
-// The answer, when one is already recorded
 function RecordedDecision({ record, level }: { readonly record: RecordedCandidateDecision; readonly level: SubHeadingLevel }): ReactElement {
   const titleId = useId();
   const Heading = SUB_HEADING_TAG[level];
@@ -732,19 +503,19 @@ function RecordedDecision({ record, level }: { readonly record: RecordedCandidat
   return (
     <section aria-labelledby={titleId} data-slot="review-recorded-decision" data-decision={record.decision} className="flex min-w-0 flex-col gap-3">
       <Heading id={titleId} className="text-base font-medium text-pretty">
-        {RECORDED_DECISION_HEADING}
+        {COPY.recordedDecisionHeading}
       </Heading>
       <Alert variant="default" role={undefined}>
         <AlertTitle>{copy.title}</AlertTitle>
         <AlertDescription>
           <p className="text-pretty">{copy.sentence}</p>
           <dl data-slot="review-decision-record" className="grid min-w-0 gap-x-4 gap-y-2 text-sm sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
-            <dt className="text-muted-foreground">{DECIDED_BY_LABEL}</dt>
-            <dd className="min-w-0 wrap-anywhere">{principal === "" ? <span className="text-muted-foreground">{NOT_STATED_TEXT}</span> : <bdi className="mono-identifier">{principal}</bdi>}</dd>
-            <dt className="text-muted-foreground">{DECIDED_AT_LABEL}</dt>
+            <dt className="text-muted-foreground">{COPY.decidedByLabel}</dt>
+            <dd className="min-w-0 wrap-anywhere">{principal === "" ? <span className="text-muted-foreground">{COPY.notStated}</span> : <bdi className="mono-identifier">{principal}</bdi>}</dd>
+            <dt className="text-muted-foreground">{COPY.decidedAtLabel}</dt>
             <dd className="min-w-0 wrap-anywhere">
               {instant === "" ? (
-                <span className="text-muted-foreground">{NOT_STATED_TEXT}</span>
+                <span className="text-muted-foreground">{COPY.notStated}</span>
               ) : (
                 <bdi>
                   <time dateTime={instant} className="mono-identifier tabular-figures">
@@ -753,35 +524,17 @@ function RecordedDecision({ record, level }: { readonly record: RecordedCandidat
                 </bdi>
               )}
             </dd>
-            <dt className="text-muted-foreground">{DECISION_NOTE_LABEL}</dt>
-            <dd className="min-w-0">
-              {note === "" ? <span className="text-muted-foreground">{NO_DECISION_NOTE_TEXT}</span> : <bdi className="block break-words text-pretty whitespace-pre-wrap">{note}</bdi>}
-            </dd>
+            <dt className="text-muted-foreground">{COPY.decisionNoteLabel}</dt>
+            <dd className="min-w-0">{note === "" ? <span className="text-muted-foreground">{COPY.noDecisionNoteText}</span> : <bdi className="block break-words text-pretty whitespace-pre-wrap">{note}</bdi>}</dd>
           </dl>
-          <p className="text-sm text-muted-foreground text-pretty">{DECISION_INSTANT_SENTENCE}</p>
-          <p className="text-pretty">{NO_FURTHER_DECISION_SENTENCE}</p>
+          <p className="text-sm text-muted-foreground text-pretty">{COPY.decisionInstantSentence}</p>
+          <p className="text-pretty">{COPY.noFurtherDecisionSentence}</p>
         </AlertDescription>
       </Alert>
     </section>
   );
 }
-// The panel
-/** The one review surface. */
-export function ReviewPanel({
-  family,
-  candidates,
-  activeVariantId,
-  onSelect,
-  policyRequiresReview,
-  notifyRequestedByAuthor,
-  protectedNoticeScope,
-  scope,
-  expectedRevision,
-  onDecide,
-  siblingStanding,
-  headingLevel = 2,
-  className,
-}: ReviewPanelProps): ReactElement {
+export function ReviewPanel({ family, candidates, activeVariantId, onSelect, policyRequiresReview, notifyRequestedByAuthor, protectedNoticeScope, scope, expectedRevision, onDecide, siblingStanding, headingLevel = 2, className }: ReviewPanelProps): ReactElement {
   const titleId = useId();
   const Heading = PANEL_HEADING_TAG[headingLevel];
   const partLevel = subHeadingLevelOf(headingLevel);
@@ -793,13 +546,7 @@ export function ReviewPanel({
   const standing = siblingStanding ?? [];
   const nothingToReview = reviewable.length === 0;
   return (
-    <section
-      aria-labelledby={titleId}
-      data-slot="review-panel"
-      data-family={family}
-      data-policy-requires-review={policyRequiresReview ? "true" : "false"}
-      className={cn("flex min-w-0 flex-col gap-6", className)}
-    >
+    <section aria-labelledby={titleId} data-slot="review-panel" data-family={family} data-policy-requires-review={policyRequiresReview ? "true" : "false"} className={cn("flex min-w-0 flex-col gap-6", className)}>
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
@@ -810,12 +557,8 @@ export function ReviewPanel({
           <CardDescription className="text-pretty">{copy.introduction}</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-6">
-          {nothingToReview ? (
-            <p className="text-sm text-muted-foreground text-pretty">{NO_CANDIDATE_NOTICE}</p>
-          ) : (
-            <VariantSwitcher family={switcherFamilyOf(family)} variants={tabs} activeVariantId={activeId} onSelect={onSelect} label={EDITION_LABEL} />
-          )}
-          {active === undefined && !nothingToReview ? <p className="text-sm text-muted-foreground text-pretty">{NO_ACTIVE_NOTICE}</p> : null}
+          {nothingToReview ? <p className="text-sm text-muted-foreground text-pretty">{COPY.noCandidateNotice}</p> : <VariantSwitcher family={switcherFamilyOf(family)} variants={tabs} activeVariantId={activeId} onSelect={onSelect} label={COPY.editionLabel} />}
+          {active === undefined && !nothingToReview ? <p className="text-sm text-muted-foreground text-pretty">{COPY.noActiveNotice}</p> : null}
           {active === undefined ? null : (
             <>
               <Separator />
@@ -842,10 +585,10 @@ export function ReviewPanel({
         <DecisionStep key={active.variantId} candidate={active} scope={scope} expectedRevision={expectedRevision} onDecide={onDecide} level={partLevel} />
       ) : (
         <Alert variant="default" role={undefined} data-slot="review-not-required">
-          <AlertTitle>{POLICY_NOT_REQUIRED_HEADING}</AlertTitle>
+          <AlertTitle>{COPY.policyNotRequiredHeading}</AlertTitle>
           <AlertDescription>
-            <p>{POLICY_NOT_REQUIRED_SENTENCE}</p>
-            <p>{POLICY_NOT_REQUIRED_NOTHING_APPROVED}</p>
+            <p>{COPY.policyNotRequiredSentence}</p>
+            <p>{COPY.policyNotRequiredNothingApproved}</p>
           </AlertDescription>
         </Alert>
       )}

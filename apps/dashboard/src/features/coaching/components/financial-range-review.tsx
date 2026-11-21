@@ -1,8 +1,4 @@
 "use client";
-/**
- * The reviewed, fixed financial range a worker shares with a coach, stated once and never as a
- * drilldown.
- */
 import type { ReactElement, ReactNode } from "react";
 import { StateNotice } from "@/components/state-notice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -16,60 +12,21 @@ import { formatMinor } from "@/modules/money/format";
 import { BASIS_DESCRIPTION, SUPPORT_BASIS } from "@/modules/support/basis";
 import { serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
 import { COACHING_COPY, FINANCIAL_RANGE_COPY } from "../copy";
-/** One reviewed financial range as a grant discloses it: a fixed period, its currency, and the single figure the read supplied for that currency — with the state that figure was read in and. */
-export interface SharedFinancialRange {
-  readonly from: CivilDate | string;
-  readonly to: CivilDate | string;
-  readonly currency: string;
-  readonly money: Money | null;
-  readonly valueState: ValueState;
-  readonly coverage: Coverage;
-  readonly asOf: string;
-}
-/** Props of {@link FinancialRangeReview}. */
-export interface FinancialRangeReviewProps {
-  readonly range: SharedFinancialRange | null;
-  readonly reviewedAt?: string | null;
-  readonly reviewedByRole?: "worker" | null;
-  readonly locale: string;
-}
-const STATE_LABELS: Readonly<Record<ValueState, string>> = {
-  value: "Recorded amount",
-  zero: "Genuine zero",
-  unknown: "Unknown",
-  withheld: "Withheld",
-  unavailable: "Unavailable",
-  "incomplete-subtotal": "Incomplete subtotal",
-};
+export type SharedFinancialRange = { readonly from: CivilDate | string; readonly to: CivilDate | string; readonly currency: string; readonly money: Money | null; readonly valueState: ValueState; readonly coverage: Coverage; readonly asOf: string };
+export type FinancialRangeReviewProps = { readonly range: SharedFinancialRange | null; readonly reviewedAt?: string | null; readonly reviewedByRole?: "worker" | null; readonly locale: string };
+const STATE_LABELS: Readonly<Record<ValueState, string>> = { value: "Recorded amount", zero: "Genuine zero", unknown: "Unknown", withheld: "Withheld", unavailable: "Unavailable", "incomplete-subtotal": "Incomplete subtotal" };
 const NUMERIC_STATES: ReadonlySet<ValueState> = new Set<ValueState>(["value", "zero", "incomplete-subtotal"]);
-
 const FIGURE_LABEL = "Received support in this range";
-
 const NO_AMOUNT_TEXT = "No amount shared";
-
 const NO_AMOUNT_LABEL = "No amount was shared for this range. This is neither zero nor an unknown amount: the read supplied no figure at all.";
-
-const NO_RANGE_SHARED =
-  "No financial range has been shared with a coach yet. Choose the dates and review them on this page " + "first: nothing from your support view becomes readable to a coach until you do.";
+const NO_RANGE_SHARED = "No financial range has been shared with a coach yet. Choose the dates and review them on this page " + "first: nothing from your support view becomes readable to a coach until you do.";
 const NO_RANGE_BADGE = "Not shared";
-
 const BASIS_HEADING = "What this range measures";
-
 const EXCLUSIONS_HEADING = "What this range does not show";
-
 const UNAVAILABLE_HEADING = "This financial range cannot be read";
-
-const FIELD_LABELS = {
-  from: "Range from",
-  to: "Range to",
-  currency: "Currency",
-  basis: "Basis",
-  reviewed: "Reviewed",
-} as const;
+const FIELD_LABELS = { from: "Range from", to: "Range to", currency: "Currency", basis: "Basis", reviewed: "Reviewed" } as const;
 const TERM_CLASS = "font-medium";
-
 const ISO_VALUE_CLASS = "whitespace-nowrap";
-
 function isoValue(value: string): ReactElement {
   return <bdi className={ISO_VALUE_CLASS}>{value}</bdi>;
 }
@@ -103,7 +60,6 @@ function coverageBounds(coverage: Coverage): ReactNode {
   }
   return null;
 }
-/** Renders the reviewed financial range a coach may read, under the one named support basis. */
 export function FinancialRangeReview({ range, reviewedAt, reviewedByRole, locale }: FinancialRangeReviewProps): ReactElement {
   if (range === null) {
     return (

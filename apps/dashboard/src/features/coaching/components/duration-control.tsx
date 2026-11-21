@@ -1,7 +1,4 @@
 "use client";
-/**
- * The duration field of a coaching invitation, and the cutoff a grant actually ended up with.
- */
 import { useId, useState, type ReactElement } from "react";
 import { FormField, FormFieldGroup } from "@/components/form-field";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -11,35 +8,13 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { parseCivilDate, serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
-/** The two duration kinds, in reading order. */
 export const DURATION_KINDS = ["ongoing", "through-date"] as const;
-/** How long sharing runs: no end date, or through a calendar date the worker chooses. */
 export type DurationKind = (typeof DURATION_KINDS)[number];
-/** The duration a worker has chosen, or `null` for not chosen yet. */
 export type DurationValue = { readonly kind: "ongoing" } | { readonly kind: "through-date"; readonly throughDate: CivilDate | null };
-/** The cutoff a grant is actually governed by, exactly as the read envelope reports it. */
-export interface FrozenDurationCutoff {
-  readonly instant: string;
-  readonly zone: string;
-  readonly sourceLimitWins: boolean;
-  readonly sourceLimit?: string | null;
-}
-/** Props of {@link DurationControl}. */
-export interface DurationControlProps {
-  readonly value: DurationValue | null;
-  readonly onChange: (next: DurationValue | null) => void;
-  readonly error?: string | null;
-  readonly frozenCutoff?: FrozenDurationCutoff | null;
-  readonly disabledReason?: string | null;
-  readonly locale: string;
-}
-/** Wording for one duration kind: the label a reader picks, and what choosing it does to access. */
-export interface DurationKindWording {
-  readonly label: string;
-  readonly description: string;
-}
-/** Every word this control renders, in one shape. */
-export interface DurationWording {
+export type FrozenDurationCutoff = { readonly instant: string; readonly zone: string; readonly sourceLimitWins: boolean; readonly sourceLimit?: string | null };
+export type DurationControlProps = { readonly value: DurationValue | null; readonly onChange: (next: DurationValue | null) => void; readonly error?: string | null; readonly frozenCutoff?: FrozenDurationCutoff | null; readonly disabledReason?: string | null; readonly locale: string };
+export type DurationKindWording = { readonly label: string; readonly description: string };
+export type DurationWording = {
   readonly legend: string;
   readonly fieldLead: string;
   readonly missingIsNotPermission: string;
@@ -61,8 +36,7 @@ export interface DurationWording {
   readonly sourceLimitWins: string;
   readonly sourceLimitUnknown: string;
   readonly kinds: Readonly<Record<DurationKind, DurationKindWording>>;
-}
-/** The duration control's words: the two kinds, the refusal facts, and the cutoff disclosures. */
+};
 export const DURATION_WORDING: DurationWording = {
   legend: "How long sharing runs",
   fieldLead: "A duration is required. Modules start switched off, and nothing is readable by a coach until " + "the person accepts, so the choice below sets the most this invitation can ever cover.",
@@ -83,17 +57,10 @@ export const DURATION_WORDING: DurationWording = {
   cutoffNotProvisional: "No provisional cutoff is shown, because a provisional number would not be the one that governs " + "access.",
   sourceLimitTitle: "An earlier limit from the source applies",
   sourceLimitWins: "A limit set by the source ends access before the date this invitation chose, and the earlier " + "limit wins: the cutoff shown above is the source's, not the one chosen here.",
-  sourceLimitUnknown:
-    "A limit set by the source ends access before the date this invitation chose, and the earlier " + "limit wins. Its own value cannot be read right now, so nothing is put in its place.",
+  sourceLimitUnknown: "A limit set by the source ends access before the date this invitation chose, and the earlier " + "limit wins. Its own value cannot be read right now, so nothing is put in its place.",
   kinds: {
-    ongoing: {
-      label: "Ongoing, until you end it",
-      description: "Sharing has no end date. It stays open until you revoke it or the coaching relationship " + "ends, whichever comes first.",
-    },
-    "through-date": {
-      label: "Through a date you choose",
-      description: "Sharing closes at the cutoff that date produces. Choose the last calendar date it should " + "cover; the cutoff is stated once the invitation is accepted.",
-    },
+    ongoing: { label: "Ongoing, until you end it", description: "Sharing has no end date. It stays open until you revoke it or the coaching relationship " + "ends, whichever comes first." },
+    "through-date": { label: "Through a date you choose", description: "Sharing closes at the cutoff that date produces. Choose the last calendar date it should " + "cover; the cutoff is stated once the invitation is accepted." },
   },
 };
 function isDurationKind(value: unknown): value is DurationKind {
@@ -105,7 +72,6 @@ function statedReason(reason: string | null | undefined): string | null {
   }
   return reason.trim() === "" ? null : reason;
 }
-/** The duration field of a coaching invitation: `ongoing` or `through-date`, plus the frozen cutoff a grant was given. */
 export default function DurationControl({ value, onChange, error = null, frozenCutoff = null, disabledReason = null, locale }: DurationControlProps): ReactElement {
   const idPrefix = useId();
   const [refusedDateText, setRefusedDateText] = useState<string | null>(null);

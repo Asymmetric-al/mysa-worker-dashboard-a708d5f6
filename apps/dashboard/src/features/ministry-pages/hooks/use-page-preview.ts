@@ -1,22 +1,5 @@
 "use client";
-/**
- * The Worker and Project Pages family's preview read: one exact, currently authorised, inert rendering of one
- * acknowledged Page edition revision, transported exactly as the service built it.
- *
- * Three decisions belong to this module rather than to its callers:
- *
- * 1. The URL states the read's own vocabulary — the edition, the acknowledged revision, an optional frozen
- *    candidate and the requested language. `documentId` is the cache key's parent and never travels on the wire:
- *    `/api/pages/preview` refuses every parameter it does not take, which is what stops a name shaped like an
- *    authority claim from riding beside the ones the read resolves scope from.
- * 2. The denial reasons are the server's closed set, owned by the content module. This browser module neither
- *    imports that module nor restates its set: the reason is carried as the denied outcome's own `reasonCode`,
- *    passed through unchanged, and a caller that does not recognise one renders a generic denial — which states
- *    no title, count or existence.
- * 3. Nothing here composes markup. `renderedHtml` is carried verbatim from the one renderer, `renditionIds` stay
- *    opaque identifiers that this module never turns into a media address, `givingAction` keeps the service's
- *    literal `"none"`, and the direction is data for the consumer to place on `dir`.
- */
+/** The Worker and Project Pages family's preview read: one exact, currently authorised, inert rendering of one acknowledged Page edition revision, transported exactly as the service built it. */
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import type { ReadEnvelope, Scope, reads } from "@/modules/data-service";
 // The outcome module rather than the service barrel, because this is a browser module: the barrel is imported
@@ -42,28 +25,26 @@ type ServicePreviewEnvelope = Extract<Awaited<ReturnType<typeof reads.pages.read
 export type PagePreviewData = ServicePreviewEnvelope["data"];
 /** The scoped envelope a preview surface renders once it has narrowed the result to `envelope`. */
 export type PagePreviewEnvelope = ReadEnvelope<PagePreviewData>;
-/** What this read answers with: the envelope, the service's denial, or the source that could not answer. */
+/** What this read answers with: the envelope, the service's denial, the source that could not answer, or the request it does not admit. */
 export type PagePreviewReadResult = ReadResult<PagePreviewEnvelope>;
 // The transport
 const PREVIEW_ENDPOINT = "/api/pages/preview";
 // A read carries no caller-supplied operation id, so a refusal names the one attempt every read transport names.
 const READ_ATTEMPT_ID = "read";
 const HANDLER_SOURCE_SYSTEM = "data-service";
-const PARAM = {
-  variantId: "variantId",
-  revisionId: "revisionId",
-  candidateId: "candidateId",
-  requestedLocale: "requestedLocale",
-} as const;
+const PARAM = { variantId: "variantId", revisionId: "revisionId", candidateId: "candidateId", requestedLocale: "requestedLocale" } as const;
 const ENVELOPE_STATUS = 200;
 const DENIED_STATUS = 403;
+/** A session that expired or could not be established answers 401 with the same denial, which is a session fault rather than a permission refusal. */
+const SESSION_FAULT_STATUS = 401;
 const UNAVAILABLE_STATUS = 503;
+
+/** A parameter this read does not admit answers 422 with the field-keyed refusal, which is the request's own fault and not a source that did not answer. */
+const REFUSED_STATUS = 422;
 const NOT_REQUESTED = "not-requested";
-const TRANSPORT_GUIDANCE =
-  "The preview request did not complete, so this edition's preview is unavailable rather than empty. Open the preview again: each read re-authorises the exact revision it is asked for, so a retry never shows newer content.";
+const TRANSPORT_GUIDANCE = "The preview request did not complete, so this edition's preview is unavailable rather than empty. Open the preview again: each read re-authorises the exact revision it is asked for, so a retry never shows newer content.";
 const UNREADABLE_GUIDANCE = "The preview request was answered with a body this read does not recognise, so the edition's preview is reported unavailable rather than rendered as an empty page.";
-const INCOMPLETE_GUIDANCE =
-  "No preview was requested: a preview renders one acknowledged revision in one named language, so the edition, the revision on screen and the language have to be stated together.";
+const INCOMPLETE_GUIDANCE = "No preview was requested: a preview renders one acknowledged revision in one named language, so the edition, the revision on screen and the language have to be stated together.";
 /** A request the transport can carry: the acknowledgement and the language the read is asked for are both known. */
 interface RequestablePreview extends PagePreviewParams {
   readonly revisionId: string;
@@ -74,14 +55,7 @@ function isRequestable(params: PagePreviewParams | undefined): params is Request
 }
 /** The outage a caller is shown when nothing could be read: the handler path is the source reference, and it names no record. */
 function outage(guidance: string): PagePreviewReadResult {
-  return {
-    kind: "unavailable",
-    unavailable: unavailable({
-      operationId: READ_ATTEMPT_ID,
-      source: { system: HANDLER_SOURCE_SYSTEM, reference: PREVIEW_ENDPOINT },
-      guidance,
-    }),
-  };
+  return { kind: "unavailable", unavailable: unavailable({ operationId: READ_ATTEMPT_ID, source: { system: HANDLER_SOURCE_SYSTEM, reference: PREVIEW_ENDPOINT }, guidance }) };
 }
 function previewUrl(params: RequestablePreview): string {
   // `URLSearchParams` percent-encodes every value, so a tag, an identifier or a name that carries a separator
@@ -106,11 +80,16 @@ function resultOf(status: number, body: unknown): PagePreviewReadResult | undefi
       return isReadResult(result) ? result : undefined;
     }
     case DENIED_STATUS:
+    case SESSION_FAULT_STATUS:
       // A denial is a legitimate answer and is returned as the service sent it, never resolved into an empty
       // preview, a placeholder page or an invented draft.
       return isOutcome(body) && body.outcome === "denied" ? { kind: "denied", denied: body } : undefined;
     case UNAVAILABLE_STATUS:
       return isOutcome(body) && body.outcome === "unavailable" ? { kind: "unavailable", unavailable: body } : undefined;
+    case REFUSED_STATUS:
+      // The request named a parameter this read does not take, or named one in a form it does not admit:
+      // the field-keyed refusal is the answer, and no source behind the preview failed.
+      return isOutcome(body) && body.outcome === "invalid" ? { kind: "refused", refused: body } : undefined;
     default:
       return undefined;
   }
@@ -125,12 +104,7 @@ async function readJsonBody(answer: Response): Promise<unknown> {
 async function requestPreview(params: RequestablePreview): Promise<PagePreviewReadResult> {
   let answer: Response;
   try {
-    answer = await fetch(previewUrl(params), {
-      method: "GET",
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: { accept: "application/json" },
-    });
+    answer = await fetch(previewUrl(params), { method: "GET", credentials: "same-origin", cache: "no-store", headers: { accept: "application/json" } });
   } catch {
     return outage(TRANSPORT_GUIDANCE);
   }
@@ -144,10 +118,7 @@ function previewKey(scope: Scope, requestable: RequestablePreview): readonly unk
   // than being left out of it, and two candidates of one edition stay two cache entries.
   return requestable.candidateId === undefined ? stated : [...stated, requestable.candidateId];
 }
-/**
- * Reads the exact, currently authorised, inert preview of one acknowledged Page revision; returns the
- * server-produced HTML envelope or the service's `denied`/`unavailable` outcome.
- */
+/** Reads the exact, currently authorised, inert preview of one acknowledged Page revision; returns the server-produced HTML envelope or the service's `denied`/`unavailable` outcome. */
 export function usePagePreview(scope: Scope, params: PagePreviewParams | undefined): UseQueryResult<PagePreviewReadResult, never> {
   // Nothing is requested until the acknowledgement is complete: an incomplete request would be answered as a
   // malformed one, and reporting that as a source outage would be a false statement about the source. A preview

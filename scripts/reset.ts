@@ -1,7 +1,4 @@
-/**
- * `bun run reset`: discards every stored session and re-seeds every seeded session from the
- * deterministic seed, so the application starts from the known world every criterion begins at.
- */
+/** `bun run reset`: discards every stored session and re-seeds every seeded session from the deterministic seed, so the application starts from the known world every criterion begins at. */
 import { basename, dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,15 +30,7 @@ function escapeForPattern(literal: string): string {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/**
- * The absolute directories a failure must never quote, longest first: the checkout, and the
- * directory the command was run in.
- *
- * Longest first is what lets a working directory nested inside the checkout rewrite on its own
- * terms instead of being read as a path inside the checkout's remainder. The filesystem root is
- * skipped, because replacing `/` would consume every path in the text, and so is a working
- * directory that has been deleted, which cannot be named.
- */
+/** The absolute directories a failure must never quote, longest first: the checkout, and the directory the command was run in. */
 function disclosureRoots(): readonly string[] {
   const directories = [REPOSITORY_ROOT];
   try {
@@ -56,26 +45,13 @@ function disclosureRoots(): readonly string[] {
     .sort((left, right) => right.length - left.length);
 }
 
-/**
- * Rewrites one root out of a message: a path below it keeps only its part inside the root, and the
- * bare root becomes `.`, which is that directory read from itself.
- *
- * The trailing separator is part of what the prefix match requires, so a sibling whose name merely
- * starts with the root's — `/checkout-archive` beside `/checkout` — is left alone.
- */
+/** Rewrites one root out of a message: a path below it keeps only its part inside the root, and the bare root becomes `.`, which is that directory read from itself. */
 function rewriteRoot(text: string, root: string): string {
   const trimmed = text.split(`${root}${sep}`).join("");
   return trimmed.replace(new RegExp(`${escapeForPattern(root)}(?![\\w.@%+-])`, "g"), ".");
 }
 
-/**
- * Rewrites every absolute path in one message or frame so it discloses nothing about this host.
- *
- * The checkout and the working directory become relative, and an absolute path that survives them
- * — a temporary file beside a target, a directory above the checkout, a home directory — keeps
- * only its final segment. The reader still learns which document a fault refused and where in the
- * source it was raised; they never learn where the host keeps the checkout.
- */
+/** Rewrites every absolute path in one message or frame so it discloses nothing about this host. */
 function withoutDisclosure(text: string): string {
   const withoutRoots = disclosureRoots().reduce(rewriteRoot, text.replace(FILE_SCHEME, ""));
   return withoutRoots.replace(ABSOLUTE_PATH, (match: string, lead: string) => `${lead}${basename(match.slice(lead.length))}`);
@@ -86,14 +62,7 @@ function reportError(message: string): void {
   process.stderr.write(`${message}\n`);
 }
 
-/**
- * Reports a rejection with its message and its frames, with every absolute path rewritten.
- *
- * At this command's boundary every thrown fault is unexpected — the reset is meant to succeed —
- * so the stack is the operator's best clue to which document the store refused to write.
- * Withholding where the checkout sits costs the reader nothing: the frames keep the file that
- * raised and the line it raised on, which is what the clue is made of.
- */
+/** Reports a rejection with its message and its frames, with every absolute path rewritten. */
 function reportFailure(error: unknown): void {
   if (!(error instanceof Error)) {
     reportError(withoutDisclosure(`reset failed with a non-error value: ${String(error)}`));
@@ -129,10 +98,7 @@ function summaryLine(label: string, value: string): string {
   return `${label.padEnd(LABEL_WIDTH)}: ${value}\n`;
 }
 
-/**
- * A count with its ids on the same line, ids sorted so two runs of one seed print identical bytes.
- * An empty set prints its count alone, because an empty id list is evidence in itself.
- */
+/** A count with its ids on the same line, ids sorted so two runs of one seed print identical bytes. */
 function countAndIds(ids: readonly string[]): string {
   const sortedIds = [...ids].sort();
   return sortedIds.length === 0 ? "0" : `${String(sortedIds.length)}  ${sortedIds.join(", ")}`;
@@ -152,21 +118,10 @@ function formatSummary(summary: ResetSummary): string {
 
 /** The same values as one line, in the field order `ResetSummary` declares, for machine-readable evidence. */
 function formatJson(summary: ResetSummary): string {
-  return `${JSON.stringify({
-    seededSessions: [...summary.seededSessions].sort(),
-    removedSessions: [...summary.removedSessions].sort(),
-    partners: summary.partners,
-    seedInstant: summary.seedInstant,
-    clockOffsetMs: summary.clockOffsetMs,
-  })}\n`;
+  return `${JSON.stringify({ seededSessions: [...summary.seededSessions].sort(), removedSessions: [...summary.removedSessions].sort(), partners: summary.partners, seedInstant: summary.seedInstant, clockOffsetMs: summary.clockOffsetMs })}\n`;
 }
 
-/**
- * What separates a restored world from a command that merely exited: the clock is back at the seed
- * instant, something was seeded, and the seeded sessions hold partners. A violated check returns the
- * offending value, because "reset succeeded" with zero sessions is the one outcome that must never
- * print as success.
- */
+/** What separates a restored world from a command that merely exited: the clock is back at the seed instant, something was seeded, and the seeded sessions hold partners. */
 function findViolation(summary: ResetSummary): string | undefined {
   if (summary.clockOffsetMs !== 0) {
     return `clock offset is ${String(summary.clockOffsetMs)} ms, and a reset leaves it at 0`;
@@ -180,14 +135,7 @@ function findViolation(summary: ResetSummary): string | undefined {
   return undefined;
 }
 
-/**
- * Runs the one reset and reports it.
- *
- * Exit contract: 0 only when the sessions were laid down and every check held; 2 for a usage error,
- * after printing the usage to stderr; and 1 for any failure — including the development runtime
- * refusing to load — or a violated check, with its diagnostics on stderr. A partial or empty
- * reset is reported as a failure, never as a success.
- */
+/** Runs the one reset and reports it. */
 async function main(): Promise<number> {
   let parsed: ParsedArguments;
   try {

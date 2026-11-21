@@ -1,9 +1,5 @@
-/**
- * Generic result helpers for service internals.
- */
-/**
- * A success value or a failure, tagged so `isOk` narrows it to one branch.
- */
+/** Generic result helpers for service internals. */
+/** A success value or a failure, tagged so `isOk` narrows it to one branch. */
 export type Result<T, E> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: E };
 /** Wraps a success value; the error type is uninhabited until a caller unifies it. */
 export function ok<T>(value: T): Result<T, never> {

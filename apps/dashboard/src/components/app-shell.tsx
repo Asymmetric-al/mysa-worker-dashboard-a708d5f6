@@ -1,29 +1,11 @@
 "use client";
-/**
- * The one application shell: the chrome every route renders inside, and the only place the page's
- * landmarks are created.
- */
+/** The one application shell: the chrome every route renders inside, and the only place the page's landmarks are created. */
 
 import { usePathname, useRouter } from "next/navigation";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useTransition,
-  type ReactElement,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { useCallback, useEffect, useRef, useState, useTransition, type ReactElement, type ReactNode, type RefObject } from "react";
 
-import ContextIndicator, {
-  type AdmittedContext,
-  type ContextRequest,
-} from "@/components/context-indicator";
-// The one context-change decision. It is a shared component of this same layer, not a feature: the
-// switch is composed here so the dialog and the fence exist once and are reachable from wherever the
-// context indicator is. Its words and its dispatch arrive as props, so importing it couples the shell
-// to the decision's shape and to nothing else.
+import ContextIndicator, { type AdmittedContext, type ContextRequest } from "@/components/context-indicator";
+// The one context-change decision, composed here as a shared component of this layer so the dialog and the fence exist once wherever the context indicator is; its words and its dispatch arrive as props.
 import ContextSwitchGuard, { type ContextSwitchGuardCopy, type ContextSwitchResult } from "@/components/context-switch-guard";
 import DevBanner from "@/components/dev-banner";
 import DevPanel, { type DevPanelProps } from "@/components/dev-panel";
@@ -33,41 +15,30 @@ import StateNotice, { type StateNoticeProps } from "@/components/state-notice";
 import { Sidebar, SidebarContent, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { cn } from "@/lib/cn";
 import type { Scope, SessionState } from "@/modules/data-service/envelope";
-// Contracts
 /** How a session was admitted, which decides whether the shell renders the route or a recovery surface. */
 export type AdmissionState = SessionState;
-
 type RecoveryState = Exclude<AdmissionState, "signed-in">;
-/** This session's development state, exactly as `readDevState` reported it. */
 export type AppShellDevState = DevPanelProps["devState"];
-/** Every transport the development region dispatches, supplied by the layer that owns them. */
-export interface AppShellDevActions {
+export type AppShellDevActions = {
   readonly onSetScenario: DevPanelProps["onSetScenario"];
   readonly onSetClock: DevPanelProps["onSetClock"];
   readonly onAdvanceClock: DevPanelProps["onAdvanceClock"];
   readonly onSetFailurePlan: DevPanelProps["onSetFailurePlan"];
   readonly reset: DevPanelProps["reset"];
-  /**
-   * Asks the development runtime to carry a different seeded persona, where this build can carry one.
-   *
-   * Omitted when changing which seeded session the browser's cookie names is not a step this build
-   * provides: the persona switch then does not render at all, because a control that cannot act is worse
-   * than no control — the rule every group of this region follows.
-   */
+  /** Asks the development runtime to carry a different seeded persona, where this build can carry one. */
   readonly onSelectPersona?: PersonaSwitcherProps["onSelect"];
   /** Asks the development runtime to apply an admission scenario, where the surface offers one. */
   readonly onSelectSessionState?: PersonaSwitcherProps["onSelectSessionState"];
-}
+};
 /** The context switch, so it is available wherever the context indicator is visible. */
-export interface AppShellContextSwitch {
+export type AppShellContextSwitch = {
   readonly copy: ContextSwitchGuardCopy;
   readonly resolvePendingScope: (request: ContextRequest) => Scope | null;
   readonly switchTo: (pendingScope: Scope) => Promise<ContextSwitchResult>;
   readonly unsavedWork?: { readonly description: string };
   readonly onSaveAndSwitch?: () => Promise<void>;
-}
-/** Props of {@link AppShell}. */
-export interface AppShellProps {
+};
+export type AppShellProps = {
   readonly scope: Scope;
   readonly admissionState: AdmissionState;
   readonly currentPath?: string;
@@ -79,74 +50,31 @@ export interface AppShellProps {
   readonly direction?: "ltr" | "rtl";
   readonly children: ReactNode;
   readonly className?: string;
-}
-// Fixed values
+};
 /** The `main` landmark's id, declared once so the skip link and any caller naming the same target cannot disagree about it. */
 export const MAIN_CONTENT_ID = "main-content";
-
 const SKIP_LINK_LABEL = "Skip to main content";
-
 const DEVELOPMENT_REGION_LABEL = "Development controls";
-
 const HELP_HREF = "/help";
 
-/** The two ways a recovery surface's one action reaches the state its sentence names. */
 type RecoveryActionKind = "help" | "refresh";
 
-/** One recovery surface: what happened, what it does not mean, and the one way forward. */
-interface RecoveryCopy {
+type RecoveryCopy = {
   readonly noticeKind: StateNoticeProps["kind"];
   readonly reasonCode?: StateNoticeProps["reasonCode"];
   readonly title: string;
   readonly description: string;
   readonly actionLabel: string;
-  /**
-   * How that one action is dispatched, which is all the four surfaces differ in.
-   *
-   * `help` follows the documented Help destination the notice renders beside these words. `refresh`
-   * stays on the page the reader is already on and asks the router for this route again, which is the
-   * step that re-requests the read the notice describes: a link to the open path would replay the route
-   * payload the router already holds and need not re-request that render. There is no third form and no
-   * default, so a surface cannot end up with an action that has neither a destination nor a command.
-   */
+  /** How that one action is dispatched, which is all the four surfaces differ in. */
   readonly actionKind: RecoveryActionKind;
-}
+};
 
-/**
- * The four recovery surfaces, one sentence set each.
- *
- * The record is exhaustive over {@link RecoveryState}, so adding an admission state to the envelope's
- * closed tuple fails to compile until its surfaces are written. None of the four offers a sign-in
- * form: there is no authenticator in this release, and a password field would promise one. Each names
- * what is true — nothing was changed, nothing was shown, what the way forward is — instead of the
- * generic apology that leaves a reader unable to decide what to do next.
- *
- * **Why the two rejected sessions name no development control.** Every development mutation asserts
- * the claimed scope, and so the admission gate, before its own authority question, so a session that
- * grants nothing — which is exactly what `expired` and `no-access` are — cannot reset the seed or
- * change persona from the surface it is looking at. Naming those controls here promised a recovery the
- * reader could not carry out; the honest one is the Help destination rendered beside the notice, so
- * both sentences name that and nothing else.
- *
- * **Why `denied` names no chooser either.** A refused admission resolves no context record, so the layout
- * presents no revision to switch against, the shell builds no switch transport, and the indicator is
- * narrowed to the membership in force — there is no chooser on the page to name. The way forward here is
- * likewise the Help destination beside it, and the sentence says plainly that this page offers no way to
- * choose another context rather than pointing at one that never renders.
- *
- * Only `unavailable` uses the notice's outage state; the three refusals use its denial state and are
- * told apart by their reason code and their own sentences. That is deliberate: `components/state-notice`
- * is the application's only surface for a state that is not a result, and a hand-written page for
- * "expired" here would be a second one that could drift from it.
- */
+/** The four recovery surfaces, one sentence set each. */
 const RECOVERY_COPY: Readonly<Record<RecoveryState, RecoveryCopy>> = {
   unavailable: {
     noticeKind: "unavailable",
     title: "This workspace could not be read",
-    description:
-      "The application could not read this session's context, so the workspace is not shown at all " +
-      "rather than shown partially or filled in from a guess. Nothing here has been changed, and " +
-      "anything already saved is still saved.",
+    description: "The application could not read this session's context, so the workspace is not shown at all " + "rather than shown partially or filled in from a guess. Nothing here has been changed, and " + "anything already saved is still saved.",
     actionLabel: "Try this page again",
     // A re-request rather than a destination: the page the reader is on is the one to ask for again.
     actionKind: "refresh",
@@ -156,10 +84,7 @@ const RECOVERY_COPY: Readonly<Record<RecoveryState, RecoveryCopy>> = {
     reasonCode: "not-admitted",
     title: "This workspace is not available to this session",
     description:
-      "The session this page resolved does not admit the organisation and ministry it asked for. " +
-      "Nothing about that context is shown — not a count, not a name and not whether a record " +
-      "exists — and this page offers no way to choose another one, so Open Help explains what an " +
-      "admitted session needs.",
+      "The session this page resolved does not admit the organisation and ministry it asked for. " + "Nothing about that context is shown — not a count, not a name and not whether a record " + "exists — and this page offers no way to choose another one, so Open Help explains what an " + "admitted session needs.",
     actionLabel: "Open Help",
     actionKind: "help",
   },
@@ -167,10 +92,7 @@ const RECOVERY_COPY: Readonly<Record<RecoveryState, RecoveryCopy>> = {
     noticeKind: "denied",
     reasonCode: "session-expired",
     title: "This session has expired",
-    description:
-      "A read from this point would not be authorised, so the workspace is closed instead of being " +
-      "shown from a session that has ended. Nothing you saved has been discarded — an ended session " +
-      "changes no stored record — and Open Help explains what each admission state means.",
+    description: "A read from this point would not be authorised, so the workspace is closed instead of being " + "shown from a session that has ended. Nothing you saved has been discarded — an ended session " + "changes no stored record — and Open Help explains what each admission state means.",
     actionLabel: "Open Help",
     actionKind: "help",
   },
@@ -178,52 +100,24 @@ const RECOVERY_COPY: Readonly<Record<RecoveryState, RecoveryCopy>> = {
     noticeKind: "denied",
     reasonCode: "no-membership",
     title: "No admitted identity for this session",
-    description:
-      "There is no account for this session, so there is no workspace to show and nothing has been " +
-      "changed. Recovering the account is the only outcome that would help, and this release carries " +
-      "no authenticator to start it with, so Open Help explains what an admitted session needs.",
+    description: "There is no account for this session, so there is no workspace to show and nothing has been " + "changed. Recovering the account is the only outcome that would help, and this release carries " + "no authenticator to start it with, so Open Help explains what an admitted session needs.",
     actionLabel: "Open Help",
     actionKind: "help",
   },
 };
 const NO_PERSONAS: readonly PersonaOption[] = [];
-
 const NO_ADMISSIONS: readonly AdmittedContext[] = [];
-
-interface PendingSwitch {
-  readonly request: ContextRequest;
-  readonly scope: Scope;
-}
-// Small helpers
-function describeMembership(admission: AdmittedContext): string {
-  const organization = admission.organizationLabel.trim() || admission.organizationId;
-  const ministry = admission.ministryLabel.trim() || admission.ministryId;
-  return `${organization}, ${ministry}`;
-}
-function isCurrentMembership(admission: AdmittedContext, scope: Scope): boolean {
-  return admission.organizationId === scope.organizationId && admission.ministryId === scope.ministryId;
-}
-function toPersonaOption(persona: { readonly id: string; readonly kind: PersonaOption["kind"]; readonly label: string; readonly description: string }): PersonaOption {
-  return {
-    id: persona.id,
-    kind: persona.kind,
-    label: persona.label,
-    description: persona.description,
-  };
-}
-function showsFinancialFacts(currentPath: string): boolean {
-  return isCurrent(currentPath, "/support") || isCurrent(currentPath, "/coaching");
-}
-// The shell
+type PendingSwitch = { readonly request: ContextRequest; readonly scope: Scope };
+const describeMembership = (admission: AdmittedContext): string => `${admission.organizationLabel.trim() || admission.organizationId}, ${admission.ministryLabel.trim() || admission.ministryId}`;
+const isCurrentMembership = (admission: AdmittedContext, scope: Scope): boolean => admission.organizationId === scope.organizationId && admission.ministryId === scope.ministryId;
+const toPersonaOption = (persona: PersonaOption): PersonaOption => ({ id: persona.id, kind: persona.kind, label: persona.label, description: persona.description });
+const showsFinancialFacts = (currentPath: string): boolean => isCurrent(currentPath, "/support") || isCurrent(currentPath, "/coaching");
 /** The custom property this shell publishes for the sticky chrome's height. */
 export const STICKY_OFFSET_PROPERTY = "--app-shell-sticky-offset";
-
 function useStickyOffset(headerRef: RefObject<HTMLElement | null>): void {
   useEffect(() => {
     const header = headerRef.current;
-    if (header === null || typeof ResizeObserver === "undefined") {
-      return;
-    }
+    if (header === null || typeof ResizeObserver === "undefined") return;
     const root = document.documentElement;
     const publish = (): void => {
       const height = Math.ceil(header.getBoundingClientRect().height);
@@ -240,11 +134,7 @@ function useStickyOffset(headerRef: RefObject<HTMLElement | null>): void {
     };
   }, [headerRef]);
 }
-const SKIP_LINK_CLASS = cn(
-  "absolute start-3 top-3 z-50 -translate-y-[200%] rounded-md border border-border bg-background",
-  "px-3 py-2 text-sm font-medium text-foreground",
-  "focus:translate-y-0 focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--ring)]",
-);
+const SKIP_LINK_CLASS = cn("absolute start-3 top-3 z-50 -translate-y-[200%] rounded-md border border-border bg-background", "px-3 py-2 text-sm font-medium text-foreground", "focus:translate-y-0 focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--ring)]");
 /** The shell: the chrome every route renders inside. */
 export function AppShell({ className, ...chrome }: AppShellProps): ReactElement {
   return (
@@ -257,7 +147,6 @@ export function AppShell({ className, ...chrome }: AppShellProps): ReactElement 
   );
 }
 type ShellChromeProps = Omit<AppShellProps, "className">;
-
 function ShellChrome({ scope, admissionState, currentPath: suppliedPath, devState, personas, devActions, contextAdmissions, contextSwitch, direction, children }: ShellChromeProps): ReactElement {
   const { setOpenMobile } = useSidebar();
   const headerRef = useRef<HTMLElement | null>(null);
@@ -265,38 +154,21 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, devStat
   const [switching, setSwitching] = useState(false);
   const [lastSwitch, setLastSwitch] = useState<ContextSwitchResult | null>(null);
 
-  // The router and the transition the outage surface's retry runs in, so the refresh it starts keeps
-  // the notice readable until the fresh server render arrives.
+  // The router and the transition the outage surface's retry runs in, so the refresh it starts keeps the notice readable until the fresh server render arrives.
   const router = useRouter();
   const [, startRefresh] = useTransition();
 
   useStickyOffset(headerRef);
 
-  /*
-   * The route to describe, from whichever side knows it. A client caller passes the path the router
-   * reported; a Server Component caller — the root layout — cannot know it and passes none, so it is
-   * read here. Both are the same source, which is what keeps the rail and the header's finance-subject
-   * disclosure pointing at the one destination the reader is actually on.
-   */
+  /** The route to describe, from whichever side knows it. */
   const routedPath = usePathname();
   const currentPath = suppliedPath ?? routedPath;
-  // A plain click on a destination closes the compact navigation the reader is looking at. The model
-  // reports only real navigations — a modified click that opens another tab is not one — so following a
-  // link in place dismisses the sheet while following it in a new tab leaves this page alone.
+  // A plain click on a destination closes the compact navigation the reader is looking at. The model reports only real navigations — a modified click that opens another tab is not one — so following a link in place dismisses the sheet while following it in a new tab leaves this page alone.
   const closeCompactNav = useCallback((): void => {
     setOpenMobile(false);
   }, [setOpenMobile]);
 
-  /*
-   * The outage surface's one action: ask the router for this route again.
-   *
-   * A `next/link` to the path already open replays the route payload the router holds and need not
-   * re-request the server render that failed, which is why `app/error.tsx` pairs its retry with
-   * `router.refresh()`. Here the refresh is the whole retry: it re-reads the render that produced the
-   * notice, and running it inside a transition leaves the notice in place until the fresh payload
-   * arrives instead of flashing an empty region. It navigates nowhere else, reloads no document and
-   * starts no save.
-   */
+  /** The outage surface's one action: ask the router for this route again. */
   const requestPageAgain = useCallback((): void => {
     startRefresh(() => {
       router.refresh();
@@ -306,14 +178,10 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, devStat
   const admissions = contextAdmissions ?? NO_ADMISSIONS;
   const requestContext = useCallback(
     (request: ContextRequest): void => {
-      if (contextSwitch === undefined) {
-        return;
-      }
+      if (contextSwitch === undefined) return;
       const target = contextSwitch.resolvePendingScope(request);
       if (target === null) {
-        // The chooser listed memberships the session admitted, so an unadmittable request means the
-        // session changed under the click. Reporting a refusal here would describe an attempt that was
-        // never made; the next read is the honest answer.
+        // The chooser listed memberships the session admitted, so an unadmittable request means the session changed under the click. Reporting a refusal here would describe an attempt that was never made; the next read is the honest answer.
         return;
       }
       setLastSwitch(null);
@@ -325,16 +193,12 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, devStat
     setPending(null);
   }, []);
   const discardAndSwitch = useCallback(async (): Promise<void> => {
-    if (contextSwitch === undefined || pending === null) {
-      return;
-    }
+    if (contextSwitch === undefined || pending === null) return;
     setSwitching(true);
     try {
       const result = await contextSwitch.switchTo(pending.scope);
       setLastSwitch(result);
-      if (result.switched) {
-        setPending(null);
-      }
+      if (result.switched) setPending(null);
     } finally {
       setSwitching(false);
     }
@@ -345,112 +209,49 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, devStat
   const announcement = pending === null && lastSwitch !== null && lastSwitch.switched ? lastSwitch.announcement : "";
   const recovery = admissionState === "signed-in" ? null : RECOVERY_COPY[admissionState];
 
-  /*
-   * The development region is rendered only where it has something to show. An empty labelled
-   * complementary landmark would still be announced in a landmark list, so a build without a
-   * development runtime simply has no development region rather than an empty one.
-   */
+  /** The development region is rendered only where it has something to show. */
   const personaSelect = devActions?.onSelectPersona;
   const showsPersonaSwitcher = personaSelect !== undefined && personaOptions.length > 0;
   const showsDevPanel = devState !== undefined && devActions !== undefined;
   const showsDevelopmentRegion = showsPersonaSwitcher || showsDevPanel;
   return (
     <>
-      {/*
-        The shell's only live region: polite, empty until a switch is accepted, and it never repeats the
-        person's own words — an outcome sentence is all it says, once.
-      */}
+      {/* The shell's only live region: polite, empty until a switch is accepted, and it never repeats the person's own words — an outcome sentence is all it says, once. */}
       <output className="sr-only">{announcement}</output>
-      {/*
-        One navigation model for both layouts. Below the design system's compact breakpoint `Sidebar`
-        renders this same content inside its own sheet — there is no second rail and no second list of
-        destinations — so every route stays reachable on a phone and nothing is lost at 320 CSS px. The
-        resting side comes from the layout's direction rather than from a direction source read here.
-      */}
+      {/* One navigation model for both layouts: below the compact breakpoint `Sidebar` renders this same content in its own sheet, so every route stays reachable at 320 CSS px, and the resting side comes from the layout's direction. */}
       <Sidebar side={direction === "rtl" ? "right" : "left"} collapsible="icon">
         <SidebarContent>
           <SidebarNav currentPath={currentPath} onNavigate={closeCompactNav} />
         </SidebarContent>
       </Sidebar>
       <div className="flex min-w-0 flex-1 flex-col">
-        {/*
-          The banner region: sticky, so the active context and the Development data label stay in view
-          while a long list scrolls underneath, and measured by `useStickyOffset` so a focused cell is
-          never obscured by it. `min-w-0` on both rows is what keeps a long ministry name from pushing the
-          page sideways at 320 CSS px — the name truncates instead.
-        */}
+        {/* The banner region: sticky so the active context and the Development data label stay in view, and measured by `useStickyOffset` so a focused cell is never obscured (WCAG 2.4.11); `min-w-0` keeps a long ministry name from pushing the page sideways at 320 CSS px. */}
         <header ref={headerRef} className="sticky top-0 z-20 flex flex-col gap-1.5 border-b border-border bg-background/95 px-3 py-2 backdrop-blur">
           <div className="flex min-w-0 items-center gap-2">
             <SidebarTrigger />
-            <ContextIndicator
-              scope={scope}
-              admissions={visibleAdmissions}
-              onRequestContext={requestContext}
-              showSupportSubject={showsFinancialFacts(currentPath)}
-              lastResult={pending === null ? lastSwitch : null}
-              className="min-w-0 flex-1"
-            />
+            <ContextIndicator scope={scope} admissions={visibleAdmissions} onRequestContext={requestContext} showSupportSubject={showsFinancialFacts(currentPath)} lastResult={pending === null ? lastSwitch : null} className="min-w-0 flex-1" />
           </div>
-          {/*
-            The label sits here — outside every admission conditional, every dialog and every route — so
-            no surface can forget it and no screen can be mistaken for production.
-          */}
+          {/* The label sits here — outside every admission conditional, every dialog and every route — so no surface can forget it and no screen can be mistaken for production. */}
           <DevBanner scenarioId={devState?.scenario.id} />
         </header>
-        {/*
-          The one `main` landmark. The design system's `SidebarInset` is deliberately not used: it renders
-          a `main` element itself, and a second one would give the page two content landmarks where the
-          shell exists to guarantee exactly one.
-        */}
+        {/* The one `main` landmark. The design system's `SidebarInset` is deliberately not used: it renders a `main` element itself, and a second one would give the page two content landmarks where the shell exists to guarantee exactly one. */}
         <main id={MAIN_CONTENT_ID} tabIndex={-1} className="min-w-0 flex-1">
           <div className="mx-auto w-full max-w-6xl px-3 py-4 sm:px-4">
             {recovery === null ? (
               children
             ) : (
-              <StateNotice
-                kind={recovery.noticeKind}
-                reasonCode={recovery.reasonCode}
-                title={recovery.title}
-                description={recovery.description}
-                headingLevel={1}
-                action={
-                  recovery.actionKind === "refresh"
-                    ? { label: recovery.actionLabel, onClick: requestPageAgain }
-                    : { label: recovery.actionLabel, href: HELP_HREF }
-                }
-              />
+              <StateNotice kind={recovery.noticeKind} reasonCode={recovery.reasonCode} title={recovery.title} description={recovery.description} headingLevel={1} action={recovery.actionKind === "refresh" ? { label: recovery.actionLabel, onClick: requestPageAgain } : { label: recovery.actionLabel, href: HELP_HREF }} />
             )}
           </div>
         </main>
-        {/*
-          The development region, in a clearly secondary landmark rather than in the account position: a
-          preview persona is a development scenario and never a sign-in, and the clock, failure plan and
-          reset are controls over the synthetic runtime. Each control renders only where the layer above
-          supplied what it dispatches, so the shell never shows a control it cannot act on.
-        */}
+        {/* The development region, in a secondary landmark: a preview persona is a scenario and never a sign-in, and each control renders only where the layer above supplied what it dispatches. */}
         {showsDevelopmentRegion ? (
           <aside aria-label={DEVELOPMENT_REGION_LABEL} className="border-t border-border bg-muted/30">
             <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-3 py-4">
               {personaSelect !== undefined && personaOptions.length > 0 ? (
-                <PersonaSwitcher
-                  personas={personaOptions}
-                  activePersonaId={devState?.activePersonaId ?? ""}
-                  onSelect={personaSelect}
-                  sessionStates={devState?.sessionStates}
-                  activeSessionState={devState?.sessionState}
-                  onSelectSessionState={devActions?.onSelectSessionState}
-                />
+                <PersonaSwitcher personas={personaOptions} activePersonaId={devState?.activePersonaId ?? ""} onSelect={personaSelect} sessionStates={devState?.sessionStates} activeSessionState={devState?.sessionState} onSelectSessionState={devActions?.onSelectSessionState} />
               ) : null}
-              {showsDevPanel && devState !== undefined && devActions !== undefined ? (
-                <DevPanel
-                  devState={devState}
-                  onSetScenario={devActions.onSetScenario}
-                  onSetClock={devActions.onSetClock}
-                  onAdvanceClock={devActions.onAdvanceClock}
-                  onSetFailurePlan={devActions.onSetFailurePlan}
-                  reset={devActions.reset}
-                />
-              ) : null}
+              {showsDevPanel && devState !== undefined && devActions !== undefined ? <DevPanel devState={devState} onSetScenario={devActions.onSetScenario} onSetClock={devActions.onSetClock} onAdvanceClock={devActions.onAdvanceClock} onSetFailurePlan={devActions.onSetFailurePlan} reset={devActions.reset} /> : null}
             </div>
           </aside>
         ) : null}

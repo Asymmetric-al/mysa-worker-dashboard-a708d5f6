@@ -1,8 +1,4 @@
 "use client";
-/**
- * The version history of a coaching target, and the closed periods that each keep the version they
- * were measured against.
- */
 import { useId, type ReactElement } from "react";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
@@ -13,93 +9,35 @@ import { formatSourceReference, type SourceReference } from "@/lib/ids";
 import type { TargetMeasure } from "@/modules/coaching/target";
 import { serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
 import { COACHING_COPY, MEASURE_COPY, TARGET_STATE_COPY, TARGET_VERSION_GUARANTEE } from "../copy";
-/** Props of {@link TargetHistory}. */
-export interface TargetHistoryProps {
-  readonly versions: ReadonlyArray<{
-    readonly revisionId: string;
-    readonly effectiveFrom: CivilDate;
-    readonly effectiveTo: CivilDate | null;
-    readonly measure: TargetMeasure;
-    readonly quantity: number;
-    readonly calendarStart: CivilDate;
-    readonly state: "open" | "closed";
-  }>;
-  readonly closedPeriods: ReadonlyArray<{
-    readonly periodStart: CivilDate;
-    readonly periodEnd: CivilDate;
-    readonly measuredAgainstRevisionId: string;
-    readonly recorded: number;
-    readonly state: "zero-recorded" | "recorded" | "paused" | "ended" | "unavailable";
-  }>;
+export type TargetHistoryProps = {
+  readonly versions: ReadonlyArray<{ readonly revisionId: string; readonly effectiveFrom: CivilDate; readonly effectiveTo: CivilDate | null; readonly measure: TargetMeasure; readonly quantity: number; readonly calendarStart: CivilDate; readonly state: "open" | "closed" }>;
+  readonly closedPeriods: ReadonlyArray<{ readonly periodStart: CivilDate; readonly periodEnd: CivilDate; readonly measuredAgainstRevisionId: string; readonly recorded: number; readonly state: "zero-recorded" | "recorded" | "paused" | "ended" | "unavailable" }>;
   readonly locale: string;
   readonly unavailable?: { readonly source: SourceReference } | null;
   readonly className?: string;
-}
-type Version = TargetHistoryProps["versions"][number];
-
-type ClosedPeriod = TargetHistoryProps["closedPeriods"][number];
-
-type ClosedPeriodState = ClosedPeriod["state"];
-
-interface VersionStateCopy {
-  readonly label: string;
-  readonly tone: StatusTone;
-}
-const VERSION_STATE_COPY: Readonly<Record<Version["state"], VersionStateCopy>> = {
-  open: { label: "Current", tone: "info" },
-  closed: { label: "Closed", tone: "neutral" },
 };
-interface ClosedPeriodCopy {
-  readonly word: string | null;
-  readonly tone: StatusTone;
-  readonly sentence: string | null;
-  readonly showsFigure: boolean;
-}
+type Version = TargetHistoryProps["versions"][number];
+type ClosedPeriod = TargetHistoryProps["closedPeriods"][number];
+type ClosedPeriodState = ClosedPeriod["state"];
+type VersionStateCopy = { readonly label: string; readonly tone: StatusTone };
+const VERSION_STATE_COPY: Readonly<Record<Version["state"], VersionStateCopy>> = { open: { label: "Current", tone: "info" }, closed: { label: "Closed", tone: "neutral" } };
+type ClosedPeriodCopy = { readonly word: string | null; readonly tone: StatusTone; readonly sentence: string | null; readonly showsFigure: boolean };
 const CLOSED_PERIOD_COPY: Readonly<Record<ClosedPeriodState, ClosedPeriodCopy>> = {
   recorded: { word: null, tone: "neutral", sentence: null, showsFigure: true },
-  "zero-recorded": {
-    word: TARGET_STATE_COPY["zero-recorded"].label,
-    tone: "muted",
-    sentence: TARGET_STATE_COPY["zero-recorded"].description,
-    showsFigure: true,
-  },
-  paused: {
-    word: TARGET_STATE_COPY.paused.label,
-    tone: "caution",
-    sentence: TARGET_STATE_COPY.paused.description,
-    showsFigure: true,
-  },
-  ended: {
-    word: TARGET_STATE_COPY.ended.label,
-    tone: "neutral",
-    sentence: TARGET_STATE_COPY.ended.description,
-    showsFigure: true,
-  },
-  unavailable: {
-    word: TARGET_STATE_COPY.unavailable.label,
-    tone: "danger",
-    sentence: TARGET_STATE_COPY.unavailable.description,
-    showsFigure: false,
-  },
+  "zero-recorded": { word: TARGET_STATE_COPY["zero-recorded"].label, tone: "muted", sentence: TARGET_STATE_COPY["zero-recorded"].description, showsFigure: true },
+  paused: { word: TARGET_STATE_COPY.paused.label, tone: "caution", sentence: TARGET_STATE_COPY.paused.description, showsFigure: true },
+  ended: { word: TARGET_STATE_COPY.ended.label, tone: "neutral", sentence: TARGET_STATE_COPY.ended.description, showsFigure: true },
+  unavailable: { word: TARGET_STATE_COPY.unavailable.label, tone: "danger", sentence: TARGET_STATE_COPY.unavailable.description, showsFigure: false },
 };
 const VERSIONS_HEADING = "Version history";
-
 const VERSIONS_DESCRIPTION = "Each version is the plan in force from its first date until the day before the next version " + "begins, so a period falls inside exactly one of them.";
-
 const PERIODS_HEADING = "Closed periods";
-
 const PERIODS_DESCRIPTION = "A period appears here once its calendar has completed, with the version it was measured against " + "and the figure that version's measure recorded.";
-
 const NO_VERSIONS_TITLE = "No version recorded yet";
-
-const NO_VERSIONS_DESCRIPTION =
-  "A target records its first version on the date it is set, and every later change to the quantity, " + "the measure or the calendar start records another one from the date it takes effect.";
+const NO_VERSIONS_DESCRIPTION = "A target records its first version on the date it is set, and every later change to the quantity, " + "the measure or the calendar start records another one from the date it takes effect.";
 const NO_PERIODS_TITLE = "No closed period yet";
-
-const NO_PERIODS_DESCRIPTION =
-  "Periods of this target are still running, so none has closed and none has a settled figure. " + "A closed period appears here with the version it was measured against once its calendar completes.";
+const NO_PERIODS_DESCRIPTION = "Periods of this target are still running, so none has closed and none has a settled figure. " + "A closed period appears here with the version it was measured against once its calendar completes.";
 const UNREADABLE_TITLE = "This history cannot be read right now";
-// The row-level readings
 function CivilDateText({ value }: { readonly value: CivilDate }): ReactElement {
   return <bdi>{serialiseCivilDate(value)}</bdi>;
 }
@@ -143,19 +81,13 @@ function MeasuredAgainstVersion({ version }: { readonly version: Version | undef
     </p>
   );
 }
-interface NoRowsNoticeProps {
-  readonly source: SourceReference | null;
-  readonly emptyTitle: string;
-  readonly emptyDescription: string;
-}
+type NoRowsNoticeProps = { readonly source: SourceReference | null; readonly emptyTitle: string; readonly emptyDescription: string };
 function NoRowsNotice({ source, emptyTitle, emptyDescription }: NoRowsNoticeProps): ReactElement {
   if (source !== null) {
     return <StateNotice kind="unavailable" title={UNREADABLE_TITLE} description={COACHING_COPY.targets.unavailable} source={source} headingLevel={3} />;
   }
   return <StateNotice kind="empty" title={emptyTitle} description={emptyDescription} headingLevel={3} />;
 }
-// The surface
-/** A target's version history and the closed periods that keep the version they were measured against. */
 export default function TargetHistory({ versions, closedPeriods, locale, unavailable = null, className }: TargetHistoryProps): ReactElement {
   const versionsHeadingId = useId();
   const periodsHeadingId = useId();

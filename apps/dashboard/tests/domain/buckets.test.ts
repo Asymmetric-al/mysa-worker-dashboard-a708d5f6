@@ -1,16 +1,4 @@
-/**
- * Proves the recurring-outcome bucket model: exactly five outcomes, the first-class
- * `outside-partition` value that keeps evidence which is unknown or stale out of them, and the
- * structural rules a bucket obeys — no sixth state, no retry affordance, no debt, no amount and no
- * monthly equivalent.
- *
- * Each absence is proven twice: over the module's own export list, which is the cheap guard, and over
- * the rows the service builds from the published seed, which is where a field added inside the read
- * path would actually appear. A row exists only in a stored session, and the store's `resetSession` is
- * the only path that creates one, so this file lays its own private session down from the seed's
- * documents and removes it again in `afterAll`. Both are fixture plumbing: every rule under test is
- * still the one `modules/support/buckets.ts` and `modules/data-service/reads/support.ts` apply.
- */
+/** Proves the recurring-outcome bucket model: exactly five outcomes, the first-class `outside-partition` value that keeps evidence which is unknown or stale out of them, and the structural rules a … */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { reads } from "@/modules/data-service";
 import type { SessionSource } from "@/modules/data-service/authorize";
@@ -19,29 +7,18 @@ import type { Money } from "@/modules/money/amount";
 import { resetSession } from "@/modules/store/repository";
 import * as buckets from "@/modules/support/buckets";
 const ALL_BUCKETS: readonly buckets.RecurringBucket[] = [...buckets.PARTITION_BUCKETS, buckets.OUTSIDE_PARTITION];
-
 const ALL_EVIDENCE: readonly buckets.RecurringEvidence["observed"][] = ["settled", "pending", "scheduled", "needs-attention", "not-received", "unknown", "stale"];
 /** The words that would state an action this application never performs — a retry — or a fact it never claims — that an unreceived occurrence is a debt being collected. */
 const AFFORDANCE_OR_DEBT = /retry|owed|debt|dunning|collect/i;
-
 function usd(minorUnits: number): Money {
   return { currency: "USD", minorUnits: minorUnits as Money["minorUnits"] };
 }
 function commitmentRow(overrides: Partial<buckets.CommitmentRow> = {}): buckets.CommitmentRow {
-  return {
-    commitmentRowId: "commitment-row-1",
-    kind: "automatic-recurring",
-    cadence: "monthly",
-    perOccurrence: usd(2500),
-    bucketState: "received",
-    pause: { state: "active" },
-    ...overrides,
-  };
+  return { commitmentRowId: "commitment-row-1", kind: "automatic-recurring", cadence: "monthly", perOccurrence: usd(2500), bucketState: "received", pause: { state: "active" }, ...overrides };
 }
 function keysDeep(value: object): readonly string[] {
   return Object.entries(value).flatMap(([key, child]) => (child !== null && typeof child === "object" ? [key, ...keysDeep(child)] : [key]));
 }
-// The rows the read path builds, from the published seed in a session of this file's own
 /** The private session the read-path case acts in: a shared seeded id would put this file's fixtures in a sibling suite's world. */
 const SESSION_ID = "domain-buckets-shape";
 const SOURCE: SessionSource = { sessionId: SESSION_ID };
@@ -53,40 +30,25 @@ function seededSessions(): Promise<readonly SeededSessionWithDocuments[]> {
   seededWorld ??= seed();
   return seededWorld;
 }
-/**
- * Lays the seeded harbour workspace down under this file's own session id, from the documents the seed
- * publishes rather than from a literal written here. The seed's own document types are used rather than
- * the store's opaque set, because the workspace is read here. The state document is given this same id,
- * because a record set states the session that owns it.
- */
+/** Lays the seeded harbour workspace down under this file's own session id, from the documents the seed publishes rather than from a literal written here. */
 async function layDownSession(): Promise<void> {
   const sessions = await seededSessions();
   const template = sessions.find((session) => session.sessionId === "established-worker");
-  if (template === undefined) {
-    throw new Error('The seed lays down no "established-worker" workspace, so the read path has no commitments to state.');
-  }
+  if (template === undefined) throw new Error('The seed lays down no "established-worker" workspace, so the read path has no commitments to state.');
   const { documents } = template;
-  await resetSession(SESSION_ID, {
-    ...documents,
-    state: { ...documents.state, context: { ...documents.state.context, sessionId: SESSION_ID } },
-  });
+  await resetSession(SESSION_ID, { ...documents, state: { ...documents.state, context: { ...documents.state.context, sessionId: SESSION_ID } } });
 }
 beforeAll(layDownSession, 120_000);
 afterAll(async () => {
   // The session is this file's own, so the store is left holding none of its fixtures.
   await resetSession(SESSION_ID);
 });
-/** The commitment rows the service builds for the seeded context, or a throw when it refuses to state them. */
 async function seededCommitmentRows(): Promise<readonly CommitmentRowFigure[]> {
   const result = await reads.support.readCommitments({}, SOURCE);
-  if (result.kind !== "envelope") {
-    throw new Error(`The commitments read for "${SESSION_ID}" answered "${result.kind}" instead of an envelope, so there are no rows to inspect.`);
-  }
+  if (result.kind !== "envelope") throw new Error(`The commitments read for "${SESSION_ID}" answered "${result.kind}" instead of an envelope, so there are no rows to inspect.`);
   const { commitments, total } = result.envelope.data;
   // The window the read returns is the whole seeded list, so no row the seed states is left unexamined.
-  if (commitments.length !== total) {
-    throw new Error(`The commitments read returned ${String(commitments.length)} rows of ${String(total)}, so a page window would hide rows this case is meant to inspect.`);
-  }
+  if (commitments.length !== total) throw new Error(`The commitments read returned ${String(commitments.length)} rows of ${String(total)}, so a page window would hide rows this case is meant to inspect.`);
   return commitments;
 }
 
@@ -113,29 +75,22 @@ describe("the bucket vocabulary", () => {
     const labels = ALL_BUCKETS.map((bucket) => buckets.BUCKET_LABELS[bucket]);
     for (const label of labels) {
       expect(label.trim()).not.toBe("");
-      // Text, never a colour, an icon or a symbol standing on its own: colour may not carry a
-      // state anywhere in this application.
       expect(label).toMatch(/\p{L}/u);
       expect(label).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|oklch\(|var\(--|\b(?:bg|text|border)-/iu);
     }
     expect(new Set(labels).size).toBe(6);
   });
 });
+const PLACEMENTS: readonly { readonly placed: string; readonly observed: buckets.RecurringEvidence["observed"]; readonly expected: buckets.RecurringBucket }[] = [
+  { placed: "a settled occurrence in Received", observed: "settled", expected: "received" },
+  { placed: "a pending occurrence in Processing", observed: "pending", expected: "processing" },
+  { placed: "a scheduled occurrence in Upcoming", observed: "scheduled", expected: "upcoming" },
+  { placed: "a needs-attention occurrence in Recovery — needs attention", observed: "needs-attention", expected: "recovery-needs-attention" },
+  { placed: "an absence of receipt in Not received", observed: "not-received", expected: "not-received" },
+];
 describe("classifying an occurrence", () => {
-  it("places a settled occurrence in Received", () => {
-    expect(buckets.bucketFor({ observed: "settled" })).toBe("received");
-  });
-  it("places a pending occurrence in Processing", () => {
-    expect(buckets.bucketFor({ observed: "pending" })).toBe("processing");
-  });
-  it("places a scheduled occurrence in Upcoming", () => {
-    expect(buckets.bucketFor({ observed: "scheduled" })).toBe("upcoming");
-  });
-  it("places a needs-attention occurrence in Recovery — needs attention", () => {
-    expect(buckets.bucketFor({ observed: "needs-attention" })).toBe("recovery-needs-attention");
-  });
-  it("places an absence of receipt in Not received", () => {
-    expect(buckets.bucketFor({ observed: "not-received" })).toBe("not-received");
+  it.each(PLACEMENTS)("places $placed", ({ observed, expected }) => {
+    expect(buckets.bucketFor({ observed })).toBe(expected);
   });
 });
 describe("evidence that cannot be placed", () => {
@@ -177,17 +132,7 @@ describe("what a bucket does not say", () => {
     // the two places an affordance could still appear here — the row a badge renders and the module —
     // and the case at the end of this file covers the row the read path builds.
     expect(typeof bucketState).toBe("string");
-    const row = commitmentRow({
-      kind: "fixed-total",
-      cadence: "annual",
-      bucketState,
-      fixedTotal: {
-        promised: usd(120_000),
-        fulfilled: usd(40_000),
-        released: usd(0),
-        remaining: usd(80_000),
-      },
-    });
+    const row = commitmentRow({ kind: "fixed-total", cadence: "annual", bucketState, fixedTotal: { promised: usd(120_000), fulfilled: usd(40_000), released: usd(0), remaining: usd(80_000) } });
     // Asserted on the row a badge renders, at any depth: a nested retry or owed field would let the
     // surface offer an action this application never performs, and would read a missing collection
     // as the donor's debt.
@@ -218,7 +163,6 @@ describe("the five measures stay five", () => {
     // evidence vocabulary holds no gift member and asking for one is a programming error rather
     // than a sixth bucket.
     expect(() => buckets.bucketFor({ observed: "gift-received" } as unknown as buckets.RecurringEvidence)).toThrow(/gift-received/);
-    // The commitment outcome that does carry the word stays exactly one bucket.
     expect(buckets.bucketFor({ observed: "settled" })).toBe("received");
   });
   it("groups outside-partition apart from the five outcomes", () => {

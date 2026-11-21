@@ -1,21 +1,5 @@
 "use client";
-/**
- * The initiative working-list member picker: the one place a worker adds partners to a working list,
- * and the only caller of the family's `addMembers` mutation.
- *
- * Four rules hold this surface together. Only the eligible candidates the envelope supplied can be
- * selected, so a later filter match never joins the list. A partner the working list already knows is
- * absent from the options rather than shown as a disabled row that implies a state nobody can act on.
- * Nothing is written until the shared review step applies it, and the service's per-partner words
- * stand: on the list, unchanged, not eligible and failed stay four different results. And inclusion is
- * not Asked, not consent and not Update-audience membership, which is said beside the control that
- * creates it.
- *
- * The options are this application's roving-focus listbox rather than the design system's Combobox:
- * the Combobox primitive owns roving focus, typeahead and dismissal internally, and this pattern is
- * specified to take those three behaviours from the UI SDK adapter, so the picker, the query toolbar's
- * facets and every recipient list move by keyboard in one way.
- */
+/** The initiative working-list member picker: the one place a worker adds partners to a working list, and the only caller of the family's `addMembers` mutation. */
 import { CheckIcon, ChevronDownIcon, UsersIcon, XIcon } from "lucide-react";
 import { useCallback, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from "react";
 import ActionReview, { type MutationSubmit } from "@/components/action-review";
@@ -36,23 +20,14 @@ import { useAddMembers, type AddMembersVariables } from "../hooks/use-initiative
 import { addMembersPayloadSchema, type AddMembersPayload } from "../schemas/member";
 /** The source identity a read states when it could not answer, taken from the envelope that carries it. */
 type SourceReference = ReadEnvelope<unknown>["source"];
-/**
- * One partner the enclosing read offers for selection, as this control renders it.
- *
- * A roster row (`PartnerRecord`) satisfies this shape, so a caller passes what the read already holds.
- * `membership` is present only when the envelope stated the working-list membership this partner
- * already has: a partner in any of the three membership states is not offered here, because the list
- * already knows them and returning a removed partner is the working list's own explicit action.
- */
+/** One partner the enclosing read offers for selection, as this control renders it. */
 export interface MemberCandidate {
   readonly partnerId: string;
   readonly displayName: string;
   readonly membership?: { readonly memberId: string; readonly state: MembershipState } | null;
 }
 /** The candidate read the envelope supplied: the eligible set, or the source's refusal to answer for it. */
-export type MemberCandidates =
-  | { readonly state: "available"; readonly partners: readonly MemberCandidate[] }
-  | { readonly state: "unavailable"; readonly source: SourceReference };
+export type MemberCandidates = { readonly state: "available"; readonly partners: readonly MemberCandidate[] } | { readonly state: "unavailable"; readonly source: SourceReference };
 /** Props of {@link MemberPicker}. */
 export interface MemberPickerProps {
   readonly initiativeId: string;
@@ -66,14 +41,7 @@ export interface MemberPickerProps {
   readonly headingLevel?: MemberPickerHeadingLevel;
   readonly className?: string;
 }
-/**
- * The picker's own wording.
- *
- * The family's copy module owns the vocabularies this control displays — the three membership states
- * and the statements about what inclusion is not — and they are imported from it. The labels a picker
- * needs in order to be operated belong to this component, so they are stated once here rather than
- * invented at each call site.
- */
+/** The picker's own wording. */
 const PICKER_COPY = {
   heading: "Add partners to the working list",
   trigger: "Add partners",
@@ -116,14 +84,7 @@ interface SelectedPartner {
 }
 /** The three outcomes that mean the change stands, so the caller hears about it. */
 const STANDING_OUTCOMES: ReadonlySet<MutationOutcome["outcome"]> = new Set<MutationOutcome["outcome"]>(["accepted", "alreadyAccepted", "unchanged"]);
-/**
- * The member mutation as its handle actually dispatches it.
- *
- * The family's handle hands back `{ submit, state }`: `submit` is the mutation's own `mutate`, whose
- * per-call `onSettled` callback is delivered the outcome. The review step must answer with the outcome
- * it receives, so this is the one place that fact is stated; it adds no second copy of the outcome and
- * no second request path.
- */
+/** The member mutation as its handle actually dispatches it. */
 type MutationDispatch<Variables> = (variables: Variables, options: { readonly onSettled: (outcome: MutationOutcome | undefined) => void }) => void;
 /** Reads the candidate prop as the read it is, whether the caller passed the eligible rows alone or the read's own state. */
 function isCandidateRead(value: readonly MemberCandidate[] | MemberCandidates): value is MemberCandidates {
@@ -147,13 +108,7 @@ function matchesSearch(candidate: MemberCandidate, query: string): boolean {
 function workingListHref(initiativeId: string): string {
   return `/partners/initiatives/${encodeURIComponent(initiativeId)}`;
 }
-/**
- * The refusal a selection would meet, in the words the payload schema uses.
- *
- * The cap and the duplicate rule are the schema's, so they are never restated here: an oversized
- * selection is refused with the schema's own message, which is what the worker reads and what the
- * service would answer.
- */
+/** The refusal a selection would meet, in the words the payload schema uses. */
 function refusalFor(initiativeId: string, partnerIds: readonly string[]): string | null {
   if (partnerIds.length === 0 || initiativeId.trim() === "") {
     return null;
@@ -168,11 +123,7 @@ function refusalFor(initiativeId: string, partnerIds: readonly string[]): string
 function isPerItemResultState(value: string): value is PerItemResultState {
   return (PER_ITEM_RESULT_STATES as readonly string[]).includes(value);
 }
-/**
- * The word one selected partner's own result carries, from the membership vocabulary where the closed
- * four name a membership state and from the per-item vocabulary where they do not. A closed switch: a
- * per-item state the application adds later fails to compile here rather than rendering silently.
- */
+/** The word one selected partner's own result carries, from the membership vocabulary where the closed four name a membership state and from the per-item vocabulary where they do not. */
 function resultWordOf(state: PerItemResultState): ResultWord {
   switch (state) {
     case "accepted":
@@ -200,11 +151,7 @@ interface PartnerSelectionProps {
   readonly results: ReadonlyMap<string, PerItemResult>;
   readonly onRemove: (partnerId: string) => void;
 }
-/**
- * The selection as chips: each partner's name, the result that partner's own row came back with once a
- * change has settled, and one remove control. The selection is what the review names, so it survives a
- * failed submit exactly as the worker left it and is cleared only by removing a partner.
- */
+/** The selection as chips: each partner's name, the result that partner's own row came back with once a change has settled, and one remove control. */
 function PartnerSelection({ selection, results, onRemove }: PartnerSelectionProps): ReactElement {
   const headingId = useId();
   if (selection.length === 0) {
@@ -370,28 +317,10 @@ export default function MemberPicker({ initiativeId, candidates, scope, expected
     addCandidate(candidate);
   }
   if (read.state === "unavailable") {
-    return (
-      <StateNotice
-        kind="unavailable"
-        title={PICKER_COPY.unavailableTitle}
-        description={PICKER_COPY.unavailableBody}
-        source={read.source}
-        headingLevel={headingLevel}
-        className={className}
-      />
-    );
+    return <StateNotice kind="unavailable" title={PICKER_COPY.unavailableTitle} description={PICKER_COPY.unavailableBody} source={read.source} headingLevel={headingLevel} className={className} />;
   }
   if (eligible.length === 0) {
-    return (
-      <StateNotice
-        kind="empty"
-        title={PICKER_COPY.emptyTitle}
-        description={PICKER_COPY.emptyBody}
-        action={{ label: PICKER_COPY.backToWorkingList, href: workingListHref(initiativeId) }}
-        headingLevel={headingLevel}
-        className={className}
-      />
-    );
+    return <StateNotice kind="empty" title={PICKER_COPY.emptyTitle} description={PICKER_COPY.emptyBody} action={{ label: PICKER_COPY.backToWorkingList, href: workingListHref(initiativeId) }} headingLevel={headingLevel} className={className} />;
   }
   const Heading = HEADING_TAG[headingLevel];
   const reviewHeadingLevel = headingLevel === 2 ? 3 : 4;
@@ -419,21 +348,7 @@ export default function MemberPicker({ initiativeId, candidates, scope, expected
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="max-w-full"
-                  aria-label={PICKER_COPY.triggerName}
-                  aria-haspopup="listbox"
-                  aria-expanded={open}
-                  aria-controls={listId}
-                  ref={triggerRef}
-                />
-              }
-            >
+            <PopoverTrigger render={<Button type="button" variant="outline" size="sm" className="max-w-full" aria-label={PICKER_COPY.triggerName} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} ref={triggerRef} />}>
               <UsersIcon aria-hidden="true" />
               <span className="truncate">{PICKER_COPY.trigger}</span>
               <ChevronDownIcon aria-hidden="true" className="size-3" />
@@ -487,13 +402,7 @@ export default function MemberPicker({ initiativeId, candidates, scope, expected
               ) : (
                 // The options scroll inside this region, never the page, and the list is one tab stop
                 // that Arrow, Home and End walk.
-                <div
-                  id={listId}
-                  role="listbox"
-                  aria-multiselectable="true"
-                  aria-label={PICKER_COPY.listLabel}
-                  className="flex max-h-64 min-w-0 flex-col gap-0.5 overflow-y-auto overscroll-contain rounded-xl border border-border p-1"
-                >
+                <div id={listId} role="listbox" aria-multiselectable="true" aria-label={PICKER_COPY.listLabel} className="flex max-h-64 min-w-0 flex-col gap-0.5 overflow-y-auto overscroll-contain rounded-xl border border-border p-1">
                   {visible.map((candidate) => {
                     const isSelected = partnerIds.includes(candidate.partnerId);
                     return (
@@ -502,10 +411,11 @@ export default function MemberPicker({ initiativeId, candidates, scope, expected
                         role="option"
                         aria-selected={isSelected}
                         {...roving.getItemProps(candidate.partnerId, {
-                          className: cn(
-                            "flex w-full min-w-0 cursor-default items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm outline-hidden select-none focus-visible:ring-[3px] focus-visible:ring-ring",
-                            isSelected ? "bg-muted" : "",
-                          ),
+                          // The focus indicator is the token-scale outline the rest of the application
+                          // uses. `outline-hidden` shares this class list, so the indicator restores the
+                          // outline style `outline-hidden` neutralises on `:focus-visible`; without that,
+                          // the width, offset and colour would resolve and paint nothing.
+                          className: cn("flex w-full min-w-0 cursor-default items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm outline-hidden select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid", isSelected ? "bg-muted" : ""),
                           onClick: () => {
                             toggleCandidate(candidate);
                           },

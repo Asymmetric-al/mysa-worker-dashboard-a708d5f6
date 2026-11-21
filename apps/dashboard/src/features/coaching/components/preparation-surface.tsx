@@ -1,7 +1,4 @@
 "use client";
-/**
- * The worker's own optional coaching preparation, and the plain statement that a coach never sees it.
- */
 import Link from "next/link";
 import type { ReactElement } from "react";
 import { StateNotice } from "@/components/state-notice";
@@ -12,30 +9,10 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import type { CivilDate } from "@/modules/time/civil";
 import { COACHING_COPY } from "../copy";
-interface PreparationRecord {
-  readonly body: string;
-  readonly updatedOn: CivilDate | string | null;
-  readonly audience: "private";
-}
-interface PreparationSourceIdentity {
-  readonly system: string;
-  readonly reference: string;
-}
-/** Props of {@link PreparationSurface}. */
-export interface PreparationSurfaceProps {
-  readonly preparation: PreparationRecord | null;
-  readonly busy?: boolean;
-  readonly unavailable?: PreparationSourceIdentity | null;
-}
-type PreparationView =
-  | { readonly state: "busy" }
-  | { readonly state: "unavailable"; readonly source: PreparationSourceIdentity }
-  | {
-      readonly state: "present";
-      readonly body: string;
-      readonly updatedOn: CivilDate | string | null;
-    }
-  | { readonly state: "absent" };
+type PreparationRecord = { readonly body: string; readonly updatedOn: CivilDate | string | null; readonly audience: "private" };
+type PreparationSourceIdentity = { readonly system: string; readonly reference: string };
+export type PreparationSurfaceProps = { readonly preparation: PreparationRecord | null; readonly busy?: boolean; readonly unavailable?: PreparationSourceIdentity | null };
+type PreparationView = { readonly state: "busy" } | { readonly state: "unavailable"; readonly source: PreparationSourceIdentity } | { readonly state: "present"; readonly body: string; readonly updatedOn: CivilDate | string | null } | { readonly state: "absent" };
 const PREPARATION_HEADING = "Private preparation";
 const PRIVATE_CLASS_LABEL = "Private to you";
 const PRIVATE_CLASS_STATEMENT = "Only you can see this; a coach you invite never sees it.";
@@ -46,13 +23,9 @@ const UPDATED_ON_LABEL = "Last updated";
 const NO_UPDATED_ON_STATEMENT = "No update date was recorded for this preparation.";
 const EMPTY_BODY_STATEMENT = "This preparation has no text in it yet.";
 const CHECK_INS_LINK_LABEL = "Write a check-in";
-
 const CHECK_INS_HREF = "/coaching/check-ins";
-
 const HEADING_ID = "coaching-preparation-heading";
-
 const LINK_CONTROL_CLASS = "h-auto min-h-8 max-w-full whitespace-normal py-1.5";
-
 function resolveView({ preparation, busy = false, unavailable = null }: PreparationSurfaceProps): PreparationView {
   if (busy) {
     return { state: "busy" };
@@ -91,7 +64,6 @@ function PreparationContent({ view }: { readonly view: PreparationView }): React
       return <StateNotice kind="empty" title={EMPTY_NOTICE_TITLE} description={COACHING_COPY.overview.empty} action={{ label: CHECK_INS_LINK_LABEL, href: CHECK_INS_HREF }} headingLevel={3} />;
   }
 }
-/** The worker's optional private preparation: the record, or the honest non-result, with the statement that a coach never sees it on every rendering. */
 export default function PreparationSurface(props: PreparationSurfaceProps): ReactElement {
   const view = resolveView(props);
   return (

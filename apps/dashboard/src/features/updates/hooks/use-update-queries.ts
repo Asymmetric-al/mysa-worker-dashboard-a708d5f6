@@ -1,44 +1,5 @@
 "use client";
-/**
- * The Ministry Updates family's browser read plumbing: exactly seven hooks, one per named read, on the one
- * scope-led query key the rest of the family reuses.
- *
- * **What it caches.** `ReadResult<ReadEnvelope<T>>` and nothing else. The store owns every record; this module
- * holds the service's answer under a key whose leading segments are the scope the read ran in, and it neither
- * mirrors a record nor merges a mutation result into an envelope it did not produce — a mutation hook
- * invalidates a job key and the surface re-reads.
- *
- * **The three answers a read has.** The envelope, a `denied` outcome, or an `unavailable` outcome. All three are
- * values returned here: a refusal never becomes an empty list, a zero, or an error thrown into React's error
- * state. `accepted`, `failed` and `unknown` are the service's own words about a send and travel untouched inside
- * the envelope, because `components/status-badge` owns that rendering and a fourth state invented here would be
- * a second vocabulary for the same fact.
- *
- * **No server self-fetch.** The route's Server Component already called the same read and passes that answer as
- * `initialData`; the hook therefore refetches on mount only when it was given no seed.
- *
- * **Nothing is derived.** No clock read, no count, no total, no percentage, no sort, no page, no lifecycle word,
- * no eligibility and no deadline: `asOf`, `coverage`, `valueStates`, `actions` and every boundary arrive inside
- * the envelope as the service and the time module resolved them. A value's state arrives in `valueStates`, so a
- * component that renders an amount, a count or a date never has to decide for itself whether it is a number.
- *
- * **Parameter names follow the record, not the screen.** An edition is `variantId`, a notification attempt is
- * `intentId`, and a preview names the revision its surface acknowledges plus the language it asks for (sent as
- * the read's `requestedLocale`), because each named read and its handler identify them that way. A value the
- * caller does not hold yet stays `undefined`: the query goes idle rather than requesting a record nobody named.
- *
- * **Endpoints.** Each job rides the handler `app/api` publishes for its record family, and the map below is the
- * single place to align if a handler is renamed. Three of the seven have no path of their own in the route tree:
- * the release and its share presentation ride `/api/variants` as that handler's two named views, the exact
- * preview rides `/api/pages/preview` (one preview authorisation, shared with the Page family), and the per-send
- * results ride `/api/notify`, whose `GET` is the only handler answering `readSendResult` — `/api/inbox` reads a
- * receiving persona's inbox instead, and `/api/publish` is a write-only path.
- *
- * **Layering.** A route composes this hook, the hook composes the shared guard and the data-service contract types, and
- * the service composes the store: the service barrel is imported for its types only, so no read, mutation or store
- * module enters the client bundle, and the values imported are the shared key builder, the outcome guards and the
- * outage constructor the service owns.
- */
+/** The Ministry Updates family's browser read plumbing: exactly seven hooks, one per named read, on the one scope-led query key the rest of the family reuses. **What it caches.** … */
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { queryKey, type QueryParams, type ScopedQueryKey } from "@/components/context-switch-guard";
 import type { ReadEnvelope, Scope, reads } from "@/modules/data-service";
@@ -55,22 +16,8 @@ export const UPDATES_READ_JOBS = ["variant-overview", "draft", "candidate", "rel
 /** One named read of the Ministry Updates family. No eighth job belongs here: a surface that seems to need one is a component defect, not a hook to add. */
 export type UpdatesReadJob = (typeof UPDATES_READ_JOBS)[number];
 
-/**
- * The handler that answers each job, keyed by the job's name.
- *
- * `readRelease` and `readSharePresentation` share `/api/variants`, which selects between them with `view`;
- * `readPreview` rides `/api/pages/preview`; `readSendResult` rides `/api/notify`. Those three are the entries to
- * change if a handler is ever given a path of its own, and nothing else in this module names a route.
- */
-export const UPDATES_READ_ENDPOINTS = {
-  "variant-overview": "/api/updates",
-  draft: "/api/drafts",
-  candidate: "/api/review",
-  release: "/api/variants",
-  preview: "/api/pages/preview",
-  "share-presentation": "/api/variants",
-  "send-result": "/api/notify",
-} as const satisfies Readonly<Record<UpdatesReadJob, string>>;
+/** The handler that answers each job, keyed by the job's name. */
+export const UPDATES_READ_ENDPOINTS = { "variant-overview": "/api/updates", draft: "/api/drafts", candidate: "/api/review", release: "/api/variants", preview: "/api/pages/preview", "share-presentation": "/api/variants", "send-result": "/api/notify" } as const satisfies Readonly<Record<UpdatesReadJob, string>>;
 
 // ---------------------------------------------------------------------------------------------
 // Fixed values
@@ -92,17 +39,7 @@ const HANDLER_SOURCE_SYSTEM = "data-service";
 const READ_ATTEMPT = "read";
 
 /** The query names the handlers read, stated once so a request carries the vocabulary each grammar declares and nothing beside it. */
-const QUERY_PARAM = {
-  documentId: "documentId",
-  variantId: "variantId",
-  revisionId: "revisionId",
-  candidateId: "candidateId",
-  requestedLocale: "requestedLocale",
-  intentId: "intentId",
-  page: "page",
-  pageSize: "pageSize",
-  view: "view",
-} as const;
+const QUERY_PARAM = { documentId: "documentId", variantId: "variantId", revisionId: "revisionId", candidateId: "candidateId", requestedLocale: "requestedLocale", intentId: "intentId", page: "page", pageSize: "pageSize", view: "view" } as const;
 
 /** The two views `/api/variants` selects between. */
 const VARIANT_VIEW = { release: "release", share: "share" } as const;
@@ -110,25 +47,15 @@ const VARIANT_VIEW = { release: "release", share: "share" } as const;
 /** The one view `/api/drafts` reads a working edition through; its other view is the frozen candidate, which this family reads from `/api/review`. */
 const DRAFT_VIEW = "draft";
 
-/**
- * What a surface is told when a read produced no usable answer. Each statement names what the surface therefore
- * has no record of and asks for the same read again, so an outage is never mistaken for an empty edition, a
- * withdrawn release or an audience of nobody.
- */
+/** What a surface is told when a read produced no usable answer. */
 const TRANSPORT_GUIDANCE: Readonly<Record<UpdatesReadJob, string>> = {
-  "variant-overview":
-    "The Update's editions could not be read, so this update has no variant matrix, no per-edition draft state and no release head to show. Retry the same read: an outage is never presented as an Update with no editions.",
-  draft:
-    "This edition's draft could not be read, so the editor has no revision, no autosave token and no media placement to restore. Retry the same read: an outage is never presented as an empty draft.",
+  "variant-overview": "The Update's editions could not be read, so this update has no variant matrix, no per-edition draft state and no release head to show. Retry the same read: an outage is never presented as an Update with no editions.",
+  draft: "This edition's draft could not be read, so the editor has no revision, no autosave token and no media placement to restore. Retry the same read: an outage is never presented as an empty draft.",
   candidate: "The frozen candidate could not be read, so this review has no exact revision to approve or return. Retry the same read: a candidate is never inferred from the draft that now stands.",
-  release:
-    "The release standing at this edition's head could not be read, so the surface states nothing about what is published. Retry the same read: an outage is neither a withdrawal nor a released revision.",
-  preview:
-    "The preview could not be read, so this edition has no exact, authorised rendering to show. Retry the same read: a preview is authorised per request and never falls back to newer content or to another edition.",
-  "share-presentation":
-    "The notice's recipient ceiling and per-edition presentation could not be read, so no notice may be submitted from this screen. Retry the same read: the ceiling it returns is the number the review shows, and it is never estimated here.",
-  "send-result":
-    "The per-recipient results of this notice could not be read, so this screen states no acceptance, failure or unknown outcome for anyone. Retry the same read: an outage is not a send that failed and not one that succeeded.",
+  release: "The release standing at this edition's head could not be read, so the surface states nothing about what is published. Retry the same read: an outage is neither a withdrawal nor a released revision.",
+  preview: "The preview could not be read, so this edition has no exact, authorised rendering to show. Retry the same read: a preview is authorised per request and never falls back to newer content or to another edition.",
+  "share-presentation": "The notice's recipient ceiling and per-edition presentation could not be read, so no notice may be submitted from this screen. Retry the same read: the ceiling it returns is the number the review shows, and it is never estimated here.",
+  "send-result": "The per-recipient results of this notice could not be read, so this screen states no acceptance, failure or unknown outcome for anyone. Retry the same read: an outage is not a send that failed and not one that succeeded.",
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -206,13 +133,7 @@ export interface UpdatesQueryOptions<T> {
 // The one key builder this family composes a key with
 // ---------------------------------------------------------------------------------------------
 
-/**
- * Keys one job of this family in one scope: the scope the read ran in, the job, then that job's parameters.
- *
- * It delegates to the application's single key builder rather than assembling the segments again, so this family
- * cannot drift into a second key format and every mutation hook here invalidates a job by the same prefix the
- * read cached it under.
- */
+/** Keys one job of this family in one scope: the scope the read ran in, the job, then that job's parameters. */
 export function updateQueryKey(scope: Scope, job: UpdatesReadJob, params: QueryParams = {}): ScopedQueryKey {
   return queryKey(scope, job, params);
 }
@@ -235,38 +156,17 @@ function isObjectBody(value: unknown): value is Readonly<Record<string, unknown>
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/**
- * Whether a body is a read envelope: the eight facts every envelope carries, checked for shape only, because the
- * service owns every value inside them. The payload's type is the caller's, taken from the named read's own
- * signature — this browser module does not restate a payload's fields, and a field it invented would be a second
- * description of a contract it does not own.
- */
+/** Whether a body is a read envelope: the eight facts every envelope carries, checked for shape only, because the service owns every value inside them. */
 function isEnvelopeOf<TPayload>(value: unknown): value is ReadEnvelope<TPayload> {
   if (!isObjectBody(value)) {
     return false;
   }
-  return (
-    "data" in value &&
-    typeof value.revision === "string" &&
-    typeof value.asOf === "string" &&
-    isObjectBody(value.scope) &&
-    isObjectBody(value.source) &&
-    isObjectBody(value.coverage) &&
-    isObjectBody(value.valueStates) &&
-    Array.isArray(value.actions)
-  );
+  return "data" in value && typeof value.revision === "string" && typeof value.asOf === "string" && isObjectBody(value.scope) && isObjectBody(value.source) && isObjectBody(value.coverage) && isObjectBody(value.valueStates) && Array.isArray(value.actions);
 }
 
 /** The one outage this module states for a read that produced no usable answer: no count, no empty collection and no record. */
 function outage<TPayload>(job: UpdatesReadJob): ReadResult<ReadEnvelope<TPayload>> {
-  return {
-    kind: "unavailable",
-    unavailable: unavailable({
-      operationId: READ_ATTEMPT,
-      source: { system: HANDLER_SOURCE_SYSTEM, reference: UPDATES_READ_ENDPOINTS[job] },
-      guidance: TRANSPORT_GUIDANCE[job],
-    }),
-  };
+  return { kind: "unavailable", unavailable: unavailable({ operationId: READ_ATTEMPT, source: { system: HANDLER_SOURCE_SYSTEM, reference: UPDATES_READ_ENDPOINTS[job] }, guidance: TRANSPORT_GUIDANCE[job] }) };
 }
 
 /** The result a body already is when a handler passed the service's own `ReadResult` on unchanged; `undefined` when it is not one. */
@@ -281,6 +181,8 @@ function wrappedResultOf<TPayload>(body: unknown): ReadResult<ReadEnvelope<TPayl
       return { kind: "denied", denied: body.denied };
     case "unavailable":
       return { kind: "unavailable", unavailable: body.unavailable };
+    case "refused":
+      return { kind: "refused", refused: body.refused };
   }
 }
 
@@ -299,10 +201,15 @@ async function answerToResult<TPayload>(job: UpdatesReadJob, answer: Response): 
         return { kind: "denied", denied: body };
       case "unavailable":
         return { kind: "unavailable", unavailable: body };
+      case "invalid":
+        // The request this read was asked to serve is not one a handler admits, so the caller is handed
+        // the field-keyed refusal to correct: the source behind the read answered, and calling it an
+        // outage would say the opposite.
+        return { kind: "refused", refused: body };
       default:
-        // Every other outcome answers a mutation, and `invalid` answers a query this transport itself misspoke —
-        // both state nothing about the records, so the surface is told the read did not complete rather than shown
-        // a success it never had or a refusal the service did not make.
+        // Every other outcome answers a mutation and states nothing about the records, so the surface is
+        // told the read did not complete rather than shown a success it never had or a refusal the
+        // service did not make.
         return outage<TPayload>(job);
     }
   }
@@ -312,23 +219,11 @@ async function answerToResult<TPayload>(job: UpdatesReadJob, answer: Response): 
   return outage<TPayload>(job);
 }
 
-/**
- * Issues one read and answers with what it stated.
- *
- * The `signal` is forwarded so `cancelQueries()` on a context switch ends the request instead of leaving it to
- * resolve into a cache the switch has already cleared; the development cookie travels because the service derives
- * the scope from it on every request; and `no-store` keeps a browser from serving one session's answer to another.
- */
+/** Issues one read and answers with what it stated. */
 async function readThrough<TPayload>(job: UpdatesReadJob, path: string, signal: AbortSignal): Promise<ReadResult<ReadEnvelope<TPayload>>> {
   let answer: Response;
   try {
-    answer = await fetch(path, {
-      method: "GET",
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: { accept: "application/json" },
-      signal,
-    });
+    answer = await fetch(path, { method: "GET", credentials: "same-origin", cache: "no-store", headers: { accept: "application/json" }, signal });
   } catch {
     // A transport fault states nothing about the records — and neither does the abort a context switch issues,
     // whose answer TanStack discards because the query it belonged to was cancelled.
@@ -384,50 +279,26 @@ interface RequestablePreview {
 }
 
 function previewPath(request: RequestablePreview): string {
-  return urlWith(UPDATES_READ_ENDPOINTS.preview, {
-    [QUERY_PARAM.variantId]: request.variantId,
-    [QUERY_PARAM.revisionId]: request.revisionId,
-    ...(request.candidateId === undefined ? {} : { [QUERY_PARAM.candidateId]: request.candidateId }),
-    [QUERY_PARAM.requestedLocale]: request.locale,
-  });
+  return urlWith(UPDATES_READ_ENDPOINTS.preview, { [QUERY_PARAM.variantId]: request.variantId, [QUERY_PARAM.revisionId]: request.revisionId, ...(request.candidateId === undefined ? {} : { [QUERY_PARAM.candidateId]: request.candidateId }), [QUERY_PARAM.requestedLocale]: request.locale });
 }
 
 function previewKeyParams(request: RequestablePreview): QueryParams {
-  return {
-    [QUERY_PARAM.variantId]: request.variantId,
-    [QUERY_PARAM.revisionId]: request.revisionId,
-    [QUERY_PARAM.requestedLocale]: request.locale,
-    ...(request.candidateId === undefined ? {} : { [QUERY_PARAM.candidateId]: request.candidateId }),
-  };
+  return { [QUERY_PARAM.variantId]: request.variantId, [QUERY_PARAM.revisionId]: request.revisionId, [QUERY_PARAM.requestedLocale]: request.locale, ...(request.candidateId === undefined ? {} : { [QUERY_PARAM.candidateId]: request.candidateId }) };
 }
 
 function sendResultPath(intentId: string, page: number | undefined, pageSize: number | undefined): string {
-  return urlWith(UPDATES_READ_ENDPOINTS["send-result"], {
-    [QUERY_PARAM.intentId]: intentId,
-    ...(page === undefined ? {} : { [QUERY_PARAM.page]: String(page) }),
-    ...(pageSize === undefined ? {} : { [QUERY_PARAM.pageSize]: String(pageSize) }),
-  });
+  return urlWith(UPDATES_READ_ENDPOINTS["send-result"], { [QUERY_PARAM.intentId]: intentId, ...(page === undefined ? {} : { [QUERY_PARAM.page]: String(page) }), ...(pageSize === undefined ? {} : { [QUERY_PARAM.pageSize]: String(pageSize) }) });
 }
 
 function sendResultKeyParams(intentId: string, page: number | undefined, pageSize: number | undefined): QueryParams {
-  return {
-    [QUERY_PARAM.intentId]: intentId,
-    ...(page === undefined ? {} : { [QUERY_PARAM.page]: page }),
-    ...(pageSize === undefined ? {} : { [QUERY_PARAM.pageSize]: pageSize }),
-  };
+  return { [QUERY_PARAM.intentId]: intentId, ...(page === undefined ? {} : { [QUERY_PARAM.page]: page }), ...(pageSize === undefined ? {} : { [QUERY_PARAM.pageSize]: pageSize }) };
 }
 
 // ---------------------------------------------------------------------------------------------
 // What every hook in this family shares
 // ---------------------------------------------------------------------------------------------
 
-/**
- * The seed options a Server Component's answer adds to a query.
- *
- * An answer given here is the one the server already read, so it is passed as the query's initial data with the
- * instant it was produced for, and nothing is requested again for it. When there is no seed the object is empty,
- * which is what lets `refetchOnMount` be decided from the caller's own value.
- */
+/** The seed options a Server Component's answer adds to a query. */
 function seedOf<T>(options: UpdatesQueryOptions<T>): UpdatesQueryOptions<T> {
   if (options.initialData === undefined) {
     return {};

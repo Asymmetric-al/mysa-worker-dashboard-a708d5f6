@@ -1,6 +1,4 @@
-/**
- * The one exact, currently authorised, inert preview of a Page edition.
- */
+/** The one exact, currently authorised, inert preview of a Page edition. */
 import type { ReactElement, ReactNode } from "react";
 import RenderedContent from "@/components/rendered-content";
 import { SimulationLabel } from "@/components/simulation-label";
@@ -25,27 +23,17 @@ export interface PagePreviewAuthorisedView {
   readonly givingAction: "none";
 }
 /** A preview that may not be rendered: one reason code and nothing else. */
-export interface PagePreviewDeniedView {
-  readonly status: "denied";
-  readonly reason: string;
-}
+export type PagePreviewDeniedView = { readonly status: "denied"; readonly reason: string };
 /** A preview whose edition could not be read: the source that failed, named honestly. */
-export interface PagePreviewUnavailableView {
-  readonly status: "unavailable";
-  readonly source: SourceReference;
-}
+export type PagePreviewUnavailableView = { readonly status: "unavailable"; readonly source: SourceReference };
+/** A preview whose own request was refused: the read answered, and the edition, revision or language asked for is not one it admits. */
+export type PagePreviewRefusedView = { readonly status: "refused" };
 /** A preview whose requested language no edition of this Page holds: the language asked for, and nothing about any other edition. */
-export interface PagePreviewLanguageUnavailableView {
-  readonly status: "language-unavailable";
-  readonly requestedLocale: string;
-}
+export type PagePreviewLanguageUnavailableView = { readonly status: "language-unavailable"; readonly requestedLocale: string };
 /** A preview whose edition has neither a draft nor a released revision, so there is nothing exact to render. */
-export interface PagePreviewUnreleasedView {
-  readonly status: "unreleased";
-  readonly locale: string;
-}
+export type PagePreviewUnreleasedView = { readonly status: "unreleased"; readonly locale: string };
 /** Every answer this surface renders. */
-export type PagePreviewView = PagePreviewAuthorisedView | PagePreviewDeniedView | PagePreviewUnavailableView | PagePreviewLanguageUnavailableView | PagePreviewUnreleasedView;
+export type PagePreviewView = PagePreviewAuthorisedView | PagePreviewDeniedView | PagePreviewUnavailableView | PagePreviewRefusedView | PagePreviewLanguageUnavailableView | PagePreviewUnreleasedView;
 /** Props of {@link PagePreviewFrame}. */
 export interface PagePreviewFrameProps {
   readonly layout: "builder" | "route";
@@ -54,10 +42,7 @@ export interface PagePreviewFrameProps {
   readonly className?: string;
 }
 // The few words this surface owns
-const FIELD_LABELS = {
-  revision: "Revision",
-  requestedLanguage: "Language requested",
-} as const;
+const FIELD_LABELS = { revision: "Revision", requestedLanguage: "Language requested" } as const;
 const PREVIEW_HEADING = copy.builder.preview;
 
 const PREVIEW_CONTENT = cn(
@@ -79,18 +64,10 @@ const PREVIEW_CONTENT = cn(
   "[&_video]:h-auto [&_video]:w-full [&_video]:max-w-full [&_video]:rounded-lg",
   "[&_figcaption]:text-xs [&_figcaption]:text-muted-foreground",
 );
-const FRAME_CLASS = "flex min-w-0 flex-col gap-3 text-start";
-
 const BODY_CLASS = "flex min-w-0 flex-col gap-4";
-
-const HEADING_CLASS: Readonly<Record<PagePreviewFrameProps["layout"], string>> = {
-  builder: "font-heading text-base font-medium",
-  route: "font-heading text-lg font-medium",
-};
+const HEADING_CLASS: Readonly<Record<PagePreviewFrameProps["layout"], string>> = { builder: "font-heading text-base font-medium", route: "font-heading text-lg font-medium" };
 const IDENTITY_CLASS = "flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-muted-foreground";
-
 const IDENTITY_PAIR_CLASS = "flex items-baseline gap-1.5";
-
 const NOTE_CLASS = "text-xs text-muted-foreground text-pretty wrap-anywhere";
 
 function PreviewHeading({ layout }: { readonly layout: PagePreviewFrameProps["layout"] }): ReactElement {
@@ -132,15 +109,7 @@ function EditionIdentity({ preview, layout }: { readonly preview: PagePreviewAut
   );
 }
 // The five answers
-function AuthorisedPreview({
-  preview,
-  layout,
-  givingBinding,
-}: {
-  readonly preview: PagePreviewAuthorisedView;
-  readonly layout: PagePreviewFrameProps["layout"];
-  readonly givingBinding: GivingBindingView | undefined;
-}): ReactElement {
+function AuthorisedPreview({ preview, layout, givingBinding }: { readonly preview: PagePreviewAuthorisedView; readonly layout: PagePreviewFrameProps["layout"]; readonly givingBinding: GivingBindingView | undefined }): ReactElement {
   return (
     <>
       <EditionIdentity preview={preview} layout={layout} />
@@ -166,6 +135,10 @@ function DeniedPreview({ preview }: { readonly preview: PagePreviewDeniedView })
 }
 function UnavailablePreview({ preview }: { readonly preview: PagePreviewUnavailableView }): ReactElement {
   return <StateNotice kind="unavailable" title={copy.states.unavailableTitle} source={preview.source} headingLevel={3} />;
+}
+/** The request for this preview is the fault: the notice says so rather than claiming a source failed. */
+function RefusedPreview(): ReactElement {
+  return <StateNotice kind="refused" title={copy.states.refusedTitle} headingLevel={3} />;
 }
 // The requested language travels in the marker and in no prose, and no edition that exists is named or
 // counted: which other languages this Page holds is not something this answer discloses.
@@ -193,6 +166,8 @@ function previewBody(preview: PagePreviewView, layout: PagePreviewFrameProps["la
       return <DeniedPreview preview={preview} />;
     case "unavailable":
       return <UnavailablePreview preview={preview} />;
+    case "refused":
+      return <RefusedPreview />;
     case "language-unavailable":
       return <LanguageUnavailablePreview preview={preview} />;
     case "unreleased":
@@ -207,7 +182,7 @@ function previewBody(preview: PagePreviewView, layout: PagePreviewFrameProps["la
 export function PagePreviewFrame({ layout, preview, givingBinding, className }: PagePreviewFrameProps): ReactElement {
   const body = previewBody(preview, layout, givingBinding);
   return (
-    <section data-slot="page-preview-frame" data-layout={layout} data-preview-status={preview.status} aria-label={PREVIEW_HEADING} className={cn(FRAME_CLASS, className)}>
+    <section data-slot="page-preview-frame" data-layout={layout} data-preview-status={preview.status} aria-label={PREVIEW_HEADING} className={cn("flex min-w-0 flex-col gap-3 text-start", className)}>
       {layout === "builder" ? (
         <Card size="sm" className="min-w-0 text-start">
           <CardHeader>

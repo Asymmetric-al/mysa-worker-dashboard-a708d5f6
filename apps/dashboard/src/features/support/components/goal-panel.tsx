@@ -1,10 +1,5 @@
 "use client";
-/**
- * The one support goal surface: the target amount, the currency it is stated in, the measure it
- * counts, the civil day it took effect on, the revision a change must present, and its progress —
- * together with the only financial write this application has, offered only where the read's own
- * capability permits it.
- */
+/** The one support goal surface: the target amount, the currency it is stated in, the measure it counts, the civil day it took effect on, the revision a change must present, and its progress — … */
 import { useCallback, useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import type { ZodError } from "zod";
 import ActionReview from "@/components/action-review";
@@ -28,7 +23,6 @@ import { useSaveGoal, type GoalSaveFormPayload } from "../hooks/use-save-goal";
 import { goalSavePayloadSchema } from "../schemas";
 import AmountValue from "./amount-value";
 import SnapshotStatement from "./snapshot-statement";
-/** One goal as the read exposes it — five facts and nothing derived from them. */
 type GoalFigure = NonNullable<GoalEnvelope["data"]["goal"]>;
 /** Props of {@link GoalPanel}. */
 export type GoalPanelProps = {
@@ -36,69 +30,31 @@ export type GoalPanelProps = {
   readonly locale: string;
   /** The display direction the route composition states; it is set on this block only, never on a child's styles. */
   readonly dir?: "ltr" | "rtl";
-  /** The envelope a Server Component read, forwarded to the query as its initial data. */
   readonly initialEnvelope?: ReadEnvelope<unknown>;
   readonly className?: string;
 };
 const PANEL_TITLE = "Support goal";
-
-const PANEL_DESCRIPTION =
-  "One target, set against received gifts on the one named basis this application measures. Changing the goal " +
-  "changes only the goal: no gift, commitment, earlier report or public progress is written, and no message is " +
-  "sent.";
-
+const PANEL_DESCRIPTION = "One target, set against received gifts on the one named basis this application measures. Changing the goal " + "changes only the goal: no gift, commitment, earlier report or public progress is written, and no message is " + "sent.";
 const READ_ONLY_FALLBACK_REASON = "This read states no goal-editing capability, so the goal is read-only here: no edit control is offered and a " + "save would be refused.";
-
 const UNEDITABLE_CURRENCY_TITLE = "This goal cannot be changed here";
 
 const UNEDITABLE_CURRENCY_BODY =
-  "The goal is stated in a currency this application holds no minor-unit precision for, so an amount in it cannot " +
-  "be written exactly. No currency is substituted in its place and no exponent is assumed, so the goal stays " +
-  "read-only until a source states it in a currency whose precision is known.";
+  "The goal is stated in a currency this application holds no minor-unit precision for, so an amount in it cannot " + "be written exactly. No currency is substituted in its place and no exponent is assumed, so the goal stays " + "read-only until a source states it in a currency whose precision is known.";
 
 const AMOUNT_LABEL = "Amount";
-
 const MEASURE_LABEL = "Measure";
-
 const EFFECTIVE_FROM_LABEL = "Effective from";
-
-const REVISION_LABEL = "Revision";
-
-const CURRENCY_LABEL = "Currency";
-
-const FACT_LABELS = {
-  amount: AMOUNT_LABEL,
-  measure: MEASURE_LABEL,
-  effectiveFrom: EFFECTIVE_FROM_LABEL,
-  revision: REVISION_LABEL,
-} as const;
-
-const FORM_LABELS: Readonly<Record<string, string>> = {
-  amount: AMOUNT_LABEL,
-  effectiveFrom: EFFECTIVE_FROM_LABEL,
-  currency: CURRENCY_LABEL,
-  measure: MEASURE_LABEL,
-};
-
+const FACT_LABELS = { amount: AMOUNT_LABEL, measure: MEASURE_LABEL, effectiveFrom: EFFECTIVE_FROM_LABEL, revision: "Revision" } as const;
+const FORM_LABELS: Readonly<Record<string, string>> = { amount: AMOUNT_LABEL, effectiveFrom: EFFECTIVE_FROM_LABEL, currency: "Currency", measure: MEASURE_LABEL };
 const FORM_FIELD_ORDER = ["amount", "effectiveFrom", "currency", "measure"] as const;
-
 const CIVIL_DAY_NOTE = "a calendar day, with no time of day and no zone behind it";
 
-/**
- * The envelope this panel renders, when the caller forwarded the goal read's own envelope.
- *
- * The four members the panel reads are checked before the envelope is used, so an envelope from
- * another read is never rendered as a goal and no goal is invented in its place.
- */
 function goalEnvelopeOf(candidate: ReadEnvelope<unknown> | undefined): GoalEnvelope | undefined {
-  if (candidate === undefined) {
-    return undefined;
-  }
+  if (candidate === undefined) return undefined;
   const data: unknown = candidate.data;
   const shaped = typeof data === "object" && data !== null && "goal" in data && "progress" in data && "percentage" in data && "period" in data && "measure" in data && "canEditGoal" in data;
   return shaped ? (candidate as GoalEnvelope) : undefined;
 }
-/** The messages a Zod failure carries, keyed by field path so a field and the summary read the same strings. */
 function fieldMessagesOf(error: ZodError): Readonly<Record<string, readonly string[]>> {
   const messages: Record<string, string[]> = {};
   for (const issue of error.issues) {
@@ -121,17 +77,9 @@ interface ProgressPresentation {
   readonly figure: string | null;
   readonly sentence: string;
 }
-/**
- * Why a percentage is absent, for the one state that does not carry its own reason.
- *
- * The goal read collapses an unusable denominator into one state, so the two reasons behind it are
- * told apart from the goal itself: a goal of zero is the zero denominator, and anything else is a
- * denominator or numerator the source did not establish.
- */
+/** Why a percentage is absent, for the one state that does not carry its own reason. */
 function absentPercentageReason(goal: GoalFigure | null): NoPercentageReason {
-  if (goal === null) {
-    return "no-goal";
-  }
+  if (goal === null) return "no-goal";
   return goal.amount.minorUnits === 0 ? "zero-denominator" : "unknown-denominator";
 }
 /** Every progress state, each with its own figure and its own sentence — never a percentage nobody computed and never a bare `0%`. */
@@ -149,15 +97,9 @@ function progressPresentation(progress: GoalProgress, goal: GoalFigure | null, m
         // invented figure, so it falls back to the sentence that says why no percentage is shown.
         return { figure: null, sentence: NO_PERCENTAGE.default };
       }
-      return {
-        figure,
-        sentence: `The goal is ${figure} met over ${from} to ${to} on the ${measureLabel} measure. A figure above 100% is stated exactly as it was computed and is never capped.`,
-      };
+      return { figure, sentence: `The goal is ${figure} met over ${from} to ${to} on the ${measureLabel} measure. A figure above 100% is stated exactly as it was computed and is never capped.` };
     case "zero":
-      return {
-        figure,
-        sentence: `No received support is recorded over ${from} to ${to}, so the goal is 0% met. That is a recorded zero and not an unknown figure.`,
-      };
+      return { figure, sentence: `No received support is recorded over ${from} to ${to}, so the goal is 0% met. That is a recorded zero and not an unknown figure.` };
     case "no-goal":
       return { figure: null, sentence: NO_PERCENTAGE["no-goal"] };
     case "no-percentage":
@@ -165,17 +107,11 @@ function progressPresentation(progress: GoalProgress, goal: GoalFigure | null, m
     case "incompatible":
       return { figure: null, sentence: NO_PERCENTAGE["incompatible-measure"] };
     case "paused":
-      return {
-        figure: null,
-        sentence: "This goal is paused, so no percentage is shown. A paused goal is not 0%: it is a goal the source is not measuring right now.",
-      };
+      return { figure: null, sentence: "This goal is paused, so no percentage is shown. A paused goal is not 0%: it is a goal the source is not measuring right now." };
     case "ended":
       return { figure: null, sentence: "This goal has ended, so no percentage is shown. An ended goal is not 0%." };
     case "unavailable":
-      return {
-        figure: null,
-        sentence: "The source behind this percentage could not be read, so no percentage is shown. That is not 0% and it is not an absence of giving.",
-      };
+      return { figure: null, sentence: "The source behind this percentage could not be read, so no percentage is shown. That is not 0% and it is not an absence of giving." };
   }
 }
 /** The precision a currency carries, stated as the rule the amount field enforces. */
@@ -218,22 +154,7 @@ function GoalFacts({ goal, locale, measureLabel, valueState }: { readonly goal: 
     </dl>
   );
 }
-/** What the review step compares: the goal as it stands, and the amount and day this change would state. */
-function GoalComparison({
-  current,
-  currentState,
-  locale,
-  amount,
-  currency,
-  effectiveFrom,
-}: {
-  readonly current: GoalFigure | null;
-  readonly currentState: ValueState;
-  readonly locale: string;
-  readonly amount: string;
-  readonly currency: string;
-  readonly effectiveFrom: string;
-}): ReactElement {
+function GoalComparison({ current, currentState, locale, amount, currency, effectiveFrom }: { readonly current: GoalFigure | null; readonly currentState: ValueState; readonly locale: string; readonly amount: string; readonly currency: string; readonly effectiveFrom: string }): ReactElement {
   return (
     <dl className="grid gap-1.5">
       <div className="flex flex-wrap items-baseline gap-x-1.5">
@@ -253,23 +174,13 @@ function GoalComparison({
     </dl>
   );
 }
-/** Props of the goal form. */
 interface GoalFormProps {
   readonly envelope: GoalEnvelope;
   readonly locale: string;
   readonly onClose: () => void;
   readonly onCheckResult: () => void;
 }
-/**
- * The goal's one editing surface: four facts, the schema's own messages, a reviewed submit and the
- * service's outcome.
- *
- * The typed values never leave local state, so a refused save preserves exactly what was typed
- * (WCAG 3.3.7). The revision the save presents is the one this form opened with, so the receipt of an
- * accepted change stays on screen after the panel re-reads the goal; a later change made from the
- * same form therefore meets the newer revision as a conflict, which is recoverable rather than
- * silently overwriting it.
- */
+/** The goal's one editing surface: four facts, the schema's own messages, a reviewed submit and the service's outcome. */
 function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): ReactElement {
   const { data } = envelope;
   const goal = data.goal;
@@ -294,29 +205,16 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
     return checked.success ? null : fieldErrorsFromInvalid({ fields: fieldMessagesOf(checked.error) });
   }, [payload]);
   const errors = serverErrors ?? (touched ? clientErrors : null);
-  const submit = useCallback(
-    async (input: MutationInput<GoalSaveFormPayload>): Promise<MutationOutcome> =>
-      mutateGoal({
-        scope: input.scope,
-        expectedRevision: input.expectedRevision,
-        payload: input.payload,
-        operationId: input.operationId,
-      }),
-    [mutateGoal],
-  );
+  const submit = useCallback(async (input: MutationInput<GoalSaveFormPayload>): Promise<MutationOutcome> => mutateGoal({ scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload, operationId: input.operationId }), [mutateGoal]);
   const handleSettled = (outcome: MutationOutcome): void => {
     if (outcome.outcome === "invalid") {
       setServerErrors(fieldErrorsFromInvalid(outcome));
       return;
     }
     setServerErrors(null);
-    if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") {
-      setSettled(true);
-    }
+    if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") setSettled(true);
   };
-  const markTouched = (): void => {
-    setTouched(true);
-  };
+  const markTouched = (): void => setTouched(true);
   if (!currencyKnown) {
     return (
       <Alert>
@@ -368,8 +266,7 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
         )}
       </FormField>
       <p className="text-sm text-muted-foreground">
-        The currency is <bdi>{currency}</bdi> and is not a free choice: it is the currency this support subject reports in, so the amount inherits a precision the source states rather than one this
-        form assumes.
+        The currency is <bdi>{currency}</bdi> and is not a free choice: it is the currency this support subject reports in, so the amount inherits a precision the source states rather than one this form assumes.
       </p>
       <Separator />
       <ActionReview<GoalSaveFormPayload>
@@ -428,16 +325,7 @@ export function GoalPanel({ scope, locale, dir, initialEnvelope, className }: Go
   if (result.kind === "denied") {
     // A refusal is stated as a refusal: the arm's own reason code, and no amount, count or title
     // beside it, because the answer is the same whether or not a goal exists in this context.
-    return (
-      <StateNotice
-        kind="denied"
-        title="The support goal is not readable in this context"
-        description="The goal, its amount and its progress are read under the selected context, and this session holds no authority for it."
-        reasonCode={result.denied.reasonCode}
-        headingLevel={3}
-        className={className}
-      />
-    );
+    return <StateNotice kind="denied" title="The support goal is not readable in this context" description="The goal, its amount and its progress are read under the selected context, and this session holds no authority for it." reasonCode={result.denied.reasonCode} headingLevel={3} className={className} />;
   }
   if (result.kind === "unavailable") {
     // The source's own identity and retry guidance, never an outage worded over the arm that carries it.
@@ -457,6 +345,11 @@ export function GoalPanel({ scope, locale, dir, initialEnvelope, className }: Go
         className={className}
       />
     );
+  }
+  if (result.kind === "refused") {
+    // The request this panel's own read made is not one the goal read admits: the refusal names the field
+    // to correct, and no amount, revision or percentage is shown in place of either fact.
+    return <StateNotice kind="refused" title="This goal's request was refused" headingLevel={3} className={className} />;
   }
   if (result.kind !== "envelope") {
     // A fourth arm added to the goal read's contract fails compilation here rather than rendering as a
@@ -508,15 +401,7 @@ export function GoalPanel({ scope, locale, dir, initialEnvelope, className }: Go
             )}
             <p className="text-sm text-pretty text-muted-foreground">{progress.sentence}</p>
           </div>
-          <SnapshotStatement
-            basis={SUPPORT_BASIS}
-            currencies={[goal === null ? envelope.coverage.currency : goal.amount.currency]}
-            period={{ from: data.period.from, to: data.period.to }}
-            coverage={envelope.coverage}
-            asOf={envelope.asOf}
-            isCurrentPeriod={data.period.state === "in-progress"}
-            locale={locale}
-          />
+          <SnapshotStatement basis={SUPPORT_BASIS} currencies={[goal === null ? envelope.coverage.currency : goal.amount.currency]} period={{ from: data.period.from, to: data.period.to }} coverage={envelope.coverage} asOf={envelope.asOf} isCurrentPeriod={data.period.state === "in-progress"} locale={locale} />
           {canEdit ? null : <p className="text-sm text-pretty text-muted-foreground">{editAction?.reason ?? READ_ONLY_FALLBACK_REASON}</p>}
           {showForm ? (
             <>

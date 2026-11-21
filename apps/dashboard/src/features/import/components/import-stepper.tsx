@@ -1,15 +1,8 @@
 "use client";
-/**
- * The contact-import journey's step indicator, and the only way back to a step already left.
- */
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { STEPS, stepAnnouncement, type ImportStepId } from "../copy";
-type ImportStepperProps = {
-  readonly current: ImportStepId;
-  readonly completed: readonly ImportStepId[];
-  readonly onReopen: (step: ImportStepId) => void;
-};
+type ImportStepperProps = { readonly current: ImportStepId; readonly completed: readonly ImportStepId[]; readonly onReopen: (step: ImportStepId) => void };
 export default function ImportStepper({ current, completed, onReopen }: ImportStepperProps) {
   const foundPosition = STEPS.findIndex((step) => step.id === current);
   const currentPosition = foundPosition === -1 ? 0 : foundPosition;
@@ -32,14 +25,7 @@ export default function ImportStepper({ current, completed, onReopen }: ImportSt
                   <span className="font-normal text-muted-foreground"> (current step)</span>
                 </span>
               ) : isCompleted ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto min-h-8 max-w-full shrink whitespace-normal py-1.5 underline underline-offset-4"
-                  aria-label={step.reopenLabel}
-                  onClick={() => onReopen(step.id)}
-                >
+                <Button type="button" variant="ghost" size="sm" className="h-auto min-h-8 max-w-full shrink whitespace-normal py-1.5 underline underline-offset-4" aria-label={step.reopenLabel} onClick={() => onReopen(step.id)}>
                   {step.title}
                 </Button>
               ) : (

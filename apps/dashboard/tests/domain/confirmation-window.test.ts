@@ -1,45 +1,4 @@
-/**
- * Success criterion 10, at the domain and the service boundary: the proof flow's 168-hour
- * confirmation window, and the honesty of the states around it.
- *
- * The window is 168 elapsed hours counted from the instant the membership accepted the proof step,
- * and it is strict at equality: a confirmation one second inside the window succeeds and a
- * confirmation at exactly 168 hours is refused. That pair is the test, because either half alone
- * passes an implementation that closed the window a second early or a second late. Nothing renews
- * the window — not a reload, not a retry, not the proof issued again — and the three are asserted
- * separately, because an implementation can be right about one and wrong about another.
- *
- * Around the window the file keeps four facts apart that a careless implementation collapses:
- * membership state, the Off/Immediate choice, the reading language and proof of possession. Only
- * the explicit confirmation moves a membership out of the proof step; a `subscribed`-looking column
- * is not consent; a source-supplied row is excluded rather than activated.
- *
- * Divergences from this file's dependency brief, each forced by the modules' own contracts:
- *
- * - The world is laid down by `resetSeed` from `dev-runtime/reset`. A session exists only in the
- *   store, the store's `resetSession` is the only path that creates one, and the store may not be
- *   imported here, so the development runtime's one deterministic reset is how a seeded session is
- *   obtained — the route `tests/domain/goal.test.ts` also takes. `mutations.dev.resetSeed` cannot
- *   serve: it is a mutation over a session that must already exist.
- * - The receiving reads accept an optional `SessionSource`, so a DOM-free suite can execute them. The
- *   property a page load would have shown — that it never confirms — is proven here against
- *   `resolveSession` (which every read performs first) and `reads.dev.readDevState` (which loads the
- *   whole session document) rather than by re-reading the preferences view, and decisively by the
- *   revision the explicit confirmation still has to match afterwards. The HTTP-level proof that a GET
- *   or HEAD never confirms belongs to `e2e/consent-notification.spec.ts` and is not duplicated here.
- * - The seeded reader personas ("subscriber" and the three readers) carry no admitted membership, and
- *   the membership mutations are authorised by the record they address rather than by ministry
- *   admission, so a reader session signs up, chooses Off or Immediate, confirms and unsubscribes on the
- *   membership it owns — the record keyed by its own principal, which is the identity a signup mints.
- *   The window's boundary pair above is still exercised through the established worker's own membership,
- *   because the acceptance this file measures from is then its own act at a known instant rather than a
- *   seeded one it takes on trust; the subscriber's case below reads the acceptance and the deadline the
- *   seed recorded for it.
- * - A mutation finds a named session only when the `SessionSource` is passed as its second
- *   argument, and an accepted outcome carries no payload, so the result a change stored (the
- *   deadline it opened, the pending proof, the state it reached) is read back by replaying the same
- *   operation id. That replay is the service's own recovery path, not a second observation channel.
- */
+/** Success criterion 10, at the domain and the service boundary: the proof flow's 168-hour confirmation window, and the honesty of the states around it. */
 import { Temporal } from "temporal-polyfill";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
@@ -68,20 +27,14 @@ import type { SeededSessionWithDocuments } from "@/modules/dev-runtime/seed";
 import { seed } from "@/modules/dev-runtime/seed";
 import { resetSeed } from "@/modules/dev-runtime/reset";
 import { advanceClock, setClock } from "@/modules/dev-runtime/scenario";
-// The world each case starts from
-/** The seeded session this file acts in: signed in, admitted to one ministry, and holding no membership of its own — the person whose proof step each case opens. */
 const SESSION_ID = "established-worker";
-
 const SOURCE: SessionSource = { sessionId: SESSION_ID };
-/** The seeded reader whose session holds its own membership and no ministry admission: the record it is authorised by. */
 const SUBSCRIBER_SESSION_ID = "subscriber";
-
 const SUBSCRIBER_SOURCE: SessionSource = { sessionId: SUBSCRIBER_SESSION_ID };
 /** The instant the seeded subscriber's membership accepted the proof step, and so the deadline its 168 hours fix. */
 const SUBSCRIBER_ACCEPTED_AT = Temporal.Instant.from("2026-11-16T12:00:00Z");
 /** The window in milliseconds, derived from the module's own stated hours so the two cannot drift. */
 const WINDOW_MILLISECONDS = CONFIRMATION_WINDOW_HOURS * 60 * 60 * 1000;
-
 const SECOND_MILLISECONDS = 1_000;
 /** What a creation presents where a revision would go: there is no stored value for a stale expectation to overwrite. */
 const NO_TARGET_REVISION = "no-target";
@@ -89,7 +42,6 @@ const NO_TARGET_REVISION = "no-target";
 const DEADLINE_AT_SEED = SEED_INSTANT.add({ hours: CONFIRMATION_WINDOW_HOURS });
 /** A publisher the seeded records never mention, so an unsubscribe for it addresses nothing. */
 const OTHER_PUBLISHER = "publisher-elsewhere";
-// The arguments each named mutation takes
 type SignupArgs = Parameters<typeof mutations.audience.signupForPurpose>[0];
 
 type ConfirmArgs = Parameters<typeof mutations.audience.confirmMembership>[0];
@@ -100,78 +52,54 @@ type UnsubscribeArgs = Parameters<typeof mutations.audience.unsubscribe>[0];
 
 type DevStateEnvelope = Extract<Awaited<ReturnType<typeof reads.dev.readDevState>>, { readonly kind: "envelope" }>["envelope"];
 
-/** One opened proof step: the scope it acts in, the principal whose own membership it opens, the publisher it addresses, and the attempt that opened it. */
 interface ProofStep {
   readonly scope: Scope;
   readonly principalId: string;
   readonly publisherId: string;
   readonly signup: SignupArgs;
 }
-// The world, as the seed built it
 let seededDocuments: Promise<readonly SeededSessionWithDocuments[]> | undefined;
-
 function seededWorld(): Promise<readonly SeededSessionWithDocuments[]> {
   // The seed is deterministic, so one build serves every case: a second call would produce the same
   // bytes, and this file never mutates the documents it reads.
   seededDocuments ??= seed();
   return seededDocuments;
 }
-
 async function seededAudience(): Promise<readonly StoredMembership[]> {
   const sessions = await seededWorld();
   const template = sessions.find((session) => session.sessionId === SESSION_ID);
-  if (template === undefined) {
-    throw new Error(`The seed lays down no "${SESSION_ID}" session, so no case in this file has an audience to read.`);
-  }
+  if (template === undefined) throw new Error(`The seed lays down no "${SESSION_ID}" session, so no case in this file has an audience to read.`);
   return template.documents.state.memberships;
 }
-
 async function seededPublisher(): Promise<string> {
   const audience = await seededAudience();
   const [first] = audience;
-  if (first === undefined) {
-    throw new Error("The seeded audience holds no membership, so no case in this file can name the publisher whose Update email it is for.");
-  }
+  if (first === undefined) throw new Error("The seeded audience holds no membership, so no case in this file can name the publisher whose Update email it is for.");
   return first.publisherId;
 }
-
 async function seededSubscriberRow(): Promise<StoredMembership> {
   const sessions = await seededWorld();
   const template = sessions.find((session) => session.sessionId === SUBSCRIBER_SESSION_ID);
   const [row] = template?.documents.state.memberships ?? [];
-  if (row === undefined) {
-    throw new Error(`The seed lays down no membership in the "${SUBSCRIBER_SESSION_ID}" session, so no case in this file has the reader's own record to confirm.`);
-  }
+  if (row === undefined) throw new Error(`The seed lays down no membership in the "${SUBSCRIBER_SESSION_ID}" session, so no case in this file has the reader's own record to confirm.`);
   return row;
 }
-
-/** Every seeded membership row, loaded once for each case by the reset that starts it. */
 let seededRows: readonly StoredMembership[] = [];
-
 function seededRow(membershipId: string): StoredMembership {
   const matches = seededRows.find((row) => row.membershipId === membershipId);
-  if (matches === undefined) {
-    throw new Error(`The seeded audience holds no "${membershipId}" row, so no case in this file can describe it.`);
-  }
+  if (matches === undefined) throw new Error(`The seeded audience holds no "${membershipId}" row, so no case in this file can describe it.`);
   return matches;
 }
-// Reading the session and its documents
 async function sessionOf(source: SessionSource): Promise<ResolvedSession> {
   const resolved = await resolveSession(source);
-  if (!resolved.ok) {
-    throw new Error(`The session "${source.sessionId}" could not be resolved, so no case in this file has an actor.`);
-  }
+  if (!resolved.ok) throw new Error(`The session "${source.sessionId}" could not be resolved, so no case in this file has an actor.`);
   return resolved.session;
 }
-
 async function selectedScope(): Promise<Scope> {
   const session = await sessionOf(SOURCE);
-  if (session.selected === null) {
-    throw new Error(`The session "${SESSION_ID}" has selected no context, so it holds no scope for a membership to belong to.`);
-  }
+  if (session.selected === null) throw new Error(`The session "${SESSION_ID}" has selected no context, so it holds no scope for a membership to belong to.`);
   return session.selected;
 }
-
 async function subscriberScope(): Promise<Scope> {
   // A reader selects no context of its own: the world it reads belongs to the publisher, so the scope its
   // record sits in carries that world's three references and the reader's own principal id — the identity
@@ -180,36 +108,25 @@ async function subscriberScope(): Promise<Scope> {
   const session = await sessionOf(SUBSCRIBER_SOURCE);
   return { ...publisherScope, principalId: session.principalId };
 }
-
 async function devStateEnvelope(): Promise<DevStateEnvelope> {
   const result = await reads.dev.readDevState(SOURCE);
-  if (result.kind !== "envelope") {
-    throw new Error(`The development state could not be read (it answered "${result.kind}"), so no case in this file can observe what a page load reads.`);
-  }
+  if (result.kind !== "envelope") throw new Error(`The development state could not be read (it answered "${result.kind}"), so no case in this file can observe what a page load reads.`);
   return result.envelope;
 }
-
 async function advanceBy(milliseconds: number): Promise<void> {
   const advanced = await advanceClock(SESSION_ID, milliseconds);
-  if (!advanced.ok) {
-    throw new Error(`The scenario clock refused to advance by ${String(milliseconds)} ms: ${advanced.error.code}.`);
-  }
+  if (!advanced.ok) throw new Error(`The scenario clock refused to advance by ${String(milliseconds)} ms: ${advanced.error.code}.`);
   // The session's stored offset is what a mutation reads its instant from and the process clock is
   // what every boundary function is given, so the two are asserted to agree rather than assumed to.
   expect(now().epochMilliseconds).toBe(SEED_INSTANT.epochMilliseconds + advanced.value.clockOffsetMs);
 }
-
-/** Moves one session's scenario clock to an absolute instant, the way the development control that steps a scenario does. */
 async function setSessionClockTo(sessionId: string, reached: Temporal.Instant): Promise<void> {
   const moved = await setClock(sessionId, elapsedMilliseconds(SEED_INSTANT, reached));
-  if (!moved.ok) {
-    throw new Error(`The scenario clock of "${sessionId}" refused the offset that reaches ${reached.toString()}: ${moved.error.code}.`);
-  }
+  if (!moved.ok) throw new Error(`The scenario clock of "${sessionId}" refused the offset that reaches ${reached.toString()}: ${moved.error.code}.`);
   // The session's stored offset is what a mutation reads its instant from and the process clock is what
   // every boundary function is given, so the two are asserted to agree rather than assumed to.
   expect(now().equals(reached)).toBe(true);
 }
-// The proof step, as this file opens it
 async function openedProofStep(): Promise<ProofStep> {
   const scope = await selectedScope();
   const session = await sessionOf(SOURCE);
@@ -217,132 +134,82 @@ async function openedProofStep(): Promise<ProofStep> {
   // and every expected boundary is a fixed instant rather than "about now".
   expect(now().equals(SEED_INSTANT)).toBe(true);
   const publisherId = await seededPublisher();
-  const step: ProofStep = {
-    scope,
-    principalId: session.principalId,
-    publisherId,
-    signup: {
-      operationId: newOperationId(),
-      scope,
-      expectedRevision: NO_TARGET_REVISION,
-      payload: { publisherId, purpose: UPDATE_EMAIL_PURPOSE, email: "reader@example.org", languagePreference: "en" },
-    },
-  };
+  const step: ProofStep = { scope, principalId: session.principalId, publisherId, signup: { operationId: newOperationId(), scope, expectedRevision: NO_TARGET_REVISION, payload: { publisherId, purpose: UPDATE_EMAIL_PURPOSE, email: "reader@example.org", languagePreference: "en" } } };
   const opened = await mutations.audience.signupForPurpose(step.signup, SOURCE);
   expect(named(opened)).toBe("accepted");
   return step;
 }
-
 function confirmInput(step: ProofStep, expectedRevision: string): ConfirmArgs {
   return { operationId: newOperationId(), scope: step.scope, expectedRevision, payload: { membershipId: step.principalId } };
 }
-
 function preferenceInput(step: ProofStep, expectedRevision: string, payload: Omit<SetPreferenceArgs["payload"], "membershipId">): SetPreferenceArgs {
   return { operationId: newOperationId(), scope: step.scope, expectedRevision, payload: { membershipId: step.principalId, ...payload } };
 }
-
 function unsubscribeInput(step: ProofStep, expectedRevision: string): UnsubscribeArgs {
   return { operationId: newOperationId(), scope: step.scope, expectedRevision, payload: { publisherId: step.publisherId, purpose: UPDATE_EMAIL_PURPOSE } };
 }
-// Reading an outcome
 function named(outcome: MutationOutcome): MutationOutcome["outcome"] {
   // A surface runs the same guard before it trusts an outcome, so asserting it keeps this file on
   // the contract rather than on the object literal it happens to receive.
   expect(isOutcome(outcome)).toBe(true);
   return outcome.outcome;
 }
-
 function acceptedFrom(outcome: MutationOutcome): Extract<MutationOutcome, { readonly outcome: "accepted" }> {
-  if (outcome.outcome !== "accepted") {
-    throw new Error(`The change answered ${outcome.outcome} rather than accepted, so the case below could not continue: ${JSON.stringify(outcome)}`);
-  }
+  if (outcome.outcome !== "accepted") throw new Error(`The change answered ${outcome.outcome} rather than accepted, so the case below could not continue: ${JSON.stringify(outcome)}`);
   return outcome;
 }
-
 function unchangedRevision(outcome: MutationOutcome): string {
-  if (outcome.outcome !== "unchanged") {
-    throw new Error(`The change answered ${outcome.outcome} rather than unchanged, so the case below could not read the untouched revision: ${JSON.stringify(outcome)}`);
-  }
+  if (outcome.outcome !== "unchanged") throw new Error(`The change answered ${outcome.outcome} rather than unchanged, so the case below could not read the untouched revision: ${JSON.stringify(outcome)}`);
   return outcome.revision;
 }
-
 function fieldMessages(outcome: MutationOutcome, field: string): readonly string[] {
-  if (outcome.outcome !== "invalid") {
-    throw new Error(`The refusal answered ${outcome.outcome} rather than invalid, so it carries no field messages: ${JSON.stringify(outcome)}`);
-  }
+  if (outcome.outcome !== "invalid") throw new Error(`The refusal answered ${outcome.outcome} rather than invalid, so it carries no field messages: ${JSON.stringify(outcome)}`);
   return outcome.fields[field] ?? [];
 }
-
 function firstMessageAbout(outcome: MutationOutcome, field: string): string {
   const [first] = fieldMessages(outcome, field);
-  if (first === undefined) {
-    throw new Error(`The refusal states nothing about "${field}", so the case below has no reason to read: ${JSON.stringify(outcome)}`);
-  }
+  if (first === undefined) throw new Error(`The refusal states nothing about "${field}", so the case below has no reason to read: ${JSON.stringify(outcome)}`);
   return first;
 }
-
 function replayedResult(outcome: MutationOutcome): unknown {
-  if (outcome.outcome !== "alreadyAccepted") {
-    throw new Error(`The replay answered ${outcome.outcome} rather than alreadyAccepted, so the change it should have stored was not read back: ${JSON.stringify(outcome)}`);
-  }
+  if (outcome.outcome !== "alreadyAccepted") throw new Error(`The replay answered ${outcome.outcome} rather than alreadyAccepted, so the change it should have stored was not read back: ${JSON.stringify(outcome)}`);
   return outcome.result;
 }
-
 function fieldOf(value: unknown, key: string): unknown {
   return typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
 }
-
 function textOf(value: unknown, key: string): string {
   const field = fieldOf(value, key);
-  if (typeof field !== "string") {
-    throw new Error(`The stored result carries no "${key}" text, so the case below could not read it: ${JSON.stringify(value)}`);
-  }
+  if (typeof field !== "string") throw new Error(`The stored result carries no "${key}" text, so the case below could not read it: ${JSON.stringify(value)}`);
   return field;
 }
-
 function nullableTextOf(value: unknown, key: string): string | null {
   const field = fieldOf(value, key);
-  if (field === null || field === undefined) {
-    return null;
-  }
-  if (typeof field !== "string") {
-    throw new Error(`The stored result carries a "${key}" that is not text, so the case below could not read it: ${JSON.stringify(value)}`);
-  }
+  if (field === null || field === undefined) return null;
+  if (typeof field !== "string") throw new Error(`The stored result carries a "${key}" that is not text, so the case below could not read it: ${JSON.stringify(value)}`);
   return field;
 }
-
 function booleanOf(value: unknown, key: string): boolean {
   const field = fieldOf(value, key);
-  if (typeof field !== "boolean") {
-    throw new Error(`The stored result carries no "${key}" boolean, so the case below could not read it: ${JSON.stringify(value)}`);
-  }
+  if (typeof field !== "boolean") throw new Error(`The stored result carries no "${key}" boolean, so the case below could not read it: ${JSON.stringify(value)}`);
   return field;
 }
-// The window, in the module's own vocabulary
 function openWindowAt(acceptedAt: Temporal.Instant, at: Temporal.Instant): Extract<ReturnType<typeof confirmationDeadline>, { readonly status: "within-window" }> {
   const deadline = confirmationDeadline({ acceptedAt, now: at });
-  if (deadline.status !== "within-window") {
-    throw new Error(`The window opened at ${acceptedAt.toString()} is already closed at ${at.toString()}, so the case below could not run inside it.`);
-  }
+  if (deadline.status !== "within-window") throw new Error(`The window opened at ${acceptedAt.toString()} is already closed at ${at.toString()}, so the case below could not run inside it.`);
   return deadline;
 }
-
 function closedWindowAt(acceptedAt: Temporal.Instant, at: Temporal.Instant): Extract<ReturnType<typeof confirmationDeadline>, { readonly status: "expired" }> {
   const deadline = confirmationDeadline({ acceptedAt, now: at });
-  if (deadline.status !== "expired") {
-    throw new Error(`The window opened at ${acceptedAt.toString()} is still open at ${at.toString()}, so the case below could not run past its end.`);
-  }
+  if (deadline.status !== "expired") throw new Error(`The window opened at ${acceptedAt.toString()} is still open at ${at.toString()}, so the case below could not run past its end.`);
   return deadline;
 }
-
 function elapsedMilliseconds(from: Temporal.Instant, to: Temporal.Instant): number {
   return to.epochMilliseconds - from.epochMilliseconds;
 }
-
 function instantsIn(text: string): readonly Temporal.Instant[] {
   return [...text.matchAll(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/gu)].map((match) => Temporal.Instant.from(match[0]));
 }
-// The stored row and the domain record, as a permission question reads them
 function domainRowOf(row: StoredMembership, scope: Scope): MembershipRecord {
   // The store keeps one shape and the audience module decides on another; the read layer adapts the
   // first into the second. This fixture carries across only the members `canReadProtected` decides
@@ -366,19 +233,9 @@ function domainRowOf(row: StoredMembership, scope: Scope): MembershipRecord {
     ...(confirmation === undefined ? {} : { confirmationDeadline: confirmation }),
   };
 }
-
 function readingGrantFor(row: StoredMembership, scope: Scope, session: ResolvedSession): AccessDecision {
-  return canReadProtected(session, {
-    audience: "approved-supporter",
-    reader: {
-      recipientId: row.membershipId,
-      publisherId: row.publisherId,
-      purpose: row.purpose,
-      memberships: [domainRowOf(row, scope)],
-    },
-  });
+  return canReadProtected(session, { audience: "approved-supporter", reader: { recipientId: row.membershipId, publisherId: row.publisherId, purpose: row.purpose, memberships: [domainRowOf(row, scope)] } });
 }
-// Every case starts from the deterministic world
 beforeEach(async () => {
   await resetSeed();
   seededRows = await seededAudience();
@@ -389,9 +246,7 @@ afterEach(async () => {
   // subscriber's own clock included, since the cases below act as that reader.
   for (const sessionId of [SESSION_ID, SUBSCRIBER_SESSION_ID]) {
     const restored = await setClock(sessionId, 0);
-    if (!restored.ok) {
-      throw new Error(`The scenario clock of "${sessionId}" could not be returned to the seed instant: ${restored.error.code}.`);
-    }
+    if (!restored.ok) throw new Error(`The scenario clock of "${sessionId}" could not be returned to the seed instant: ${restored.error.code}.`);
   }
 });
 
@@ -416,7 +271,6 @@ describe("the deadline is the acceptance instant plus 168 elapsed hours", () => 
       expect(deadline.remainingMilliseconds).toBe(WINDOW_MILLISECONDS);
     }
   });
-
   it("counts 168 elapsed hours across a daylight-saving transition rather than seven calendar days", () => {
     const acceptedLocal = Temporal.ZonedDateTime.from("2026-10-20T12:00:00+01:00[Europe/London]");
     const acceptedAt = acceptedLocal.toInstant();
@@ -435,7 +289,6 @@ describe("the deadline is the acceptance instant plus 168 elapsed hours", () => 
         .equals(deadline.deadlineInstant.add({ seconds: 3_600 })),
     ).toBe(true);
   });
-
   it("keeps the deadline the acceptance recorded through every read that follows it", async () => {
     const step = await openedProofStep();
     const opened = replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE));
@@ -462,7 +315,6 @@ describe("strict at equality", () => {
     expect(textOf(receipt, "state")).toBe("active");
     expect(nullableTextOf(receipt, "confirmedAt")).toBe(DEADLINE_AT_SEED.subtract({ seconds: 1 }).toString());
   });
-
   it("refuses the confirmation at exactly 168 hours and leaves the row waiting for proof", async () => {
     const step = await openedProofStep();
     await advanceBy(WINDOW_MILLISECONDS);
@@ -509,7 +361,6 @@ describe("nothing extends the window", () => {
     expect(named(refused)).toBe("invalid");
     expect(firstMessageAbout(refused, "membershipId")).toContain(DEADLINE_AT_SEED.toString());
   });
-
   it("keeps a refused confirmation refused when it is tried again a second later", async () => {
     const step = await openedProofStep();
     await advanceBy(WINDOW_MILLISECONDS);
@@ -525,7 +376,6 @@ describe("nothing extends the window", () => {
     expect(message).toContain(DEADLINE_AT_SEED.toString());
     expect(message).not.toContain(now().add({ hours: CONFIRMATION_WINDOW_HOURS }).toString());
   });
-
   it("does not reset the acceptance when the proof is issued again for the same membership", async () => {
     const step = await openedProofStep();
     await advanceBy(WINDOW_MILLISECONDS + SECOND_MILLISECONDS);
@@ -559,32 +409,24 @@ describe("confirmation is an explicit action and never a read", () => {
     const confirmed = await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE);
     expect(acceptedFrom(confirmed).revision).toBe("rev-2");
   });
-
   it("moves the row to active only on the explicit confirmation, and a repeat changes nothing", async () => {
     const step = await openedProofStep();
     const confirmation = confirmInput(step, "rev-1");
     expect(acceptedFrom(await mutations.audience.confirmMembership(confirmation, SOURCE)).revision).toBe("rev-2");
-    // The same attempt arriving twice is the replay the ledger exists for: the stored result comes
-    // back and no revision advances.
     const replay = await mutations.audience.confirmMembership(confirmation, SOURCE);
     expect(named(replay)).toBe("alreadyAccepted");
     const receipt = replayedResult(replay);
     expect(textOf(receipt, "state")).toBe("active");
     expect(textOf(receipt, "revision")).toBe("rev-2");
-    // A fresh attempt at a membership that has already confirmed is `unchanged`, not a second
-    // acceptance carrying a new revision.
     const repeated = await mutations.audience.confirmMembership(confirmInput(step, "rev-2"), SOURCE);
     expect(named(repeated)).toBe("unchanged");
     expect(unchangedRevision(repeated)).toBe("rev-2");
   });
-
   it("opens the proof step with a pending result that claims no message and no membership", async () => {
     const step = await openedProofStep();
     const receipt = replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE));
     expect(textOf(receipt, "state")).not.toBe("active");
     const proof = fieldOf(receipt, "proof");
-    // The audience module states the one neutral pending result and the service stores exactly it:
-    // pending, no mail claimed as sent, and the next step left to the person's own Confirm.
     expect(proof).toEqual(pendingProofResult());
     expect(booleanOf(proof, "claimsMailSent")).toBe(false);
     expect(textOf(proof, "status")).toBe("pending");
@@ -608,7 +450,6 @@ describe("the states and the choices stay honest", () => {
     const observed = new Set(seededRows.map((row) => row.state));
     expect([...observed].sort()).toEqual([...MEMBERSHIP_STATES].sort());
   });
-
   it("offers exactly Off and Immediate, and refuses a cadence it does not offer", async () => {
     expect(MEMBER_CHOICES).toHaveLength(2);
     expect([...MEMBER_CHOICES]).toEqual(["off", "immediate"]);
@@ -624,12 +465,9 @@ describe("the states and the choices stay honest", () => {
     expect(named(refused)).toBe("invalid");
     expect(fieldMessages(refused, "choice").length).toBeGreaterThan(0);
   });
-
   it("treats a subscribed-looking column as no consent at all", async () => {
     const scope = await selectedScope();
     const session = await sessionOf(SOURCE);
-    // The seed lays this row down as what an import's `subscribed` column produces: a record with
-    // no acceptance behind it.
     const imported = seededRow("membership-subscribed-column");
     expect(imported.state).not.toBe("active");
     expect(imported.state).toBe("off");
@@ -639,9 +477,7 @@ describe("the states and the choices stay honest", () => {
     // The permission question asked of the same row: the column grants no protected reading,
     // because nothing ever proved the address.
     const refused = readingGrantFor(imported, scope, session);
-    if (refused.allowed) {
-      throw new Error("A subscribed-looking import column was read as consent, and a column is not consent.");
-    }
+    if (refused.allowed) throw new Error("A subscribed-looking import column was read as consent, and a column is not consent.");
     expect(refused.denial.reasonCode).toBe("no-protected-grant");
     // The row whose person did confirm once keeps its grant although it is off, so what the case
     // separates is the acceptance, not the state the row happens to sit in.
@@ -650,7 +486,6 @@ describe("the states and the choices stay honest", () => {
     expect(unsubscribed.acceptedAt).not.toBeNull();
     expect(readingGrantFor(unsubscribed, scope, session).allowed).toBe(true);
   });
-
   it("records a reading language without touching the state, the choice or the deadline", async () => {
     const step = await openedProofStep();
     const before = nullableTextOf(replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE)), "confirmationDeadline");
@@ -663,23 +498,12 @@ describe("the states and the choices stay honest", () => {
     expect(fieldOf(receipt, "changed")).toEqual({ choice: false, languagePreference: true });
     const after = nullableTextOf(replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE)), "confirmationDeadline");
     expect(after).toBe(before);
-    // Proof of possession is still the person's own act, measured from the acceptance the language
-    // change left untouched.
     expect(acceptedFrom(await mutations.audience.confirmMembership(confirmInput(step, "rev-2"), SOURCE)).revision).toBe("rev-3");
   });
-
   it.each(["held", "unqualified"] as const)("records a %s source row as excluded and never activates it", async (disposition) => {
     const scope = await selectedScope();
     const membershipScope: MembershipScope = { organizationId: scope.organizationId, ministryId: scope.ministryId };
-    const excluded = excludedSourceMembership({
-      membershipId: "membership-source-row",
-      scope: membershipScope,
-      publisherId: await seededPublisher(),
-      recipientId: "membership-source-row",
-      email: "source.row@example.org",
-      languagePreference: "en",
-      sourceDisposition: disposition,
-    });
+    const excluded = excludedSourceMembership({ membershipId: "membership-source-row", scope: membershipScope, publisherId: await seededPublisher(), recipientId: "membership-source-row", email: "source.row@example.org", languagePreference: "en", sourceDisposition: disposition });
     expect(isExcludedSourceMembership(excluded)).toBe(true);
     expect(excluded.state).toBe("off");
     expect(excluded.state).not.toBe("active");
@@ -688,35 +512,24 @@ describe("the states and the choices stay honest", () => {
     // given, so no path leads from a held or unqualified source row to an active membership.
     expect(withChoice(excluded, "immediate", now())).toBe(excluded);
     const confirmation = confirmAt(excluded, now());
-    if (confirmation.status !== "refused") {
-      throw new Error(`A ${disposition} source row was confirmed, and a row the source supplied is never activated by a confirmation.`);
-    }
+    if (confirmation.status !== "refused") throw new Error(`A ${disposition} source row was confirmed, and a row the source supplied is never activated by a confirmation.`);
     expect(confirmation.reason).toBe("source-excluded");
-    // Reading it does not promote it: the predicates and the permission question below all run
-    // against the row, and it is byte-for-byte the row the source supplied afterwards.
     const untouched = { ...excluded };
     confirmationDeadline({ acceptedAt: SEED_INSTANT, now: now() });
     isConfirmationOpen(excluded, now());
     withChoice(excluded, "off", now());
     const session = await sessionOf(SOURCE);
-    const grant = canReadProtected(session, {
-      audience: "approved-supporter",
-      reader: { recipientId: excluded.recipientId, publisherId: excluded.publisherId, purpose: excluded.purpose, memberships: [excluded] },
-    });
+    const grant = canReadProtected(session, { audience: "approved-supporter", reader: { recipientId: excluded.recipientId, publisherId: excluded.publisherId, purpose: excluded.purpose, memberships: [excluded] } });
     expect(grant.allowed).toBe(false);
     expect(excluded).toEqual(untouched);
   });
-
   it("unsubscribes one publisher and one purpose, and leaves every other fact alone", async () => {
     const step = await openedProofStep();
     expect(acceptedFrom(await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE)).revision).toBe("rev-2");
     const language = preferenceInput(step, "rev-2", { choice: "immediate", languagePreference: "fr" });
     expect(acceptedFrom(await mutations.audience.setPreference(language, SOURCE)).revision).toBe("rev-3");
     // Another publisher is not addressed, so the act turns nothing off and advances no revision.
-    const elsewhere = await mutations.audience.unsubscribe(
-      { operationId: newOperationId(), scope: step.scope, expectedRevision: "rev-3", payload: { publisherId: OTHER_PUBLISHER, purpose: UPDATE_EMAIL_PURPOSE } },
-      SOURCE,
-    );
+    const elsewhere = await mutations.audience.unsubscribe({ operationId: newOperationId(), scope: step.scope, expectedRevision: "rev-3", payload: { publisherId: OTHER_PUBLISHER, purpose: UPDATE_EMAIL_PURPOSE } }, SOURCE);
     expect(named(elsewhere)).toBe("unchanged");
     expect(unchangedRevision(elsewhere)).toBe("rev-3");
     // A purpose this release keeps no memberships for is refused rather than widened to the one it
@@ -725,7 +538,6 @@ describe("the states and the choices stay honest", () => {
     const widened = await mutations.audience.unsubscribe(otherPurpose, SOURCE);
     expect(named(widened)).toBe("invalid");
     expect(fieldMessages(widened, "purpose").length).toBeGreaterThan(0);
-    // The act this person does own.
     const addressed = unsubscribeInput(step, "rev-3");
     expect(acceptedFrom(await mutations.audience.unsubscribe(addressed, SOURCE)).revision).toBe("rev-4");
     const receipt = replayedResult(await mutations.audience.unsubscribe(addressed, SOURCE));
@@ -733,8 +545,6 @@ describe("the states and the choices stay honest", () => {
     expect(textOf(receipt, "purpose")).toBe(UPDATE_EMAIL_PURPOSE);
     expect(textOf(receipt, "state")).toBe("off");
     expect(textOf(receipt, "choice")).toBe("off");
-    // Turning notices off promises no recall of what was already sent, and it does not reach the
-    // reading language the person chose: stating that language again changes nothing.
     expect(booleanOf(receipt, "claimsRecall")).toBe(false);
     const unchangedLanguage = preferenceInput(step, "rev-4", { choice: "off", languagePreference: "fr" });
     expect(named(await mutations.audience.setPreference(unchangedLanguage, SOURCE))).toBe("unchanged");
@@ -745,8 +555,6 @@ describe("a reader confirms the membership its own session holds", () => {
   it("confirms the seeded awaiting-proof membership one second before its seeded deadline, and a repeat changes nothing", async () => {
     const seeded = await seededSubscriberRow();
     const scope = await subscriberScope();
-    // The record is the caller's own: its identifier is the session's principal, which is the identity a
-    // signup mints and the one every membership mutation addresses.
     expect(seeded.membershipId).toBe(scope.principalId);
     expect(seeded.state).toBe("awaiting-proof");
     // The acceptance and the deadline are the ones the seed recorded, so the boundary below is this
@@ -757,28 +565,18 @@ describe("a reader confirms the membership its own session holds", () => {
     expect(elapsedMilliseconds(SUBSCRIBER_ACCEPTED_AT, deadline)).toBe(WINDOW_MILLISECONDS);
     const lastSecondInside = deadline.subtract({ seconds: 1 });
     await setSessionClockTo(SUBSCRIBER_SESSION_ID, lastSecondInside);
-    // The instant the case now reads at is inside the window the record itself states.
     expect(openWindowAt(SUBSCRIBER_ACCEPTED_AT, now()).deadlineInstant.equals(deadline)).toBe(true);
-    const confirmation: ConfirmArgs = {
-      operationId: newOperationId(),
-      scope,
-      expectedRevision: seeded.revision,
-      payload: { membershipId: seeded.membershipId },
-    };
+    const confirmation: ConfirmArgs = { operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { membershipId: seeded.membershipId } };
     expect(acceptedFrom(await mutations.audience.confirmMembership(confirmation, SUBSCRIBER_SOURCE)).revision).toBe("rev-2");
     const receipt = replayedResult(await mutations.audience.confirmMembership(confirmation, SUBSCRIBER_SOURCE));
     expect(textOf(receipt, "state")).toBe("active");
     expect(nullableTextOf(receipt, "confirmedAt")).toBe(lastSecondInside.toString());
     // A repeat proves nothing further: the row is active at the revision the acceptance reached, so a
     // fresh attempt presenting that revision answers `unchanged` and records no second acceptance.
-    const repeated = await mutations.audience.confirmMembership(
-      { operationId: newOperationId(), scope, expectedRevision: "rev-2", payload: { membershipId: seeded.membershipId } },
-      SUBSCRIBER_SOURCE,
-    );
+    const repeated = await mutations.audience.confirmMembership({ operationId: newOperationId(), scope, expectedRevision: "rev-2", payload: { membershipId: seeded.membershipId } }, SUBSCRIBER_SOURCE);
     expect(named(repeated)).toBe("unchanged");
     expect(unchangedRevision(repeated)).toBe("rev-2");
   });
-
   it("refuses the same confirmation at exactly the seeded deadline and leaves the record confirmable a second earlier", async () => {
     const seeded = await seededSubscriberRow();
     const scope = await subscriberScope();
@@ -787,25 +585,14 @@ describe("a reader confirms the membership its own session holds", () => {
     // The boundary instant itself is outside the window: it is the first instant the module reports as
     // expired, and it is exactly the deadline the record's own acceptance fixed.
     expect(closedWindowAt(SUBSCRIBER_ACCEPTED_AT, now()).deadlineInstant.equals(deadline)).toBe(true);
-    const refused = await mutations.audience.confirmMembership(
-      { operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { membershipId: seeded.membershipId } },
-      SUBSCRIBER_SOURCE,
-    );
+    const refused = await mutations.audience.confirmMembership({ operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { membershipId: seeded.membershipId } }, SUBSCRIBER_SOURCE);
     expect(named(refused)).toBe("invalid");
     const expiry = firstMessageAbout(refused, "membershipId");
     expect(expiry.startsWith("confirmation-expired:")).toBe(true);
-    // The reason names the instant the window closed, which is the seeded deadline and not the instant
-    // the refusal happened.
     expect(instantsIn(expiry).map((instant) => instant.toString())).toEqual([deadline.toString()]);
     expect(expiry.startsWith("not-awaiting-proof")).toBe(false);
-    // The refusal neither promoted the record nor moved its window: the same row, at the revision the
-    // caller read and one second inside it, still confirms — which is also what proves the identity the
-    // reader's session owns is the record the confirmation reached.
     await setSessionClockTo(SUBSCRIBER_SESSION_ID, deadline.subtract({ seconds: 1 }));
-    const inside = await mutations.audience.confirmMembership(
-      { operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { membershipId: seeded.membershipId } },
-      SUBSCRIBER_SOURCE,
-    );
+    const inside = await mutations.audience.confirmMembership({ operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { membershipId: seeded.membershipId } }, SUBSCRIBER_SOURCE);
     expect(acceptedFrom(inside).revision).toBe("rev-2");
   });
 });

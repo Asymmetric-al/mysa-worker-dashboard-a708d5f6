@@ -1,44 +1,10 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": [
-    "import",
-    "typescript",
-    "react",
-    "jsx-a11y",
-    "nextjs",
-    "vitest",
-    "promise",
-    "unicorn",
-    "oxc"
-  ],
-  "env": {
-    "browser": true,
-    "node": true,
-    "es2024": true
-  },
-  "categories": {
-    "correctness": "error"
-  },
-  "ignorePatterns": [
-    "**/node_modules/**",
-    "**/.next/**",
-    "**/.turbo/**",
-    "**/dist/**",
-    "**/test-results/**",
-    "**/playwright-report/**",
-    "**/.data/**",
-    "**/public/fixtures/**",
-    "**/bun.lock",
-    "**/*.d.ts"
-  ],
-  "rules": {
-    "import/no-cycle": "error",
-    "react/style-prop-object": "error",
-    "no-eval": "error",
-    "no-new-func": "error",
-    "no-script-url": "error",
-    "no-loss-of-precision": "error"
-  },
+  "plugins": ["import", "typescript", "react", "jsx-a11y", "nextjs", "vitest", "promise", "unicorn", "oxc"],
+  "env": { "browser": true, "node": true, "es2024": true },
+  "categories": { "correctness": "error" },
+  "ignorePatterns": ["**/node_modules/**", "**/.next/**", "**/.turbo/**", "**/dist/**", "**/test-results/**", "**/playwright-report/**", "**/.data/**", "**/public/fixtures/**", "**/bun.lock", "**/*.d.ts"],
+  "rules": { "import/no-cycle": "error", "react/style-prop-object": "error", "no-eval": "error", "no-new-func": "error", "no-script-url": "error", "no-loss-of-precision": "error" },
   "overrides": [
     {
       "files": ["**/src/app/**", "**/src/lib/**"],
@@ -64,18 +30,12 @@
           "error",
           {
             "patterns": [
-              {
-                "group": ["@/features", "@/features/**", "**/features/**"],
-                "message": "A shared component sits below the feature layer: it may not import a feature, because that inverts app -> features -> components and lets one feature's copy serve another."
-              },
+              { "group": ["@/features", "@/features/**", "**/features/**"], "message": "A shared component sits below the feature layer: it may not import a feature, because that inverts app -> features -> components and lets one feature's copy serve another." },
               {
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -89,14 +49,8 @@
           "error",
           {
             "patterns": [
-              {
-                "group": ["@/features/**", "@/modules/**", "**/features/**", "**/modules/**"],
-                "message": "src/components/ui composes primitives only: no feature and no domain module import."
-              },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["@/features/**", "@/modules/**", "**/features/**", "**/modules/**"], "message": "src/components/ui composes primitives only: no feature and no domain module import." },
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -104,20 +58,13 @@
     },
     {
       "files": ["**/src/modules/**"],
-      "excludeFiles": [
-        "**/src/modules/data-service/**",
-        "**/src/modules/store/**",
-        "**/src/modules/dev-runtime/**"
-      ],
+      "excludeFiles": ["**/src/modules/data-service/**", "**/src/modules/store/**", "**/src/modules/dev-runtime/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
           {
             "patterns": [
-              {
-                "regex": "^(?:@/|(?:\\.\\.?/)+)features(?:/.*)?$",
-                "message": "A domain or service module may not import a feature: features compose modules, never the reverse."
-              },
+              { "regex": "^(?:@/|(?:\\.\\.?/)+)features(?:/.*)?$", "message": "A domain or service module may not import a feature: features compose modules, never the reverse." },
               {
                 "regex": "^(?:@/|(?:\\.\\.?/)+)(?:modules/)?store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
@@ -128,24 +75,8 @@
       }
     },
     {
-      "files": [
-        "**/src/modules/data-service/**",
-        "**/src/modules/store/**",
-        "**/src/modules/dev-runtime/**"
-      ],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "regex": "^(?:@/|(?:\\.\\.?/)+)features(?:/.*)?$",
-                "message": "A domain or service module may not import a feature: features compose modules, never the reverse."
-              }
-            ]
-          }
-        ]
-      }
+      "files": ["**/src/modules/data-service/**", "**/src/modules/store/**", "**/src/modules/dev-runtime/**"],
+      "rules": { "no-restricted-imports": ["error", { "patterns": [{ "regex": "^(?:@/|(?:\\.\\.?/)+)features(?:/.*)?$", "message": "A domain or service module may not import a feature: features compose modules, never the reverse." }] }] }
     },
     {
       "files": ["**/src/features/shell/**"],
@@ -155,12 +86,7 @@
           {
             "patterns": [
               {
-                "group": [
-                  "@/features",
-                  "@/features/**",
-                  "!@/features/shell",
-                  "!@/features/shell/**"
-                ],
+                "group": ["@/features", "@/features/**", "!@/features/shell", "!@/features/shell/**"],
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -171,10 +97,7 @@
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -199,10 +122,7 @@
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -216,12 +136,7 @@
           {
             "patterns": [
               {
-                "group": [
-                  "@/features",
-                  "@/features/**",
-                  "!@/features/partners",
-                  "!@/features/partners/**"
-                ],
+                "group": ["@/features", "@/features/**", "!@/features/partners", "!@/features/partners/**"],
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -232,10 +147,7 @@
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -249,12 +161,7 @@
           {
             "patterns": [
               {
-                "group": [
-                  "@/features",
-                  "@/features/**",
-                  "!@/features/import",
-                  "!@/features/import/**"
-                ],
+                "group": ["@/features", "@/features/**", "!@/features/import", "!@/features/import/**"],
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -265,10 +172,7 @@
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -282,12 +186,7 @@
           {
             "patterns": [
               {
-                "group": [
-                  "@/features",
-                  "@/features/**",
-                  "!@/features/initiatives",
-                  "!@/features/initiatives/**"
-                ],
+                "group": ["@/features", "@/features/**", "!@/features/initiatives", "!@/features/initiatives/**"],
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -298,10 +197,7 @@
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -315,12 +211,7 @@
           {
             "patterns": [
               {
-                "group": [
-                  "@/features",
-                  "@/features/**",
-                  "!@/features/referrals",
-                  "!@/features/referrals/**"
-                ],
+                "group": ["@/features", "@/features/**", "!@/features/referrals", "!@/features/referrals/**"],
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -331,10 +222,7 @@
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -359,10 +247,7 @@
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -376,12 +261,7 @@
           {
             "patterns": [
               {
-                "group": [
-                  "@/features",
-                  "@/features/**",
-                  "!@/features/support",
-                  "!@/features/support/**"
-                ],
+                "group": ["@/features", "@/features/**", "!@/features/support", "!@/features/support/**"],
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -392,10 +272,7 @@
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -409,12 +286,7 @@
           {
             "patterns": [
               {
-                "group": [
-                  "@/features",
-                  "@/features/**",
-                  "!@/features/updates",
-                  "!@/features/updates/**"
-                ],
+                "group": ["@/features", "@/features/**", "!@/features/updates", "!@/features/updates/**"],
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -425,10 +297,7 @@
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -442,12 +311,7 @@
           {
             "patterns": [
               {
-                "group": [
-                  "@/features",
-                  "@/features/**",
-                  "!@/features/ministry-pages",
-                  "!@/features/ministry-pages/**"
-                ],
+                "group": ["@/features", "@/features/**", "!@/features/ministry-pages", "!@/features/ministry-pages/**"],
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -458,10 +322,7 @@
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -475,12 +336,7 @@
           {
             "patterns": [
               {
-                "group": [
-                  "@/features",
-                  "@/features/**",
-                  "!@/features/audience",
-                  "!@/features/audience/**"
-                ],
+                "group": ["@/features", "@/features/**", "!@/features/audience", "!@/features/audience/**"],
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -491,10 +347,7 @@
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -508,12 +361,7 @@
           {
             "patterns": [
               {
-                "group": [
-                  "@/features",
-                  "@/features/**",
-                  "!@/features/coaching",
-                  "!@/features/coaching/**"
-                ],
+                "group": ["@/features", "@/features/**", "!@/features/coaching", "!@/features/coaching/**"],
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -524,10 +372,7 @@
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
-              {
-                "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"],
-                "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own."
-              }
+              { "group": ["tailwindcss/colors", "tailwindcss/defaultTheme"], "message": "Colour values resolve to the semantic tokens declared once in src/styles/globals.css. A palette import is a second colour source, so the component states no colour of its own." }
             ]
           }
         ]
@@ -538,28 +383,12 @@
       "rules": {
         "no-restricted-properties": [
           "error",
-          {
-            "object": "Math",
-            "property": "round",
-            "message": "An amount is an exact minor-unit integer, so it never needs rounding. Reaching for Math.round here means the value has left integer arithmetic."
-          },
-          {
-            "property": "toFixed",
-            "message": "Format an amount from its integer minor units and the currency exponent (modules/money/format). toFixed rounds a binary float and silently loses cents."
-          },
-          {
-            "object": "Number",
-            "property": "parseFloat",
-            "message": "An amount arrives as an exact minor-unit integer, never as a float string. Use modules/money to parse an amount or its currency."
-          }
+          { "object": "Math", "property": "round", "message": "An amount is an exact minor-unit integer, so it never needs rounding. Reaching for Math.round here means the value has left integer arithmetic." },
+          { "property": "toFixed", "message": "Format an amount from its integer minor units and the currency exponent (modules/money/format). toFixed rounds a binary float and silently loses cents." },
+          { "object": "Number", "property": "parseFloat", "message": "An amount arrives as an exact minor-unit integer, never as a float string. Use modules/money to parse an amount or its currency." }
         ]
       }
     },
-    {
-      "files": ["**/src/components/scroll-region.tsx"],
-      "rules": {
-        "jsx-a11y/no-noninteractive-tabindex": ["error", { "tags": ["section"] }]
-      }
-    }
+    { "files": ["**/src/components/scroll-region.tsx"], "rules": { "jsx-a11y/no-noninteractive-tabindex": ["error", { "tags": ["section"] }] } }
   ]
 }

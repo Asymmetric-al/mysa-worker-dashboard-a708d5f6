@@ -1,7 +1,4 @@
 "use client";
-/**
- * The one table preset in the application.
- */
 import { useEffect, useId, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, Columns3Icon } from "lucide-react";
 import {
@@ -33,28 +30,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/cn";
 import type { SourceReference } from "@/lib/ids";
-/** The features this preset renders, declared once and exported. */
-export const recordListFeatures = tableFeatures({
-  rowSortingFeature,
-  rowSelectionFeature,
-  columnVisibilityFeature,
-  rowPaginationFeature,
-});
-/** The preset's feature set, for a feature that needs to name it in a type position. */
+export const recordListFeatures = tableFeatures({ rowSortingFeature, rowSelectionFeature, columnVisibilityFeature, rowPaginationFeature });
 export type RecordListFeatureSet = typeof recordListFeatures;
-/** A column definition for this preset's table. */
 export type RecordListColumnDef<TRow extends RowData> = ColumnDef<RecordListFeatureSet, TRow>;
-/** One ordering instruction, as the service applies it. */
 export type SortDescriptor = ColumnSort;
 /** The list state the owner controls, passed straight through to the service query. */
-export interface RecordListQueryState {
-  sort: SortDescriptor[];
-  page: number;
-  pageSize: number;
-  columnVisibility: ColumnVisibilityState;
-}
-/** Props of {@link RecordList}. */
-export interface RecordListProps<TRow extends RowData> {
+export type RecordListQueryState = { sort: SortDescriptor[]; page: number; pageSize: number; columnVisibility: ColumnVisibilityState };
+export type RecordListProps<TRow extends RowData> = {
   label: string;
   columns: ReadonlyArray<RecordListColumnDef<TRow>>;
   rows: ReadonlyArray<TRow>;
@@ -76,20 +58,14 @@ export interface RecordListProps<TRow extends RowData> {
   stickyOffset?: string;
   maxHeight?: string;
   className?: string;
-}
+};
 const SELECT_COLUMN_ID = "__record_list_select";
-
 const ACTIONS_COLUMN_ID = "__record_list_actions";
-
 const DEFAULT_STICKY_OFFSET = "calc(var(--app-shell-sticky-offset, 4rem) + 3rem)";
-
 const LOADING_ROW_MINIMUM = 3;
 const LOADING_ROW_MAXIMUM = 8;
-
 const FALLBACK_PAGE_SIZE = 50;
-
 const HEAD_CELL_CLASS = "sticky top-0 z-10 bg-background";
-
 const MIXED_CHECKBOX_CLASS = cn(
   "data-[indeterminate]:border-primary data-[indeterminate]:bg-primary data-[indeterminate]:text-primary-foreground",
   "data-[indeterminate]:[&_svg]:opacity-0",
@@ -97,12 +73,7 @@ const MIXED_CHECKBOX_CLASS = cn(
   "data-[indeterminate]:before:h-[2px] data-[indeterminate]:before:w-2 data-[indeterminate]:before:rounded-full",
   "data-[indeterminate]:before:bg-primary-foreground data-[indeterminate]:before:content-['']",
 );
-interface ColumnVisibilityItem {
-  readonly id: string;
-  readonly label: string;
-  readonly visible: boolean;
-  readonly canHide: boolean;
-}
+type ColumnVisibilityItem = { readonly id: string; readonly label: string; readonly visible: boolean; readonly canHide: boolean };
 function querySignature(queryState: RecordListQueryState): string {
   const sorting = queryState.sort.map((entry) => `${entry.id}:${entry.desc ? "desc" : "asc"}`).join(",");
   const visibility = Object.keys(queryState.columnVisibility)
@@ -113,35 +84,21 @@ function querySignature(queryState: RecordListQueryState): string {
 }
 function columnLabel<TRow extends RowData>(column: Column<RecordListFeatureSet, TRow, unknown>): string {
   const header = column.columnDef.header;
-  if (typeof header === "string" && header.trim() !== "") {
-    return header;
-  }
-  return column.id;
+  return typeof header === "string" && header.trim() !== "" ? header : column.id;
 }
 function defaultHeader<TRow extends RowData>(context: HeaderContext<RecordListFeatureSet, TRow, unknown>): string {
   return context.column.id;
 }
 function defaultCell<TRow extends RowData>(context: CellContext<RecordListFeatureSet, TRow, unknown>): ReactNode {
   const value = context.renderValue();
-  if (typeof value === "string") {
-    return value;
-  }
-  if (typeof value === "number") {
-    return String(value);
-  }
-  return "";
+  if (typeof value === "string") return value;
+  return typeof value === "number" ? String(value) : "";
 }
 function SortIndicator({ direction }: { readonly direction: SortDirection | false }): ReactElement {
   const Icon = direction === "asc" ? ArrowUpIcon : direction === "desc" ? ArrowDownIcon : ChevronsUpDownIcon;
   return <Icon aria-hidden="true" className={cn("size-3.5 shrink-0", direction === false ? "text-muted-foreground" : "text-foreground")} />;
 }
-interface ColumnVisibilityMenuProps {
-  readonly tableLabel: string;
-  readonly items: ReadonlyArray<ColumnVisibilityItem>;
-  readonly visibleCount: number;
-  readonly onToggle: (columnId: string, visible: boolean) => void;
-  readonly onShowAll: () => void;
-}
+type ColumnVisibilityMenuProps = { readonly tableLabel: string; readonly items: ReadonlyArray<ColumnVisibilityItem>; readonly visibleCount: number; readonly onToggle: (columnId: string, visible: boolean) => void; readonly onShowAll: () => void };
 function ColumnVisibilityMenu({ tableLabel, items, visibleCount, onToggle, onShowAll }: ColumnVisibilityMenuProps): ReactElement {
   return (
     <DropdownMenu>
@@ -154,43 +111,24 @@ function ColumnVisibilityMenu({ tableLabel, items, visibleCount, onToggle, onSho
         <DropdownMenuLabel>Show columns</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {items.map((item) => {
-          // A visible column that is the only one left is disabled, so the rule is visible before
-          // it is hit rather than silently swallowing the click.
+          // A visible column that is the only one left is disabled, so the rule is visible before it is hit rather than silently swallowing the click.
           const hidesLastVisible = item.visible && visibleCount <= 1;
           return (
-            <DropdownMenuCheckboxItem
-              key={item.id}
-              checked={item.visible}
-              disabled={!item.canHide || hidesLastVisible}
-              closeOnClick={false}
-              onCheckedChange={(checked) => {
-                onToggle(item.id, checked);
-              }}
-            >
+            <DropdownMenuCheckboxItem key={item.id} checked={item.visible} disabled={!item.canHide || hidesLastVisible} closeOnClick={false} onCheckedChange={(checked) => onToggle(item.id, checked)}>
               {item.label}
             </DropdownMenuCheckboxItem>
           );
         })}
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={() => {
-            onShowAll();
-          }}
-        >
-          Show all columns
-        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onShowAll()}>Show all columns</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
 const EMPTY_SELECTION: ReadonlyArray<string> = [];
-
 const countFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-
 function normalisePageSize(pageSize: number): number {
-  if (!Number.isFinite(pageSize)) {
-    return FALLBACK_PAGE_SIZE;
-  }
+  if (!Number.isFinite(pageSize)) return FALLBACK_PAGE_SIZE;
   const whole = Math.trunc(pageSize);
   return whole >= 1 ? whole : FALLBACK_PAGE_SIZE;
 }
@@ -222,83 +160,44 @@ export function RecordList<TRow extends RowData>({
   const selectionEnabled = onSelectionChange !== undefined;
   const actionsEnabled = rowActions !== undefined;
   const selectedKeys = selectedIds ?? EMPTY_SELECTION;
-  // The feature's columns, bracketed by the preset's own two cells. Memoized because `useTable`
-  // rebuilds its column instances when the array identity changes, and a feature may well build its
-  // column array inline.
-  const tableColumns = useMemo<RecordListColumnDef<TRow>[]>(() => {
-    const next: RecordListColumnDef<TRow>[] = [];
-    if (selectionEnabled) {
-      next.push({ id: SELECT_COLUMN_ID, enableSorting: false, enableHiding: false });
-    }
-    for (const column of columns) {
-      next.push(column);
-    }
-    if (actionsEnabled) {
-      next.push({ id: ACTIONS_COLUMN_ID, enableSorting: false, enableHiding: false });
-    }
-    return next;
-  }, [columns, selectionEnabled, actionsEnabled]);
-  // The controlled selection slice, derived one way from the ids the owner holds. v9 reads selection
-  // as a record of selected ids, so the identity is a record id and never a row position.
-  const rowSelection = useMemo<RowSelectionState>(() => {
-    const next: RowSelectionState = {};
-    for (const id of selectedKeys) {
-      next[id] = true;
-    }
-    return next;
-  }, [selectedKeys]);
+  // The feature's columns, bracketed by the preset's own two cells. Memoized because `useTable` rebuilds its column instances when the array identity changes, and a feature may well build its column array inline.
+  const tableColumns = useMemo<RecordListColumnDef<TRow>[]>(
+    () => [...(selectionEnabled ? [{ id: SELECT_COLUMN_ID, enableSorting: false, enableHiding: false }] : []), ...columns, ...(actionsEnabled ? [{ id: ACTIONS_COLUMN_ID, enableSorting: false, enableHiding: false }] : [])],
+    [columns, selectionEnabled, actionsEnabled],
+  );
+  // The controlled selection slice, derived one way from the ids the owner holds. v9 reads selection as a record of selected ids, so the identity is a record id and never a row position.
+  const rowSelection = useMemo<RowSelectionState>(() => Object.fromEntries(selectedKeys.map((id) => [id, true])), [selectedKeys]);
   const pageSize = normalisePageSize(queryState.pageSize);
   const table = useTable({
     features: recordListFeatures,
     columns: tableColumns,
     data: rows,
     getRowId,
-    state: {
-      sorting: queryState.sort,
-      columnVisibility: queryState.columnVisibility,
-      rowSelection,
-      pagination: {
-        pageIndex: Math.max(0, Math.trunc(queryState.page) - 1),
-        pageSize,
-      },
-    },
-    // Every stage belongs to the service. Manual pagination plus `rowCount` is also what makes
-    // `getRowCount()` report the whole result, so the pager can never print the size of one page.
+    state: { sorting: queryState.sort, columnVisibility: queryState.columnVisibility, rowSelection, pagination: { pageIndex: Math.max(0, Math.trunc(queryState.page) - 1), pageSize } },
+    // Every stage belongs to the service. Manual pagination plus `rowCount` is also what makes `getRowCount()` report the whole result, so the pager can never print the size of one page.
     manualSorting: true,
     manualPagination: true,
     rowCount: Math.max(0, Math.trunc(rowCount)),
     enableMultiSort: false,
-    // A column states its own `header` and `cell`. Where it does not, the heading falls back to the
-    // column id and the body to the record's own value, so an unlabelled column of blank cells —
-    // which is both a rendering gap and an accessibility failure — cannot happen.
+    // A column states its own `header` and `cell`. Where it does not, the heading falls back to the column id and the body to the record's own value, so an unlabelled column of blank cells — which is both a rendering gap and an accessibility failure — cannot happen.
     defaultColumn: { header: defaultHeader, cell: defaultCell },
   });
-  // Read back through the controlled slice rather than the props, so the pager and the sort
-  // affordances below are describing the state the table actually holds.
+  // Read back through the controlled slice rather than the props, so the pager and the sort affordances below are describing the state the table actually holds.
   const pagination = table.state.pagination;
-  // Every row the body renders and every column it renders for each: read once, so the header, the
-  // selection control, the skeleton and the body all describe the same page.
+  // Every row the body renders and every column it renders for each: read once, so the header, the selection control, the skeleton and the body all describe the same page.
   const bodyRows = table.getRowModel().rows;
   const visibleLeafColumns = table.getVisibleLeafColumns();
   const allOnPageSelected = table.getIsAllPageRowsSelected();
   const someOnPageSelected = table.getIsSomePageRowsSelected();
   const signature = querySignature(queryState);
   const signatureRef = useRef(signature);
-  // A selection belongs to the query that produced it. Once a filter, a sort, a page or a visible
-  // column set changes, the selected ids may name rows the worker can no longer see, so the
-  // selection is cleared rather than carried into an action over invisible records.
+  // A selection belongs to the query that produced it. Once a filter, a sort, a page or a visible column set changes, the selected ids may name rows the worker can no longer see, so the selection is cleared rather than carried into an action over invisible records.
   useEffect(() => {
-    if (signatureRef.current === signature) {
-      return;
-    }
+    if (signatureRef.current === signature) return;
     signatureRef.current = signature;
-    if (onSelectionChange !== undefined && selectedKeys.length > 0) {
-      onSelectionChange([]);
-    }
+    if (onSelectionChange !== undefined && selectedKeys.length > 0) onSelectionChange([]);
   }, [signature, selectedKeys, onSelectionChange]);
-  // The latest query state this component dispatched, so two changes raised in one event — the pager
-  // asking for a new size and then for the page that keeps the first visible row in view — compose
-  // into one next state instead of the second overwriting the first from a stale prop.
+  // The latest query state this component dispatched, so two changes raised in one event — the pager asking for a new size and then for the page that keeps the first visible row in view — compose into one next state instead of the second overwriting the first from a stale prop.
   const latestQuery = useRef(queryState);
   useEffect(() => {
     latestQuery.current = queryState;
@@ -308,9 +207,7 @@ export function RecordList<TRow extends RowData>({
     latestQuery.current = next;
     onQueryStateChange(next);
   }
-  // The header cell is the only place a sort can start. It asks the library for the next order so a
-  // column's own descending-first and no-removal policies are honoured, then dispatches the new
-  // ordering to the service: nothing is sorted in the browser.
+  // The header cell is the only place a sort can start. It asks the library for the next order so a column's own descending-first and no-removal policies are honoured, then dispatches the new ordering to the service: nothing is sorted in the browser.
   function handleSort(column: Column<RecordListFeatureSet, TRow, unknown>): void {
     const next = column.getNextSortingOrder();
     const sort: SortingState = next === false ? [] : [{ id: column.id, desc: next === "desc" }];
@@ -319,62 +216,31 @@ export function RecordList<TRow extends RowData>({
   const visibilityItems: ReadonlyArray<ColumnVisibilityItem> = table
     .getAllLeafColumns()
     .filter((column) => column.id !== SELECT_COLUMN_ID && column.id !== ACTIONS_COLUMN_ID)
-    .map((column) => ({
-      id: column.id,
-      label: columnLabel(column),
-      visible: column.getIsVisible(),
-      canHide: column.getCanHide(),
-    }));
+    .map((column) => ({ id: column.id, label: columnLabel(column), visible: column.getIsVisible(), canHide: column.getCanHide() }));
   const visibleDataColumnCount = visibilityItems.reduce((count, item) => (item.visible ? count + 1 : count), 0);
-  // Hiding a column changes what the worker can see of a selected row but not which rows exist, so
-  // the page stays where it is; the selection still clears, through the query signature above.
+  // Hiding a column changes what the worker can see of a selected row but not which rows exist, so the page stays where it is; the selection still clears, through the query signature above.
   function handleToggleColumn(columnId: string, visible: boolean): void {
-    if (!visible && visibleDataColumnCount <= 1) {
-      return;
-    }
-    // Composed from the latest dispatched state rather than the prop, so two toggles cannot lose
-    // the first: the menu stays open while the reader shows and hides several columns.
-    commitQuery({
-      columnVisibility: { ...latestQuery.current.columnVisibility, [columnId]: visible },
-    });
+    if (!visible && visibleDataColumnCount <= 1) return;
+    // Composed from the latest dispatched state rather than the prop, so two toggles cannot lose the first: the menu stays open while the reader shows and hides several columns.
+    commitQuery({ columnVisibility: { ...latestQuery.current.columnVisibility, [columnId]: visible } });
   }
   function handleShowAllColumns(): void {
     commitQuery({ columnVisibility: {} });
   }
-  function setSelection(next: ReadonlySet<string>): void {
-    if (onSelectionChange === undefined) {
-      return;
-    }
-    onSelectionChange(Array.from(next));
-  }
+  const setSelection = (next: ReadonlySet<string>): void => onSelectionChange?.(Array.from(next));
   function handleRowSelectedChange(rowId: string, selected: boolean): void {
     const next = new Set(selectedKeys);
-    if (selected) {
-      next.add(rowId);
-    } else {
-      next.delete(rowId);
-    }
+    if (selected) next.add(rowId);
+    else next.delete(rowId);
     setSelection(next);
   }
-  // The header control selects the rows this page holds — the rows the worker can actually see —
-  // and leaves anything selected elsewhere untouched. It is never a "select all matching rows"
-  // shortcut, because that would select records the worker has not looked at.
+  // The header control selects the rows this page holds — the rows the worker can actually see — and leaves anything selected elsewhere untouched. It is never a "select all matching rows" shortcut, because that would select records the worker has not looked at.
   function handleSelectAllOnPage(selected: boolean): void {
     const next = new Set(selectedKeys);
-    for (const row of bodyRows) {
-      if (selected) {
-        next.add(row.id);
-      } else {
-        next.delete(row.id);
-      }
-    }
+    for (const row of bodyRows)
+      if (selected) next.add(row.id);
+      else next.delete(row.id);
     setSelection(next);
-  }
-  function handlePageChange(page: number): void {
-    commitQuery({ page });
-  }
-  function handlePageSizeChange(nextPageSize: number): void {
-    commitQuery({ pageSize: nextPageSize });
   }
   const firstDataCellIndex = selectionEnabled ? 1 : 0;
   const loadingRowCount = Math.min(Math.max(LOADING_ROW_MINIMUM, pageSize), LOADING_ROW_MAXIMUM);
@@ -383,33 +249,17 @@ export function RecordList<TRow extends RowData>({
   function rowLabelId(rowIndex: number): string {
     return `${cellIdBase}-row-${rowIndex}-label`;
   }
-  function selectionLabelFor(row: Row<RecordListFeatureSet, TRow>): {
-    "aria-label"?: string;
-    "aria-labelledby"?: string;
-  } {
-    if (rowLabel !== undefined) {
-      const name = rowLabel(row.original);
-      if (name.trim() !== "") {
-        return { "aria-label": `Select ${name}` };
-      }
-    }
-    if (visibleDataColumnCount > 0) {
-      return { "aria-labelledby": rowLabelId(row.index) };
-    }
-    return { "aria-label": `Select row ${row.index + 1}` };
+  function selectionLabelFor(row: Row<RecordListFeatureSet, TRow>): { "aria-label"?: string; "aria-labelledby"?: string } {
+    const name = rowLabel === undefined ? "" : rowLabel(row.original).trim();
+    if (name !== "") return { "aria-label": `Select ${name}` };
+    return visibleDataColumnCount > 0 ? { "aria-labelledby": rowLabelId(row.index) } : { "aria-label": `Select row ${row.index + 1}` };
   }
   const selectedCount = selectedKeys.length;
   const selectionSummary = selectedCount === 0 ? "" : `${countFormat.format(selectedCount)} selected. A selection is not an audience or a consent: the action you choose re-checks every selected row.`;
   if (unavailable !== undefined) {
     return (
       <div data-slot="record-list" className={cn("flex flex-col gap-3", className)}>
-        <StateNotice
-          kind="unavailable"
-          title={`${label} could not be read`}
-          description="No count, total or empty result stands in for the missing data."
-          source={unavailable.source}
-          retry={unavailable.onRetry === undefined ? undefined : { label: "Try again", onClick: unavailable.onRetry }}
-        />
+        <StateNotice kind="unavailable" title={`${label} could not be read`} description="No count, total or empty result stands in for the missing data." source={unavailable.source} retry={unavailable.onRetry === undefined ? undefined : { label: "Try again", onClick: unavailable.onRetry }} />
       </div>
     );
   }
@@ -428,18 +278,14 @@ export function RecordList<TRow extends RowData>({
   );
   return (
     <div data-slot="record-list" className={cn("flex flex-col gap-3", className)}>
-      {/* One persistent polite status region: it reports the busy condition as it starts, instead of
-          mounting a live region that already holds its message, which a screen reader never reads. */}
+      {/* One persistent polite status region: it reports the busy condition as it starts, instead of mounting a live region that already holds its message, which a screen reader never reads. */}
       <output className="sr-only">{isLoading ? `Loading ${itemNoun}.` : ""}</output>
       {showTable ? (
         <>
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            {/* One persistent polite status line: it announces the selection as it changes and,
-                while nothing is selected, states nothing rather than disappearing from the layout. */}
+            {/* One persistent polite status line: it announces the selection as it changes and, while nothing is selected, states nothing rather than disappearing from the layout. */}
             <output className="text-sm text-muted-foreground">{selectionSummary}</output>
-            {visibilityItems.length > 0 ? (
-              <ColumnVisibilityMenu tableLabel={label} items={visibilityItems} visibleCount={visibleDataColumnCount} onToggle={handleToggleColumn} onShowAll={handleShowAllColumns} />
-            ) : null}
+            {visibilityItems.length > 0 ? <ColumnVisibilityMenu tableLabel={label} items={visibilityItems} visibleCount={visibleDataColumnCount} onToggle={handleToggleColumn} onShowAll={handleShowAllColumns} /> : null}
           </div>
           <ScrollRegion label={`${label}, scrollable`} stickyOffset={resolvedStickyOffset} maxHeight={maxHeight} aria-busy={isLoading ? true : undefined}>
             <Table>
@@ -449,24 +295,14 @@ export function RecordList<TRow extends RowData>({
                   <TableRow key={headerGroup.id} className="hover:bg-transparent">
                     {headerGroup.headers.map((header) => {
                       if (header.isPlaceholder) {
-                        // Only a grouped header tree produces placeholders, which this preset cannot
-                        // build; the empty cell keeps the grid aligned if one ever appears.
+                        // Only a grouped header tree produces placeholders, which this preset cannot build; the empty cell keeps the grid aligned if one ever appears.
                         return <TableHead key={header.id} scope="col" className={HEAD_CELL_CLASS} />;
                       }
                       const column = header.column;
                       if (column.id === SELECT_COLUMN_ID) {
                         return (
                           <TableHead key={header.id} scope="col" className={cn(HEAD_CELL_CLASS, "w-10")}>
-                            <Checkbox
-                              className={MIXED_CHECKBOX_CLASS}
-                              checked={allOnPageSelected}
-                              indeterminate={!allOnPageSelected && someOnPageSelected}
-                              disabled={bodyRows.length === 0}
-                              onCheckedChange={(checked) => {
-                                handleSelectAllOnPage(checked);
-                              }}
-                              aria-label={`Select all ${itemNoun} on this page`}
-                            />
+                            <Checkbox className={MIXED_CHECKBOX_CLASS} checked={allOnPageSelected} indeterminate={!allOnPageSelected && someOnPageSelected} disabled={bodyRows.length === 0} onCheckedChange={(checked) => handleSelectAllOnPage(checked)} aria-label={`Select all ${itemNoun} on this page`} />
                           </TableHead>
                         );
                       }
@@ -483,26 +319,8 @@ export function RecordList<TRow extends RowData>({
                       return (
                         <TableHead key={header.id} scope="col" aria-sort={canSort ? ariaSort : undefined} className={HEAD_CELL_CLASS}>
                           {canSort ? (
-                            // The design system's Button, not a click handler on the cell: it is
-                            // reachable by Tab, activated by Enter and Space, and no drag takes
-                            // part in sorting (WCAG 2.5.7). Base UI renders it on a native
-                            // `type="button"`, so it can never submit an enclosing form, and
-                            // `size="sm"` is 32 CSS px tall — above the 24x24 floor (WCAG 2.5.8)
-                            // without changing the header row's height. `-ms-3` cancels the
-                            // button's own `px-3` so the sortable label lines up with the
-                            // non-sortable ones, whose cell supplies that padding. The ring is
-                            // stated explicitly at full strength rather than left to the variant's
-                            // default, so the one focus indicator this control has is never
-                            // halved; the variant now draws the same full-strength ring, and
-                            // tailwind-merge keeps them identical.
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="-ms-3 max-w-full focus-visible:ring-ring"
-                              onClick={() => {
-                                handleSort(column);
-                              }}
-                            >
+                            // The design system's Button, not a click handler on the cell: Tab reaches it, Enter and Space activate it, and no drag takes part in sorting (WCAG 2.5.7); `size="sm"` is 32 CSS px, above the 24x24 floor of 2.5.8, and `-ms-3` aligns the label with the non-sortable headings.
+                            <Button variant="ghost" size="sm" className="-ms-3 max-w-full focus-visible:ring-ring" onClick={() => handleSort(column)}>
                               <table.FlexRender header={header} />
                               <SortIndicator direction={sortDirection} />
                             </Button>
@@ -532,13 +350,7 @@ export function RecordList<TRow extends RowData>({
                           if (cell.column.id === SELECT_COLUMN_ID) {
                             return (
                               <TableCell key={cell.id} className="w-10">
-                                <Checkbox
-                                  checked={row.getIsSelected()}
-                                  onCheckedChange={(checked) => {
-                                    handleRowSelectedChange(row.id, checked);
-                                  }}
-                                  {...selectionLabelFor(row)}
-                                />
+                                <Checkbox checked={row.getIsSelected()} onCheckedChange={(checked) => handleRowSelectedChange(row.id, checked)} {...selectionLabelFor(row)} />
                               </TableCell>
                             );
                           }
@@ -560,16 +372,7 @@ export function RecordList<TRow extends RowData>({
               </TableBody>
             </Table>
           </ScrollRegion>
-          <PaginationBar
-            total={table.getRowCount()}
-            page={pagination.pageIndex + 1}
-            pageSize={pagination.pageSize}
-            pageSizeOptions={pageSizeOptions}
-            onPageChange={handlePageChange}
-            onPageSizeChange={handlePageSizeChange}
-            itemNoun={itemNoun}
-            disabled={isLoading}
-          />
+          <PaginationBar total={table.getRowCount()} page={pagination.pageIndex + 1} pageSize={pagination.pageSize} pageSizeOptions={pageSizeOptions} onPageChange={(page) => commitQuery({ page })} onPageSizeChange={(nextPageSize) => commitQuery({ pageSize: nextPageSize })} itemNoun={itemNoun} disabled={isLoading} />
         </>
       ) : (
         emptyNotice

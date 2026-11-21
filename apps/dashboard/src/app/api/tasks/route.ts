@@ -1,19 +1,14 @@
-/**
- * The browser transport for the one task model.
- */
+/** The browser transport for the one task model. */
 import { z } from "zod";
 import { assertNever } from "@/lib/result";
-import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse, type MutationInput, type MutationOutcome } from "@/modules/data-service";
+import { mutationInputSchema, mutations, outcomeFromError, reads, refusedRead, toResponse } from "@/modules/data-service";
 import { isResolvableTimeZone } from "@/modules/time/civil";
+import { dispatch, jsonBodyOf, operationIdentityOf } from "../handler";
 // The store writes through node:fs, so this handler never runs on the edge runtime.
 export const runtime = "nodejs";
 // The read resolves the development session and evaluates the scenario clock once per request.
 export const dynamic = "force-dynamic";
-
-const UNIDENTIFIED_ATTEMPT = "unidentified-attempt";
-
 const READ_ATTEMPT_ID = "read";
-
 const MESSAGES = {
   titleRequired: "Give this task a title, because a title is the one thing a task cannot do without.",
   titleTooLong: "Shorten the title to a phrase, so it reads at a glance in a list.",
@@ -39,19 +34,14 @@ const MESSAGES = {
 } as const;
 // Lengths the composer and these schemas share
 const TITLE_MAX_LENGTH = 200;
-
 const CATEGORY_MAX_LENGTH = 60;
-
 const NOTE_MAX_LENGTH = 2000;
-
 function codePointLength(value: string): number {
   return Array.from(value).length;
 }
 // Field shapes the five task mutations declare
 const taskIdSchema = z.string({ error: MESSAGES.taskIdRequired }).trim().min(1, MESSAGES.taskIdRequired);
-
 const linkIdSchema = z.string({ error: MESSAGES.linkInvalid }).trim().min(1, MESSAGES.linkInvalid);
-
 const titleSchema = z
   .string({ error: MESSAGES.titleRequired })
   .trim()
@@ -80,17 +70,11 @@ const noteSchema = z
     }
   });
 const civilDateSchema = z.iso.date({ error: MESSAGES.dueDateInvalid });
-
 const timeZoneSchema = z.string({ error: MESSAGES.timeZoneInvalid }).trim().min(1, MESSAGES.timeZoneInvalid);
-
 const TASK_KINDS = ["default", "meeting"] as const;
-
 const taskKindSchema = z.enum(TASK_KINDS, { error: MESSAGES.kindInvalid });
-
 const PLANNED_CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/u;
-
 const PLANNED_DATE_TIME_PATTERN = /^(\d{4}-\d{2}-\d{2})T((?:[01]\d|2[0-3]):[0-5]\d)(?::[0-5]\d)?$/u;
-
 const plannedTimeSchema = z
   .string({ error: MESSAGES.plannedTimeInvalid })
   .trim()
@@ -104,22 +88,13 @@ const plannedTimeSchema = z
       ctx.addIssue({ code: "custom", message: MESSAGES.plannedTimeInvalid });
     }
   });
-type PlannedPairing = {
-  readonly kind?: "default" | "meeting" | undefined;
-  readonly dueOn?: string | null | undefined;
-  readonly plannedTime?: string | null | undefined;
-  readonly timeZone?: string | null | undefined;
-};
+type PlannedPairing = { readonly kind?: "default" | "meeting" | undefined; readonly dueOn?: string | null | undefined; readonly plannedTime?: string | null | undefined; readonly timeZone?: string | null | undefined };
 function refinePlannedPairing(value: PlannedPairing, ctx: z.RefinementCtx): void {
   const hasTime = value.plannedTime !== undefined && value.plannedTime !== null;
   const hasZone = value.timeZone !== undefined && value.timeZone !== null;
   if ((value.kind ?? "default") === "default") {
     if (hasTime || hasZone) {
-      ctx.addIssue({
-        code: "custom",
-        message: MESSAGES.plannedTimeOnlyForMeeting,
-        path: ["plannedTime"],
-      });
+      ctx.addIssue({ code: "custom", message: MESSAGES.plannedTimeOnlyForMeeting, path: ["plannedTime"] });
     }
     return;
   }
@@ -128,11 +103,7 @@ function refinePlannedPairing(value: PlannedPairing, ctx: z.RefinementCtx): void
     return;
   }
   if (!hasTime && hasZone) {
-    ctx.addIssue({
-      code: "custom",
-      message: MESSAGES.plannedTimeRequiresZone,
-      path: ["plannedTime"],
-    });
+    ctx.addIssue({ code: "custom", message: MESSAGES.plannedTimeRequiresZone, path: ["plannedTime"] });
     return;
   }
   const plannedDay = value.plannedTime === undefined || value.plannedTime === null ? undefined : PLANNED_DATE_TIME_PATTERN.exec(value.plannedTime)?.[1];
@@ -176,38 +147,22 @@ const editTaskPayloadSchema = z
       refinePlannedPairing(value, ctx);
     }
   });
-const completeTaskPayloadSchema = z.strictObject({
-  operation: z.literal("completeTask"),
-  taskId: taskIdSchema,
-});
-const reopenTaskPayloadSchema = z.strictObject({
-  operation: z.literal("reopenTask"),
-  taskId: taskIdSchema,
-});
-const cancelTaskPayloadSchema = z.strictObject({
-  operation: z.literal("cancelTask"),
-  taskId: taskIdSchema,
-  confirmed: z.literal(true, { error: MESSAGES.cancellationNotConfirmed }),
-});
+const completeTaskPayloadSchema = z.strictObject({ operation: z.literal("completeTask"), taskId: taskIdSchema });
+const reopenTaskPayloadSchema = z.strictObject({ operation: z.literal("reopenTask"), taskId: taskIdSchema });
+const cancelTaskPayloadSchema = z.strictObject({ operation: z.literal("cancelTask"), taskId: taskIdSchema, confirmed: z.literal(true, { error: MESSAGES.cancellationNotConfirmed }) });
 // One body schema per mutation: the four-field envelope, with that mutation's own payload
 const createTaskBodySchema = mutationInputSchema(createTaskPayloadSchema);
 const editTaskBodySchema = mutationInputSchema(editTaskPayloadSchema);
 const completeTaskBodySchema = mutationInputSchema(completeTaskPayloadSchema);
 const reopenTaskBodySchema = mutationInputSchema(reopenTaskPayloadSchema);
 const cancelTaskBodySchema = mutationInputSchema(cancelTaskPayloadSchema);
-
 const TASK_OPERATIONS = ["createTask", "editTask", "completeTask", "reopenTask", "cancelTask"] as const;
 // The read side: the query grammar this transport admits
 type TaskListQuery = Parameters<typeof reads.work.listTasks>[0];
-
 type TaskSortInstruction = NonNullable<TaskListQuery["sort"]>[number];
-
 const TASK_LIST_NAMES = ["today", "upcoming", "overdue", "all", "undated"] as const satisfies readonly TaskListQuery["list"][];
-
 const TASK_SORT_FIELDS = ["dueOn", "title", "category", "status"] as const satisfies readonly TaskSortInstruction["field"][];
-
 const TASK_SORT_DIRECTIONS = ["asc", "desc"] as const satisfies readonly TaskSortInstruction["direction"][];
-
 function isTaskSortField(value: string): value is TaskSortInstruction["field"] {
   return TASK_SORT_FIELDS.some((admitted) => admitted === value);
 }
@@ -227,7 +182,6 @@ const displayTimeZoneSchema = z
     }
   });
 const listNameSchema = z.enum(TASK_LIST_NAMES, { error: MESSAGES.listInvalid });
-
 const sortSchema = z.array(z.string()).transform((tokens: readonly string[], context): readonly TaskSortInstruction[] => {
   const instructions: TaskSortInstruction[] = [];
   for (const token of tokens) {
@@ -243,121 +197,54 @@ const sortSchema = z.array(z.string()).transform((tokens: readonly string[], con
   }
   return instructions;
 });
-const taskListQuerySchema = z.object({
-  displayTimeZone: displayTimeZoneSchema,
-  list: listNameSchema.optional(),
-  sort: sortSchema.optional(),
-});
+const taskListQuerySchema = z.object({ displayTimeZone: displayTimeZoneSchema, list: listNameSchema.optional(), sort: sortSchema.optional() });
 type TaskListQueryParams = z.output<typeof taskListQuerySchema>;
-
 function rawTaskListParams(search: URLSearchParams): Record<string, unknown> {
   const sort = search.getAll("sort").flatMap((value) => value.split(","));
-  return {
-    displayTimeZone: search.get("displayTimeZone") ?? undefined,
-    list: search.get("list") ?? undefined,
-    sort: sort.length === 0 ? undefined : sort,
-  };
+  return { displayTimeZone: search.get("displayTimeZone") ?? undefined, list: search.get("list") ?? undefined, sort: sort.length === 0 ? undefined : sort };
 }
 function taskListQueryOf(search: URLSearchParams, params: TaskListQueryParams): TaskListQuery {
   const page = search.get("page");
   const pageSize = search.get("pageSize");
-  return {
-    list: params.list ?? "all",
-    displayTimeZone: params.displayTimeZone,
-    page: page === null ? undefined : Number(page),
-    pageSize: pageSize === null ? undefined : Number(pageSize),
-    ...(params.sort === undefined ? {} : { sort: params.sort }),
-  };
+  return { list: params.list ?? "all", displayTimeZone: params.displayTimeZone, page: page === null ? undefined : Number(page), pageSize: pageSize === null ? undefined : Number(pageSize), ...(params.sort === undefined ? {} : { sort: params.sort }) };
 }
 // The second read on this path: the dated agenda, which the request names rather than the transport guessing
 type AgendaReadQuery = Parameters<typeof reads.work.readAgenda>[0];
-
 const READ_PARAM = "read";
-
 const AGENDA_READ = "readAgenda";
-
 const agendaQuerySchema = z.object({ displayTimeZone: displayTimeZoneSchema });
-
 type AgendaQueryParams = z.output<typeof agendaQuerySchema>;
-
 function rawAgendaParams(search: URLSearchParams): Record<string, unknown> {
   return { displayTimeZone: search.get("displayTimeZone") ?? undefined };
 }
 function agendaQueryOf(search: URLSearchParams, params: AgendaQueryParams): AgendaReadQuery {
   const page = search.get("page");
   const pageSize = search.get("pageSize");
-  return {
-    displayTimeZone: params.displayTimeZone,
-    page: page === null ? undefined : Number(page),
-    pageSize: pageSize === null ? undefined : Number(pageSize),
-  };
+  return { displayTimeZone: params.displayTimeZone, page: page === null ? undefined : Number(page), pageSize: pageSize === null ? undefined : Number(pageSize) };
 }
 // The write side: one named mutation per request
-const attemptIdentitySchema = z.object({ operationId: z.string() });
-
-const discriminantSchema = z.object(
-  {
-    payload: z.object({ operation: z.enum(TASK_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }),
-  },
-  { error: MESSAGES.bodyNotJson },
-);
-async function jsonBodyOf(request: Request): Promise<unknown> {
-  try {
-    const body: unknown = await request.json();
-    return body;
-  } catch {
-    return undefined;
-  }
-}
-function operationIdentityOf(raw: unknown): string {
-  const identity = attemptIdentitySchema.safeParse(raw);
-  return identity.success && identity.data.operationId.length > 0 ? identity.data.operationId : UNIDENTIFIED_ATTEMPT;
-}
-function payloadOf<T extends { readonly operation: string }>(payload: T): Omit<T, "operation"> {
-  const { operation: _discriminant, ...forwarded } = payload;
-  return forwarded;
-}
-async function dispatch<P extends { readonly operation: string }>(
-  schema: z.ZodType<MutationInput<P>>,
-  raw: unknown,
-  operationId: string,
-  run: (input: MutationInput<Omit<P, "operation">>) => Promise<MutationOutcome>,
-): Promise<Response> {
-  const parsed = schema.safeParse(raw);
-  if (!parsed.success) {
-    return toResponse(outcomeFromError(operationId, parsed.error));
-  }
-  try {
-    return toResponse(await run({ ...parsed.data, payload: payloadOf(parsed.data.payload) }));
-  } catch (error) {
-    return toResponse(outcomeFromError(operationId, error));
-  }
-}
+const discriminantSchema = z.object({ payload: z.object({ operation: z.enum(TASK_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.bodyNotJson });
 // The two verbs
 /** One page of one task list or of the dated agenda, exactly as the request asked for it. */
 export async function GET(request: Request): Promise<Response> {
   const search = new URL(request.url).searchParams;
   try {
-    // The agenda shares this job's path, so the request states which read it asks for and a request
-    // that states none stays the task list it has always been.
+    // The agenda shares this job's path, so the request states which read it asks for and a request that states none stays the task list it has always been.
     if (search.get(READ_PARAM) === AGENDA_READ) {
       const agenda = agendaQuerySchema.safeParse(rawAgendaParams(search));
       if (!agenda.success) {
-        return toResponse(outcomeFromError(READ_ATTEMPT_ID, agenda.error));
+        return toResponse(refusedRead(READ_ATTEMPT_ID, agenda.error));
       }
       return toResponse(await reads.work.readAgenda(agendaQueryOf(search, agenda.data)));
     }
     const grammar = taskListQuerySchema.safeParse(rawTaskListParams(search));
     if (!grammar.success) {
-      // A value this read does not admit is a request-level refusal, answered with the same
-      // per-field `invalid` outcome the five mutations answer, because no source behind the read
-      // failed and a caller has to be told which field to correct.
-      return toResponse(outcomeFromError(READ_ATTEMPT_ID, grammar.error));
+      // A value this read does not admit is a request-level refusal, answered with the same per-field refusal the five mutations answer, because no source behind the read failed and a caller has to be told which field to correct.
+      return toResponse(refusedRead(READ_ATTEMPT_ID, grammar.error));
     }
     return toResponse(await reads.work.listTasks(taskListQueryOf(search, grammar.data)));
   } catch (error) {
-    // One mapper knows the difference between a store outage, a session that cannot be established
-    // and a lost acknowledgement, so a thrown fault is answered rather than escaping the boundary.
+    // One mapper knows the difference between a store outage, a session that cannot be established and a lost acknowledgement, so a thrown fault is answered rather than escaping the boundary.
     return toResponse(outcomeFromError(READ_ATTEMPT_ID, error));
   }
 }
@@ -371,18 +258,17 @@ export async function POST(request: Request): Promise<Response> {
   }
   switch (claimed.data.payload.operation) {
     case "createTask":
-      return dispatch(createTaskBodySchema, raw, operationId, mutations.work.createTask);
+      return dispatch(createTaskBodySchema, raw, operationId, "operation", mutations.work.createTask);
     case "editTask":
-      return dispatch(editTaskBodySchema, raw, operationId, mutations.work.editTask);
+      return dispatch(editTaskBodySchema, raw, operationId, "operation", mutations.work.editTask);
     case "completeTask":
-      return dispatch(completeTaskBodySchema, raw, operationId, mutations.work.completeTask);
+      return dispatch(completeTaskBodySchema, raw, operationId, "operation", mutations.work.completeTask);
     case "reopenTask":
-      return dispatch(reopenTaskBodySchema, raw, operationId, mutations.work.reopenTask);
+      return dispatch(reopenTaskBodySchema, raw, operationId, "operation", mutations.work.reopenTask);
     case "cancelTask":
-      return dispatch(cancelTaskBodySchema, raw, operationId, mutations.work.cancelTask);
+      return dispatch(cancelTaskBodySchema, raw, operationId, "operation", mutations.work.cancelTask);
     default:
-      // Unreachable: the five names above are the closed set the discriminant schema admits, so a
-      // sixth mutation fails to compile at this call instead of reaching the runtime.
+      // Unreachable: the five names above are the closed set the discriminant schema admits, so a sixth mutation fails to compile at this call instead of reaching the runtime.
       return assertNever(claimed.data.payload.operation, "Unhandled task mutation");
   }
 }

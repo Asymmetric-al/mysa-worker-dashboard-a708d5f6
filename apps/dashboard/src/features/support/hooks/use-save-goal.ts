@@ -1,8 +1,5 @@
 "use client";
-/**
- * The browser transport for `saveGoal` — the one financial write this application has — and the one
- * place a goal edit leaves the page.
- */
+/** The browser transport for `saveGoal` — the one financial write this application has — and the one place a goal edit leaves the page. */
 import { useMutation, useQueryClient, type UseMutationResult } from "@tanstack/react-query";
 import { useRef } from "react";
 import type { input as SchemaInput } from "zod";
@@ -12,11 +9,8 @@ import type { MutationInput, Scope } from "@/modules/data-service/envelope";
 import { invalid, isOutcome, unknown as unknownOutcome, type MutationOutcome } from "@/modules/data-service/outcome";
 import { goalSavePayloadSchema, type GoalSavePayload } from "../schemas";
 const SAVE_GOAL_PATH = "/api/support/goal";
-
 const REFRESHED_JOBS = ["goal", "overview", "report"] as const;
-/** The payload a caller submits: the goal form's own values, before the amount becomes money. */
 export type GoalSaveFormPayload = SchemaInput<typeof goalSavePayloadSchema>;
-/** Everything one save presents, which is the mutation input with the payload in its form-shaped form and the attempt identity optional because this hook can mint it. */
 export interface SaveGoalVariables {
   readonly scope: Scope;
   readonly expectedRevision: string;
@@ -64,20 +58,10 @@ export function useSaveGoal(): UseMutationResult<MutationOutcome, Error, SaveGoa
       if (!checked.success) {
         return invalid({ operationId: identity.operationId, fields: checked.error });
       }
-      const input: MutationInput<GoalSavePayload> = {
-        operationId: identity.operationId,
-        scope: variables.scope,
-        expectedRevision: variables.expectedRevision,
-        payload: checked.data,
-      };
+      const input: MutationInput<GoalSavePayload> = { operationId: identity.operationId, scope: variables.scope, expectedRevision: variables.expectedRevision, payload: checked.data };
       let response: Response;
       try {
-        response = await fetch(SAVE_GOAL_PATH, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          credentials: "same-origin",
-          body: JSON.stringify(input),
-        });
+        response = await fetch(SAVE_GOAL_PATH, { method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin", body: JSON.stringify(input) });
       } catch {
         return unknownOutcome({ operationId: identity.operationId });
       }

@@ -1,6 +1,4 @@
-/**
- * The transport layer's one declaration of the development-session cookie.
- */
+/** The transport layer's one declaration of the development-session cookie. */
 import type { NextRequest } from "next/server";
 /** The cookie name the development session travels under. */
 export const SESSION_COOKIE_NAME = "dashboard_session";

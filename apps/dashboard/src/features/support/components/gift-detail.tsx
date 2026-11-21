@@ -1,15 +1,11 @@
 "use client";
-/**
- * The gift detail: one row of received support at the grain the source reports it, with its split,
- * its correction and its provenance stated rather than inferred, the coverage and as-of the read ran
- * at — and the one follow-up it may lead to, an ordinary task that changes nothing about the gift.
- */
+/** The gift detail: one row of received support at the grain the source reports it, with its split, its correction and its provenance stated rather than inferred, the coverage and as-of the read ran … */
 import { ArrowLeftIcon } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import ActionReview, { type MutationSubmit } from "@/components/action-review";
-import { fieldErrorsFromInvalid, FormField, type FieldErrorLookup } from "@/components/form-field";
+import { fieldErrorsFromInvalid, FormField, refusalSummary, type FieldErrorLookup } from "@/components/form-field";
 import StateNotice from "@/components/state-notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,26 +30,20 @@ type LedgerRow = GiftsEnvelope["data"]["report"]["rows"][number];
 type RowGrain = "gift" | "allocation";
 /** The words this record states in its own voice */
 const RECORD_HEADING = "Gift record";
-const RECORD_LEAD =
-  "One row of received support, stated at the grain, in the currency and with the provenance the source reports for it. Nothing on this record is recomputed: every figure is the one the read returned.";
+const RECORD_LEAD = "One row of received support, stated at the grain, in the currency and with the provenance the source reports for it. Nothing on this record is recomputed: every figure is the one the read returned.";
 const RETURN_NAV_LABEL = "Return path";
 const RETURN_LINK_LABEL = "Back to the gifts ledger, with the filters, sort and page you came from";
 const GRAIN_HEADING = "What this row is";
 const GRAIN_ALLOCATION_LEAD =
-  "This row is one authorised allocation of a gift. A gift split between several destinations is " +
-  "reported once per allocation, and only the allocation this read is authorised to see is shown " +
-  "here: no other allocation of the same gift appears on this record, and none of them is added " +
-  "together with it.";
-const GRAIN_GIFT_LEAD =
-  "This row is a whole gift that carries no allocation, so it is the gift itself rather than a part of one. Nothing here divides it into allocations and no part of it is shown in place of the whole.";
+  "This row is one authorised allocation of a gift. A gift split between several destinations is " + "reported once per allocation, and only the allocation this read is authorised to see is shown " + "here: no other allocation of the same gift appears on this record, and none of them is added " + "together with it.";
+const GRAIN_GIFT_LEAD = "This row is a whole gift that carries no allocation, so it is the gift itself rather than a part of one. Nothing here divides it into allocations and no part of it is shown in place of the whole.";
 const GRAIN_RULE_POINTER = "The snapshot statement below states the grain rule this family reports on, including why a view that holds both grain levels counts the gift once.";
 const GRAIN_SIBLING_NOTE = "Another row of the same gift may exist in the ledger. Each row is its own record, and this one neither totals the others nor stands in for them.";
 const CORRECTION_HEADING = "This row is a correction";
 const CORRECTION_AGAINST_HEADING = "A correction against this row is also in this result";
 const CORRECTION_BADGE = "Correction";
 const PROVENANCE_HEADING = "Provenance";
-const PROVENANCE_LEAD =
-  "The record this row came from, as one opaque reference. It is printed exactly as the source gave it: it is never linked, never parsed, and never compared with another reference to decide what it means.";
+const PROVENANCE_LEAD = "The record this row came from, as one opaque reference. It is printed exactly as the source gave it: it is never linked, never parsed, and never compared with another reference to decide what it means.";
 const SNAPSHOT_HEADING = "Basis, coverage and as-of";
 const SNAPSHOT_NOTE = "Every figure on this record was read once, at the snapshot stated here. Two surfaces compare only when their coverage and their as-of instant agree.";
 const FOLLOW_UP_HEADING = "Follow up on this gift";
@@ -73,15 +63,8 @@ const CATEGORY_DESCRIPTION = "Your own short label, such as \u201cThank you\u201
 const DUE_LABEL = "Due date";
 const DUE_DESCRIPTION = "The calendar day you intend to do this on. Leave it empty for a task with no date: a due date is not an appointment, and a planned day proves nothing about contact.";
 const PARTNER_LABEL = "Partner reference";
-const PARTNER_DESCRIPTION =
-  "The partner record this task is about, carried from the gift as an identifier. Clear it for a task that names no record. It is never an amount and never a guess at who gave.";
-const FIELD_LABELS: Readonly<Record<string, string | undefined>> = {
-  title: TITLE_LABEL,
-  category: CATEGORY_LABEL,
-  dueOn: DUE_LABEL,
-  partnerId: PARTNER_LABEL,
-  operation: "Request",
-};
+const PARTNER_DESCRIPTION = "The partner record this task is about, carried from the gift as an identifier. Clear it for a task that names no record. It is never an amount and never a guess at who gave.";
+const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { title: TITLE_LABEL, category: CATEGORY_LABEL, dueOn: DUE_LABEL, partnerId: PARTNER_LABEL, operation: "Request" };
 const LOADING_TEXT = "Reading this gift, its grain and the coverage it falls in.";
 const LEDGER_HREF = "/support/gifts";
 const SOURCE_SYSTEM_LABEL = "Source system";
@@ -95,34 +78,12 @@ const DESIGNATION_LABEL = "Designation";
 const DESIGNATION_UNSTATED = "The source states no designation for this gift.";
 const STATE_LABEL = "This figure\u2019s state";
 const DATE_UNSTATED = "The source did not establish when this gift was given, so no date stands in its place.";
-const PRECISION_LEAD: Readonly<Record<LedgerRow["datePrecision"], string>> = {
-  date: "The source states this as a precise day.",
-  approximate: "The source states this date approximately, so it is a guide rather than a recorded day.",
-  unknown: "The source did not establish this date, so it is not shown as one.",
-};
-const GRAIN_WORD: Readonly<Record<RowGrain, string>> = {
-  gift: "Gift grain",
-  allocation: "Allocation grain",
-};
-const VALUE_STATE_WORD: Readonly<Record<ValueState, string>> = {
-  value: "Recorded amount",
-  zero: "Recorded zero",
-  unknown: "Unknown amount",
-  withheld: "Withheld",
-  unavailable: "Source unavailable",
-  "incomplete-subtotal": "Incomplete subtotal",
-};
-const DECIMAL_PLACES_WORD: Readonly<Record<number, string>> = {
-  0: "no decimal places",
-  1: "one decimal place",
-  2: "two decimal places",
-  3: "three decimal places",
-};
+const PRECISION_LEAD: Readonly<Record<LedgerRow["datePrecision"], string>> = { date: "The source states this as a precise day.", approximate: "The source states this date approximately, so it is a guide rather than a recorded day.", unknown: "The source did not establish this date, so it is not shown as one." };
+const GRAIN_WORD: Readonly<Record<RowGrain, string>> = { gift: "Gift grain", allocation: "Allocation grain" };
+const VALUE_STATE_WORD: Readonly<Record<ValueState, string>> = { value: "Recorded amount", zero: "Recorded zero", unknown: "Unknown amount", withheld: "Withheld", unavailable: "Source unavailable", "incomplete-subtotal": "Incomplete subtotal" };
+const DECIMAL_PLACES_WORD: Readonly<Record<number, string>> = { 0: "no decimal places", 1: "one decimal place", 2: "two decimal places", 3: "three decimal places" };
 const ATTRIBUTION_ANONYMOUS = "The source records this support as anonymous, so no partner is named here and none is inferred from another record.";
-const ATTRIBUTION_UNRESOLVED =
-  "The source supplied no attribution for this support. That is an absent attribution rather than " +
-  "an anonymous gift and rather than a missing record: the amount stands, and the partner it belongs " +
-  "to is not known here.";
+const ATTRIBUTION_UNRESOLVED = "The source supplied no attribution for this support. That is an absent attribution rather than " + "an anonymous gift and rather than a missing record: the amount stands, and the partner it belongs " + "to is not known here.";
 /** What one field of the record states */
 function Fact({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement {
   return (
@@ -206,14 +167,7 @@ function locateRow(envelope: GiftsEnvelope | null, giftId: string): { readonly r
 function correctionAgainst(rows: readonly LedgerRow[], row: LedgerRow): LedgerRow | undefined {
   return rows.find((candidate) => candidate.refundOf !== undefined && candidate.refundOf === row.giftRowId);
 }
-/**
- * The state the row's amount is rendered in.
- *
- * The read records `value` or `zero` for a row amount and derives `incomplete-subtotal` from partial
- * coverage. Neither can express an amount whose currency the source did not identify, because at row
- * grain the currency is the only evidence of it, so such a row is stated as `unknown` here rather
- * than printed at a precision or under a code the source never gave.
- */
+/** The state the row's amount is rendered in. */
 function amountStateOf(row: LedgerRow, index: number, valueStates: Readonly<Record<string, ValueState>>): ValueState {
   if (exponentOf(row.amount.currency) === undefined) {
     return "unknown";
@@ -236,20 +190,14 @@ function withoutField(lookup: FieldErrorLookup | null, path: string): FieldError
 function messagesFor(lookup: FieldErrorLookup | null, path: string): readonly string[] | undefined {
   return lookup === null ? undefined : lookup.byField[path];
 }
-/**
- * The precision this amount is stated at, taken from the currency the source named rather than from a
- * precision this surface would otherwise have to assume.
- */
+/** The precision this amount is stated at, taken from the currency the source named rather than from a precision this surface would otherwise have to assume. */
 function CurrencyPrecision({ currency }: { readonly currency: string }): ReactElement {
   const exponent = exponentOf(currency);
   if (exponent === undefined) {
     return currency === UNKNOWN_CURRENCY ? (
       <>The source identified no currency for this amount, so no code is shown here, nothing is assumed in its place, and the amount cannot be totalled or compared with another.</>
     ) : (
-      <>
-        The source named a currency this application holds no exponent for, so the amount is stated as unknown rather than at a precision this surface would have had to assume. The code the source
-        used is not repeated here, because repeating it would present it as one this record can state.
-      </>
+      <>The source named a currency this application holds no exponent for, so the amount is stated as unknown rather than at a precision this surface would have had to assume. The code the source used is not repeated here, because repeating it would present it as one this record can state.</>
     );
   }
   const places = DECIMAL_PLACES_WORD[exponent] ?? `${String(exponent)} decimal places`;
@@ -289,12 +237,12 @@ export function GiftDetail({ scope, giftId, locale, dir, ledgerQuery, className 
   const [lastOutcome, setLastOutcome] = useState<MutationOutcome | null>(null);
   const followUp = useFollowUpTask();
   const carriedQuery = useMemo<GiftsQuery>(() => ledgerQuery ?? parseGiftsQuery(search), [ledgerQuery, search]);
-  // The read is the ledger read this record's address carries, without the reference that names the
-  // row. Asking for the query the ledger asks for means an opened ledger already holds the envelope
-  // this record renders, and the return path restores exactly the view the worker left. A row this
-  // page does not hold — because the address states a different page or filter — is reported as the
-  // read reports it rather than fetched through a second, wider read.
-  const readQuery = useMemo<GiftsQuery>(() => ({ ...carriedQuery, giftId: undefined }), [carriedQuery]);
+  // The read is the ledger read this record's address carries, read exactly as the address states it.
+  // Asking for the query the ledger asks for means an opened ledger already holds the envelope this
+  // record renders, and the return path restores exactly the view the worker left. A row this page
+  // does not hold — because the address states a different page or filter — is reported as the read
+  // reports it rather than fetched through a second, wider read.
+  const readQuery = useMemo<GiftsQuery>(() => carriedQuery, [carriedQuery]);
   const gifts = useGifts({ scope, query: readQuery });
   const returnHref = useMemo(() => ledgerHrefOf(readQuery), [readQuery]);
   const settle = useCallback((outcome: MutationOutcome): void => {
@@ -325,40 +273,28 @@ export function GiftDetail({ scope, giftId, locale, dir, ledgerQuery, className 
   if (gifts.isError || read === undefined) {
     return (
       <Frame dir={dir} className={className} returnHref={returnHref}>
-        <StateNotice
-          kind="unavailable"
-          headingLevel={1}
-          title="This gift could not be read"
-          description="The ledger read behind this record did not answer, so no amount is shown: this is an outage rather than a zero and rather than an empty record."
-          retry={{ label: "Read this gift again", onClick: retryRead }}
-        />
+        <StateNotice kind="unavailable" headingLevel={1} title="This gift could not be read" description="The ledger read behind this record did not answer, so no amount is shown: this is an outage rather than a zero and rather than an empty record." retry={{ label: "Read this gift again", onClick: retryRead }} />
       </Frame>
     );
   }
   if (read.kind === "denied") {
     return (
       <Frame dir={dir} className={className} returnHref={returnHref}>
-        <StateNotice
-          kind="denied"
-          headingLevel={1}
-          title="This gift is not available in this context"
-          reasonCode={read.denied.reasonCode}
-          description="The read was refused before it enumerated anything, so nothing here states whether a record exists, what it holds, who it is attributed to or what it was for."
-        />
+        <StateNotice kind="denied" headingLevel={1} title="This gift is not available in this context" reasonCode={read.denied.reasonCode} description="The read was refused before it enumerated anything, so nothing here states whether a record exists, what it holds, who it is attributed to or what it was for." />
       </Frame>
     );
   }
   if (read.kind === "unavailable") {
     return (
       <Frame dir={dir} className={className} returnHref={returnHref}>
-        <StateNotice
-          kind="unavailable"
-          headingLevel={1}
-          title="The source behind this gift is unavailable"
-          source={read.unavailable.source}
-          description={read.unavailable.guidance}
-          retry={{ label: "Read this gift again", onClick: retryRead }}
-        />
+        <StateNotice kind="unavailable" headingLevel={1} title="The source behind this gift is unavailable" source={read.unavailable.source} description={read.unavailable.guidance} retry={{ label: "Read this gift again", onClick: retryRead }} />
+      </Frame>
+    );
+  }
+  if (read.kind === "refused") {
+    return (
+      <Frame dir={dir} className={className} returnHref={returnHref}>
+        <StateNotice kind="refused" headingLevel={1} title="This gift's request was refused" description={refusalSummary(read.refused)} />
       </Frame>
     );
   }
@@ -447,8 +383,7 @@ export function GiftDetail({ scope, giftId, locale, dir, ledgerQuery, className 
             <Fact label={ATTRIBUTION_LABEL}>
               {row.attribution.kind === "partner" ? (
                 <>
-                  The source attributes this row to one partner record: <bdi className="mono-identifier">{row.attribution.partnerId}</bdi>. An equal-looking name or address in another record is not
-                  this reference, and nothing here joins the two.
+                  The source attributes this row to one partner record: <bdi className="mono-identifier">{row.attribution.partnerId}</bdi>. An equal-looking name or address in another record is not this reference, and nothing here joins the two.
                 </>
               ) : row.attribution.kind === "anonymous" ? (
                 ATTRIBUTION_ANONYMOUS
@@ -476,14 +411,13 @@ export function GiftDetail({ scope, giftId, locale, dir, ledgerQuery, className 
         <SectionCard id={correctionHeadingId} title={row.refundOf === undefined ? CORRECTION_AGAINST_HEADING : CORRECTION_HEADING}>
           {row.refundOf === undefined ? null : (
             <p>
-              This row records a refund or correction against another row, <bdi className="mono-identifier">{row.refundOf}</bdi>. It carries its own date and its own amount, exactly as the source
-              states them above, and it is never netted into the row it corrects: the two are read as two records, so the change is explained in the open rather than hidden inside a difference.
+              This row records a refund or correction against another row, <bdi className="mono-identifier">{row.refundOf}</bdi>. It carries its own date and its own amount, exactly as the source states them above, and it is never netted into the row it corrects: the two are read as two records, so the change is
+              explained in the open rather than hidden inside a difference.
             </p>
           )}
           {correction === undefined ? null : (
             <p>
-              The result also holds the correction recorded against this row: <bdi className="mono-identifier">{correction.giftRowId}</bdi>, with its own date and its own amount. Both records stand as
-              the source states them, and neither is combined with the other here.
+              The result also holds the correction recorded against this row: <bdi className="mono-identifier">{correction.giftRowId}</bdi>, with its own date and its own amount. Both records stand as the source states them, and neither is combined with the other here.
             </p>
           )}
         </SectionCard>

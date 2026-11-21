@@ -1,15 +1,8 @@
-/**
- * The shell family's five development-runtime request bodies: one schema per named mutation the
- * development panel and the Settings reset drive through `GET|POST /api/dev` — `setScenario`,
- * `setClock`, `advanceClock`, `setFailurePlan` and `resetSeed`. `readDevState` is a read, so it has no
- * body and no schema here.
- */
 import { z } from "zod";
 import { isRecord } from "@/lib/guards";
 import { mutationInputSchema, type MutationInput } from "@/modules/data-service/envelope";
 /** The largest clock amount these schemas accept, in seconds — roughly ten years. */
 export const CLOCK_OFFSET_GUARD_SECONDS = 315_360_000;
-
 const DEV_SCHEMA_MESSAGES = {
   actionRequired: "A development request names the action it asks for, so send the control's own action with the rest of the request.",
   identifierRequired: "This change names no record, so choose the value it applies to and submit again.",
@@ -25,25 +18,13 @@ const DEV_SCHEMA_MESSAGES = {
   failurePlanDisarmNotAbsent: "A failure plan is disarmed by stating a null plan, because the plan it clears is the one already armed.",
 } as const;
 const opaqueIdentifierSchema = z.string({ error: DEV_SCHEMA_MESSAGES.identifierRequired }).trim().min(1, DEV_SCHEMA_MESSAGES.identifierRequired).max(200, DEV_SCHEMA_MESSAGES.identifierTooLong);
-
-const setScenarioPayloadSchema = z.strictObject({
-  scenarioId: opaqueIdentifierSchema,
-});
-const setClockPayloadSchema = z.strictObject({
-  offsetIso: z.iso.datetime({ offset: true, error: DEV_SCHEMA_MESSAGES.clockReadingRequired }),
-});
+const setScenarioPayloadSchema = z.strictObject({ scenarioId: opaqueIdentifierSchema });
+const setClockPayloadSchema = z.strictObject({ offsetIso: z.iso.datetime({ offset: true, error: DEV_SCHEMA_MESSAGES.clockReadingRequired }) });
 const advanceClockPayloadSchema = z.strictObject({
-  bySeconds: z
-    .number({ error: DEV_SCHEMA_MESSAGES.clockAmountNotWhole })
-    .int({ error: DEV_SCHEMA_MESSAGES.clockAmountNotWhole })
-    .positive({ error: DEV_SCHEMA_MESSAGES.clockAmountOutOfRange })
-    .max(CLOCK_OFFSET_GUARD_SECONDS, { error: DEV_SCHEMA_MESSAGES.clockAmountOutOfRange }),
+  bySeconds: z.number({ error: DEV_SCHEMA_MESSAGES.clockAmountNotWhole }).int({ error: DEV_SCHEMA_MESSAGES.clockAmountNotWhole }).positive({ error: DEV_SCHEMA_MESSAGES.clockAmountOutOfRange }).max(CLOCK_OFFSET_GUARD_SECONDS, { error: DEV_SCHEMA_MESSAGES.clockAmountOutOfRange }),
 });
 const resetSeedPayloadSchema = z.strictObject({});
-/** One validated development request: the four-field mutation input, plus the action it names. */
-export type DevRequest<Action extends DevMutationName, Payload> = MutationInput<Payload> & {
-  readonly action: Action;
-};
+export type DevRequest<Action extends DevMutationName, Payload> = MutationInput<Payload> & { readonly action: Action };
 function requestProjectionOf(raw: unknown, action: DevMutationName): Record<string, unknown> | undefined {
   if (!isRecord(raw) || raw.action !== action) {
     return undefined;
@@ -59,61 +40,34 @@ function developmentRequestSchema<Action extends DevMutationName, Payload>(actio
     .pipe(mutationInputSchema(payload))
     .transform((input) => ({ action, ...input }));
 }
-/** One call a failure plan may target: which kind of call it is, and the name the runtime advertises. */
 export type AdvertisedFailureTarget = { kind: "read" | "mutation"; name: string };
-/** The failure vocabulary a session's development read advertises: its modes and its named calls. */
-export type AdvertisedFailurePlan = {
-  modes: readonly string[];
-  targets: readonly AdvertisedFailureTarget[];
-};
-/** Validates setScenario — accepted | alreadyAccepted | unchanged | conflict | denied | invalid | unavailable | unknown. */
+export type AdvertisedFailurePlan = { modes: readonly string[]; targets: readonly AdvertisedFailureTarget[] };
 export const setScenarioRequestSchema = developmentRequestSchema("setScenario", setScenarioPayloadSchema);
-/** Validates setClock — accepted | alreadyAccepted | unchanged | conflict | denied | invalid | unavailable | unknown. */
 export const setClockRequestSchema = developmentRequestSchema("setClock", setClockPayloadSchema);
-/** Validates advanceClock — accepted | alreadyAccepted | unchanged | conflict | denied | invalid | unavailable | unknown. */
 export const advanceClockRequestSchema = developmentRequestSchema("advanceClock", advanceClockPayloadSchema);
-/** Validates resetSeed — accepted | alreadyAccepted | unchanged | conflict | denied | invalid | unavailable | unknown. */
 export const resetSeedRequestSchema = developmentRequestSchema("resetSeed", resetSeedPayloadSchema);
-/** One failure a panel asks to arm: the mode, and the advertised call it is demonstrated on. */
 export type AdvertisedFailureArming = { mode: string; target: AdvertisedFailureTarget };
-/** The disarm a panel asks for: the absent plan, naming no mode and no call. */
 export type AdvertisedFailureDisarm = { plan: null };
-/** Either form of a failure-plan payload the panel sends: the failure to arm, or the disarm. */
 export type AdvertisedFailurePlanPayload = AdvertisedFailureArming | AdvertisedFailureDisarm;
 /** Validates setFailurePlan against the modes and targets the caller's development read advertises. */
 export function makeSetFailurePlanRequestSchema(advertised: AdvertisedFailurePlan) {
   const armPlanSchema: z.ZodType<AdvertisedFailureArming> = z
     .strictObject({
       mode: z.string({ error: DEV_SCHEMA_MESSAGES.failureModeRequired }).min(1, DEV_SCHEMA_MESSAGES.failureModeRequired),
-      target: z.strictObject({
-        kind: z.enum(["read", "mutation"], {
-          error: DEV_SCHEMA_MESSAGES.failureTargetKindInvalid,
-        }),
-        name: z.string({ error: DEV_SCHEMA_MESSAGES.failureTargetNameRequired }).min(1, DEV_SCHEMA_MESSAGES.failureTargetNameRequired),
-      }),
+      target: z.strictObject({ kind: z.enum(["read", "mutation"], { error: DEV_SCHEMA_MESSAGES.failureTargetKindInvalid }), name: z.string({ error: DEV_SCHEMA_MESSAGES.failureTargetNameRequired }).min(1, DEV_SCHEMA_MESSAGES.failureTargetNameRequired) }),
     })
     .superRefine((plan, ctx) => {
       // Each refusal lands on its own field path, so the form places the message against the control
       // that offered the value rather than against the whole payload.
       if (!advertised.modes.includes(plan.mode)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["mode"],
-          message: DEV_SCHEMA_MESSAGES.failureModeNotAdvertised,
-        });
+        ctx.addIssue({ code: "custom", path: ["mode"], message: DEV_SCHEMA_MESSAGES.failureModeNotAdvertised });
       }
       const isAdvertisedTarget = advertised.targets.some((target) => target.kind === plan.target.kind && target.name === plan.target.name);
       if (!isAdvertisedTarget) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["target", "name"],
-          message: DEV_SCHEMA_MESSAGES.failureTargetNotAdvertised,
-        });
+        ctx.addIssue({ code: "custom", path: ["target", "name"], message: DEV_SCHEMA_MESSAGES.failureTargetNotAdvertised });
       }
     });
-  const disarmPlanSchema: z.ZodType<AdvertisedFailureDisarm> = z.strictObject({
-    plan: z.null({ error: DEV_SCHEMA_MESSAGES.failurePlanDisarmNotAbsent }),
-  });
+  const disarmPlanSchema: z.ZodType<AdvertisedFailureDisarm> = z.strictObject({ plan: z.null({ error: DEV_SCHEMA_MESSAGES.failurePlanDisarmNotAbsent }) });
   const planSchema: z.ZodType<AdvertisedFailurePlanPayload> = z.custom<AdvertisedFailurePlanPayload>().superRefine((payload, ctx) => {
     const parsed = typeof payload === "object" && payload !== null && Object.hasOwn(payload, "plan") ? disarmPlanSchema.safeParse(payload) : armPlanSchema.safeParse(payload);
     if (!parsed.success) {
@@ -126,17 +80,11 @@ export function makeSetFailurePlanRequestSchema(advertised: AdvertisedFailurePla
   });
   return developmentRequestSchema("setFailurePlan", planSchema);
 }
-/** The validated setScenario request: the action named, the four-field envelope and the scenario to run. */
 export type SetScenarioRequest = z.infer<typeof setScenarioRequestSchema>;
-/** The validated setClock request: the action named, the four-field envelope and the instant to read. */
 export type SetClockRequest = z.infer<typeof setClockRequestSchema>;
-/** The validated advanceClock request: the action named, the four-field envelope and the forward move. */
 export type AdvanceClockRequest = z.infer<typeof advanceClockRequestSchema>;
-/** The validated setFailurePlan request: the action named, the four-field envelope, and either the mode with the one call it arms or the null plan that disarms the armed one. */
 export type SetFailurePlanRequest = z.infer<ReturnType<typeof makeSetFailurePlanRequestSchema>>;
-/** The validated resetSeed request: the action named, the four-field envelope and no payload field. */
 export type ResetSeedRequest = z.infer<typeof resetSeedRequestSchema>;
 /** The five development mutations this family sends, verb-first and identical to the service's names. */
 export const DEV_MUTATION_NAMES = ["setScenario", "setClock", "advanceClock", "setFailurePlan", "resetSeed"] as const;
-/** One development mutation, named the way its schema and the service name it. */
 export type DevMutationName = (typeof DEV_MUTATION_NAMES)[number];

@@ -1,57 +1,6 @@
 "use client";
 
-/**
- * `selectContext` as the shell dispatches it: one validated, intent-keyed attempt over
- * `POST /api/session/context`, answered with exactly one of the eight closed outcomes.
- *
- * **What this hook owns.**
- * - *The attempt.* It builds the four-field mutation input of AAP 0.7.1 — `operationId`, `scope`,
- *   `expectedRevision` and the payload — and validates it with the family's own
- *   `selectContextRequestSchema` before anything leaves. A body the schema refuses is answered `invalid`
- *   with the Zod issue paths as field keys, and no request is sent: the handler validates with this same
- *   schema, so a person sees the field path the service would have named anyway.
- * - *The identity.* An attempt's `operationId` is keyed on its intent — the authority it acts in, the
- *   context record's revision it saw, and the selection it asks for — so a retry of one intent re-uses the
- *   identity it was first given and the service answers `alreadyAccepted` with the stored result instead of
- *   moving the session twice. The authoritative intent hash is computed server-side in
- *   `modules/data-service/operations`; the key here only decides whether *this client* repeats one attempt.
- *   A different selection, revision or scope is a different intent and mints a new identity.
- * - *The receipt.* The latest outcome is held as render state for one durable result — not a second copy of
- *   a record, and not a cache.
- *
- * **What it does not own, because another file is the single owner.**
- * - *The wire.* `features/shell/api-client`'s `submitContextSelection` is the family's one `POST` to
- *   `/api/session/context`: it answers a request that never arrived as `unavailable` and a body it cannot
- *   read as `unknown` under the caller's own identity (AAP 0.3.2 and Rule 1 clause 2 forbid a second
- *   transport implementation, so this hook sends nothing itself).
- * - *The cache.* AAP 0.3.4 makes `components/context-switch-guard`'s `useContextFence` the only place the
- *   TanStack Query cache is emptied: it cancels in-flight reads and clears before it dispatches. This hook
- *   therefore clears nothing, invalidates nothing and reports no switch optimistically. Its `selectContext`
- *   takes exactly `{ scope, expectedRevision, payload }`, which is the shape the fence's dispatch takes, so
- *   composing the two keeps that ordering in one place.
- * - *The wording.* `features/shell/copy/context-switch` owns every label and sentence the switch shows;
- *   this file holds no user-visible copy.
- *
- * **What it does on each settled outcome.** `accepted` and `alreadyAccepted` re-read the Server Components
- * once for that attempt through `router.refresh()`, because the persisted selection is the server's and the
- * next read is the proof; a second resolution of one attempt cannot refresh twice. `conflict` is returned
- * untouched for the guard to re-open over the caller's preserved input. `denied` and `unavailable` are
- * returned untouched, so the context in force and its envelopes stay exactly as they were. `unknown`
- * carries the `operationId` the surface offers as a result check — never a resend under a fresh key. No
- * client state claims the switch happened.
- *
- * **The one in-flight rule.** A second press of the same intent is answered with the attempt already
- * running: one intent is one effect, and a second answer for it would settle one intent twice. A different
- * selection during an attempt is a second intent, dispatched on its own attempt with its own identity — the
- * service serialises the two, and whichever expected revision has moved is answered `conflict` rather than
- * overwriting the other, so a press for one context can never be answered with another's result. The
- * one-switch-at-a-time rule for the shell as a whole lives in the fence the guard drives.
- *
- * **What it never does.** It throws nothing out of a call it drives: a fault that escapes the transport is
- * reported as `unknown` under the attempt's own identity, because success and failure would both be untrue.
- * It imports no store, no development runtime, no design-system source and no other feature, reads no clock,
- * logs nothing and returns no boolean.
- */
+/** `selectContext` as the shell dispatches it: one validated, intent-keyed attempt over `POST /api/session/context`, answered with exactly one of the eight closed outcomes. */
 
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -66,18 +15,8 @@ import { invalid, unknown as unknownOutcome } from "@/modules/data-service/outco
 import { submitContextSelection } from "../api-client";
 import { selectContextRequestSchema, type SelectContextPayload } from "../schemas/select-context";
 
-/**
- * How many intents keep the identity of their attempt.
- *
- * A session's selectable contexts are a closed, small set, but the payload also carries the guard's optional
- * decision about held work, so the map is bounded and evicts its least recently used entry rather than
- * growing for the life of the session. A forgotten intent is only forgotten by this client: pressing it
- * again mints a new identity, which the service answers as a fresh attempt with the revision that then
- * stands — never as a second effect of the first.
- */
 const REMEMBERED_INTENT_LIMIT = 16;
 
-/** What a caller asks the shell to do: act in one context, from the one it is acting in now. */
 export interface SelectContextIntent {
   /** The context the caller is acting in now, from the admission envelope. */
   scope: Scope;
@@ -87,7 +26,6 @@ export interface SelectContextIntent {
   payload: SelectContextPayload;
 }
 
-/** What {@link useSelectContext} returns: the one dispatch, the last outcome, and its attempt identity. */
 export interface SelectContextApi {
   /** Validates one intent, dispatches it, and answers exactly one outcome. */
   selectContext(intent: SelectContextIntent): Promise<MutationOutcome>;
@@ -101,34 +39,12 @@ export interface SelectContextApi {
   clearOutcome(): void;
 }
 
-/**
- * The identity key of one intent: the authority, the revision it was read at, and the selection it asks for.
- *
- * The payload is a closed four-field object, so its fields are named here rather than reflected over: an
- * attempt is recognised by the values it carries, in the order the contract declares them, and adding a
- * payload member is a change to this line rather than a silent slip through a generic serialiser.
- */
 function intentKeyOf(intent: SelectContextIntent): string {
   const { scope, expectedRevision, payload } = intent;
-  return [
-    scope.organizationId,
-    scope.ministryId,
-    scope.supportSubjectId,
-    scope.principalId,
-    expectedRevision,
-    payload.organizationId,
-    payload.ministryId,
-    payload.supportSubjectId,
-    payload.resolveUnsavedWork ?? "",
-  ].join("|");
+  return [scope.organizationId, scope.ministryId, scope.supportSubjectId, scope.principalId, expectedRevision, payload.organizationId, payload.ministryId, payload.supportSubjectId, payload.resolveUnsavedWork ?? ""].join("|");
 }
 
-/**
- * The context switch, as the shell dispatches it.
- *
- * Every settled attempt is reported as one of the eight closed outcomes; no call answers a boolean, and no
- * success is inferred from an absent error.
- */
+/** The context switch, as the shell dispatches it. */
 export function useSelectContext(): SelectContextApi {
   const router = useRouter();
   const attempts = useRef(new Map<string, string>());
@@ -159,14 +75,7 @@ export function useSelectContext(): SelectContextApi {
     return minted;
   }, []);
 
-  /**
-   * Re-renders the Server Components once for one settled attempt.
-   *
-   * The refresh is per attempt, not per press: a replay of the same attempt refreshes the render at most
-   * once, because the tree it would re-read is the tree that attempt already produced. Where the shell
-   * supplies this dispatch to `useContextFence`, this is the switch's single refresh: the fence's own
-   * `switched` branch must not refresh a second time.
-   */
+  /** Re-renders the Server Components once for one settled attempt. */
   const refreshOnceFor = useCallback(
     (settledOperationId: string): void => {
       if (refreshedFor.current === settledOperationId) {
@@ -206,12 +115,7 @@ export function useSelectContext(): SelectContextApi {
       }
 
       const attemptOperationId = identityFor(key);
-      const parsed = selectContextRequestSchema.safeParse({
-        operationId: attemptOperationId,
-        scope: intent.scope,
-        expectedRevision: intent.expectedRevision,
-        payload: intent.payload,
-      });
+      const parsed = selectContextRequestSchema.safeParse({ operationId: attemptOperationId, scope: intent.scope, expectedRevision: intent.expectedRevision, payload: intent.payload });
 
       if (!parsed.success) {
         // The field paths the family's schema reports are the ones the handler would report, so the

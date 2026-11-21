@@ -1,23 +1,5 @@
 "use client";
-/**
- * The context chooser, as one TanStack Query read.
- *
- * **The job.** Read the memberships this session may act in — the service's own `readContextChooser`
- * (AAP 0.6.1) — in the browser, so a caller that needs the chooser re-reads it without a Server
- * Component round trip, and answer in the shell family's one result vocabulary: `ready`, `denied`,
- * `unavailable`, `unknown` or `loading`, beside `retry()` and `discarded`.
- *
- * **The transport.** `GET /api/session?job=context-chooser`. AAP 0.6.3 declares `GET /api/session` for
- * the session family, so the chooser job rides that one path with the job named in the query string
- * rather than a second endpoint; the path is written once, in {@link CHOOSER_ENDPOINT}.
- *
- * **What it never does.** It derives no context from a display name, an email address or a postal
- * address (AAP 0.7.1: equal-looking identifiers establish neither identity nor authority), mints no
- * operation identity, holds no copy of the membership list beyond the cached envelope, filters, sorts,
- * hides or de-duplicates nothing (the envelope is passed through untouched, and a component renders the
- * labels the service supplied), and clears no cache: the one clear in this application belongs to the
- * fence in `components/context-switch-guard`.
- */
+/** The context chooser, as one TanStack Query read. */
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef } from "react";
 
@@ -28,36 +10,11 @@ import type { ReadEnvelope, Scope } from "@/modules/data-service/envelope";
 import { isOutcome, type DenialReason } from "@/modules/data-service/outcome";
 import type { ContextChooserData } from "@/modules/data-service/reads/shell";
 
-// ---------------------------------------------------------------------------------------------
-// Fixed values
-// ---------------------------------------------------------------------------------------------
-
-/** The job this read names on the session handler, and the segment it occupies in the query key. */
 const CHOOSER_JOB = "context-chooser";
-
-/** The one path this file fetches: the declared session handler, with the chooser job named. */
 const CHOOSER_ENDPOINT = `/api/session?job=${CHOOSER_JOB}`;
 
-// ---------------------------------------------------------------------------------------------
-// What the handler answers
-// ---------------------------------------------------------------------------------------------
+type ChooserAnswer = { readonly kind: "envelope"; readonly envelope: ReadEnvelope<ContextChooserData> } | { readonly kind: "denied"; readonly reason: DenialReason } | { readonly kind: "unavailable"; readonly source: SourceReference | null } | { readonly kind: "unknown" };
 
-/**
- * One settled chooser request, in the shape the application's read contract already declares: the
- * scoped envelope, the denial, the outage, or a body this file does not recognise.
- *
- * A returned union rather than a thrown error, because none of the four is a fault: a denial is an
- * answer about authority, an outage names the source that could not answer, and an unrecognised body is
- * a fact about the response. Only a cancelled request rejects, and that rejection describes a context
- * being left, so it is passed on and dropped with the query.
- */
-type ChooserAnswer =
-  | { readonly kind: "envelope"; readonly envelope: ReadEnvelope<ContextChooserData> }
-  | { readonly kind: "denied"; readonly reason: DenialReason }
-  | { readonly kind: "unavailable"; readonly source: SourceReference | null }
-  | { readonly kind: "unknown" };
-
-/** The mutable holder of the last source this surface was told about, so a transport failure names it. */
 interface LastSource {
   current: SourceReference | null;
 }
@@ -74,65 +31,21 @@ function isChooserGroup(value: unknown): boolean {
   if (!isRecord(value) || typeof value.organizationId !== "string" || typeof value.organizationLabel !== "string" || !Array.isArray(value.ministries)) {
     return false;
   }
-  return value.ministries.every(
-    (ministry: unknown) =>
-      isRecord(ministry) &&
-      typeof ministry.ministryId === "string" &&
-      typeof ministry.ministryLabel === "string" &&
-      typeof ministry.supportSubjectId === "string" &&
-      typeof ministry.selected === "boolean",
-  );
+  return value.ministries.every((ministry: unknown) => isRecord(ministry) && typeof ministry.ministryId === "string" && typeof ministry.ministryLabel === "string" && typeof ministry.supportSubjectId === "string" && typeof ministry.selected === "boolean");
 }
 
 function isChooserData(value: unknown): value is ContextChooserData {
   return isRecord(value) && typeof value.directEntry === "boolean" && Array.isArray(value.groups) && value.groups.every(isChooserGroup);
 }
 
-/**
- * Whether a 200 body is the chooser's read envelope.
- *
- * The envelope is checked structurally, member by member, because the handler answers with the envelope
- * itself (`toResponse` writes the envelope as the 200 body) and this file must not hand a component a
- * value that only looks like one: every member a surface reads is required here, including the ones this
- * hook does not read, so an envelope missing its coverage or its actions is reported as unrecognised
- * rather than rendered as complete.
- */
 function isChooserEnvelope(value: unknown): value is ReadEnvelope<ContextChooserData> {
-  return (
-    isRecord(value) &&
-    isChooserData(value.data) &&
-    isScope(value.scope) &&
-    isSourceReference(value.source) &&
-    typeof value.revision === "string" &&
-    typeof value.asOf === "string" &&
-    isRecord(value.coverage) &&
-    isRecord(value.valueStates) &&
-    Array.isArray(value.actions)
-  );
+  return isRecord(value) && isChooserData(value.data) && isScope(value.scope) && isSourceReference(value.source) && typeof value.revision === "string" && typeof value.asOf === "string" && isRecord(value.coverage) && isRecord(value.valueStates) && Array.isArray(value.actions);
 }
 
-// ---------------------------------------------------------------------------------------------
-// The request
-// ---------------------------------------------------------------------------------------------
-
-/**
- * Reads the chooser from the one path, and answers with one of the four settled shapes.
- *
- * A request that never reached the handler, and a body that is not JSON, answer `unavailable` with the
- * last source this surface was told about — never with an empty membership list, because "no choices"
- * and "could not read the choices" are different facts about a session. A body that is none of the three
- * recognised shapes answers `unknown`: it states no effect to check, so it names no operation.
- */
 async function requestChooser(signal: AbortSignal | undefined, lastSource: LastSource): Promise<ChooserAnswer> {
   let response: Response;
   try {
-    response = await fetch(CHOOSER_ENDPOINT, {
-      method: "GET",
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: { accept: "application/json" },
-      signal,
-    });
+    response = await fetch(CHOOSER_ENDPOINT, { method: "GET", credentials: "same-origin", cache: "no-store", headers: { accept: "application/json" }, signal });
   } catch (error) {
     // A cancelled request is not an answer: the fence cancels and clears before a context switch, so a
     // rejection here describes the context being left rather than a failure worth reporting.
@@ -168,11 +81,6 @@ async function requestChooser(signal: AbortSignal | undefined, lastSource: LastS
   return { kind: "unknown" };
 }
 
-// ---------------------------------------------------------------------------------------------
-// The result
-// ---------------------------------------------------------------------------------------------
-
-/** What a caller renders the chooser from: the envelope, or the reason there is no list of choices. */
 export type ContextChooserResult =
   | { readonly state: "ready"; readonly envelope: ReadEnvelope<ContextChooserData> }
   | { readonly state: "denied"; readonly reason: DenialReason }
@@ -180,7 +88,6 @@ export type ContextChooserResult =
   | { readonly state: "unknown"; readonly operationId?: string }
   | { readonly state: "loading" };
 
-/** The result, plus the two facts a caller needs that are not part of the closed state set. */
 export type ContextChooser = ContextChooserResult & {
   /** Asks the same read again. It clears nothing, invalidates nothing and mints no operation identity. */
   retry(): void;
@@ -193,17 +100,7 @@ interface MappedResult {
   readonly discarded: boolean;
 }
 
-/**
- * Reads the memberships this session may act in, answering `ready | denied | unavailable | unknown |
- * loading` together with `retry()` and `discarded`.
- *
- * `enabled` comes from the caller, computed from the admission envelope it already holds
- * (`admittedMemberships.length > 1`), so a session admitted to a single ministry issues no request at
- * all and never renders a chooser (AAP 0.10.1: "one ministry opens directly"). The hook does not
- * re-derive that test: the gate above it owns the question, and a second copy of the rule could answer
- * differently. `initial` is the Server Component gate's own envelope, so the first paint reads the
- * chooser the server already built instead of waiting on a client round trip.
- */
+/** Reads the memberships this session may act in, answering `ready | denied | unavailable | unknown | loading` together with `retry()` and `discarded`. */
 export function useContextChooser(enabled: boolean, initial?: ReadEnvelope<ContextChooserData>): ContextChooser {
   // The context this surface is read under, as its own server answer states it. It is the only reference
   // a late envelope can be compared against, and it is absent when no envelope was supplied — in which

@@ -1,26 +1,5 @@
 "use client";
-/**
- * The referral lists: Active, incomplete date and the permitted Expired history, over the family's
- * one search toolbar and the application's one table preset, with the address as the only query state.
- *
- * Nothing here judges a window, counts a day or derives a deadline. `reads.referrals.readReferrals`
- * answers one page of one list with the window it resolved, the status it judged and the
- * whole-result total, and every value below is that read's own — the caption's count is the read's
- * total rather than the size of the loaded page, and a row whose window end is absent states that
- * absence instead of printing a blank. The URL is the query state, so a detail visit, a shared link
- * and the browser's Back button all return to the exact list, search and page.
- *
- * The three lists are three different questions rather than one filtered list (AAP 0.8.3). A date
- * that is not known precisely enough admits no deadline and no Active or Expired judgement, so the
- * incomplete-date list says so once for the whole view; and the Expired list is a narrow permission
- * over history, so it renders through `ExpiredReferralHistory` — the one component that owns the
- * permission statement, the permitted facts and the withheld ones — and never as a table of the
- * partner record. Continue is offered on neither list: it belongs to a referral's own detail, where
- * the read answers one cycle in full.
- *
- * The read takes no ordering parameter, so this surface states the order the read applies instead of
- * offering a sort control that would change nothing, and no column is sortable.
- */
+/** The referral lists: */
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
@@ -35,69 +14,28 @@ import { cn } from "@/lib/cn";
 import type { Scope } from "@/modules/data-service";
 import { LIST_COPY, listCountCaption, NO_DEADLINE_NOTICE, PRECISION_COPY, STATUS_COPY } from "../copy";
 import { useReferrals, type ReferralListPage } from "../hooks/use-referrals";
-import {
-  DEFAULT_REFERRAL_PAGE_SIZE,
-  DEFAULT_REFERRAL_VIEW,
-  LIST_QUERY_MESSAGES,
-  parseReferralListQuery,
-  REFERRAL_PAGE_SIZES,
-  REFERRAL_VIEWS,
-  type ReferralListQuery,
-  type ReferralView,
-} from "../schemas";
+import { DEFAULT_REFERRAL_PAGE_SIZE, DEFAULT_REFERRAL_VIEW, LIST_QUERY_MESSAGES, parseReferralListQuery, REFERRAL_PAGE_SIZES, REFERRAL_VIEWS, type ReferralListQuery, type ReferralView } from "../schemas";
 import ExpiredReferralHistory from "./expired-referral-history";
-// The contract
-/** Props of {@link ReferralList}. */
-export interface ReferralListProps {
+export type ReferralListProps = {
   /** The exact authority these lists are read under; the service re-derives scope from it on every read. */
   readonly scope: Scope;
-  /**
-   * The direction the surrounding document is read in, supplied by the route that composes this
-   * surface. It is spread on the outermost element only when it is supplied: a list that defaulted
-   * the direction would override a right-to-left interface rather than inherit it.
-   */
+  /** The direction the surrounding document is read in, supplied by the route that composes this surface. */
   readonly dir?: "ltr" | "rtl";
   readonly className?: string;
-}
-// The rows this surface renders, taken from the read's own payload rather than restated here
-/** The arm of the read's payload that the Active and incomplete-date lists share: one table of cycles. */
+};
 type ListedReferrals = Extract<ReferralListPage, { readonly list: "active" | "incomplete-date" }>;
-/** One row of the Active or incomplete-date table. */
 type ListedReferralRow = ListedReferrals["items"][number];
-/** The arm of the read's payload that the permitted Expired history answers with. */
 type ExpiredReferrals = Extract<ReferralListPage, { readonly list: "expired" }>;
-// The address this surface is shown by
-/**
- * The parameter names the family's own parser reads, so the address this component writes and the
- * address it parses are one grammar — and that grammar is the one `GET /api/referrals` answers.
- */
-const ADDRESS = {
-  list: "list",
-  search: "search",
-  page: "page",
-  pageSize: "pageSize",
-} as const;
+/** The parameter names the family's own parser reads, so the address this component writes and the address it parses are one grammar — and that grammar is the one `GET /api/referrals` answers. */
+const ADDRESS = { list: "list", search: "search", page: "page", pageSize: "pageSize" } as const;
 /** The route prefix a row links into, kept in one constant so the family's list and detail addresses stay together. */
 const REFERRAL_ROUTE_PREFIX = "/partners/referrals";
 /** The page the schema counts from: the read slices from `(page - 1) * pageSize`, so pages start at 1. */
 const FIRST_PAGE = 1;
-/** The one noun every count and pager on this surface names. */
 const ITEM_NOUN = "referral";
-/**
- * The query an address that states nothing this surface can honour is read with: the family's own
- * default list and page size, so a refused address never invents a view from the parts that parsed.
- */
-const DEFAULT_LIST_QUERY: ReferralListQuery = {
-  list: DEFAULT_REFERRAL_VIEW,
-  search: "",
-  page: FIRST_PAGE,
-  pageSize: DEFAULT_REFERRAL_PAGE_SIZE,
-};
-/**
- * The address as the family's parser reads it: its parameters as a record, with a parameter stated
- * more than once kept as every value it carries so the parser can refuse the address rather than
- * this surface quietly preferring one of them.
- */
+/** The query an address that states nothing this surface can honour is read with: the family's own default list and page size, so a refused address never invents a view from the parts that parsed. */
+const DEFAULT_LIST_QUERY: ReferralListQuery = { list: DEFAULT_REFERRAL_VIEW, search: "", page: FIRST_PAGE, pageSize: DEFAULT_REFERRAL_PAGE_SIZE };
+/** The address as the family's parser reads it: its parameters as a record, with a parameter stated more than once kept as every value it carries so the parser can refuse the address rather than this … */
 function addressOf(searchParams: ReadonlyURLSearchParams): Readonly<Record<string, string | string[] | undefined>> {
   const address: Record<string, string | string[] | undefined> = {};
   for (const key of new Set(searchParams.keys())) {
@@ -119,43 +57,15 @@ function listParams(query: ReferralListQuery): URLSearchParams {
   params.set(ADDRESS.pageSize, String(query.pageSize));
   return params;
 }
-// The few words this surface adds to the family's copy
-/**
- * The retry label the shared notice requires. Every read notice in the application offers its retry
- * under this word, and the family's copy states no label for it; nothing else on this surface is
- * worded here, because the lists, the columns, the statuses, the search and the notices all speak
- * from `../copy`.
- */
 const RETRY_LABEL = "Try again";
-/**
- * The tone each status word carries, so colour never stands alone: the word itself is the label.
- * An ended window is neutral rather than a fault, and a date too imprecise for a deadline asks for
- * no attention at all.
- */
-const ROW_STATUS_TONE: Readonly<Record<ListedReferralRow["status"], StatusTone>> = {
-  active: "positive",
-  expired: "neutral",
-  "no-deadline": "muted",
-  refused: "caution",
-};
-/** The identity of one row: the referral reference the read answers, never a row position. */
-function referralRowId(row: ListedReferralRow): string {
-  return row.referralId;
-}
-/** The word a fact the read did not supply renders as, so an absent value is stated rather than left blank. */
+/** The tone each status word carries, so colour never stands alone: the word itself is the label. */
+const ROW_STATUS_TONE: Readonly<Record<ListedReferralRow["status"], StatusTone>> = { active: "positive", expired: "neutral", "no-deadline": "muted", refused: "caution" };
 const NOT_RECORDED = statusBadgeProps(VALUE_STATE_WORDS, "unknown");
 const ROW_LINK_CLASS = "rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const MUTED_TEXT_CLASS = "text-muted-foreground";
-// The cells
-/** A permitted fact the read could not supply, stated as such instead of as a gap. */
 function NotRecorded(): ReactElement {
   return <StatusBadge label={NOT_RECORDED.label} tone={NOT_RECORDED.tone} />;
 }
-/**
- * Where a row's window stands, in the family's own words: the word the status carries, the sentence
- * that explains it, and — where the window could not be resolved at all — the reason the read gave,
- * printed as the opaque token it is rather than paraphrased into a sentence this file would invent.
- */
 function StatusCell({ row }: { readonly row: ListedReferralRow }): ReactElement {
   const copy = STATUS_COPY[row.status];
   return (
@@ -167,23 +77,8 @@ function StatusCell({ row }: { readonly row: ListedReferralRow }): ReactElement 
   );
 }
 // The permitted Expired history
-/**
- * One permitted Expired history per row of the page, or — when the view holds none — the single
- * statement that history owns, which tells an empty permission apart from a search that matched
- * nothing. The rows never become a table: a permitted history carries no partner access, so no
- * column of it could be offered without widening the permission it is shown under.
- */
-function ExpiredReferralHistorySection({
-  items,
-  searchEmpty,
-  dir,
-  headingLevel,
-}: {
-  readonly items: ExpiredReferrals["items"];
-  readonly searchEmpty: boolean;
-  readonly dir?: "ltr" | "rtl";
-  readonly headingLevel: 2 | 3 | 4;
-}): ReactElement {
+/** One permitted Expired history per row of the page, or — when the view holds none — the single statement that history owns, which tells an empty permission apart from a search that matched nothing. */
+function ExpiredReferralHistorySection({ items, searchEmpty, dir, headingLevel }: { readonly items: ExpiredReferrals["items"]; readonly searchEmpty: boolean; readonly dir?: "ltr" | "rtl"; readonly headingLevel: 2 | 3 | 4 }): ReactElement {
   if (items.length === 0) {
     return <ExpiredReferralHistory referral={null} searchEmpty={searchEmpty} headingLevel={headingLevel} dir={dir} />;
   }
@@ -204,8 +99,6 @@ function ExpiredReferralHistorySection({
     </ul>
   );
 }
-// The view switcher
-/** The three lists as three addresses, with the one being read marked as the current page. */
 function ViewSwitcher({ current, hrefOf }: { readonly current: ReferralView; readonly hrefOf: (view: ReferralView) => string }): ReactElement {
   return (
     <nav aria-label={LIST_COPY.viewSwitcherLabel} className="min-w-0">
@@ -214,11 +107,7 @@ function ViewSwitcher({ current, hrefOf }: { readonly current: ReferralView; rea
           const isCurrent = view === current;
           return (
             <li key={view} className="min-w-0">
-              <Link
-                href={hrefOf(view)}
-                aria-current={isCurrent ? "page" : undefined}
-                className={cn(buttonVariants({ variant: isCurrent ? "secondary" : "ghost", size: "sm" }), "max-w-full whitespace-normal")}
-              >
+              <Link href={hrefOf(view)} aria-current={isCurrent ? "page" : undefined} className={cn(buttonVariants({ variant: isCurrent ? "secondary" : "ghost", size: "sm" }), "max-w-full whitespace-normal")}>
                 <bdi>{LIST_COPY.views[view].heading}</bdi>
               </Link>
             </li>
@@ -228,8 +117,6 @@ function ViewSwitcher({ current, hrefOf }: { readonly current: ReferralView; rea
     </nav>
   );
 }
-// The surface
-/** The `/partners/referrals` list surface: the three lists, the one search toolbar and the query kept in the address. */
 export function ReferralList({ scope, dir, className }: ReferralListProps): ReactElement {
   const router = useRouter();
   const pathname = usePathname();
@@ -340,18 +227,8 @@ export function ReferralList({ scope, dir, className }: ReferralListProps): Reac
           return introduced === null ? <NotRecorded /> : <bdi className="tabular-figures">{introduced}</bdi>;
         },
       },
-      {
-        id: "datePrecision",
-        header: LIST_COPY.columns.datePrecision,
-        enableSorting: false,
-        cell: (context) => <bdi>{PRECISION_COPY[context.row.original.datePrecision].label}</bdi>,
-      },
-      {
-        id: "status",
-        header: LIST_COPY.columns.status,
-        enableSorting: false,
-        cell: (context) => <StatusCell row={context.row.original} />,
-      },
+      { id: "datePrecision", header: LIST_COPY.columns.datePrecision, enableSorting: false, cell: (context) => <bdi>{PRECISION_COPY[context.row.original.datePrecision].label}</bdi> },
+      { id: "status", header: LIST_COPY.columns.status, enableSorting: false, cell: (context) => <StatusCell row={context.row.original} /> },
       {
         id: "windowEnd",
         // The heading stays a plain string: the preset also reads it as the column's visible name in
@@ -387,6 +264,10 @@ export function ReferralList({ scope, dir, className }: ReferralListProps): Reac
     // The outcome's own guidance and source are shown rather than a sentence written here, so the
     // outage names what failed and what to do about it.
     content = <StateNotice kind="unavailable" title={LIST_COPY.heading} description={read.unavailable.guidance} source={read.unavailable.source} retry={retry} headingLevel={3} />;
+  } else if (read.kind === "refused") {
+    // The list this surface asked for is not one the read admits: the request itself is the answer, so
+    // no count, row or source failure stands in its place.
+    content = <StateNotice kind="refused" title={LIST_COPY.heading} headingLevel={3} />;
   } else if (read.envelope.data.list !== query.list) {
     // The read is still answering the list this surface was showing a moment ago. Those rows are
     // never shown under another list's heading and caption, so the previous answer gives way to the
@@ -409,17 +290,7 @@ export function ReferralList({ scope, dir, className }: ReferralListProps): Reac
         ) : (
           <>
             <ExpiredReferralHistorySection items={list.items} searchEmpty={query.search !== ""} dir={dir} headingLevel={3} />
-            {list.total === 0 ? null : (
-              <PaginationBar
-                total={list.total}
-                page={list.page}
-                pageSize={list.pageSize}
-                pageSizeOptions={REFERRAL_PAGE_SIZES}
-                onPageChange={handlePageChange}
-                onPageSizeChange={handlePageSizeChange}
-                itemNoun={ITEM_NOUN}
-              />
-            )}
+            {list.total === 0 ? null : <PaginationBar total={list.total} page={list.page} pageSize={list.pageSize} pageSizeOptions={REFERRAL_PAGE_SIZES} onPageChange={handlePageChange} onPageSizeChange={handlePageSizeChange} itemNoun={ITEM_NOUN} />}
           </>
         );
     } else if (list.total === 0) {
@@ -432,13 +303,7 @@ export function ReferralList({ scope, dir, className }: ReferralListProps): Reac
         ) : (
           // An empty result under a search is a different fact from an empty list, and its remedy is
           // the search itself.
-          <StateNotice
-            kind="empty"
-            title={LIST_COPY.search.empty.title}
-            description={LIST_COPY.search.empty.body}
-            action={{ label: LIST_COPY.search.empty.actionLabel, onClick: handleClearSearch }}
-            headingLevel={3}
-          />
+          <StateNotice kind="empty" title={LIST_COPY.search.empty.title} description={LIST_COPY.search.empty.body} action={{ label: LIST_COPY.search.empty.actionLabel, onClick: handleClearSearch }} headingLevel={3} />
         );
     } else if (list.items.length === 0) {
       // The address names a page past the end of this result: the correction above re-reads the last
@@ -454,7 +319,7 @@ export function ReferralList({ scope, dir, className }: ReferralListProps): Reac
             rowCount={list.total}
             queryState={{ sort: [], page: query.page, pageSize: query.pageSize, columnVisibility }}
             onQueryStateChange={handleQueryStateChange}
-            getRowId={referralRowId}
+            getRowId={(row) => row.referralId}
             itemNoun={ITEM_NOUN}
             pageSizeOptions={REFERRAL_PAGE_SIZES}
           />
@@ -497,14 +362,7 @@ export function ReferralList({ scope, dir, className }: ReferralListProps): Reac
         <h2 className="font-heading text-xl font-semibold text-pretty wrap-anywhere">{LIST_COPY.views[query.list].heading}</h2>
         <p className="max-w-prose text-sm text-muted-foreground text-pretty wrap-anywhere">{LIST_COPY.views[query.list].explanation}</p>
       </div>
-      <QueryToolbar
-        label={LIST_COPY.search.label}
-        search={{ value: query.search, onChange: handleSearchChange, placeholder: LIST_COPY.search.placeholder }}
-        facets={[]}
-        applied={{}}
-        onAppliedChange={handleAppliedChange}
-        pending={referrals.isFetching}
-      />
+      <QueryToolbar label={LIST_COPY.search.label} search={{ value: query.search, onChange: handleSearchChange, placeholder: LIST_COPY.search.placeholder }} facets={[]} applied={{}} onAppliedChange={handleAppliedChange} pending={referrals.isFetching} />
       <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{LIST_COPY.search.hint}</p>
       {/* An address the family's parser refused: each refusal is shown in the family's own words,
           keyed by the field it concerns, and the list below is the module's default query. */}
@@ -512,9 +370,7 @@ export function ReferralList({ scope, dir, className }: ReferralListProps): Reac
         <Alert>
           <AlertTitle>{LIST_QUERY_MESSAGES.formLevel}</AlertTitle>
           <AlertDescription>
-            <ul className="flex list-disc flex-col gap-1 ps-5">
-              {Object.entries(parsed.fieldErrors).flatMap(([field, messages]) => messages.map((message, index) => <li key={`${field}-${String(index)}`}>{message}</li>))}
-            </ul>
+            <ul className="flex list-disc flex-col gap-1 ps-5">{Object.entries(parsed.fieldErrors).flatMap(([field, messages]) => messages.map((message, index) => <li key={`${field}-${String(index)}`}>{message}</li>))}</ul>
           </AlertDescription>
         </Alert>
       )}

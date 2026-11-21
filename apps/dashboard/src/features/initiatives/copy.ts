@@ -1,7 +1,4 @@
-/**
- * Wording for the initiatives and referrals family: the closed vocabularies this family displays, and
- * the statements that keep each distinction intact.
- */
+/** Wording for the initiatives and referrals family: the closed vocabularies this family displays, and the statements that keep each distinction intact. */
 import type { NoticeKind } from "@/components/state-notice";
 /** The three states of an initiative working-list membership. */
 export const MEMBERSHIP_STATES = ["included", "removed", "excluded"] as const;
@@ -9,21 +6,9 @@ export const MEMBERSHIP_STATES = ["included", "removed", "excluded"] as const;
 export type MembershipState = (typeof MEMBERSHIP_STATES)[number];
 
 export const MEMBERSHIP_STATE_COPY: Record<MembershipState, { label: string; description: string; emptyNote: string }> = {
-  included: {
-    label: "On the working list",
-    description: "You selected this partner for this initiative's reviewed working list.",
-    emptyNote: "No partners are on the working list yet.",
-  },
-  removed: {
-    label: "Removed",
-    description: "No longer on the working list; history and independent obligations are kept.",
-    emptyNote: "No partners have been removed.",
-  },
-  excluded: {
-    label: "Not eligible",
-    description: "Never a candidate for this initiative; the reason comes from the source.",
-    emptyNote: "No partners are marked not eligible.",
-  },
+  included: { label: "On the working list", description: "You selected this partner for this initiative's reviewed working list.", emptyNote: "No partners are on the working list yet." },
+  removed: { label: "Removed", description: "No longer on the working list; history and independent obligations are kept.", emptyNote: "No partners have been removed." },
+  excluded: { label: "Not eligible", description: "Never a candidate for this initiative; the reason comes from the source.", emptyNote: "No partners are marked not eligible." },
 };
 /** Why inclusion is not Asked, not consent and not audience membership. */
 export const MEMBERSHIP_RULES_COPY = {
@@ -40,22 +25,10 @@ export const STAGE_STATES = ["recorded", "retired", "denied", "unavailable"] as 
 export type StageState = (typeof STAGE_STATES)[number];
 
 export const STAGE_STATE_COPY: Record<StageState, { label: string; description: string }> = {
-  recorded: {
-    label: "Recorded",
-    description: "A human assessment the worker recorded; it is never a prediction of giving.",
-  },
-  retired: {
-    label: "Retired",
-    description: "The source no longer admits this stage, so it is shown as retired or missing.",
-  },
-  denied: {
-    label: "Not permitted",
-    description: "You are not permitted to see or set this stage, and nothing about it is shown.",
-  },
-  unavailable: {
-    label: "Unavailable",
-    description: "The source could not answer, so this is never shown as having no stage.",
-  },
+  recorded: { label: "Recorded", description: "A human assessment the worker recorded; it is never a prediction of giving." },
+  retired: { label: "Retired", description: "The source no longer admits this stage, so it is shown as retired or missing." },
+  denied: { label: "Not permitted", description: "You are not permitted to see or set this stage, and nothing about it is shown." },
+  unavailable: { label: "Unavailable", description: "The source could not answer, so this is never shown as having no stage." },
 };
 /** The stage selector is compact, works by keyboard and single pointer, and has no drag affordance; moving a partner between lists is the explicit Return action. */
 export const STAGE_SELECTOR_COPY = {
@@ -79,34 +52,13 @@ export type AssertingResponseKind = (typeof ASSERTING_RESPONSE_KINDS)[number];
 export const RESPONSE_KIND_ORDER = RESPONSE_KINDS;
 
 export const RESPONSE_KIND_COPY: Record<ResponseKind, { label: string; description: string }> = {
-  agreed: {
-    label: "Agreed",
-    description: "The named respondent agreed to the terms of this version.",
-  },
-  conditional: {
-    label: "Agreed with conditions",
-    description: "The respondent agreed subject to conditions recorded with the response.",
-  },
-  partial: {
-    label: "Agreed in part",
-    description: "The respondent agreed part of the requested terms; the response records which.",
-  },
-  deferred: {
-    label: "Deferred",
-    description: "The respondent asked for more time before answering; no answer is recorded yet.",
-  },
-  declined: {
-    label: "Declined",
-    description: "The respondent declined this Request.",
-  },
-  unanswered: {
-    label: "Unanswered",
-    description: "No answer from the named respondent is recorded yet.",
-  },
-  "needs clarification": {
-    label: "Needs clarification",
-    description: "The respondent asked for clarification before answering.",
-  },
+  agreed: { label: "Agreed", description: "The named respondent agreed to the terms of this version." },
+  conditional: { label: "Agreed with conditions", description: "The respondent agreed subject to conditions recorded with the response." },
+  partial: { label: "Agreed in part", description: "The respondent agreed part of the requested terms; the response records which." },
+  deferred: { label: "Deferred", description: "The respondent asked for more time before answering; no answer is recorded yet." },
+  declined: { label: "Declined", description: "The respondent declined this Request." },
+  unanswered: { label: "Unanswered", description: "No answer from the named respondent is recorded yet." },
+  "needs clarification": { label: "Needs clarification", description: "The respondent asked for clarification before answering." },
 };
 /** The boundaries a response must never be read across. */
 export const RESPONSE_AGREEMENT_COPY = {
@@ -152,30 +104,13 @@ export const REQUEST_LIFECYCLE_STATES = ["draft", "submitted", "presented", "ans
 export type RequestLifecycleState = (typeof REQUEST_LIFECYCLE_STATES)[number];
 
 export const REQUEST_LIFECYCLE_COPY: Record<RequestLifecycleState, { label: string; description: string }> = {
-  draft: {
-    label: "Draft",
-    description: "Prepared but not submitted for review, and not presented to the respondent.",
-  },
-  submitted: {
-    label: "Submitted for review",
-    description: "Waiting for review before it can be presented to the respondent.",
-  },
-  presented: {
-    label: "Presented",
-    description: "Given to the respondent, with no answer recorded against it yet.",
-  },
-  answered: {
-    label: "Answered",
-    description: "An answer from the named respondent is recorded against a terms version.",
-  },
+  draft: { label: "Draft", description: "Prepared but not submitted for review, and not presented to the respondent." },
+  submitted: { label: "Submitted for review", description: "Waiting for review before it can be presented to the respondent." },
+  presented: { label: "Presented", description: "Given to the respondent, with no answer recorded against it yet." },
+  answered: { label: "Answered", description: "An answer from the named respondent is recorded against a terms version." },
 };
 /** The presentation record; the date itself is rendered from the envelope's value. */
-export const PRESENTATION_COPY = {
-  presentedOnLabel: "Presented on",
-  mannerLabel: "How it was presented",
-  versionRefLabel: "Terms version presented",
-  earlierVersionsNote: "Earlier presented versions are kept.",
-} as const;
+export const PRESENTATION_COPY = { presentedOnLabel: "Presented on", mannerLabel: "How it was presented", versionRefLabel: "Terms version presented", earlierVersionsNote: "Earlier presented versions are kept." } as const;
 /** Results state their denominator; with none supplied, no share is shown. */
 export const RESULTS_COPY = {
   heading: "Results",
@@ -204,14 +139,8 @@ export const INITIATIVE_STATES = ["open", "closed"] as const;
 export type InitiativeState = (typeof INITIATIVE_STATES)[number];
 
 export const INITIATIVE_STATE_COPY: Record<InitiativeState, { label: string; description: string }> = {
-  open: {
-    label: "Open",
-    description: "Accepting new solicitation and further recorded responses.",
-  },
-  closed: {
-    label: "Closed",
-    description: "No new solicitation; every recorded response and closure note is kept.",
-  },
+  open: { label: "Open", description: "Accepting new solicitation and further recorded responses." },
+  closed: { label: "Closed", description: "No new solicitation; every recorded response and closure note is kept." },
 };
 /** List and header wording for the initiatives surfaces. */
 export const INITIATIVE_COPY = {
@@ -231,27 +160,12 @@ export const INITIATIVE_COPY = {
 /** Empty, unavailable, denied and unconfirmed results for this family. */
 export type StateNoticeKind = Exclude<NoticeKind, "loading" | "partial-coverage" | "language-unavailable">;
 
-export const STATE_NOTICE_KINDS = ["empty", "unavailable", "denied", "unknown"] as const satisfies readonly StateNoticeKind[];
+export const STATE_NOTICE_KINDS = ["empty", "unavailable", "denied", "unknown", "refused"] as const satisfies readonly StateNoticeKind[];
 
 export const STATE_NOTICE_COPY: Record<StateNoticeKind, { title: string; body: string; actionLabel: string | null }> = {
-  empty: {
-    title: "Nothing recorded yet",
-    body: "Create an initiative to start a reviewed working list.",
-    actionLabel: null,
-  },
-  unavailable: {
-    title: "Source unavailable",
-    body: "The source behind this initiative could not answer, so nothing is shown here.",
-    actionLabel: "Try again",
-  },
-  denied: {
-    title: "Not available to you",
-    body: "You do not have access to this initiative.",
-    actionLabel: null,
-  },
-  unknown: {
-    title: "Result not confirmed",
-    body: "The change may have been saved. Check the result for this operation instead.",
-    actionLabel: "Check the result",
-  },
+  empty: { title: "Nothing recorded yet", body: "Create an initiative to start a reviewed working list.", actionLabel: null },
+  unavailable: { title: "Source unavailable", body: "The source behind this initiative could not answer, so nothing is shown here.", actionLabel: "Try again" },
+  denied: { title: "Not available to you", body: "You do not have access to this initiative.", actionLabel: null },
+  unknown: { title: "Result not confirmed", body: "The change may have been saved. Check the result for this operation instead.", actionLabel: "Check the result" },
+  refused: { title: "This request was refused", body: "The request this view sent is not one the initiative read admits, so nothing was read and the source behind it did not fail.", actionLabel: null },
 };

@@ -1,29 +1,4 @@
-/**
- * Success criterion 10: the 24-hour notification usefulness window, and the honesty of what a
- * submission of a notice reports.
- *
- * A notice stays useful for the 24 *elapsed* hours that follow the instant it was intended for, and
- * the boundary is strict at equality: a request at 24 h − 1 s is still inside it, a request at
- * exactly 24 h is outside it. Elapsed hours rather than calendar days is the substance of the rule,
- * because a calendar-day reading of the same window gives 23 or 25 hours whenever a daylight-saving
- * transition falls inside it. A rejected request is rejected for good: a fresh operation id is a new
- * attempt at an expired intent, not a way round the window. And an outcome whose fate is unknown
- * offers recovery by operation identity, never a resend under a new key — submission, provider
- * acceptance, delivery and reading are four separate facts, and this application claims only the
- * first.
- *
- * Divergences recorded. This file's dependency list names the time modules, the seed and the data
- * service but not the store. A read or a mutation acts on a *stored* session, and no named read or
- * mutation lays one down — `mutations.dev.resetSeed` itself requires an existing authorised session —
- * so the private session below is laid down through the store's own `resetSession` from the seed's
- * documents. `readSession` is then used to measure what a submission actually recorded, because
- * `reads.audience.readInbox` and `reads.audience.readSendResult` derive the session from the request
- * cookie and take no `SessionSource`, so a Node test has no request scope for them to read. Both uses
- * are fixture plumbing: every rule under test is still the one `modules/time/window.ts` and the
- * service apply, the window arithmetic is never re-computed here, and the session is removed again
- * in `afterAll`. `reads.dev.readDevState` supplies the development document's own revision, which is
- * the `expectedRevision` the service requires of `mutations.dev.setFailurePlan`.
- */
+/** Success criterion 10: the 24-hour notification usefulness window, and the honesty of what a submission of a notice reports. */
 import { Temporal } from "temporal-polyfill";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
@@ -35,84 +10,51 @@ import { advanceClock, setClock } from "@/modules/dev-runtime/scenario";
 import { readSession, resetSession } from "@/modules/store/repository";
 import { SEED_INSTANT, now } from "@/modules/time/clock";
 import { NOTIFICATION_USEFULNESS_HOURS, notificationDeadline, type NotificationDeadlineResult } from "@/modules/time/window";
-// The world each case starts from: one private session, never a shared seeded id
 const SESSION_ID = "domain-notification-window";
-
 const SOURCE: SessionSource = { sessionId: SESSION_ID };
-/** The Update the seeded notice is about, and the two editions no seeded intent already covers. */
 const DOCUMENT_ID = "doc-update-autumn";
-
 const PUBLIC_EDITION = "release-update-fr-1";
-
 const SUPPORTER_EDITION = "release-update-en-approved-supporter-1";
 /** The one intent the seed already recorded, so every count in this file has a known starting point. */
 const SEEDED_INTENT_ID = "intent-update-autumn-en";
-
 const PUBLISHER_ID = "publisher-harbour";
-
 const PURPOSE = "update-email";
-
 const FIRST_REVISION = "rev-1";
-/** The zone whose clocks are put back on 25 October 2026, and the instant a case is intended for inside it. */
 const DST_ZONE = "Europe/London";
-
 const DST_INTENDED_AT = "2026-10-24T12:00:00Z";
-
 const MILLISECONDS_PER_SECOND = 1_000;
-
 const MILLISECONDS_PER_HOUR = 60 * 60 * MILLISECONDS_PER_SECOND;
 /** The window the specification fixes, in elapsed milliseconds: deliberately not a calendar day. */
 const USEFULNESS_MILLISECONDS = 24 * MILLISECONDS_PER_HOUR;
-/**
- * The closed vocabulary a recorded per-recipient outcome may use, restated here as the assertion's
- * own expectation rather than read back off the implementation: a submission is accepted for a
- * recipient, fails, or is unknown, and nothing else.
- */
+/** The closed vocabulary a recorded per-recipient outcome may use, restated here as the assertion's own expectation rather than read back off the implementation: a submission is accepted for a … */
 const SEND_RESULT_STATES = ["accepted", "failed", "unknown"] as const;
-/**
- * The words that would state a delivery, a reading or a receipt, none of which this release records.
- * A member is judged word by word, because a field that merely contains those letters — such as the
- * `alreadyCoveredCount` of an audience already given a copy — states nothing about a message arriving.
- */
+/** The words that would state a delivery, a reading or a receipt, none of which this release records. */
 const DELIVERY_WORDS: ReadonlySet<string> = new Set(["deliver", "delivered", "delivery", "read", "reads", "reading", "open", "opened", "receipt"]);
-
 function claimsDeliveryOrReading(member: string): boolean {
   return member.split(/(?=[A-Z])/u).some((word) => DELIVERY_WORDS.has(word.toLowerCase()));
 }
-
 let scope: Scope;
-
 let seededWorld: Promise<readonly SeededSessionWithDocuments[]> | undefined;
-
 function seededSessions(): Promise<readonly SeededSessionWithDocuments[]> {
   // One build of the seeded world for the whole file: the documents are deterministic, so every case
   // laying its session down again starts from exactly the same bytes.
   seededWorld ??= seed();
   return seededWorld;
 }
-
 async function moveClockToOffset(offsetMilliseconds: number): Promise<void> {
   const moved = await setClock(SESSION_ID, offsetMilliseconds);
-  if (!moved.ok) {
-    throw new Error(`The scenario clock of "${SESSION_ID}" could not be set to an offset of ${String(offsetMilliseconds)} ms: ${moved.error.code}.`);
-  }
+  if (!moved.ok) throw new Error(`The scenario clock of "${SESSION_ID}" could not be set to an offset of ${String(offsetMilliseconds)} ms: ${moved.error.code}.`);
 }
-
 async function moveClockTo(instant: Temporal.Instant): Promise<void> {
   await moveClockToOffset(instant.epochMilliseconds - SEED_INSTANT.epochMilliseconds);
   // Every boundary is judged against the scenario clock, so a case that thinks it moved the clock
   // reads the instant back instead of assuming the move took effect.
-  if (now().epochMilliseconds !== instant.epochMilliseconds) {
-    throw new Error(`The scenario clock reads ${now().toString()} rather than ${instant.toString()}.`);
-  }
+  if (now().epochMilliseconds !== instant.epochMilliseconds) throw new Error(`The scenario clock reads ${now().toString()} rather than ${instant.toString()}.`);
 }
-
 async function layDownSession(offsetMilliseconds = 0): Promise<void> {
   const sessions = await seededSessions();
   const template = sessions.find((session) => session.sessionId === DEFAULT_SESSION_ID);
-  if (template === undefined) {
-    throw new Error(`The seed lays down no "${DEFAULT_SESSION_ID}" workspace, so no case in this file has a world to start from.`);
-  }
+  if (template === undefined) throw new Error(`The seed lays down no "${DEFAULT_SESSION_ID}" workspace, so no case in this file has a world to start from.`);
   const { documents } = template;
   await resetSession(SESSION_ID, {
     ...documents,
@@ -122,40 +64,24 @@ async function layDownSession(offsetMilliseconds = 0): Promise<void> {
   });
   await moveClockToOffset(offsetMilliseconds);
 }
-
 async function scopeOf(source: SessionSource): Promise<Scope> {
   const resolved = await resolveSession(source);
-  if (!resolved.ok) {
-    throw new Error(`The session "${source.sessionId}" could not be resolved, so no notification case can act in it.`);
-  }
+  if (!resolved.ok) throw new Error(`The session "${source.sessionId}" could not be resolved, so no notification case can act in it.`);
   const selected = resolved.session.selected;
-  if (selected === null) {
-    throw new Error(`The session "${source.sessionId}" has selected no context, so it holds no scope to submit a notice in.`);
-  }
+  if (selected === null) throw new Error(`The session "${source.sessionId}" has selected no context, so it holds no scope to submit a notice in.`);
   return selected;
 }
-
-/**
- * Clears an armed simulated failure, so no case inherits one. The plan and the clock are the two
- * scenario inputs this file moves, and both are returned to their baseline after every case.
- */
+/** Clears an armed simulated failure, so no case inherits one. */
 async function disarmAnyArmedFailure(): Promise<void> {
   const documents = await readSession(SESSION_ID);
   const meta: unknown = documents === undefined ? undefined : documents.meta;
-  if (typeof meta !== "object" || meta === null) {
-    return;
-  }
+  if (typeof meta !== "object" || meta === null) return;
   const plan: unknown = Reflect.get(meta, "failurePlan");
-  if (plan === null || plan === undefined) {
-    return;
-  }
+  if (plan === null || plan === undefined) return;
   const dev = await reads.dev.readDevState(SOURCE);
-  if (dev.kind !== "envelope") {
-    return;
-  }
+  if (dev.kind !== "envelope") return;
   await mutations.dev.setFailurePlan({ operationId: newOperationId(), scope, expectedRevision: dev.envelope.revision, payload: { plan: null } }, SOURCE);
 }
-
 beforeEach(async () => {
   await layDownSession();
   scope = await scopeOf(SOURCE);
@@ -170,157 +96,99 @@ afterAll(async () => {
   // The session is this file's own, so the store is left holding none of its fixtures.
   await resetSession(SESSION_ID);
 });
-// Small helpers over the modules' own vocabulary
 interface NoticeRequest {
   readonly operationId?: string;
   readonly releaseId?: string;
   readonly intendedAt?: Temporal.Instant;
 }
-
 async function requestNotice(options: NoticeRequest = {}): Promise<MutationOutcome> {
-  // A fresh operation id per attempt is what makes a second submission an honest new attempt rather
-  // than a replay, unless a case names the identity it means to reuse.
-  const payload: { documentId: string; releaseId: string; intendedAt?: string } = {
-    documentId: DOCUMENT_ID,
-    releaseId: options.releaseId ?? PUBLIC_EDITION,
-  };
+  const payload: { documentId: string; releaseId: string; intendedAt?: string } = { documentId: DOCUMENT_ID, releaseId: options.releaseId ?? PUBLIC_EDITION };
   if (options.intendedAt !== undefined) {
     payload.intendedAt = options.intendedAt.toString();
   }
-  return mutations.updates.requestNotification(SESSION_ID, {
-    operationId: options.operationId ?? newOperationId(),
-    scope,
-    expectedRevision: FIRST_REVISION,
-    payload,
-  });
+  return mutations.updates.requestNotification(SESSION_ID, { operationId: options.operationId ?? newOperationId(), scope, expectedRevision: FIRST_REVISION, payload });
 }
-/** The record families a notice writes, read to measure the fixture, never to decide a rule. */
 type StoredNotificationRecords = Pick<SessionStateDocument, "notificationIntents" | "notificationResults" | "memberships">;
 
 async function storedRecords(): Promise<StoredNotificationRecords> {
   const documents = await readSession(SESSION_ID);
-  if (documents === undefined) {
-    throw new Error(`The store holds no session "${SESSION_ID}", so the notification records cannot be measured.`);
-  }
+  if (documents === undefined) throw new Error(`The store holds no session "${SESSION_ID}", so the notification records cannot be measured.`);
   const state: unknown = documents.state;
-  if (typeof state !== "object" || state === null) {
-    throw new Error("The stored session document is not an object, so the notification records cannot be measured.");
-  }
+  if (typeof state !== "object" || state === null) throw new Error("The stored session document is not an object, so the notification records cannot be measured.");
   return state as StoredNotificationRecords;
 }
-
 function intentForRelease(intents: readonly NotificationIntentRecord[], releaseId: string): NotificationIntentRecord {
   const found = intents.find((intent) => intent.releaseId === releaseId);
-  if (found === undefined) {
-    throw new Error(`No notification intent was recorded for the edition "${releaseId}".`);
-  }
+  if (found === undefined) throw new Error(`No notification intent was recorded for the edition "${releaseId}".`);
   return found;
 }
-
 function resultForIntent(results: readonly NotificationSendResultRecord[], intentId: string): NotificationSendResultRecord {
   const found = results.find((result) => result.intentId === intentId);
-  if (found === undefined) {
-    throw new Error(`No send result was recorded for the intent "${intentId}".`);
-  }
+  if (found === undefined) throw new Error(`No send result was recorded for the intent "${intentId}".`);
   return found;
 }
 function recipientRowCount(records: StoredNotificationRecords): number {
   return records.notificationResults.reduce((total, result) => total + result.recipients.length, 0);
 }
 function outcomeNameOf(outcome: MutationOutcome): string {
-  if (!isOutcome(outcome)) {
-    throw new Error("A mutation answered with a value that is not one of the eight outcomes.");
-  }
+  if (!isOutcome(outcome)) throw new Error("A mutation answered with a value that is not one of the eight outcomes.");
   return outcome.outcome;
 }
 function acceptanceOf(outcome: MutationOutcome, what: string): Extract<MutationOutcome, { outcome: "accepted" }> {
-  if (!isOutcome(outcome) || outcome.outcome !== "accepted") {
-    throw new Error(`${what} answered "${outcomeNameOf(outcome)}" instead of an acceptance.`);
-  }
+  if (!isOutcome(outcome) || outcome.outcome !== "accepted") throw new Error(`${what} answered "${outcomeNameOf(outcome)}" instead of an acceptance.`);
   return outcome;
 }
 function unknownOf(outcome: MutationOutcome, what: string): Extract<MutationOutcome, { outcome: "unknown" }> {
-  if (!isOutcome(outcome) || outcome.outcome !== "unknown") {
-    throw new Error(`${what} answered "${outcomeNameOf(outcome)}" instead of an uncertain outcome.`);
-  }
+  if (!isOutcome(outcome) || outcome.outcome !== "unknown") throw new Error(`${what} answered "${outcomeNameOf(outcome)}" instead of an uncertain outcome.`);
   return outcome;
 }
 function alreadyAcceptedOf(outcome: MutationOutcome, what: string): Extract<MutationOutcome, { outcome: "alreadyAccepted" }> {
-  if (!isOutcome(outcome) || outcome.outcome !== "alreadyAccepted") {
-    throw new Error(`${what} answered "${outcomeNameOf(outcome)}" instead of recovering the stored result.`);
-  }
+  if (!isOutcome(outcome) || outcome.outcome !== "alreadyAccepted") throw new Error(`${what} answered "${outcomeNameOf(outcome)}" instead of recovering the stored result.`);
   return outcome;
 }
-/** The field messages a validation refusal names, which say exactly which input was refused and why. */
 function refusalFieldsOf(outcome: MutationOutcome, what: string): FieldMessages {
-  if (!isOutcome(outcome) || outcome.outcome !== "invalid") {
-    throw new Error(`${what} answered "${outcomeNameOf(outcome)}" instead of a validation refusal.`);
-  }
+  if (!isOutcome(outcome) || outcome.outcome !== "invalid") throw new Error(`${what} answered "${outcomeNameOf(outcome)}" instead of a validation refusal.`);
   return outcome.fields;
 }
-/** The single message a refusal of the intended instant carries, which is the closed reason the surface shows. */
 function usefulnessMessage(fields: FieldMessages, what: string): string {
   const messages = fields.intendedAt;
-  if (messages === undefined || messages.length === 0) {
-    throw new Error(`${what} was refused for ${Object.keys(fields).join(", ") || "no named field"} rather than for the instant its usefulness window runs from.`);
-  }
+  if (messages === undefined || messages.length === 0) throw new Error(`${what} was refused for ${Object.keys(fields).join(", ") || "no named field"} rather than for the instant its usefulness window runs from.`);
   return messages.join(" ");
 }
 function withinUsefulness(result: NotificationDeadlineResult, what: string): Extract<NotificationDeadlineResult, { status: "within-usefulness" }> {
-  if (result.status !== "within-usefulness") {
-    throw new Error(`${what} fell outside the usefulness window.`);
-  }
+  if (result.status !== "within-usefulness") throw new Error(`${what} fell outside the usefulness window.`);
   return result;
 }
 function pastUsefulness(result: NotificationDeadlineResult, what: string): Extract<NotificationDeadlineResult, { status: "past-usefulness" }> {
-  if (result.status !== "past-usefulness") {
-    throw new Error(`${what} was still inside the usefulness window.`);
-  }
+  if (result.status !== "past-usefulness") throw new Error(`${what} was still inside the usefulness window.`);
   return result;
 }
-/** What one submission reports about itself, as the replay of a lost acknowledgement hands it back. */
 interface SubmissionView {
   readonly intentId: string;
   readonly ceilingCount: number;
   readonly recipientIds: readonly string[];
   readonly members: readonly string[];
 }
-
 function submissionViewOf(value: unknown): SubmissionView {
-  if (typeof value !== "object" || value === null) {
-    throw new Error("The recovered result is not the submission view a notice answers with.");
-  }
+  if (typeof value !== "object" || value === null) throw new Error("The recovered result is not the submission view a notice answers with.");
   const intentId: unknown = Reflect.get(value, "intentId");
   const ceilingCount: unknown = Reflect.get(value, "ceilingCount");
   const recipients: unknown = Reflect.get(value, "recipients");
-  if (typeof intentId !== "string" || typeof ceilingCount !== "number" || !Array.isArray(recipients)) {
-    throw new Error("The recovered result states no intent, ceiling and recipient list, so it is not a submission view.");
-  }
+  if (typeof intentId !== "string" || typeof ceilingCount !== "number" || !Array.isArray(recipients)) throw new Error("The recovered result states no intent, ceiling and recipient list, so it is not a submission view.");
   const recipientIds = recipients.map((copy: unknown) => {
     const recipientId: unknown = typeof copy === "object" && copy !== null ? Reflect.get(copy, "recipientId") : undefined;
-    if (typeof recipientId !== "string") {
-      throw new Error("A recipient of the recovered submission is stated without the identity its copy was pinned to.");
-    }
+    if (typeof recipientId !== "string") throw new Error("A recipient of the recovered submission is stated without the identity its copy was pinned to.");
     return recipientId;
   });
   return { intentId, ceilingCount, recipientIds, members: Object.keys(value) };
 }
-/**
- * Every intended rendition, as `intentId → recipientId → renditionId`. A recipient named twice within
- * one intent, or a copy that names no rendition at all, fails here rather than being compared: one
- * recipient receives exactly one pinned rendition per intent.
- */
 function recipientRenditionsOf(records: StoredNotificationRecords, when: string): ReadonlyMap<string, ReadonlyMap<string, string>> {
   const byIntent = new Map<string, ReadonlyMap<string, string>>();
   for (const result of records.notificationResults) {
     const byRecipient = new Map<string, string>();
     for (const copy of result.recipients) {
-      if (copy.renditionId.length === 0) {
-        throw new Error(`On ${when}, the copy recorded for "${copy.recipientId}" names no rendition, so it is pinned to nothing.`);
-      }
-      if (byRecipient.has(copy.recipientId)) {
-        throw new Error(`On ${when}, the intent "${result.intentId}" records more than one copy for "${copy.recipientId}", so that person received more than one rendition.`);
-      }
+      if (copy.renditionId.length === 0) throw new Error(`On ${when}, the copy recorded for "${copy.recipientId}" names no rendition, so it is pinned to nothing.`);
+      if (byRecipient.has(copy.recipientId)) throw new Error(`On ${when}, the intent "${result.intentId}" records more than one copy for "${copy.recipientId}", so that person received more than one rendition.`);
       byRecipient.set(copy.recipientId, copy.renditionId);
     }
     byIntent.set(result.intentId, byRecipient);
@@ -336,8 +204,6 @@ describe("the deadline is the intended instant plus 24 elapsed hours", () => {
     const atIntended = withinUsefulness(notificationDeadline({ intendedAt, now: intendedAt }), "A notice read at the instant it was intended for");
     expect(atIntended.deadlineInstant.epochMilliseconds - intendedAt.epochMilliseconds).toBe(USEFULNESS_MILLISECONDS);
     expect(atIntended.remainingMilliseconds).toBe(USEFULNESS_MILLISECONDS);
-    // One millisecond inside the window is still useful, and the remainder is what is left rather
-    // than the whole window again.
     const justInside = withinUsefulness(notificationDeadline({ intendedAt, now: intendedAt.add({ milliseconds: USEFULNESS_MILLISECONDS - 1 }) }), "A notice read one millisecond inside the window");
     expect(justInside.remainingMilliseconds).toBe(1);
     // The equality case, asserted from the deadline's own side: the same instant either way, so the
@@ -353,9 +219,7 @@ describe("the deadline is the intended instant plus 24 elapsed hours", () => {
     // hours after it, so a window measured from the request would end at two different instants.
     acceptanceOf(await requestNotice({ releaseId: PUBLIC_EDITION, intendedAt }), "The notice requested 20 hours after it was meant for");
     const advanced = await advanceClock(SESSION_ID, 3 * MILLISECONDS_PER_HOUR);
-    if (!advanced.ok) {
-      throw new Error(`The scenario clock could not be advanced by three hours: ${advanced.error.code}.`);
-    }
+    if (!advanced.ok) throw new Error(`The scenario clock could not be advanced by three hours: ${advanced.error.code}.`);
     acceptanceOf(await requestNotice({ releaseId: SUPPORTER_EDITION, intendedAt }), "The notice requested 23 hours after it was meant for");
     const records = await storedRecords();
     const earlyIntent = intentForRelease(records.notificationIntents, PUBLIC_EDITION);
@@ -381,20 +245,14 @@ describe("the window is strict at equality", () => {
     const failedRecipientIds = seededResult.recipients.filter((copy) => copy.state === "failed").map((copy) => copy.recipientId);
     expect(failedRecipientIds.length).toBe(1);
     const [failedRecipientId] = failedRecipientIds;
-    if (failedRecipientId === undefined) {
-      throw new Error("The seeded send result records no definite failure, so no case here could exercise a retry inside the window.");
-    }
+    if (failedRecipientId === undefined) throw new Error("The seeded send result records no definite failure, so no case here could exercise a retry inside the window.");
     const intendedAt = SEED_INSTANT.subtract({ milliseconds: USEFULNESS_MILLISECONDS - MILLISECONDS_PER_SECOND });
     const accepted = acceptanceOf(await requestNotice({ intendedAt }), "A notice requested one second inside the usefulness window");
-    // An acceptance names the two records it created — the intent and its send result — and the
-    // document whose revision it advanced; it claims nothing about a message leaving.
     expect(accepted.created?.length).toBe(2);
     expect(accepted.changed).toEqual([DOCUMENT_ID]);
     const after = await storedRecords();
     const intent = intentForRelease(after.notificationIntents, PUBLIC_EDITION);
     const retried = resultForIntent(after.notificationResults, intent.intentId);
-    // Only the recipient whose earlier copy definitively failed is offered the notice again: a copy
-    // that was already accepted, or left uncertain, is never sent a second time.
     expect(retried.recipients.map((copy) => copy.recipientId)).toEqual([failedRecipientId]);
     expect(retried.recipients.every((copy) => copy.state === "accepted")).toBe(true);
     // The earlier record is untouched: the retry is a new copy on a new intent rather than a rewrite
@@ -429,23 +287,17 @@ describe("a rejected notice cannot be revived as a fresh attempt", () => {
     // The same operation id replays an attempt that was refused, so it is refused again rather than
     // recovered: a rejection is not an acceptance waiting to be acknowledged.
     const replayed = refusalFieldsOf(await requestNotice({ operationId: firstOperationId, intendedAt }), "The replay of the refused attempt");
-    // A fresh operation id is a new attempt at the same expired intent. It is refused identically,
-    // which is the clause that stops "resend" from being a way round the window.
     const freshOperationId = newOperationId();
     expect(freshOperationId).not.toBe(firstOperationId);
     const fresh = refusalFieldsOf(await requestNotice({ operationId: freshOperationId, intendedAt }), "A fresh attempt at the same expired intent");
     // Later still, and later again after the clock moves on: the window does not extend because
     // someone tried again, so a retry cannot turn an expired intent into a useful one.
     const advanced = await advanceClock(SESSION_ID, MILLISECONDS_PER_HOUR);
-    if (!advanced.ok) {
-      throw new Error(`The scenario clock could not be advanced by an hour: ${advanced.error.code}.`);
-    }
+    if (!advanced.ok) throw new Error(`The scenario clock could not be advanced by an hour: ${advanced.error.code}.`);
     const afterWaiting = refusalFieldsOf(await requestNotice({ operationId: newOperationId(), intendedAt }), "A retry an hour past the window");
     expect(replayed).toEqual(first);
     expect(fresh).toEqual(first);
     expect(afterWaiting).toEqual(first);
-    // No message appeared for any of the four attempts: the recorded intents, the send results and
-    // the per-recipient copies are the seeded ones, unchanged and unextended.
     const after = await storedRecords();
     expect(after.notificationIntents.map((intent) => intent.intentId)).toEqual(before.notificationIntents.map((intent) => intent.intentId));
     expect(after.notificationResults.length).toBe(before.notificationResults.length);
@@ -491,21 +343,8 @@ describe("the window is elapsed hours, not calendar days", () => {
 describe("an uncertain outcome is recovered by identity, never resent", () => {
   it("answers an uncertain submission with unknown and returns the stored result on replay", async () => {
     const dev = await reads.dev.readDevState(SOURCE);
-    if (dev.kind !== "envelope") {
-      throw new Error(`The development document answered "${dev.kind}" instead of an envelope, so no failure could be armed.`);
-    }
-    acceptanceOf(
-      await mutations.dev.setFailurePlan(
-        {
-          operationId: newOperationId(),
-          scope,
-          expectedRevision: dev.envelope.revision,
-          payload: { mode: "unknown", target: { kind: "mutation", name: "requestNotification" } },
-        },
-        SOURCE,
-      ),
-      "Arming the lost acknowledgement on requestNotification",
-    );
+    if (dev.kind !== "envelope") throw new Error(`The development document answered "${dev.kind}" instead of an envelope, so no failure could be armed.`);
+    acceptanceOf(await mutations.dev.setFailurePlan({ operationId: newOperationId(), scope, expectedRevision: dev.envelope.revision, payload: { mode: "unknown", target: { kind: "mutation", name: "requestNotification" } } }, SOURCE), "Arming the lost acknowledgement on requestNotification");
     const operationId = newOperationId();
     const intendedAt = SEED_INSTANT;
     const uncertain = unknownOf(await requestNotice({ operationId, intendedAt }), "A submission whose acknowledgement was lost");
@@ -522,30 +361,24 @@ describe("an uncertain outcome is recovered by identity, never resent", () => {
     const view = submissionViewOf(recovered.result);
     expect(view.intentId).toBe(created.intentId);
     expect(view.ceilingCount).toBe(created.ceilingCount);
-    // Recovery is a read of what was stored, not a new effect: one intent, one send result, and the
-    // same copies the record holds.
     const afterReplay = await storedRecords();
     expect(afterReplay.notificationIntents.length).toBe(2);
     expect(afterReplay.notificationResults.length).toBe(2);
-    expect(view.recipientIds.toSorted()).toEqual(resultForIntent(afterReplay.notificationResults, created.intentId).recipients.map((copy) => copy.recipientId).toSorted());
-    // Nothing in the recovered view claims a delivery or a reading either.
+    expect(view.recipientIds.toSorted()).toEqual(
+      resultForIntent(afterReplay.notificationResults, created.intentId)
+        .recipients.map((copy) => copy.recipientId)
+        .toSorted(),
+    );
     expect(view.members.filter(claimsDeliveryOrReading)).toEqual([]);
     // The arming is cleared here and again after every case, so no later case inherits it.
     const armed = await reads.dev.readDevState(SOURCE);
-    if (armed.kind !== "envelope") {
-      throw new Error(`The development document answered "${armed.kind}" instead of an envelope.`);
-    }
-    acceptanceOf(
-      await mutations.dev.setFailurePlan({ operationId: newOperationId(), scope, expectedRevision: armed.envelope.revision, payload: { plan: null } }, SOURCE),
-      "Disarming the lost acknowledgement",
-    );
+    if (armed.kind !== "envelope") throw new Error(`The development document answered "${armed.kind}" instead of an envelope.`);
+    acceptanceOf(await mutations.dev.setFailurePlan({ operationId: newOperationId(), scope, expectedRevision: armed.envelope.revision, payload: { plan: null } }, SOURCE), "Disarming the lost acknowledgement");
   });
   it("records only accepted, failed and unknown as per-recipient outcomes", async () => {
     const records = await storedRecords();
     const seededResult = resultForIntent(records.notificationResults, SEEDED_INTENT_ID);
     const observed = [...new Set(seededResult.recipients.map((copy) => copy.state))].toSorted();
-    // Exactly three states, and they are the three the rule fixes: what a recipient's copy did inside
-    // this simulation. A delivery or a reading is a different fact that this application never has.
     expect(observed.length).toBe(SEND_RESULT_STATES.length);
     expect(observed).toEqual([...SEND_RESULT_STATES]);
     for (const copy of seededResult.recipients) {
@@ -558,8 +391,6 @@ describe("an uncertain outcome is recovered by identity, never resent", () => {
     for (const copy of seededResult.recipients) {
       expect(Object.keys(copy).toSorted()).toEqual(["at", "recipientId", "renditionId", "state"]);
     }
-    // A submission answers with an acceptance — the notice was submitted — and the outcome's own
-    // members claim nothing beyond that.
     const accepted = acceptanceOf(await requestNotice({}), "A notice submitted for a published edition");
     expect(accepted.outcome).toBe("accepted");
     expect(Object.keys(accepted).filter(claimsDeliveryOrReading)).toEqual([]);
@@ -572,29 +403,12 @@ describe("the accepted ceiling and the pinned rendition", () => {
     const before = await storedRecords();
     const intent = intentForRelease(before.notificationIntents, PUBLIC_EDITION);
     const ceiling = intent.ceilingCount;
-    // The ceiling is a whole number of recipients: the seeded harbour audience holds four active
-    // memberships beside four that receive nothing — one awaiting proof, one that turned Off, one
-    // restricted, and one whose source column merely said "subscribed".
     expect(Number.isInteger(ceiling)).toBe(true);
     expect(ceiling).toBe(4);
     const copiesBefore = resultForIntent(before.notificationResults, intent.intentId).recipients.length;
-    acceptanceOf(
-      await mutations.audience.signupForPurpose(
-        {
-          operationId: newOperationId(),
-          scope,
-          expectedRevision: FIRST_REVISION,
-          payload: { publisherId: PUBLISHER_ID, purpose: PURPOSE, email: "late.reader@example.org", languagePreference: "fr" },
-        },
-        SOURCE,
-      ),
-      "A reader signing up after the notice was submitted",
-    );
+    acceptanceOf(await mutations.audience.signupForPurpose({ operationId: newOperationId(), scope, expectedRevision: FIRST_REVISION, payload: { publisherId: PUBLISHER_ID, purpose: PURPOSE, email: "late.reader@example.org", languagePreference: "fr" } }, SOURCE), "A reader signing up after the notice was submitted");
     const after = await storedRecords();
     expect(after.memberships.length).toBe(before.memberships.length + 1);
-    // The ceiling is the audience the intent was accepted for. A later signup may be excluded by
-    // policy, but it can never enlarge what was already accepted, and it creates no second intent
-    // and no second copy.
     expect(intentForRelease(after.notificationIntents, PUBLIC_EDITION).ceilingCount).toBe(ceiling);
     expect(after.notificationIntents.length).toBe(before.notificationIntents.length);
     expect(resultForIntent(after.notificationResults, intent.intentId).recipients.length).toBe(copiesBefore);
@@ -607,16 +421,12 @@ describe("the accepted ceiling and the pinned rendition", () => {
     // one that stays recorded, so a later variant cannot be silently substituted for it.
     expect(secondPins).toEqual(firstPins);
     const seededPins = firstPins.get(SEEDED_INTENT_ID);
-    if (seededPins === undefined) {
-      throw new Error("The seeded intent records no pinned copies, so no case here could compare two intents.");
-    }
+    if (seededPins === undefined) throw new Error("The seeded intent records no pinned copies, so no case here could compare two intents.");
     expect(seededPins.size).toBe(4);
     const records = await storedRecords();
     const created = intentForRelease(records.notificationIntents, PUBLIC_EDITION);
     const createdPins = firstPins.get(created.intentId);
-    if (createdPins === undefined) {
-      throw new Error(`The intent "${created.intentId}" records no pinned copies.`);
-    }
+    if (createdPins === undefined) throw new Error(`The intent "${created.intentId}" records no pinned copies.`);
     expect(createdPins.size).toBe(1);
     for (const [recipientId, renditionId] of createdPins) {
       // The pin follows the edition this notice was submitted for, rather than whatever an earlier

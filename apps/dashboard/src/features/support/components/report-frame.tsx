@@ -1,64 +1,10 @@
 "use client";
-/**
- * The frame every one of this application's four fixed reports renders inside.
- *
- * **One read, every artifact.** This file issues exactly one report read — `useReport`, once — and
- * hands the `ReportResult` that read answers with, unchanged, to the layout that draws the screen, to
- * the snapshot identity the export carries and to `printModel`. So the on-screen total, the chart
- * series, the table rows, the drill-down, the CSV file and the printed page of one query cannot
- * disagree in count or in minor-unit sums per currency (AAP 0.8.8; AAP 0.12.2; criterion 1). Nothing
- * here adds, subtracts, averages, divides or rounds an amount: a figure is stated by the component that
- * owns its rendering, from the value state the read recorded for that field.
- *
- * **What the frame owns.** The report's identity and description (`../report-catalog`), the one
- * snapshot statement, the coverage note, the layout the catalogue names, the export and print controls
- * and the print-only page. The four layouts render their own figures; the chart belongs to the one
- * layout that carries a series (`./report-history`); and the statement, the controls and the printed
- * page are the family's single implementations of those concerns (AAP 0.3.4). This file composes them
- * and duplicates none of them.
- *
- * **The chart.** `./report-history` owns the chart for the `history` layout, so this frame draws no
- * chart of its own: a second chart of the same series would be a second presentation of one result.
- *
- * **The print model.** `./print-report` renders a `PrintModel` and never builds one, and the export
- * read answers with CSV text plus its snapshot facts rather than a print model. This frame therefore
- * calls the owned presentation builder `printModel` exactly once on the same result the screen shows,
- * and gives what it returns to `./print-report`. The screen region and the printed region are mutually
- * exclusive by medium — `print:hidden` on one, `hidden print:block` on the other — so exactly one of
- * them is exposed at a time.
- *
- * **Where the query comes from.** `query` is the report query the route parsed, in the report engine's
- * own vocabulary (`@/modules/support/report`). The browser read accepts the narrower filter set the
- * service publishes, so `requestQueryOf` reduces one to the other in a single direction: the period,
- * the currency selection, the amount range, the attribution, the designation, the method, the search,
- * the sort and the page window all survive. The `scope` the query object may carry is deliberately not
- * forwarded, because every read derives its authority from the session and never from the caller.
- *
- * **The first paint.** The read hook publishes no `initialData`, so a `Server Component` envelope
- * passed as `initialEnvelope` is used only while the browser read has issued no answer of its own, and
- * only after a structural check that its `data` really is a report result read in this frame's own
- * scope. The moment the read answers
- * — with an envelope, a denial or an outage — that answer is what stands, because the seeded envelope
- * is an earlier read of the same query rather than a second source.
- *
- * **The drill-down.** A matrix cell carries the narrowed report query the engine built for it, and
- * this frame turns that handle into the Gifts-ledger address the cell opens: the period, the currency,
- * the attribution, the designation, the method, the search and the sort come from the handle, so no
- * query is rebuilt here and no data is read for the link.
- *
- * **Direction and accessibility.** One `h1` for the page, layouts nesting beneath it; the *Development
- * data* label belongs to the shell and stays visible in every state below; the printed region holds no
- * focusable element; and only the matrix's own `ScrollRegion` scrolls at 320 CSS px, so the page itself
- * never does. `dir` is passed to the four layouts and to the printed page, so a right-to-left report
- * reads as one document.
- *
- * **Layering.** `features/support → components → components/ui`. It imports no store, no report
- * engine, no CSV writer, no chart library and no second transport.
- */
+/** The frame every one of this application's four fixed reports renders inside. **One read, every artifact.** This file issues exactly one report read — `useReport`, once — and hands the … */
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, type ReactElement } from "react";
 import StateNotice from "@/components/state-notice";
+import { refusalSummary } from "@/components/form-field";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
@@ -80,65 +26,34 @@ import SnapshotStatement from "./snapshot-statement";
 // What the caller passes
 /** Props of {@link ReportFrame}. */
 export type ReportFrameProps = {
-  /** The authority the report is read under and the export is checked in. */
   readonly scope: Scope;
   /** Which of the four fixed reports this page is: the catalogue is the only report identity. */
   readonly reportId: ReportId;
-  /** The report query the route parsed, carrying the report id, the period and the year. */
   readonly query: ReportQuery;
   /** The envelope a `Server Component` already read for this query, used for the first paint only. */
   readonly initialEnvelope?: ReadEnvelope<unknown>;
   readonly locale: string;
   readonly dir?: "ltr" | "rtl";
-  /** The years the history layout may switch to, supplied by the route or the envelope. */
   readonly yearChoices?: readonly number[];
-  /** Re-runs the same query with a new year; the route's query state is the default path. */
   readonly onSelectYear?: (year: number) => void;
   readonly className?: string;
 };
 // Wording this frame owns
 const SUPPORT_CRUMB = "Support";
-
 const LOADING_TITLE = "Reading this report";
-
 const LOADING_BODY = "No figure is shown until the read answers, because a report written before the answer would state a number nobody computed.";
-
 const LOADING_LINES = 8;
-
 const DENIED_TITLE = "This report is not permitted in this scope";
-
 const UNAVAILABLE_TITLE = "This report could not be read";
-
+const REFUSED_TITLE = "This report's request was refused";
 const UNREACHED_TITLE = "The report request did not complete";
-
 const UNREACHED_BODY = "The request for this report never arrived at an answer, so nothing on this page is a figure and nothing is presented as one. Retrying re-requests the same read.";
-
-const RETRY_LABEL = "Retry the read";
-
-const COVERAGE_NOTE_TITLES: Readonly<Partial<Record<CoverageState, string>>> = {
-  partial: "Coverage of this period is partial",
-  unknown: "How much of this period the source covers is unknown",
-};
+const COVERAGE_NOTE_TITLES: Readonly<Partial<Record<CoverageState, string>>> = { partial: "Coverage of this period is partial", unknown: "How much of this period the source covers is unknown" };
 const UNSTATED_BOUNDARY = "a date the source does not state";
-
-const EXPORT_ACTION = "exportQuery";
-/** The ledger address a matrix cell opens, and the parameter names that ledger reads. */
 const GIFTS_ROUTE = "/support/gifts";
-const GIFTS_PARAM = {
-  from: "from",
-  to: "to",
-  currency: "currency",
-  recipient: "recipient",
-  partnerId: "partnerId",
-  amountMin: "amountMin",
-  amountMax: "amountMax",
-  designation: "designation",
-  method: "method",
-  search: "search",
-  sortField: "sortField",
-  sortDirection: "sortDirection",
-} as const;
-/** The search parameter the history layout's year is carried in, which the route reads back. */
+const GIFTS_PARAM = { from: "from", to: "to", currency: "currency", recipient: "recipient", partnerId: "partnerId", amountMin: "amountMin", amountMax: "amountMax", designation: "designation", method: "method", search: "search", sortField: "sortField", sortDirection: "sortDirection" } as const;
+/** The export action the read states, and the query parameter the history year travels in. */
+const EXPORT_ACTION = "exportQuery";
 const YEAR_PARAM = "year";
 const NO_YEARS: readonly number[] = [];
 // Reading what arrived, without trusting it
@@ -146,9 +61,7 @@ function isJsonObject(value: unknown): value is Readonly<Record<string, unknown>
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function isReportResult(value: unknown): value is ReportResult {
-  if (!isJsonObject(value)) {
-    return false;
-  }
+  if (!isJsonObject(value)) return false;
   const snapshot = value["snapshot"];
   return (
     isJsonObject(snapshot) &&
@@ -167,15 +80,9 @@ function isReportResult(value: unknown): value is ReportResult {
 function isReportEnvelope(value: ReadEnvelope<unknown>): value is ReportEnvelope {
   return isReportResult(value.data);
 }
-/**
- * The envelope a `Server Component` read for this page, used only when it was read in the authority
- * this frame is acting in: an envelope of another scope is another context's result, so it is dropped
- * rather than shown while this frame's own read is in flight.
- */
+/** The envelope a `Server Component` read for this page, used only when it was read in the authority this frame is acting in: an envelope of another scope is another context's result, so it is … */
 function seededEnvelope(initialEnvelope: ReadEnvelope<unknown> | undefined, scope: Scope): ReportEnvelope | undefined {
-  if (initialEnvelope === undefined || !isReportEnvelope(initialEnvelope)) {
-    return undefined;
-  }
+  if (initialEnvelope === undefined || !isReportEnvelope(initialEnvelope)) return undefined;
   return sameScope(initialEnvelope.scope, scope) ? initialEnvelope : undefined;
 }
 // The one bridge from the report query to the filter set the browser read accepts
@@ -189,11 +96,7 @@ function periodInputOf(period: ReportQuery["period"]): ReportRequestQuery["perio
       return { kind: "explicit", from: String(period.from), to: String(period.to) };
   }
 }
-/**
- * Reduces the report query to the bounded filter set `readReport` accepts, member for member, and
- * changes nothing a figure depends on. The scope the report query carries is left behind on purpose:
- * the read resolves authority from the session, so a caller-supplied scope never reaches it.
- */
+/** Reduces the report query to the bounded filter set `readReport` accepts, member for member, and changes nothing a figure depends on. */
 function requestQueryOf(query: ReportQuery): ReportRequestQuery {
   const { amountRange, page, sort } = query;
   return {
@@ -213,24 +116,10 @@ function requestQueryOf(query: ReportQuery): ReportRequestQuery {
 // The coverage note the layout sits under
 function coverageNoteOf(coverage: Coverage): { readonly title: string; readonly body: string } | null {
   const title = COVERAGE_NOTE_TITLES[coverage.state];
-  if (title === undefined) {
-    return null;
-  }
-  return {
-    title,
-    body: fillTemplate(COVERAGE_TEMPLATES[coverage.state], {
-      from: coverage.from ?? UNSTATED_BOUNDARY,
-      to: coverage.to ?? UNSTATED_BOUNDARY,
-    }),
-  };
+  if (title === undefined) return null;
+  return { title, body: fillTemplate(COVERAGE_TEMPLATES[coverage.state], { from: coverage.from ?? UNSTATED_BOUNDARY, to: coverage.to ?? UNSTATED_BOUNDARY }) };
 }
 // The drill-down
-/**
- * The Gifts-ledger address one matrix cell opens. The narrowed query comes from the cell's own
- * `drilldown` handle — the engine's, not this file's — so the period, the attribution, the currency
- * and every surrounding filter are the ones the matrix was computed under, and the ledger applies the
- * same restriction the cell states.
- */
 function cellDrilldownHref(cell: MatrixCell): string {
   const { drilldown } = cell;
   const period = drilldown.period;
@@ -243,24 +132,16 @@ function cellDrilldownHref(cell: MatrixCell): string {
   const partner = drilldown.partner;
   if (partner !== undefined) {
     params.set(GIFTS_PARAM.recipient, partner.kind);
-    if (partner.kind === "partner") {
-      params.set(GIFTS_PARAM.partnerId, partner.partnerId);
-    }
+    if (partner.kind === "partner") params.set(GIFTS_PARAM.partnerId, partner.partnerId);
   }
   const range = drilldown.amountRange;
   if (range !== undefined) {
     params.set(GIFTS_PARAM.amountMin, String(range.minMinor));
     params.set(GIFTS_PARAM.amountMax, String(range.maxMinor));
   }
-  if (drilldown.designation !== undefined) {
-    params.set(GIFTS_PARAM.designation, drilldown.designation);
-  }
-  if (drilldown.method !== undefined) {
-    params.set(GIFTS_PARAM.method, drilldown.method);
-  }
-  if (drilldown.search !== undefined) {
-    params.set(GIFTS_PARAM.search, drilldown.search);
-  }
+  if (drilldown.designation !== undefined) params.set(GIFTS_PARAM.designation, drilldown.designation);
+  if (drilldown.method !== undefined) params.set(GIFTS_PARAM.method, drilldown.method);
+  if (drilldown.search !== undefined) params.set(GIFTS_PARAM.search, drilldown.search);
   const sort = drilldown.sort;
   if (sort !== undefined) {
     params.set(GIFTS_PARAM.sortField, sort.field);
@@ -283,11 +164,7 @@ interface ReportLayoutProps {
   readonly years: readonly number[];
   readonly onSelectYear: (year: number) => void;
 }
-/**
- * Renders exactly one of the four fixed layouts, chosen by the catalogue rather than by the URL. The
- * switch is exhaustive over the catalogue's own union: a fifth layout cannot be added without failing
- * to compile here, so the `default` branch is unreachable rather than a silent fallback.
- */
+/** Renders exactly one of the four fixed layouts, chosen by the catalogue rather than by the URL. */
 function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear }: ReportLayoutProps): ReactElement {
   const { layout } = REPORT_CATALOG[reportId];
   switch (layout) {
@@ -323,7 +200,7 @@ export function ReportFrame({ scope, reportId, query, initialEnvelope, locale, d
   // earlier read of the same query only while this read has neither answered nor failed.
   const envelope = answer === undefined ? (read.isError ? undefined : seededEnvelope(initialEnvelope, scope)) : answer.kind === "envelope" ? answer.envelope : undefined;
   const retry = {
-    label: RETRY_LABEL,
+    label: "Retry the read",
     onClick: (): void => {
       void read.refetch();
     },
@@ -362,6 +239,10 @@ export function ReportFrame({ scope, reportId, query, initialEnvelope, locale, d
       content = <StateNotice kind="denied" title={DENIED_TITLE} reasonCode={answer.denied.reasonCode} headingLevel={2} />;
     } else if (answer !== undefined && answer.kind === "unavailable") {
       content = <StateNotice kind="unavailable" title={UNAVAILABLE_TITLE} description={answer.unavailable.guidance} source={answer.unavailable.source} retry={retry} headingLevel={2} />;
+    } else if (answer !== undefined && answer.kind === "refused") {
+      // The report query this address states is not one the read admits: the refusal names what to
+      // correct, and the source behind the report answered rather than failing.
+      content = <StateNotice kind="refused" title={REFUSED_TITLE} description={refusalSummary(answer.refused)} headingLevel={2} />;
     } else if (read.isError) {
       content = <StateNotice kind="unavailable" title={UNREACHED_TITLE} description={UNREACHED_BODY} retry={retry} headingLevel={2} />;
     } else {
@@ -374,14 +255,7 @@ export function ReportFrame({ scope, reportId, query, initialEnvelope, locale, d
     // The snapshot facts every artifact states, taken from the read rather than derived here: the
     // per-currency partition and the period from the result, the coverage and the as-of instant from the
     // envelope, and the period state from the model the printed page reads.
-    const facts = {
-      basis: result.snapshot.basis,
-      currencies: result.snapshot.currencies,
-      period: { from: String(result.snapshot.period.from), to: String(result.snapshot.period.to) },
-      coverage: envelope.coverage,
-      asOf: envelope.asOf,
-      isCurrentPeriod: model.inProgress,
-    };
+    const facts = { basis: result.snapshot.basis, currencies: result.snapshot.currencies, period: { from: String(result.snapshot.period.from), to: String(result.snapshot.period.to) }, coverage: envelope.coverage, asOf: envelope.asOf, isCurrentPeriod: model.inProgress };
     const note = coverageNoteOf(envelope.coverage);
     content = (
       <>
@@ -401,15 +275,7 @@ export function ReportFrame({ scope, reportId, query, initialEnvelope, locale, d
         <Separator />
         {/* The controls of the artifact that leaves the application: the same query, the same snapshot
             identity and the same facts the screen shows, with the envelope's own advisory capability. */}
-        <ExportPrintActions
-          scope={scope}
-          query={query}
-          snapshotId={snapshotId}
-          snapshot={{ ...facts, rowTotal: result.total }}
-          locale={locale}
-          dir={dir}
-          canExport={envelope.actions.some((action) => action.name === EXPORT_ACTION && action.available)}
-        />
+        <ExportPrintActions scope={scope} query={query} snapshotId={snapshotId} snapshot={{ ...facts, rowTotal: result.total }} locale={locale} dir={dir} canExport={envelope.actions.some((action) => action.name === EXPORT_ACTION && action.available)} />
       </>
     );
     printed = <PrintReport model={model} snapshot={facts} locale={locale} dir={dir} />;

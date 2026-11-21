@@ -1,65 +1,17 @@
 "use client";
-/**
- * The Coaching family's read transport: the six TanStack Query clients of the family's six named coaching
- * reads, each handing its read's `envelope | denied | unavailable` to the family's components unchanged.
- *
- * **Scope basis.** AAP 0.11.1 (`apps/dashboard/src/features/coaching/**`, the hooks for the family's
- * reads and mutations); AAP 0.7.1, whose coaching subset of reads is `readCoachingOverview`,
- * `readTargets`, `readCheckIns`, `readTaskShares`, `readCoachPortfolio` and `readCoachSubject`; AAP 0.6.3,
- * whose handlers are `GET /api/coaching`, `/api/coaching/targets`, `/api/coaching/checkins`,
- * `/api/coaching/taskshare` and `/api/coaching/subjects`; AAP 0.10.1 family 13 (Coaching) with criteria
- * 16 and 19 as its evidence.
- *
- * **What it owns, and what it deliberately does not.** TanStack Query caches the read envelopes and
- * nothing else (AAP 0.7.1), under keys whose leading segments come from `scopeKey` — the one builder whose
- * cache the context fence in `components/context-switch-guard` clears on a switch (AAP 0.7.2). A switch
- * keeps these components mounted and changes only the scope inside the key, so an envelope read in the
- * ministry the worker left cannot be rendered in the one they entered. No measure, cutoff, window,
- * percentage, filter, sort, page or aggregate is computed here: AAP 0.8.4 and 0.8.8 put those behind the
- * service and the envelope states them, and a second computation here is how a coaching surface starts
- * disagreeing with the service that produced it. No envelope is mirrored in local state, so there is no
- * second owner to fall out of step with the store.
- *
- * **Why the wire is decoded rather than asserted.** `toResponse` answers a read as the envelope itself at
- * 200, the denial at 403 and the outage at 503, so the body is not already a `ReadResult`. Asserting the
- * body as one would hand a component a value whose `kind` is `undefined`, and a denial — the answer
- * criterion 19 requires to carry no count, title or existence hint — would render as a coaching surface
- * holding no data. The three arms are therefore rebuilt from the status, and a status or body this read
- * does not answer with is thrown as the fault it is rather than dressed as an empty list or a zero.
- *
- * **Why the two coach reads share one handler.** `view=portfolio` and `subjectId=<opaque id>` are the
- * single handler that serves a coach, and it authorises before it enumerates: a subject outside the
- * coach's admitted grants is a denial carrying no count, title or existence hint rather than an empty
- * module set. The worker overview's own handler answers that read alone and refuses a parameter that would
- * name another authority, so it is not a second way to ask for a portfolio.
- *
- * **Imports.** Every service import here is `import type`: the service barrel reaches the store, which a
- * browser bundle must not load, so the read payloads and the two failure arms arrive as types and the wire
- * is decoded below.
- */
+/** The Coaching family's read transport: the six TanStack Query clients of the family's six named coaching reads, each handing its read's `envelope | denied | unavailable | refused` to the family's … */
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { scopeKey } from "@/components/context-switch-guard";
 import { isRecord } from "@/lib/guards";
 import type { ReadEnvelope, ReadResult, Scope, reads } from "@/modules/data-service";
-import type { DeniedOutcome, UnavailableOutcome } from "@/modules/data-service/outcome";
+import type { DeniedOutcome, InvalidOutcome, UnavailableOutcome } from "@/modules/data-service/outcome";
 
 // ---------------------------------------------------------------------------------------------
 // The six jobs this module transports
 // ---------------------------------------------------------------------------------------------
 
-/**
- * The six job segments a Coaching cache key carries after its scope segments. Exported so the family's
- * mutation hooks invalidate exactly the entries these reads fill — the coach portfolio on its own, without
- * discarding the worker overview beside it.
- */
-export const COACHING_JOB_KEYS = {
-  overview: "coaching-overview",
-  targets: "targets",
-  checkIns: "check-ins",
-  taskShares: "task-shares",
-  coachPortfolio: "coach-portfolio",
-  coachSubject: "coach-subject",
-} as const;
+/** The six job segments a Coaching cache key carries after its scope segments. */
+export const COACHING_JOB_KEYS = { overview: "coaching-overview", targets: "targets", checkIns: "check-ins", taskShares: "task-shares", coachPortfolio: "coach-portfolio", coachSubject: "coach-subject" } as const;
 
 // ---------------------------------------------------------------------------------------------
 // The reads' own contracts, derived from the service rather than restated
@@ -83,11 +35,7 @@ type CoachPortfolioData = Extract<Awaited<ReturnType<typeof reads.coach.readCoac
 /** The coach subject payload: the admitted modules and their states, the frozen duration, the reviewed financial range and the separate `sharesNothing` answer. */
 type CoachSubjectData = Extract<Awaited<ReturnType<typeof reads.coach.readCoachSubject>>, { readonly kind: "envelope" }>["envelope"]["data"];
 
-/**
- * The page window a coaching list states, taken from the read that folds in the default of 25 rows and the
- * cap of 100 (AAP 0.8.7). The values are forwarded untouched: the service clamps the window and states the
- * page it actually answered with, so a clamp decided here would be a second rule.
- */
+/** The page window a coaching list states, taken from the read that folds in the default of 25 rows and the cap of 100 (AAP 0.8.7). */
 type TargetsQuery = NonNullable<Parameters<typeof reads.coaching.readTargets>[0]>;
 
 /** The page window a check-in list states, forwarded untouched for the same reason. */
@@ -122,14 +70,15 @@ const ENVELOPE_STATUS = 200;
 
 const DENIED_STATUS = 403;
 
+/** A session that expired or could not be established answers 401 with the same denial, which is a session fault rather than a permission refusal. */
+const SESSION_FAULT_STATUS = 401;
+
 const UNAVAILABLE_STATUS = 503;
 
-/**
- * A stated list window as the handler's search string. Every member present is sent exactly as the caller
- * stated it, and an absent one is left out so the service applies its own default; no value is formatted,
- * because a query the service parses is not a value a surface displays. `URLSearchParams` keeps insertion
- * order, so the URL and the cache key describe one request.
- */
+/** A query this read does not admit answers 422 with the field-keyed refusal, which is the request's own fault and not a source that did not answer. */
+const REFUSED_STATUS = 422;
+
+/** A stated list window as the handler's search string. */
 function toSearchParams(query: Readonly<Record<string, string | number | undefined>>): string {
   const search = new URLSearchParams();
   for (const [name, value] of Object.entries(query)) {
@@ -156,17 +105,7 @@ function isEnvelopeOf<T>(value: unknown, admitsData: (data: Record<string, unkno
     return false;
   }
   const { data, scope, source, revision, asOf, coverage, valueStates, actions } = value;
-  return (
-    isRecord(data) &&
-    admitsData(data) &&
-    isRecord(scope) &&
-    isRecord(source) &&
-    typeof revision === "string" &&
-    typeof asOf === "string" &&
-    isRecord(coverage) &&
-    isRecord(valueStates) &&
-    Array.isArray(actions)
-  );
+  return isRecord(data) && admitsData(data) && isRecord(scope) && isRecord(source) && typeof revision === "string" && typeof asOf === "string" && isRecord(coverage) && isRecord(valueStates) && Array.isArray(actions);
 }
 
 function isDeniedBody(value: unknown): value is DeniedOutcome {
@@ -181,33 +120,21 @@ function isUnavailableBody(value: unknown): value is UnavailableOutcome {
     return false;
   }
   const { source } = value;
-  return (
-    value.outcome === "unavailable" &&
-    typeof value.operationId === "string" &&
-    typeof value.guidance === "string" &&
-    isRecord(source) &&
-    typeof source.system === "string" &&
-    typeof source.reference === "string"
-  );
+  return value.outcome === "unavailable" && typeof value.operationId === "string" && typeof value.guidance === "string" && isRecord(source) && typeof source.system === "string" && typeof source.reference === "string";
 }
 
-/**
- * Reads one coaching envelope and answers the read's own result. Exactly one GET is made, with the
- * admission cookie travelling by `same-origin` and the answer left out of the HTTP cache so a withdrawal, a
- * revocation or a cutoff that has just passed takes effect on the next read. A transport fault, an
- * unparseable body and a status this read does not answer with are thrown: `useQuery` reports them as an
- * error the caller renders as a load failure, and none of them becomes an empty list.
- */
+function isRefusedBody(value: unknown): value is InvalidOutcome {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return value.outcome === "invalid" && typeof value.operationId === "string" && isRecord(value.fields);
+}
+
+/** Reads one coaching envelope and answers the read's own result. */
 async function getReadResult<T>(url: string, signal: AbortSignal, admitsData: (data: Record<string, unknown>) => boolean): Promise<ReadResult<ReadEnvelope<T>>> {
   let response: Response;
   try {
-    response = await fetch(url, {
-      method: "GET",
-      signal,
-      headers: { accept: "application/json" },
-      credentials: "same-origin",
-      cache: "no-store",
-    });
+    response = await fetch(url, { method: "GET", signal, headers: { accept: "application/json" }, credentials: "same-origin", cache: "no-store" });
   } catch (cause) {
     throw new Error(`GET ${url} could not be completed.`, { cause });
   }
@@ -224,6 +151,7 @@ async function getReadResult<T>(url: string, signal: AbortSignal, admitsData: (d
       }
       return { kind: "envelope", envelope: body };
     case DENIED_STATUS:
+    case SESSION_FAULT_STATUS:
       if (!isDeniedBody(body)) {
         throw noAnswer(url, response.status, "a body that is not a denial");
       }
@@ -233,6 +161,11 @@ async function getReadResult<T>(url: string, signal: AbortSignal, admitsData: (d
         throw noAnswer(url, response.status, "a body that is not an unavailable source");
       }
       return { kind: "unavailable", unavailable: body };
+    case REFUSED_STATUS:
+      if (!isRefusedBody(body)) {
+        throw noAnswer(url, response.status, "a body that is not a refused request");
+      }
+      return { kind: "refused", refused: body };
     default:
       throw noAnswer(url, response.status, "a status this read does not answer with");
   }
@@ -270,74 +203,32 @@ function admitsCoachSubject(data: Record<string, unknown>): boolean {
 // The six reads
 // ---------------------------------------------------------------------------------------------
 
-/**
- * Reads the worker's coaching overview — private preparation and every relationship's state, its five
- * independent module switches and its duration — answering `envelope`, `denied` or `unavailable`.
- */
+/** Reads the worker's coaching overview — private preparation and every relationship's state, its five independent module switches and its duration — answering `envelope`, `denied` or `unavailable`. */
 export function useCoachingOverview(scope: Scope): UseQueryResult<ReadResult<ReadEnvelope<CoachingOverviewData>>, Error> {
-  return useQuery({
-    queryKey: [...scopeKey(scope), COACHING_JOB_KEYS.overview],
-    queryFn: ({ signal }) => getReadResult<CoachingOverviewData>(COACHING_ENDPOINT, signal, admitsCoachingOverview),
-    retry: false,
-  });
+  return useQuery({ queryKey: [...scopeKey(scope), COACHING_JOB_KEYS.overview], queryFn: ({ signal }) => getReadResult<CoachingOverviewData>(COACHING_ENDPOINT, signal, admitsCoachingOverview), retry: false });
 }
 
-/**
- * Reads one page of the worker's targets with their versions and measured periods, answering `envelope`,
- * `denied` or `unavailable`.
- */
+/** Reads one page of the worker's targets with their versions and measured periods, answering `envelope`, `denied` or `unavailable`. */
 export function useTargets(scope: Scope, params: TargetsQuery): UseQueryResult<ReadResult<ReadEnvelope<TargetsData>>, Error> {
-  return useQuery({
-    queryKey: [...scopeKey(scope), COACHING_JOB_KEYS.targets, params],
-    queryFn: ({ signal }) => getReadResult<TargetsData>(readUrl(TARGETS_ENDPOINT, params), signal, admitsTargets),
-    retry: false,
-  });
+  return useQuery({ queryKey: [...scopeKey(scope), COACHING_JOB_KEYS.targets, params], queryFn: ({ signal }) => getReadResult<TargetsData>(readUrl(TARGETS_ENDPOINT, params), signal, admitsTargets), retry: false });
 }
 
-/**
- * Reads one page of the worker's check-ins, the private autosave and the shared revision kept apart,
- * answering `envelope`, `denied` or `unavailable`.
- */
+/** Reads one page of the worker's check-ins, the private autosave and the shared revision kept apart, answering `envelope`, `denied` or `unavailable`. */
 export function useCheckIns(scope: Scope, params: CheckInsQuery): UseQueryResult<ReadResult<ReadEnvelope<CheckInsData>>, Error> {
-  return useQuery({
-    queryKey: [...scopeKey(scope), COACHING_JOB_KEYS.checkIns, params],
-    queryFn: ({ signal }) => getReadResult<CheckInsData>(readUrl(CHECK_INS_ENDPOINT, params), signal, admitsCheckIns),
-    retry: false,
-  });
+  return useQuery({ queryKey: [...scopeKey(scope), COACHING_JOB_KEYS.checkIns, params], queryFn: ({ signal }) => getReadResult<CheckInsData>(readUrl(CHECK_INS_ENDPOINT, params), signal, admitsCheckIns), retry: false });
 }
 
-/**
- * Reads one page of the task summaries the worker selected for sharing, answering `envelope`, `denied` or
- * `unavailable`.
- */
+/** Reads one page of the task summaries the worker selected for sharing, answering `envelope`, `denied` or `unavailable`. */
 export function useTaskShares(scope: Scope, params: TaskSharesQuery): UseQueryResult<ReadResult<ReadEnvelope<TaskSharesData>>, Error> {
-  return useQuery({
-    queryKey: [...scopeKey(scope), COACHING_JOB_KEYS.taskShares, params],
-    queryFn: ({ signal }) => getReadResult<TaskSharesData>(readUrl(TASK_SHARES_ENDPOINT, params), signal, admitsTaskShares),
-    retry: false,
-  });
+  return useQuery({ queryKey: [...scopeKey(scope), COACHING_JOB_KEYS.taskShares, params], queryFn: ({ signal }) => getReadResult<TaskSharesData>(readUrl(TASK_SHARES_ENDPOINT, params), signal, admitsTaskShares), retry: false });
 }
 
-/**
- * Reads the coach's own portfolio of admitted subjects, answering `envelope`, `denied` or `unavailable`: a
- * portfolio holding no subject is the envelope's own empty answer, never a denial and never an outage.
- */
+/** Reads the coach's own portfolio of admitted subjects, answering `envelope`, `denied` or `unavailable`: a portfolio holding no subject is the envelope's own empty answer, never a denial and never … */
 export function useCoachPortfolio(scope: Scope): UseQueryResult<ReadResult<ReadEnvelope<CoachPortfolioData>>, Error> {
-  return useQuery({
-    queryKey: [...scopeKey(scope), COACHING_JOB_KEYS.coachPortfolio],
-    queryFn: ({ signal }) => getReadResult<CoachPortfolioData>(readUrl(COACH_ENDPOINT, { view: PORTFOLIO_VIEW }), signal, admitsCoachPortfolio),
-    retry: false,
-  });
+  return useQuery({ queryKey: [...scopeKey(scope), COACHING_JOB_KEYS.coachPortfolio], queryFn: ({ signal }) => getReadResult<CoachPortfolioData>(readUrl(COACH_ENDPOINT, { view: PORTFOLIO_VIEW }), signal, admitsCoachPortfolio), retry: false });
 }
 
-/**
- * Reads one admitted subject as the coach, addressing it by the identifier the caller holds so this read can
- * never enumerate subjects, and answering `envelope`, `denied` or `unavailable`.
- */
+/** Reads one admitted subject as the coach, addressing it by the identifier the caller holds so this read can never enumerate subjects, and answering `envelope`, `denied` or `unavailable`. */
 export function useCoachSubject(scope: Scope, subjectId: string): UseQueryResult<ReadResult<ReadEnvelope<CoachSubjectData>>, Error> {
-  return useQuery({
-    queryKey: [...scopeKey(scope), COACHING_JOB_KEYS.coachSubject, { subjectId }],
-    queryFn: ({ signal }) => getReadResult<CoachSubjectData>(readUrl(COACH_ENDPOINT, { subjectId }), signal, admitsCoachSubject),
-    retry: false,
-  });
+  return useQuery({ queryKey: [...scopeKey(scope), COACHING_JOB_KEYS.coachSubject, { subjectId }], queryFn: ({ signal }) => getReadResult<CoachSubjectData>(readUrl(COACH_ENDPOINT, { subjectId }), signal, admitsCoachSubject), retry: false });
 }

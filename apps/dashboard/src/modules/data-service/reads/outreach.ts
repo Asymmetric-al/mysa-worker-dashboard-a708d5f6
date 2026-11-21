@@ -1,8 +1,4 @@
-/**
- * The outreach reads: the initiatives a ministry runs and their reviewed working lists, the
- * independently answerable Requests inside them, and the referral cycles that carry an original
- * introduction date and the window resolved from it.
- */
+/** The outreach reads: the initiatives a ministry runs and their reviewed working lists, the independently answerable Requests inside them, and the referral cycles that carry an original introduction … */
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
@@ -49,13 +45,9 @@ import {
   type TaskRecordStatus,
 } from "../envelope";
 import { denied, LOCAL_STORE_SYSTEM, unavailable, type DeniedOutcome, type ReadResult } from "../outcome";
-// Fixed values
 const READ_ATTEMPT_ID = "read";
-
 const OUTREACH_SOURCE_REFERENCE = "outreach";
-
 const NEW_WINDOW_PERIOD_SEARCH_LIMIT = 400;
-// The stored records these reads need
 const outreachDocumentsSchema = z.object({
   context: z.object({ revision: recordRevisionSchema }),
   partners: z.array(partnerRecordSchema),
@@ -66,98 +58,45 @@ const outreachDocumentsSchema = z.object({
   tasks: z.array(taskRecordSchema),
 });
 type OutreachDocuments = z.infer<typeof outreachDocumentsSchema>;
-// Opening a read: session, scope, instant and records
-interface OutreachRefusal {
-  readonly ok: false;
-  readonly refusal: ReadResult<never>;
-}
-interface OutreachAccess {
-  readonly ok: true;
-  readonly session: ResolvedSession;
-  readonly scope: Scope;
-  readonly now: Temporal.Instant;
-  readonly documents: OutreachDocuments;
-}
+type OutreachRefusal = { readonly ok: false; readonly refusal: ReadResult<never> };
+type OutreachAccess = { readonly ok: true; readonly session: ResolvedSession; readonly scope: Scope; readonly now: Temporal.Instant; readonly documents: OutreachDocuments };
 type OutreachOpening = OutreachAccess | OutreachRefusal;
-
 function refuseRead(denial: DeniedOutcome): OutreachRefusal {
   return { ok: false, refusal: { kind: "denied", denied: denial } };
 }
 function unavailableRead(input: { readonly job: string; readonly reference: string; readonly guidance: string }): OutreachRefusal {
   const source: SourceReference = { system: LOCAL_STORE_SYSTEM, reference: input.reference };
   logger.sourceUnavailable({ job: input.job, source });
-  return {
-    ok: false,
-    refusal: {
-      kind: "unavailable",
-      unavailable: unavailable({
-        operationId: READ_ATTEMPT_ID,
-        source,
-        guidance: input.guidance,
-      }),
-    },
-  };
+  return { ok: false, refusal: { kind: "unavailable", unavailable: unavailable({ operationId: READ_ATTEMPT_ID, source, guidance: input.guidance }) } };
 }
 async function openOutreach(job: string, source?: SessionSource): Promise<OutreachOpening> {
   const resolved = await resolveSession(source);
-  if (!resolved.ok) {
-    return { ok: false, refusal: readResultOfRefusal(resolved.refusal) };
-  }
+  if (!resolved.ok) return { ok: false, refusal: readResultOfRefusal(resolved.refusal) };
   const { session } = resolved;
   const scope = session.selected;
   if (scope === null) {
-    // No context has been selected, so there is no scope to read under. The session's own admission
-    // state still decides why: the authority question is asked with a membership the principal
-    // genuinely holds, purely to obtain that answer, so an expired or denied session is reported as
-    // such rather than as a missing selection. Nothing is read with that scope.
+    // No context has been selected, so there is no scope to read under. The session's own admission state still decides why: the authority question is asked with a membership the principal genuinely holds, purely to obtain that answer, so an expired or denied session is reported as such rather than as a missing
+    // selection. Nothing is read with that scope.
     const admitted = session.admittedMemberships[0];
     if (admitted !== undefined) {
-      const gate = assertScope(session, {
-        organizationId: admitted.organizationId,
-        ministryId: admitted.ministryId,
-        supportSubjectId: admitted.supportSubjectId,
-        principalId: session.principalId,
-      });
-      if (!gate.ok) {
-        return refuseRead(gate.denial);
-      }
+      const gate = assertScope(session, { organizationId: admitted.organizationId, ministryId: admitted.ministryId, supportSubjectId: admitted.supportSubjectId, principalId: session.principalId });
+      if (!gate.ok) return refuseRead(gate.denial);
     }
     return refuseRead(denied({ operationId: READ_ATTEMPT_ID, reasonCode: "no-membership" }));
   }
   const scoped = assertScope(session, scope);
-  if (!scoped.ok) {
-    return refuseRead(scoped.denial);
-  }
+  if (!scoped.ok) return refuseRead(scoped.denial);
   let stored: Awaited<ReturnType<typeof readSession>>;
   try {
     stored = await readSession(session.sessionId);
   } catch {
     stored = undefined;
   }
-  if (stored === undefined) {
-    return unavailableRead({
-      job,
-      reference: OUTREACH_SOURCE_REFERENCE,
-      guidance: "The session's records could not be read. Reload the workspace, or reset the seed from Settings.",
-    });
-  }
+  if (stored === undefined) return unavailableRead({ job, reference: OUTREACH_SOURCE_REFERENCE, guidance: "The session's records could not be read. Reload the workspace, or reset the seed from Settings." });
   const parsed = outreachDocumentsSchema.safeParse(stored.state);
-  if (!parsed.success) {
-    return unavailableRead({
-      job,
-      reference: OUTREACH_SOURCE_REFERENCE,
-      guidance: "The stored outreach records are not in a shape this build can read. Reset the seed from Settings to restore the known dataset.",
-    });
-  }
-  return {
-    ok: true,
-    session,
-    scope,
-    now: instantAt(session.clockOffsetMs),
-    documents: parsed.data,
-  };
+  if (!parsed.success) return unavailableRead({ job, reference: OUTREACH_SOURCE_REFERENCE, guidance: "The stored outreach records are not in a shape this build can read. Reset the seed from Settings to restore the known dataset." });
+  return { ok: true, session, scope, now: instantAt(session.clockOffsetMs), documents: parsed.data };
 }
-// Small shared helpers
 function pageOf(requested: number | undefined): number {
   return requested !== undefined && Number.isSafeInteger(requested) && requested >= 1 ? requested : 1;
 }
@@ -183,9 +122,7 @@ function completeCoverage(from: string | null, to: string | null): Coverage {
   return { from, to, state: "complete" };
 }
 function readInstant(value: string | null): Temporal.Instant | undefined {
-  if (value === null) {
-    return undefined;
-  }
+  if (value === null) return undefined;
   try {
     return Temporal.Instant.from(value);
   } catch {
@@ -197,78 +134,39 @@ function instantOrder(value: string): number {
   return instant === undefined ? Number.NEGATIVE_INFINITY : instant.epochMilliseconds;
 }
 function canReadPartner(session: ResolvedSession, scope: Scope, partner: PartnerRecord): boolean {
-  return canView(session, {
-    kind: "partner",
-    scope,
-    audience: partner.audience,
-    authorPrincipalId: partner.audience === "private" ? session.principalId : null,
-  }).allowed;
+  return canView(session, { kind: "partner", scope, audience: partner.audience, authorPrincipalId: partner.audience === "private" ? session.principalId : null }).allowed;
 }
 function readablePartners(session: ResolvedSession, scope: Scope, documents: OutreachDocuments): ReadonlyMap<string, PartnerRecord> {
   const readable = new Map<string, PartnerRecord>();
-  for (const partner of documents.partners) {
-    if (canReadPartner(session, scope, partner)) {
-      readable.set(partner.partnerId, partner);
-    }
-  }
+  for (const partner of documents.partners) if (canReadPartner(session, scope, partner)) readable.set(partner.partnerId, partner);
   return readable;
 }
-// Initiatives: the list
 /** How an initiative stands today. */
 export type InitiativeLifecycle = "open" | "reopened" | "closed";
 /** The orders an initiative list may be presented in. */
 export type InitiativeSort = "name" | "period-start" | "state";
 /** What an initiative list may ask for: a state filter, a whole-dataset search, an order and a page. */
-export interface InitiativesQuery {
-  readonly state?: InitiativeState;
-  readonly search?: string;
-  readonly sort?: InitiativeSort;
-  readonly page?: number;
-  readonly pageSize?: number;
-}
+export type InitiativesQuery = { readonly state?: InitiativeState; readonly search?: string; readonly sort?: InitiativeSort; readonly page?: number; readonly pageSize?: number };
 /** How many members a working list carries in each of its three states. */
-export interface InitiativeMembershipCounts {
-  readonly included: number;
-  readonly removed: number;
-  readonly excluded: number;
-}
+export type InitiativeMembershipCounts = { readonly included: number; readonly removed: number; readonly excluded: number };
 /** One initiative as a list row: its purpose, its accountable person, its period and its states. */
-export interface InitiativeRow {
-  readonly initiativeId: string;
-  readonly name: string;
-  readonly purpose: string;
-  readonly responsiblePrincipalId: PrincipalId;
-  readonly period: { readonly from: string | null; readonly to: string | null } | null;
-  readonly state: InitiativeState;
+export type InitiativeRow = { readonly initiativeId: string; readonly name: string; readonly purpose: string; readonly responsiblePrincipalId: PrincipalId } & { readonly period: { readonly from: string | null; readonly to: string | null } | null; readonly state: InitiativeState } & {
   readonly lifecycle: InitiativeLifecycle;
   readonly closureDisposition: string | null;
   readonly memberStates: InitiativeMembershipCounts;
-  readonly revision: string;
-}
+} & { readonly revision: string };
 /** One page of initiatives over the whole authorised result. */
-export interface InitiativeListPage {
-  readonly items: readonly InitiativeRow[];
-  readonly total: number;
-  readonly page: number;
-  readonly pageSize: number;
-}
+export type InitiativeListPage = { readonly items: readonly InitiativeRow[]; readonly total: number; readonly page: number; readonly pageSize: number };
 function lifecycleOf(initiative: InitiativeRecord): InitiativeLifecycle {
-  if (initiative.state === "closed") {
-    return "closed";
-  }
-  // A stored disposition beside an open initiative is what a reopen preserves, so it is the one
-  // evidence that this initiative was closed before.
+  if (initiative.state === "closed") return "closed";
+  // A stored disposition beside an open initiative is what a reopen preserves, so it is the one evidence that this initiative was closed before.
   return initiative.closureDisposition === null ? "open" : "reopened";
 }
 function memberStatesOf(initiativeId: string, members: readonly InitiativeMemberRecord[], partners: ReadonlyMap<string, PartnerRecord>): InitiativeMembershipCounts {
   const counts = { included: 0, removed: 0, excluded: 0 };
   for (const member of members) {
-    if (member.initiativeId !== initiativeId) {
-      continue;
-    }
-    if (partners.get(member.partnerId) === undefined) {
-      continue;
-    }
+    if (member.initiativeId !== initiativeId) continue;
+    if (partners.get(member.partnerId) === undefined) continue;
     counts[member.state] += 1;
   }
   return counts;
@@ -303,12 +201,8 @@ function civilOrderKey(date: string | null): readonly [number, string] {
 function compareTasksByDue(left: TaskRecord, right: TaskRecord): number {
   const leftKey = civilOrderKey(left.dueOn);
   const rightKey = civilOrderKey(right.dueOn);
-  if (leftKey[0] !== rightKey[0]) {
-    return leftKey[0] - rightKey[0];
-  }
-  if (leftKey[1] !== rightKey[1]) {
-    return leftKey[1] < rightKey[1] ? -1 : 1;
-  }
+  if (leftKey[0] !== rightKey[0]) return leftKey[0] - rightKey[0];
+  if (leftKey[1] !== rightKey[1]) return leftKey[1] < rightKey[1] ? -1 : 1;
   return left.taskId < right.taskId ? -1 : 1;
 }
 function lifecycleOrder(lifecycle: InitiativeLifecycle): number {
@@ -325,51 +219,32 @@ function compareInitiatives(sort: InitiativeSort, left: InitiativeRow, right: In
   if (sort === "period-start") {
     const a = civilOrderKey(left.period === null ? null : left.period.from);
     const b = civilOrderKey(right.period === null ? null : right.period.from);
-    if (a[0] !== b[0]) {
-      return a[0] - b[0];
-    }
-    if (a[1] !== b[1]) {
-      return a[1] < b[1] ? -1 : 1;
-    }
+    if (a[0] !== b[0]) return a[0] - b[0];
+    if (a[1] !== b[1]) return a[1] < b[1] ? -1 : 1;
   }
   if (sort === "state") {
     const difference = lifecycleOrder(left.lifecycle) - lifecycleOrder(right.lifecycle);
-    if (difference !== 0) {
-      return difference;
-    }
+    if (difference !== 0) return difference;
   }
   return compareCodeUnits(left.name, right.name);
 }
 /** Lists the initiatives of the admitted ministry with their purpose, accountable person, optional period and state, paged over the whole authorised result. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readInitiatives(query: InitiativesQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<InitiativeListPage>>> {
   const opening = await openOutreach("readInitiatives", source);
-  if (!opening.ok) {
-    return opening.refusal;
-  }
+  if (!opening.ok) return opening.refusal;
   const { session, scope, now, documents } = opening;
   const partners = readablePartners(session, scope, documents);
   const readable: InitiativeRow[] = [];
   for (const initiative of documents.initiatives) {
-    const decision = canView(session, {
-      kind: "initiative",
-      scope,
-      ministryId: initiative.ministryContextId,
-      responsiblePrincipalId: initiative.responsiblePrincipalId,
-    });
-    if (!decision.allowed) {
-      continue;
-    }
+    const decision = canView(session, { kind: "initiative", scope, ministryId: initiative.ministryContextId, responsiblePrincipalId: initiative.responsiblePrincipalId });
+    if (!decision.allowed) continue;
     readable.push(initiativeRowOf(initiative, documents.initiativeMembers, partners));
   }
   const needle = (query.search ?? "").trim().toLowerCase();
   const stateFilter = query.state;
   const matching = readable.filter((row) => {
-    if (stateFilter !== undefined && row.state !== stateFilter) {
-      return false;
-    }
-    if (needle === "") {
-      return true;
-    }
+    if (stateFilter !== undefined && row.state !== stateFilter) return false;
+    if (needle === "") return true;
     return row.name.toLowerCase().includes(needle) || row.purpose.toLowerCase().includes(needle);
   });
   const sort = sortOfInitiative(query.sort);
@@ -387,180 +262,69 @@ export async function readInitiatives(query: InitiativesQuery = {}, source?: Ses
     markCount(states, `${row.initiativeId}.memberStates.removed`, row.memberStates.removed);
     markCount(states, `${row.initiativeId}.memberStates.excluded`, row.memberStates.excluded);
   }
-  const actions: readonly ReadAction[] = [
-    { name: "createInitiative", available: true },
-    ordered.length === 0
-      ? {
-          name: "readInitiative",
-          available: false,
-          reason: "No initiative in this ministry matches the current view.",
-        }
-      : { name: "readInitiative", available: true },
-  ];
-  return {
-    kind: "envelope",
-    envelope: buildEnvelope({
-      data: { items, total: ordered.length, page, pageSize },
-      scope,
-      // The source is the local store named by its fixed family marker: an opaque reference a reader
-      // can use to find the owner of these records, never the session credential that opened it.
-      source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
-      // The collection has no revision of its own; the document set that holds it does, and a change
-      // originating from a row states that row's own revision.
-      revision: documents.context.revision,
-      asOf: now.toString(),
-      coverage: completeCoverage(
-        earliestCivil(readable.map((row) => (row.period === null ? null : row.period.from))),
-        latestCivil(readable.map((row) => (row.period === null ? null : row.period.to))),
-      ),
-      valueStates: states,
-      actions,
-    }),
-  };
+  const actions: readonly ReadAction[] = [{ name: "createInitiative", available: true }, ordered.length === 0 ? { name: "readInitiative", available: false, reason: "No initiative in this ministry matches the current view." } : { name: "readInitiative", available: true }];
+  const envelope = buildEnvelope({
+    data: { items, total: ordered.length, page, pageSize },
+    scope,
+    // The source is the local store named by its fixed family marker: an opaque reference a reader can use to find the owner of these records, never the session credential that opened it.
+    source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
+    // The collection has no revision of its own; the document set that holds it does, and a change originating from a row states that row's own revision.
+    revision: documents.context.revision,
+    asOf: now.toString(),
+    coverage: completeCoverage(earliestCivil(readable.map((row) => (row.period === null ? null : row.period.from))), latestCivil(readable.map((row) => (row.period === null ? null : row.period.to)))),
+    valueStates: states,
+    actions,
+  });
+  return { kind: "envelope", envelope };
 }
-// Initiatives: one initiative
 /** What one initiative's detail may ask for: a membership-state filter and a page of the working list. */
-export interface InitiativeDetailQuery {
-  readonly memberState?: InitiativeMemberState;
-  readonly page?: number;
-  readonly pageSize?: number;
-}
+export type InitiativeDetailQuery = { readonly memberState?: InitiativeMemberState; readonly page?: number; readonly pageSize?: number };
 /** Where a member's recorded stage stands against the list the source approves today. */
 export type InitiativeStageState = "admitted" | "retired" | "unrecorded";
 /** One value of the source-approved stage list, and whether the source still offers it. */
-export interface InitiativeStageOption {
-  readonly value: string;
-  readonly admitted: boolean;
-}
+export type InitiativeStageOption = { readonly value: string; readonly admitted: boolean };
 /** One recorded change of a member's state, kept so a removal or an exclusion is never silent. */
-export interface InitiativeMemberHistoryRow {
-  readonly state: InitiativeMemberState;
-  readonly at: string;
-  readonly byPrincipalId: PrincipalId;
-  readonly reason: string | null;
-}
+export type InitiativeMemberHistoryRow = { readonly state: InitiativeMemberState; readonly at: string; readonly byPrincipalId: PrincipalId; readonly reason: string | null };
 /** One partner as the reviewed working list presents them. */
-export interface InitiativeMemberRow {
-  readonly memberId: string;
-  readonly partnerId: string;
-  readonly partnerDisplayName: string;
-  readonly partnerKind: PartnerKind;
-  readonly state: InitiativeMemberState;
-  readonly stage: string | null;
-  readonly stageState: InitiativeStageState;
-  readonly addedAt: string;
+export type InitiativeMemberRow = { readonly memberId: string; readonly partnerId: string; readonly partnerDisplayName: string; readonly partnerKind: PartnerKind } & { readonly state: InitiativeMemberState; readonly stage: string | null; readonly stageState: InitiativeStageState; readonly addedAt: string } & {
   readonly returnedAt: string | null;
   readonly history: readonly InitiativeMemberHistoryRow[];
   readonly revision: string;
-}
+};
 /** What a Request asked for, versioned: requested terms, never received support. */
-export interface RequestedTermsRow {
-  readonly version: string;
-  readonly basis: "requested-terms";
-  readonly money: {
-    readonly currency: string;
-    readonly minorUnits: number;
-    readonly currencyExponent: number | null;
-    readonly cadence: string | null;
-    readonly term: string | null;
-  } | null;
+export type RequestedTermsRow = { readonly version: string; readonly basis: "requested-terms" } & { readonly money: { readonly currency: string; readonly minorUnits: number; readonly currencyExponent: number | null; readonly cadence: string | null; readonly term: string | null } | null } & {
   readonly nonFinancial: string | null;
-}
+};
 /** The actual presentation of a Request: when, how, and the terms version it showed. */
-export interface RequestPresentationRow {
-  readonly presentedOn: string;
-  readonly manner: string;
-  readonly versionRef: string;
-  readonly citesCurrentVersion: boolean;
-}
+export type RequestPresentationRow = { readonly presentedOn: string; readonly manner: string; readonly versionRef: string; readonly citesCurrentVersion: boolean };
 /** A response, bound to the terms version it answers. */
-export interface RequestResponseRow {
-  readonly kind: RequestResponseKind;
-  readonly respondentId: string;
-  readonly standingEvidence: string | null;
-  readonly termsVersionRef: string;
-  readonly recordedAt: string;
-  readonly answersCurrentVersion: boolean;
-}
+export type RequestResponseRow = { readonly kind: RequestResponseKind; readonly respondentId: string; readonly standingEvidence: string | null; readonly termsVersionRef: string; readonly recordedAt: string; readonly answersCurrentVersion: boolean };
 /** One independently answerable invitation inside an initiative. */
-export interface InitiativeRequestRow {
-  readonly requestId: string;
-  readonly recipientPartnerId: string;
-  readonly recipientDisplayName: string | null;
-  readonly representedOrganizationId: string | null;
-  readonly purpose: string;
-  readonly terms: RequestedTermsRow;
+export type InitiativeRequestRow = { readonly requestId: string; readonly recipientPartnerId: string; readonly recipientDisplayName: string | null } & { readonly representedOrganizationId: string | null; readonly purpose: string; readonly terms: RequestedTermsRow } & {
   readonly presentation: RequestPresentationRow | null;
   readonly response: RequestResponseRow | null;
-  readonly answeredEarlierTermsVersion: boolean;
-  readonly unanswered: boolean;
-  readonly nextWorkIds: readonly string[];
-  readonly revision: string;
-}
+} & { readonly answeredEarlierTermsVersion: boolean; readonly unanswered: boolean; readonly nextWorkIds: readonly string[] } & { readonly revision: string };
 /** One piece of work the initiative owns, as its detail presents it. */
-export interface InitiativeTaskRow {
-  readonly taskId: string;
-  readonly title: string;
-  readonly dueOn: string | null;
-  readonly plannedTime: string | null;
-  readonly timeZone: string | null;
-  readonly kind: TaskKind;
-  readonly status: TaskRecordStatus;
-  readonly ownerPrincipalId: PrincipalId;
-  readonly revision: string;
-}
+export type InitiativeTaskRow = { readonly taskId: string; readonly title: string; readonly dueOn: string | null; readonly plannedTime: string | null; readonly timeZone: string | null; readonly kind: TaskKind; readonly status: TaskRecordStatus; readonly ownerPrincipalId: PrincipalId; readonly revision: string };
 /** One entry of an initiative's history, derived only from records that carry a time. */
 export type InitiativeHistoryRow =
-  | {
-      readonly kind: "member-state";
-      readonly at: string;
-      readonly memberId: string;
-      readonly state: InitiativeMemberState;
-      readonly byPrincipalId: PrincipalId;
-      readonly reason: string | null;
-    }
-  | {
-      readonly kind: "request-response";
-      readonly at: string;
-      readonly requestId: string;
-      readonly responseKind: RequestResponseKind;
-      readonly termsVersionRef: string;
-      readonly respondentId: string;
-    };
+  | { readonly kind: "member-state"; readonly at: string; readonly memberId: string; readonly state: InitiativeMemberState; readonly byPrincipalId: PrincipalId; readonly reason: string | null }
+  | { readonly kind: "request-response"; readonly at: string; readonly requestId: string; readonly responseKind: RequestResponseKind; readonly termsVersionRef: string; readonly respondentId: string };
 /** One page of the reviewed working list, over the whole authorised list. */
-export interface InitiativeWorkingListPage {
-  readonly items: readonly InitiativeMemberRow[];
-  readonly total: number;
-  readonly page: number;
-  readonly pageSize: number;
-}
+export type InitiativeWorkingListPage = { readonly items: readonly InitiativeMemberRow[]; readonly total: number; readonly page: number; readonly pageSize: number };
 /** Everything one initiative's detail presents: its overview, list, Requests, work and history. */
-export interface InitiativeDetail {
-  readonly initiative: InitiativeRow;
-  readonly stages: readonly InitiativeStageOption[];
-  readonly workingList: InitiativeWorkingListPage;
-  readonly requests: { readonly items: readonly InitiativeRequestRow[]; readonly total: number };
+export type InitiativeDetail = { readonly initiative: InitiativeRow; readonly stages: readonly InitiativeStageOption[]; readonly workingList: InitiativeWorkingListPage } & { readonly requests: { readonly items: readonly InitiativeRequestRow[]; readonly total: number } } & {
   readonly nextWork: { readonly items: readonly InitiativeTaskRow[]; readonly total: number };
-  readonly history: readonly InitiativeHistoryRow[];
-}
+} & { readonly history: readonly InitiativeHistoryRow[] };
 function stageStateOf(stage: string | null): InitiativeStageState {
-  if (stage === null) {
-    return "unrecorded";
-  }
+  if (stage === null) return "unrecorded";
   // The one list is the source's current one, so a stage a member still carries after the source retires it reads as retired rather than as a missing value.
   return (INITIATIVE_STAGES as readonly string[]).includes(stage) ? "admitted" : "retired";
 }
 function stageOptionsOf(members: readonly InitiativeMemberRecord[]): readonly InitiativeStageOption[] {
-  const options: InitiativeStageOption[] = INITIATIVE_STAGES.map((value) => ({
-    value,
-    admitted: true,
-  }));
+  const options: InitiativeStageOption[] = INITIATIVE_STAGES.map((value) => ({ value, admitted: true }));
   const retired = new Set<string>();
-  for (const member of members) {
-    if (member.stage !== null && stageStateOf(member.stage) === "retired") {
-      retired.add(member.stage);
-    }
-  }
+  for (const member of members) if (member.stage !== null && stageStateOf(member.stage) === "retired") retired.add(member.stage);
   return [...options, ...[...retired].sort().map((value) => ({ value, admitted: false }))];
 }
 function memberStateOrder(state: InitiativeMemberState): number {
@@ -575,9 +339,7 @@ function memberStateOrder(state: InitiativeMemberState): number {
 }
 function memberRowOf(member: InitiativeMemberRecord, partners: ReadonlyMap<string, PartnerRecord>): InitiativeMemberRow | undefined {
   const partner = partners.get(member.partnerId);
-  if (partner === undefined) {
-    return undefined;
-  }
+  if (partner === undefined) return undefined;
   return {
     memberId: member.memberId,
     partnerId: member.partnerId,
@@ -588,12 +350,7 @@ function memberRowOf(member: InitiativeMemberRecord, partners: ReadonlyMap<strin
     stageState: stageStateOf(member.stage),
     addedAt: member.addedAt,
     returnedAt: member.returnedAt,
-    history: member.history.map((entry) => ({
-      state: entry.state,
-      at: entry.at,
-      byPrincipalId: entry.byPrincipalId,
-      reason: entry.reason,
-    })),
+    history: member.history.map((entry) => ({ state: entry.state, at: entry.at, byPrincipalId: entry.byPrincipalId, reason: entry.reason })),
     revision: member.revision,
   };
 }
@@ -601,16 +358,7 @@ function requestedTermsOf(terms: RequestRecord["terms"]): RequestedTermsRow {
   return {
     version: terms.version,
     basis: "requested-terms",
-    money:
-      terms.money === null
-        ? null
-        : {
-            currency: terms.money.amount.currency,
-            minorUnits: terms.money.amount.minorUnits,
-            currencyExponent: exponentOf(terms.money.amount.currency) ?? null,
-            cadence: terms.money.cadence,
-            term: terms.money.term,
-          },
+    money: terms.money === null ? null : { currency: terms.money.amount.currency, minorUnits: terms.money.amount.minorUnits, currencyExponent: exponentOf(terms.money.amount.currency) ?? null, cadence: terms.money.cadence, term: terms.money.term },
     nonFinancial: terms.nonFinancial,
   };
 }
@@ -624,26 +372,11 @@ function requestRowOf(request: RequestRecord, partners: ReadonlyMap<string, Part
     representedOrganizationId: request.representedOrganizationId,
     purpose: request.purpose,
     terms: requestedTermsOf(request.terms),
-    presentation:
-      request.presentation === null
-        ? null
-        : {
-            presentedOn: request.presentation.presentedOn,
-            manner: request.presentation.manner,
-            versionRef: request.presentation.versionRef,
-            citesCurrentVersion: request.presentation.versionRef === currentVersion,
-          },
+    presentation: request.presentation === null ? null : { presentedOn: request.presentation.presentedOn, manner: request.presentation.manner, versionRef: request.presentation.versionRef, citesCurrentVersion: request.presentation.versionRef === currentVersion },
     response:
       request.response === null
         ? null
-        : {
-            kind: request.response.kind,
-            respondentId: request.response.respondentId,
-            standingEvidence: request.response.standingEvidence,
-            termsVersionRef: request.response.termsVersionRef,
-            recordedAt: request.response.recordedAt,
-            answersCurrentVersion: request.response.termsVersionRef === currentVersion,
-          },
+        : { kind: request.response.kind, respondentId: request.response.respondentId, standingEvidence: request.response.standingEvidence, termsVersionRef: request.response.termsVersionRef, recordedAt: request.response.recordedAt, answersCurrentVersion: request.response.termsVersionRef === currentVersion },
     answeredEarlierTermsVersion: request.response !== null && request.response.termsVersionRef !== currentVersion,
     unanswered: request.response === null,
     nextWorkIds: request.nextWorkIds,
@@ -651,63 +384,22 @@ function requestRowOf(request: RequestRecord, partners: ReadonlyMap<string, Part
   };
 }
 function taskRowOf(task: TaskRecord): InitiativeTaskRow {
-  return {
-    taskId: task.taskId,
-    title: task.title,
-    dueOn: task.dueOn,
-    plannedTime: task.plannedTime,
-    timeZone: task.timeZone,
-    kind: task.kind,
-    status: task.status,
-    ownerPrincipalId: task.ownerPrincipalId,
-    revision: task.revision,
-  };
+  return { taskId: task.taskId, title: task.title, dueOn: task.dueOn, plannedTime: task.plannedTime, timeZone: task.timeZone, kind: task.kind, status: task.status, ownerPrincipalId: task.ownerPrincipalId, revision: task.revision };
 }
 function historyOf(initiativeId: string, members: readonly InitiativeMemberRecord[], requests: readonly RequestRecord[]): readonly InitiativeHistoryRow[] {
   const entries: InitiativeHistoryRow[] = [];
   for (const member of members) {
-    if (member.initiativeId !== initiativeId) {
-      continue;
-    }
-    for (const change of member.history) {
-      entries.push({
-        kind: "member-state",
-        at: change.at,
-        memberId: member.memberId,
-        state: change.state,
-        byPrincipalId: change.byPrincipalId,
-        reason: change.reason,
-      });
-    }
+    if (member.initiativeId !== initiativeId) continue;
+    for (const change of member.history) entries.push({ kind: "member-state", at: change.at, memberId: member.memberId, state: change.state, byPrincipalId: change.byPrincipalId, reason: change.reason });
   }
   for (const request of requests) {
-    if (request.initiativeId !== initiativeId || request.response === null) {
-      continue;
-    }
-    entries.push({
-      kind: "request-response",
-      at: request.response.recordedAt,
-      requestId: request.requestId,
-      responseKind: request.response.kind,
-      termsVersionRef: request.response.termsVersionRef,
-      respondentId: request.response.respondentId,
-    });
+    if (request.initiativeId !== initiativeId || request.response === null) continue;
+    entries.push({ kind: "request-response", at: request.response.recordedAt, requestId: request.requestId, responseKind: request.response.kind, termsVersionRef: request.response.termsVersionRef, respondentId: request.response.respondentId });
   }
   return entries.sort((left, right) => instantOrder(right.at) - instantOrder(left.at));
 }
-function initiativeActions(input: {
-  readonly session: ResolvedSession;
-  readonly scope: Scope;
-  readonly initiative: InitiativeRecord;
-  readonly members: readonly InitiativeMemberRecord[];
-  readonly requests: readonly RequestRecord[];
-}): readonly ReadAction[] {
-  const edits = canEdit(input.session, {
-    kind: "initiative",
-    scope: input.scope,
-    ministryId: input.initiative.ministryContextId,
-    responsiblePrincipalId: input.initiative.responsiblePrincipalId,
-  });
+function initiativeActions(input: { readonly session: ResolvedSession; readonly scope: Scope; readonly initiative: InitiativeRecord; readonly members: readonly InitiativeMemberRecord[]; readonly requests: readonly RequestRecord[] }): readonly ReadAction[] {
+  const edits = canEdit(input.session, { kind: "initiative", scope: input.scope, ministryId: input.initiative.ministryContextId, responsiblePrincipalId: input.initiative.responsiblePrincipalId });
   const lifecycle = lifecycleOf(input.initiative);
   const closed = lifecycle === "closed";
   const responsibleReason = "Only the principal responsible for this initiative may change it.";
@@ -715,11 +407,7 @@ function initiativeActions(input: {
   const returned = input.members.filter((member) => member.state === "removed").length > 0;
   const awaitingPresentation = input.requests.some((request) => request.presentation === null);
   const awaitingResponse = input.requests.some((request) => request.presentation !== null && request.response === null);
-  const refused = (name: string, reason: string): ReadAction => ({
-    name,
-    available: false,
-    reason: edits.allowed ? reason : responsibleReason,
-  });
+  const refused = (name: string, reason: string): ReadAction => ({ name, available: false, reason: edits.allowed ? reason : responsibleReason });
   return [
     edits.allowed && !closed ? { name: "addMembers", available: true } : refused("addMembers", "This initiative is closed, so its working list no longer takes new members."),
     edits.allowed && listed ? { name: "removeMember", available: true } : refused("removeMember", "The working list has no included member to remove."),
@@ -727,9 +415,7 @@ function initiativeActions(input: {
     edits.allowed && listed ? { name: "setStage", available: true } : refused("setStage", "A stage is recorded against an included member, and the working list has none."),
     edits.allowed && !closed ? { name: "draftRequest", available: true } : refused("draftRequest", "This initiative is closed, so no new Request may be drafted."),
     // Presenting is the moment an ask reaches somebody, so closure fences it as it fences a new ask.
-    edits.allowed && awaitingPresentation && !closed
-      ? { name: "presentRequest", available: true }
-      : refused("presentRequest", closed ? "This initiative is closed, so no new solicitation may be presented." : "No drafted Request is waiting to be presented."),
+    edits.allowed && awaitingPresentation && !closed ? { name: "presentRequest", available: true } : refused("presentRequest", closed ? "This initiative is closed, so no new solicitation may be presented." : "No drafted Request is waiting to be presented."),
     edits.allowed && awaitingResponse ? { name: "recordRequestResponse", available: true } : refused("recordRequestResponse", "No presented Request is waiting for a response."),
     edits.allowed && !closed ? { name: "closeInitiative", available: true } : refused("closeInitiative", "This initiative is already closed."),
     edits.allowed && closed ? { name: "reopenInitiative", available: true } : refused("reopenInitiative", "Only a closed initiative can be reopened."),
@@ -738,26 +424,12 @@ function initiativeActions(input: {
 /** Reads one initiative: its overview, its reviewed working list, its Requests with the terms version each answers, the work it owns and its dated history. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readInitiative(initiativeId: string, query: InitiativeDetailQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<InitiativeDetail>>> {
   const opening = await openOutreach("readInitiative", source);
-  if (!opening.ok) {
-    return opening.refusal;
-  }
+  if (!opening.ok) return opening.refusal;
   const { session, scope, now, documents } = opening;
   const initiative = documents.initiatives.find((record) => record.initiativeId === initiativeId);
-  if (initiative === undefined) {
-    return {
-      kind: "denied",
-      denied: denied({ operationId: READ_ATTEMPT_ID, reasonCode: "no-permission" }),
-    };
-  }
-  const decision = canView(session, {
-    kind: "initiative",
-    scope,
-    ministryId: initiative.ministryContextId,
-    responsiblePrincipalId: initiative.responsiblePrincipalId,
-  });
-  if (!decision.allowed) {
-    return { kind: "denied", denied: decision.denial };
-  }
+  if (initiative === undefined) return { kind: "denied", denied: denied({ operationId: READ_ATTEMPT_ID, reasonCode: "no-permission" }) };
+  const decision = canView(session, { kind: "initiative", scope, ministryId: initiative.ministryContextId, responsiblePrincipalId: initiative.responsiblePrincipalId });
+  if (!decision.allowed) return { kind: "denied", denied: decision.denial };
   const partners = readablePartners(session, scope, documents);
   const members = documents.initiativeMembers.filter((member) => member.initiativeId === initiative.initiativeId);
   const requests = documents.requests.filter((request) => request.initiativeId === initiative.initiativeId).sort((left, right) => (left.requestId < right.requestId ? -1 : 1));
@@ -767,9 +439,7 @@ export async function readInitiative(initiativeId: string, query: InitiativeDeta
     .filter((row) => query.memberState === undefined || row.state === query.memberState)
     .sort((left, right) => {
       const byState = memberStateOrder(left.state) - memberStateOrder(right.state);
-      if (byState !== 0) {
-        return byState;
-      }
+      if (byState !== 0) return byState;
       // Code-unit order, never a locale-aware one: a page boundary must not move between machines.
       return compareCodeUnits(left.partnerDisplayName, right.partnerDisplayName);
     });
@@ -797,12 +467,9 @@ export async function readInitiative(initiativeId: string, query: InitiativeDeta
     markOptional(states, `${request.requestId}.presentation`, request.presentation !== null);
     markOptional(states, `${request.requestId}.response`, request.response !== null);
     markOptional(states, `${request.requestId}.terms.money`, request.terms.money !== null);
-    if (request.terms.money !== null) {
-      markOptional(states, `${request.requestId}.terms.money.currencyExponent`, request.terms.money.currencyExponent !== null);
-    }
+    if (request.terms.money !== null) markOptional(states, `${request.requestId}.terms.money.currencyExponent`, request.terms.money.currencyExponent !== null);
     if (request.recipientDisplayName === null) {
-      // The caller may not name this recipient: the value is withheld rather than unknown, and a
-      // surface must render it as withheld so it is never mistaken for an absent partner.
+      // The caller may not name this recipient: the value is withheld rather than unknown, and a surface must render it as withheld so it is never mistaken for an absent partner.
       states[`${request.requestId}.recipientDisplayName`] = "withheld";
     } else {
       states[`${request.requestId}.recipientDisplayName`] = "value";
@@ -820,98 +487,44 @@ export async function readInitiative(initiativeId: string, query: InitiativeDeta
     nextWork: { items: nextWork, total: nextWork.length },
     history: historyOf(initiative.initiativeId, members, requests),
   };
-  return {
-    kind: "envelope",
-    envelope: buildEnvelope({
-      data,
-      scope,
-      source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
-      revision: initiative.revision,
-      asOf: now.toString(),
-      coverage: completeCoverage(
-        earliestCivil([initiative.period === null ? null : initiative.period.from, ...requests.map((request) => (request.presentation === null ? null : request.presentation.presentedOn))]),
-        latestCivil([initiative.period === null ? null : initiative.period.to]),
-      ),
-      valueStates: states,
-      actions: initiativeActions({ session, scope, initiative, members, requests }),
-    }),
-  };
+  const envelope = buildEnvelope({
+    data,
+    scope,
+    source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
+    revision: initiative.revision,
+    asOf: now.toString(),
+    coverage: completeCoverage(earliestCivil([initiative.period === null ? null : initiative.period.from, ...requests.map((request) => (request.presentation === null ? null : request.presentation.presentedOn))]), latestCivil([initiative.period === null ? null : initiative.period.to])),
+    valueStates: states,
+    actions: initiativeActions({ session, scope, initiative, members, requests }),
+  });
+  return { kind: "envelope", envelope };
 }
-// Initiatives: results
 /** One count with the base it is measured against and that base's meaning. */
-export interface MeasuredCount {
-  readonly count: number;
-  readonly denominator: number;
-  readonly denominatorMeaning: string;
-  readonly percentage?: number;
-}
+export type MeasuredCount = { readonly count: number; readonly denominator: number; readonly denominatorMeaning: string; readonly percentage?: number };
 /** One of the seven response kinds with the count it holds and the base it is measured against. */
-export interface ResponseKindResult extends MeasuredCount {
-  readonly kind: RequestResponseKind;
-}
+export type ResponseKindResult = MeasuredCount & { readonly kind: RequestResponseKind };
 /** The results of one terms version: how many Requests referenced it, and how many responses bind to it. */
-export interface TermsVersionResult {
-  readonly termsVersion: string;
-  readonly state: "current" | "superseded";
-  readonly requestsReferencing: number;
-  readonly responses: MeasuredCount;
-}
+export type TermsVersionResult = { readonly termsVersion: string; readonly state: "current" | "superseded"; readonly requestsReferencing: number; readonly responses: MeasuredCount };
 /** The whole result of one initiative, with every count carrying its denominator. */
-export interface InitiativeResults {
-  readonly initiative: {
-    readonly initiativeId: string;
-    readonly name: string;
-    readonly state: InitiativeState;
-    readonly lifecycle: InitiativeLifecycle;
-    readonly revision: string;
-  };
-  readonly workingList: {
-    readonly included: MeasuredCount;
-    readonly removed: MeasuredCount;
-    readonly excluded: MeasuredCount;
-  };
-  readonly requests: {
-    readonly presented: MeasuredCount;
-    readonly answered: MeasuredCount;
-    readonly unanswered: MeasuredCount;
-  };
-  readonly responseKinds: readonly ResponseKindResult[];
-  readonly termsVersions: readonly TermsVersionResult[];
-}
+export type InitiativeResults = { readonly initiative: { readonly initiativeId: string; readonly name: string; readonly state: InitiativeState; readonly lifecycle: InitiativeLifecycle; readonly revision: string } } & {
+  readonly workingList: { readonly included: MeasuredCount; readonly removed: MeasuredCount; readonly excluded: MeasuredCount };
+} & { readonly requests: { readonly presented: MeasuredCount; readonly answered: MeasuredCount; readonly unanswered: MeasuredCount } } & { readonly responseKinds: readonly ResponseKindResult[]; readonly termsVersions: readonly TermsVersionResult[] };
 const WORKING_LIST_BASE = "partners the reviewed working list carries";
-
 const REQUEST_BASE = "Requests recorded for this initiative";
-
 function measuredCount(count: number, denominator: number, denominatorMeaning: string): MeasuredCount {
   const base = { count, denominator, denominatorMeaning };
-  if (denominator <= 0) {
-    return base;
-  }
+  if (denominator <= 0) return base;
   return { ...base, percentage: Math.round((count * 1000) / denominator) / 10 };
 }
 /** Reads one initiative's results: every count as a numerator over a stated base. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readInitiativeResults(initiativeId: string, source?: SessionSource): Promise<ReadResult<ReadEnvelope<InitiativeResults>>> {
   const opening = await openOutreach("readInitiativeResults", source);
-  if (!opening.ok) {
-    return opening.refusal;
-  }
+  if (!opening.ok) return opening.refusal;
   const { session, scope, now, documents } = opening;
   const initiative = documents.initiatives.find((record) => record.initiativeId === initiativeId);
-  if (initiative === undefined) {
-    return {
-      kind: "denied",
-      denied: denied({ operationId: READ_ATTEMPT_ID, reasonCode: "no-permission" }),
-    };
-  }
-  const decision = canView(session, {
-    kind: "initiative",
-    scope,
-    ministryId: initiative.ministryContextId,
-    responsiblePrincipalId: initiative.responsiblePrincipalId,
-  });
-  if (!decision.allowed) {
-    return { kind: "denied", denied: decision.denial };
-  }
+  if (initiative === undefined) return { kind: "denied", denied: denied({ operationId: READ_ATTEMPT_ID, reasonCode: "no-permission" }) };
+  const decision = canView(session, { kind: "initiative", scope, ministryId: initiative.ministryContextId, responsiblePrincipalId: initiative.responsiblePrincipalId });
+  if (!decision.allowed) return { kind: "denied", denied: decision.denial };
   const partners = readablePartners(session, scope, documents);
   const members = documents.initiativeMembers.filter((member) => member.initiativeId === initiative.initiativeId && partners.has(member.partnerId));
   const requests = documents.requests.filter((request) => request.initiativeId === initiative.initiativeId);
@@ -922,50 +535,22 @@ export async function readInitiativeResults(initiativeId: string, source?: Sessi
   const presented = requests.filter((request) => request.presentation !== null).length;
   const answered = requests.filter((request) => request.response !== null).length;
   const unanswered = requests.filter((request) => request.response === null).length;
-  const responseKinds: ResponseKindResult[] = REQUEST_RESPONSE_KINDS.map((kind) => ({
-    kind,
-    ...measuredCount(kind === "unanswered" ? unanswered : requests.filter((request) => request.response?.kind === kind).length, requests.length, REQUEST_BASE),
-  }));
+  const responseKinds: ResponseKindResult[] = REQUEST_RESPONSE_KINDS.map((kind) => ({ kind, ...measuredCount(kind === "unanswered" ? unanswered : requests.filter((request) => request.response?.kind === kind).length, requests.length, REQUEST_BASE) }));
   const versionSet = new Set<string>();
   for (const request of requests) {
     versionSet.add(request.terms.version);
-    if (request.presentation !== null) {
-      versionSet.add(request.presentation.versionRef);
-    }
-    if (request.response !== null) {
-      versionSet.add(request.response.termsVersionRef);
-    }
+    if (request.presentation !== null) versionSet.add(request.presentation.versionRef);
+    if (request.response !== null) versionSet.add(request.response.termsVersionRef);
   }
   const termsVersions: TermsVersionResult[] = [...versionSet].sort().map((termsVersion) => {
-    const referencing = requests.filter(
-      (request) => request.terms.version === termsVersion || request.presentation?.versionRef === termsVersion || request.response?.termsVersionRef === termsVersion,
-    ).length;
+    const referencing = requests.filter((request) => request.terms.version === termsVersion || request.presentation?.versionRef === termsVersion || request.response?.termsVersionRef === termsVersion).length;
     const bound = requests.filter((request) => request.response?.termsVersionRef === termsVersion).length;
-    return {
-      termsVersion,
-      state: requests.some((request) => request.terms.version === termsVersion) ? "current" : "superseded",
-      requestsReferencing: referencing,
-      responses: measuredCount(bound, referencing, "Requests that stated or answered this terms version"),
-    };
+    return { termsVersion, state: requests.some((request) => request.terms.version === termsVersion) ? "current" : "superseded", requestsReferencing: referencing, responses: measuredCount(bound, referencing, "Requests that stated or answered this terms version") };
   });
   const data: InitiativeResults = {
-    initiative: {
-      initiativeId: initiative.initiativeId,
-      name: initiative.name,
-      state: initiative.state,
-      lifecycle: lifecycleOf(initiative),
-      revision: initiative.revision,
-    },
-    workingList: {
-      included: measuredCount(included, rosterTotal, WORKING_LIST_BASE),
-      removed: measuredCount(removed, rosterTotal, WORKING_LIST_BASE),
-      excluded: measuredCount(excluded, rosterTotal, WORKING_LIST_BASE),
-    },
-    requests: {
-      presented: measuredCount(presented, requests.length, REQUEST_BASE),
-      answered: measuredCount(answered, requests.length, REQUEST_BASE),
-      unanswered: measuredCount(unanswered, requests.length, REQUEST_BASE),
-    },
+    initiative: { initiativeId: initiative.initiativeId, name: initiative.name, state: initiative.state, lifecycle: lifecycleOf(initiative), revision: initiative.revision },
+    workingList: { included: measuredCount(included, rosterTotal, WORKING_LIST_BASE), removed: measuredCount(removed, rosterTotal, WORKING_LIST_BASE), excluded: measuredCount(excluded, rosterTotal, WORKING_LIST_BASE) },
+    requests: { presented: measuredCount(presented, requests.length, REQUEST_BASE), answered: measuredCount(answered, requests.length, REQUEST_BASE), unanswered: measuredCount(unanswered, requests.length, REQUEST_BASE) },
     responseKinds,
     termsVersions,
   };
@@ -991,260 +576,93 @@ export async function readInitiativeResults(initiativeId: string, source?: Sessi
     markCount(states, `termsVersions.${version.termsVersion}.responses.count`, version.responses.count);
     markOptional(states, `termsVersions.${version.termsVersion}.responses.percentage`, version.responses.percentage !== undefined);
   }
-  return {
-    kind: "envelope",
-    envelope: buildEnvelope({
-      data,
-      scope,
-      source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
-      revision: initiative.revision,
-      asOf: now.toString(),
-      coverage: completeCoverage(
-        earliestCivil([initiative.period === null ? null : initiative.period.from, ...requests.map((request) => (request.presentation === null ? null : request.presentation.presentedOn))]),
-        latestCivil([initiative.period === null ? null : initiative.period.to]),
-      ),
-      valueStates: states,
-      actions: [{ name: "readInitiative", available: true }],
-    }),
-  };
+  const envelope = buildEnvelope({
+    data,
+    scope,
+    source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
+    revision: initiative.revision,
+    asOf: now.toString(),
+    coverage: completeCoverage(earliestCivil([initiative.period === null ? null : initiative.period.from, ...requests.map((request) => (request.presentation === null ? null : request.presentation.presentedOn))]), latestCivil([initiative.period === null ? null : initiative.period.to])),
+    valueStates: states,
+    actions: [{ name: "readInitiative", available: true }],
+  });
+  return { kind: "envelope", envelope };
 }
-// Referrals
 /** The three referral lists, which are three different questions and never one filtered list. */
 export type ReferralListName = "active" | "incomplete-date" | "expired";
 /** What a referral list may ask for: which list, a whole-dataset search, and a page. */
-export interface ReferralsQuery {
-  readonly list?: ReferralListName;
-  readonly search?: string;
-  readonly page?: number;
-  readonly pageSize?: number;
-}
+export type ReferralsQuery = { readonly list?: ReferralListName; readonly search?: string; readonly page?: number; readonly pageSize?: number };
 /** The calendar-day wording of a New window, disclosed beside the instant that expires. */
-export interface ReferralNominalWindow {
-  readonly lastIncludedOn: string;
-  readonly wording: string;
-  readonly disagreesWithResolved: boolean;
-  readonly resolution: MidnightResolution;
-}
+export type ReferralNominalWindow = { readonly lastIncludedOn: string; readonly wording: string; readonly disagreesWithResolved: boolean; readonly resolution: MidnightResolution };
 /** A referral's exclusive endpoint, as resolved and as disclosed. */
-export interface ReferralDeadlineView {
-  readonly kind: ReferralWindowKind;
-  readonly end: string;
-  readonly nominal: ReferralNominalWindow | null;
-  readonly nominalUnavailableReason: string | null;
-  readonly resolvedOn: string | null;
-}
+export type ReferralDeadlineView = { readonly kind: ReferralWindowKind; readonly end: string; readonly nominal: ReferralNominalWindow | null; readonly nominalUnavailableReason: string | null; readonly resolvedOn: string | null };
 /** Whether this cycle's single deliberate continuation is currently on offer, and why not when it is not. */
-export interface ContinuationEligibility {
-  readonly available: boolean;
-  readonly reason: string | null;
-  readonly cycle: { readonly consumed: boolean; readonly successorId: string | null };
-}
+export type ContinuationEligibility = { readonly available: boolean; readonly reason: string | null; readonly cycle: { readonly consumed: boolean; readonly successorId: string | null } };
 /** The worker-continuation setting this session runs under, with the reason it gives when it withholds the action. */
-export interface ContinuationPolicy {
-  readonly setting: "on" | "off" | "unknown";
-  readonly reason: string | null;
-}
+export type ContinuationPolicy = { readonly setting: "on" | "off" | "unknown"; readonly reason: string | null };
 /** One referral cycle in full: the introduction it records, the window resolved from it, where it stands now and what may be done next. */
-export interface ReferralDetailRow {
-  readonly referralId: string;
-  readonly partnerId: string;
-  readonly partnerDisplayName: string;
-  readonly partnerKind: PartnerKind;
-  readonly datePrecision: DatePrecision;
-  readonly originalIntroductionOn: string | null;
-  readonly sourceZone: string;
+export type ReferralDetailRow = { readonly referralId: string; readonly partnerId: string; readonly partnerDisplayName: string; readonly partnerKind: PartnerKind } & { readonly datePrecision: DatePrecision; readonly originalIntroductionOn: string | null; readonly sourceZone: string } & {
   readonly sourceReference: SourceReference | null;
   readonly cycleIndex: number;
   readonly windowKind: ReferralWindowKind;
-  readonly windowStart: string | null;
-  readonly windowEnd: string | null;
-  readonly consumed: boolean;
-  readonly predecessorId: string | null;
-  readonly successorId: string | null;
-  readonly status: ReferralWindowStatus;
-  readonly deadline: ReferralDeadlineView | null;
+} & { readonly windowStart: string | null; readonly windowEnd: string | null; readonly consumed: boolean; readonly predecessorId: string | null } & { readonly successorId: string | null; readonly status: ReferralWindowStatus; readonly deadline: ReferralDeadlineView | null } & {
   readonly continuation: ContinuationEligibility;
   readonly revision: string;
-}
-const EXPIRED_REFERRAL_FIELDS = [
-  "referralId",
-  "partnerDisplayName",
-  "sourceReference",
-  "status",
-  "originalIntroductionOn",
-  "datePrecision",
-  "windowKind",
-  "windowStart",
-  "windowEnd",
-  "cycleIndex",
-  "consumed",
-  "continuation",
-] as const satisfies readonly (keyof ReferralDetailRow)[];
-/**
- * One expired cycle as permitted history presents it: an approved identity, its status, its dates and
- * the cycle's continuation eligibility.
- *
- * `continuation` travels because it is an action condition rather than a record fact: the Expired
- * views are the ones that carry Continue, so they are the ones that must state whether the cycle may
- * be continued, or why it may not. No record fact beyond the approved identity, the source
- * reference, the status and the permitted dates rides with it.
- */
+};
+const EXPIRED_REFERRAL_FIELDS = ["referralId", "partnerDisplayName", "sourceReference", "status", "originalIntroductionOn", "datePrecision", "windowKind", "windowStart", "windowEnd", "cycleIndex", "consumed", "continuation"] as const satisfies readonly (keyof ReferralDetailRow)[];
+/** One expired cycle as permitted history presents it: an approved identity, its status, its dates and the cycle's continuation eligibility. */
 export type ExpiredReferralRow = Pick<ReferralDetailRow, (typeof EXPIRED_REFERRAL_FIELDS)[number]>;
 /** One referral as a list row: who it is, when it was introduced, where its window stands. */
-export interface ReferralListRow {
-  readonly referralId: string;
-  readonly partnerDisplayName: string;
-  readonly datePrecision: DatePrecision;
-  readonly originalIntroductionOn: string | null;
-  readonly cycleIndex: number;
-  readonly windowKind: ReferralWindowKind;
+export type ReferralListRow = { readonly referralId: string; readonly partnerDisplayName: string; readonly datePrecision: DatePrecision } & { readonly originalIntroductionOn: string | null; readonly cycleIndex: number; readonly windowKind: ReferralWindowKind } & {
   readonly windowStart: string | null;
   readonly windowEnd: string | null;
   readonly status: ReferralWindowStatus["status"];
-  readonly statusReason: WindowRefusalReason | null;
-  readonly consumed: boolean;
-  readonly continuation: ContinuationEligibility;
-}
+} & { readonly statusReason: WindowRefusalReason | null; readonly consumed: boolean; readonly continuation: ContinuationEligibility };
 /** One page of one referral list, over the whole authorised result. */
 export type ReferralListData =
-  | {
-      readonly list: "active" | "incomplete-date";
-      readonly items: readonly ReferralListRow[];
-      readonly total: number;
-      readonly page: number;
-      readonly pageSize: number;
-      readonly continuationPolicy: ContinuationPolicy;
-    }
-  | {
-      readonly list: "expired";
-      readonly items: readonly ExpiredReferralRow[];
-      readonly total: number;
-      readonly page: number;
-      readonly pageSize: number;
-      readonly continuationPolicy: ContinuationPolicy;
-    };
+  | { readonly list: "active" | "incomplete-date"; readonly items: readonly ReferralListRow[]; readonly total: number; readonly page: number; readonly pageSize: number; readonly continuationPolicy: ContinuationPolicy }
+  | { readonly list: "expired"; readonly items: readonly ExpiredReferralRow[]; readonly total: number; readonly page: number; readonly pageSize: number; readonly continuationPolicy: ContinuationPolicy };
 /** One referral, presented either in full or as permitted Expired history. */
-export type ReferralDetailData =
-  | {
-      readonly view: "detail";
-      readonly referral: ReferralDetailRow;
-      readonly continuationPolicy: ContinuationPolicy;
-    }
-  | {
-      readonly view: "expired-history";
-      readonly referral: ExpiredReferralRow;
-      readonly continuationPolicy: ContinuationPolicy;
-    };
+export type ReferralDetailData = { readonly view: "detail"; readonly referral: ReferralDetailRow; readonly continuationPolicy: ContinuationPolicy } | { readonly view: "expired-history"; readonly referral: ExpiredReferralRow; readonly continuationPolicy: ContinuationPolicy };
 function continuationPolicyOf(session: ResolvedSession): ContinuationPolicy {
   const setting = isScenarioId(session.scenarioId) ? scenarioFlagsFor(session.scenarioId).continuationSetting : "unknown";
   switch (setting) {
     case "on":
       return { setting, reason: null };
     case "off":
-      return {
-        setting,
-        reason: "Worker continuation is off, so an ordinarily expired referral offers no Continue action.",
-      };
+      return { setting, reason: "Worker continuation is off, so an ordinarily expired referral offers no Continue action." };
     case "unknown":
-      return {
-        setting,
-        reason: "The worker-continuation setting could not be read, so no Continue action is offered.",
-      };
+      return { setting, reason: "The worker-continuation setting could not be read, so no Continue action is offered." };
   }
 }
 function referralStatusOf(cycle: ReferralCycleRecord, now: Temporal.Instant): ReferralWindowStatus {
   const end = readInstant(cycle.windowEnd);
-  if (cycle.windowEnd !== null && end === undefined) {
-    return { status: "refused", reason: "invalid-date" };
-  }
+  if (cycle.windowEnd !== null && end === undefined) return { status: "refused", reason: "invalid-date" };
   return referralWindowState({ windowEnd: end, now });
 }
-function matchingNewWindowRule(input: {
-  readonly cycle: ReferralCycleRecord;
-  readonly originalIntroductionOn: CivilDate;
-  readonly end: Temporal.Instant;
-}): Extract<NewWindowEnd, { status: "bounded" }> | undefined {
-  if (input.cycle.datePrecision !== "date") {
-    return undefined;
-  }
+function matchingNewWindowRule(input: { readonly cycle: ReferralCycleRecord; readonly originalIntroductionOn: CivilDate; readonly end: Temporal.Instant }): Extract<NewWindowEnd, { status: "bounded" }> | undefined {
+  if (input.cycle.datePrecision !== "date") return undefined;
   for (let days = 1; days <= NEW_WINDOW_PERIOD_SEARCH_LIMIT; days += 1) {
-    const candidate = newWindowEnd({
-      originalIntroductionOn: input.originalIntroductionOn,
-      datePrecision: input.cycle.datePrecision,
-      sourceZone: input.cycle.sourceZone,
-      days,
-    });
-    if (candidate.status === "bounded" && candidate.resolvedEndInstant.toString() === input.end.toString()) {
-      return candidate;
-    }
+    const candidate = newWindowEnd({ originalIntroductionOn: input.originalIntroductionOn, datePrecision: input.cycle.datePrecision, sourceZone: input.cycle.sourceZone, days });
+    if (candidate.status === "bounded" && candidate.resolvedEndInstant.toString() === input.end.toString()) return candidate;
   }
   return undefined;
 }
 function deadlineOf(cycle: ReferralCycleRecord): ReferralDeadlineView | null {
   const end = readInstant(cycle.windowEnd);
-  if (end === undefined) {
-    return null;
-  }
+  if (end === undefined) return null;
   const resolved = civilDateAt(end, cycle.sourceZone);
   const resolvedOn = resolved.status === "resolved" ? serialiseCivilDate(resolved.date) : null;
-  if (cycle.windowKind === "continued") {
-    return {
-      kind: "continued",
-      end: end.toString(),
-      nominal: null,
-      nominalUnavailableReason: "A continuation is counted in elapsed seconds from the instant it was accepted, so it has no calendar-day wording.",
-      resolvedOn,
-    };
-  }
+  if (cycle.windowKind === "continued") return { kind: "continued", end: end.toString(), nominal: null, nominalUnavailableReason: "A continuation is counted in elapsed seconds from the instant it was accepted, so it has no calendar-day wording.", resolvedOn };
   const parsedDate = cycle.originalIntroductionOn === null ? undefined : parseCivilDate(cycle.originalIntroductionOn);
-  if (parsedDate === undefined || parsedDate.status === "refused") {
-    return {
-      kind: cycle.windowKind,
-      end: end.toString(),
-      nominal: null,
-      nominalUnavailableReason: "The stored introduction date cannot be read as a calendar date, so no calendar-day wording is stated for this endpoint.",
-      resolvedOn,
-    };
-  }
-  const rule = matchingNewWindowRule({
-    cycle,
-    originalIntroductionOn: parsedDate.date,
-    end,
-  });
-  if (rule === undefined) {
-    return {
-      kind: cycle.windowKind,
-      end: end.toString(),
-      nominal: null,
-      nominalUnavailableReason: "The persisted endpoint is not the endpoint any period of the New-window rule resolves today, so the persisted instant stands and no nominal wording is stated for it.",
-      resolvedOn,
-    };
-  }
-  return {
-    kind: cycle.windowKind,
-    end: end.toString(),
-    nominal: {
-      lastIncludedOn: serialiseCivilDate(rule.nominalLastIncludedOn),
-      wording: rule.nominalWording,
-      disagreesWithResolved: rule.nominalDisagreesWithResolved,
-      resolution: rule.resolution,
-    },
-    nominalUnavailableReason: null,
-    resolvedOn,
-  };
+  if (parsedDate === undefined || parsedDate.status === "refused") return { kind: cycle.windowKind, end: end.toString(), nominal: null, nominalUnavailableReason: "The stored introduction date cannot be read as a calendar date, so no calendar-day wording is stated for this endpoint.", resolvedOn };
+  const rule = matchingNewWindowRule({ cycle, originalIntroductionOn: parsedDate.date, end });
+  if (rule === undefined) return { kind: cycle.windowKind, end: end.toString(), nominal: null, nominalUnavailableReason: "The persisted endpoint is not the endpoint any period of the New-window rule resolves today, so the persisted instant stands and no nominal wording is stated for it.", resolvedOn };
+  return { kind: cycle.windowKind, end: end.toString(), nominal: { lastIncludedOn: serialiseCivilDate(rule.nominalLastIncludedOn), wording: rule.nominalWording, disagreesWithResolved: rule.nominalDisagreesWithResolved, resolution: rule.resolution }, nominalUnavailableReason: null, resolvedOn };
 }
-function continuationOf(input: {
-  readonly status: ReferralWindowStatus;
-  readonly cycle: ReferralCycleRecord;
-  readonly successorId: string | null;
-  readonly policy: ContinuationPolicy;
-}): ContinuationEligibility {
+function continuationOf(input: { readonly status: ReferralWindowStatus; readonly cycle: ReferralCycleRecord; readonly successorId: string | null; readonly policy: ContinuationPolicy }): ContinuationEligibility {
   const cycleState = { consumed: input.cycle.consumed, successorId: input.successorId };
-  const unavailable = (reason: string): ContinuationEligibility => ({
-    available: false,
-    reason,
-    cycle: cycleState,
-  });
+  const unavailable = (reason: string): ContinuationEligibility => ({ available: false, reason, cycle: cycleState });
   switch (input.status.status) {
     case "active":
       return unavailable("This referral's window has not ended, so there is nothing to continue.");
@@ -1255,17 +673,10 @@ function continuationOf(input: {
     case "expired":
       break;
   }
-  if (input.cycle.windowKind !== "new") {
-    return unavailable("This cycle is itself a continuation, and an introduction carries at most one continuation.");
-  }
-  if (input.cycle.consumed || input.successorId !== null) {
-    return unavailable("This referral cycle has already been continued.");
-  }
-  // The policy is consulted last, so a cycle that could not be continued anyway is told why in its
-  // own terms and only a genuinely eligible cycle is withheld by the setting.
-  if (input.policy.reason !== null) {
-    return unavailable(input.policy.reason);
-  }
+  if (input.cycle.windowKind !== "new") return unavailable("This cycle is itself a continuation, and an introduction carries at most one continuation.");
+  if (input.cycle.consumed || input.successorId !== null) return unavailable("This referral cycle has already been continued.");
+  // The policy is consulted last, so a cycle that could not be continued anyway is told why in its own terms and only a genuinely eligible cycle is withheld by the setting.
+  if (input.policy.reason !== null) return unavailable(input.policy.reason);
   return { available: true, reason: null, cycle: cycleState };
 }
 function successorIdOf(referralId: string, referrals: readonly ReferralCycleRecord[]): string | null {
@@ -1273,18 +684,9 @@ function successorIdOf(referralId: string, referrals: readonly ReferralCycleReco
   return successor === undefined ? null : successor.referralId;
 }
 type ReferralRowBase = Omit<ReferralDetailRow, "deadline">;
-
-function referralRowOf(input: {
-  readonly cycle: ReferralCycleRecord;
-  readonly partners: ReadonlyMap<string, PartnerRecord>;
-  readonly referrals: readonly ReferralCycleRecord[];
-  readonly now: Temporal.Instant;
-  readonly policy: ContinuationPolicy;
-}): ReferralRowBase | undefined {
+function referralRowOf(input: { readonly cycle: ReferralCycleRecord; readonly partners: ReadonlyMap<string, PartnerRecord>; readonly referrals: readonly ReferralCycleRecord[]; readonly now: Temporal.Instant; readonly policy: ContinuationPolicy }): ReferralRowBase | undefined {
   const partner = input.partners.get(input.cycle.partnerId);
-  if (partner === undefined) {
-    return undefined;
-  }
+  if (partner === undefined) return undefined;
   const status = referralStatusOf(input.cycle, input.now);
   const successorId = successorIdOf(input.cycle.referralId, input.referrals);
   return {
@@ -1304,14 +706,8 @@ function referralRowOf(input: {
     predecessorId: input.cycle.predecessorId,
     successorId,
     status,
-    // Reaching this row already means the referral target was permitted, so the only remaining
-    // question is the policy.
-    continuation: continuationOf({
-      status,
-      cycle: input.cycle,
-      successorId,
-      policy: input.policy,
-    }),
+    // Reaching this row already means the referral target was permitted, so the only remaining question is the policy.
+    continuation: continuationOf({ status, cycle: input.cycle, successorId, policy: input.policy }),
     revision: input.cycle.revision,
   };
 }
@@ -1356,55 +752,32 @@ function latestResolvedDay(rows: readonly ReferralRowBase[]): string | null {
   return latestCivil(days);
 }
 function compareDatesDescending(left: string | null, right: string | null): number {
-  if (left === null && right === null) {
-    return 0;
-  }
-  if (left === null) {
-    return 1;
-  }
-  if (right === null) {
-    return -1;
-  }
+  if (left === null && right === null) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
   return instantOrder(right) - instantOrder(left);
 }
 function compareReferrals(left: ReferralRowBase, right: ReferralRowBase): number {
   const byEnd = compareDatesDescending(left.windowEnd, right.windowEnd);
-  if (byEnd !== 0) {
-    return byEnd;
-  }
+  if (byEnd !== 0) return byEnd;
   const byIntroduction = compareDatesDescending(left.originalIntroductionOn, right.originalIntroductionOn);
-  if (byIntroduction !== 0) {
-    return byIntroduction;
-  }
+  if (byIntroduction !== 0) return byIntroduction;
   return left.referralId < right.referralId ? -1 : 1;
 }
 /** Lists referrals in one of the three lists: Active, incomplete-date, or the narrow permitted Expired view. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readReferrals(query: ReferralsQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<ReferralListData>>> {
   const opening = await openOutreach("readReferrals", source);
-  if (!opening.ok) {
-    return opening.refusal;
-  }
+  if (!opening.ok) return opening.refusal;
   const { session, scope, now, documents } = opening;
-  // The referral question is answered once, from the derived scope, and before anything is
-  // enumerated: a caller without authority for this family learns nothing about its size.
+  // The referral question is answered once, from the derived scope, and before anything is enumerated: a caller without authority for this family learns nothing about its size.
   const permitted = canView(session, { kind: "referral", scope });
-  if (!permitted.allowed) {
-    return { kind: "denied", denied: permitted.denial };
-  }
+  if (!permitted.allowed) return { kind: "denied", denied: permitted.denial };
   const partners = readablePartners(session, scope, documents);
   const continuationPolicy = continuationPolicyOf(session);
   const rows: ReferralRowBase[] = [];
   for (const cycle of documents.referrals) {
-    const row = referralRowOf({
-      cycle,
-      partners,
-      referrals: documents.referrals,
-      now,
-      policy: continuationPolicy,
-    });
-    if (row !== undefined) {
-      rows.push(row);
-    }
+    const row = referralRowOf({ cycle, partners, referrals: documents.referrals, now, policy: continuationPolicy });
+    if (row !== undefined) rows.push(row);
   }
   const list: ReferralListName = query.list ?? "active";
   const needle = (query.search ?? "").trim().toLowerCase();
@@ -1426,101 +799,46 @@ export async function readReferrals(query: ReferralsQuery = {}, source?: Session
   const continueOffered = matching.some((row) => row.continuation.available);
   const actions: readonly ReadAction[] = [
     { name: "recordIntroduction", available: true },
-    // Continue is absent rather than disabled when no cycle may be continued; each row states the
-    // reason in its own `continuation`, so a reader is told why without being offered a dead control.
+    // Continue is absent rather than disabled when no cycle may be continued; each row states the reason in its own `continuation`, so a reader is told why without being offered a dead control.
     ...(continueOffered ? [{ name: "continueReferral", available: true }] : []),
-    matching.length === 0
-      ? {
-          name: "readReferral",
-          available: false,
-          reason: `No referral is in the ${list} list for the current view.`,
-        }
-      : { name: "readReferral", available: true },
+    matching.length === 0 ? { name: "readReferral", available: false, reason: `No referral is in the ${list} list for the current view.` } : { name: "readReferral", available: true },
   ];
-  const data: ReferralListData =
-    list === "expired"
-      ? {
-          list,
-          items: pageRows.map((row) => project(row, EXPIRED_REFERRAL_FIELDS)),
-          total: matching.length,
-          page,
-          pageSize,
-          continuationPolicy,
-        }
-      : {
-          list,
-          items: pageRows.map(referralListRowOf),
-          total: matching.length,
-          page,
-          pageSize,
-          continuationPolicy,
-        };
-  return {
-    kind: "envelope",
-    envelope: buildEnvelope({
-      data,
-      scope,
-      source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
-      revision: documents.context.revision,
-      asOf: now.toString(),
-      coverage: completeCoverage(earliestCivil(matching.map((row) => row.originalIntroductionOn)), latestResolvedDay(matching)),
-      valueStates: states,
-      actions,
-    }),
-  };
+  const data: ReferralListData = list === "expired" ? { list, items: pageRows.map((row) => project(row, EXPIRED_REFERRAL_FIELDS)), total: matching.length, page, pageSize, continuationPolicy } : { list, items: pageRows.map(referralListRowOf), total: matching.length, page, pageSize, continuationPolicy };
+  const envelope = buildEnvelope({
+    data,
+    scope,
+    source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
+    revision: documents.context.revision,
+    asOf: now.toString(),
+    coverage: completeCoverage(earliestCivil(matching.map((row) => row.originalIntroductionOn)), latestResolvedDay(matching)),
+    valueStates: states,
+    actions,
+  });
+  return { kind: "envelope", envelope };
 }
 /** Reads one referral: the introduction it records with its precision, the window resolved from it, the disclosure that sits beside the resolved instant, where it stands now and whether it may. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readReferral(referralId: string, source?: SessionSource): Promise<ReadResult<ReadEnvelope<ReferralDetailData>>> {
   const opening = await openOutreach("readReferral", source);
-  if (!opening.ok) {
-    return opening.refusal;
-  }
+  if (!opening.ok) return opening.refusal;
   const { session, scope, now, documents } = opening;
   const cycle = documents.referrals.find((record) => record.referralId === referralId);
-  if (cycle === undefined) {
-    return {
-      kind: "denied",
-      denied: denied({ operationId: READ_ATTEMPT_ID, reasonCode: "no-permission" }),
-    };
-  }
+  if (cycle === undefined) return { kind: "denied", denied: denied({ operationId: READ_ATTEMPT_ID, reasonCode: "no-permission" }) };
   const decision = canView(session, { kind: "referral", scope });
-  if (!decision.allowed) {
-    return { kind: "denied", denied: decision.denial };
-  }
+  if (!decision.allowed) return { kind: "denied", denied: decision.denial };
   const partners = readablePartners(session, scope, documents);
   const continuationPolicy = continuationPolicyOf(session);
-  const base = referralRowOf({
-    cycle,
-    partners,
-    referrals: documents.referrals,
-    now,
-    policy: continuationPolicy,
-  });
+  const base = referralRowOf({ cycle, partners, referrals: documents.referrals, now, policy: continuationPolicy });
   if (base === undefined) {
-    // The partner behind this cycle is not one this caller may name, so the referral is refused in
-    // the same shape a hidden record produces: nothing about the partner may be learned from it.
-    return {
-      kind: "denied",
-      denied: denied({ operationId: READ_ATTEMPT_ID, reasonCode: "no-permission" }),
-    };
+    // The partner behind this cycle is not one this caller may name, so the referral is refused in the same shape a hidden record produces: nothing about the partner may be learned from it.
+    return { kind: "denied", denied: denied({ operationId: READ_ATTEMPT_ID, reasonCode: "no-permission" }) };
   }
   // The one cycle this read opens is the one whose calendar-day disclosure is resolved.
   const row: ReferralDetailRow = { ...base, deadline: deadlineOf(cycle) };
   const expired = row.status.status === "expired";
-  // An expired cycle is answered in the narrow permitted shape whichever route reached it, so its
-  // detail cannot be re-opened into partner access. The projection carries the cycle's continuation
-  // eligibility, the action condition the Continue surface states, while no record fact beyond the
-  // approved identity, the source reference, the status and the permitted dates travels with it; the
-  // policy stays beside the projection, since it explains the setting and discloses no record.
-  const data: ReferralDetailData = expired
-    ? {
-        view: "expired-history",
-        referral: project(row, EXPIRED_REFERRAL_FIELDS),
-        continuationPolicy,
-      }
-    : { view: "detail", referral: row, continuationPolicy };
-  // One state per value-bearing path the returned data carries: the narrow projection holds no
-  // deadline, so its paths are not described here.
+  // An expired cycle is answered in the narrow permitted shape whichever route reached it, so its detail cannot be re-opened into partner access. The projection carries the cycle's continuation eligibility, the action condition the Continue surface states, while no record fact beyond the approved identity, the source
+  // reference, the status and the permitted dates travels with it; the policy stays beside the projection, since it explains the setting and discloses no record.
+  const data: ReferralDetailData = expired ? { view: "expired-history", referral: project(row, EXPIRED_REFERRAL_FIELDS), continuationPolicy } : { view: "detail", referral: row, continuationPolicy };
+  // One state per value-bearing path the returned data carries: the narrow projection holds no deadline, so its paths are not described here.
   const states: Record<string, RecordedValueState> = {};
   markOptional(states, `${row.referralId}.originalIntroductionOn`, row.originalIntroductionOn !== null);
   markOptional(states, `${row.referralId}.windowStart`, row.windowStart !== null);
@@ -1534,21 +852,16 @@ export async function readReferral(referralId: string, source?: SessionSource): 
     markOptional(states, `${row.referralId}.predecessorId`, row.predecessorId !== null);
   }
   const actions: readonly ReadAction[] = row.continuation.available ? [{ name: "continueReferral", available: true }] : [];
-  return {
-    kind: "envelope",
-    envelope: buildEnvelope({
-      data,
-      scope,
-      // The store answered this read, so the source is the local store named by its fixed family
-      // marker, an opaque reference and never the session credential that opened the store. The
-      // record's own source reference still travels in the row, where a reader can see which system
-      // the referral came from.
-      source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
-      revision: row.revision,
-      asOf: now.toString(),
-      coverage: completeCoverage(row.originalIntroductionOn, latestResolvedDay([row])),
-      valueStates: states,
-      actions,
-    }),
-  };
+  const envelope = buildEnvelope({
+    data,
+    scope,
+    // The store answered this read, so the source is the local store named by its fixed family marker, an opaque reference and never the session credential that opened the store. The record's own source reference still travels in the row, where a reader can see which system the referral came from.
+    source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
+    revision: row.revision,
+    asOf: now.toString(),
+    coverage: completeCoverage(row.originalIntroductionOn, latestResolvedDay([row])),
+    valueStates: states,
+    actions,
+  });
+  return { kind: "envelope", envelope };
 }

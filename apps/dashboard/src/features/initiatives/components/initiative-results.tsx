@@ -1,32 +1,15 @@
 "use client";
-/**
- * One initiative's results: what the named respondents actually answered, stated as the count the
- * read supplied over the base that count is measured against, in words.
- *
- * **Why nothing is divided here.** AAP 0.8.3 requires every result to state its denominator and
- * requires a missing denominator to produce no share at all. The read already decides that: it omits
- * `percentage` entirely when the base is zero or absent, so this surface states the base beside each
- * count and renders the read's own figure only when the read computed one. A base of nothing can
- * therefore never become `0%`, `NaN` or `Infinity`, and the missing-denominator wording is used
- * instead of a dash that would read as zero.
- *
- * **What this surface refuses to say.** The seven response kinds stay separate — `unanswered` and
- * `needs clarification` are recorded answers about the evidence, not non-responses to be folded
- * away — so no total, share, funnel, ranking or trend is derived from them, and no currency, amount
- * or commitment appears anywhere: a recorded response is an answer, not a pledge, gift, subscription,
- * notice or task.
- *
- * **Layering.** This component composes the family's copy and its one read hook with the shared
- * table, notice and status patterns; it reads nothing itself, calls no transport and formats no
- * figure the service did not compute.
- */
-import { useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
+/** One initiative's results: what the named respondents actually answered, stated as the count the read supplied over the base that count is measured against, in words. **Why nothing is divided … */
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { refusalSummary } from "@/components/form-field";
 import { RecordList, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { statusBadgeProps, VALUE_STATE_WORDS, type StatusBadgeSpec } from "@/components/status-badge";
 import { cn } from "@/lib/cn";
 import { assertNever } from "@/lib/result";
 import type { Coverage, ReadEnvelope, ValueState, reads } from "@/modules/data-service";
+import { PAGE_SIZE_CAP, PAGE_SIZE_DEFAULT } from "@/modules/support/report";
 import { RESPONSE_AGREEMENT_COPY, RESPONSE_KIND_COPY, RESULTS_COPY, STATE_NOTICE_COPY, type ResponseKind } from "../copy";
 import { useInitiativeResults, type InitiativeResultsEnvelope } from "../hooks/use-initiative-results";
 
@@ -52,33 +35,14 @@ type ValueStates = Readonly<Record<string, ValueState>>;
 type ColumnVisibility = RecordListQueryState["columnVisibility"];
 
 // The two vocabularies, joined once
-/**
- * The read names the kinds with the stored vocabulary (`needs-clarification`) while this family names
- * the same kinds for readers (`needs clarification`), so one exhaustive map joins them. A kind added
- * to either side stops compiling here rather than reaching a reader as an unnamed row.
- */
-const COPY_KIND_OF_RECORDED_KIND: Readonly<Record<RecordedResponseKind, ResponseKind>> = {
-  agreed: "agreed",
-  conditional: "conditional",
-  partial: "partial",
-  deferred: "deferred",
-  declined: "declined",
-  unanswered: "unanswered",
-  "needs-clarification": "needs clarification",
-};
+/** The read names the kinds with the stored vocabulary (`needs-clarification`) while this family names the same kinds for readers (`needs clarification`), so one exhaustive map joins them. */
+const COPY_KIND_OF_RECORDED_KIND: Readonly<Record<RecordedResponseKind, ResponseKind>> = { agreed: "agreed", conditional: "conditional", partial: "partial", deferred: "deferred", declined: "declined", unanswered: "unanswered", "needs-clarification": "needs clarification" };
 
 /** The two states a terms version can hold on this surface; a version is never silently current. */
-const TERMS_VERSION_STATE: Readonly<Record<TermsVersionRow["state"], StatusBadgeSpec>> = {
-  current: { label: "Current terms version", tone: "info" },
-  superseded: { label: "Superseded by a later version", tone: "muted" },
-};
+const TERMS_VERSION_STATE: Readonly<Record<TermsVersionRow["state"], StatusBadgeSpec>> = { current: { label: "Current terms version", tone: "info" }, superseded: { label: "Superseded by a later version", tone: "muted" } };
 
 // Wording this surface alone states
-/**
- * `../copy.ts` owns the family's shared vocabulary — the response kinds, the denominator wording and
- * the statements that a recorded response creates nothing — and the wording particular to the results
- * section is named once here rather than repeated across the table, the narrow list and the notices.
- */
+/** `../copy.ts` owns the family's shared vocabulary — the response kinds, the denominator wording and the statements that a recorded response creates nothing — and the wording particular to the … */
 const SURFACE_COPY = {
   intro: "Each row states one recorded response kind, the count the read supplied for it, and the base that count is measured against.",
   worthNote: "A recorded response is one named person's answer; a change in these counts says nothing about anyone's motivation or worth.",
@@ -107,11 +71,55 @@ const NO_TERMS_VERSIONS: readonly TermsVersionRow[] = [];
 
 const NO_VALUE_STATES: ValueStates = {};
 
+const NO_COLUMNS_HIDDEN: ColumnVisibility = {};
+
+// The page window, and the address it survives in
+/** The parameters the window travels as. */
+const RESULT_PARAM = { page: "page", pageSize: "pageSize" } as const;
+
+const FIRST_PAGE = 1;
+
+const WHOLE_NUMBER = /^\d+$/u;
+
+/** The page window this surface states: the page it shows and how many rows one page holds. */
+export interface InitiativeResultsQuery {
+  readonly page: number;
+  readonly pageSize: number;
+}
+
+/** The window a first visit states: the first page at the read's own default size. */
+export const DEFAULT_INITIATIVE_RESULTS_QUERY: InitiativeResultsQuery = { page: FIRST_PAGE, pageSize: PAGE_SIZE_DEFAULT };
+function integerOf(value: string | null): number | undefined {
+  if (value === null || !WHOLE_NUMBER.test(value)) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+function pageNumberOf(value: number): number {
+  return Number.isSafeInteger(value) && value >= FIRST_PAGE ? value : FIRST_PAGE;
+}
+function pageSizeNumberOf(value: number): number {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    return PAGE_SIZE_DEFAULT;
+  }
+  return value >= PAGE_SIZE_CAP ? PAGE_SIZE_CAP : PAGE_SIZE_DEFAULT;
+}
+/** Writes the page window as URL parameters, so a pager change, a reload and a return from a Request all state the same window. */
+export function toInitiativeResultsParams(query: InitiativeResultsQuery): URLSearchParams {
+  const params = new URLSearchParams();
+  params.set(RESULT_PARAM.page, String(pageNumberOf(query.page)));
+  params.set(RESULT_PARAM.pageSize, String(pageSizeNumberOf(query.pageSize)));
+  return params;
+}
+/** Reads the page window back from an address, applying the same two rules the writer applies so a round trip returns an equal window. */
+export function parseInitiativeResultsQuery(source: URLSearchParams | string): InitiativeResultsQuery {
+  const params = typeof source === "string" ? new URLSearchParams(source) : source;
+  return { page: pageNumberOf(integerOf(params.get(RESULT_PARAM.page)) ?? FIRST_PAGE), pageSize: pageSizeNumberOf(integerOf(params.get(RESULT_PARAM.pageSize)) ?? PAGE_SIZE_DEFAULT) };
+}
+
 // Reading the read
-/**
- * The state the read recorded for one field. Every count this read answers is marked by the service,
- * so a path it did not mark carries no special state and the number it supplied is rendered as itself.
- */
+/** The state the read recorded for one field. */
 function statedState(valueStates: ValueStates, path: string): ValueState {
   return valueStates[path] ?? "value";
 }
@@ -124,10 +132,7 @@ function termsStatePath(termsVersion: string, member: "requestsReferencing" | "r
   return `termsVersions.${termsVersion}.${member}`;
 }
 
-/**
- * The period the counts cover, in words, so a reader of the table or of its accessible name knows what
- * span the figures describe rather than assuming they cover all of history.
- */
+/** The period the counts cover, in words, so a reader of the table or of its accessible name knows what span the figures describe rather than assuming they cover all of history. */
 function coverageSentence(coverage: Coverage): string {
   const { from, to, state } = coverage;
   const span = from !== null && to !== null ? `records from ${from} to ${to}` : from !== null ? `records from ${from} onwards` : to !== null ? `records up to ${to}` : "records with no period stated";
@@ -149,11 +154,7 @@ function initiativeHref(initiativeId: string): string {
 }
 
 // The figures
-/**
- * A count rendered from its own value state: a plain number only when the read says the number stands
- * as it is, an incompleteness beside the figure when the period behind it is only partly covered, and
- * the state's own word — never a number — when the value is not available to show.
- */
+/** A count rendered from its own value state: a plain number only when the read says the number stands as it is, an incompleteness beside the figure when the period behind it is only partly covered … */
 function CountFigure({ count, state }: { readonly count: number; readonly state: ValueState }): ReactElement {
   if (!Number.isFinite(count)) {
     // A count that is not a number is never printed as one; it is reported as the unknown it is.
@@ -179,11 +180,7 @@ function CountFigure({ count, state }: { readonly count: number; readonly state:
   }
 }
 
-/**
- * The base a count is measured against, in words. A base of zero — or one the read could not state —
- * is not a base, so the family's missing-denominator wording stands in its place and no share appears
- * beside it.
- */
+/** The base a count is measured against, in words. */
 function DenominatorFigure({ measured }: { readonly measured: MeasuredCount }): ReactElement {
   if (!Number.isFinite(measured.denominator) || measured.denominator <= 0) {
     return <span className="text-pretty text-muted-foreground">{RESULTS_COPY.denominatorMissingNote}</span>;
@@ -195,10 +192,7 @@ function DenominatorFigure({ measured }: { readonly measured: MeasuredCount }): 
   );
 }
 
-/**
- * The share, and only the share the read computed. When the read carried none — because the base was
- * zero, absent or unusable — the surface states that absence instead of dividing counts by nothing.
- */
+/** The share, and only the share the read computed. */
 function ShareFigure({ measured }: { readonly measured: MeasuredCount }): ReactElement {
   const share = measured.percentage;
   if (share === undefined || !Number.isFinite(share)) {
@@ -230,53 +224,22 @@ function responseKindColumns(valueStates: ValueStates, showsShare: boolean): Rea
       enableHiding: false,
       cell: ({ row }) => <KindFigure kind={row.original.kind} />,
     },
-    {
-      id: "count",
-      header: RESULTS_COPY.countColumnLabel,
-      enableSorting: false,
-      cell: ({ row }) => <CountFigure count={row.original.count} state={statedState(valueStates, countStatePath(row.original.kind))} />,
-    },
-    {
-      id: "denominator",
-      header: RESULTS_COPY.denominatorLabel,
-      enableSorting: false,
-      cell: ({ row }) => <DenominatorFigure measured={row.original} />,
-    },
+    { id: "count", header: RESULTS_COPY.countColumnLabel, enableSorting: false, cell: ({ row }) => <CountFigure count={row.original.count} state={statedState(valueStates, countStatePath(row.original.kind))} /> },
+    { id: "denominator", header: RESULTS_COPY.denominatorLabel, enableSorting: false, cell: ({ row }) => <DenominatorFigure measured={row.original} /> },
   ];
   // A share column exists only where the read computed a share: an always-present empty column would
   // claim the source was asked and answered nothing.
   if (showsShare) {
-    columns.push({
-      id: "share",
-      header: RESULTS_COPY.shareColumnLabel,
-      enableSorting: false,
-      cell: ({ row }) => <ShareFigure measured={row.original} />,
-    });
+    columns.push({ id: "share", header: RESULTS_COPY.shareColumnLabel, enableSorting: false, cell: ({ row }) => <ShareFigure measured={row.original} /> });
   }
   return columns;
 }
 
 function termsVersionColumns(valueStates: ValueStates): ReadonlyArray<RecordListColumnDef<TermsVersionRow>> {
   return [
-    {
-      id: "termsVersion",
-      header: SURFACE_COPY.termsVersionColumn,
-      enableSorting: false,
-      enableHiding: false,
-      cell: ({ row }) => <bdi className="mono-identifier break-all">{row.original.termsVersion}</bdi>,
-    },
-    {
-      id: "state",
-      header: SURFACE_COPY.termsStateColumn,
-      enableSorting: false,
-      cell: ({ row }) => <StatusBadge {...statusBadgeProps(TERMS_VERSION_STATE, row.original.state)} />,
-    },
-    {
-      id: "referencing",
-      header: SURFACE_COPY.termsReferencingColumn,
-      enableSorting: false,
-      cell: ({ row }) => <CountFigure count={row.original.requestsReferencing} state={statedState(valueStates, termsStatePath(row.original.termsVersion, "requestsReferencing"))} />,
-    },
+    { id: "termsVersion", header: SURFACE_COPY.termsVersionColumn, enableSorting: false, enableHiding: false, cell: ({ row }) => <bdi className="mono-identifier break-all">{row.original.termsVersion}</bdi> },
+    { id: "state", header: SURFACE_COPY.termsStateColumn, enableSorting: false, cell: ({ row }) => <StatusBadge {...statusBadgeProps(TERMS_VERSION_STATE, row.original.state)} /> },
+    { id: "referencing", header: SURFACE_COPY.termsReferencingColumn, enableSorting: false, cell: ({ row }) => <CountFigure count={row.original.requestsReferencing} state={statedState(valueStates, termsStatePath(row.original.termsVersion, "requestsReferencing"))} /> },
     {
       id: "responses",
       header: SURFACE_COPY.termsResponsesColumn,
@@ -309,10 +272,7 @@ interface KindListProps {
   readonly label: string;
 }
 
-/**
- * The reading order a phone can actually show: kind word, the count, the base it is counted against
- * and — where the read computed one — the share, with no table and no horizontal scroll.
- */
+/** The reading order a phone can actually show: kind word, the count, the base it is counted against and — where the read computed one — the share, with no table and no horizontal scroll. */
 function KindList({ rows, valueStates, showsShare, label }: KindListProps): ReactElement {
   return (
     <div data-slot="initiative-results-kinds" className="min-w-0 md:hidden">
@@ -380,27 +340,32 @@ function ResultsStatement(): ReactElement {
 
 interface InitiativeResultsSurfaceProps {
   readonly initiativeId: string;
-  readonly queryState: RecordListQueryState;
+  /** The page window a composing page controls; absent, the surface reads its own window from the address. */
+  readonly queryState?: RecordListQueryState;
   readonly initialEnvelope: ReadEnvelope<ResultsData>;
   readonly onQueryStateChange?: (next: RecordListQueryState) => void;
   readonly className?: string;
 }
 
-function InitiativeResultsSurface({ initiativeId, queryState, initialEnvelope, onQueryStateChange, className }: InitiativeResultsSurfaceProps): ReactElement {
+function InitiativeResultsSurface({ initiativeId, queryState: controlledState, initialEnvelope, onQueryStateChange, className }: InitiativeResultsSurfaceProps): ReactElement {
   const headingId = useId();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // The address is where this surface's page window lives when no caller states one, so a reload, a
+  // return from a Request and the browser's Back button all show the window the reader left rather than
+  // the first one.
+  const stated = useMemo<InitiativeResultsQuery>(() => parseInitiativeResultsQuery(searchParams), [searchParams]);
+  const page = controlledState === undefined ? stated.page : controlledState.page;
+  const pageSize = controlledState === undefined ? stated.pageSize : controlledState.pageSize;
+  // Column visibility is presentation and stays in this component, as the preset's other lists keep it.
+  const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(controlledState === undefined ? NO_COLUMNS_HIDDEN : controlledState.columnVisibility);
+  const listQueryState = useMemo<RecordListQueryState>(() => ({ sort: NO_SORT, page, pageSize, columnVisibility }), [page, pageSize, columnVisibility]);
   // The read seeds from the envelope the Server Component already answered with, so it paints from
   // that authority instead of asking the same question again; this wrapper is the hook's own member
   // shape, not a second copy of the answer.
   const seeded = useMemo<InitiativeResultsEnvelope<ResultsData>>(() => ({ kind: "envelope", envelope: initialEnvelope }), [initialEnvelope]);
-  const read = useInitiativeResults<ResultsData>(initiativeId, queryState, seeded);
-  // Column visibility is presentation and stays in this component, as the preset's other lists keep
-  // it. This read answers whole-initiative counts rather than a page of rows, so the only state the
-  // owner can be asked for is a page or size it controls.
-  const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(queryState.columnVisibility);
-  const listQueryState = useMemo<RecordListQueryState>(
-    () => ({ sort: NO_SORT, page: queryState.page, pageSize: queryState.pageSize, columnVisibility }),
-    [queryState.page, queryState.pageSize, columnVisibility],
-  );
+  const read = useInitiativeResults<ResultsData>(initiativeId, listQueryState, seeded);
   const result = read.status === "ready" ? read.result : undefined;
   const envelope = result !== undefined && result.kind === "envelope" ? result.envelope : undefined;
   const kindRows: readonly ResponseKindRow[] = envelope === undefined ? NO_RESPONSE_KINDS : envelope.data.responseKinds;
@@ -409,15 +374,39 @@ function InitiativeResultsSurface({ initiativeId, queryState, initialEnvelope, o
   const showsShare = kindRows.some((row) => row.percentage !== undefined);
   const kindColumns = useMemo<ReadonlyArray<RecordListColumnDef<ResponseKindRow>>>(() => responseKindColumns(valueStates, showsShare), [valueStates, showsShare]);
   const termsColumns = useMemo<ReadonlyArray<RecordListColumnDef<TermsVersionRow>>>(() => termsVersionColumns(valueStates), [valueStates]);
+  // The window is written beside every other parameter the page carries — the initiative this section
+  // belongs to among them — so the address still states what the page is about.
+  const writeWindow = useCallback(
+    (nextPage: number, nextPageSize: number): void => {
+      const params = new URLSearchParams(searchParams.toString());
+      for (const [key, value] of toInitiativeResultsParams({ page: nextPage, pageSize: nextPageSize })) {
+        params.set(key, value);
+      }
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+  // The read answers whole-initiative counts, so the rows it returns are the whole result. A page the
+  // address states past the last one those rows occupy would show an empty table over a populated
+  // result, so the window is corrected to the last page that exists rather than left blank.
+  const lastPage = Math.max(FIRST_PAGE, Math.ceil(Math.max(kindRows.length, termsRows.length) / pageSize));
+  useEffect(() => {
+    if (controlledState !== undefined || page <= lastPage) {
+      return;
+    }
+    writeWindow(lastPage, pageSize);
+  }, [controlledState, lastPage, page, pageSize, writeWindow]);
   function handleQueryStateChange(next: RecordListQueryState): void {
     if (next.columnVisibility !== columnVisibility) {
       setColumnVisibility(next.columnVisibility);
     }
-    // No pager is offered over seven response kinds, so this only ever passes on a change the owner
-    // raised itself; a page or size it did not raise is never invented here.
-    if ((next.page !== queryState.page || next.pageSize !== queryState.pageSize) && onQueryStateChange !== undefined) {
-      onQueryStateChange({ ...queryState, page: next.page, pageSize: next.pageSize });
+    if (next.page === page && next.pageSize === pageSize) {
+      return;
     }
+    // The pager's window reaches the address, so the continuity the list surfaces keep holds here too.
+    writeWindow(next.page, next.pageSize);
+    // A caller that controls the window still receives the change, so it keeps holding its own copy.
+    onQueryStateChange?.({ sort: NO_SORT, page: next.page, pageSize: next.pageSize, columnVisibility });
   }
   if (result === undefined) {
     // The first answer is still awaited: a busy surface, never an empty one and never a zero.
@@ -441,6 +430,15 @@ function InitiativeResultsSurface({ initiativeId, queryState, initialEnvelope, o
     return (
       <Surface headingId={headingId} className={className}>
         <StateNotice kind="unavailable" headingLevel={4} title={STATE_NOTICE_COPY.unavailable.title} description={result.unavailable.guidance} source={result.unavailable.source} />
+      </Surface>
+    );
+  }
+  if (result.kind === "refused") {
+    // The working list this surface asked for is not one the read admits: the refusal names the field to
+    // correct, and the initiative's Requests answered rather than becoming unavailable.
+    return (
+      <Surface headingId={headingId} className={className}>
+        <StateNotice kind="refused" headingLevel={4} title={STATE_NOTICE_COPY.refused.title} description={refusalSummary(result.refused)} />
       </Surface>
     );
   }
@@ -471,13 +469,7 @@ function InitiativeResultsSurface({ initiativeId, queryState, initialEnvelope, o
           <p className="text-sm text-pretty">{RESULTS_COPY.noResultsNote}</p>
         ) : null
       ) : (
-        <StateNotice
-          kind="empty"
-          headingLevel={4}
-          title={`${RESULTS_COPY.heading}: ${results.initiative.name}`}
-          description={RESULTS_COPY.noResultsNote}
-          action={{ label: SURFACE_COPY.emptyAction, href: `${initiativeHref(initiativeId)}#requests` }}
-        />
+        <StateNotice kind="empty" headingLevel={4} title={`${RESULTS_COPY.heading}: ${results.initiative.name}`} description={RESULTS_COPY.noResultsNote} action={{ label: SURFACE_COPY.emptyAction, href: `${initiativeHref(initiativeId)}#requests` }} />
       )}
       {/*
         Two compositions of one answer with opposite responsive display utilities, so `display: none`
@@ -485,16 +477,7 @@ function InitiativeResultsSurface({ initiativeId, queryState, initialEnvelope, o
         sequence, never both and never neither (WCAG 1.3.1, 1.4.10).
       */}
       <div className="hidden min-w-0 md:block">
-        <RecordList
-          label={kindsLabel}
-          columns={kindColumns}
-          rows={kindRows}
-          rowCount={kindRows.length}
-          queryState={listQueryState}
-          onQueryStateChange={handleQueryStateChange}
-          getRowId={responseKindRowId}
-          itemNoun="response kinds"
-        />
+        <RecordList label={kindsLabel} columns={kindColumns} rows={kindRows} rowCount={kindRows.length} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={responseKindRowId} itemNoun="response kinds" />
       </div>
       <KindList rows={kindRows} valueStates={valueStates} showsShare={showsShare} label={kindsLabel} />
       {termsRows.length === 0 ? null : (
@@ -503,16 +486,7 @@ function InitiativeResultsSurface({ initiativeId, queryState, initialEnvelope, o
             <h4 className="text-sm font-semibold">{SURFACE_COPY.termsHeading}</h4>
             <p className="text-sm text-pretty text-muted-foreground">{RESPONSE_AGREEMENT_COPY.bindsToTermsVersion}</p>
           </div>
-          <RecordList
-            label={`${RESULTS_COPY.heading} for ${results.initiative.name}: ${SURFACE_COPY.termsHeading}`}
-            columns={termsColumns}
-            rows={termsRows}
-            rowCount={termsRows.length}
-            queryState={listQueryState}
-            onQueryStateChange={handleQueryStateChange}
-            getRowId={termsVersionRowId}
-            itemNoun="terms versions"
-          />
+          <RecordList label={`${RESULTS_COPY.heading} for ${results.initiative.name}: ${SURFACE_COPY.termsHeading}`} columns={termsColumns} rows={termsRows} rowCount={termsRows.length} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={termsVersionRowId} itemNoun="terms versions" />
         </div>
       )}
     </Surface>
@@ -522,23 +496,16 @@ function InitiativeResultsSurface({ initiativeId, queryState, initialEnvelope, o
 /** Props of {@link InitiativeResults}. */
 export interface InitiativeResultsProps {
   readonly initiativeId: string;
-  /** The list state the page controls; the read keys on it rather than paging, because it answers whole-initiative counts. */
-  readonly queryState: RecordListQueryState;
-  /**
-   * The envelope the Server Component already read, and the authority the browser read re-requests
-   * under. The read seeds from it, so a page rendering this surface supplies it; without one there is
-   * no scope to read with, and the surface states that the answer has not arrived rather than
-   * presenting an empty result.
-   */
+  /** The page window a composing page controls, in the preset's own query-state shape. */
+  readonly queryState?: RecordListQueryState;
+  /** The envelope the Server Component already read, and the authority the browser read re-requests under. */
   readonly initialEnvelope?: ReadEnvelope<ResultsData>;
+  /** Receives every window or column change as well, for a caller that keeps its own copy of the state. */
   readonly onQueryStateChange?: (next: RecordListQueryState) => void;
   readonly className?: string;
 }
 
-/**
- * The initiative results surface. Every count it shows came from the read with the base it is counted
- * against, and no figure is divided, summed or ranked here.
- */
+/** The initiative results surface. */
 export default function InitiativeResults({ initiativeId, queryState, initialEnvelope, onQueryStateChange, className }: InitiativeResultsProps): ReactElement {
   const headingId = useId();
   if (initialEnvelope === undefined) {

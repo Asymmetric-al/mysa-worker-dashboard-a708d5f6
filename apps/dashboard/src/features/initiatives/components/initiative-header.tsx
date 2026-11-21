@@ -1,8 +1,4 @@
 "use client";
-/**
- * The initiative detail header: who this initiative is, how it stands, and the exact authority the
- * page in front of the worker was read under.
- */
 import type { ReactElement, ReactNode } from "react";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -10,24 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import type { ReadAction, ReadEnvelope, reads } from "@/modules/data-service";
-import {
-  CLOSURE_COPY,
-  INITIATIVE_COPY,
-  INITIATIVE_STATE_COPY,
-  MEMBERSHIP_RULES_COPY,
-  MEMBERSHIP_STATES,
-  MEMBERSHIP_STATE_COPY,
-  REQUESTED_TERMS_COPY,
-  dispositionFallback,
-  type MembershipState,
-} from "../copy";
-// The contract: the detail read's own types, narrowed to the fields this region renders
+import { CLOSURE_COPY, INITIATIVE_COPY, INITIATIVE_STATE_COPY, MEMBERSHIP_RULES_COPY, MEMBERSHIP_STATES, MEMBERSHIP_STATE_COPY, REQUESTED_TERMS_COPY, dispositionFallback, type MembershipState } from "../copy";
 type InitiativeEnvelope = Extract<Awaited<ReturnType<typeof reads.outreach.readInitiative>>, { readonly kind: "envelope" }>["envelope"];
-
 type InitiativeDetailData = InitiativeEnvelope["data"];
-
 type InitiativeRowData = InitiativeDetailData["initiative"];
-
 interface InitiativeHeaderPayload {
   readonly initiative: Pick<InitiativeRowData, "name" | "purpose" | "responsiblePrincipalId" | "period" | "state" | "lifecycle" | "closureDisposition" | "memberStates">;
   readonly nextWork: Pick<InitiativeDetailData["nextWork"], "total">;
@@ -38,31 +20,20 @@ interface InitiativeHeaderProps {
   readonly onRequestReopen?: () => void;
 }
 type InitiativeLifecycleAction = "closeInitiative" | "reopenInitiative";
-
 interface HeaderView {
   readonly initiative: InitiativeHeaderPayload["initiative"];
   readonly openWork: number | null;
 }
-// Reading the payload defensively
 function viewOf(envelope: ReadEnvelope<InitiativeHeaderPayload> | null | undefined): HeaderView | null {
-  if (envelope === null || envelope === undefined) {
-    return null;
-  }
+  if (envelope === null || envelope === undefined) return null;
   const data: unknown = envelope.data;
-  if (typeof data !== "object" || data === null) {
-    return null;
-  }
+  if (typeof data !== "object" || data === null) return null;
   const payload = data as { readonly initiative?: unknown; readonly nextWork?: unknown };
   const initiative = payload.initiative;
-  if (typeof initiative !== "object" || initiative === null) {
-    return null;
-  }
+  if (typeof initiative !== "object" || initiative === null) return null;
   const nextWork = payload.nextWork;
   const total = typeof nextWork === "object" && nextWork !== null ? (nextWork as { readonly total?: unknown }).total : undefined;
-  return {
-    initiative: initiative as InitiativeHeaderPayload["initiative"],
-    openWork: typeof total === "number" ? total : null,
-  };
+  return { initiative: initiative as InitiativeHeaderPayload["initiative"], openWork: typeof total === "number" ? total : null };
 }
 function actionOf(actions: readonly ReadAction[], name: InitiativeLifecycleAction): ReadAction | undefined {
   return actions.find((action) => action.name === name);
@@ -75,9 +46,7 @@ function absentActions(candidates: readonly { readonly label: string; readonly a
   const grouped: { labels: string[]; reason: string }[] = [];
   for (const candidate of candidates) {
     const { action, label } = candidate;
-    if (action === undefined || action.available || action.reason === undefined) {
-      continue;
-    }
+    if (action === undefined || action.available || action.reason === undefined) continue;
     const existing = grouped.find((entry) => entry.reason === action.reason);
     if (existing === undefined) {
       grouped.push({ labels: [label], reason: action.reason });
@@ -90,7 +59,6 @@ function absentActions(candidates: readonly { readonly label: string; readonly a
 function toneOf(state: InitiativeHeaderPayload["initiative"]["state"]): StatusTone {
   return state === "closed" ? "neutral" : "positive";
 }
-// The small presentational pieces this region composes
 function Fact({ term, children }: { readonly term: string; readonly children: ReactNode }): ReactElement {
   return (
     <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
@@ -117,18 +85,12 @@ function PeriodValue({ period }: { readonly period: InitiativeRowData["period"] 
   return (
     <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
       {from === null ? <span className="text-muted-foreground">{REQUESTED_TERMS_COPY.notStated}</span> : <CivilDate value={from} />}
-      {/* The separator is punctuation, so it is left out of the spoken form; the term above says
-          which two ends of one period the reader is hearing. */}
       <span aria-hidden="true">–</span>
       {to === null ? <span className="text-muted-foreground">{REQUESTED_TERMS_COPY.notStated}</span> : <CivilDate value={to} />}
     </span>
   );
 }
-const SCOPE_TERMS = {
-  organization: "Organization",
-  ministry: "Ministry",
-  supportSubject: "Support subject",
-} as const;
+const SCOPE_TERMS = { organization: "Organization", ministry: "Ministry", supportSubject: "Support subject" } as const;
 function ScopeReference({ term, reference }: { readonly term: string; readonly reference: string }): ReactElement {
   return (
     <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
@@ -151,28 +113,19 @@ function MembershipCount({ state, count }: { readonly state: MembershipState; re
     </div>
   );
 }
-// The region
-/** The initiative detail header. */
 export default function InitiativeHeader({ envelope, onRequestClose, onRequestReopen }: InitiativeHeaderProps): ReactElement | null {
   const view = viewOf(envelope);
-  if (view === null) {
-    return null;
-  }
+  if (view === null) return null;
   const { initiative, openWork } = view;
   const closed = initiative.state === "closed";
   const reopened = initiative.lifecycle === "reopened";
   const ownsUnfinishedWork = openWork !== null && openWork > 0;
-  // A closed initiative states how it closed; a reopened one states the disposition a reopen
-  // preserved, so the closure history is visible while the initiative is open again.
   const showsDisposition = closed || initiative.closureDisposition !== null;
   const showsClosureNotes = (closed && ownsUnfinishedWork) || reopened;
   const stateCopy = INITIATIVE_STATE_COPY[initiative.state];
   const disposition = initiative.closureDisposition === null ? REQUESTED_TERMS_COPY.notStated : dispositionFallback(initiative.closureDisposition);
   const closeAction = actionOf(envelope.actions, "closeInitiative");
   const reopenAction = actionOf(envelope.actions, "reopenInitiative");
-  // `actions` is advisory and the service re-checks, but a trigger with no handler to call would be
-  // a control that cannot act, so one is offered only when the read admits it *and* the route has
-  // supplied the request it would make.
   const offersClose = closeAction?.available === true && onRequestClose !== undefined;
   const offersReopen = reopenAction?.available === true && onRequestReopen !== undefined;
   const absent = absentActions([
@@ -235,8 +188,6 @@ export default function InitiativeHeader({ envelope, onRequestClose, onRequestRe
           <div className="flex min-w-0 flex-col gap-2">
             {offersClose ? <p className="text-xs text-pretty text-muted-foreground">{CLOSURE_COPY.closeHelp}</p> : null}
             {absent.length === 0 ? null : (
-              // A static explanation of why a change is not on offer, so `role="alert"` is left off
-              // and the region announces nothing when it merely renders.
               <Alert role={undefined} className="px-3 py-2">
                 <AlertDescription>
                   <ul className="flex flex-col gap-0.5 text-xs">

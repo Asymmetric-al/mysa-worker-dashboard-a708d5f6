@@ -1,8 +1,4 @@
 "use client";
-/**
- * Contact import, step one — Choose file: the file the journey will import, the four limits it will be
- * measured against, and the disclosure that this import is simulated.
- */
 import { useId, useState, type ChangeEvent, type ReactElement } from "react";
 import { FormField } from "@/components/form-field";
 import SimulationLabel from "@/components/simulation-label";
@@ -13,9 +9,7 @@ import type { ImportFileSelection } from "../hooks/use-import-journey";
 function readContentBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => {
-      reject(new Error("The browser could not read the chosen file."));
-    };
+    reader.onerror = () => reject(new Error("The browser could not read the chosen file."));
     reader.onload = () => {
       const result = reader.result;
       if (typeof result !== "string") {
@@ -28,13 +22,7 @@ function readContentBase64(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
-/** Props of {@link FileChooser}. */
-export interface FileChooserProps {
-  readonly selection: ImportFileSelection | undefined;
-  readonly onChoose: (selection: ImportFileSelection) => void;
-  readonly onContinue: () => void;
-}
-/** Step one of the contact import: choose one UTF-8 CSV file, read the limits it will be held to, and open step two. */
+export type FileChooserProps = { readonly selection: ImportFileSelection | undefined; readonly onChoose: (selection: ImportFileSelection) => void; readonly onContinue: () => void };
 export default function FileChooser({ selection, onChoose, onContinue }: FileChooserProps): ReactElement {
   const [reading, setReading] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
@@ -44,9 +32,7 @@ export default function FileChooser({ selection, onChoose, onContinue }: FileCho
   const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>): void => {
     const chosen = event.target.files?.[0] ?? null;
     event.target.value = "";
-    if (chosen === null) {
-      return;
-    }
+    if (chosen === null) return;
     setReadError(null);
     setReading(true);
     void readContentBase64(chosen).then(
@@ -81,18 +67,7 @@ export default function FileChooser({ selection, onChoose, onContinue }: FileCho
       </div>
       <div className="flex min-w-0 flex-col gap-3">
         <FormField label={CHOOSE_FILE_COPY.fileLabel} name="file" description={CHOOSE_FILE_COPY.fileHint} error={readError ?? undefined} required>
-          {({ id, describedBy, invalid, required }) => (
-            <Input
-              id={id}
-              type="file"
-              aria-describedby={describedBy}
-              aria-invalid={invalid}
-              aria-required={required}
-              className="h-auto cursor-pointer py-2"
-              disabled={reading}
-              onChange={handleFileInputChange}
-            />
-          )}
+          {({ id, describedBy, invalid, required }) => <Input id={id} type="file" aria-describedby={describedBy} aria-invalid={invalid} aria-required={required} className="h-auto cursor-pointer py-2" disabled={reading} onChange={handleFileInputChange} />}
         </FormField>
         {/* Beside the control that triggers the effect, and before anything is parsed. */}
         <SimulationLabel effect={IMPORT_SIMULATION_EFFECT} />

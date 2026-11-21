@@ -12,28 +12,17 @@ export const SIMULATION_LABELS = Object.freeze({
   "importer-safety": "synthetic files only; a successful local parse is not a safety qualification",
   "media-preparation": "local processing; not production scanning or transcoding",
 } as const satisfies Record<SimulatedEffect, string>);
-/** Where the label sits. */
 export type SimulationLabelContext = "inline" | "block";
-/** Props of {@link SimulationLabel}. */
-export interface SimulationLabelProps extends Omit<
-  ComponentPropsWithoutRef<"div">,
-  "children" | "style" | "role" | "hidden" | "aria-hidden" | "aria-live" | "aria-atomic" | "dangerouslySetInnerHTML"
-> {
+export interface SimulationLabelProps extends Omit<ComponentPropsWithoutRef<"div">, "children" | "style" | "role" | "hidden" | "aria-hidden" | "aria-live" | "aria-atomic" | "dangerouslySetInnerHTML"> {
   effect: SimulatedEffect;
   context?: SimulationLabelContext;
 }
 const INLINE_SURFACE = "flex w-fit max-w-full items-start gap-2 rounded-md border border-border bg-background px-2.5 " + "py-1.5 text-start text-sm text-muted-foreground text-pretty wrap-anywhere";
-
 const INLINE_ICON = "mt-0.5 size-4 shrink-0";
 const BLOCK_ICON = "size-4 shrink-0";
-
 function labelFor(effect: SimulatedEffect): string {
   if (!Object.hasOwn(SIMULATION_LABELS, effect)) {
-    throw new Error(
-      `SimulationLabel received an effect it has no sentence for: "${String(effect)}". ` +
-        "Every simulated boundary must state what did not happen, so add the effect to " +
-        "SIMULATION_LABELS instead of passing a value the interface cannot label.",
-    );
+    throw new Error(`SimulationLabel received an effect it has no sentence for: "${String(effect)}". ` + "Every simulated boundary must state what did not happen, so add the effect to " + "SIMULATION_LABELS instead of passing a value the interface cannot label.");
   }
   return SIMULATION_LABELS[effect];
 }
@@ -44,8 +33,7 @@ export function SimulationLabel({ effect, context = "inline", className, ...rest
     return (
       <Alert
         {...rest}
-        // A disclosure that states a limitation takes the informational variant and never
-        // `destructive`: an alarm-toned sentence would present an honest simulation as a fault.
+        // A disclosure that states a limitation takes the informational variant and never `destructive`: an alarm-toned sentence would present an honest simulation as a fault.
         variant="default"
         role={undefined}
         data-simulation-effect={effect}
