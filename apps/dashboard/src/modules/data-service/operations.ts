@@ -36,7 +36,8 @@
  *    `conflict` with `reason: "stale-revision"`, the current value and the preserved input, with
  *    nothing written;
  * 5. `apply` runs, answering `{ changed: false }` (→ `unchanged`, no revision advance, no history or
- *    activity entry, nothing recorded) or `{ changed: true, … }`;
+ *    activity entry, nothing recorded) or `{ changed: true, … }`; a refusal it reached from the record
+ *    (`{ refused }`) is returned with nothing written at all;
  * 6. the change's scope is re-checked against the scope it started from, then the ledger entry is
  *    recorded in that same transaction and the transaction commits;
  * 7. exactly one of the eight outcomes from `./outcome` is returned.
@@ -82,10 +83,11 @@ import { transact } from "@/modules/store/repository";
 import { now } from "@/modules/time/clock";
 
 import {
-  assertScope,
-  assertScopeUnchanged,
+  assertScopeUnder,
+  assertScopeUnchangedUnder,
   resolveSession,
   type ResolvedSession,
+  type ScopeAuthority,
   type ScopeDecision,
   type SessionResolution,
 } from "./authorize";
@@ -471,15 +473,33 @@ export interface MutationContext {
   readonly session: ResolvedSession;
   /** The revision the target stood at before the change, which `apply` presents back as its result. */
   readonly currentRevision: string;
+  /**
+   * The attempt identity the caller supplied, so an `apply` that refuses after reading the record can
+   * answer with the same operation id every other outcome carries.
+   *
+   * A refusal is the one outcome an `apply` may build itself, and every constructor in `./outcome`
+   * requires this identity. Supplying it here is what keeps a refusal recoverable and attributable
+   * rather than a second, anonymously built answer.
+   */
+  readonly operationId: string;
 }
 
 /**
- * What `apply` answers: nothing to do, or the change it made.
+ * What `apply` answers: nothing to do, the change it made, or a refusal it reached only by reading the
+ * record the change acts on.
  *
  * `{ changed: false }` is a real answer and not an error: the payload would produce no change, so the
  * runner answers `unchanged`, advances no revision, writes no history or activity entry and records
  * nothing. `{ changed: true }` must state the new `revision` and the opaque `result` a replay returns
  * verbatim, so the stored result is exactly what the first caller was told.
+ *
+ * `{ refused }` exists because some questions can only be answered from the record, and the record is
+ * readable only inside the transaction: whether this caller is the side of the relationship a command
+ * belongs to, whether the episode it addresses is still open, and whether the value it presents is
+ * still current. Those answers must be able to be `denied`, `conflict` or `invalid` — with no effect,
+ * no revision advance and no ledger entry — rather than being flattened into `unchanged`, which would
+ * report a refusal as though nothing needed doing. The refusal travels as one of the closed outcomes,
+ * so the caller reads it exactly as it reads a refusal the runner itself produced.
  *
  * The identifier list a caller changed is named `changedIds` because `changed` is this union's own
  * discriminant: one property carries one meaning at this boundary. `scope` is the context the change
@@ -488,6 +508,7 @@ export interface MutationContext {
  */
 export type ApplyResult<R extends MutationResult> =
   | { readonly changed: false }
+  | { readonly refused: MutationOutcome }
   | {
       readonly changed: true;
       /** The revision the record now stands at, presented back by the next write. */
@@ -528,6 +549,19 @@ export interface MutationPlan<P, R extends MutationResult> {
    * denial uses — a reason code that names the caller's relationship and nothing it asked about.
    */
   readonly authorize: (session: ResolvedSession) => ScopeDecision;
+  /**
+   * What this mutation's authority to act in the claimed scope is derived from.
+   *
+   * Omitted, it is `membership`: the caller must be admitted to the organisation, ministry and support
+   * subject it claims, which is every worker action. A mutation a principal performs under a grant
+   * rather than a membership — the coach's own acceptance and departure — states `grant` instead, so
+   * the claimed scope must still name the session's own principal and the session must still be
+   * admitting, while the ministry membership is the one thing that is not required. That refusal would
+   * otherwise make the coach's two writes unreachable, because a coach holds no membership and must
+   * not be given one; what the grant itself admits is decided by the mutation's own `apply`, which can
+   * read the record inside the transaction.
+   */
+  readonly scopeAuthority?: ScopeAuthority;
   /**
    * Locates the target's current revision, for the optimistic-concurrency comparison.
    *
@@ -757,7 +791,8 @@ export async function runMutation<P, R extends MutationResult>(
     return report(denied({ operationId, reasonCode: authority.reasonCode }));
   }
   const session = authority.session;
-  const scopeDecision = assertScope(session, input.scope);
+  const scopeAuthority = plan.scopeAuthority ?? "membership";
+  const scopeDecision = assertScopeUnder(session, input.scope, scopeAuthority);
   if (!scopeDecision.ok) {
     return report(denied({ operationId, reasonCode: scopeDecision.denial.reasonCode }));
   }
@@ -834,7 +869,18 @@ export async function runMutation<P, R extends MutationResult>(
       }
 
       // 5. The change itself, applied to this transaction's draft.
-      const applied = await plan.apply({ docs, session, currentRevision: targetRevision });
+      const applied = await plan.apply({
+        docs,
+        session,
+        currentRevision: targetRevision,
+        operationId,
+      });
+      if ("refused" in applied) {
+        // A refusal the mutation reached only after reading the record: nothing was applied, no
+        // revision advanced and no ledger entry is written, so the caller's input is preserved and the
+        // effect is absent rather than merely unreported.
+        return applied.refused;
+      }
       if (!applied.changed) {
         // Nothing needed doing: no revision advance, no history or activity entry, nothing recorded.
         return unchanged({ operationId, revision: reportedRevision });
@@ -843,7 +889,12 @@ export async function runMutation<P, R extends MutationResult>(
       // A write re-checks the scope it started from and the one it produced, so a change can never
       // move a record into a context the caller cannot see. Throwing is how a draft is discarded: the
       // store writes nothing when this callback throws.
-      const scopeHeld = assertScopeUnchanged(session, input.scope, applied.scope ?? input.scope);
+      const scopeHeld = assertScopeUnchangedUnder(
+        session,
+        input.scope,
+        applied.scope ?? input.scope,
+        scopeAuthority,
+      );
       if (!scopeHeld.ok) {
         throw new MutationRefused(denied({ operationId, reasonCode: scopeHeld.denial.reasonCode }));
       }

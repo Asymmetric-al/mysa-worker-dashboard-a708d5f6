@@ -394,7 +394,21 @@ function admitsContext(
 }
 
 /**
- * Asserts that a caller may act in a scope at all.
+ * What a request's authority to act in a scope is derived from.
+ *
+ * `membership` is the ordinary answer and the default everywhere: the caller is admitted to the
+ * organisation, ministry and support subject it claims. `grant` exists for the two principals whose
+ * relationship to the data is a deliberate grant rather than a membership — a coaching relationship's
+ * two sides — because a coach holds no ministry membership and must not be given one, exactly as the
+ * `cohort-subject` target below already states. The two guards below are otherwise unchanged for
+ * `grant`, so the session must still be admitting, the scope must still name the session's own
+ * principal, and a change must still keep the scope it started from; what the grant itself admits is
+ * decided by the named mutation against the record inside its own transaction.
+ */
+export type ScopeAuthority = "membership" | "grant";
+
+/**
+ * Asserts that a caller may act in a scope at all, under the authority its relationship states.
  *
  * Four checks, in this order, and each refusal names the caller's relationship rather than anything
  * it asked about: the session must be in an admitting state; the scope's principal must be the one
@@ -407,8 +421,17 @@ function admitsContext(
  * ministries may act in either, and the selection decides what a surface opens on rather than what
  * the principal is allowed to reach. A stale envelope can therefore produce a `denied` outcome when
  * its action is submitted, but never an unauthorised write.
+ *
+ * The membership check is the one step `grant` authority omits, and it omits only that: a session
+ * whose authority is a grant is still held to the admitting state and to its own principal, and a
+ * mutation using it must still authorise the record it touches — which it can, because the grant is
+ * in the session's own documents.
  */
-export function assertScope(session: ResolvedSession, scope: Scope): ScopeDecision {
+export function assertScopeUnder(
+  session: ResolvedSession,
+  scope: Scope,
+  authority: ScopeAuthority,
+): ScopeDecision {
   const gate = sessionGate(session);
   if (gate !== undefined) {
     return { ok: false, denial: gate };
@@ -416,9 +439,17 @@ export function assertScope(session: ResolvedSession, scope: Scope): ScopeDecisi
   if (scope.principalId !== session.principalId) {
     return { ok: false, denial: refuse("not-admitted") };
   }
+  if (authority === "grant") {
+    return { ok: true };
+  }
   return admitsScope(session, scope)
     ? { ok: true }
     : { ok: false, denial: refuse("no-membership") };
+}
+
+/** Asserts that a caller may act in a scope admitted by one of its memberships. */
+export function assertScope(session: ResolvedSession, scope: Scope): ScopeDecision {
+  return assertScopeUnder(session, scope, "membership");
 }
 
 /**
@@ -428,23 +459,36 @@ export function assertScope(session: ResolvedSession, scope: Scope): ScopeDecisi
  * record into another organisation, ministry or support subject is refused even when the caller is
  * admitted to the destination, because admission to two contexts is not permission to move a record
  * between them. This is the guard a mutation's runner calls after applying its change, and it is
- * separate from {@link assertScope} rather than folded into it so the two questions stay legible: the
- * one it started from, and the one it produced.
+ * separate from {@link assertScopeUnder} rather than folded into it so the two questions stay legible:
+ * the one it started from, and the one it produced.
+ *
+ * The exact comparison is made under every authority, so a grant-authorised change can never move a
+ * record into a context the caller does not hold either.
  */
+export function assertScopeUnchangedUnder(
+  session: ResolvedSession,
+  before: Scope,
+  after: Scope,
+  authority: ScopeAuthority,
+): ScopeDecision {
+  const started = assertScopeUnder(session, before, authority);
+  if (!started.ok) {
+    return started;
+  }
+  const produced = assertScopeUnder(session, after, authority);
+  if (!produced.ok) {
+    return produced;
+  }
+  return sameScope(before, after) ? { ok: true } : { ok: false, denial: refuse("no-permission") };
+}
+
+/** Asserts that a change kept the record inside the membership-admitted context it started in. */
 export function assertScopeUnchanged(
   session: ResolvedSession,
   before: Scope,
   after: Scope,
 ): ScopeDecision {
-  const started = assertScope(session, before);
-  if (!started.ok) {
-    return started;
-  }
-  const produced = assertScope(session, after);
-  if (!produced.ok) {
-    return produced;
-  }
-  return sameScope(before, after) ? { ok: true } : { ok: false, denial: refuse("no-permission") };
+  return assertScopeUnchangedUnder(session, before, after, "membership");
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -888,6 +932,7 @@ function coachingGrantIsLive(grant: CoachingGrantRecord): boolean {
     case "revoked":
     case "expired":
     case "ended":
+    case "left":
       return false;
   }
 }

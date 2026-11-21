@@ -862,6 +862,24 @@ export const taskRecordSchema: z.ZodType<TaskRecord> = z
     },
   );
 
+/**
+ * The fingerprint of the task meaning a shared summary's description was reviewed against.
+ *
+ * A coaching task summary shares a description, the live due date and the live status; the
+ * description summarises the task's own meaning, so the meaning is what it is reviewed against: its
+ * title, its category and its note. The live due date and status are deliberately excluded, because
+ * they travel beside the description and change without changing what the description says.
+ *
+ * Declared beside the record it fingerprints so the write that records a share and the read that
+ * compares it produce the same value from the same declaration. Equal, and the summary is shared;
+ * different, and the description is withheld until it is reviewed again. The value is a comparison
+ * key and never a disclosure: it reaches no envelope, and no surface can reconstruct a title, a note
+ * or a donor from it.
+ */
+export function taskReviewedFingerprint(task: TaskRecord): string {
+  return [task.taskId, task.title, task.category ?? "", task.note ?? ""].join("\u0000");
+}
+
 // ---------------------------------------------------------------------------------------------
 // Task series
 // ---------------------------------------------------------------------------------------------
@@ -1999,7 +2017,16 @@ export const membershipRecordSchema: z.ZodType<MembershipRecord> = z.object({
 // Coaching grants
 // ---------------------------------------------------------------------------------------------
 
-/** The six states of a coaching relationship. Each stop-type has its own state. */
+/**
+ * Every state a coaching relationship can be stored in, so each of the six stop-type effects has its
+ * own answer.
+ *
+ * `left` is stored as itself rather than collapsed into `ended`: the coach leaving and the worker
+ * ending the relationship are different acts, and reporting one as the other would state an ending the
+ * worker never chose. `superseded` is not stored here — a replaced invitation is recorded by its
+ * `invitation.supersededBy` reference, which keeps the replacement's own row the one that carries the
+ * new terms.
+ */
 export const COACHING_GRANT_STATES = [
   "invited",
   "accepted",
@@ -2007,6 +2034,7 @@ export const COACHING_GRANT_STATES = [
   "revoked",
   "expired",
   "ended",
+  "left",
 ] as const;
 
 /** Where a coaching grant stands. An ended episode cannot return through a stale action. */
@@ -2353,6 +2381,55 @@ export const coachingCheckInRecordSchema: z.ZodType<CoachingCheckInRecord> = z.o
   privateDraft: coachingCheckInPrivateDraftRecordSchema.nullable(),
   shared: coachingCheckInSharedRevisionRecordSchema.nullable(),
   revision: recordRevisionSchema,
+});
+
+// ---------------------------------------------------------------------------------------------
+// Coaching task shares
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * One share of one occurrence of one task, as stored.
+ *
+ * A share covers a single occurrence, which is why the occurrence identity is part of the record: a
+ * recurring task's next occurrence is a different occurrence and needs a fresh selection rather than
+ * inheriting this share. `reviewedFingerprint` is the opaque value
+ * {@link taskReviewedFingerprint} produced when the description was reviewed; it is compared with the
+ * fingerprint of the task as it stands and never interpreted, which is how a changed task withholds a
+ * stale summary without any reader being able to see what changed. `reviewedSummary` holds the
+ * description exactly as reviewed, never shortened, with its own measured length.
+ *
+ * The record declares no title, note, donor, amount, attachment, source reference or link: a share
+ * carries what the worker reviewed for a coach and nothing else, so no later field can arrive here
+ * without an edit to this declaration.
+ */
+export interface CoachingTaskShareRecord {
+  readonly shareId: string;
+  readonly taskId: string;
+  readonly occurrenceId: string;
+  readonly reviewedSummary: {
+    readonly description: string;
+    readonly codePoints: number;
+    readonly reviewedAt: string;
+  };
+  readonly reviewedFingerprint: string;
+  readonly state: "shared" | "removed";
+  readonly revision: number;
+  readonly withdrawnAt?: string | null;
+}
+
+export const coachingTaskShareRecordSchema: z.ZodType<CoachingTaskShareRecord> = z.object({
+  shareId: z.string().min(1),
+  taskId: z.string().min(1),
+  occurrenceId: z.string().min(1),
+  reviewedSummary: z.object({
+    description: z.string(),
+    codePoints: z.int().nonnegative(),
+    reviewedAt: storedInstantSchema,
+  }),
+  reviewedFingerprint: z.string().min(1),
+  state: z.enum(["shared", "removed"]),
+  revision: z.int().nonnegative(),
+  withdrawnAt: storedInstantSchema.nullable().optional(),
 });
 
 // ---------------------------------------------------------------------------------------------

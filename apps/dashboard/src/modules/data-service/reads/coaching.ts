@@ -128,6 +128,7 @@ import {
   buildEnvelope,
   coachingCheckInRecordSchema,
   coachingGrantRecordSchema,
+  coachingTaskShareRecordSchema,
   coachingTargetRecordSchema,
   commitmentRowRecordSchema,
   giftRowRecordSchema,
@@ -135,12 +136,13 @@ import {
   partnerRecordSchema,
   project,
   scopeSchema,
-  storedInstantSchema,
   supportProjectionRecordSchema,
   taskRecordSchema,
+  taskReviewedFingerprint,
   type CoachingCheckInRecord,
   type CoachingDurationRecord,
   type CoachingGrantRecord,
+  type CoachingTaskShareRecord,
   type CoachingTargetRecord,
   type CommitmentRowRecord,
   type Coverage,
@@ -204,28 +206,12 @@ const SUPPORT_PROJECTION_REFERENCE = "support-projection";
 /**
  * One share of one task occurrence, as stored.
  *
- * `envelope.ts` declares no stored record for a coaching task share — a share exists because a worker
- * selected a task, so the shape is declared here, beside the only reader of it, rather than forking the
- * shared record vocabulary. `reviewedFingerprint` is opaque: this file compares it with the fingerprint
- * of the task's reviewed fields as they stand now and never interprets it.
+ * The record's shape is declared once in `../envelope`, beside the vocabulary every other stored record
+ * belongs to, because both the write that records a share and this read validate it.
+ * `reviewedFingerprint` is opaque: this file compares it with the fingerprint of the task's reviewed
+ * fields as they stand now and never interprets it.
  */
-const storedCoachingTaskShareSchema = z.object({
-  shareId: z.string().min(1),
-  taskId: z.string().min(1),
-  occurrenceId: z.string().min(1),
-  reviewedSummary: z.object({
-    description: z.string(),
-    codePoints: z.int().nonnegative(),
-    reviewedAt: storedInstantSchema,
-  }),
-  reviewedFingerprint: z.string().min(1),
-  state: z.enum(["shared", "removed"]),
-  revision: z.int().nonnegative(),
-  withdrawnAt: storedInstantSchema.nullable().optional(),
-});
-
-/** One stored coaching task share, derived from its schema so the two cannot drift. */
-type StoredCoachingTaskShare = z.infer<typeof storedCoachingTaskShareSchema>;
+type StoredCoachingTaskShare = CoachingTaskShareRecord;
 
 /**
  * The families these six reads parse out of the session's opaque state document.
@@ -238,7 +224,7 @@ const coachingStateSchema = z.object({
   coachingGrants: z.array(coachingGrantRecordSchema),
   coachingTargets: z.array(coachingTargetRecordSchema),
   coachingCheckIns: z.array(coachingCheckInRecordSchema),
-  coachingTaskShares: z.array(storedCoachingTaskShareSchema).optional(),
+  coachingTaskShares: z.array(coachingTaskShareRecordSchema).optional(),
   interactions: z.array(interactionRecordSchema),
   tasks: z.array(taskRecordSchema),
   partners: z.array(partnerRecordSchema),
@@ -1087,21 +1073,6 @@ function supportProjectionOf(state: CoachingState): SupportLoad {
 // ---------------------------------------------------------------------------------------------
 // Shared task summaries
 // ---------------------------------------------------------------------------------------------
-
-/**
- * The opaque fingerprint of the task fields a shared description was reviewed against.
- *
- * The description summarises the task's own meaning, so the meaning is what it is reviewed against: its
- * title, its category and its note. The live due date and status are deliberately excluded, because they
- * travel beside the description and change without changing what the description says.
- *
- * The fingerprint is compared and never returned: no coach-facing shape in this file has a field able to
- * hold the task's own name, its body, its donor, an amount, an attachment, a link or a private history,
- * and this value reaches no envelope.
- */
-function taskMeaningFingerprint(task: TaskRecord): string {
-  return [task.taskId, task.title, task.category ?? "", task.note ?? ""].join("\u0000");
-}
 
 /** A due date in the shared summary's own shape: dated at its recorded precision, or undated. */
 function dueDateOf(task: TaskRecord): TaskSummaryDueDate {
@@ -2111,7 +2082,7 @@ export async function readTaskShares(
     );
     const working = workingShareOf(stored);
     const sourceAvailable = working !== null && task !== undefined;
-    const currentFingerprint = task === undefined ? undefined : taskMeaningFingerprint(task);
+    const currentFingerprint = task === undefined ? undefined : taskReviewedFingerprint(task);
     const shareState =
       working === null
         ? "unavailable"
@@ -2595,7 +2566,7 @@ function taskShareSummaryStateOf(
   if (working === null) return "unavailable";
   return taskShareReadState({
     share: working,
-    currentFingerprint: task === undefined ? undefined : taskMeaningFingerprint(task),
+    currentFingerprint: task === undefined ? undefined : taskReviewedFingerprint(task),
     sourceAvailable: task !== undefined,
   });
 }
@@ -2694,7 +2665,7 @@ function coachTaskSummariesOf(
         ? "unavailable"
         : taskShareReadState({
             share: working,
-            currentFingerprint: task === undefined ? undefined : taskMeaningFingerprint(task),
+            currentFingerprint: task === undefined ? undefined : taskReviewedFingerprint(task),
             sourceAvailable: task !== undefined,
           });
     if (readState === "removed") continue;
@@ -2708,7 +2679,7 @@ function coachTaskSummariesOf(
             dueDate: dueDateOf(task),
             status: task.status,
             reviewedFingerprint: working.reviewedFingerprint,
-            currentFingerprint: taskMeaningFingerprint(task),
+            currentFingerprint: taskReviewedFingerprint(task),
             sourceAvailable: true,
           });
     const current =
