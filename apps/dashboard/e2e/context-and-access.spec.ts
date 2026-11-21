@@ -11,7 +11,7 @@
  * The scenario this file drives, from the deterministic seed:
  * - the primary worker (session `established-worker`) in the Harbour youth ministry, holding a private
  *   note on one partner, an unreleased Arabic draft, an approved-supporter edition that carries prose
- *   the public edition does not, a protected video placement and exportable gifts;
+ *   the public edition does not, a placed video and exportable gifts;
  * - a second worker in another organisation (`second-worker`), whose scope shares nothing with it;
  * - an unauthorised reader (`reader-unauthorized`), whose refusal discloses no count, title, size or
  *   existence hint;
@@ -100,7 +100,7 @@ interface OwnerValues {
   readonly protectedTitle: string;
   /** The one paragraph the approved-supporter edition carries and its public sibling does not. */
   readonly protectedParagraph: string;
-  /** The address the owner's own preview player asks the protected video from. */
+  /** The address the owner's own preview player asks the edition's placed video from. */
   readonly mediaSrc: string;
 }
 
@@ -288,7 +288,7 @@ function expectEmptyRoster(probe: Probe, ownerOnly: readonly string[], supplied:
  * The owner's surfaces are read as the owner: the partner's record route, with the identity heading it
  * states and the private note inside its own private-notes card, and the roster search that finds that
  * record by the same display name; the gifts ledger, with the identifier its row links to and the row
- * identifier its read reports; the protected video's address, taken from the Page preview's own player;
+ * identifier its read reports; the placed video's address, taken from the Page preview's own player;
  * and two previews of the same Update — the released public edition and the approved-supporter edition —
  * whose difference is exactly the prose the protected edition adds. Reading all of them is what makes
  * every asserted value a fact this application really holds rather than a constant copied from the seed.
@@ -326,7 +326,7 @@ async function captureOwnerValues(page: Page): Promise<OwnerValues> {
 
   await page.goto(`/pages/${OWNER_PAGE_EDITION.documentId}/${OWNER_PAGE_EDITION.locale}/preview`);
   const mediaSrc = (await page.locator("video").first().getAttribute("src"))?.trim() ?? "";
-  expect(mediaSrc, "the Page preview plays the protected video from its own address").toContain("/api/media/");
+  expect(mediaSrc, "the Page preview plays the video the edition places from its own address").toContain("/api/media/");
 
   const draft = await get(page, "the owner's draft edition", `/api/drafts?view=draft&variantId=${encodeURIComponent(OWNER_DRAFT_EDITION)}`);
   expect(draft.response.status(), "the owner reads the draft edition of their own Update").toBe(200);
@@ -344,9 +344,16 @@ async function captureOwnerValues(page: Page): Promise<OwnerValues> {
   return { privateNote, giftId, giftRowId, draftTitle, protectedTitle, protectedParagraph, mediaSrc };
 }
 
-/** Every value an outside identity must never receive, gathered from what the owner's own surfaces show. */
+/**
+ * Every value an outside identity must never receive, gathered from what the owner's own surfaces show.
+ *
+ * The preview player's `mediaSrc` is deliberately absent: the seeded Page's released public edition has
+ * `listed` reach, so the public reading route serves that edition and the video it places to any reader,
+ * and the preview and the reading route showing one rendition address is the reach rule working rather
+ * than a disclosure. The protected media facts are asserted in {@link outsideCalls} instead.
+ */
 function ownerOnlyValues(values: OwnerValues): readonly string[] {
-  return [values.privateNote, values.giftId, values.giftRowId, values.draftTitle, values.protectedTitle, values.protectedParagraph, values.mediaSrc, OWNER_PARTNER_ID, OWNER_PARTNER_NAME, OWNER_SUPPORT_SUBJECT, OWNER_PRINCIPAL];
+  return [values.privateNote, values.giftId, values.giftRowId, values.draftTitle, values.protectedTitle, values.protectedParagraph, OWNER_PARTNER_ID, OWNER_PARTNER_NAME, OWNER_SUPPORT_SUBJECT, OWNER_PRINCIPAL];
 }
 
 /**
@@ -379,17 +386,29 @@ function outsideCalls(values: OwnerValues): readonly OutsideCall[] {
 /**
  * The two receiving addresses, asked of every outside identity.
  *
- * What they answer is judged only on what they carry: the reading address of a Page edition and the
- * discovery index answer nothing to a caller holding no grant, and where such an address is not served
- * at all its refusal still carries none of the owner's values. The assertion that matters is the one
- * about content — a protected edition's paragraph, a draft's title or a private note may not reach a
- * reader through a receiving surface — and it holds against a served edition and against a refusal
- * alike, which is why no particular status is required here.
+ * What they answer is judged only on what they carry: the reading address of a Page edition serves its
+ * listed public edition to any caller while an address holding nothing for that caller refuses, and both a
+ * served edition and a refusal are judged the same way. The assertion that matters is the one about
+ * content — a protected edition's paragraph, a draft's title or a private note may not reach a reader
+ * through a receiving surface — and it holds against a served edition and against a refusal alike, which is
+ * why no particular status is required here.
  */
 const RECEIVING_ADDRESSES = [
   { label: "the public reading address of the owner's Page edition", path: `/preview/pages/${OWNER_PAGE_EDITION.documentId}/${OWNER_PAGE_EDITION.locale}` },
   { label: "the receiving discovery index", path: "/preview/pages" },
 ] as const;
+
+/**
+ * The one identifier a receiving address may state, and why nothing else is excused.
+ *
+ * A read answers with the envelope the data service builds, and that envelope states the scope the read ran
+ * under instead of leaving the caller to infer its authority: a served edition therefore names the
+ * publisher's own organisation, ministry and support subject, together with the principal reading it. The
+ * ministry's support subject reaches a public reader that way by design, so it is judged by the direct
+ * probes in {@link outsideCalls} and by a second worker's own scope, and not on these two surfaces. Every
+ * other value {@link ownerOnlyValues} gathers is judged here, served edition or refusal.
+ */
+const READING_SCOPE_IDENTIFIER = OWNER_SUPPORT_SUBJECT;
 
 /** Issues one outside call through the browser's own request context. */
 async function issue(page: Page, call: OutsideCall): Promise<Probe> {
@@ -406,10 +425,12 @@ async function expectSurfaceWithoutOwnerValue(page: Page, label: string, ownerOn
 
 /** Asserts the two receiving addresses carry none of the owner's values, and are not server faults. */
 async function expectReceivingAddressesSealed(page: Page, ownerOnly: readonly string[]): Promise<void> {
+  // The scope a served edition states is the authority its own read ran under, not a record of the owner's.
+  const judged = ownerOnly.filter((value) => value !== READING_SCOPE_IDENTIFIER);
   for (const address of RECEIVING_ADDRESSES) {
     const probe = await get(page, address.label, address.path);
     expect(probe.response.status(), `${address.label} answered ${String(probe.response.status())}; a surface that renders its own refusal is not a server fault`).toBeLessThan(500);
-    expectNoOwnerValue(probe, ownerOnly);
+    expectNoOwnerValue(probe, judged);
   }
 }
 
