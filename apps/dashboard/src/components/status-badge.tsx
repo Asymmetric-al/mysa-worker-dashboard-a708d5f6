@@ -2,6 +2,10 @@ import type { ComponentProps } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
+import type { SendOutcomeState } from "@/modules/audience/consent";
+import type { MembershipState } from "@/modules/audience/membership";
+import type { GrantLifecycleState } from "@/modules/coaching/grant";
+import type { Reach } from "@/modules/content/reach";
 import type { ValueState } from "@/modules/data-service/envelope";
 import { BUCKET_LABELS, type RecurringBucket } from "@/modules/support/buckets";
 
@@ -24,9 +28,13 @@ import { BUCKET_LABELS, type RecurringBucket } from "@/modules/support/buckets";
  *   is not a number must never render as `0`.
  *
  * Every vocabulary below is one exhaustive `Record` over a closed union, so adding a member without
- * giving it a label and a tone is a compile error rather than an unlabelled chip. A feature passes a
- * union member through {@link statusBadgeProps} and receives `{ label, tone }`; it never hand-writes
- * the state word, which is what keeps one state spelled one way across the whole application.
+ * giving it a label and a tone is a compile error rather than an unlabelled chip. The four state
+ * vocabularies take their members from the domain module that stores them — `modules/audience` for
+ * memberships and send outcomes, `modules/coaching/grant` for grant episodes and
+ * `modules/content/reach` for reach — so a state added or renamed there fails to compile here until
+ * it has a word and a tone. A feature passes a union member through {@link statusBadgeProps} and
+ * receives `{ label, tone }`; it never hand-writes the state word, which is what keeps one state
+ * spelled one way across the whole application.
  *
  * The recurring-bucket words are not re-typed here: `modules/support/buckets` owns them (including
  * the `outside-partition` wording that keeps unknown or stale evidence out of the five outcomes),
@@ -97,8 +105,12 @@ const TONE_APPEARANCE: Readonly<
  * The words keep three different facts apart — a choice the person made (`off`), an acceptance still
  * waiting for their confirmation (`awaiting-proof`), and a limitation the source imposed
  * (`restricted`) — so no surface can present a held record as consent.
+ *
+ * The members are `modules/audience/membership`'s own: `MEMBERSHIP_STATES` declares the four states
+ * once, and this name is an alias for its member type so a fifth state cannot be added on one side
+ * only.
  */
-export type MembershipStatus = "active" | "awaiting-proof" | "off" | "restricted";
+export type MembershipStatus = MembershipState;
 
 /** The label and tone of each membership state. */
 export const MEMBERSHIP_STATUS: Readonly<Record<MembershipStatus, StatusBadgeSpec>> = {
@@ -112,8 +124,11 @@ export const MEMBERSHIP_STATUS: Readonly<Record<MembershipStatus, StatusBadgeSpe
  * The three per-recipient send outcomes. `accepted` says the simulated sender took the work and
  * nothing more, so its word carries "not delivered"; `unknown` says the acknowledgement was lost, so
  * its word carries neither success nor failure.
+ *
+ * `modules/audience/consent` owns the union this aliases, so a fourth send state fails to compile
+ * here rather than reaching a surface without a word.
  */
-export type SendStatus = "accepted" | "failed" | "unknown";
+export type SendStatus = SendOutcomeState;
 
 /** The label and tone of each send outcome. */
 export const SEND_STATUS: Readonly<Record<SendStatus, StatusBadgeSpec>> = {
@@ -123,33 +138,34 @@ export const SEND_STATUS: Readonly<Record<SendStatus, StatusBadgeSpec>> = {
 };
 
 /**
- * The three reach values a released edition may carry. `not-public` is invisible, `link-public` is
- * public but unlisted and noindex, and `listed` appears in the discovery index — three different
+ * The three reach values a released edition may carry, each under the specification's fixed name:
+ * Not public, Shared by link: public, and Listed publicly. `not-public` is invisible, `link-public`
+ * is public but unlisted and noindex, and `listed` appears in the discovery index — three different
  * facts that a single "published" flag would collapse.
+ *
+ * `modules/content/reach` owns the union this aliases, and `RELEASE_REACH_VALUES` on the release
+ * record is the single declaration of it, so a fourth reach value fails to compile here.
  */
-export type ReleaseReachStatus = "not-public" | "link-public" | "listed";
+export type ReleaseReachStatus = Reach;
 
 /** The label and tone of each reach value. */
 export const REACH_STATUS: Readonly<Record<ReleaseReachStatus, StatusBadgeSpec>> = {
   "not-public": { label: "Not public", tone: "neutral" },
-  "link-public": { label: "Shared by link — public, unlisted", tone: "info" },
+  "link-public": { label: "Shared by link: public", tone: "info" },
   listed: { label: "Listed publicly", tone: "positive" },
 };
 
 /**
  * The states of a coaching grant episode. Delivery, deliberate acceptance, active access, expiry,
- * revocation and a completed episode are six separate outcomes, and a superseded invitation or an
- * accepted grant whose source is down stay distinguishable from all of them.
+ * revocation, an ended relationship and a coach leaving are separate outcomes, and a superseded
+ * invitation stays distinguishable from all of them.
+ *
+ * The eight stored states are `modules/coaching/grant`'s own: `GRANT_LIFECYCLE_STATES` declares them
+ * once, `left` among them, so a ninth stored state fails to compile here until it has a word and a
+ * tone. `accepted-but-unavailable` is the one member the lifecycle never stores — it is derived at
+ * read time, and its entry below says from what.
  */
-export type CoachingGrantStatus =
-  | "invited"
-  | "accepted"
-  | "active"
-  | "revoked"
-  | "expired"
-  | "ended"
-  | "superseded"
-  | "accepted-but-unavailable";
+export type CoachingGrantStatus = GrantLifecycleState | "accepted-but-unavailable";
 
 /** The label and tone of each grant state. */
 export const COACHING_STATUS: Readonly<Record<CoachingGrantStatus, StatusBadgeSpec>> = {
@@ -159,7 +175,11 @@ export const COACHING_STATUS: Readonly<Record<CoachingGrantStatus, StatusBadgeSp
   revoked: { label: "Revoked", tone: "danger" },
   expired: { label: "Expired", tone: "caution" },
   ended: { label: "Ended", tone: "neutral" },
+  left: { label: "Coach left — access closed", tone: "neutral" },
   superseded: { label: "Superseded by a newer invitation", tone: "muted" },
+  // Derived at read time, never stored: the acceptance is recorded and the episode's source cannot
+  // be read right now, so this states no closure and no access — it stays distinct from `accepted`
+  // and from every lifecycle closure.
   "accepted-but-unavailable": { label: "Accepted — access unavailable", tone: "caution" },
 };
 

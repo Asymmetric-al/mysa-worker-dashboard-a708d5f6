@@ -59,6 +59,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
 import { isNonEmptyString, isRecord } from "@/lib/guards";
+import type { SourceReference } from "@/lib/ids";
 import { redactDenial } from "@/lib/redaction";
 import { assertNever } from "@/lib/result";
 
@@ -89,17 +90,6 @@ export type JsonValue =
  * can store it and a replay can return it byte for byte.
  */
 export type MutationResult = JsonValue;
-
-/**
- * The identity of a source an outcome refers to: the system's own name and one opaque reference
- * into it. The reference is never parsed, never compared across systems and never rendered as if
- * its form carried meaning, which is why a caller that only needs to report a source can use this
- * shape without importing the envelope's richer reference type.
- */
-export type SourceRefLike = {
-  readonly system: string;
-  readonly reference: string;
-};
 
 /**
  * The result for one row of an operation that acts on several items at once.
@@ -233,7 +223,7 @@ export type InvalidOutcome = {
 export type UnavailableOutcome = {
   readonly outcome: "unavailable";
   readonly operationId: string;
-  readonly source: SourceRefLike;
+  readonly source: SourceReference;
   readonly guidance: string;
 };
 
@@ -413,7 +403,7 @@ export function invalid(input: {
  */
 export function unavailable(input: {
   operationId: string;
-  source: SourceRefLike;
+  source: SourceReference;
   guidance: string;
 }): UnavailableOutcome {
   return {
@@ -526,6 +516,9 @@ const CORRUPT_DOCUMENT_FAULT = "CorruptJsonError";
 /** The store fault raised for a session id that cannot name a document; refused, never repaired. */
 const INVALID_SESSION_FAULT = "InvalidSessionIdError";
 
+/** The store fault raised for a session id that names no stored session; a transaction never creates one. */
+const SESSION_NOT_FOUND_FAULT = "SessionNotFoundError";
+
 /**
  * The filesystem fault codes that describe the store's own medium rather than the caller's input:
  * a missing directory, a full disk, a permission denial, an I/O error. A coding fault carries an
@@ -591,7 +584,8 @@ function storeFaultReference(error: unknown): string | undefined {
  *   branch is defensive rather than expected);
  * - a store or medium fault becomes `unavailable`, naming the store and the retry that is safe;
  * - a session that cannot be established becomes `denied`, because it yields no authority and no
- *   retry can change that;
+ *   retry can change that: a session id that cannot name a document and a session the store does
+ *   not hold are answered alike, since neither becomes authoritative by being asked for again;
  * - anything unrecognised becomes `unknown`, carrying the `operationId` and nothing else, because
  *   when the fate of the effect is not known, success and failure are both lies.
  *
@@ -603,6 +597,13 @@ export function outcomeFromError(operationId: string, error: unknown): MutationO
     return invalid({ operationId, fields: error });
   }
   if (readStringProperty(error, "name") === INVALID_SESSION_FAULT) {
+    return denied({ operationId, reasonCode: "session-unavailable" });
+  }
+  if (readStringProperty(error, "name") === SESSION_NOT_FOUND_FAULT) {
+    // Raised before the transaction opened a draft or wrote a document, so the effect definitively
+    // did not happen and `unknown` would assert that it might have. `unavailable` would call the
+    // store down and invite a retry, but the store answered: it holds no such session, and asking
+    // again cannot create one.
     return denied({ operationId, reasonCode: "session-unavailable" });
   }
   const reference = storeFaultReference(error);
@@ -625,7 +626,7 @@ function isDenialReason(value: unknown): value is DenialReason {
 }
 
 /** Narrows an untrusted value to a source identity with both of its parts present. */
-function isSourceRefLike(value: unknown): value is SourceRefLike {
+function isSourceReference(value: unknown): value is SourceReference {
   return isRecord(value) && isNonEmptyString(value.system) && isNonEmptyString(value.reference);
 }
 
@@ -671,7 +672,7 @@ export function isOutcome(value: unknown): value is MutationOutcome {
     case "unavailable":
       return (
         isNonEmptyString(value.operationId) &&
-        isSourceRefLike(value.source) &&
+        isSourceReference(value.source) &&
         isNonEmptyString(value.guidance)
       );
     case "unknown":

@@ -33,9 +33,13 @@ export type CivilDate = Temporal.PlainDate;
 /**
  * How precisely a recorded date is known: the three precisions a referral introduction, a logged
  * interaction and every other recorded date may carry. Declared here and nowhere else, so a second
- * precision union cannot drift from this one.
+ * precision union cannot drift from this one — and declared in a runtime form, so a stored record's
+ * schema is derived from this list instead of restating its members.
  */
-export type DatePrecision = "date" | "approximate" | "unknown";
+export const DATE_PRECISIONS = ["date", "approximate", "unknown"] as const;
+
+/** One date precision, derived from {@link DATE_PRECISIONS}. */
+export type DatePrecision = (typeof DATE_PRECISIONS)[number];
 
 /** The outcome of reading a stored or source-supplied date string. */
 export type ParsedCivilDate =

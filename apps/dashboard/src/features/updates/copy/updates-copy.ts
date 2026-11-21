@@ -9,19 +9,10 @@
  * limits only in `modules/media`.
  */
 import type { SimulatedEffect } from "@/components/simulation-label";
-// `ContentKind` belongs to the content variant module, which declares the kinds an Update may carry;
-// the document profile module validates a body's shape and names no kind, so the union is imported from
-// its one owner rather than redeclared here.
-import type { ContentKind } from "@/modules/content/variant";
-
-/**
- * The two audiences one Update variant may serve.
- *
- * Mirrors the audiences the Update family permits, which are public or approved-supporter for any one
- * content locale and never both axes crossed. Declared locally so this leaf keys its maps on the values
- * it words, and so a caller cannot pass a Page audience where an Update audience is meant.
- */
-export type UpdateAudience = "public" | "approved-supporter";
+// `ContentKind` and `VariantAudience` belong to the content variant module, which declares the kinds an
+// Update may carry and the two audiences a variant may serve; the document profile module validates a
+// body's shape and names neither, so both are imported from their one owner rather than redeclared here.
+import type { ContentKind, VariantAudience } from "@/modules/content/variant";
 
 /**
  * The two publish choices a release offers, mirroring the `mode` the publish payload accepts.
@@ -47,11 +38,14 @@ export const UPDATE_KIND_LABELS: Record<ContentKind, string> = {
 /**
  * The name of each Update audience and the one sentence naming who that variant is for.
  *
- * The name is what a badge or a switcher shows; the sentence is what a worker reads beside it, so the
- * audience axis is understood without consulting a consent or membership surface.
+ * The two keys are the content variant module's closed audience set, imported so an audience added
+ * there fails to compile here. An Update variant serves public or approved-supporter for any one
+ * content locale and never both axes crossed. The name is what a badge or a switcher shows; the
+ * sentence is what a worker reads beside it, so the audience axis is understood without consulting a
+ * consent or membership surface.
  */
 export const AUDIENCE_LABELS: Record<
-  UpdateAudience,
+  VariantAudience,
   { readonly label: string; readonly whoReceives: string }
 > = {
   public: {

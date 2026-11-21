@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { RESPONSE_KINDS } from "../copy";
+import { ASSERTING_RESPONSE_KINDS, RESPONSE_KINDS, type ResponseKind } from "../copy";
 
 // A recorded response is the named respondent's own answer to one Request, bound to the terms version
 // it was shown. Agreement creates no pledge, gift, commitment, subscription, notification or send, so
@@ -12,13 +12,9 @@ const responseKindSchema = z.enum(RESPONSE_KINDS, {
   error: "Choose how this Request was answered from the recorded responses.",
 });
 
-// The vocabulary lists the kinds that assert agreement ahead of the kinds that record a non-answer, so
-// the boundary is a position in that one enum and no kind is restated here. Only an asserting kind has
-// to say what stands behind it.
-const AGREEMENT_KIND_COUNT = 3;
-const AGREEMENT_KINDS: ReadonlySet<string> = new Set(
-  responseKindSchema.options.slice(0, AGREEMENT_KIND_COUNT),
-);
+// The asserting kinds are declared once beside the vocabulary in the copy module, so which kinds must
+// say what stands behind them cannot move with a display order, and no kind is restated here.
+const ASSERTING_KIND_SET: ReadonlySet<ResponseKind> = new Set(ASSERTING_RESPONSE_KINDS);
 
 /** Client-side shape of a `recordRequestResponse` payload, checked before the service re-checks it. */
 export const recordRequestResponsePayloadSchema = z
@@ -62,7 +58,7 @@ export const recordRequestResponsePayloadSchema = z
   })
   .strict()
   .superRefine((payload, context) => {
-    if (!AGREEMENT_KINDS.has(payload.kind)) return;
+    if (!ASSERTING_KIND_SET.has(payload.kind)) return;
     // A non-asserting answer is a recorded state in its own right: it is never refused for having no
     // evidence and never required to carry it.
     if (payload.standingEvidence !== null && payload.standingEvidence.length > 0) return;

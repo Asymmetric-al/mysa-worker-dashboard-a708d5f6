@@ -104,13 +104,42 @@
     },
     {
       "files": ["**/src/modules/**"],
+      "excludeFiles": [
+        "**/src/modules/data-service/**",
+        "**/src/modules/store/**",
+        "**/src/modules/dev-runtime/**"
+      ],
       "rules": {
         "no-restricted-imports": [
           "error",
           {
             "patterns": [
               {
-                "group": ["@/features", "@/features/**"],
+                "regex": "^(?:@/|(?:\\.\\.?/)+)features(?:/.*)?$",
+                "message": "A domain or service module may not import a feature: features compose modules, never the reverse."
+              },
+              {
+                "regex": "^(?:@/|(?:\\.\\.?/)+)(?:modules/)?store(?:/.*)?$",
+                "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "**/src/modules/data-service/**",
+        "**/src/modules/store/**",
+        "**/src/modules/dev-runtime/**"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "regex": "^(?:@/|(?:\\.\\.?/)+)features(?:/.*)?$",
                 "message": "A domain or service module may not import a feature: features compose modules, never the reverse."
               }
             ]
@@ -135,6 +164,10 @@
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
+                "regex": "^(?:\\.\\.?/)+(?:features/)?(?:home|partners|import|initiatives|referrals|work|support|updates|ministry-pages|audience|coaching)(?:/.*)?$",
+                "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
+              },
+              {
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
@@ -156,6 +189,10 @@
             "patterns": [
               {
                 "group": ["@/features", "@/features/**", "!@/features/home", "!@/features/home/**"],
+                "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
+              },
+              {
+                "regex": "^(?:\\.\\.?/)+(?:features/)?(?:shell|partners|import|initiatives|referrals|work|support|updates|ministry-pages|audience|coaching)(?:/.*)?$",
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -188,6 +225,10 @@
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
+                "regex": "^(?:\\.\\.?/)+(?:features/)?(?:shell|home|import|initiatives|referrals|work|support|updates|ministry-pages|audience|coaching)(?:/.*)?$",
+                "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
+              },
+              {
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
@@ -214,6 +255,10 @@
                   "!@/features/import",
                   "!@/features/import/**"
                 ],
+                "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
+              },
+              {
+                "regex": "^(?:\\.\\.?/)+(?:features/)?(?:shell|home|partners|initiatives|referrals|work|support|updates|ministry-pages|audience|coaching)(?:/.*)?$",
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -246,6 +291,10 @@
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
+                "regex": "^(?:\\.\\.?/)+(?:features/)?(?:shell|home|partners|import|referrals|work|support|updates|ministry-pages|audience|coaching)(?:/.*)?$",
+                "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
+              },
+              {
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
@@ -275,6 +324,10 @@
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
+                "regex": "^(?:\\.\\.?/)+(?:features/)?(?:shell|home|partners|import|initiatives|work|support|updates|ministry-pages|audience|coaching)(?:/.*)?$",
+                "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
+              },
+              {
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
@@ -296,6 +349,10 @@
             "patterns": [
               {
                 "group": ["@/features", "@/features/**", "!@/features/work", "!@/features/work/**"],
+                "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
+              },
+              {
+                "regex": "^(?:\\.\\.?/)+(?:features/)?(?:shell|home|partners|import|initiatives|referrals|support|updates|ministry-pages|audience|coaching)(?:/.*)?$",
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -328,6 +385,10 @@
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
+                "regex": "^(?:\\.\\.?/)+(?:features/)?(?:shell|home|partners|import|initiatives|referrals|work|updates|ministry-pages|audience|coaching)(?:/.*)?$",
+                "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
+              },
+              {
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
@@ -354,6 +415,10 @@
                   "!@/features/updates",
                   "!@/features/updates/**"
                 ],
+                "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
+              },
+              {
+                "regex": "^(?:\\.\\.?/)+(?:features/)?(?:shell|home|partners|import|initiatives|referrals|work|support|ministry-pages|audience|coaching)(?:/.*)?$",
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
@@ -386,6 +451,10 @@
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
+                "regex": "^(?:\\.\\.?/)+(?:features/)?(?:shell|home|partners|import|initiatives|referrals|work|support|updates|audience|coaching)(?:/.*)?$",
+                "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
+              },
+              {
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
@@ -415,6 +484,10 @@
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {
+                "regex": "^(?:\\.\\.?/)+(?:features/)?(?:shell|home|partners|import|initiatives|referrals|work|support|updates|ministry-pages|coaching)(?:/.*)?$",
+                "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
+              },
+              {
                 "regex": "^(?:@/|(?:\\.\\.?/)+)modules/store(?:/.*)?$",
                 "message": "Only src/modules/data-service (with the store and development runtime modules) may reach the synthetic store. Reads and changes go through the named service reads and mutations, so scope, revision and operation rules are applied on the one path."
               },
@@ -441,6 +514,10 @@
                   "!@/features/coaching",
                   "!@/features/coaching/**"
                 ],
+                "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
+              },
+              {
+                "regex": "^(?:\\.\\.?/)+(?:features/)?(?:shell|home|partners|import|initiatives|referrals|work|support|updates|ministry-pages|audience)(?:/.*)?$",
                 "message": "Feature folders are composed by src/app and never by each other. Lift the shared surface into src/components or the shared rule into src/modules, so one implementation serves both instead of a second copy."
               },
               {

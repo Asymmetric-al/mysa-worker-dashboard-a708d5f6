@@ -57,6 +57,8 @@ export const TASK_SCHEMA_MESSAGES = {
     "Choose the linked record from the list, so a link names a record rather than a typed value.",
   /** A title longer than a list row can show. */
   titleTooLong: "Shorten the title to a phrase, so it reads at a glance in a list.",
+  /** A category that arrived as something other than text. */
+  categoryInvalid: "A category is text, so enter a short label or leave the field empty.",
   /** A kind value the task vocabulary has no name for. */
   taskKindInvalid: "Choose Task or Meeting as the kind of work.",
   /** A planned time that is not a date and a clock time together. */
@@ -64,6 +66,8 @@ export const TASK_SCHEMA_MESSAGES = {
   /** A timezone this device cannot resolve. */
   timeZoneInvalid:
     "Choose the timezone this time is stated in, so the time is never read in an assumed zone.",
+  /** A note that arrived as something other than text. */
+  noteInvalid: "A note is text, so write a reminder or leave the field empty.",
   /** A note longer than a reminder needs to be. */
   noteTooLong: "A note is a short reminder, so shorten this one.",
   /** A cancellation submitted without its confirmation step. */
@@ -228,7 +232,7 @@ export const taskTitleSchema = z
  * rather than a missing value: no list excludes it and no form reports it as an error.
  */
 export const taskCategorySchema = z
-  .string({ error: TASK_FIELD_MESSAGES.categoryTooLong })
+  .string({ error: TASK_SCHEMA_MESSAGES.categoryInvalid })
   .trim()
   .superRefine((value, ctx) => {
     if (codePointLength(value) > TASK_CATEGORY_MAX_LENGTH) {
@@ -246,7 +250,7 @@ export const taskCategorySchema = z
  * `undefined`, the state of a task with no note.
  */
 export const taskNoteSchema = z
-  .string({ error: TASK_SCHEMA_MESSAGES.noteTooLong })
+  .string({ error: TASK_SCHEMA_MESSAGES.noteInvalid })
   .trim()
   .superRefine((value, ctx) => {
     if (codePointLength(value) > TASK_NOTE_MAX_LENGTH) {

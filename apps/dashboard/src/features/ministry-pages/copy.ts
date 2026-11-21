@@ -402,8 +402,8 @@ export interface ReachOptionCopy {
 
 /**
  * The three reach values, keyed by the vocabulary the content profile declares so a fourth value
- * stops compiling here. The names are the specification's own; the compact badge beside this control
- * keeps its own shorter wording in `components/status-badge.tsx`.
+ * stops compiling here. The names are the specification's own, and the compact badge beside this
+ * control presents each value under the same fixed name from `components/status-badge.tsx`.
  */
 const REACH_COPY: Record<Reach, ReachOptionCopy> = {
   "not-public": {

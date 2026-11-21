@@ -84,6 +84,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -142,21 +144,6 @@ const EDITOR_PROSE_CLASS = cn(
   "[&_code]:rounded-sm [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs",
   "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
   "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-3",
-);
-
-/**
- * The link destination field's classes. `components/ui/input` is the design system's control and
- * would be the natural import, but this file's dependency list does not include it: the field is
- * therefore a native `input` carrying the same token classes as that control, so it looks and
- * behaves like the rest of the form language without a second styling source. Replacing it with
- * `components/ui/input` is a one-line change the moment this component's dependencies include it.
- */
-const LINK_FIELD_CLASS = cn(
-  "h-9 w-full min-w-0 rounded-4xl border border-input bg-input/30 px-3 py-1 text-base",
-  "transition-colors outline-none placeholder:text-muted-foreground md:text-sm",
-  "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
-  "aria-invalid:border-destructive aria-invalid:ring-[3px] aria-invalid:ring-destructive/20",
-  "dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
 );
 
 /**
@@ -828,10 +815,8 @@ function LinkDestinationDialog({
         </DialogHeader>
 
         <div className="grid gap-1.5">
-          <label htmlFor={fieldId} className="text-sm font-medium">
-            Web address
-          </label>
-          <input
+          <Label htmlFor={fieldId}>Web address</Label>
+          <Input
             ref={fieldRef}
             id={fieldId}
             type="text"
@@ -851,7 +836,6 @@ function LinkDestinationDialog({
             }}
             aria-invalid={error !== null}
             aria-describedby={error === null ? undefined : errorId}
-            className={LINK_FIELD_CLASS}
           />
           {error === null ? null : (
             <p id={errorId} className="text-xs text-destructive">

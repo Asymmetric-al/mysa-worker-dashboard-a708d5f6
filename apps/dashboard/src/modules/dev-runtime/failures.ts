@@ -6,7 +6,7 @@
  * proves. This module declares that plan and nothing else: one mode — `denied`, `conflict` or
  * `unknown` — armed against exactly one named read or mutation, stamped with the scenario instant it
  * was armed at. Exactly one plan is active at a time (assumption A13), so a demonstration cannot
- * confuse which failure it is watching, and {@link armFailurePlan} refuses an arming request while a
+ * confuse which failure it is watching, and {@link setFailurePlan} refuses an arming request while a
  * plan is armed instead of quietly replacing it.
  *
  * This module holds no state of its own. The armed plan is persisted per session by
@@ -31,12 +31,14 @@
  *   targets registered below, and AAP 0.11.1 File Creation Plan row
  *   `modules/dev-runtime/{seed,generate,failures,scenario,reset}.ts`.
  *
- * Layering: a development-runtime module below the data service. Its only imports are the closed
- * outcome-name vocabulary the envelope module declares — a type-only import, erased at build time, so
- * the data service may import this module at runtime without closing a cycle — and the generic result
- * helpers `@/lib/result`. It reaches no store, no data-service value, no component, no feature and no
- * application code. It reads no clock, holds no randomness and does no I/O: `armedAt` is an argument
- * supplied by the scenario, and the current-time constructors of `Date` never appear here.
+ * Layering: a development-runtime module below the data service. It reaches no store, no data-service
+ * value, no component, no feature and no application code: its imports are the closed outcome-name
+ * vocabulary the envelope module declares — a type-only import, erased at build time, so the data
+ * service may import this module at runtime without closing a cycle — the generic result helpers
+ * `@/lib/result`, the shared narrowing guard `@/lib/guards`, and the pinned `temporal-polyfill` that
+ * owns every date and offset decision here. It reads no clock, holds no randomness and does no I/O:
+ * `armedAt` is an argument supplied by the scenario, and the current-time constructors of `Date`
+ * never appear here.
  *
  * Rule 1 obligations this file keeps. It registers exactly the ten targets and the three modes the
  * specification names, so it arms nothing for a deferred capability and adds no fourth mode. It
@@ -44,6 +46,9 @@
  * Each mode answers with the outcome the contract fixes, so a denial stays silent about what it
  * refused, a conflict holds the caller's input, and an `unknown` stays recoverable by identity.
  */
+import { Temporal } from "temporal-polyfill";
+
+import { isRecord } from "@/lib/guards";
 import { err, ok, type Result } from "@/lib/result";
 import type { OperationOutcomeName } from "@/modules/data-service/envelope";
 
@@ -77,7 +82,7 @@ export type FailureTargetKind = "read" | "mutation";
  * Kept as the private table the public type is derived from, so the union of target names and the
  * rows they come from cannot diverge: adding a row extends the type, and a name typed here but absent
  * from the rows is a compile error. `modes` is the narrow set each target actually demonstrates — a
- * target is not a free slot for whichever mode a caller fancies, and {@link armFailurePlan} refuses a
+ * target is not a free slot for whichever mode a caller fancies, and {@link setFailurePlan} refuses a
  * pairing outside this table.
  */
 const DEMONSTRABLE_TARGET_ROWS = [
@@ -279,72 +284,35 @@ function refuse(code: FailurePlanRefusalCode, message: string): FailurePlanRefus
  * A stored instant: an ISO-8601 date-time that states its offset, which is the form the envelope
  * module stores `armedAt` in.
  *
- * The shape is checked here rather than by a schema library, because this module's imports are the
- * outcome-name vocabulary and the result helpers and nothing else. The pattern is only the first
- * filter: month, day, hour, minute, second and offset ranges are then checked against the real
- * calendar, so `2026-02-30T00:00:00Z` and `2026-11-20T24:00:00Z` are refused instead of being handed
- * to a `Temporal.Instant.from` that would throw on them. A leap second (`:60`) is not accepted,
- * because no representable instant holds one.
+ * The shape is checked here rather than by a schema library, because this module carries no schema
+ * library in its imports: the check is this pattern, then `Temporal`. The pattern states only the
+ * stored form — four-digit year, two-digit month, day and time fields, `Z` or a `±HH:MM` offset, an
+ * optional fractional second — and leaves the calendar and the offset to `Temporal`, which refuses
+ * a date that does not exist such as `2026-02-30`, an hour of `24`, a minute of `60` and an offset
+ * of `+24:00`; no month length, leap-year rule or field range therefore lives here. The one range
+ * the pattern does state is the second field: `Temporal.Instant.from` accepts a `:60` leap second by
+ * clamping it to `:59`, which would store an instant a second away from the one written, so the
+ * pattern refuses that field itself.
  */
 const STORED_INSTANT_PATTERN =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:Z|[+-](\d{2}):(\d{2}))$/;
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
-/** Days in each month of a common year; February is answered by {@link daysInMonth} itself. */
-const MONTH_LENGTHS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const;
-
-/** Whether a year carries a 29th of February, by the Gregorian rule. */
-function isLeapYear(year: number): boolean {
-  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-}
-
-/** The length of one month of one year, so a stored 31st of a short month is refused. */
-function daysInMonth(year: number, month: number): number {
-  if (month === 2) {
-    return isLeapYear(year) ? 29 : 28;
-  }
-  return MONTH_LENGTHS[month - 1] ?? 0;
-}
-
-/** Narrows an unknown value to a stored instant string, without throwing on anything. */
+/**
+ * Narrows an unknown value to a stored instant string, without throwing on anything.
+ *
+ * `Temporal.Instant.from` throws on a value that names no instant, and a stored plan is a value a
+ * person can hand-edit, so the refusal is answered here rather than escaping to a request path.
+ */
 function isStoredInstant(value: unknown): value is string {
-  if (typeof value !== "string") {
+  if (typeof value !== "string" || !STORED_INSTANT_PATTERN.test(value)) {
     return false;
   }
-  const parts = STORED_INSTANT_PATTERN.exec(value);
-  if (parts === null) {
+  try {
+    Temporal.Instant.from(value);
+    return true;
+  } catch {
     return false;
   }
-  // Index 0 is the whole match, so the fields start at 1: a non-participating offset group is
-  // `undefined`, which the range checks below accept as "the instant states Z".
-  const [, year, month, day, hour, minute, second, offsetHour, offsetMinute] = parts;
-  if (
-    year === undefined ||
-    month === undefined ||
-    day === undefined ||
-    hour === undefined ||
-    minute === undefined ||
-    second === undefined
-  ) {
-    return false;
-  }
-  const monthNumber = Number(month);
-  const dayNumber = Number(day);
-  return (
-    monthNumber >= 1 &&
-    monthNumber <= 12 &&
-    dayNumber >= 1 &&
-    dayNumber <= daysInMonth(Number(year), monthNumber) &&
-    Number(hour) <= 23 &&
-    Number(minute) <= 59 &&
-    Number(second) <= 59 &&
-    (offsetHour === undefined || Number(offsetHour) <= 23) &&
-    (offsetMinute === undefined || Number(offsetMinute) <= 59)
-  );
-}
-
-/** Whether a value is a plain object, so a stored plan can be read field by field. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -420,7 +388,7 @@ export interface FailurePlanRequest {
  * `malformed-plan` when `armedAt` is not a storable instant, and `already-armed` when a plan is
  * already active — the last refusal is what keeps exactly one failure armed at a time (A13).
  */
-export function armFailurePlan(
+export function setFailurePlan(
   current: FailurePlanDocument,
   request: FailurePlanRequest,
 ): Result<FailurePlan, FailurePlanRefusal> {

@@ -1,12 +1,23 @@
 import { z } from "zod";
 
+import { parseCivilDate } from "@/modules/time/civil";
+
 /**
- * ISO `YYYY-MM-DD` civil-date shape; calendar validity is the service's check.
+ * A civil date carried as `YYYY-MM-DD` and read by `@/modules/time/civil`.
+ *
+ * Shape and calendar in one check: `2026-02-31` has the shape of a date yet names no day, so it is
+ * refused rather than rolled forward into March. The calendar is read by the one civil-date
+ * implementation, so this client schema cannot answer differently from the service for one value,
+ * and no time of day, zone or instant is invented for the day the worker chose.
  */
 export const civilDateSchema = z
   .string()
   .trim()
-  .regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "Enter the date as YYYY-MM-DD.");
+  .superRefine((value, ctx) => {
+    if (parseCivilDate(value).status === "refused") {
+      ctx.addIssue({ code: "custom", message: "Enter a real calendar date as YYYY-MM-DD." });
+    }
+  });
 
 /**
  * Builds a trimmed text field whose length is bounded in Unicode code points.
@@ -55,9 +66,18 @@ export const createInitiativePayloadSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
-    // ISO civil dates order correctly as strings, which keeps calendar interpretation
-    // in the service's single civil-date implementation.
-    if (value.period !== undefined && value.period.endOn < value.period.startOn) {
+    // A date that names no day is already refused on its own field, so the period is ordered only
+    // when both ends name real days: otherwise the ordering message would blame the order for a
+    // value the calendar refused. Each end is read by the one civil-date implementation, and only
+    // then do the ISO strings order them as calendar days without a second date implementation.
+    if (value.period === undefined) return;
+    if (
+      parseCivilDate(value.period.startOn).status === "refused" ||
+      parseCivilDate(value.period.endOn).status === "refused"
+    ) {
+      return;
+    }
+    if (value.period.endOn < value.period.startOn) {
       ctx.addIssue({
         code: "custom",
         message: "Choose an end date on or after the start date.",

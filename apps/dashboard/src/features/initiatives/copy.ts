@@ -104,6 +104,20 @@ export const RESPONSE_KINDS = [
 
 export type ResponseKind = (typeof RESPONSE_KINDS)[number];
 
+/**
+ * The three kinds that assert agreement — agreed, conditional and partial. They are the only kinds that
+ * must state what stands behind the answer; deferred, declined, unanswered and needs clarification
+ * record a non-answer, so they never require it. Declared here so a change of display order cannot
+ * change the rule.
+ */
+export const ASSERTING_RESPONSE_KINDS = [
+  "agreed",
+  "conditional",
+  "partial",
+] as const satisfies readonly ResponseKind[];
+
+export type AssertingResponseKind = (typeof ASSERTING_RESPONSE_KINDS)[number];
+
 /** Deterministic rendering order for results surfaces. */
 export const RESPONSE_KIND_ORDER = RESPONSE_KINDS;
 

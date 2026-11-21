@@ -43,9 +43,20 @@ import { todayInZone, type CivilDate } from "./civil";
  * The closed profile set: does not repeat, weekly, every N weeks, monthly on day N, every N months.
  *
  * A closed set is the point of the rule: an unknown profile is refused by `validateSeriesRule`
- * rather than coerced to a default, so nothing can repeat more often than its author asked.
+ * rather than coerced to a default, so nothing can repeat more often than its author asked. The list
+ * is also the set's one runtime form, so a stored series rule derives its schema from this
+ * declaration instead of restating the profiles.
  */
-export type RepeatProfile = "none" | "weekly" | "everyNWeeks" | "monthlyOnDay" | "everyNMonths";
+export const REPEAT_PROFILES = [
+  "none",
+  "weekly",
+  "everyNWeeks",
+  "monthlyOnDay",
+  "everyNMonths",
+] as const;
+
+/** One repeat profile, derived from {@link REPEAT_PROFILES}. */
+export type RepeatProfile = (typeof REPEAT_PROFILES)[number];
 
 /**
  * How a series ends: on a date, after a number of occurrences, or — only under the qualified
@@ -83,16 +94,10 @@ export type SeriesRule = {
  * Paused and stopped are different states, not two names for one: a pause can be resumed and leaves
  * the plan intact, while a stop closes the series and explains the fate of its unfinished work.
  */
-export type SeriesState = "active" | "paused" | "stopped";
+export const SERIES_STATES = ["active", "paused", "stopped"] as const;
 
-/** Every profile, listed once so the closed set has a runtime form as well as a type. */
-const REPEAT_PROFILES: readonly RepeatProfile[] = [
-  "none",
-  "weekly",
-  "everyNWeeks",
-  "monthlyOnDay",
-  "everyNMonths",
-];
+/** One series state, derived from {@link SERIES_STATES}. */
+export type SeriesState = (typeof SERIES_STATES)[number];
 
 /** The closed set as a lookup, so an unrecognised profile can never be coerced to a default. */
 const KNOWN_PROFILES: ReadonlySet<string> = new Set<string>(REPEAT_PROFILES);

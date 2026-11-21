@@ -2,6 +2,11 @@
  * Measures the repository's tracked line count with the request's own pipeline — `git ls-files`, with
  * `bun.lock` as its only exclusion, piped through `xargs wc -l` — and exits by the 100,000-line limit.
  * Implements AAP 0.9.1 (`bun run lines`), 0.11.1 and the 0.12.3 measurement behind criterion 22.
+ *
+ * That pipeline is a POSIX one: it runs through a POSIX shell (`/bin/sh`) and needs POSIX `grep`,
+ * `xargs` and `wc` on `PATH`. A host lacking the shell or any of those tools is reported as a
+ * measurement failure (exit 2) instead of a number, so a pipeline that never ran is never read as a
+ * tree that came in under the limit.
  */
 import path from "node:path";
 

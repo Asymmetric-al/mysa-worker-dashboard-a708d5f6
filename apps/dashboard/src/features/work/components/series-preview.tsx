@@ -99,6 +99,17 @@ export interface SeriesPreviewProps {
   /** The next dates and their resolution facts, as the service computed them at read time. */
   readonly reading: SeriesPreviewReading;
 
+  /**
+   * The reader's interface locale, exactly as the shell resolved it: an explicit BCP-47 tag, never
+   * the platform default, so the server render and the browser render write the same dates.
+   *
+   * It arrives as a prop rather than an import because the preference is the shell's, and a feature
+   * never imports another feature. Every date and every month name this preview writes — including
+   * the one inside the resolution sentence — is written in this locale, so the Settings preference
+   * reaches this surface instead of stopping at it.
+   */
+  readonly displayLocale: string;
+
   /** Layout classes for the block this preview occupies. Never a colour, radius or shadow. */
   readonly className?: string;
 }
@@ -124,27 +135,44 @@ const SERIES_STATE_TONES: Readonly<Record<SeriesState, StatusTone>> = {
  */
 const MAX_PREVIEWED_DATES = 3;
 
-/**
- * The language a rendered date is written in, stated explicitly.
- *
- * Stating it keeps the server render and the browser render identical and stops a viewer's platform
- * locale from reordering a calendar date that is a civil fact rather than an instant. This is
- * rendering only: the date itself never passes through a zone, and `serialiseCivilDate` still
- * supplies the machine-readable form for the `dateTime` attribute.
- */
-const DISPLAY_LOCALE = "en";
-
 const DATE_DISPLAY_FORMAT: Intl.DateTimeFormatOptions = { dateStyle: "medium" };
 const MONTH_NAME_FORMAT: Intl.DateTimeFormatOptions = { month: "long" };
 
-/** Renders a civil date for a reader without moving it: the date's own parts, in one locale. */
-function displayCivilDate(date: CivilDate): string {
-  return date.toLocaleString(DISPLAY_LOCALE, DATE_DISPLAY_FORMAT);
+/**
+ * One part of a civil date, written in the locale the caller states.
+ *
+ * The date's own parts are rendered, so nothing passes through a zone and a display-zone change can
+ * never move a due date. The locale is always the caller's explicit tag and never the platform's,
+ * which keeps the server render and the browser render identical.
+ *
+ * A tag `Intl` refuses throws a `RangeError`, and a throw during render would take the whole preview
+ * down over a preference the reader can change. The stored `YYYY-MM-DD` form is the honest fallback
+ * for that case: it is unambiguous and reads as a date, where quietly substituting a default locale
+ * would hide that the tag was unusable. Anything else thrown is a defect and is not absorbed.
+ */
+function formatDatePart(
+  date: CivilDate,
+  displayLocale: string,
+  format: Intl.DateTimeFormatOptions,
+): string {
+  try {
+    return date.toLocaleString(displayLocale, format);
+  } catch (error) {
+    if (!(error instanceof RangeError)) {
+      throw error;
+    }
+    return serialiseCivilDate(date);
+  }
 }
 
-/** The month a resolved date fell in, which the resolution sentence names. */
-function monthNameOf(date: CivilDate): string {
-  return date.toLocaleString(DISPLAY_LOCALE, MONTH_NAME_FORMAT);
+/** Renders a civil date for a reader without moving it: the date's own parts, in that locale. */
+function displayCivilDate(date: CivilDate, displayLocale: string): string {
+  return formatDatePart(date, displayLocale, DATE_DISPLAY_FORMAT);
+}
+
+/** The month a resolved date fell in, which the resolution sentence names, in that locale. */
+function monthNameOf(date: CivilDate, displayLocale: string): string {
+  return formatDatePart(date, displayLocale, MONTH_NAME_FORMAT);
 }
 
 /**
@@ -154,11 +182,14 @@ function monthNameOf(date: CivilDate): string {
  * `requestedDay`, and the month is the one the resolved date belongs to. Nothing is inferred and
  * nothing is recomputed, so the sentence can only say what the rule actually did.
  */
-function resolutionSentence(resolution: DisclosedMonthDayResolution): string {
+function resolutionSentence(
+  resolution: DisclosedMonthDayResolution,
+  displayLocale: string,
+): string {
   const { requestedDay, dueOn } = resolution;
   return LAST_DAY_OF_MONTH_RESOLUTION_TEMPLATE.replace("{day}", String(requestedDay)).replace(
     "{month}",
-    monthNameOf(dueOn),
+    monthNameOf(dueOn, displayLocale),
   );
 }
 
@@ -202,6 +233,7 @@ export default function SeriesPreview({
   profile,
   planningTimeZone,
   reading,
+  displayLocale,
   className,
 }: SeriesPreviewProps): ReactElement {
   // Hook first and unconditionally, so the label association below survives every branch.
@@ -294,10 +326,10 @@ export default function SeriesPreview({
             const key = serialiseCivilDate(resolution.dueOn);
             return (
               <p key={key} className="text-sm break-words text-muted-foreground">
-                {resolutionSentence(resolution)}{" "}
+                {resolutionSentence(resolution, displayLocale)}{" "}
                 <bdi>
                   <time dateTime={key} className="tabular-figures">
-                    {displayCivilDate(resolution.dueOn)}
+                    {displayCivilDate(resolution.dueOn, displayLocale)}
                   </time>
                 </bdi>
               </p>
@@ -322,7 +354,7 @@ export default function SeriesPreview({
                 >
                   <bdi>
                     <time dateTime={key} className="tabular-figures">
-                      {displayCivilDate(date)}
+                      {displayCivilDate(date, displayLocale)}
                     </time>
                   </bdi>
                   <StatusBadge
@@ -332,7 +364,7 @@ export default function SeriesPreview({
                   />
                   {resolution === undefined ? null : (
                     <p className="w-full text-sm text-muted-foreground">
-                      {resolutionSentence(resolution)}
+                      {resolutionSentence(resolution, displayLocale)}
                     </p>
                   )}
                 </li>

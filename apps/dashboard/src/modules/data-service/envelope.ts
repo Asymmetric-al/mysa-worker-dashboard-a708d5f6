@@ -30,18 +30,36 @@
  * a postal address, because equal-looking values establish neither identity nor authority.
  *
  * This module holds no behaviour beyond the envelope's derivation and {@link project}. It reads no
- * clock, no file, no network and no store, and it imports only `zod` plus type-only repository types,
- * so a Server Component, a Route Handler and a Client Component may all import it.
+ * clock, no file, no network and no store, and it imports `zod` plus the runtime closed-set tuples
+ * its stored records hold, alongside type-only repository types, so a Server Component, a Route
+ * Handler and a Client Component may all import it. Deriving each stored schema from its owner's one
+ * runtime tuple is what keeps a closed vocabulary declared once: a member added to a domain module
+ * reaches the schema with it, instead of compiling in the owner and then being rejected at runtime.
  */
 
 import { z } from "zod";
 
 import type { SourceReference } from "@/lib/ids";
-import type { ContentDirection, ContentDocumentJson } from "@/modules/content/document";
+import type { ModuleKey } from "@/modules/coaching/grant";
+import {
+  CONTENT_DIRECTIONS,
+  type ContentDirection,
+  type ContentDocumentJson,
+} from "@/modules/content/document";
 import type { MinorUnits, Money } from "@/modules/money/amount";
-import type { CommitmentKind, RecurringBucket } from "@/modules/support/buckets";
-import type { DatePrecision } from "@/modules/time/civil";
-import type { RepeatProfile, SeriesState } from "@/modules/time/recurrence";
+import {
+  COMMITMENT_KINDS,
+  RECURRING_BUCKETS,
+  type CommitmentKind,
+  type RecurringBucket,
+} from "@/modules/support/buckets";
+import { DATE_PRECISIONS, type DatePrecision } from "@/modules/time/civil";
+import {
+  REPEAT_PROFILES,
+  SERIES_STATES,
+  type RepeatProfile,
+  type SeriesState,
+} from "@/modules/time/recurrence";
 
 // ---------------------------------------------------------------------------------------------
 // Value states
@@ -422,11 +440,7 @@ export const storedInstantSchema: z.ZodType<string> = z.iso.datetime({ offset: t
  * The union itself is owned by `modules/time/civil`, which declares it as the only place those three
  * precisions are named; this schema is only its stored form, so the two cannot drift.
  */
-export const storedDatePrecisionSchema: z.ZodType<DatePrecision> = z.enum([
-  "date",
-  "approximate",
-  "unknown",
-]);
+export const storedDatePrecisionSchema: z.ZodType<DatePrecision> = z.enum(DATE_PRECISIONS);
 
 /** An opaque, source-qualified reference: the stored form of the reference `@/lib/ids` declares. */
 export const sourceReferenceSchema: z.ZodType<SourceReference> = z.object({
@@ -890,7 +904,7 @@ export interface SeriesRuleRecord {
 }
 
 export const seriesRuleRecordSchema: z.ZodType<SeriesRuleRecord> = z.object({
-  profile: z.enum(["none", "weekly", "everyNWeeks", "monthlyOnDay", "everyNMonths"]),
+  profile: z.enum(REPEAT_PROFILES),
   interval: z.int().min(1),
   dayOfMonth: z.int().min(1).max(31).nullable(),
   firstDueOn: storedCivilDateSchema,
@@ -945,7 +959,7 @@ export const taskSeriesRecordSchema: z.ZodType<TaskSeriesRecord> = z.object({
   currentRule: seriesRuleRecordSchema,
   effectiveRevisions: z.array(seriesRuleRevisionRecordSchema),
   currentOccurrenceId: z.string().min(1).nullable(),
-  state: z.enum(["active", "paused", "stopped"]),
+  state: z.enum(SERIES_STATES),
   planNeedsReview: z.boolean(),
   revision: recordRevisionSchema,
 });
@@ -1444,17 +1458,10 @@ export const commitmentFixedTotalRecordSchema: z.ZodType<CommitmentFixedTotalRec
 export const commitmentRowRecordSchema: z.ZodType<CommitmentRowRecord> = z
   .object({
     commitmentRowId: z.string().min(1),
-    kind: z.enum(["automatic-recurring", "manual-recurring", "fixed-total"]),
+    kind: z.enum(COMMITMENT_KINDS),
     cadence: z.string().min(1),
     perOccurrence: moneySchema,
-    bucketState: z.enum([
-      "received",
-      "processing",
-      "upcoming",
-      "recovery-needs-attention",
-      "not-received",
-      "outside-partition",
-    ]),
+    bucketState: z.enum(RECURRING_BUCKETS),
     lastSuccessfulOn: storedCivilDateSchema.nullable(),
     nextEligibleOn: storedCivilDateSchema.nullable(),
     pause: commitmentPauseRecordSchema,
@@ -1575,7 +1582,7 @@ export const contentVariantRecordSchema: z.ZodType<ContentVariantRecord> = z.obj
   documentId: z.string().min(1),
   audience: contentAudienceSchema,
   locale: z.string().min(1),
-  direction: z.enum(["ltr", "rtl"]),
+  direction: z.enum(CONTENT_DIRECTIONS),
   draftRevisionId: z.string().min(1).nullable(),
   candidateId: z.string().min(1).nullable(),
   releaseHeadId: z.string().min(1).nullable(),
@@ -2008,17 +2015,20 @@ export type CoachingGrantState = (typeof COACHING_GRANT_STATES)[number];
 /**
  * The five modules a grant may admit, each an independent flag that starts unselected.
  *
+ * The five are the support goal, the support results, the targets, the check-ins and the task
+ * summaries. `support-goal` and `support-results` are independent switches: sharing a goal shares no
+ * financial results, so a coach admitted to the goal reads no results, and a coach admitted to the
+ * results reads no goal. A module is off until the worker switches it on.
+ *
+ * The vocabulary is declared once, in `modules/coaching/grant`, as `MODULE_KEYS`; this selection is
+ * keyed by exactly those five keys — the same five the coach's view is keyed by — so no translation
+ * between one set of module names and another exists anywhere.
+ *
  * A coach reads exactly the modules switched on: an unshared module is absent rather than empty, so
  * "not shared" and "nothing recorded" stay different answers. Re-enabling one after a stop does not
  * restore access to what was shared before it.
  */
-export interface CoachingModuleSelection {
-  readonly preparation: boolean;
-  readonly targets: boolean;
-  readonly checkIns: boolean;
-  readonly taskSummaries: boolean;
-  readonly financialSupport: boolean;
-}
+export type CoachingModuleSelection = Readonly<Record<ModuleKey, boolean>>;
 
 /**
  * How long the sharing lasts.
@@ -2068,13 +2078,22 @@ export interface CoachingGrantRecord {
   readonly revision: string;
 }
 
-export const coachingModuleSelectionSchema: z.ZodType<CoachingModuleSelection> = z.object({
-  preparation: z.boolean(),
+/**
+ * The five stored switches, one per module, typed exhaustively against `ModuleKey` so a member added
+ * to the vocabulary or removed from it fails compilation here rather than being rejected when a
+ * legitimately stored selection is read back.
+ */
+const coachingModuleSelectionShape: Readonly<Record<ModuleKey, z.ZodBoolean>> = {
+  "support-goal": z.boolean(),
+  "support-results": z.boolean(),
   targets: z.boolean(),
-  checkIns: z.boolean(),
-  taskSummaries: z.boolean(),
-  financialSupport: z.boolean(),
-});
+  "check-ins": z.boolean(),
+  "task-summaries": z.boolean(),
+};
+
+/** Validates the five module switches as stored, so a module the worker never shared reads `false`. */
+export const coachingModuleSelectionSchema: z.ZodType<CoachingModuleSelection> =
+  z.object(coachingModuleSelectionShape);
 
 export const coachingDurationRecordSchema: z.ZodType<CoachingDurationRecord> = z
   .object({
@@ -2419,11 +2438,12 @@ export type ImportRowState = (typeof IMPORT_ROW_STATES)[number];
 /**
  * What the chosen file is, as measured before any row was processed.
  *
- * `fileName` is recorded for the worker's own receipt and is never echoed into rendered output, a
- * download name or a media descriptor.
+ * `name` is display metadata carried for the worker's own receipt: it is never echoed into rendered
+ * output, a download name or a media descriptor, and it establishes no file type, because the file
+ * was typed by its content before a row was read.
  */
 export interface ImportFileMetaRecord {
-  readonly fileName: string;
+  readonly name: string;
   readonly bytes: number;
   readonly rowCount: number;
   readonly columnCount: number;
@@ -2486,7 +2506,7 @@ export interface ImportProposalRecord {
 }
 
 export const importFileMetaRecordSchema: z.ZodType<ImportFileMetaRecord> = z.object({
-  fileName: z.string().min(1),
+  name: z.string().min(1),
   bytes: z.int().nonnegative(),
   rowCount: z.int().nonnegative(),
   columnCount: z.int().nonnegative(),

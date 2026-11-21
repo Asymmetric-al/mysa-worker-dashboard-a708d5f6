@@ -15,11 +15,12 @@
  *   nothing here reads a cookie, a session, a request header of its own, a scope resolver or a feature
  *   flag, so a stale, missing or mistaken decision can only deny.
  * - Denial and absence are one response. An unauthorised read, a purpose this module does not serve, an
- *   unresolvable asset and a rendition the caller cannot name all return the same status, the same fixed
- *   neutral body and the same headers, differing only in the `kind` a caller switches on. Any difference
- *   between them — a refusal status beside a not-found status, a different content length, an `Allow`
- *   header — would let a caption, poster or transcript address answer "does this exist, and may someone
- *   else see it?", which is exactly the disclosure the denial exists to prevent.
+ *   unresolvable asset, a rendition the caller cannot name and a rendition that belongs to a different asset
+ *   all return the same status, the same fixed neutral body and the same headers, differing only in the
+ *   `kind` a caller switches on. Any difference between them — a refusal status beside a not-found status, a
+ *   different content length, an `Allow` header — would let a caption, poster or transcript address answer
+ *   "does this exist, and may someone else see it?", which is exactly the disclosure the denial exists to
+ *   prevent.
  * - Every request re-authorises because nothing is remembered. There is no map of decisions, no cache of
  *   bytes, no clock and no randomness: two calls with the same inputs return equal results, and changing
  *   `allowed` between two calls changes the answer on the very next call.
@@ -361,9 +362,9 @@ export type MediaReadResult =
  *    protected video exists.
  * 2. The authorisation the data service already decided is applied next, before any enumeration: a reader who
  *    was not authorised learns nothing, not even that a record was absent.
- * 3. Resolvability follows. A rendition prepared for another purpose, a rendition without bytes, and a
- *    rendition with no source reference all take the same refusal, because "there is nothing here" and "you
- *    may not have it" must be one answer.
+ * 3. Resolvability follows. A rendition prepared for another purpose, a rendition that belongs to a different
+ *    asset than the one requested, a rendition without bytes, and a rendition with no source reference all
+ *    take the same refusal, because "there is nothing here" and "you may not have it" must be one answer.
  * 4. The asset state then chooses between the tombstone, the honest unavailable answer, and serving.
  * 5. Only an admitted read of a live asset has its Range header parsed, so a range request is never a way past
  *    steps 1 to 4.
@@ -386,6 +387,9 @@ export function assertReadable(
   if (assetId.trim().length === 0) return deny();
   if (rendition === null) return deny();
   if (rendition.purpose !== resolvedAuthorisation.requestedPurpose) return deny();
+  // The rendition must belong to the asset the request named: bytes resolved for one asset are never served
+  // under another's address, whatever a caller passed in.
+  if (rendition.assetId !== assetId) return deny();
   if (rendition.mimeType.trim().length === 0) return deny();
   if (!(rendition.bytes instanceof Uint8Array)) return deny();
 

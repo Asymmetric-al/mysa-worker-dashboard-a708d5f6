@@ -231,8 +231,11 @@ export async function prepareDisplayImage(
 }
 
 /**
- * Checks the length of a UTF-8 encoded source name, ignoring case, so a prepared image that still carries the
- * original name is never returned.
+ * Whether the prepared bytes still contain the supplied file name, compared byte for byte and ignoring ASCII
+ * case, so a prepared image that still carries the original name is never returned.
+ *
+ * Both the supplied name and its last path segment are searched for, and a candidate shorter than
+ * `MIN_LEAK_NEEDLE_LENGTH` is skipped.
  */
 function containsSourceName(bytes: Uint8Array, sourceName: string | undefined): boolean {
   const trimmed = sourceName?.trim() ?? "";

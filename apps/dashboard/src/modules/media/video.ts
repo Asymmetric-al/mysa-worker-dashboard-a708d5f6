@@ -111,9 +111,6 @@ export type VideoPreparationResult =
     }
   | VideoRefusal;
 
-/** Alias retained for the spelling the release plan uses for this result type. */
-export type VideoPreperationResult = VideoPreparationResult;
-
 /** The bytes of one candidate upload. */
 export type VideoInput = { readonly bytes: Uint8Array };
 
@@ -169,12 +166,19 @@ function describesBytes(byteLength: number): string {
   return `${byteLength.toLocaleString("en-US")} bytes (${mib.toFixed(1)} MiB)`;
 }
 
+/** Joins admitted codec names as alternatives, because a file carries one of them rather than all of them. */
+function asAlternatives(codecs: readonly string[]): string {
+  const last = codecs.at(-1);
+  if (last === undefined) return "";
+  return codecs.length === 1 ? last : `${codecs.slice(0, -1).join(", ")} or ${last}`;
+}
+
 function admittedVideoCodecs(container: AdmittedContainer): string {
-  return ADMITTED_BY_CONTAINER[container].video.join(", ");
+  return asAlternatives(ADMITTED_BY_CONTAINER[container].video);
 }
 
 function admittedAudioCodecs(container: AdmittedContainer): string {
-  return ADMITTED_BY_CONTAINER[container].audio.join(", ");
+  return asAlternatives(ADMITTED_BY_CONTAINER[container].audio);
 }
 
 function admitsVideoCodec(

@@ -170,6 +170,8 @@ export interface MediaTagVerification {
 
 /** One prepared rendition: the bytes this application serves, with the checks that admitted them. */
 export interface MediaRendition {
+  /** The asset identity this rendition belongs to, so a serving decision can refuse another asset's bytes. */
+  readonly assetId: string;
   /** Deterministic identity of the rendition: the asset identity, the purpose and the caller's optional variant. */
   readonly renditionId: string;
   readonly purpose: MediaRenditionPurpose;
@@ -377,6 +379,7 @@ export async function acceptImage<S extends MediaAssetScope>(
     profileCheck,
     renditions: [
       {
+        assetId: input.assetId,
         renditionId: renditionIdFor(input.assetId, "display", input.variant),
         purpose: "display",
         mimeType: prepared.mimeType,
@@ -440,6 +443,7 @@ export async function acceptVideo<S extends MediaAssetScope>(
     profileCheck: videoProfileCheck(inspection.profileCheck),
     renditions: [
       {
+        assetId: input.assetId,
         renditionId: renditionIdFor(input.assetId, "playback", input.variant),
         purpose: "playback",
         mimeType: preparation.mimeType,
@@ -523,6 +527,7 @@ async function preparePoster(input: PrepareRenditionInput): Promise<MediaRenditi
     assetId: input.assetId,
     altText,
     rendition: {
+      assetId: input.assetId,
       renditionId: renditionIdFor(input.assetId, "poster", input.variant),
       purpose: "poster",
       mimeType: prepared.mimeType,
@@ -612,6 +617,7 @@ function prepareTextRendition(
     state: "ready",
     assetId: input.assetId,
     rendition: {
+      assetId: input.assetId,
       renditionId: renditionIdFor(input.assetId, purpose, input.variant),
       purpose,
       mimeType: isWebVtt ? WEBVTT_MIME_TYPE : PLAIN_TEXT_MIME_TYPE,

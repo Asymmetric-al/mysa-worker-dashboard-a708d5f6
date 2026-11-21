@@ -47,15 +47,17 @@
  * reading of the clock.
  *
  * Layering: a development-runtime module below the data service. It imports the clock controls, the
- * store's session surface, the sibling failure-plan vocabulary and the result helpers, and it never
- * reads the machine clock: it draws no current-time value, no randomness, and it arms no timer,
- * interval, microtask chain or scheduled callback. Every instant it derives comes from
- * `SEED_INSTANT`. It imports no data-service read, mutation or dev-state value, no feature, no
- * component and no route. Its one import from that layer is the session-admission vocabulary of
+ * store's session surface with the fault it raises for an undecodable document, the shared narrowing
+ * guards, the sibling failure-plan vocabulary and the result helpers, and it never reads the machine
+ * clock: it draws no current-time value, no randomness, and it arms no timer, interval, microtask
+ * chain or scheduled callback. Every instant it derives comes from `SEED_INSTANT`. It imports no
+ * data-service read, mutation or dev-state value, no feature, no component and no route. Its one
+ * import from that layer is the session-admission vocabulary of
  * `@/modules/data-service/envelope` — a leaf contract module that reaches no store and no request
  * path — because that module owns the persisted session record this runtime lays down; importing it
  * here, and never the reverse, is what keeps that vocabulary single and the two layers acyclic.
  */
+import { isRecord } from "@/lib/guards";
 import { err, ok, type Result } from "@/lib/result";
 import {
   admittedMembershipSchema,
@@ -63,6 +65,7 @@ import {
   type AdmittedMembership,
   type SessionState,
 } from "@/modules/data-service/envelope";
+import { CorruptJsonError } from "@/modules/store/atomic";
 import { isSafeSessionId } from "@/modules/store/paths";
 import { readSession, SessionNotFoundError, transact } from "@/modules/store/repository";
 import { advanceClockOffset, SEED_INSTANT, setClockOffset } from "@/modules/time/clock";
@@ -360,12 +363,13 @@ export const CLOCK_OFFSET_LIMIT_MS: number =
 // Stored-value validation
 // ---------------------------------------------------------------------------------------------
 
-/** Whether a value is a plain object, so a stored document can be read field by field. */
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** Whether a value is a string carrying at least one non-whitespace character. */
+/**
+ * Whether a value is a string carrying at least one non-whitespace character.
+ *
+ * Trimmed on purpose, unlike `@/lib/guards`'s length-based `isNonEmptyString`: a stored reference of
+ * spaces names no organization, ministry or subject, so it is refused rather than admitted as a
+ * present field.
+ */
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -899,32 +903,57 @@ export function applySessionClock(meta: SessionMetaDocument): void {
 }
 
 /**
- * Reads a session's development document, or `undefined` when it cannot be read as one.
+ * What a session's development document read found: the document, no session, or a store that could
+ * not be read.
  *
- * Nothing here throws: a request path asks this to describe a session, and an absent session, a
- * truncated document and a document naming a scenario this release does not define all read as
- * "no document", which the dev panel presents as a session that needs resetting. A caller that must
- * report why a document was unusable uses {@link parseSessionMeta} itself.
+ * `document` is the stored document parsed; `absent` is no such session, or a document this release
+ * cannot read as one, which a destructive reset replaces with a usable one; `unavailable` is the
+ * store itself failing to answer, which is never presented as an absent session and never answered by
+ * offering a reset. The last two stay apart because the facts differ: an unreadable store says
+ * nothing about whether the session exists, and AAP 0.1.1 "Continuity" with 0.15.2 "Honesty" requires
+ * `empty` and `unavailable` to stay distinct.
  */
-export async function readScenarioMeta(
-  sessionId: string,
-): Promise<SessionMetaDocument | undefined> {
+export type DevStateRead =
+  | { readonly kind: "document"; readonly meta: SessionMetaDocument }
+  | { readonly kind: "absent" }
+  | { readonly kind: "unavailable"; readonly message: string };
+
+/**
+ * Reads a session's development document and reports which of those three facts it found.
+ *
+ * Nothing here throws: a request path asks this to describe a session, so every outcome is a value.
+ * A session the store does not hold, a document written by another version of this module and a body
+ * that cannot be decoded are `absent` — a destructive reset lays down a usable document — while the
+ * store failing to answer at all is `unavailable`, because an unreadable directory or an I/O fault
+ * says nothing about whether the session exists. The message names no file path, no session id and no
+ * stored value, so a fault cannot disclose what it could not read. A caller that must report why a
+ * stored document was unusable uses {@link parseSessionMeta} itself.
+ */
+export async function readDevState(sessionId: string): Promise<DevStateRead> {
   if (!isSafeSessionId(sessionId)) {
-    return undefined;
+    return { kind: "absent" };
   }
 
   try {
     const documents = await readSession(sessionId);
     if (documents === undefined) {
-      return undefined;
+      return { kind: "absent" };
     }
 
     const parsed = parseSessionMeta(documents.meta);
-    return parsed.ok ? parsed.value : undefined;
-  } catch {
-    // A store fault while describing a session is reported as no document: this read exists so the
-    // panel can render a scenario, and a truncated file or an unreadable directory is the case it is
-    // built to survive rather than the case it turns into a failed request.
-    return undefined;
+    return parsed.ok ? { kind: "document", meta: parsed.value } : { kind: "absent" };
+  } catch (error) {
+    // Undecodable bytes, and the missing sibling document `readSession` reports the same way, are a
+    // document this release cannot read as this session's own, which a reset replaces. Every other
+    // fault is the store itself failing to answer, and presenting that as an absent session is what
+    // would invite a destructive reset for a session that may be perfectly intact.
+    if (error instanceof CorruptJsonError) {
+      return { kind: "absent" };
+    }
+    return {
+      kind: "unavailable",
+      message:
+        "The session store could not be read, so this session's scenario, clock and failure plan are unavailable rather than absent.",
+    };
   }
 }

@@ -16,10 +16,14 @@
  * the fate of a notice already submitted. Publication, notification submission, provider
  * acceptance, delivery and reading are separate outcomes, so no sentence here claims that a notice
  * left this application, reached anyone or was read. Notice sending in this application is
- * simulated, and the canonical sentences that say so are the ones in `@/components/simulation-label`;
- * this file states only what the flow itself does when it has to explain which confirmation message
- * counts, never a second disclaimer.
+ * simulated, and the canonical sentences that say so are the ones in `@/components/simulation-label`:
+ * the one sentence here that names the simulation quotes `SIMULATION_LABELS["mail-submission"]`
+ * verbatim instead of restating it, so this file adds only what the flow itself does when it has to
+ * explain which confirmation message counts, never a second disclaimer.
  */
+// The simulated-mail sentence is quoted from its one owner rather than worded again here, so the
+// disclosure in this module and the label the calling surface renders cannot drift apart.
+import { SIMULATION_LABELS } from "@/components/simulation-label";
 import { MEMBER_CHOICES, type MemberChoice } from "@/modules/audience/membership";
 import { CONFIRMATION_WINDOW_HOURS } from "@/modules/time/window";
 
@@ -94,8 +98,7 @@ export const PROOF_FLOW_COPY = {
   },
   pendingResult: {
     title: "This address is still waiting for confirmation",
-    description:
-      "The address has to be confirmed before this membership becomes active. Opening this page, reloading it or previewing a link here is never a confirmation. Notice sending in this application is simulated, so the confirmation message is the one this page renders and no mail leaves the application.",
+    description: `The address has to be confirmed before this membership becomes active. Opening this page, reloading it or previewing a link here is never a confirmation. Notice sending is ${SIMULATION_LABELS["mail-submission"]}, so the confirmation message is the one this page renders.`,
   },
   confirmAction: {
     label: "Confirm this address",

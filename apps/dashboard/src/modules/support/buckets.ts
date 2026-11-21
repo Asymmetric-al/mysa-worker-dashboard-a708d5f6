@@ -33,13 +33,35 @@ import type { CivilDate } from "../time/civil";
 /**
  * The three kinds of commitment the source projection distinguishes, in the order a surface lists
  * them: an automatic recurring gift, a manual recurring gift and a fixed total. Closed on purpose —
- * a fourth kind is a product change rather than a configuration value.
+ * a fourth kind is a product change rather than a configuration value — and declared in a runtime
+ * form, so a stored commitment row derives its schema from this list instead of restating it.
  */
-export type CommitmentKind = "automatic-recurring" | "manual-recurring" | "fixed-total";
+export const COMMITMENT_KINDS = [
+  "automatic-recurring",
+  "manual-recurring",
+  "fixed-total",
+] as const;
+
+/** One kind of commitment, derived from {@link COMMITMENT_KINDS}. */
+export type CommitmentKind = (typeof COMMITMENT_KINDS)[number];
 
 // ---------------------------------------------------------------------------------------------
 // The five outcomes, and `outside-partition`
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * Every bucket a commitment occurrence can be in, in the order the product lists them: the five
+ * outcomes a surface shows, then `outside-partition` for evidence that is `unknown` or `stale`.
+ * Declared in a runtime form, so a stored commitment row's schema is derived from this list.
+ */
+export const RECURRING_BUCKETS = [
+  "received",
+  "processing",
+  "upcoming",
+  "recovery-needs-attention",
+  "not-received",
+  "outside-partition",
+] as const;
 
 /**
  * Where one recurring occurrence stands, per the source evidence: the five outcomes the product
@@ -60,13 +82,7 @@ export type CommitmentKind = "automatic-recurring" | "manual-recurring" | "fixed
  *   commitment, never from averaging received gifts. This module computes no equivalent and accepts
  *   no derived average as evidence.
  */
-export type RecurringBucket =
-  | "received"
-  | "processing"
-  | "upcoming"
-  | "recovery-needs-attention"
-  | "not-received"
-  | "outside-partition";
+export type RecurringBucket = (typeof RECURRING_BUCKETS)[number];
 
 /**
  * The five in-partition buckets in the order every surface lists them — Received, Processing,

@@ -77,9 +77,19 @@ export type MoneyOperationErrorCode =
 
 /**
  * The single refusal this module raises, so a caller maps one error type to the closed
- * outcome set instead of guessing from a message. `code` is safe to branch on and to
- * present as an honest reason; `message` names the operation and every currency code
- * involved, and never carries an amount.
+ * outcome set instead of guessing from a message. `code` — never `message` — is what a
+ * caller branches on and presents as an honest reason; `message` names the operation and
+ * every currency code involved, and never carries an amount.
+ *
+ * Every refusal here is thrown, so this class is the one thing a caller has to map. The
+ * service validates a request before it calls in, so a `MoneyOperationError` that escapes
+ * is a defect rather than a user-facing validation failure — it means that check was
+ * missed. Such an escape reaches the service's `outcomeFromError`, which answers `unknown`
+ * for an unrecognised fault because a thrown exception is a defect and not a presentation
+ * (AAP 0.15.1): never success, never failure, and never a statement that the effect was
+ * applied — the wrong answer for a refusal that ran no computation at all. A caller that
+ * can be handed one therefore maps `code` to the closed outcome set instead of letting it
+ * escape.
  */
 export class MoneyOperationError extends Error {
   readonly code: MoneyOperationErrorCode;
@@ -230,8 +240,13 @@ export function compareMinor(a: Money, b: Money): -1 | 0 | 1 {
  * Reverses the sign of an amount, keeping its currency — the correction case, such as a
  * refund that offsets a gift. Negation of a safe integer cannot overflow, and a zero
  * amount stays a canonical zero instead of becoming negative zero.
+ *
+ * An amount whose currency has no exponent is refused rather than negated, because a
+ * negation must not manufacture a second unknown-currency fact: that fact stays the one
+ * original amount, which `sumMinor` alone hands back in `unsurmmed`.
  */
 export function negateMinor(a: Money): Money {
+  assertKnownCurrency(a.currency, "negateMinor");
   const amount = assertMinorUnits(a.minorUnits, "negateMinor");
   if (amount === 0) {
     return { currency: a.currency, minorUnits: minorUnitsOf(0) };
