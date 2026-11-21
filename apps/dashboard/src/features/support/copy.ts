@@ -36,9 +36,11 @@
  * cannot learn of an action from copy the application will not perform.
  *
  * Text and types only. No JSX, no component, no store, no clock and no arithmetic: this module
- * declares sentences, the fields they interpolate and the exhaustive maps that make a missing entry a
- * compile error. It imports the basis and the bucket type, and the value-state and coverage types as
- * types, and nothing else.
+ * declares sentences, the fields they interpolate, the exhaustive maps that make a missing entry a
+ * compile error, and the family's one `{slot}` substitution rule — {@link templateSegments} and
+ * {@link fillTemplate} — so the slots named in a sentence above are read the same way by every surface
+ * that renders one, including the one that isolates each filled value in a `<bdi>`. It imports the
+ * basis and the bucket type, and the value-state and coverage types as types, and nothing else.
  */
 
 import type { CoverageState, ValueState } from "@/modules/data-service/envelope";
@@ -500,3 +502,67 @@ export const GIVING_FOLLOW_UP: GivingFollowUpCopy = {
     "The task was created. Nothing about the gift changed: no financial record was written, no " +
     "message was sent and no obligation was created.",
 };
+
+// ---------------------------------------------------------------------------------------------
+// The one slot-substitution rule for every template above
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * One piece of a template, in the template's own order: the template's words, or one `{slot}` and the
+ * value the caller supplied for it.
+ *
+ * `value` is `undefined` exactly when the caller supplied nothing for that slot name, which is the fact
+ * both renderings below need in order to leave such a slot visible as `{slot}` rather than blank it.
+ */
+export type TemplateSegment =
+  | string
+  | { readonly slot: string; readonly value: string | undefined };
+
+/**
+ * The one `{slot}` shape these templates use: a word between braces, captured so the slot's name is a
+ * group and the words around it are not.
+ *
+ * It is declared once, beside the sentences it describes, because a second spelling of it — a different
+ * character class, or a copy that drops the capture group and returns the name inside braces — is a
+ * second answer to what a slot is, and the templates above would then render differently depending on
+ * which surface filled them.
+ */
+const TEMPLATE_SLOT = /\{(\w+)\}/;
+
+/**
+ * Splits a template into its own words and its `{slot}`s, in order, and substitutes nothing.
+ *
+ * `String.prototype.split` with one capture group returns the literal runs and the captured slot names
+ * alternately, so the wording is preserved exactly and only the slots are identified; every entry at an
+ * even index is the template's own text and every odd entry is a slot name. A surface that must render a
+ * filled value as something other than plain text — `snapshot-statement` isolates each one in a `<bdi>`
+ * — maps these segments itself instead of re-splitting the template.
+ *
+ * A slot the caller supplied no value for is returned with `value: undefined` rather than omitted or
+ * replaced by an empty string, so the caller can keep it visible as `{slot}`.
+ */
+export function templateSegments(
+  template: string,
+  values: Readonly<Record<string, string>>,
+): readonly TemplateSegment[] {
+  return template
+    .split(TEMPLATE_SLOT)
+    .map((part, index) => (index % 2 === 0 ? part : { slot: part, value: values[part] }));
+}
+
+/**
+ * Fills a template's `{slot}`s from the values supplied, and changes nothing else.
+ *
+ * Every occurrence of a supplied slot is replaced, not just the first, because a template that names the
+ * same fact twice must state the same value twice. A slot with no supplied value is left as the literal
+ * `{slot}` instead of vanishing: a missing substitution is then visible in review rather than producing
+ * a sentence with a hole in it, and no value is invented for a slot the caller was not given. A value
+ * the caller supplied — including an empty one — is used as given, and no text outside a slot is touched.
+ */
+export function fillTemplate(template: string, values: Readonly<Record<string, string>>): string {
+  return templateSegments(template, values)
+    .map((segment) =>
+      typeof segment === "string" ? segment : (segment.value ?? `{${segment.slot}}`),
+    )
+    .join("");
+}

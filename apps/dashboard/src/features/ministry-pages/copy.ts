@@ -25,6 +25,7 @@
  * formatting of a date, an amount or a locale. Types come from the content profile, so an admitted
  * value added upstream fails to compile here until it is worded.
  */
+import { REACH_STATUS } from "@/components/status-badge";
 import type { PresentationChoice } from "@/modules/content/document";
 import type { Reach } from "@/modules/content/reach";
 import type { VariantFamily } from "@/modules/content/variant";
@@ -402,24 +403,25 @@ export interface ReachOptionCopy {
 
 /**
  * The three reach values, keyed by the vocabulary the content profile declares so a fourth value
- * stops compiling here. The names are the specification's own, and the compact badge beside this
- * control presents each value under the same fixed name from `components/status-badge.tsx`.
+ * stops compiling here. The names are the specification's own and are imported from
+ * `components/status-badge.tsx`'s `REACH_STATUS`, so the reach control, the review text, the
+ * receiving view and the chip beside them cannot word a setting differently.
  */
 const REACH_COPY: Record<Reach, ReachOptionCopy> = {
   "not-public": {
-    label: "Not public",
+    label: REACH_STATUS["not-public"].label,
     explanation:
       "Only you can open this edition. The link serves nobody else and the edition is not listed.",
     indexable: false,
   },
   "link-public": {
-    label: "Shared by link: public",
+    label: REACH_STATUS["link-public"].label,
     explanation:
       "Anyone with the link can read it, but it is not listed in the discovery index and search engines are asked not to index it.",
     indexable: false,
   },
   listed: {
-    label: "Listed publicly",
+    label: REACH_STATUS.listed.label,
     explanation:
       "Anyone with the link can read it, and it appears in the public discovery index, where search engines may index it.",
     indexable: true,

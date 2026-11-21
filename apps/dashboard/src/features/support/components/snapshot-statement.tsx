@@ -36,6 +36,7 @@ import {
   IN_PROGRESS_NOTE,
   SUPPORT_BASIS_STATEMENT,
   SUPPORT_GRAIN_STATEMENT,
+  templateSegments,
 } from "../copy";
 
 /** Props of {@link SnapshotStatement}. Every fact is supplied; none is derived here. */
@@ -107,30 +108,29 @@ const VARIANT_TYPOGRAPHY: Readonly<Record<Variant, string>> = {
   print: "leading-relaxed print:text-xs print:leading-snug print:break-inside-avoid",
 };
 
-/** One `{slot}` in a `../copy` template. */
-const TEMPLATE_SLOT = /\{(\w+)\}/;
-
 /**
- * Fills a template's `{slot}` placeholders, isolating every filled value in a `<bdi>`.
+ * Renders a `../copy` template with every filled `{slot}` isolated in a `<bdi>`.
  *
- * `String.prototype.split` with one capture group returns the template's own words and the captured
- * slot names alternately, so the wording is preserved exactly and only the slots become elements. A
- * slot this file has no value for keeps its braces instead of vanishing, so a template that grew a
- * new slot is visible rather than silently blank.
+ * The family's copy module owns the substitution rule, so this file does not split a template itself:
+ * it takes the segments {@link templateSegments} returns and turns each one into a node. The wording is
+ * preserved exactly, because a literal segment renders as its own text and only a slot becomes an
+ * element — and that element is a `<bdi>`, so a date, a currency code or an identifier filled into a
+ * right-to-left block cannot reorder against its neighbours. A slot this file has no value for keeps its
+ * braces instead of vanishing, so a template that grew a new slot is visible rather than silently blank.
  */
-function fillTemplate(template: string, values: Readonly<Record<string, string>>): ReactNode[] {
-  const filled: ReactNode[] = [];
+function isolatedTemplate(template: string, values: Readonly<Record<string, string>>): ReactNode[] {
+  const nodes: ReactNode[] = [];
 
-  for (const [index, part] of template.split(TEMPLATE_SLOT).entries()) {
-    if (index % 2 === 0) {
-      filled.push(part);
+  for (const [index, segment] of templateSegments(template, values).entries()) {
+    if (typeof segment === "string") {
+      nodes.push(segment);
       continue;
     }
-    const value = values[part];
-    filled.push(value === undefined ? `{${part}}` : <bdi key={index}>{value}</bdi>);
+    const { slot, value } = segment;
+    nodes.push(value === undefined ? `{${slot}}` : <bdi key={index}>{value}</bdi>);
   }
 
-  return filled;
+  return nodes;
 }
 
 /**
@@ -200,20 +200,20 @@ export function SnapshotStatement({
           ) : currencies.length === 1 ? (
             <bdi>{partition}</bdi>
           ) : (
-            fillTemplate(CHART_CAPTIONS.unit, { currency: partition })
+            isolatedTemplate(CHART_CAPTIONS.unit, { currency: partition })
           )}
         </dd>
 
         <dt className={label}>{FIELD_LABELS.coverage}</dt>
         <dd className="min-w-0 break-words">
-          {fillTemplate(COVERAGE_TEMPLATES[coverage.state], {
+          {isolatedTemplate(COVERAGE_TEMPLATES[coverage.state], {
             from: coverage.from ?? UNSTATED_BOUNDARY,
             to: coverage.to ?? UNSTATED_BOUNDARY,
           })}
         </dd>
 
         <dt className={label}>{FIELD_LABELS.asOf}</dt>
-        <dd className="min-w-0 break-words">{fillTemplate(AS_OF_TEMPLATE, { asOf })}</dd>
+        <dd className="min-w-0 break-words">{isolatedTemplate(AS_OF_TEMPLATE, { asOf })}</dd>
       </dl>
 
       {isCurrentPeriod ? <p className="min-w-0 break-words">{IN_PROGRESS_NOTE}</p> : null}

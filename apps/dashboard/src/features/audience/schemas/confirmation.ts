@@ -26,19 +26,17 @@
  *
  * Both schemas mirror the service's own payload schemas field for field, and the service is the
  * authority on that shape: a key it does not accept cannot be added here, because a strict object on
- * the receiving side would refuse every request as carrying an unknown key.
+ * the receiving side would refuse every request as carrying an unknown key. The reading language is
+ * the one field a second copy would let drift, so this file declares no shape of its own for it and
+ * imports `languageTagSchema` from `./preference`, whose regex is the service's own: a tag one form
+ * accepts is a tag the other accepts and a tag the service accepts.
  */
 
 import { z } from "zod";
 
 import { UPDATE_EMAIL_PURPOSE } from "@/modules/audience/membership";
 
-// ---------------------------------------------------------------------------------------------
-// The language tag shape
-// ---------------------------------------------------------------------------------------------
-
-/** A shape check for a BCP-47-style tag (primary subtag plus alphanumeric subtags), not a registry lookup. */
-const LANGUAGE_TAG_SHAPE = /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/;
+import { languageTagSchema } from "./preference";
 
 // ---------------------------------------------------------------------------------------------
 // signupForPurpose: the request that opens the proof step
@@ -86,13 +84,10 @@ export const signupPayloadSchema = z.strictObject({
    * An optional reading language, independent of the Off/Immediate choice and of proof of the address.
    * It neither subscribes nor unsubscribes anyone, never extends the confirmation window and never
    * substitutes the edition already pinned on a notice accepted earlier. Absence is the only way to
-   * express "no preference", so a form with no choice omits the key.
+   * express "no preference", so a form with no choice omits the key. The shape is the family's one
+   * language-tag check, so every tag this form accepts the preference form accepts too.
    */
-  languagePreference: z
-    .string({ error: "Use a language tag such as en-GB or ar." })
-    .max(35, { error: "Use a language tag of 35 characters or fewer." })
-    .regex(LANGUAGE_TAG_SHAPE, { error: "Use a language tag such as en-GB or ar." })
-    .optional(),
+  languagePreference: languageTagSchema.optional(),
 });
 
 /** The validated `signupForPurpose` payload: what the proof flow's request step posts. */

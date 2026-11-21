@@ -20,6 +20,10 @@
  * every payload and answers `invalid` with the per-field messages that `@/components/form-field.tsx`
  * renders; a schema here only spares the reader a round trip for a mistake their form can already see.
  *
+ * The language tag is the family's one shape, so `languageTagSchema` below is exported and the sibling
+ * `./confirmation.ts` imports it instead of declaring a second one: the signup and preference payloads
+ * then agree by construction, and a tag one form accepts is a tag the other accepts and the service does.
+ *
  * The purpose is deliberately not a field. `setPreference` addresses one membership inside the selected
  * context, and that context already carries the publisher and the one purpose this release keeps
  * (`update-email`, declared in `@/modules/audience/membership`); the service reads both from the scope.
@@ -49,7 +53,7 @@ import { MEMBER_CHOICES, type MemberChoice } from "@/modules/audience/membership
 
 /**
  * The shape of a reading-language tag: a primary language subtag followed by its hyphenated subtags
- * (`en`, `en-GB`, `ar`, `zh-Hant-TW`), within RFC 5646's 35-character limit checked on the field below.
+ * (`en`, `en-GB`, `ar`, `zh-Hant-TW`), within RFC 5646's 35-character limit checked on the schema below.
  *
  * Shape only — this is not a registry lookup. Matching a tag to an edition, resolving the fallback when
  * this publisher has no edition in the chosen language, and reading that edition's direction belong to
@@ -57,6 +61,15 @@ import { MEMBER_CHOICES, type MemberChoice } from "@/modules/audience/membership
  * accepts, so a tag this schema passes is a tag the service passes as well.
  */
 const LANGUAGE_TAG_SHAPE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{1,8})*$/u;
+
+/**
+ * The audience family's single language-tag check, used by both payloads in this folder, and a mirror of
+ * the service's own constant so a tag the browser accepts is a tag the service accepts.
+ */
+export const languageTagSchema = z
+  .string({ error: "Use a language tag such as en-GB or ar." })
+  .max(35, { error: "Use a language tag of 35 characters or fewer." })
+  .regex(LANGUAGE_TAG_SHAPE, { error: "Use a language tag such as en-GB or ar." });
 
 /**
  * Which of the reader's own memberships this decision is for: an opaque identifier, carried exactly as
@@ -86,23 +99,6 @@ const choiceSchema = z.enum(MEMBER_CHOICES, {
   error: "Choose Off or Immediate. Those are the only two choices for this purpose.",
 }) satisfies z.ZodType<MemberChoice, MemberChoice>;
 
-/**
- * The reading language, held as a **separate field from `choice`** because it is a separate fact.
- *
- * A language is neither an act of consent nor proof of email possession. Changing it neither subscribes
- * nor unsubscribes anyone, never resets a confirmation window, and never alters the fate of a notice
- * already accepted or left unknown — that notice keeps the rendition it was pinned to. A request that
- * changes only the language therefore sends the choice the reader already has, unchanged, beside it.
- *
- * Absence is the only way to say "leave the language as it is": an empty string is not a language tag
- * and is refused, so a form with no language to send leaves the key out rather than clearing a stored
- * preference with a blank.
- */
-const languagePreferenceSchema = z
-  .string({ error: "Use a language tag such as en-GB or ar." })
-  .max(35, { error: "Use a language tag of 35 characters or fewer." })
-  .regex(LANGUAGE_TAG_SHAPE, { error: "Use a language tag such as en-GB or ar." });
-
 // ---------------------------------------------------------------------------------------------
 // The payload
 // ---------------------------------------------------------------------------------------------
@@ -117,7 +113,20 @@ const languagePreferenceSchema = z
 export const setPreferencePayloadSchema = z.strictObject({
   membershipId: membershipIdSchema,
   choice: choiceSchema,
-  languagePreference: languagePreferenceSchema.optional(),
+  /**
+   * The reading language, held as a **separate field from `choice`** because it is a separate fact.
+   *
+   * A language is neither an act of consent nor proof of email possession. Changing it neither subscribes
+   * nor unsubscribes anyone, never resets a confirmation window, and never alters the fate of a notice
+   * already accepted or left unknown — that notice keeps the rendition it was pinned to. A request that
+   * changes only the language therefore sends the choice the reader already has, unchanged, beside it.
+   *
+   * Absence is the only way to say "leave the language as it is": an empty string is not a language tag
+   * and is refused, so a form with no language to send leaves the key out rather than clearing a stored
+   * preference with a blank. The shape is `languageTagSchema`, the family's one check, so a tag this
+   * payload accepts is one the signup payload accepts and one the service accepts.
+   */
+  languagePreference: languageTagSchema.optional(),
 });
 
 /** The validated `setPreference` payload. */

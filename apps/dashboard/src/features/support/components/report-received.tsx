@@ -69,6 +69,7 @@ import {
   IN_PROGRESS_NOTE,
   NO_PERCENTAGE,
   REPORT_COPY,
+  fillTemplate,
 } from "../copy";
 import AmountValue from "./amount-value";
 
@@ -237,11 +238,6 @@ function monthText(point: MonthPoint): string {
 function contributorValueState(change: CurrencyChange): ValueState {
   const state = change.valueState;
   return state === "unknown" || state === "incomplete-subtotal" ? state : "value";
-}
-
-/** Fills one `{placeholder}` slot in a copy template with a value the caller already holds. */
-function fillTemplate(template: string, placeholder: string, value: string): string {
-  return template.replace(`{${placeholder}}`, value);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -679,7 +675,7 @@ export function ReportReceived({
       ) : null}
       {currencies.length > 1 ? (
         <p className="text-sm text-muted-foreground">
-          {fillTemplate(CHART_CAPTIONS.unit, "currency", currencies.join(", "))}
+          {fillTemplate(CHART_CAPTIONS.unit, { currency: currencies.join(", ") })}
         </p>
       ) : null}
       {summary.length === 0 ? (

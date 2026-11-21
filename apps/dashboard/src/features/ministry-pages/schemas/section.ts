@@ -25,9 +25,10 @@
  * - Presentation is the profile's closed set of four choices, each built from `PRESENTATION_CHOICES`,
  *   so a colour, a spacing, a theme, a CSS class or a pixel position is `invalid` rather than styled.
  * - The section catalogue is this family's own. A stored section's identity is an opaque catalogue key
- *   (`ContentSection["element"]`), so the eight admitted types and the field keys each of them edits
- *   are declared here, where the builder and its forms read them; the service applies the same
- *   catalogue and stays the authority on which key a stored section accepts.
+ *   (`ContentSection["element"]`), so the eight admitted types are declared once, in the family's
+ *   wording module, and the field keys each of them edits are declared here, where the builder's
+ *   forms read them; the service applies the same catalogue and stays the authority on which key a
+ *   stored section accepts.
  * - A field value is plain text stored verbatim, and a newly added section carries every field empty,
  *   so these schemas validate the shape of a section's text and never its completeness. Whether a
  *   section says enough to publish is a review question, not a payload one.
@@ -45,12 +46,10 @@
 
 import { z } from "zod";
 
-import {
-  PRESENTATION_CHOICES,
-  type ContentSection,
-  type PresentationChoice,
-} from "@/modules/content/document";
+import { PRESENTATION_CHOICES, type PresentationChoice } from "@/modules/content/document";
 import { mutationInputSchema, type MutationInput } from "@/modules/data-service/envelope";
+
+import { PAGE_SECTION_TYPES, type PageSectionType } from "../copy";
 
 // ---------------------------------------------------------------------------------------------
 // The four bounded presentation choices
@@ -86,26 +85,19 @@ export type Presentation = z.infer<typeof presentationSchema>;
 // ---------------------------------------------------------------------------------------------
 
 /**
- * The eight section types the two guided catalogues offer, in the order the catalogue lists them.
+ * The eight section types the two guided catalogues offer, and the field values each one edits.
+ *
+ * The types themselves are declared once in this family, in its wording module: `PAGE_SECTION_TYPES`
+ * in `../copy` is the one tuple that the payload schema below validates against, that the catalogue
+ * copy map is keyed by, and that each family's section list spreads. A ninth type joins that tuple,
+ * and then fails to compile here until its field values are stated below — and in the catalogue map
+ * until it is worded — so no type can exist on one side of the family alone.
  *
  * The content profile leaves a section's identity open on purpose: `ContentSection["element"]` is the
- * catalogue key this family owns, not a value the profile declares. This tuple is therefore the one
- * declaration of the set a payload may name, and every shape below is a total map over its members —
- * a ninth type fails to compile until its field values are stated and its union member added.
+ * catalogue key this family owns, not a value the profile declares. The field-key map below is
+ * therefore a total map over the imported type, so a catalogue type arrives without its field keys
+ * only by failing to compile.
  */
-const SECTION_TYPES = [
-  "introduction",
-  "story",
-  "prayer",
-  "milestone",
-  "image",
-  "video",
-  "giving",
-  "progress",
-] as const satisfies readonly ContentSection["element"][];
-
-/** One section type of the catalogue. */
-type SectionType = (typeof SECTION_TYPES)[number];
 
 /** One plain-text field value: stored verbatim, so leading zeros and mixed scripts survive a save. */
 const sectionFieldValueSchema = z.string({ error: "A section field holds plain text." });
@@ -143,7 +135,7 @@ const SECTION_FIELD_VALUES = {
   },
   giving: {},
   progress: {},
-} as const satisfies Record<SectionType, SectionFieldValues>;
+} as const satisfies Record<PageSectionType, SectionFieldValues>;
 
 /**
  * The typed field values of one catalogue section, discriminated on the section type in hand.
@@ -154,7 +146,7 @@ const SECTION_FIELD_VALUES = {
  * member is strict, so an unknown key is `invalid` instead of being stored.
  *
  * The members are listed in catalogue order, and the map above proves the set is complete: a type
- * added to `SECTION_TYPES` has no member here until one is added, so it cannot be silently
+ * added to `PAGE_SECTION_TYPES` has no member here until one is added, so it cannot be silently
  * unvalidated.
  */
 export const sectionFieldsSchema = z.discriminatedUnion("sectionType", [
@@ -273,7 +265,7 @@ function withDraftEdition<Payload extends DraftEditionTarget>(
 export const addSectionPayloadSchema = withDraftEdition(
   z.strictObject({
     ...draftEditionFields,
-    sectionType: z.enum(SECTION_TYPES, { error: "Choose a section type from the catalogue." }),
+    sectionType: z.enum(PAGE_SECTION_TYPES, { error: "Choose a section type from the catalogue." }),
     afterSectionId: sectionIdSchema.optional(),
   }),
 );

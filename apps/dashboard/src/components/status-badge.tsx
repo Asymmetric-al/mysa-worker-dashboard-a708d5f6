@@ -144,6 +144,11 @@ export const SEND_STATUS: Readonly<Record<SendStatus, StatusBadgeSpec>> = {
  *
  * `modules/content/reach` owns the union this aliases, and `RELEASE_REACH_VALUES` on the release
  * record is the single declaration of it, so a fourth reach value fails to compile here.
+ *
+ * These three labels are the one declaration of the names the specification fixes verbatim, and the
+ * reach option names both families show are derived from them: `features/audience/copy/receiving`
+ * and `features/ministry-pages/copy` import this map and read `label` from it, so the reach control,
+ * the review text, the receiving view and the chip beside them cannot word a setting differently.
  */
 export type ReleaseReachStatus = Reach;
 

@@ -88,7 +88,7 @@ import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { formatMinor } from "@/modules/money/format";
 import type { ReportResult, SeriesPoint } from "@/modules/support/report";
 
-import { CHART_CAPTIONS, EMPTY_STATES, MEASURE_LABELS, REPORT_COPY } from "../copy";
+import { CHART_CAPTIONS, EMPTY_STATES, MEASURE_LABELS, REPORT_COPY, fillTemplate } from "../copy";
 
 // ---------------------------------------------------------------------------------------------
 // What the caller passes
@@ -220,21 +220,6 @@ const TABLE_CAPTION_TEMPLATE =
 // ---------------------------------------------------------------------------------------------
 // Wording helpers
 // ---------------------------------------------------------------------------------------------
-
-/**
- * Fills a wording template's `{placeholder}` slots with the values the caller supplies.
- *
- * The family's copy module owns the sentences and declares the placeholders it interpolates; this
- * helper only substitutes them. A placeholder with no value is left as it stands rather than being
- * blanked, so a missing substitution is visible in review instead of producing a sentence with a hole
- * in it — and nothing here invents a value for a slot it was not given.
- */
-function fillTemplate(template: string, values: Readonly<Record<string, string>>): string {
-  return template.replace(/\{(\w+)\}/g, (placeholder: string, name: string) => {
-    const value = values[name];
-    return value === undefined ? placeholder : value;
-  });
-}
 
 /**
  * Writes one month bucket in the reader's locale, without moving it through a zone.

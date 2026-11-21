@@ -30,8 +30,9 @@
  * the five sentences disclosing a simulated effect are `SIMULATION_LABELS` in
  * `components/simulation-label.tsx`; the empty, unavailable, denied and *Language unavailable*
  * presentations are `components/state-notice.tsx`'s, to which this file supplies words; and a video
- * plays in `components/video-player.tsx`. What is declared here is the reach option names and the
- * reader's sentences.
+ * plays in `components/video-player.tsx`. What is declared here is what each reach setting means to
+ * a reader, beside the reader's sentences; the three option names themselves are imported from that
+ * map rather than re-typed.
  *
  * What these words must never claim: that a publication was delivered to or read by anyone, that a
  * notice reached a person, that a language choice or an open consents to anything, that a refused
@@ -39,6 +40,7 @@
  * the giving placement can take a payment. Reading an edition changes nothing.
  */
 import type { SimulatedEffect } from "@/components/simulation-label";
+import { REACH_STATUS } from "@/components/status-badge";
 import { REACH_VALUES, type Reach } from "@/modules/content/reach";
 import { PREVIEW_DENIAL_REASONS } from "@/modules/content/preview";
 
@@ -56,28 +58,29 @@ interface ReachOptionCopy {
  * The three reach settings, keyed by the closed vocabulary so a fourth value stops compiling here
  * until it is worded.
  *
- * `label` is the option name the reach control and the review text show. The compact status chip
- * beside it takes its own word from `components/status-badge.tsx`, so the two surfaces cannot drift
- * apart without one of them changing the vocabulary. The annotation keys the map by the release
- * record's alias and the `satisfies` closes it against the tuple the surfaces order the options by,
- * so the two declarations of the vocabulary must agree before this file compiles.
+ * `label` is the option name the reach control and the review text show, read from
+ * `components/status-badge.tsx`'s `REACH_STATUS` instead of re-typed here, so the reach control, the
+ * review text, the receiving view and the chip beside them cannot word a setting differently. The
+ * annotation keys the map by the release record's alias and the `satisfies` closes it against the
+ * tuple the surfaces order the options by, so the two declarations of the vocabulary must agree
+ * before this file compiles.
  */
 export const REACH_COPY: Record<Reach, ReachOptionCopy> = {
   "not-public": {
-    label: "Not public",
+    label: REACH_STATUS["not-public"].label,
     description:
       "Only you can see this edition: your own reading view and your preview show it, and nobody " +
       "else can reach it, with a link or otherwise.",
   },
   "link-public": {
-    label: "Shared by link: public",
+    label: REACH_STATUS["link-public"].label,
     description:
       "Anyone holding the link can read this edition, but it is unlisted: it is kept out of the " +
       "public discovery index, search engines are asked not to index it (noindex), and the link is " +
       "checked again every time it is opened.",
   },
   listed: {
-    label: "Listed publicly",
+    label: REACH_STATUS.listed.label,
     description:
       "Anyone holding the link can read this edition, and it appears in the public discovery index, " +
       "where it can be opened from there and search engines may index it.",

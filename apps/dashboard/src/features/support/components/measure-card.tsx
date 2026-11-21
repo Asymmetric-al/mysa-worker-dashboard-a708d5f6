@@ -43,7 +43,13 @@ import type { Coverage, ValueState } from "@/modules/data-service/envelope";
 import type { Money } from "@/modules/money/amount";
 import type { SupportMeasure } from "@/modules/support/basis";
 
-import { AS_OF_TEMPLATE, COVERAGE_TEMPLATES, IN_PROGRESS_NOTE, MEASURE_LABELS } from "../copy";
+import {
+  AS_OF_TEMPLATE,
+  COVERAGE_TEMPLATES,
+  IN_PROGRESS_NOTE,
+  MEASURE_LABELS,
+  fillTemplate,
+} from "../copy";
 import AmountValue from "./amount-value";
 
 /** Props of {@link MeasureCard}. */
@@ -100,14 +106,6 @@ const FACT_LABELS = {
   coverage: "Coverage",
   asOf: "As of",
 } as const;
-
-/** Fills a copy template's `{placeholder}` slots with values the caller already holds. */
-function fillTemplate(template: string, values: Readonly<Record<string, string>>): string {
-  return Object.entries(values).reduce(
-    (sentence, [name, value]) => sentence.replaceAll(`{${name}}`, value),
-    template,
-  );
-}
 
 /**
  * The coverage sentence for the state this read recorded.

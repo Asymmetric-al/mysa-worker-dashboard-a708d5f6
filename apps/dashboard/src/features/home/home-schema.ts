@@ -37,13 +37,15 @@
  *   service item the Support surfaces read too, so the number is the one report computation's and
  *   never a second sum of Home's own.
  *
- * Why one import is missing on purpose. The lifecycle states are declared here rather than imported
- * from `@/components/draft-status`, because this module must import no React, so that a Server
- * Component, a Client Component and a Vitest test can each import it. The list below is a copy of
- * `CONTENT_LIFECYCLE_STATES` and moves with it; an item whose state is not in this copy is reported
- * as unreadable rather than guessed at, which makes a stale copy visible instead of silent. The one
- * component import kept is a type — `SimulatedEffect` — so the five effects here cannot drift from
- * the five that `components/simulation-label` has a sentence for.
+ * Why the lifecycle list is a runtime tuple here. This module must import no React, so that a
+ * Server Component, a Client Component and a Vitest test can each import it, and it therefore
+ * states the eight states itself rather than importing `CONTENT_LIFECYCLE_STATES` from
+ * `@/components/draft-status`. The words remain that module's: the annotation below ties this tuple
+ * to its `ContentLifecycleState` union, so a state renamed or removed there, or a member this copy
+ * invents, is a compile error rather than a silent divergence, and an item whose state is not in
+ * this copy is reported as unreadable rather than guessed at. Both component imports are types, so
+ * no React reaches this graph: the other is `SimulatedEffect`, which keeps the five effects here
+ * from drifting from the five that `components/simulation-label` has a sentence for.
  *
  * Plan items: AAP 0.10.1 family 1 (Home separates Attention, Information and Unfinished work, with a
  * reason and a destination on every item); AAP 0.11.1 row `features/home/**`; AAP 0.6.1 read
@@ -56,6 +58,7 @@
 
 import { z } from "zod";
 
+import type { ContentLifecycleState } from "@/components/draft-status";
 import type { SimulatedEffect } from "@/components/simulation-label";
 
 // ---------------------------------------------------------------------------------------------
@@ -209,7 +212,7 @@ const HOME_LIFECYCLE_STATES = [
   "withdrawn",
   "superseded-head",
   "stale-translation",
-] as const;
+] as const satisfies readonly ContentLifecycleState[];
 
 /**
  * The five simulated external effects, mirrored from `components/simulation-label` as a type only.
