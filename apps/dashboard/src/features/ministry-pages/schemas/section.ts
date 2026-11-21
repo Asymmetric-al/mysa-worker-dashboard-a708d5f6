@@ -3,10 +3,25 @@
  * `addSection`, `moveSection`, `duplicateSection`, `removeSection` and `saveSectionFields` — together
  * with the two shapes they share: the four bounded presentation choices and the typed field values of
  * each admitted section type.
+ *
+ * **Each payload names its own change.** `POST /api/pages/sections` selects the mutation by
+ * `payload.operation`, so every schema below carries that member as the discriminant of the one mutation
+ * it describes, defaulted to the mutation's own name: a builder control composes the change it wants and
+ * never repeats the verb, while the body that leaves the browser still names exactly one mutation.
  */
 import { z } from "zod";
 import { PRESENTATION_CHOICES, type PresentationChoice } from "@/modules/content/document";
 import { mutationInputSchema, type MutationInput } from "@/modules/data-service/envelope";
+// The annotation types are imported with `import type`, which the compiler erases: they hold each schema
+// below to the service's own payload type without pulling the mutation bodies, the store or `node:fs`
+// into a client bundle. They also keep the defaulted discriminant out of the exported payload types, so
+// a control builds the change and nothing else.
+import type {
+  AddSectionPayload as ServiceAddSectionPayload,
+  MoveSectionPayload as ServiceMoveSectionPayload,
+  SaveSectionFieldsPayload as ServiceSaveSectionFieldsPayload,
+  SectionReferencePayload,
+} from "@/modules/data-service/mutations/content";
 import { PAGE_SECTION_TYPES, type PageSectionType } from "../copy";
 // The four bounded presentation choices
 /** The presentation `saveSectionFields` accepts: exactly the profile's four choices, each required. */
@@ -117,9 +132,13 @@ function withDraftEdition<Payload extends DraftEditionTarget>(schema: z.ZodType<
   });
 }
 // addSection — one catalogue section added to the draft edition
+// The section type is held to the catalogue this client mirrors, which is narrower than the text the
+// service payload types it as, so both are named together: the annotation keeps the admitted set and a
+// service change still reaches this file.
 /** The payload `addSection` accepts: the draft edition, one catalogue section type, and the section it follows. */
-export const addSectionPayloadSchema = withDraftEdition(
+export const addSectionPayloadSchema: z.ZodType<ServiceAddSectionPayload & { readonly sectionType: PageSectionType }> = withDraftEdition(
   z.strictObject({
+    operation: z.literal("addSection").default("addSection"),
     ...draftEditionFields,
     sectionType: z.enum(PAGE_SECTION_TYPES, { error: "Choose a section type from the catalogue." }),
     afterSectionId: sectionIdSchema.optional(),
@@ -133,8 +152,9 @@ export type AddSectionInput = MutationInput<AddSectionPayload>;
 export const addSectionInputSchema: z.ZodType<AddSectionInput> = mutationInputSchema(addSectionPayloadSchema);
 // moveSection — one section moved to an explicit position
 /** The payload `moveSection` accepts: one section and the position it takes. */
-export const moveSectionPayloadSchema = withDraftEdition(
+export const moveSectionPayloadSchema: z.ZodType<ServiceMoveSectionPayload> = withDraftEdition(
   z.strictObject({
+    operation: z.literal("moveSection").default("moveSection"),
     ...draftEditionFields,
     sectionId: sectionIdSchema,
     targetIndex: z.int({ error: "Choose where this section should go, as a whole position." }).nonnegative("Choose where this section should go."),
@@ -148,8 +168,9 @@ export type MoveSectionInput = MutationInput<MoveSectionPayload>;
 export const moveSectionInputSchema: z.ZodType<MoveSectionInput> = mutationInputSchema(moveSectionPayloadSchema);
 // duplicateSection — one section copied within the draft edition
 /** The payload `duplicateSection` accepts: the section to copy. */
-export const duplicateSectionPayloadSchema = withDraftEdition(
+export const duplicateSectionPayloadSchema: z.ZodType<SectionReferencePayload> = withDraftEdition(
   z.strictObject({
+    operation: z.literal("duplicateSection").default("duplicateSection"),
     ...draftEditionFields,
     sectionId: sectionIdSchema,
   }),
@@ -162,8 +183,9 @@ export type DuplicateSectionInput = MutationInput<DuplicateSectionPayload>;
 export const duplicateSectionInputSchema: z.ZodType<DuplicateSectionInput> = mutationInputSchema(duplicateSectionPayloadSchema);
 // removeSection — one section removed from the draft edition
 /** The payload `removeSection` accepts: the section to remove, and nothing else. */
-export const removeSectionPayloadSchema = withDraftEdition(
+export const removeSectionPayloadSchema: z.ZodType<SectionReferencePayload> = withDraftEdition(
   z.strictObject({
+    operation: z.literal("removeSection").default("removeSection"),
     ...draftEditionFields,
     sectionId: sectionIdSchema,
   }),
@@ -176,9 +198,10 @@ export type RemoveSectionInput = MutationInput<RemoveSectionPayload>;
 export const removeSectionInputSchema: z.ZodType<RemoveSectionInput> = mutationInputSchema(removeSectionPayloadSchema);
 // saveSectionFields — one section's fields and its presentation choices
 /** The payload `saveSectionFields` accepts: one section's field values, its presentation choices, or both. */
-export const saveSectionFieldsPayloadSchema = withDraftEdition(
+export const saveSectionFieldsPayloadSchema: z.ZodType<ServiceSaveSectionFieldsPayload> = withDraftEdition(
   z
     .strictObject({
+      operation: z.literal("saveSectionFields").default("saveSectionFields"),
       ...draftEditionFields,
       sectionId: sectionIdSchema,
       fields: z.record(z.string(), sectionFieldValueSchema).optional(),

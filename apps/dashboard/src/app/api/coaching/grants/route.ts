@@ -1,5 +1,5 @@
 /**
- * `POST /api/coaching/grants` — the four coaching-grant lifecycle writes, selected by `payload.action`.
+ * `POST /api/coaching/grants` — the four coaching-grant lifecycle writes, selected by `payload.operation`.
  */
 import { z } from "zod";
 import { assertNever } from "@/lib/result";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 const UNIDENTIFIED_ATTEMPT = "unidentified-attempt";
 
 const MESSAGES = {
-  verb: "Name the change this request makes as payload.action: acceptInvitation, revokeGrant, endCoaching or leaveCoaching.",
+  verb: "Name the change this request makes as payload.operation: acceptInvitation, revokeGrant, endCoaching or leaveCoaching.",
   body: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.",
   reference: "A grant reference is the opaque identifier a coaching read handed out. A name, an email address, a job title, a household or a project is not that reference and grants nothing.",
 } as const;
@@ -34,17 +34,17 @@ type LeaveCoachingPayload = Parameters<typeof mutations.coach.leaveCoaching>[0][
 // address-derived identity, a status or state the service must derive, a module map, a cutoff or a
 // duration — is named in an `invalid` answer rather than stripped and ignored.
 const acceptInvitationPayload = z.strictObject({
-  action: z.literal("acceptInvitation"),
+  operation: z.literal("acceptInvitation"),
   grantId: grantReference,
   // The invitation revision the coach actually saw, in either form a coaching read hands out.
   invitationRevision: z.union([z.number().int().min(0), grantReference]).optional(),
-}) satisfies z.ZodType<AcceptInvitationPayload & { readonly action: "acceptInvitation" }>;
+}) satisfies z.ZodType<AcceptInvitationPayload & { readonly operation: "acceptInvitation" }>;
 
-const revokeGrantPayload = z.strictObject({ action: z.literal("revokeGrant"), grantId: grantReference }) satisfies z.ZodType<RevokeGrantPayload & { readonly action: "revokeGrant" }>;
+const revokeGrantPayload = z.strictObject({ operation: z.literal("revokeGrant"), grantId: grantReference }) satisfies z.ZodType<RevokeGrantPayload & { readonly operation: "revokeGrant" }>;
 
-const endCoachingPayload = z.strictObject({ action: z.literal("endCoaching"), grantId: grantReference }) satisfies z.ZodType<EndCoachingPayload & { readonly action: "endCoaching" }>;
+const endCoachingPayload = z.strictObject({ operation: z.literal("endCoaching"), grantId: grantReference }) satisfies z.ZodType<EndCoachingPayload & { readonly operation: "endCoaching" }>;
 
-const leaveCoachingPayload = z.strictObject({ action: z.literal("leaveCoaching"), grantId: grantReference }) satisfies z.ZodType<LeaveCoachingPayload & { readonly action: "leaveCoaching" }>;
+const leaveCoachingPayload = z.strictObject({ operation: z.literal("leaveCoaching"), grantId: grantReference }) satisfies z.ZodType<LeaveCoachingPayload & { readonly operation: "leaveCoaching" }>;
 // One request schema per mutation: the four-field envelope around that mutation's own payload
 const acceptInvitationRequest = mutationInputSchema(acceptInvitationPayload);
 
@@ -53,9 +53,9 @@ const revokeGrantRequest = mutationInputSchema(revokeGrantPayload);
 const endCoachingRequest = mutationInputSchema(endCoachingPayload);
 
 const leaveCoachingRequest = mutationInputSchema(leaveCoachingPayload);
-// Which change this request makes is read on its own first, so a body whose payload no mutation accepts is
-// still told which change it failed to name.
-const verbRead = z.object({ payload: z.object({ action: z.enum(GRANT_VERBS, { error: MESSAGES.verb }) }, { error: MESSAGES.verb }) }, { error: MESSAGES.body });
+// Which change this request makes is read from `payload.operation` alone first, so a body whose payload
+// no mutation accepts is still told which change it failed to name.
+const verbRead = z.object({ payload: z.object({ operation: z.enum(GRANT_VERBS, { error: MESSAGES.verb }) }, { error: MESSAGES.verb }) }, { error: MESSAGES.body });
 // The attempt's identity is read on its own too, so a refusal reports the attempt it refused
 const attemptRead = z.object({ operationId: z.string().min(1).max(64) });
 
@@ -93,7 +93,7 @@ export async function POST(request: Request): Promise<Response> {
   // The four verbs share one payload shape and the ledger hashes only the scope, the expected revision and
   // the payload, so one operationId must never be reused across verbs: that reuse would read as a replay of
   // the first verb instead of as changed intent.
-  switch (verb.data.payload.action) {
+  switch (verb.data.payload.operation) {
     case "acceptInvitation": {
       const parsed = acceptInvitationRequest.safeParse(raw);
       if (!parsed.success) return refusal(operationId, parsed.error);
@@ -130,6 +130,6 @@ export async function POST(request: Request): Promise<Response> {
     }
     default:
       // Unreachable: the enum above is the closed set of four verbs, so a fifth fails to compile at this call.
-      return assertNever(verb.data.payload.action, "Unhandled coaching grant mutation");
+      return assertNever(verb.data.payload.operation, "Unhandled coaching grant mutation");
   }
 }

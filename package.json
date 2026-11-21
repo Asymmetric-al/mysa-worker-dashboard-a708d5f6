@@ -11,12 +11,12 @@
     "dev": "turbo run dev",
     "fixtures:media": "bun scripts/make-media-fixtures.mjs",
     "format": "oxfmt .",
-    "lines": "bun scripts/count-lines.ts",
-    "lint": "turbo run lint",
+    "lines": "turbo run lines",
+    "lint": "turbo run lint && oxlint --config .oxlintrc.json scripts",
     "reset": "bun scripts/reset.ts",
     "seed:workload": "bun scripts/generate-workload.ts",
     "test": "turbo run test",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck && tsc --noEmit -p tsconfig.scripts.json"
   },
   "devDependencies": {
     "@types/bun": "1.4.5",

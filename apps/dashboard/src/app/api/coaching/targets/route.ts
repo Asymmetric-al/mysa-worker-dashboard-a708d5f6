@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { assertNever } from "@/lib/result";
 import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse, type MutationInput, type MutationOutcome } from "@/modules/data-service";
+import { pagingParamsOf, pagingQuerySchema } from "../../paging";
 /** The store reads and writes through `node:fs`, so this handler never runs on the edge runtime. */
 export const runtime = "nodejs";
 /** Both verbs resolve the development session and evaluate the scenario clock once per request. */
@@ -16,6 +17,8 @@ const READ_ATTEMPT_ID = "read";
 const MESSAGES = {
   operationRequired: "State which change this request makes as payload.operation: saveTarget, editTarget, pauseTarget or endTarget.",
   bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.",
+  pageInvalid: "Read the page as a whole number of one or more, so the targets arrive on the page you asked for rather than one this read chose.",
+  pageSizeInvalid: "Read the page size as a whole number of one or more, so the targets arrive in pages of the size you asked for; the service applies its own cap.",
 } as const;
 // One payload type per named mutation, read from the mutation that validates it
 type SaveTargetPayload = Parameters<typeof mutations.coaching.saveTarget>[0]["payload"];
@@ -34,18 +37,15 @@ const pauseTargetBodySchema = mutationInputSchema(z.custom<WirePayload<PauseTarg
 const endTargetBodySchema = mutationInputSchema(z.custom<WirePayload<EndTargetPayload, "endTarget">>());
 
 const TARGET_OPERATIONS = ["saveTarget", "editTarget", "pauseTarget", "endTarget"] as const;
-// The read side: the page window the request stated, forwarded as it stands
+// The read side: the page window the request stated, and nothing else it could ask for
 type TargetListQuery = Parameters<typeof reads.coaching.readTargets>[0];
-
-function targetListQueryOf(request: Request): TargetListQuery {
-  const params = new URL(request.url).searchParams;
-  const page = params.get("page");
-  const pageSize = params.get("pageSize");
-  return {
-    page: page === null ? undefined : Number(page),
-    pageSize: pageSize === null ? undefined : Number(pageSize),
-  };
-}
+/**
+ * The page window a caller may state. The default of 25 rows and the cap of 100 are the service's own
+ * rules, so nothing here clamps them; a value that is not a whole number of one or more is refused by the
+ * name of the parameter, so a caller is never quietly shown a page it did not ask for. No record selector,
+ * state filter or persona is admitted: the session decides whose targets these are.
+ */
+const targetListQuerySchema = pagingQuerySchema({ page: MESSAGES.pageInvalid, pageSize: MESSAGES.pageSizeInvalid });
 // The write side: one named mutation per request
 const attemptIdentitySchema = z.object({ operationId: z.string() });
 
@@ -91,7 +91,14 @@ async function dispatch<Wire extends { readonly operation: string }>(
 /** One page of the worker's targets, each with its versions and its measured periods. */
 export async function GET(request: Request): Promise<Response> {
   try {
-    return toResponse(await reads.coaching.readTargets(targetListQueryOf(request)));
+    const grammar = targetListQuerySchema.safeParse(pagingParamsOf(new URL(request.url).searchParams));
+    if (!grammar.success) {
+      // A paging value this read does not admit is a request-level refusal answered with the same
+      // per-field `invalid` outcome the four mutations on this path answer, because no source behind the
+      // read failed and the caller has to be told which parameter to correct.
+      return toResponse(outcomeFromError(READ_ATTEMPT_ID, grammar.error));
+    }
+    return toResponse(await reads.coaching.readTargets(grammar.data satisfies TargetListQuery));
   } catch (error) {
     // One mapper knows the difference between a store outage, a session that cannot be established and
     // a lost acknowledgement, so a thrown fault is answered rather than escaping the boundary.

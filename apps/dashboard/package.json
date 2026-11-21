@@ -7,7 +7,8 @@
     "build": "next build",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --config ../../.oxlintrc.json",
-    "test": "vitest run && playwright test --pass-with-no-tests"
+    "test": "vitest run && playwright test --pass-with-no-tests",
+    "lines": "bun ../../scripts/count-lines.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",

@@ -9,6 +9,11 @@
  * body of its own: the body is the four members below, and the payload inside it is the type the
  * sibling schema inferred.
  *
+ * **The payload names its own change.** The `operation` member the handler selects the mutation by is
+ * composed in `../schemas/section` and `../schemas/preset`, where each schema defaults it to the one
+ * mutation it describes, so a control states the change it wants and never the verb, and the payload
+ * cannot name a change other than the one whose schema judged it.
+ *
  * **Judged before it is sent.** Each member hands that four-member body to the mutation's own schema
  * first, so a body the service would refuse is answered as `invalid` with its per-field messages and no
  * request leaves the browser. That is also how a presentation choice the content profile does not admit

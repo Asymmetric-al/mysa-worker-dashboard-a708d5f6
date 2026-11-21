@@ -11,6 +11,7 @@ import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse, ty
  * every other refusal is, so its field messages reach a form through one convention.
  */
 import { invalid } from "@/modules/data-service/outcome";
+import { pagingParamsOf, pagingQuerySchema } from "../../paging";
 /** The store reads and writes through `node:fs`, so this handler never runs on the edge runtime. */
 export const runtime = "nodejs";
 /** Both verbs resolve the development session and evaluate the scenario clock once per request. */
@@ -47,33 +48,14 @@ const stopTaskShareBodySchema = mutationInputSchema(z.custom<WirePayload<StopTas
 const TASK_SHARE_OPERATIONS = ["shareTaskSummary", "stopTaskShare"] as const;
 // The read side: the page window the request stated, and nothing else it could ask for
 type TaskShareListQuery = Parameters<typeof reads.coaching.readTaskShares>[0];
-
-const POSITIVE_WHOLE_NUMBER = /^[1-9][0-9]*$/u;
-/** A paging parameter as a URL carries it: a whole number of one or more, and nothing else. */
-function pagingParameter(message: string) {
-  return z
-    .string()
-    .trim()
-    .superRefine((value, ctx) => {
-      if (!POSITIVE_WHOLE_NUMBER.test(value) || !Number.isSafeInteger(Number(value))) {
-        ctx.addIssue({ code: "custom", message });
-      }
-    })
-    .transform((value) => Number(value));
-}
 /**
- * The page window a caller may state. The default of 25 rows and the cap of 100 are the service's own
- * rules, so nothing here clamps them; a value that is not a whole number of one or more is refused by
- * the name of the parameter, so a caller is never quietly shown a page it did not ask for. No record
- * selector, state filter or persona is admitted: the session decides whose summaries these are.
+ * The page window a caller may state, in this read's own wording. The default of 25 rows and the cap of
+ * 100 are the service's own rules, so nothing here clamps them; a value that is not a whole number of one
+ * or more is refused by the name of the parameter, so a caller is never quietly shown a page it did not
+ * ask for. No record selector, state filter or persona is admitted: the session decides whose summaries
+ * these are.
  */
-const taskShareListQuerySchema = z.object({
-  page: pagingParameter(MESSAGES.pageInvalid).optional(),
-  pageSize: pagingParameter(MESSAGES.pageSizeInvalid).optional(),
-});
-function rawTaskShareListParams(search: URLSearchParams): Record<string, unknown> {
-  return { page: search.get("page") ?? undefined, pageSize: search.get("pageSize") ?? undefined };
-}
+const taskShareListQuerySchema = pagingQuerySchema({ page: MESSAGES.pageInvalid, pageSize: MESSAGES.pageSizeInvalid });
 // The write side: one named mutation per request
 const attemptIdentitySchema = z.object({ operationId: z.string() });
 
@@ -120,7 +102,7 @@ async function dispatch<Wire extends { readonly operation: string }>(
 /** One page of the worker's shared task summaries, each with the description that was reviewed, the task's live due date and status, and whether the description still matches the task. */
 export async function GET(request: Request): Promise<Response> {
   try {
-    const grammar = taskShareListQuerySchema.safeParse(rawTaskShareListParams(new URL(request.url).searchParams));
+    const grammar = taskShareListQuerySchema.safeParse(pagingParamsOf(new URL(request.url).searchParams));
     if (!grammar.success) {
       // A paging value this read does not admit is a request-level refusal answered with the same
       // per-field `invalid` outcome the two mutations answer, because no source behind the read failed

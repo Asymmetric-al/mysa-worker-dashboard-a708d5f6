@@ -26,8 +26,9 @@
  * client hooks therefore send `payload.operation`, not `payload.mutation`, and the four literals below are
  * the whole set.
  */
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse, type MutationInput, type MutationOutcome } from "@/modules/data-service";
+import { pagingParamsOf, pagingQuerySchema } from "../../paging";
 /** The store reads and writes through `node:fs` behind the service, so this handler never runs on the edge runtime. */
 export const runtime = "nodejs";
 /** Both verbs resolve the development session and evaluate the scenario clock, so no answer may be served from a cache. */
@@ -38,6 +39,8 @@ export const dynamic = "force-dynamic";
  * its measured value before a transaction opens, rather than shortened. The Coaching domain's own
  * check-in module owns these numbers and enforces the same four behind the service, which stays
  * authoritative; a Route Handler may not import a domain module, so an exceeded bound is restated here.
+ * The 256 KiB ceiling is measured on the bytes as they arrive, by `readCheckInBody` below, so a request
+ * past it costs a refusal rather than the memory to hold it.
  */
 const MAX_QUESTIONS = 5;
 
@@ -59,20 +62,21 @@ const READ_ATTEMPT_ID = "read";
  */
 const NOT_STORED = { headers: { "cache-control": "no-store" } } as const;
 /**
- * An answer is plain text (AAP 0.8.4). A tag-like sequence and a serialised editor document are the two
- * shapes that would arrive if markup or a rich-text document were posted as an answer, and both are refused
- * by name instead of being escaped, parsed or rendered.
+ * An answer is plain text (AAP 0.8.4), and plain text legitimately contains `<` and `>`: a scripture
+ * reference written `<John 3:16>` and a comparison written `x < y > z` are the worker's own words. The
+ * Coaching domain sets no markup rule, so this boundary refuses no tag-like sequence — refusing one would
+ * reject text the service accepts. The single shape that is not plain text is a serialised editor
+ * document posted where the words themselves belong, and only that is refused, by name, rather than being
+ * escaped, parsed or rendered.
  */
-const MARKUP_PATTERN = /<\s*\/?\s*[a-zA-Z][^>]*>/u;
-
 const EDITOR_DOCUMENT_PREFIX = /^\s*\{\s*"type"\s*:\s*"doc"/u;
-
-const UTF8_ENCODER = new TextEncoder();
 
 const MESSAGES = {
   bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.",
+  pageInvalid: "Read the page as a whole number of one or more, so the check-ins arrive on the page you asked for rather than one this read chose.",
+  pageSizeInvalid: "Read the page size as a whole number of one or more, so the check-ins arrive in pages of the size you asked for; the service applies its own cap.",
   requestTooLarge(bytes: number): string {
-    return `This check-in request is ${bytes} bytes and the limit is ${MAX_REQUEST_BYTES} bytes (${MAX_REQUEST_KIB} KiB). Nothing was saved: keep the check-in within the limit and send it again.`;
+    return `This check-in request passed the ${MAX_REQUEST_BYTES}-byte limit (${MAX_REQUEST_KIB} KiB): ${bytes} bytes had arrived or been declared when it was refused. Nothing was saved: keep the check-in within the limit and send it again.`;
   },
   questionSetExceeded(count: number): string {
     return `This check-in carries ${count} questions and the limit is ${MAX_QUESTIONS}. Nothing was dropped: take one question out and send it again, with every other question worded exactly as you wrote it.`;
@@ -80,8 +84,8 @@ const MESSAGES = {
   notText(label: string): string {
     return `${label} is plain text, so send it as a string rather than as a document, a list or a number.`;
   },
-  markupRefused(label: string): string {
-    return `${label} is plain text and this one carries markup. Nothing was saved: write it as plain text and send it again.`;
+  documentRefused(label: string): string {
+    return `${label} is plain text, so send the words themselves rather than a serialised editor document. Nothing was saved: write it as plain text and send it again.`;
   },
   scalarsExceeded(label: string, scalars: number, limit: number): string {
     return `${label} is ${scalars} characters long and the limit is ${limit}. Nothing was dropped: bring it within the limit and send it again.`;
@@ -96,12 +100,14 @@ const MESSAGES = {
 /**
  * One plain-text field bounded in Unicode scalar values. The count is `Array.from(text).length`, not
  * `z.string().max(n)`, because the latter counts UTF-16 code units and would refuse a shorter answer that
- * happens to use characters outside the basic plane.
+ * happens to use characters outside the basic plane. The only shape refused here besides an overlong field
+ * is a serialised editor document, which is a rich-text body rather than plain text; no `<` or `>` makes a
+ * field unacceptable, because plain text contains them and the domain refuses none.
  */
 function plainTextField(label: string, maxScalars: number): z.ZodType<string> {
   return z.string({ error: MESSAGES.notText(label) }).superRefine((text, context) => {
-    if (MARKUP_PATTERN.test(text) || EDITOR_DOCUMENT_PREFIX.test(text)) {
-      context.addIssue({ code: "custom", message: MESSAGES.markupRefused(label) });
+    if (EDITOR_DOCUMENT_PREFIX.test(text)) {
+      context.addIssue({ code: "custom", message: MESSAGES.documentRefused(label) });
       return;
     }
     const scalars = Array.from(text).length;
@@ -181,18 +187,13 @@ const checkInPayloadSchema = z.discriminatedUnion("operation", [saveCheckInPaylo
 type CheckInPayload = z.infer<typeof checkInPayloadSchema>;
 /**
  * The whole request, judged in one pipeline so every refusal is a Zod issue and one mapper answers it:
- * the 256 KiB ceiling is measured on the raw bytes before anything is parsed, JSON parsing reports its own
- * refusal instead of throwing, and the four-field envelope with one mutation's payload is validated by the
- * service's own `mutationInputSchema`.
+ * the 256 KiB ceiling has already been measured on the bytes as they arrived, by the reader that produced
+ * this text, so it has no second owner here; JSON parsing reports its own refusal instead of throwing; and
+ * the four-field envelope with one mutation's payload is validated by the service's own
+ * `mutationInputSchema`.
  */
 const checkInRequestSchema = z
   .string({ error: MESSAGES.bodyNotJson })
-  .superRefine((raw, context) => {
-    const bytes = UTF8_ENCODER.encode(raw).byteLength;
-    if (bytes > MAX_REQUEST_BYTES) {
-      context.addIssue({ code: "custom", message: MESSAGES.requestTooLarge(bytes) });
-    }
-  })
   .transform((raw, context) => {
     try {
       return JSON.parse(raw) as unknown;
@@ -204,15 +205,65 @@ const checkInRequestSchema = z
   .pipe(mutationInputSchema(checkInPayloadSchema));
 // Helpers
 type CheckInListQuery = Parameters<typeof reads.coaching.readCheckIns>[0];
-/** The page window the request stated, forwarded exactly as received: the service clamps the coaching page and reports its own limits. */
-function checkInListQueryOf(request: Request): CheckInListQuery {
-  const params = new URL(request.url).searchParams;
-  const page = params.get("page");
-  const pageSize = params.get("pageSize");
-  return {
-    page: page === null ? undefined : Number(page),
-    pageSize: pageSize === null ? undefined : Number(pageSize),
-  };
+/**
+ * The page window a caller may state. The default of 25 rows and the cap of 100 are the service's own
+ * rules, so nothing here clamps them; a value that is not a whole number of one or more is refused by the
+ * name of the parameter, so a caller is never quietly shown a page it did not ask for.
+ */
+const checkInListQuerySchema = pagingQuerySchema({ page: MESSAGES.pageInvalid, pageSize: MESSAGES.pageSizeInvalid });
+/** What reading one request's body produced: the text the pipeline judges, or the byte count at which it was refused. */
+type CheckInBody = { readonly kind: "text"; readonly text: string } | { readonly kind: "oversized"; readonly bytes: number };
+
+const utf8Decoder = new TextDecoder("utf-8");
+
+function joinChunks(chunks: readonly Uint8Array[], totalBytes: number): Uint8Array {
+  const joined = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return joined;
+}
+/**
+ * Reads one request's body, stopping at the 256 KiB ceiling instead of buffering whatever arrives.
+ *
+ * A declared length over the ceiling is refused before a byte is read, and a request that declares no
+ * length — or understates it — is counted as it streams and cancelled the moment the count crosses the
+ * ceiling, so an oversized check-in costs a refusal rather than the memory and the time to hold it. A
+ * request that carries no body at all reads as the empty text, which the pipeline below refuses as "not
+ * JSON" exactly as it always has; a read that throws is left to the caller, whose one mapper answers it.
+ */
+async function readCheckInBody(request: Request): Promise<CheckInBody> {
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength !== null) {
+    const declaredBytes = Number(declaredLength);
+    if (Number.isFinite(declaredBytes) && declaredBytes > MAX_REQUEST_BYTES) {
+      return { kind: "oversized", bytes: declaredBytes };
+    }
+  }
+  const stream = request.body;
+  if (stream === null) {
+    return { kind: "text", text: "" };
+  }
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let receivedBytes = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    receivedBytes += value.byteLength;
+    if (receivedBytes > MAX_REQUEST_BYTES) {
+      await reader.cancel();
+      return { kind: "oversized", bytes: receivedBytes };
+    }
+    chunks.push(value);
+  }
+  // Decoded non-fatally, exactly as `request.text()` decodes: a byte sequence that is not valid UTF-8
+  // becomes the replacement character rather than a second refusal the ceiling does not make.
+  return { kind: "text", text: utf8Decoder.decode(joinChunks(chunks, receivedBytes)) };
 }
 /**
  * The attempt identity a refusal echoes back. It reads the identifier out of the body without judging
@@ -261,7 +312,14 @@ function answer(result: Parameters<typeof toResponse>[0]): Response {
 /** One page of the worker's check-ins, each keeping its captured question set, its private autosave and its shared revision apart, with the page window and limits the service reports. */
 export async function GET(request: Request): Promise<Response> {
   try {
-    return answer(await reads.coaching.readCheckIns(checkInListQueryOf(request)));
+    const grammar = checkInListQuerySchema.safeParse(pagingParamsOf(new URL(request.url).searchParams));
+    if (!grammar.success) {
+      // A paging value this read does not admit is a request-level refusal answered through this file's
+      // one mapper, because no source behind the read failed and the caller has to be told which
+      // parameter to correct.
+      return answer(outcomeFromError(READ_ATTEMPT_ID, grammar.error));
+    }
+    return answer(await reads.coaching.readCheckIns(grammar.data satisfies CheckInListQuery));
   } catch (error) {
     // A thrown store fault is an outage, a session that cannot be established is a denial, and an
     // unrecognised failure is `unknown`: one mapper knows the difference, so nothing escapes this boundary.
@@ -270,14 +328,25 @@ export async function GET(request: Request): Promise<Response> {
 }
 /** One named check-in change, selected by `payload.operation`; answers with exactly one of `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function POST(request: Request): Promise<Response> {
-  let raw: string;
+  let body: CheckInBody;
   try {
-    // Read once, in full: the ceiling below is measured on the bytes that were actually sent, and nothing
-    // is truncated to fit it.
-    raw = await request.text();
+    // Read once, against the ceiling: nothing is truncated to fit it, and nothing past it is held.
+    body = await readCheckInBody(request);
   } catch (error) {
     return answer(outcomeFromError(UNIDENTIFIED_ATTEMPT, error));
   }
+  if (body.kind === "oversized") {
+    // The request was cancelled at the ceiling before its `operationId` could be read, so the refusal names
+    // no attempt rather than an invented one — the identity the media transport also reports when its own
+    // bound refuses a request — and it travels as `invalid` through the one mapper, like every refusal here.
+    return answer(
+      outcomeFromError(
+        UNIDENTIFIED_ATTEMPT,
+        new ZodError([{ code: "custom", path: [], message: MESSAGES.requestTooLarge(body.bytes), input: undefined }]),
+      ),
+    );
+  }
+  const raw = body.text;
   const parsed = checkInRequestSchema.safeParse(raw);
   if (!parsed.success) {
     return answer(outcomeFromError(operationIdentityOf(raw), parsed.error));

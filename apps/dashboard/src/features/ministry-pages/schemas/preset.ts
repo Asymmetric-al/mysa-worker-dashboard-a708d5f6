@@ -32,6 +32,7 @@ const presetIdField = z.enum(PRESET_IDS, { error: PRESET_SCHEMA_MESSAGES.presetR
 /** Validates the `applyPreset` payload: the draft the preset is composed into, and the preset chosen. */
 export const applyPresetPayloadSchema: z.ZodType<ServiceApplyPresetPayload> = z
   .strictObject({
+    operation: z.literal("applyPreset").default("applyPreset"),
     ...draftTargetShape,
     presetId: presetIdField,
   })

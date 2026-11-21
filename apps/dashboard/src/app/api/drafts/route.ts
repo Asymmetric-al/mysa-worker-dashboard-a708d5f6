@@ -42,8 +42,8 @@ const UTF8 = new TextEncoder();
 const MESSAGES = {
   bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.",
   bodyTooLarge: `A draft request carries prose and media references rather than media bytes, so a body over ${String(REQUEST_BYTE_LIMIT)} bytes is refused before it is read: nothing was saved and the editor's own text is untouched.`,
-  payloadMissing: "State the change this request makes as payload, carrying the mutation it asks for as payload.mutation.",
-  mutationRequired: 'State which change this request makes as payload.mutation: "saveDraft" or "restoreRevisionAsDraft".',
+  payloadMissing: "State the change this request makes as payload, carrying the operation it asks for as payload.operation.",
+  operationRequired: 'State which change this request makes as payload.operation: "saveDraft" or "restoreRevisionAsDraft".',
   queryInvalid: "Send the draft read as a query carrying view=draft or view=candidate and the variantId of the edition it addresses.",
   viewRequired: "State which content state this read asks for as view=draft or view=candidate.",
   variantIdRequired: "State the edition this request addresses as variantId: a working draft and a frozen candidate are both read through the edition that holds them.",
@@ -142,7 +142,7 @@ const mediaPlacementRefSchema = z.strictObject({
 // The two payloads, each closed and each naming the one effect it asks for
 const saveDraftPayloadSchema = z
   .strictObject({
-    mutation: z.literal("saveDraft", { error: MESSAGES.mutationRequired }),
+    operation: z.literal("saveDraft", { error: MESSAGES.operationRequired }),
     variantId: editionReferenceSchema,
     body: z.unknown(),
     contentChecksum: checksumSchema.optional(),
@@ -159,7 +159,7 @@ const saveDraftPayloadSchema = z
   });
 
 const restoreRevisionAsDraftPayloadSchema = z.strictObject({
-  mutation: z.literal("restoreRevisionAsDraft", { error: MESSAGES.mutationRequired }),
+  operation: z.literal("restoreRevisionAsDraft", { error: MESSAGES.operationRequired }),
   revisionId: revisionReferenceSchema,
 });
 // One body schema per mutation: the four-field envelope, with that mutation's own payload
@@ -171,13 +171,13 @@ const DRAFT_MUTATIONS = ["saveDraft", "restoreRevisionAsDraft"] as const;
 
 type DraftMutation = (typeof DRAFT_MUTATIONS)[number];
 /**
- * The discriminant: which of the two named mutations a request asks for. It is selected from this field
- * alone, so a payload that states no mutation, or one this transport does not serve, is refused instead
- * of being guessed at from its shape.
+ * The discriminant: which of the two named mutations a request asks for. It is read from
+ * `payload.operation` alone, so a payload that states no operation, or one this transport does not
+ * serve, is refused instead of being guessed at from its shape.
  */
 const claimedMutationSchema = z.object(
   {
-    payload: z.object({ mutation: z.enum(DRAFT_MUTATIONS, { error: MESSAGES.mutationRequired }) }, { error: MESSAGES.payloadMissing }),
+    payload: z.object({ operation: z.enum(DRAFT_MUTATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.payloadMissing }),
   },
   { error: MESSAGES.bodyNotJson },
 );
@@ -215,20 +215,20 @@ function operationIdOf(body: unknown): string {
   return identity.success && identity.data.operationId.length > 0 ? identity.data.operationId : UNIDENTIFIED_ATTEMPT;
 }
 /**
- * Removes the transport's discriminant before the payload reaches the service, whose payload schema is
- * closed and does not carry the field: the mutation is named once, here, and the service receives only
- * what it accepts.
+ * Removes the transport's discriminant, `payload.operation`, before the payload reaches the service,
+ * whose payload schema is closed and does not carry the field: the mutation is named once, here, and
+ * the service receives only what it accepts.
  */
-function payloadOf<P extends { readonly mutation: DraftMutation }>(payload: P): Omit<P, "mutation"> {
-  const { mutation: _discriminant, ...forwarded } = payload;
+function payloadOf<P extends { readonly operation: DraftMutation }>(payload: P): Omit<P, "operation"> {
+  const { operation: _discriminant, ...forwarded } = payload;
   return forwarded;
 }
 /** Parses one mutation's body, calls that one named mutation, and answers with the outcome it returned. */
-async function dispatch<P extends { readonly mutation: DraftMutation }>(
+async function dispatch<P extends { readonly operation: DraftMutation }>(
   schema: z.ZodType<MutationInput<P>>,
   body: unknown,
   operationId: string,
-  run: (input: MutationInput<Omit<P, "mutation">>) => Promise<MutationOutcome>,
+  run: (input: MutationInput<Omit<P, "operation">>) => Promise<MutationOutcome>,
 ): Promise<Response> {
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
@@ -276,7 +276,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     return toResponse(outcomeFromError(operationId, claimed.error));
   }
   const sessionId = sessionIdOf(request);
-  switch (claimed.data.payload.mutation) {
+  switch (claimed.data.payload.operation) {
     case "saveDraft":
       return dispatch(saveDraftRequestSchema, body, operationId, (input) => mutations.updates.saveDraft(sessionId, input));
     case "restoreRevisionAsDraft":
@@ -284,6 +284,6 @@ export async function POST(request: NextRequest): Promise<Response> {
     default:
       // Unreachable: the two names above are the closed set the discriminant schema admits, so a third
       // mutation fails to compile at this call rather than reaching the runtime.
-      return assertNever(claimed.data.payload.mutation, "Unhandled draft mutation");
+      return assertNever(claimed.data.payload.operation, "Unhandled draft mutation");
   }
 }
