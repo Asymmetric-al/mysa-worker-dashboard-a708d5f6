@@ -87,7 +87,7 @@ export function mayRepeatIntent(state: SendOutcomeState): boolean {
 // ---------------------------------------------------------------------------------------------
 
 /** The membership a choice change addresses: one publisher, one purpose, one recipient. */
-interface AddressedMembership {
+export interface AddressedMembership {
   memberships: readonly MembershipRecord[];
   publisherId: string;
   purpose: AudiencePurpose;
@@ -95,7 +95,7 @@ interface AddressedMembership {
 }
 
 /** A choice change: the addressed membership plus the choice the person made. */
-interface ChoiceChange extends AddressedMembership {
+export interface ChoiceChange extends AddressedMembership {
   choice: MemberChoice;
 }
 
@@ -107,7 +107,7 @@ interface ChoiceChange extends AddressedMembership {
  * matched and when the matched record was already in the requested state. The mutation that calls
  * this maps `null` to its `unchanged` outcome rather than reporting a success that did not happen.
  */
-interface ChoiceChangeResult {
+export interface ChoiceChangeResult {
   memberships: MembershipRecord[];
   changedMembershipId: string | null;
 }
@@ -255,7 +255,7 @@ export function evidenceGrantsConsent(evidence: ConsentEvidence): boolean {
 // ---------------------------------------------------------------------------------------------
 
 /** The four values that identify one notification intent for one recipient on one purpose. */
-interface IntentIdentity {
+export interface IntentIdentity {
   publisherId: string;
   purpose: AudiencePurpose;
   recipientId: string;

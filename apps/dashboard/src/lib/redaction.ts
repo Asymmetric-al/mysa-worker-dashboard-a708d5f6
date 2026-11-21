@@ -212,12 +212,14 @@ function walk(value: unknown, rule: RedactionRule, seen: WeakSet<object>, path: 
     return REDACTED;
   }
   seen.add(value);
-  const copy: Record<string, unknown> = {};
+  const entries: [string, unknown][] = [];
   for (const [key, entry] of Object.entries(value)) {
     const entryPath = path.length === 0 ? key : `${path}.${key}`;
-    copy[key] = rule(entryPath) ? REDACTED : walk(entry, rule, seen, entryPath);
+    entries.push([key, rule(entryPath) ? REDACTED : walk(entry, rule, seen, entryPath)]);
   }
-  return copy;
+  // fromEntries, not bracket assignment: an own "__proto__" key parsed from a document
+  // must stay ordinary data instead of being taken as a prototype.
+  return Object.fromEntries(entries);
 }
 
 /**

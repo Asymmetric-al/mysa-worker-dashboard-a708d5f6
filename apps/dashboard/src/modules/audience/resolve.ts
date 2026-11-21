@@ -138,14 +138,14 @@ export interface EligibilityResult {
  * built from, the instant it was accepted — which no late signup may enlarge — and the ceiling the
  * caller promised at that moment.
  */
-interface NotificationIntent {
+export interface NotificationIntent {
   readonly intentId: string;
   readonly acceptedAt: Temporal.Instant;
   readonly ceilingCount?: number;
 }
 
 /** Everything one eligibility question needs: authorised rows for one publisher and purpose, and now. */
-interface EligibilityInput {
+export interface EligibilityInput {
   readonly memberships: readonly MembershipRecord[];
   readonly publisherId: string;
   readonly purpose: AudiencePurpose;
@@ -205,7 +205,7 @@ export type RenditionResolution =
     };
 
 /** The recipient a pin is resolved for, with the grant already decided elsewhere. */
-interface RenditionRecipient {
+export interface RenditionRecipient {
   readonly recipientId: string;
   readonly languagePreference: string;
   /** Decided by the authorisation service at read time; this module never evaluates a grant. */
@@ -213,7 +213,7 @@ interface RenditionRecipient {
 }
 
 /** Everything one pinning question needs: the recipient and the candidates offered for it. */
-interface RenditionResolutionInput {
+export interface RenditionResolutionInput {
   readonly recipient: RenditionRecipient;
   readonly candidates: readonly RenditionCandidate[];
 }

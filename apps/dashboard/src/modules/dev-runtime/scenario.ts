@@ -50,9 +50,19 @@
  * store's session surface, the sibling failure-plan vocabulary and the result helpers, and it never
  * reads the machine clock: it draws no current-time value, no randomness, and it arms no timer,
  * interval, microtask chain or scheduled callback. Every instant it derives comes from
- * `SEED_INSTANT`. It imports no data-service value, no feature, no component and no route.
+ * `SEED_INSTANT`. It imports no data-service read, mutation or dev-state value, no feature, no
+ * component and no route. Its one import from that layer is the session-admission vocabulary of
+ * `@/modules/data-service/envelope` — a leaf contract module that reaches no store and no request
+ * path — because that module owns the persisted session record this runtime lays down; importing it
+ * here, and never the reverse, is what keeps that vocabulary single and the two layers acyclic.
  */
 import { err, ok, type Result } from "@/lib/result";
+import {
+  admittedMembershipSchema,
+  SESSION_STATES,
+  type AdmittedMembership,
+  type SessionState,
+} from "@/modules/data-service/envelope";
 import { isSafeSessionId } from "@/modules/store/paths";
 import { readSession, SessionNotFoundError, transact } from "@/modules/store/repository";
 import { advanceClockOffset, SEED_INSTANT, setClockOffset } from "@/modules/time/clock";
@@ -243,23 +253,21 @@ export function scenarioFlagsFor(scenarioId: ScenarioId): ScenarioFlags {
 // Session state, context and the meta document
 // ---------------------------------------------------------------------------------------------
 
-/** The admission states a session can be in, in the order the shell presents them. */
-const SESSION_STATE_LIST = ["signed-in", "unavailable", "denied", "expired", "no-access"] as const;
-
 /**
- * How admission stands for a session.
+ * The admission states a session can be in, in the order the shell presents them, and the membership
+ * a principal is admitted under — re-exported from the read envelope that owns the persisted record.
  *
- * `no-access` carries no principal: it is the user for whom the only honest outcome is
- * account-recovery guidance, so it is a state rather than a denial of a known record.
+ * `@/modules/data-service/envelope` is the one declaration of that vocabulary, because it owns the
+ * session context record a state and a membership are stored in. This module re-exports both rather
+ * than keeping a second copy, so the state a scenario lays down and the state a stored context carries
+ * cannot drift apart, and every caller of this module keeps the names it already imports.
  */
-export type SessionState = (typeof SESSION_STATE_LIST)[number];
-
-/** Every admission state, frozen, for the panel and for stored-value validation. */
-export const SESSION_STATES: readonly SessionState[] = Object.freeze(SESSION_STATE_LIST);
+export { SESSION_STATES };
+export type { AdmittedMembership, SessionState };
 
 /** Whether a value names an admission state this release defines. */
 export function isSessionState(value: unknown): value is SessionState {
-  return typeof value === "string" && (SESSION_STATE_LIST as readonly string[]).includes(value);
+  return typeof value === "string" && (SESSION_STATES as readonly string[]).includes(value);
 }
 
 /**
@@ -273,12 +281,6 @@ export interface SelectedContext {
   organizationId: string;
   ministryId: string;
   supportSubjectId: string;
-}
-
-/** One membership the acting principal has been admitted to. */
-export interface AdmittedMembership {
-  organizationId: string;
-  ministryId: string;
 }
 
 /** The document version this module writes; a stored document of any other version is unreadable. */
@@ -441,11 +443,13 @@ function offsetRefusalFor(value: unknown): SessionMetaRefusal | undefined {
 
 /**
  * Reads admitted memberships, or `undefined` when the value is not a list of distinct non-empty
- * organization/ministry pairs.
+ * organization, ministry and support-subject references.
  *
- * A repeated pair is refused rather than collapsed: the document says the principal was admitted to
- * the same ministry twice, which no seed produces, and quietly deduplicating it would hide a
- * hand-edited file that a person needs to see.
+ * Each entry is minted through the read envelope's own schema, so a stored membership is the branded
+ * shape a session context record carries: the runtime half and the record half are one type rather
+ * than two that merely resemble each other. A repeat is refused rather than collapsed: the document
+ * says the principal was admitted to the same authority twice, which no seed produces, and quietly
+ * deduplicating it would hide a hand-edited file that a person needs to see.
  */
 function parseAdmittedMemberships(value: unknown): AdmittedMembership[] | undefined {
   if (!Array.isArray(value)) {
@@ -456,16 +460,32 @@ function parseAdmittedMemberships(value: unknown): AdmittedMembership[] | undefi
     if (!isRecord(entry)) {
       return undefined;
     }
-    const { organizationId, ministryId } = entry;
-    if (!isNonEmptyString(organizationId) || !isNonEmptyString(ministryId)) {
+    const { organizationId, ministryId, supportSubjectId } = entry;
+    if (
+      !isNonEmptyString(organizationId) ||
+      !isNonEmptyString(ministryId) ||
+      !isNonEmptyString(supportSubjectId)
+    ) {
+      return undefined;
+    }
+    const admission = admittedMembershipSchema.safeParse({
+      organizationId,
+      ministryId,
+      supportSubjectId,
+    });
+    if (!admission.success) {
       return undefined;
     }
     for (const existing of memberships) {
-      if (existing.organizationId === organizationId && existing.ministryId === ministryId) {
+      if (
+        existing.organizationId === admission.data.organizationId &&
+        existing.ministryId === admission.data.ministryId &&
+        existing.supportSubjectId === admission.data.supportSubjectId
+      ) {
         return undefined;
       }
     }
-    memberships.push({ organizationId, ministryId });
+    memberships.push(admission.data);
   }
   return memberships;
 }
@@ -535,13 +555,13 @@ export function buildSessionMeta(input: SessionMetaSeedInput): SessionMetaDocume
   const memberships = parseAdmittedMemberships(admittedMemberships);
   if (memberships === undefined) {
     throw new TypeError(
-      "A session meta document's admitted memberships are zero or more distinct pairs of non-empty organization and ministry ids.",
+      "A session meta document's admitted memberships are zero or more distinct triples of non-empty organization, ministry and support-subject ids.",
     );
   }
 
   if (!isSessionState(sessionState)) {
     throw new TypeError(
-      `Unknown session state ${describeValue(sessionState)}: this release defines ${SESSION_STATE_LIST.join(", ")}.`,
+      `Unknown session state ${describeValue(sessionState)}: this release defines ${SESSION_STATES.join(", ")}.`,
     );
   }
 
@@ -648,7 +668,7 @@ export function parseSessionMeta(value: unknown): Result<SessionMetaDocument, Se
     return err(
       refuse(
         "meta-unreadable",
-        `The stored session's admission state is ${describeValue(sessionState)}, which is not one of ${SESSION_STATE_LIST.join(", ")}.`,
+        `The stored session's admission state is ${describeValue(sessionState)}, which is not one of ${SESSION_STATES.join(", ")}.`,
       ),
     );
   }
@@ -668,7 +688,7 @@ export function parseSessionMeta(value: unknown): Result<SessionMetaDocument, Se
     return err(
       refuse(
         "meta-unreadable",
-        "The stored session's admitted memberships are zero or more distinct pairs of non-empty organization and ministry ids.",
+        "The stored session's admitted memberships are zero or more distinct triples of non-empty organization, ministry and support-subject ids.",
       ),
     );
   }

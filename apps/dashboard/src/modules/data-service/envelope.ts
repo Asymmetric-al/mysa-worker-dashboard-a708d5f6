@@ -468,13 +468,22 @@ export const recordAudienceSchema: z.ZodType<RecordAudience> = z.enum(RECORD_AUD
 // ---------------------------------------------------------------------------------------------
 
 /**
- * The four states a resolved session can be in.
+ * The five states a resolved session can be in: the four admissions, then the no-access recovery
+ * state.
  *
- * A user with no admitted membership is `denied` with an empty `admittedMemberships`, which is the
- * no-access state whose only honest outcome is account-recovery guidance: it is not a fifth state,
- * and it never renders as an empty workspace.
+ * `signed-in`, `unavailable`, `denied` and `expired` are the four admissions. `no-access` is the user
+ * for whom no admitted identity exists, so it carries no admitted membership and its only honest
+ * outcome is account-recovery guidance. It never renders as an empty workspace, and it is never
+ * collapsed into `denied`: a denial discloses nothing about what it refused, while no-access states
+ * the one thing that is known — there is an account to recover.
  */
-export const SESSION_STATES = ["signed-in", "unavailable", "denied", "expired"] as const;
+export const SESSION_STATES = [
+  "signed-in",
+  "unavailable",
+  "denied",
+  "expired",
+  "no-access",
+] as const;
 
 /** The state of the session a request resolved to. */
 export type SessionState = (typeof SESSION_STATES)[number];

@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
+import { SESSION_STATES, type SessionState } from "@/modules/data-service/envelope";
 
 /**
  * The one switch over the seeded preview personas and the session states.
@@ -54,12 +55,12 @@ import { cn } from "@/lib/cn";
  * one is a development scenario — it is not a sign-out and it does not clear the store — and each
  * state states its documented outcome here rather than relying on a colour.
  *
- * The five-member `PersonaSessionState` union is declared in this file rather than imported. The
- * envelope's `SESSION_STATES` covers the four admissions and has no member for the no-access user, and
- * this component's own vocabulary must stay closed over all five; `activeSessionState` is therefore
- * accepted as a plain `string` and resolved through {@link isPersonaSessionState}, so a caller holding
- * either vocabulary needs no cast and an unrecognised value is displayed as itself instead of being
- * silently replaced.
+ * That vocabulary is the read envelope's single declaration of it, re-exported here under this
+ * component's own name so the props below keep their type; this file keeps no copy of the closed set,
+ * and the state the development runtime stores and the state this control labels are one list.
+ * `activeSessionState` is nevertheless accepted as a plain `string` and resolved through
+ * {@link isPersonaSessionState}, so a caller holding any raw value needs no cast and an unrecognised
+ * value is displayed as itself instead of being silently replaced by a guessed label.
  */
 
 /**
@@ -87,17 +88,15 @@ export interface PersonaOption {
  * The closed set of session states the switch can demonstrate, in the order the specification lists
  * them: the four admissions and then the no-access user, whose only honest outcome is account-recovery
  * guidance.
+ *
+ * It is the envelope contract's own tuple, re-exported under this component's name rather than
+ * restated here: the five members are declared once, beside the session context record that stores
+ * them, so the states this control offers cannot fall behind the states a session can be in.
  */
-export const PERSONA_SESSION_STATES = [
-  "signed-in",
-  "unavailable",
-  "denied",
-  "expired",
-  "no-access",
-] as const;
+export const PERSONA_SESSION_STATES = SESSION_STATES;
 
-/** A member of {@link PERSONA_SESSION_STATES}. */
-export type PersonaSessionState = (typeof PERSONA_SESSION_STATES)[number];
+/** A member of {@link PERSONA_SESSION_STATES}: the envelope's own session state. */
+export type PersonaSessionState = SessionState;
 
 /**
  * The word and tone of each session state.
@@ -137,8 +136,8 @@ export const PERSONA_SESSION_STATE_OUTCOMES: Readonly<Record<PersonaSessionState
  * Whether a raw value is one of the five states this control can label.
  *
  * Exists because `activeSessionState` is a `string`: the development runtime and the admission read
- * may carry a value from either vocabulary, and a value this control cannot label must never be given
- * a guessed one.
+ * hand over the value a session actually carries, and a value this control cannot label must never be
+ * given a guessed one.
  */
 export function isPersonaSessionState(value: string): value is PersonaSessionState {
   return Object.hasOwn(PERSONA_SESSION_STATE_LABELS, value);
