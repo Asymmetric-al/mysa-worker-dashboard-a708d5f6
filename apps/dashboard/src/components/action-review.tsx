@@ -117,7 +117,8 @@ const CONFIRM_EFFECT_SENTENCE = "It takes effect as soon as you confirm it.";
 
 /** Said instead of the controls once a success outcome has settled this attempt. */
 const SETTLED_SENTENCE =
-  "This step is complete for this attempt. The result below is its record, and it stays on this page.";
+  "This step is complete for this attempt, and the result below is its record. Changing what this " +
+  "step would apply begins a new attempt with its own identity.";
 
 /** Said when a selection exists but holds nothing, so the confirm control is unavailable. */
 const NOTHING_SELECTED_SENTENCE =
@@ -257,6 +258,17 @@ export interface UseReviewedMutationResult<P> {
   readonly pending: boolean;
   /** The last outcome, or `null` before the first submission settles. */
   readonly outcome: MutationOutcome | null;
+  /**
+   * The intent this step last reviewed with its caller: the fingerprint of the input it handed to
+   * {@link submit}, or `null` before the first submission and after {@link reset}.
+   *
+   * A replay and a re-apply both keep it, because each acts on the input the caller already reviewed
+   * — a re-apply sends that same payload against the conflict's current revision, and the receipt it
+   * answers with still belongs to the input the person was reading. Comparing it with the caller's
+   * current intent is what lets a step see that the input has moved on, so a changed intent begins a
+   * new attempt instead of leaving a settled receipt in place for the life of the mount.
+   */
+  readonly reviewedIntent: string | null;
   /** Submits one intent, reusing the identity when the intent is unchanged. */
   submit(input: Omit<MutationInput<P>, "operationId">): Promise<MutationOutcome>;
   /** Replays the last intent under its own identity; `null` when there is nothing to replay. */
@@ -304,6 +316,7 @@ export function useReviewedMutation<P = unknown>(
   const pendingRef = useRef(false);
   const [outcome, setOutcome] = useState<MutationOutcome | null>(null);
   const outcomeRef = useRef<MutationOutcome | null>(null);
+  const [reviewedIntent, setReviewedIntent] = useState<string | null>(null);
   const inputRef = useRef<Omit<MutationInput<P>, "operationId"> | null>(null);
   const inFlightRef = useRef<Promise<MutationOutcome> | null>(null);
 
@@ -315,15 +328,25 @@ export function useReviewedMutation<P = unknown>(
   }, []);
 
   const submitInput = useCallback(
-    (input: Omit<MutationInput<P>, "operationId">): Promise<MutationOutcome> => {
+    (
+      input: Omit<MutationInput<P>, "operationId">,
+      /* `false` for a re-apply, which dispatches the reviewed payload against the conflict's current
+       * revision: that is a new identity but not a new input to review. */
+      reviewsInput = true,
+    ): Promise<MutationOutcome> => {
       const running = inFlightRef.current;
       if (running !== null) {
         return running;
       }
 
       /* The first submission mints the identity; a retry of the same intent keeps it, and a changed
-       * intent mints a new one. */
-      const identity = attemptForIntent(attemptRef.current, intentKeyOf(input));
+       * intent mints a new one. The reviewed intent is recorded only for a submission of the input the
+       * caller reviewed, so a re-apply keeps the intent it was launched from. */
+      const intent = intentKeyOf(input);
+      if (reviewsInput) {
+        setReviewedIntent(intent);
+      }
+      const identity = attemptForIntent(attemptRef.current, intent);
       adopt(identity);
       inputRef.current = input;
       pendingRef.current = true;
@@ -383,7 +406,7 @@ export function useReviewedMutation<P = unknown>(
     if (input === null || revision === null || pendingRef.current) {
       return null;
     }
-    return submitInput({ ...input, expectedRevision: revision });
+    return submitInput({ ...input, expectedRevision: revision }, false);
   }, [submitInput]);
 
   const reset = useCallback((): void => {
@@ -396,12 +419,14 @@ export function useReviewedMutation<P = unknown>(
     inputRef.current = null;
     outcomeRef.current = null;
     setOutcome(null);
+    setReviewedIntent(null);
   }, [adopt]);
 
   return {
     operationId: attempt === null ? null : attempt.operationId,
     pending,
     outcome,
+    reviewedIntent,
     submit: submitInput,
     retry,
     reapply,
@@ -498,6 +523,22 @@ export interface ActionReviewProps<P = unknown> {
   readonly submit: MutationSubmit<P>;
 
   /**
+   * Checks the result of an unconfirmed attempt by re-reading it, for a caller that owns that read.
+   *
+   * A check is a read of an `operationId` that already exists — the import journey's receipt lookup
+   * (`readImportReceipt`, `GET /api/import/[operationId]` in AAP 0.6.3) is the one this release
+   * ships — so it belongs to the caller that holds the lookup, not to this file, which builds no
+   * URL and fetches nothing.
+   *
+   * A replay is not a check, and must never be labelled as one. A replay re-sends this same
+   * mutation under the same identity, and the service applies it when the earlier attempt never
+   * landed, so a control described as applying nothing would perform the write. A step with no
+   * receipt lookup therefore supplies no `checkResult`: its unconfirmed receipt then offers the
+   * replay it can honestly perform, and the receipt says what that replay does.
+   */
+  readonly checkResult?: () => void;
+
+  /**
    * Called once each time an attempt settles, with the outcome the receipt renders. A feature uses
    * it to invalidate the reads the change touched; it may not use it to report the result itself,
    * because the receipt in this step is the record.
@@ -574,6 +615,14 @@ function SelectionSummary({
  * `conflict` is only correctable beside the input it refused, and an `unavailable` source is only
  * retryable while the change it blocked is still described. The receipt appears underneath it and is
  * never replaced by a passing notice.
+ *
+ * One attempt per intent, and a changed intent is a new one. A settled attempt sets the confirm
+ * controls aside while its receipt stands, so one write cannot be confirmed twice; the moment the
+ * caller's `input` describes something else, that receipt is the record of an attempt the person has
+ * moved on from, so it is withheld and the confirm controls return for the new intent. The identity
+ * that follows is fresh, because this step mints one identity per intent — and an input rebuilt with
+ * the same contents changes no intent at all, so a caller that recomputes its input on every render
+ * keeps the receipt it had.
  */
 export function ActionReview<P = unknown>({
   title,
@@ -587,6 +636,7 @@ export function ActionReview<P = unknown>({
   selection,
   input,
   submit,
+  checkResult,
   onSettled,
   fieldLabels,
   headingLevel = 2,
@@ -596,6 +646,7 @@ export function ActionReview<P = unknown>({
     operationId,
     pending,
     outcome,
+    reviewedIntent,
     submit: dispatchSubmit,
     retry,
     reapply,
@@ -606,13 +657,26 @@ export function ActionReview<P = unknown>({
   const [dialogOpen, setDialogOpen] = useState(false);
   const resultRef = useRef<HTMLDivElement | null>(null);
 
+  /* The receipt belongs to the input the caller last reviewed, and a changed intent is a new attempt:
+   * once `input` describes something else, the receipt of the earlier attempt is withheld and the
+   * confirm controls come back, so a step that stays mounted can be used more than once instead of
+   * settling for the life of the mount. The next confirm then mints a fresh identity, because the
+   * identity is keyed by the intent.
+   *
+   * The comparison is the canonical intent and never object identity, so a caller that rebuilds an
+   * equal input on every render sees nothing move, and a replay of the reviewed intent keeps its own
+   * receipt on screen while it runs. An attempt in flight for a *different* intent shows nothing of
+   * the earlier one: that record belongs to a change the person has left behind. */
+  const reviewed = reviewedIntent === intentKeyOf(input);
+  const current = reviewed ? outcome : null;
+
   /* A settled attempt leaves nothing left to confirm: `accepted`, `alreadyAccepted` and `unchanged`
    * all mean the change needs no further press. The others stay open for correction or replay. */
   const settled =
-    outcome !== null &&
-    (outcome.outcome === "accepted" ||
-      outcome.outcome === "alreadyAccepted" ||
-      outcome.outcome === "unchanged");
+    current !== null &&
+    (current.outcome === "accepted" ||
+      current.outcome === "alreadyAccepted" ||
+      current.outcome === "unchanged");
   const nothingSelected = selection !== undefined && selection.count <= 0;
   const confirmUnavailable = pending || nothingSelected;
   const state = pending ? "working" : settled ? "settled" : "review";
@@ -626,11 +690,11 @@ export function ActionReview<P = unknown>({
    * announces the field messages itself; two focus moves for one failure would fight each other.
    */
   useEffect(() => {
-    if (outcome === null || outcome.outcome === "invalid") {
+    if (current === null || current.outcome === "invalid") {
       return;
     }
     resultRef.current?.focus();
-  }, [outcome]);
+  }, [current]);
 
   /** Runs one attempt and reports it once, so `onSettled` fires for confirm, retry and re-apply alike. */
   const settle = useCallback(
@@ -650,9 +714,11 @@ export function ActionReview<P = unknown>({
     void settle(() => dispatchSubmit(input));
   };
 
-  /* A replay sends the same intent under the same identity, which is why it is the only recovery a
-   * lost acknowledgement offers: the service answers with the stored result rather than repeating
-   * the effect. */
+  /* A replay re-sends the same intent under the same identity, so the service answers with the
+   * stored result rather than repeating an effect that already happened — and applies the change
+   * when the earlier attempt never landed. That is what makes it an honest recovery for a source
+   * that was down or an acknowledgement that was lost, and it is not a substitute for a check: a
+   * caller that owns a receipt lookup offers the read, and this step labels the replay as one. */
   const replay = (): void => {
     void settle(retry);
   };
@@ -784,29 +850,32 @@ export function ActionReview<P = unknown>({
         </CardContent>
       </Card>
 
-      {outcome === null ? null : (
-        /* Focusable only so the reading position can move here after an attempt settles; it carries
-         * no ring of its own, because a ring around a whole receipt would read as an interactive
-         * surface it is not. */
+      {current === null ? null : (
+        /* Focusable so the reading position can move to the receipt once an attempt settles: the
+         * confirm control is disabled while the request runs, so without a place to land a keyboard
+         * user would be dropped at the document body. Nothing is suppressed here — the token layer's
+         * `:focus-visible` outline is what makes that position visible. */
         <div
           ref={resultRef}
           tabIndex={-1}
           data-slot="action-review-result"
-          data-outcome={outcome.outcome}
-          className="flex min-w-0 flex-col gap-3 outline-none"
+          data-outcome={current.outcome}
+          className="flex min-w-0 flex-col gap-3"
         >
           {simulationEffect === undefined ? null : (
             <SimulationLabel effect={simulationEffect} context="block" />
           )}
           <OperationResult
-            outcome={outcome}
+            outcome={current}
             headingLevel={receiptHeadingLevel(headingLevel)}
-            /* Each recovery action appears only on the outcome it belongs to: a check for an
-             * unconfirmed effect, a replay for a source that was down, and a re-apply for a stale
-             * revision. None of them ever offers to send the work again under a fresh identity. */
-            onCheckResult={outcome.outcome === "unknown" ? replay : undefined}
-            onRetrySameWork={outcome.outcome === "unavailable" ? replay : undefined}
-            onReapply={outcome.outcome === "conflict" ? applyAgain : undefined}
+            /* Each recovery action appears only where it can be honoured: a genuine re-read of the
+             * same operation for an unconfirmed effect, but only where the caller owns that read; a
+             * replay for a source that was down or an acknowledgement that was lost, which the
+             * service answers with the original result; and a re-apply for a stale revision. None of
+             * them ever offers to send the work again under a fresh identity. */
+            onCheckResult={current.outcome === "unknown" ? checkResult : undefined}
+            onRetrySameWork={mayReplay(current) ? replay : undefined}
+            onReapply={current.outcome === "conflict" ? applyAgain : undefined}
             fieldLabels={fieldLabels}
           />
         </div>

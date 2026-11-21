@@ -272,8 +272,15 @@ const ACCEPT_HINT: Readonly<Record<MediaPickerKind, string>> = Object.freeze({
 /** How long a video is given to report its own metadata before the measurement is abandoned. */
 const VIDEO_PROBE_TIMEOUT_MS = 15_000;
 
-/** The number grouping every count and dimension in this dialog uses. */
-const COUNT_FORMAT = new Intl.NumberFormat();
+/**
+ * The number grouping every count and dimension in this dialog uses.
+ *
+ * Fixed rather than taken from the host: the dialog renders on the server and again in the browser,
+ * and a locale read from each environment would produce two different strings for one measurement
+ * ("8,000" against "8.000") and trip hydration. Every value formatted here is a whole pixel count, so
+ * a fixed grouping is faithful.
+ */
+const COUNT_FORMAT = new Intl.NumberFormat("en-US");
 
 /** Field paths the service refuses, paired with the words the receipt's summary reads. */
 const FIELD_LABELS: Readonly<Record<string, string>> = Object.freeze({

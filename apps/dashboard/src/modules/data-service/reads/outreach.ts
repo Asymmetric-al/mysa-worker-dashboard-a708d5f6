@@ -89,6 +89,7 @@ import {
   assertScope,
   canEdit,
   canView,
+  readResultOfRefusal,
   resolveSession,
   type ResolvedSession,
   type SessionSource,
@@ -144,6 +145,15 @@ import {
  * produces — the only field that may differ is the reason code.
  */
 const READ_ATTEMPT_ID = "read";
+
+/**
+ * The store's reference for the outreach family, reported as a read's source and in diagnostics.
+ *
+ * The reference is a fixed opaque marker naming the record family a reader would ask for. It is never
+ * the session's identity: the session id is the value of the development cookie, so it is a
+ * credential, and a credential has no place in an envelope a browser receives or in a log line.
+ */
+const OUTREACH_SOURCE_REFERENCE = "outreach";
 
 /**
  * The stages this release's source-approved list offers, declared once here with the values the seeded
@@ -273,7 +283,7 @@ function unavailableRead(input: {
 async function openOutreach(job: string, source?: SessionSource): Promise<OutreachOpening> {
   const resolved = await resolveSession(source);
   if (!resolved.ok) {
-    return refuseRead(resolved.denial);
+    return { ok: false, refusal: readResultOfRefusal(resolved.refusal) };
   }
 
   const { session } = resolved;
@@ -312,7 +322,7 @@ async function openOutreach(job: string, source?: SessionSource): Promise<Outrea
   if (stored === undefined) {
     return unavailableRead({
       job,
-      reference: session.sessionId,
+      reference: OUTREACH_SOURCE_REFERENCE,
       guidance:
         "The session's records could not be read. Reload the workspace, or reset the seed from Settings.",
     });
@@ -322,7 +332,7 @@ async function openOutreach(job: string, source?: SessionSource): Promise<Outrea
   if (!parsed.success) {
     return unavailableRead({
       job,
-      reference: session.sessionId,
+      reference: OUTREACH_SOURCE_REFERENCE,
       guidance:
         "The stored outreach records are not in a shape this build can read. Reset the seed from Settings to restore the known dataset.",
     });
@@ -744,9 +754,9 @@ export async function readInitiatives(
     envelope: buildEnvelope({
       data: { items, total: ordered.length, page, pageSize },
       scope,
-      // The state document that holds these records is what was read, so its session identity is
-      // the reference a reader would use to find the dataset behind the answer.
-      source: { system: LOCAL_STORE_SYSTEM, reference: session.sessionId },
+      // The source is the local store named by its fixed family marker: an opaque reference a reader
+      // can use to find the owner of these records, never the session credential that opened it.
+      source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
       // The collection has no revision of its own; the document set that holds it does, and a change
       // originating from a row states that row's own revision.
       revision: documents.context.revision,
@@ -1343,7 +1353,7 @@ export async function readInitiative(
     envelope: buildEnvelope({
       data,
       scope,
-      source: { system: LOCAL_STORE_SYSTEM, reference: session.sessionId },
+      source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
       revision: initiative.revision,
       asOf: now.toString(),
       coverage: completeCoverage(
@@ -1607,7 +1617,7 @@ export async function readInitiativeResults(
     envelope: buildEnvelope({
       data,
       scope,
-      source: { system: LOCAL_STORE_SYSTEM, reference: session.sessionId },
+      source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
       revision: initiative.revision,
       asOf: now.toString(),
       coverage: completeCoverage(
@@ -2269,7 +2279,7 @@ export async function readReferrals(
     envelope: buildEnvelope({
       data,
       scope,
-      source: { system: LOCAL_STORE_SYSTEM, reference: session.sessionId },
+      source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
       revision: documents.context.revision,
       asOf: now.toString(),
       coverage: completeCoverage(
@@ -2384,9 +2394,11 @@ export async function readReferral(
     envelope: buildEnvelope({
       data,
       scope,
-      // The store answered this read; the record's own source reference travels in the row, where a
-      // reader can see which system the referral came from without it standing in for the answer.
-      source: { system: LOCAL_STORE_SYSTEM, reference: session.sessionId },
+      // The store answered this read, so the source is the local store named by its fixed family
+      // marker, an opaque reference and never the session credential that opened the store. The
+      // record's own source reference still travels in the row, where a reader can see which system
+      // the referral came from.
+      source: { system: LOCAL_STORE_SYSTEM, reference: OUTREACH_SOURCE_REFERENCE },
       revision: row.revision,
       asOf: now.toString(),
       coverage: completeCoverage(row.originalIntroductionOn, latestResolvedDay([row])),

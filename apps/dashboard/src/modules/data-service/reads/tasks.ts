@@ -73,6 +73,7 @@ import {
   assertScope,
   canEdit,
   canView,
+  readResultOfRefusal,
   resolveSession,
   type ResolvedSession,
   type SessionSource,
@@ -244,7 +245,7 @@ function refused(result: ReadResult<never>): ReadOpening {
 async function openRead(source?: SessionSource): Promise<ReadOpening> {
   const resolution = await resolveSession(source);
   if (!resolution.ok) {
-    return refused({ kind: "denied", denied: resolution.denial });
+    return refused(readResultOfRefusal(resolution.refusal));
   }
 
   const { session } = resolution;

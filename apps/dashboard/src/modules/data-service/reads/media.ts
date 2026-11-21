@@ -4,8 +4,9 @@
  * `readMediaAsset()` answers one request for one rendition of one asset — a display still, a playback
  * stream, a poster, a caption track or a transcript — by re-deriving the caller's authority on every
  * call, handing the serving decision to `@/modules/media/serve`'s `assertReadable()`, and answering
- * with either the wire facts of a response that may be sent or one of the two refusals a read can
- * make. It backs `GET /api/media/[assetId]/[rendition]`, which is the only address a rendition has.
+ * with either the envelope that carries the wire facts of a response that may be sent or one of the two
+ * refusals a read can make. It backs `GET /api/media/[assetId]/[rendition]`, which is the only address
+ * a rendition has.
  *
  * The invariants this read holds for its caller:
  *
@@ -34,21 +35,31 @@
  * - **Serving proves only that these bytes were sent.** It is not evidence that anything was released,
  *   delivered or read, and no surface may present it as any of those.
  *
- * The documented exception to the read envelope. Every other read in this folder answers with a
- * scoped envelope, and this one deliberately does not: a byte stream carries no per-field states, no
- * period statement and no available actions, so the read answers with {@link MediaRenditionResponse} —
- * the authorised bytes and the wire facts that go with them — and its two failure modes travel as the
- * ordinary `denied` and `unavailable` outcomes. `outcome.ts` names this exception in its own header,
- * and the type below states it again where a reader will look for an envelope and not find one.
+ * The read envelope, like every other read. An authorised rendition is answered inside the same
+ * eight-member envelope every read in this service returns — `data`, `scope`, `source`, `revision`,
+ * `asOf`, `coverage`, `valueStates` and `actions` — so a caller of one of the named reads consults one
+ * shape, and this read is not a code-only exception to the read contract. `data` is
+ * {@link MediaRenditionResponse}: the authorised bytes and the wire facts that go with them, from
+ * which the route layer writes the response's status, header set and body. `scope` is the asset's own
+ * recorded scope, the authority this read actually ran under; `source` is the custody source named for
+ * the asset; `revision` is the asset record's own token; `asOf` is this session's scenario instant;
+ * `coverage` states the whole asset record, which has no period behind it; `valueStates` states the
+ * one value-bearing path the answer carries, its body length; and `actions` is empty, because a
+ * rendition is bytes and the actions available on it belong to the content revision that places it.
+ * The two failure modes stay the ordinary `denied` and `unavailable` outcomes: a refusal is an answer
+ * in its own right, never an empty envelope.
  *
  * Where the bytes come from. A rendition's bytes are named by its record's `bytesRef`, and the media
  * module's serving decision requires the bytes to *arrive* with the rendition ("bytes stay the
- * caller's"), so resolving that reference is this read's job and nobody else's: the store publishes
- * JSON documents only, and no module in `@/modules/media` opens a file. The resolution is deliberately
- * narrow — one plain read under one of two contained roots, refusing anything that could name a path
- * outside them — and a reference that cannot be honoured is an `unavailable` source, never a
- * zero-length body. Preparation itself is local processing and is labelled as such by the surface that
- * triggers it; nothing here scans, transcodes or claims to.
+ * caller's"), so resolving that reference is this read's job: the store publishes JSON documents only,
+ * and no module in `@/modules/media` opens a file. The custody itself belongs to the store's media
+ * module, which owns the one tree served bytes live in and the one reference form a record states for
+ * one, and this read delegates to its `readMediaBytes()`. A stored reference can therefore only ever
+ * name a file inside the store's data tree — never a file under the application's `public/` directory,
+ * which the framework serves at a permanent unauthenticated address, and never anything else on the
+ * machine — and a reference that cannot be honoured is an `unavailable` source, never a zero-length
+ * body. Preparation itself is local processing and is labelled as such by the surface that triggers
+ * it; nothing here scans, transcodes or claims to.
  *
  * Scope: AAP 0.6.1 (`readMediaAsset`), 0.6.3 (`GET /api/media/[assetId]/[rendition]`), 0.7.1's job row
  * "Attach media", 0.7.2 (opaque rendition identities, re-authorised per request including byte ranges),
@@ -56,17 +67,15 @@
  * states) and 0.3.2 (renderer-level scope enforcement). Evidence: success criteria 18 and 19.
  *
  * Layering: a data-service read. It imports the one session resolver and permission question, the
- * shared outcome and record contracts, the store's single read function, the development scenario
- * registry that owns the "media unavailable" world, the media module's serving decision, and the
- * framework-free helpers. It imports no component, no feature, no route, no provider package, and it
- * writes no document: this read changes nothing.
+ * shared outcome and record contracts, the store's single read function and its media-custody module,
+ * the development scenario registry that owns the "media unavailable" world, the media module's
+ * serving decision, the scenario clock, and the framework-free helpers. It imports no component, no
+ * feature, no route, no provider package, and it writes no document: this read changes nothing.
  */
 // A rendition's bytes must arrive with the rendition: the media module's serving decision receives them
 // from its caller, the store publishes JSON documents only, and no module in `@/modules/media` opens a
-// file. Resolving the record's reference is therefore this read's one piece of custody, kept to a single
-// contained read under the two roots below, so a later media-custody owner replaces one seam.
-import { readFile } from "node:fs/promises";
-
+// file. Resolving the record's reference is therefore this read's one piece of custody, delegated to the
+// store module that owns the tree those bytes live in.
 import { z } from "zod";
 
 import { isNonEmptyString } from "@/lib/guards";
@@ -81,16 +90,21 @@ import {
   type ByteRange,
   type MediaServingState,
 } from "@/modules/media/serve";
-import { DATA_ROOT } from "@/modules/store/paths";
+import { readMediaBytes } from "@/modules/store/media";
 import { readSession } from "@/modules/store/repository";
+import { instantAt } from "@/modules/time/clock";
 
-import { canView, resolveSession } from "../authorize";
+import { canView, readResultOfRefusal, resolveSession, type ResolvedSession } from "../authorize";
 import {
+  buildEnvelope,
   mediaAssetRecordSchema,
   type MediaAssetKind,
   type MediaAssetRecord,
   type MediaAssetRenditionPurpose,
   type MediaAssetRenditionRecord,
+  type ReadAction,
+  type ReadEnvelope,
+  type RecordedValueState,
 } from "../envelope";
 import {
   denied,
@@ -103,20 +117,18 @@ import {
 // ---------------------------------------------------------------------------------------------
 // What this read answers with
 //
-// The one place in `data-service/reads` that is not a read envelope, and the reason is in the type.
+// The envelope every read answers with, carrying one authorised rendition and its wire facts.
 // ---------------------------------------------------------------------------------------------
 
 /**
  * One authorised rendition response: the bytes this read authorises sending, and the facts that must
  * be sent with them.
  *
- * This type is the documented exception to the envelope contract, and it is deliberately not an
- * envelope in disguise. A per-field state map, a period statement, an available-actions list and a
- * revision all answer questions about numbers and collections; a rendition is bytes, and the only
- * facts a caller needs about them are the media type, the length, the window and the status.
- * Attaching an empty set of those envelope members "for consistency" would be the half-wrapped
- * exception the plan names as a defect, so the two failure modes travel as `denied` and `unavailable`
- * and nothing else is bolted on.
+ * It is the `data` member of this read's envelope, never the read's whole answer. The envelope states
+ * the scope the request ran under, its source, the asset's revision, the scenario instant, the
+ * coverage, the state of each value carried here and the actions available; this type carries what the
+ * wire itself needs, and the route layer writing the response takes its status, its header set and its
+ * body from it.
  *
  * `status` and `headers` are carried rather than derived by the route layer because the serving
  * decision owns them: the media module states the one cache policy this application sets and the
@@ -155,6 +167,15 @@ export interface MediaRenditionResponse {
   /** The complete header set for this response: the cache policy, type, length, window and range. */
   readonly headers: Readonly<Record<string, string>>;
 }
+
+/**
+ * What this read answers with: the rendition's envelope, or the outcome that refused it.
+ *
+ * The two failure branches carry no envelope at all, exactly as every other read's do, because neither
+ * is a way of saying "read this and found nothing": a refusal must disclose no count, size, media type
+ * or existence flag, and a source that is down must name itself rather than render as an empty body.
+ */
+export type MediaAssetReadResult = ReadResult<ReadEnvelope<MediaRenditionResponse>>;
 
 /**
  * One request for one rendition.
@@ -226,11 +247,15 @@ const MEDIA_REFUSAL_REASON: DenialReason = "no-permission";
 /** The bytes of a response that carries no body: the unsatisfiable-range case, and nothing else. */
 const NO_BYTES = new Uint8Array(0);
 
-/** The suffix the store's data directory carries, used to derive the repository root from it. */
-const DATA_ROOT_SUFFIX = "/.data";
-
-/** Longest `bytesRef` this read will resolve; far beyond any reference the record schema admits. */
-const MAX_BYTES_REF_LENGTH = 512;
+/**
+ * The actions this read offers on a rendition: none.
+ *
+ * A rendition is bytes. Every action a surface offers around it — replace it, remove its placement,
+ * register another — changes the content revision that places the asset, which is a different record
+ * from the one this read returns and carries its own revision. Listing them here would offer an action
+ * whose expected revision this envelope never stated, so the list is empty rather than borrowed.
+ */
+const NO_ACTIONS: readonly ReadAction[] = Object.freeze([]);
 
 /**
  * What a caller is told when a rendition's bytes could not be read right now.
@@ -268,18 +293,6 @@ const KIND_PURPOSES: Readonly<Record<MediaAssetKind, readonly MediaAssetRenditio
   image: ["display"],
   video: ["playback", "poster", "captions", "transcript"],
 };
-
-/**
- * The two directories a `bytesRef` may name anything inside: the repository root, which is where the
- * committed development fixtures live, and the store's own data directory, which is where a registered
- * upload's bytes are kept.
- *
- * The repository root is derived from the store's own answer rather than by walking up from the
- * working directory again: `store/paths.ts` is the one module that resolved it, and a second walk could
- * land somewhere else. A reference outside both roots is refused, which is what stops a stored
- * reference from becoming a read of any file on the machine.
- */
-const MEDIA_BYTE_ROOTS: readonly string[] = Object.freeze([repositoryRootOf(DATA_ROOT), DATA_ROOT]);
 
 /**
  * The stored shape this read needs from a session's state document: its media assets, validated by the
@@ -326,17 +339,22 @@ const storedMediaSchema = z.object({
  * Byte ranges get no shortcut. A range request is authorised identically to a whole-entity one, its
  * window is parsed only after every check above has passed, and an unsatisfiable window is answered
  * with the range's own status and the entity's size rather than with a truncated body.
+ *
+ * Every authorised answer — the whole entity, a requested window or an unsatisfiable window — is the
+ * one envelope {@link renditionAnswer} builds, so a caller reads the same eight members whichever of
+ * the three it receives. The refusals stay outcomes: a denial and an unavailable source are answers in
+ * their own right and carry no envelope to be mistaken for an empty one.
  */
-export async function readMediaAsset(
-  input: MediaAssetReadInput,
-): Promise<ReadResult<MediaRenditionResponse>> {
+export async function readMediaAsset(input: MediaAssetReadInput): Promise<MediaAssetReadResult> {
   if (!isNonEmptyString(input.assetId) || !isNonEmptyString(input.rendition)) {
     return refused();
   }
 
   const resolved = await resolveSession();
   if (!resolved.ok) {
-    return refused();
+    // A request that names no session the store holds is refused; a store that could not answer is
+    // the outage it is, and the caller is entitled to hear which of the two it was.
+    return readResultOfRefusal(resolved.refusal);
   }
   const { session } = resolved;
 
@@ -381,7 +399,10 @@ export async function readMediaAsset(
     return unavailableBytes(bytesSourceOf(asset), MISSING_RENDITION_GUIDANCE);
   }
 
-  const bytes = await readRenditionBytes(rendition.bytesRef);
+  // The bytes come from the store's media custody, which refuses any reference naming a file outside
+  // its own data tree — the application's `public/` directory included. A refused reference and a read
+  // failure are the same answer here: an unavailable source, never a zero-length body.
+  const bytes = await readMediaBytes(rendition.bytesRef);
   if (bytes === undefined) {
     return unavailableBytes(bytesSourceOf(asset), UNAVAILABLE_GUIDANCE);
   }
@@ -391,48 +412,42 @@ export async function readMediaAsset(
     scope: asset.scope,
     assetState: servingStateOf(session.scenarioId),
     requestedPurpose: purpose,
-    // The rendition's own bytes reference never travels: it names a path inside this repository, and no
-    // response may echo one. The bytes' holder is named by the asset's opaque identity instead, which
-    // the caller already has from the request it made.
+    // The rendition's own bytes reference never travels: it names a location inside the store's data
+    // tree, and no response may echo one. The bytes' holder is named by the asset's opaque identity
+    // instead, which the caller already has from the request it made.
     bytesRef: bytesSourceOf(asset),
     rangeHeader: input.rangeHeader ?? null,
   });
 
   switch (serving.kind) {
     case "readable":
-      return {
-        kind: "envelope",
-        envelope: {
-          kind: asset.kind,
-          renditionId: serving.renditionId,
-          purpose: serving.purpose,
-          mimeType: serving.mimeType,
-          contentLength: serving.contentLength,
-          range: serving.byteRange,
-          bytes: sliceRenditionBytes(bytes, serving.byteRange),
-          status: serving.status,
-          headers: serving.headers,
-        },
-      };
+      return renditionAnswer(session, asset, {
+        kind: asset.kind,
+        renditionId: serving.renditionId,
+        purpose: serving.purpose,
+        mimeType: serving.mimeType,
+        contentLength: serving.contentLength,
+        range: serving.byteRange,
+        bytes: sliceRenditionBytes(bytes, serving.byteRange),
+        status: serving.status,
+        headers: serving.headers,
+      });
 
     case "rangeNotSatisfiable":
       // The reader may have this entity; the window simply names none of it. The status and the headers
       // carry the entity's size, and the body is empty by definition, so nothing is truncated and no
       // size is disclosed that the caller was not already authorised to learn.
-      return {
-        kind: "envelope",
-        envelope: {
-          kind: asset.kind,
-          renditionId: rendition.renditionId,
-          purpose: rendition.purpose,
-          mimeType: rendition.mimeType,
-          contentLength: 0,
-          range: null,
-          bytes: NO_BYTES,
-          status: serving.status,
-          headers: serving.headers,
-        },
-      };
+      return renditionAnswer(session, asset, {
+        kind: asset.kind,
+        renditionId: rendition.renditionId,
+        purpose: rendition.purpose,
+        mimeType: rendition.mimeType,
+        contentLength: 0,
+        range: null,
+        bytes: NO_BYTES,
+        status: serving.status,
+        headers: serving.headers,
+      });
 
     case "unavailable":
       return unavailableBytes(serving.source, UNAVAILABLE_GUIDANCE);
@@ -449,11 +464,60 @@ export async function readMediaAsset(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Internals: the segment, the source, the asset state and the two refusals
+// Internals: the envelope, the segment, the source, the asset state and the two refusals
 //
 // Each one is a single expression of a single fact, so no branch of the read above states its own
 // version of it.
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * The envelope one authorised rendition is answered in.
+ *
+ * Every member is a fact this read established, never a default:
+ *
+ * - `data` is the rendition and the wire facts that go with it, from which the route layer sends the
+ *   status, the headers and the body.
+ * - `scope` is the asset's own recorded scope — the authority `canView` has just asserted. The context
+ *   the request arrived in grants nothing on its own, so reporting that instead would state an
+ *   authority this read never ran under.
+ * - `source` is the custody source named for the asset, addressed by its opaque identity: the same pair
+ *   the `unavailable` answer names, and never the record's `bytesRef`.
+ * - `revision` is the asset record's own token, which a change to this asset would present as its
+ *   expected revision. A rendition has no revision of its own: the record that holds it does.
+ * - `asOf` is this session's scenario instant, derived from the offset its own document persists, so
+ *   two sessions in different scenarios never compare a media read against one process-wide clock.
+ * - `coverage` is the whole asset record with both bounds absent, and that is a statement rather than
+ *   a default: the read covers the asset's entire record, which has no period behind it, and stating a
+ *   window would fabricate one. Because this read states no financial subject, it states no currency
+ *   and no date basis, so `incomplete-subtotal` can never be derived from this coverage.
+ * - `valueStates` states the one value-bearing path the answer carries: the body's length. It is
+ *   `zero` for the unsatisfiable-range answer, whose body is empty by definition, so an authorised
+ *   reader whose window named no byte cannot render that emptiness as a missing value.
+ * - `actions` is empty: a rendition is bytes, and every action a surface offers around it belongs to
+ *   the content revision that places the asset, which is a different record from this one.
+ */
+function renditionAnswer(
+  session: ResolvedSession,
+  asset: MediaAssetRecord,
+  data: MediaRenditionResponse,
+): MediaAssetReadResult {
+  const valueStates: Readonly<Record<string, RecordedValueState>> = {
+    contentLength: data.contentLength === 0 ? "zero" : "value",
+  };
+  return {
+    kind: "envelope",
+    envelope: buildEnvelope({
+      data,
+      scope: asset.scope,
+      source: bytesSourceOf(asset),
+      revision: asset.revision,
+      asOf: instantAt(session.clockOffsetMs).toString(),
+      coverage: { from: null, to: null, state: "complete" },
+      valueStates,
+      actions: NO_ACTIONS,
+    }),
+  };
+}
 
 /**
  * Resolves the request's second segment against this asset's own records.
@@ -505,8 +569,8 @@ function preparedRendition(
  * The source identity a diagnostic and an `unavailable` outcome name for this asset's bytes.
  *
  * It is the asset's opaque identity, not the record's `bytesRef`: a reference names a location inside
- * this repository, and an outcome travels to a browser. The asset identity is already in the request
- * the caller made, so naming it discloses nothing it did not already have.
+ * the store's data tree, and an outcome travels to a browser. The asset identity is already in the
+ * request the caller made, so naming it discloses nothing it did not already have.
  */
 function bytesSourceOf(asset: MediaAssetRecord): MediaOriginalReference {
   return { system: MEDIA_SOURCE_SYSTEM, reference: asset.assetId };
@@ -529,65 +593,6 @@ function servingStateOf(scenarioId: string): MediaServingState {
 }
 
 /**
- * Reads one rendition's bytes from the reference its record states.
- *
- * The reference is resolved under {@link MEDIA_BYTE_ROOTS} only — the repository root for the committed
- * development fixtures, then the store's data directory for a registered upload — and anything that could
- * name a path outside them (an absolute path, a parent segment, a backslash, a drive letter, a NUL byte,
- * an empty segment) is refused before a filesystem call is made. A reference that resolves to nothing is
- * the same answer as one that could not be read: `undefined`, which the read reports as an unavailable
- * source. Nothing about either the reference or the failure is logged or returned.
- */
-async function readRenditionBytes(bytesRef: string): Promise<Uint8Array | undefined> {
-  const relative = containedRelativePath(bytesRef);
-  if (relative === undefined) {
-    return undefined;
-  }
-  for (const root of MEDIA_BYTE_ROOTS) {
-    try {
-      // A copy rather than a view over the read buffer: the serving decision hands out a subarray of
-      // these bytes, and nothing served may alias a pooled buffer another read could reuse.
-      return new Uint8Array(await readFile(`${root}/${relative}`));
-    } catch {
-      continue;
-    }
-  }
-  return undefined;
-}
-
-/** Whether a stored reference is a plain relative path this read may resolve, and that path when it is. */
-function containedRelativePath(bytesRef: string): string | undefined {
-  const reference = bytesRef.trim();
-  if (reference.length === 0 || reference.length > MAX_BYTES_REF_LENGTH) {
-    return undefined;
-  }
-  if (reference.startsWith("/") || reference.includes("\\") || reference.includes("\0")) {
-    return undefined;
-  }
-  if (/^[A-Za-z]:/.test(reference)) {
-    return undefined;
-  }
-  const segments = reference.split("/");
-  const contained = segments.every(
-    (segment) => segment.length > 0 && segment !== "." && segment !== "..",
-  );
-  return contained ? segments.join("/") : undefined;
-}
-
-/**
- * The repository root, derived from the data directory the store itself resolved.
- *
- * `store/paths.ts` walks up to the workspace marker once, at module load, and this is that answer with
- * the store's own directory removed. Deriving it here rather than walking again keeps one answer to
- * "where is this repository", which is the same reason the store owns the walk.
- */
-function repositoryRootOf(dataRoot: string): string {
-  return dataRoot.endsWith(DATA_ROOT_SUFFIX)
-    ? dataRoot.slice(0, dataRoot.length - DATA_ROOT_SUFFIX.length)
-    : dataRoot;
-}
-
-/**
  * The one refusal this read returns, whatever produced it.
  *
  * An unresolvable session, an asset another ministry holds, an asset that does not exist, a purpose
@@ -600,7 +605,7 @@ function repositoryRootOf(dataRoot: string): string {
  * are field for field identical. The outcome is redacted on the way out as well, so a field added to it
  * later cannot carry an existence flag by accident.
  */
-function refused(): ReadResult<MediaRenditionResponse> {
+function refused(): MediaAssetReadResult {
   return {
     kind: "denied",
     denied: redactDenial(
@@ -610,7 +615,7 @@ function refused(): ReadResult<MediaRenditionResponse> {
 }
 
 /** The answer when the session's own documents cannot be read: an unavailable store, never a refusal. */
-function unreadableStore(): ReadResult<MediaRenditionResponse> {
+function unreadableStore(): MediaAssetReadResult {
   return unavailableBytes(
     { system: LOCAL_STORE_SYSTEM, reference: STORE_UNREADABLE_REFERENCE },
     STORE_UNAVAILABLE_GUIDANCE,
@@ -623,10 +628,7 @@ function unreadableStore(): ReadResult<MediaRenditionResponse> {
  * The diagnostic line carries the job and the source and nothing else — no bytes, no file name, no
  * asset title, no size — because the line names what failed rather than what the asset holds.
  */
-function unavailableBytes(
-  source: MediaOriginalReference,
-  guidance: string,
-): ReadResult<MediaRenditionResponse> {
+function unavailableBytes(source: MediaOriginalReference, guidance: string): MediaAssetReadResult {
   logger.sourceUnavailable({ job: JOB, source });
   return {
     kind: "unavailable",

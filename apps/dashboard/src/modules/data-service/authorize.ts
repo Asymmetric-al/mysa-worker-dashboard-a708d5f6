@@ -79,7 +79,15 @@ import {
   type Scope,
   type SessionState,
 } from "./envelope";
-import { denied, type DenialReason, type DeniedOutcome } from "./outcome";
+import {
+  denied,
+  unavailable,
+  unavailableFromStoreFault,
+  type DenialReason,
+  type DeniedOutcome,
+  type ReadResult,
+  type UnavailableOutcome,
+} from "./outcome";
 
 // ---------------------------------------------------------------------------------------------
 // The resolved session
@@ -125,11 +133,24 @@ export interface ResolvedSession {
  *
  * A session that exists resolves `ok: true` even when it grants nothing — `expired`, `unavailable`,
  * `denied` and `no-access` are states of a real session, and the shell has to be able to describe
- * them. Only a request that names no session the store holds is refused outright.
+ * them. A request that names no session the store holds is refused outright, and a store that cannot
+ * answer is refused as the outage it is.
  */
 export type SessionResolution =
   | { readonly ok: true; readonly session: ResolvedSession }
-  | { readonly ok: false; readonly denial: DeniedOutcome };
+  | { readonly ok: false; readonly refusal: SessionRefusal };
+
+/**
+ * The two facts a refused session can be, kept apart so no caller can answer one as the other.
+ *
+ * `denied` is the closed denial the permission vocabulary states: the request names no usable session,
+ * so it carries no authority and no retry can give it any. `unavailable` is the store itself failing to
+ * answer — an absent root, an undecodable document, a denied read of the medium — which names the
+ * source and offers the retry that is safe, because the caller's access is not what failed.
+ */
+export type SessionRefusal =
+  | { readonly kind: "denied"; readonly denied: DeniedOutcome }
+  | { readonly kind: "unavailable"; readonly unavailable: UnavailableOutcome };
 
 /**
  * A session named directly rather than derived from the request cookie.
@@ -150,7 +171,7 @@ export interface SessionSource {
  * A read has no attempt identity: nothing was asked to change, so nothing can be replayed. The value
  * states that instead of inventing an identifier, and it keeps the refusal's shape byte-identical to
  * a mutation's — the only field that may differ between two refusals is the reason code. A mutation
- * replaces it with its own `operationId` (`{ ...denial, operationId }`), because for a write the
+ * replaces it with its own `operationId` through {@link outcomeOfRefusal}, because for a write the
  * attempt identity is the caller's recovery handle.
  */
 const READ_ATTEMPT_ID = "read";
@@ -167,9 +188,57 @@ function refuse(reason: DenialReason): DeniedOutcome {
   return redactDenial(denied({ operationId: READ_ATTEMPT_ID, reasonCode: reason }));
 }
 
-/** Wraps a refusal as the failing half of {@link SessionResolution}. */
+/**
+ * Builds the denial arm of a session refusal.
+ *
+ * It is exported for the one case a caller has to answer itself rather than receive: a request context
+ * that cannot yield its cookie, where the resolver was never asked. The denial is the one
+ * {@link resolveSession} gives an absent cookie, so a caller cannot tell the two apart.
+ */
+export function sessionDenial(reason: DenialReason): SessionRefusal {
+  return { kind: "denied", denied: refuse(reason) };
+}
+
+/** Wraps a denial as the refusing half of {@link SessionResolution}. */
 function refusedSession(reason: DenialReason): SessionResolution {
-  return { ok: false, denial: refuse(reason) };
+  return { ok: false, refusal: sessionDenial(reason) };
+}
+
+/**
+ * Re-expresses a session refusal as the failing half of a read result.
+ *
+ * A read answers `denied` or `unavailable` and never an envelope for a session it could not establish,
+ * so every read maps its refusal through here rather than rebuilding the branch: a denial stays a
+ * denial and an outage stays an outage, and the attempt marker the refusal already carries is the only
+ * identity a read has.
+ */
+export function readResultOfRefusal<T>(refusal: SessionRefusal): ReadResult<T> {
+  return refusal.kind === "denied"
+    ? { kind: "denied", denied: refusal.denied }
+    : { kind: "unavailable", unavailable: refusal.unavailable };
+}
+
+/**
+ * Re-expresses a session refusal as the outcome a request answers with, under the attempt identity it
+ * carries.
+ *
+ * A write's attempt identity is the caller's recovery handle, so it replaces the read marker the
+ * refusal was built with; everything else travels unchanged — the reason code, or the outage's source
+ * and guidance — so no call site decides for itself whether it is answering a denial or an outage. A
+ * read whose context carries an outcome rather than a {@link ReadResult} passes its own attempt marker
+ * here, which is the same marker the refusal already states.
+ */
+export function outcomeOfRefusal(
+  refusal: SessionRefusal,
+  operationId: string,
+): DeniedOutcome | UnavailableOutcome {
+  return refusal.kind === "denied"
+    ? denied({ operationId, reasonCode: refusal.denied.reasonCode })
+    : unavailable({
+        operationId,
+        source: refusal.unavailable.source,
+        guidance: refusal.unavailable.guidance,
+      });
 }
 
 /**
@@ -281,7 +350,8 @@ function resolvedSession(sessionId: string, meta: StoredSessionMeta): ResolvedSe
  * `next/headers` is loaded here rather than at module scope so a direct caller — the domain tests
  * that name a seeded session, an operational script — never pulls Next's request machinery into its
  * process. The cookie is the only identity a request carries; its attributes (`httpOnly`,
- * `sameSite=lax`, `path=/`) belong to the response that mints it, in the session bootstrap route.
+ * `sameSite=lax`, `path=/`) belong to the response that mints it, in `src/proxy.ts`, which
+ * establishes the development session on a request that carries none.
  */
 async function requestSessionId(): Promise<string | undefined> {
   const { cookies } = await import("next/headers");
@@ -297,10 +367,14 @@ async function requestSessionId(): Promise<string | undefined> {
  * documents through the store's one read function, and parse the meta document. Everything after
  * that is the session's own statement about itself.
  *
- * An absent cookie, a value that cannot name a session, a session the store does not hold, a
- * document that cannot be decoded and a meta document this build cannot read all answer alike: with
- * one refusal that reveals nothing, because "there is no usable session" is the same fact in each
- * case and there is no honest retry to offer. Production never falls back to fixtures or a default
+ * An absent cookie, a value that cannot name a session, a session the store does not hold and a meta
+ * document this build cannot read answer alike: with one denial that reveals nothing, because "there
+ * is no usable session" is the same fact in each case and there is no honest retry to offer. A store
+ * that cannot answer is the different fact and keeps its own answer: an absent root, a document that
+ * cannot be decoded and a refused read of the medium are an outage, naming the source and the retry
+ * that is safe, because the caller's access is not what failed. Nothing else is presented here — a
+ * fault that is not the store's own medium is a defect rather than either answer, so it is rethrown
+ * to the boundary that converts one. Production never falls back to fixtures or a default
  * principal, so a request with no session is refused rather than served as somebody (AAP 0.7.2);
  * {@link SessionSource} is the one path that could be mistaken for such a fallback, and it asserts
  * the development boundary before it uses the id.
@@ -328,14 +402,21 @@ export async function resolveSession(source?: SessionSource): Promise<SessionRes
   let documents: SessionDocuments | undefined;
   try {
     documents = await readSession(sessionId);
-  } catch {
-    // A corrupt or unreadable document means the session cannot be established. The refusal says
-    // that and nothing else: naming the document, the path or the fault would disclose where the
-    // session's records live, and the caller can do nothing with that knowledge it could not do
-    // with the refusal itself.
-    return refusedSession("session-unavailable");
+  } catch (error) {
+    // A store that could not answer is an outage, not a denial: the outcome names the store's own
+    // reference for the fault and the retry that is safe, and it says nothing about the document, the
+    // path or the bytes, so it cannot disclose where a session's records live or what they hold.
+    const outage = unavailableFromStoreFault(READ_ATTEMPT_ID, error);
+    if (outage === undefined) {
+      // Anything else is a defect — a bug in this application rather than a store that is down — and
+      // an exception is never a presentation, so it reaches the boundary that answers one.
+      throw error;
+    }
+    return { ok: false, refusal: { kind: "unavailable", unavailable: outage } };
   }
   if (documents === undefined) {
+    // The store answered: it holds no session under this id. That is the same denial an unusable
+    // cookie receives, and asking again cannot create one.
     return refusedSession("session-unavailable");
   }
 

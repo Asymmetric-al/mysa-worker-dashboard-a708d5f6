@@ -23,19 +23,19 @@
  *   edition;
  * - a **release** is a separate action over a set of approved editions (`publishVariants`), reported
  *   per edition, which is what lets one edition fail while a sibling's prior-good release stands;
- * - a **withdrawal** names an identifier and an optional note (`withdrawPage`, `withdrawLocale`): it
+ * - a **withdrawal** names one identifier and nothing else (`withdrawPage`, `withdrawLocale`): it
  *   contains what this application serves and claims no recall of a copy someone already holds.
  *
  * A Page has no notification. `notifyMode` below admits `publish-only` and nothing else, the release
  * payload carries no mode, recipient or ceiling, and no payload here can ask for a notice — publication
  * is never presented as delivery.
  *
- * Field names are the payload's own contract with the service: each payload names the fields its
- * mutation accepts in `modules/data-service/mutations/content.ts`, so a payload validated here is
- * accepted there unchanged and a message lands on the field the form renders. Two fields are this
- * client's own and have no service counterpart: the approval's `decision`, which states the one answer
- * this family gives, and the withdrawal `reason`, which records the worker's own note about the
- * decision.
+ * Field names are the payload's own contract with the service: each payload names exactly the fields
+ * its mutation accepts in `modules/data-service/mutations/content.ts` — no more and no fewer — so a
+ * payload validated here is accepted there unchanged and a message lands on the field the form renders.
+ * The service's payloads are strict objects, so a key the mutation does not declare is refused as an
+ * unknown field rather than ignored: a field this client invented would turn every submission into an
+ * `invalid` outcome, which is why each mirror below is the service's payload and nothing beyond it.
  *
  * A schema here is the client's mirror, never the authority. The service re-validates every payload
  * with its own per-mutation schema, re-derives every fact it acts on from the stored records, and
@@ -73,7 +73,7 @@ import type { ContentVariant } from "@/modules/content/variant";
 import { mutationInputSchema, type MutationInput } from "@/modules/data-service/envelope";
 
 // ---------------------------------------------------------------------------------------------
-// Shared primitives: one identifier, one locale tag, one audience, one document body, one note
+// Shared primitives: one identifier, one locale tag, one audience, one document body
 // ---------------------------------------------------------------------------------------------
 
 /**
@@ -250,25 +250,21 @@ export type SubmitForReviewInput = MutationInput<SubmitForReviewPayload>;
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Feeds `approveCandidate`: one frozen candidate, the answer this request carries, and the release mode
- * that answer keeps.
+ * Feeds `approveCandidate`: one frozen candidate and the release mode the approval keeps.
  *
- * Both literals are load-bearing. `decision` admits approval and nothing else — a request for changes is
- * a different mutation with its own payload — so the shared review panel cannot post one candidate two
- * answers from one request. `notifyMode` admits `publish-only` and nothing else, under the field name the
- * service's review payload reads, so a reviewer can neither add a notice to a Page release nor turn the
- * author's publish-only submission into one; the service additionally refuses a mode that differs from
- * the submitted one rather than upgrading it.
+ * The payload states no answer of its own. The mutation this schema feeds *is* the approval — a
+ * request for changes is a different mutation with its own payload — so a `decision` member would
+ * describe the same request twice and, being a key the service's review payload does not declare,
+ * would be refused as an unknown field. `notifyMode` is the field that payload does declare, it admits
+ * `publish-only` and nothing else here, and the service additionally refuses a mode that differs from
+ * the submitted one rather than upgrading it: a reviewer can neither add a notice to a Page release
+ * nor turn the author's publish-only submission into one.
  *
  * Approving approves no sibling: not another language edition, not another audience. Review is one step,
  * and a second round is a new submission with a new candidate.
  */
 export const approveCandidatePayloadSchema = z.strictObject({
   candidateId: recordIdSchema,
-  decision: z.literal(
-    "approve",
-    "This request carries an approval, so approve the candidate from its review panel.",
-  ),
   notifyMode: z.literal(
     "publish-only",
     "A Page release sends no notice, so an approval releases the edition without one.",
@@ -350,30 +346,18 @@ export type PublishVariantsInput = MutationInput<PublishVariantsPayload>;
 // ---------------------------------------------------------------------------------------------
 
 /**
- * The optional note a worker may attach to either withdrawal: absent, or text that says something.
- *
- * Absent is a complete answer — withdrawing without explaining is not stopped — and a blank note is
- * refused, because "optional" must never quietly mean "empty". The note records the worker's own reason
- * for the decision; it is not a claim that anything was sent, and withdrawal recalls no message already
- * submitted and no copy a third party already holds.
- */
-const withdrawalReasonSchema = z
-  .string({ error: "State the reason as a note on this withdrawal, or leave it out entirely." })
-  .trim()
-  .min(1, "Either leave the reason out or say why this edition is being withdrawn.")
-  .optional();
-
-/**
  * Feeds `withdrawPage`: the page whose released editions stop being served.
  *
  * Withdrawal contains what this application serves — every address answers a short notice and the
  * discovery list stops naming the page — and it works while another draft of the page is invalid,
  * because containment does not wait for editorial repair. It reaches no copy a reader already holds and
  * no message already submitted, and the tombstone it leaves carries no identifying content.
+ *
+ * The payload names the document and nothing else: the service's `withdrawPage` payload declares no
+ * note, so a stated one would be refused as an unknown field rather than recorded.
  */
 export const withdrawPagePayloadSchema = z.strictObject({
   documentId: recordIdSchema,
-  reason: withdrawalReasonSchema,
 });
 
 /** The payload `withdrawPage` accepts, inferred so the confirmation holds one shape. */
@@ -395,7 +379,6 @@ export type WithdrawPageInput = MutationInput<WithdrawPagePayload>;
  */
 export const withdrawLocalePayloadSchema = z.strictObject({
   variantId: recordIdSchema,
-  reason: withdrawalReasonSchema,
 });
 
 /** The payload `withdrawLocale` accepts, inferred so the confirmation holds one shape. */

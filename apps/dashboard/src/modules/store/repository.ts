@@ -18,12 +18,18 @@
  */
 import {
   CorruptJsonError,
+  existsOnDisk,
   readJson,
   removeIfExists,
   serialiseJson,
   writeJsonAtomic,
 } from "./atomic";
-import { sessionPaths, type SessionDocumentKey, type SessionDocuments } from "./paths";
+import {
+  DATA_ROOT,
+  sessionPaths,
+  type SessionDocumentKey,
+  type SessionDocuments,
+} from "./paths";
 import { withSessionLock } from "./sessions";
 
 /** The documents every session owns: a set without any of them is an incomplete write, not a session. */
@@ -76,9 +82,34 @@ async function readRequiredDocument(file: string): Promise<unknown> {
 }
 
 /**
+ * Raised when the store root itself is absent, so no session can be read from it.
+ *
+ * It is the outage the store answers with instead of "no such session": a directory that is not there
+ * cannot state whether it holds a session, and reporting the absence of a record for it would present a
+ * store that could not answer as a session that does not exist. `code` states the filesystem fact it
+ * reports — the `ENOENT` the operating system itself raises — so the data service's existing
+ * filesystem-fault mapping recognises the store's own medium without importing the store, and `root`
+ * names the directory for the operator, in a message that never reaches an outcome.
+ */
+export class StoreAbsentError extends Error {
+  /** The filesystem fact this error reports: the store root does not exist. */
+  readonly code = "ENOENT" as const;
+
+  /** The store root that was not found; stated in the message, never in an outcome. */
+  readonly root: string;
+
+  constructor(root: string) {
+    super(`The store root ${root} does not exist, so no session can be read from it.`);
+    this.name = "StoreAbsentError";
+    this.root = root;
+  }
+}
+
+/**
  * Reads a session's documents, or `undefined` when the store holds no such session; a corrupt
- * document throws rather than reading as empty, and no lock is taken because each document is
- * published by an atomic rename.
+ * document throws rather than reading as empty, an absent store root throws {@link StoreAbsentError}
+ * rather than reading as an absent session, and no lock is taken because each document is published by
+ * an atomic rename.
  */
 export async function readSession(sessionId: string): Promise<SessionDocuments | undefined> {
   const paths = sessionPaths(sessionId);
@@ -87,6 +118,12 @@ export async function readSession(sessionId: string): Promise<SessionDocuments |
   // and an absent session is refused without touching the other three documents.
   const state = await readJson(paths.state);
   if (state === undefined) {
+    // A document that is absent because the whole root is absent is a store that cannot answer, not a
+    // store that holds no such session. The two are told apart here, where the absence rule lives, so
+    // that no caller has to guess and no outage is reported as a missing record.
+    if (!(await existsOnDisk(DATA_ROOT))) {
+      throw new StoreAbsentError(DATA_ROOT);
+    }
     return undefined;
   }
 

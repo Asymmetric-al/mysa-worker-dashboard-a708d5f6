@@ -120,6 +120,7 @@ import { now } from "@/modules/time/clock";
 
 import {
   canEdit,
+  outcomeOfRefusal,
   resolveSession,
   type ResolvedSession,
   type ScopeDecision,
@@ -742,7 +743,7 @@ async function importSessionAuthority(
     const resolution = await resolveSession(source);
     return resolution.ok
       ? { ok: true, sessionId: resolution.session.sessionId }
-      : { ok: false, outcome: resolution.denial };
+      : { ok: false, outcome: outcomeOfRefusal(resolution.refusal, operationId) };
   } catch {
     return { ok: false, outcome: denied({ operationId, reasonCode: "session-unavailable" }) };
   }

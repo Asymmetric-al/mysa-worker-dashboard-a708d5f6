@@ -80,6 +80,7 @@ import { now } from "@/modules/time/clock";
 import {
   assertScopeUnder,
   assertScopeUnchangedUnder,
+  outcomeOfRefusal,
   resolveSession,
   type ResolvedSession,
   type ScopeAuthority,
@@ -104,10 +105,11 @@ import {
   unavailable,
   unchanged,
   unknown,
-  type DenialReason,
+  type DeniedOutcome,
   type MutationOutcome,
   type MutationResult,
   type PerItemResult,
+  type UnavailableOutcome,
 } from "./outcome";
 
 // ---------------------------------------------------------------------------------------------
@@ -565,6 +567,21 @@ export interface MutationPlan<P, R extends MutationResult> {
    * it, and its `record` answer is what makes a stale `expectedRevision` a `conflict`.
    */
   readonly readCurrent?: (docs: SessionDocuments) => CurrentTarget;
+  /**
+   * Which pass of a multi-pass mutation this call is: the attempt that answers the caller, or a probe.
+   *
+   * A `probe` pass is one a module runs only to establish what its own answering pass may depend on —
+   * that the envelope and payload are well formed, the caller holds the authority, the attempt is not a
+   * replay, the revision is current and the record it would rewrite is readable. Its `apply` answers
+   * `{ changed: false }`, so the runner's `unchanged` is a carry-on signal that sends the module on to
+   * the change, not the answer the caller received. A probe pass therefore writes no diagnostic line for
+   * `unchanged`, and writes its line for every other outcome, because every other outcome is the answer
+   * the caller received and so is the one line this attempt gets.
+   *
+   * Defaults to `attempt`: the pass whose outcome is the caller's answer, and the only pass a mutation
+   * that runs once performs.
+   */
+  readonly diagnosticPass?: "attempt" | "probe";
   /** The change itself, run inside the transaction with the documents, the session and the revision. */
   readonly apply: (context: MutationContext) => ApplyResult<R> | Promise<ApplyResult<R>>;
 }
@@ -647,10 +664,31 @@ function claimedScope(input: unknown): LogScope | undefined {
   return { organizationId, ministryId, supportSubjectId, principalId };
 }
 
-/** The session a mutation acts for, or the reason code that refuses it. */
+/**
+ * The scope an authorised attempt is logged under: the context it claimed, with the principal that acted.
+ *
+ * A request's `scope` is a claim and never authority: an identifier that looks like another persona's
+ * establishes neither identity nor authority, and the session the request carried is what establishes
+ * it. So once the session has resolved, the line names the session's own principal — the persona that
+ * acted, and therefore the one a refusal is attributable to — while the three context identifiers stay
+ * the ones the attempt claimed, because that context is what the attempt was evaluated against. Until
+ * the session resolves there is no authenticated principal to name, and an attempt refused before that
+ * point carries the claim as it stands rather than an invented actor.
+ */
+function diagnosticScopeFor(claimed: LogScope, session: ResolvedSession): LogScope {
+  return { ...claimed, principalId: session.principalId };
+}
+
+/**
+ * The session a mutation acts for, or the outcome that refuses it.
+ *
+ * The refusing half is the outcome rather than a reason code, so the runner answers with exactly the
+ * fact the resolver established: a denial when the request names no stored session, and the store's
+ * own outage when the store is what could not answer.
+ */
 type SessionForMutation =
   | { readonly ok: true; readonly session: ResolvedSession }
-  | { readonly ok: false; readonly reasonCode: DenialReason };
+  | { readonly ok: false; readonly outcome: DeniedOutcome | UnavailableOutcome };
 
 /**
  * Resolves the authoritative session for one attempt.
@@ -661,8 +699,16 @@ type SessionForMutation =
  * `authorize.ts` gates to a development build; in a production build that path refuses, and the
  * cookie's own refusal stands. Whichever path answers, the session it resolves must be the session the
  * caller named: acting for another session is refused rather than written into.
+ *
+ * A store that could not answer outranks a denial whichever path reached it. The request's own refusal
+ * is the authoritative fact there — the named path may have been asked for an id this attempt never
+ * resolved, and answering that as a denial would tell the caller they lack access to a store that never
+ * replied.
  */
-async function sessionForMutation(sessionId: string): Promise<SessionForMutation> {
+async function sessionForMutation(
+  sessionId: string,
+  operationId: string,
+): Promise<SessionForMutation> {
   let fromRequest: SessionResolution | undefined;
   try {
     fromRequest = await resolveSession();
@@ -672,23 +718,36 @@ async function sessionForMutation(sessionId: string): Promise<SessionForMutation
     fromRequest = undefined;
   }
 
+  const requestRefusal =
+    fromRequest === undefined || fromRequest.ok ? undefined : fromRequest.refusal;
+
   if (fromRequest !== undefined && fromRequest.ok) {
     return fromRequest.session.sessionId === sessionId
       ? { ok: true, session: fromRequest.session }
-      : { ok: false, reasonCode: "not-admitted" };
+      : { ok: false, outcome: denied({ operationId, reasonCode: "not-admitted" }) };
   }
 
   try {
     const named = await resolveSession({ sessionId });
-    return named.ok
-      ? { ok: true, session: named.session }
-      : { ok: false, reasonCode: named.denial.reasonCode };
+    if (named.ok) {
+      return { ok: true, session: named.session };
+    }
+    return {
+      ok: false,
+      outcome: outcomeOfRefusal(
+        requestRefusal?.kind === "unavailable" ? requestRefusal : named.refusal,
+        operationId,
+      ),
+    };
   } catch {
     // Naming a session directly is refused outside a development build, and a refusal to name one is
     // not a session: the request cookie's own answer is the honest one.
     return {
       ok: false,
-      reasonCode: fromRequest === undefined ? "session-unavailable" : fromRequest.denial.reasonCode,
+      outcome:
+        requestRefusal === undefined
+          ? denied({ operationId, reasonCode: "session-unavailable" })
+          : outcomeOfRefusal(requestRefusal, operationId),
     };
   }
 }
@@ -732,10 +791,18 @@ export async function runMutation<P, R extends MutationResult>(
    * payload, no note body, no email address, no amount. An attempt whose scope cannot be read is not
    * logged rather than logged in a narrower shape, because the line is closed and a partial one would
    * describe the attempt in the wrong context.
+   *
+   * This is the only writer of the one attempt line, so the stream counts attempts and states the
+   * outcome each caller received. Its `principalId` is the session's own principal once the session has
+   * resolved, and the claim only for an attempt refused before it could be. A `probe` pass's
+   * `unchanged` is the one outcome that writes no line, because it is a carry-on signal for the module
+   * that asked rather than the caller's answer: the line for that attempt, if it has one, is the probe's
+   * line for the outcome that answered instead.
    */
   const report = (outcome: MutationOutcome): MutationOutcome => {
     const elapsedMs = performance.now() - startedAt;
-    if (diagnosticScope !== undefined) {
+    const carriedOn = plan.diagnosticPass === "probe" && outcome.outcome === "unchanged";
+    if (diagnosticScope !== undefined && !carriedOn) {
       logger.mutation({
         operationId,
         scope: diagnosticScope,
@@ -765,11 +832,15 @@ export async function runMutation<P, R extends MutationResult>(
   // 2. The session this request acts for, the scope it claims, then the mutation's own authority.
   // Authorisation precedes everything a record question could disclose: a refusal here carries a
   // reason code and no count, title, existence flag or size.
-  const authority = await sessionForMutation(plan.sessionId);
+  const authority = await sessionForMutation(plan.sessionId, operationId);
   if (!authority.ok) {
-    return report(denied({ operationId, reasonCode: authority.reasonCode }));
+    return report(authority.outcome);
   }
   const session = authority.session;
+  // From here the attempt has an authenticated actor, so the line names it: the claim is what the
+  // attempt asked to act in, and the session is who acted. Both stay distinct on the line, which is
+  // what lets a refusal be attributed to the persona it happened to.
+  diagnosticScope = diagnosticScopeFor(diagnosticScope, session);
   const scopeAuthority = plan.scopeAuthority ?? "membership";
   const scopeDecision = assertScopeUnder(session, input.scope, scopeAuthority);
   if (!scopeDecision.ok) {

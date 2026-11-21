@@ -107,15 +107,20 @@ import {
   type TaskShareRefusal,
 } from "@/modules/coaching/taskshare";
 import {
-  civilDateAt,
   parseCivilDate,
   serialiseCivilDate,
   todayInZone,
   type CivilDate,
 } from "@/modules/time/civil";
 import { now } from "@/modules/time/clock";
+import { shareThroughDateOfCutoff } from "@/modules/time/window";
 
-import { resolveSession, type ScopeDecision, type SessionSource } from "../authorize";
+import {
+  outcomeOfRefusal,
+  resolveSession,
+  type ScopeDecision,
+  type SessionSource,
+} from "../authorize";
 import {
   coachingCheckInRecordSchema,
   coachingGrantRecordSchema,
@@ -249,19 +254,6 @@ function planningToday(at: Temporal.Instant): CivilDate | null {
   return today.status === "resolved" ? today.date : null;
 }
 
-/**
- * The Share-through day a frozen cutoff implies, in the zone it was frozen in.
- *
- * A cutoff is the exclusive start of the civil day after the Share-through date, so the recorded instant
- * and zone name that day exactly: the day the cutoff falls on, less one. The calendar rule itself stays
- * in `modules/time`; this only reads it back, which is what lets an acceptance re-freeze the duration
- * from its own terms rather than from the day the acceptance happened to run.
- */
-function shareThroughDateOf(cutoff: Temporal.Instant, frozenZone: string): CivilDate | null {
-  const dayOfCutoff = civilDateAt(cutoff, frozenZone);
-  return dayOfCutoff.status === "resolved" ? dayOfCutoff.date.subtract({ days: 1 }) : null;
-}
-
 /** The attempt identity a request that states no usable one is answered under. */
 const UNIDENTIFIED_ATTEMPT = "unidentified-attempt";
 
@@ -304,7 +296,7 @@ async function mutationSessionId(
   }
   return resolution.ok
     ? { ok: true, sessionId: resolution.session.sessionId }
-    : { ok: false, outcome: denied({ operationId, reasonCode: resolution.denial.reasonCode }) };
+    : { ok: false, outcome: outcomeOfRefusal(resolution.refusal, operationId) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -565,7 +557,10 @@ function workingDurationOf(duration: CoachingDurationRecord): GrantDuration | nu
 
   const cutoff = duration.cutoffInstant === null ? null : instantOf(duration.cutoffInstant);
   if (cutoff === null) return null;
-  const shareThroughDate = shareThroughDateOf(cutoff, duration.frozenZone);
+  const shareThroughDate = shareThroughDateOfCutoff({
+    cutoffInstant: cutoff,
+    frozenZone: duration.frozenZone,
+  });
   if (shareThroughDate === null) return null;
 
   return {
@@ -748,7 +743,10 @@ function checkInShareDurationOf(duration: CoachingDurationRecord): CheckInShareD
   if (duration.kind === "ongoing") return { kind: "ongoing" };
   const cutoff = duration.cutoffInstant === null ? null : instantOf(duration.cutoffInstant);
   if (cutoff === null) return null;
-  const throughOn = shareThroughDateOf(cutoff, duration.frozenZone);
+  const throughOn = shareThroughDateOfCutoff({
+    cutoffInstant: cutoff,
+    frozenZone: duration.frozenZone,
+  });
   return throughOn === null ? null : { kind: "through-date", throughOn };
 }
 

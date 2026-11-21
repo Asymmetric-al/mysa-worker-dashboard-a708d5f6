@@ -32,9 +32,15 @@
  * The wire vocabulary (mirrored by the gifts Route Handler, which is this file's only peer):
  * `period` (an admitted preset, opaque here) or `from` + `to` (civil dates, inclusive); `currency`
  * plus `amountMin`/`amountMax` (integers in that currency's minor units); `recipient` (`partner`
- * with `partnerId`, or `anonymous-or-unresolved`; absent means every attribution); `designation`;
+ * with `partnerId`, `anonymous`, or `unresolved`; absent means every attribution); `designation`;
  * `method`; `search`; `sortField` + `sortDirection`; `page` (0-based index); `pageSize`; and
  * `giftId`, which is the detail narrowing rather than a second read.
+ *
+ * The answer is read the way the handler writes it. `toResponse` flattens a read result onto the
+ * status, so `200` carries the envelope object itself, `403` the denial and `503` the outage, and no
+ * `kind` member wraps any of them — that wrapper is the in-process value this hook answers with, not
+ * the wire shape. The status is therefore read first and the body is checked against the arm the
+ * status names.
  *
  * The gift detail is this read narrowed by `giftId`. The named inventory has no `readGift`, so the
  * detail route asks the ledger for one gift's row inside the filters it came from, which is also why
@@ -43,9 +49,9 @@
  * Layering: a feature hook above the shared component layer and the data-service contracts, and below
  * nothing but the family's own components. It imports `scopeKey` as the only scope-key builder in the
  * application (so the context fence can clear this read with every other), the read-result contract as
- * a type plus its one shape guard, the envelope's `Scope`, and the money module's `minorUnitsOf`, whose
- * validation is the only way a stated range bound becomes a `MinorUnits` value; no money arithmetic
- * happens here. It reaches no store, no report engine, no Route
+ * a type, the envelope's `Scope`, and the money module's `minorUnitsOf`, whose validation is the only
+ * way a stated range bound becomes a `MinorUnits` value; no money arithmetic happens here. It reaches
+ * no store, no report engine, no Route
  * Handler and no second router; the relative same-origin `fetch` below keeps the session cookie
  * travelling and keeps the server from calling its own HTTP surface.
  */
@@ -53,9 +59,10 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
 import { scopeKey } from "@/components/context-switch-guard";
+import { isRecord } from "@/lib/guards";
 import type { reads } from "@/modules/data-service";
 import type { FinancialCoverage, ReadEnvelope, Scope } from "@/modules/data-service/envelope";
-import { isReadResult, type ReadResult } from "@/modules/data-service/outcome";
+import type { DeniedOutcome, ReadResult, UnavailableOutcome } from "@/modules/data-service/outcome";
 import { minorUnitsOf, type MinorUnits } from "@/modules/money/amount";
 
 // ---------------------------------------------------------------------------------------------
@@ -114,14 +121,18 @@ export type GiftCurrencyQuery =
 /**
  * Which attribution the result is restricted to.
  *
- * `anonymous-or-unresolved` is a first-class choice and not a missing partner: anonymous support is a
- * supporter who chose not to be identified, and unresolved support is a source row that supplied no
- * attribution. Neither borrows a partner's identity in order to be filterable.
+ * The read selects one attribution at a time, so the three the service admits are the three this
+ * state can hold — a named partner, anonymous support, and support that supplied no attribution —
+ * and each is a complete filter on its own. Anonymous support is a supporter who chose not to be
+ * identified and unresolved support is a source row that supplied no attribution at all: two
+ * distinct facts, neither of them a missing partner, and neither borrowing a partner's identity in
+ * order to be filterable.
  */
 export type GiftRecipientQuery =
   | { readonly kind: "any" }
   | { readonly kind: "partner"; readonly partnerId: string }
-  | { readonly kind: "anonymous-or-unresolved" };
+  | { readonly kind: "anonymous" }
+  | { readonly kind: "unresolved" };
 
 /**
  * The gifts ledger's controlled state: the whole of it, in one value, so the URL, the hook key and
@@ -170,9 +181,16 @@ const PARAM = {
   giftId: "giftId",
 } as const;
 
-/** The two attribution kinds a URL distinguishes; `any` states no restriction and is not emitted. */
+/**
+ * The three attribution kinds a URL distinguishes, in the vocabulary the read accepts.
+ *
+ * `any` states no restriction and is never emitted, and the other three are the service's own member
+ * names — `partner` beside its identifier, `anonymous`, and `unresolved` — because a value the read
+ * does not know is a filter the handler refuses rather than one it drops.
+ */
 const RECIPIENT_PARTNER = "partner";
-const RECIPIENT_ANONYMOUS_OR_UNRESOLVED = "anonymous-or-unresolved";
+const RECIPIENT_ANONYMOUS = "anonymous";
+const RECIPIENT_UNRESOLVED = "unresolved";
 
 /**
  * What a period reads as when the URL states none.
@@ -221,8 +239,10 @@ export function toGiftsParams(query: GiftsQuery): URLSearchParams {
   if (query.recipient.kind === RECIPIENT_PARTNER) {
     params.set(PARAM.recipient, RECIPIENT_PARTNER);
     params.set(PARAM.partnerId, query.recipient.partnerId);
-  } else if (query.recipient.kind === RECIPIENT_ANONYMOUS_OR_UNRESOLVED) {
-    params.set(PARAM.recipient, RECIPIENT_ANONYMOUS_OR_UNRESOLVED);
+  } else if (query.recipient.kind === RECIPIENT_ANONYMOUS) {
+    params.set(PARAM.recipient, RECIPIENT_ANONYMOUS);
+  } else if (query.recipient.kind === RECIPIENT_UNRESOLVED) {
+    params.set(PARAM.recipient, RECIPIENT_UNRESOLVED);
   }
 
   if (query.designation !== undefined) {
@@ -286,8 +306,10 @@ export function parseGiftsQuery(source: URLSearchParams | string): GiftsQuery {
   let recipient: GiftRecipientQuery = { kind: "any" };
   if (statedRecipient === RECIPIENT_PARTNER && partnerId !== null) {
     recipient = { kind: "partner", partnerId };
-  } else if (statedRecipient === RECIPIENT_ANONYMOUS_OR_UNRESOLVED) {
-    recipient = { kind: "anonymous-or-unresolved" };
+  } else if (statedRecipient === RECIPIENT_ANONYMOUS) {
+    recipient = { kind: "anonymous" };
+  } else if (statedRecipient === RECIPIENT_UNRESOLVED) {
+    recipient = { kind: "unresolved" };
   }
 
   const sortField = params.get(PARAM.sortField);
@@ -396,6 +418,11 @@ const GIFTS_JOB = "gifts";
 /** The one endpoint this ledger reads, relative so the development session cookie travels with it. */
 const GIFTS_ENDPOINT = "/api/support/gifts";
 
+/** The three statuses a gifts read answers with: the envelope, a denial and an outage. */
+const ENVELOPE_STATUS = 200;
+const DENIED_STATUS = 403;
+const UNAVAILABLE_STATUS = 503;
+
 /**
  * How long a gifts envelope is treated as fresh.
  *
@@ -429,7 +456,8 @@ export interface UseGiftsOptions {
 
 /**
  * Reads `readGifts` for one ledger query in one scope: the result is `envelope | denied | unavailable`
- * exactly as the service answered, handed on unwrapped so the caller narrows it with `isReadResult`.
+ * as the contract states those three answers, handed on unwrapped so the caller narrows it with
+ * `isReadResult`.
  */
 export function useGifts(options: UseGiftsOptions): UseQueryResult<GiftsReadResult, Error> {
   const { scope, query, initialEnvelope } = options;
@@ -447,12 +475,46 @@ export function useGifts(options: UseGiftsOptions): UseQueryResult<GiftsReadResu
 }
 
 /**
+ * The one error this file raises: an answer no contract describes, named by the request and the
+ * status that produced it.
+ *
+ * It is a plain `Error` on purpose, because the caller renders the query's own error state from it.
+ * It is raised rather than answered with a read result: a transport fault and an unrecognised body
+ * produced no contract answer at all, and the outage arm this file would otherwise build would have
+ * to invent the source identity that arm's honesty depends on.
+ */
+function noAnswer(status: number, detail: string): Error {
+  return new Error(
+    `${GIFTS_ENDPOINT} answered ${status} with ${detail}, so this ledger's rows are unavailable.`,
+  );
+}
+
+/**
+ * The body of a response, or the error above when it is not JSON.
+ *
+ * A page that answers with an HTML error document has no contract answer at all, so this never
+ * substitutes an empty object for a body it could not read.
+ */
+async function readJsonBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    throw noAnswer(response.status, "a body that is not JSON");
+  }
+}
+
+/**
  * Asks the gifts endpoint for one query's envelope.
  *
- * A denied or unavailable answer arrives as a valid read result and is returned as one: the surface
- * renders the denial or the outage it says, and neither is ever turned into an empty list or a zero.
- * A body that is not a read result at all means no contract answer was produced, so the promise
- * rejects and the caller shows the query's own error state as an unavailable read.
+ * The status decides which arm the body is, because the handler flattens the read result onto the
+ * status and writes that arm's object itself as the body — `200` the envelope, `403` the denial,
+ * `503` the outage, with no `kind` member around any of them. A denial and an outage are contract
+ * answers and are returned as the arms they are: the surface renders the denial or the outage they
+ * state, and neither is ever turned into an empty list or a zero.
+ *
+ * A status this read does not answer with, or a body that is not the arm its status names, means no
+ * contract answer was produced, so the promise rejects and the caller shows the query's own error
+ * state as an unavailable read.
  */
 async function fetchGifts(query: GiftsQuery): Promise<GiftsReadResult> {
   /* The parameters always state at least a page and a size, so the query string is never empty and the
@@ -463,23 +525,89 @@ async function fetchGifts(query: GiftsQuery): Promise<GiftsReadResult> {
     headers: { accept: "application/json" },
     credentials: "same-origin",
   });
+  const body = await readJsonBody(response);
 
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    throw new Error(
-      `${GIFTS_ENDPOINT} answered without a JSON read result, so this ledger's rows are unavailable.`,
-    );
+  switch (response.status) {
+    case ENVELOPE_STATUS:
+      if (!isGiftsEnvelope(body)) {
+        throw noAnswer(response.status, "a body that is not a gifts envelope");
+      }
+      return { kind: "envelope", envelope: body };
+    case DENIED_STATUS:
+      if (!isDeniedBody(body)) {
+        throw noAnswer(response.status, "a body that is not a denial");
+      }
+      return { kind: "denied", denied: body };
+    case UNAVAILABLE_STATUS:
+      if (!isUnavailableBody(body)) {
+        throw noAnswer(response.status, "a body that is not an unavailable source");
+      }
+      return { kind: "unavailable", unavailable: body };
+    default:
+      throw noAnswer(response.status, "a status this read does not answer with");
   }
+}
 
-  if (!isReadResult(body)) {
-    throw new Error(
-      `${GIFTS_ENDPOINT} answered without a read result, so this ledger's rows are unavailable.`,
-    );
+/**
+ * Whether a decoded body is the envelope `readGifts` states: the eight members every read envelope
+ * carries, with the ledger's own data — the report and the grain it is stated at — present and of the
+ * shape the surface renders it in.
+ *
+ * The check stops at what a surface would otherwise trip over, because a body missing one of them is a
+ * truncated or foreign answer rather than a ledger that found no rows. It is deliberately not a second
+ * schema for the figures inside: the data service validated what it wrote, so every row, total and
+ * sum here is the service's own.
+ */
+function isGiftsEnvelope(value: unknown): value is GiftsEnvelope {
+  if (!isRecord(value)) {
+    return false;
   }
+  const { data, scope, coverage, valueStates, actions, asOf, revision } = value;
+  return (
+    isRecord(data) &&
+    isRecord(data.report) &&
+    typeof data.grain === "string" &&
+    isRecord(scope) &&
+    isRecord(coverage) &&
+    isRecord(valueStates) &&
+    Array.isArray(actions) &&
+    typeof asOf === "string" &&
+    typeof revision === "string"
+  );
+}
 
-  return body as GiftsReadResult;
+/**
+ * Whether a decoded body is the denial a `403` carries. The reason code describes the caller's
+ * relationship to the request, never a record, so nothing here can be read as an existence flag.
+ */
+function isDeniedBody(value: unknown): value is DeniedOutcome {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    value.outcome === "denied" &&
+    typeof value.operationId === "string" &&
+    typeof value.reasonCode === "string"
+  );
+}
+
+/**
+ * Whether a decoded body is the outage a `503` carries: the source identity and the guidance, both of
+ * which a surface states instead of showing an empty ledger or a zero.
+ */
+function isUnavailableBody(value: unknown): value is UnavailableOutcome {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const source = value.source;
+  return (
+    value.outcome === "unavailable" &&
+    typeof value.operationId === "string" &&
+    typeof value.guidance === "string" &&
+    isRecord(source) &&
+    typeof source.system === "string" &&
+    typeof source.reference === "string"
+  );
 }
 
 /**

@@ -21,11 +21,14 @@
  *
  * **The transport.** One relative `GET /api/support` with same-origin credentials, so the
  * `httpOnly`, `sameSite=lax` development-session cookie travels and the handler derives the scope
- * itself. The HTTP status is deliberately not read as the answer: a denial answers `403` and an
- * outage `503`, and both are contract answers the surface must render rather than transport
- * failures, so the body's discriminant alone decides. What is absent from the body is a genuine
- * fault, and a fault is a defect rather than a presentation: it rejects the query so the caller
- * renders its own unavailable state, and no result is invented here to stand in for one.
+ * itself. The handler answers through `toResponse`, the application's one status ladder, which
+ * flattens a read result onto the status: `200` carries the envelope object itself, `403` the denial
+ * and `503` the outage, and none of them is wrapped in a `kind` member. That wrapper is the
+ * in-process value this hook returns to its caller, not the wire shape, so the response's status is
+ * read first and the body is then checked against the arm that status names. A status this read does
+ * not answer with, or a body that is not the arm its status names, is a genuine fault rather than a
+ * presentation: it rejects the query so the caller renders its own unavailable state, and no result
+ * is invented here to stand in for one — least of all an outage carrying a source this file made up.
  *
  * **Why the server snapshot is not fetched again on mount, and how freshness still bounds it.**
  * `initialDataUpdatedAt` is the envelope's `asOf` — the scenario instant the server read was
@@ -55,6 +58,9 @@ import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { scopeKey } from "@/components/context-switch-guard";
 import { isRecord } from "@/lib/guards";
 import type { Scope, reads } from "@/modules/data-service";
+// Type-only: the outcome module imports `next/server` for its response mapping, so a value import
+// would pull server code into the browser bundle. The two failure arms are decoded from the wire here.
+import type { DeniedOutcome, UnavailableOutcome } from "@/modules/data-service/outcome";
 
 /**
  * What the overview read answers with, derived from the service instead of restated here.
@@ -65,6 +71,18 @@ import type { Scope, reads } from "@/modules/data-service";
  * the service answers with.
  */
 export type SupportOverviewRead = Awaited<ReturnType<typeof reads.support.readSupportOverview>>;
+
+/**
+ * The one envelope this hook reads: the overview's report, its three non-cash measure sets, and the
+ * scope, source, revision, as-of instant, coverage, value states and actions every read carries.
+ *
+ * Extracted from the service's own result rather than written out, for the same reason as
+ * {@link SupportOverviewRead}: the shape a surface renders is the shape the service answered with.
+ */
+type SupportOverviewEnvelope = Extract<
+  SupportOverviewRead,
+  { readonly kind: "envelope" }
+>["envelope"];
 
 /** What the overview hook needs to read the surface. */
 export interface UseSupportOverviewOptions {
@@ -138,14 +156,40 @@ function scenarioAnchorOf(result: SupportOverviewRead): number | undefined {
   return Number.isFinite(anchor) ? anchor : undefined;
 }
 
+/** The three statuses an overview read answers with: the envelope, a denial and an outage. */
+const ENVELOPE_STATUS = 200;
+const DENIED_STATUS = 403;
+const UNAVAILABLE_STATUS = 503;
+
+/**
+ * The one error this file raises: an answer no contract describes, named by the request and the
+ * status that produced it.
+ *
+ * It is a plain `Error` on purpose, because the caller renders an unavailable state from it. It is
+ * raised rather than answered with a read result: a transport fault and an unrecognised body
+ * produced no contract answer at all, and the outage arm this file would otherwise build would have
+ * to invent the source identity that arm's honesty depends on.
+ */
+function noAnswer(status: number, detail: string): Error {
+  return new Error(
+    `${OVERVIEW_ENDPOINT} answered ${status} with ${detail}, so the overview read has no answer to state.`,
+  );
+}
+
 /**
  * The overview read over the browser transport: one same-origin `GET` answered with a read result.
  *
+ * The status decides which arm the body is, because the handler flattens the read result onto the
+ * status and writes that arm's object itself as the body — `200` the envelope, `403` the denial,
+ * `503` the outage, with no `kind` member around any of them. Each status is therefore read against
+ * its own arm's shape and mapped back into the in-process union this hook answers with.
+ *
  * Both the request and the body read are guarded, so a transport fault or an unparsable body rejects
- * this query with an `Error` that names the endpoint and the status and keeps the underlying cause:
- * neither produced a contract answer, and the caller renders its own unavailable state from that
- * rejection — never an empty overview, a zero, or an `unavailable` result whose source this file made
- * up.
+ * this query with an `Error` that names the endpoint and the status and keeps the underlying cause.
+ * A status this read does not answer with, or a body that is not the arm its status names, rejects
+ * the same way, because none of them produced a contract answer and the only honest presentations of
+ * that are the caller's unavailable state — never an empty overview, a zero, or an `unavailable`
+ * result whose source this file made up.
  */
 async function fetchSupportOverview(): Promise<SupportOverviewRead> {
   let response: Response;
@@ -169,41 +213,87 @@ async function fetchSupportOverview(): Promise<SupportOverviewRead> {
     );
   }
 
-  if (!isOverviewRead(payload)) {
-    throw new Error(`GET ${OVERVIEW_ENDPOINT} answered ${response.status} without a read result.`);
+  switch (response.status) {
+    case ENVELOPE_STATUS:
+      if (!isOverviewEnvelope(payload)) {
+        throw noAnswer(response.status, "a body that is not an overview envelope");
+      }
+      return { kind: "envelope", envelope: payload };
+    case DENIED_STATUS:
+      if (!isDeniedBody(payload)) {
+        throw noAnswer(response.status, "a body that is not a denial");
+      }
+      return { kind: "denied", denied: payload };
+    case UNAVAILABLE_STATUS:
+      if (!isUnavailableBody(payload)) {
+        throw noAnswer(response.status, "a body that is not an unavailable source");
+      }
+      return { kind: "unavailable", unavailable: payload };
+    default:
+      throw noAnswer(response.status, "a status this read does not answer with");
   }
-
-  return payload;
 }
 
 /**
- * Whether a parsed body is one of the read contract's three answers.
+ * Whether a decoded body is the envelope the overview read states: the eight members every read
+ * envelope carries, with the data this surface renders present and of the shape it renders it in.
  *
- * The check is the body's discriminant, not a second schema: the data service validates what it
- * writes, so revalidating every field here would be a competing authority over the same contract.
- * What it does establish is that the body really is a read result, so a truncated or foreign payload
- * rejects the query instead of being handed to a view as though it were one.
- *
- * The full `isReadResult` narrowing in `modules/data-service/outcome` cannot be used here: that
- * module imports a server-only response type, and a client module reaches it type-only so no server
- * code enters the browser bundle.
+ * The check stops at what a surface would otherwise trip over — the report, its three non-cash
+ * measure sets, the scope, the coverage, the value states, the actions, the instant and the revision
+ * — because a body missing one of them is a truncated or foreign answer rather than a read that
+ * found nothing. It is deliberately not a second schema for the figures inside: the data service
+ * validated what it wrote, so a figure here is the service's own and is never re-checked.
  */
-function isOverviewRead(value: unknown): value is SupportOverviewRead {
+function isOverviewEnvelope(value: unknown): value is SupportOverviewEnvelope {
   if (!isRecord(value)) {
     return false;
   }
-  const kind = value.kind;
-  if (typeof kind !== "string") {
+  const { data, scope, coverage, valueStates, actions, asOf, revision } = value;
+  return (
+    isRecord(data) &&
+    isRecord(data.report) &&
+    Array.isArray(data.monthlyEquivalent) &&
+    Array.isArray(data.buckets) &&
+    Array.isArray(data.commitmentKinds) &&
+    isRecord(scope) &&
+    isRecord(coverage) &&
+    isRecord(valueStates) &&
+    Array.isArray(actions) &&
+    typeof asOf === "string" &&
+    typeof revision === "string"
+  );
+}
+
+/**
+ * Whether a decoded body is the denial a `403` carries. The reason code describes the caller's
+ * relationship to the request, never a record, so nothing here can be read as an existence flag.
+ */
+function isDeniedBody(value: unknown): value is DeniedOutcome {
+  if (!isRecord(value)) {
     return false;
   }
-  switch (kind) {
-    case "envelope":
-      return isRecord(value.envelope);
-    case "denied":
-      return isRecord(value.denied);
-    case "unavailable":
-      return isRecord(value.unavailable);
-    default:
-      return false;
+  return (
+    value.outcome === "denied" &&
+    typeof value.operationId === "string" &&
+    typeof value.reasonCode === "string"
+  );
+}
+
+/**
+ * Whether a decoded body is the outage a `503` carries: the source identity and the guidance, both of
+ * which a surface states instead of showing an empty overview or a zero.
+ */
+function isUnavailableBody(value: unknown): value is UnavailableOutcome {
+  if (!isRecord(value)) {
+    return false;
   }
+  const source = value.source;
+  return (
+    value.outcome === "unavailable" &&
+    typeof value.operationId === "string" &&
+    typeof value.guidance === "string" &&
+    isRecord(source) &&
+    typeof source.system === "string" &&
+    typeof source.reference === "string"
+  );
 }

@@ -16,7 +16,7 @@
  * hand-editable, truncatable on the way and easy to disagree with what the screen shows; as a body it
  * is the very object the cache key carries, so the key cannot omit a field the request sends.
  *
- * Why the HTTP status is read first. `toResponse` in `modules/data-service/outcome` flattens the
+ * Why the HTTP status is read first. `toResponse` in `modules/data-service/response` flattens the
  * in-process read union onto the wire: 200 carries the envelope itself, 403 the denial and 503 the
  * outage. {@link requestReport} therefore rebuilds the union's `kind` from the status the service
  * documented. Every branch it returns is built from a body the service sent; a transport failure, an

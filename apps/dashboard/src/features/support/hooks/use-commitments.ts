@@ -27,10 +27,11 @@
  * list exactly as it stood; they are the list's own state, and the read neither filters nor narrows on
  * them.
  *
- * Imports are type-only wherever the target reaches the server. `modules/data-service` re-exports the
- * outcome module, which imports `next/server` for its response mapping, so a value import from either
- * would pull server code into the browser bundle: the read's own signature is reached through
- * `typeof reads.support.readCommitments`, and the two failure arms are decoded here from the wire.
+ * Imports are type-only wherever they need only types. The barrel is the whole data surface — every
+ * read, every named mutation and the store behind them — so a value import from it would place the
+ * service in the browser bundle, and this hook takes the read's own signature through
+ * `typeof reads.support.readCommitments` plus the two failure-outcome types, then decodes both arms
+ * here from the wire.
  *
  * Failure handling. A transport error, a status this read does not answer with, or a body that is not
  * one of the three arms produces a plain `Error` naming `/api/support/commitments`, which the caller

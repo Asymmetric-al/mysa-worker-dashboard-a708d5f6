@@ -82,7 +82,13 @@ import {
   type SeriesState,
 } from "@/modules/time/recurrence";
 
-import { canEdit, resolveSession, type ResolvedSession, type ScopeDecision } from "../authorize";
+import {
+  canEdit,
+  outcomeOfRefusal,
+  resolveSession,
+  type ResolvedSession,
+  type ScopeDecision,
+} from "../authorize";
 import {
   principalIdSchema,
   recordRevisionSchema,
@@ -861,7 +867,7 @@ async function openMutation(
     );
     return resolution.ok
       ? { ok: true, sessionId: resolution.session.sessionId }
-      : { ok: false, outcome: denied({ operationId, reasonCode: resolution.denial.reasonCode }) };
+      : { ok: false, outcome: outcomeOfRefusal(resolution.refusal, operationId) };
   } catch {
     // Naming a session directly is refused outside a development build, and a request with no
     // request scope has no cookie: neither becomes a session by being asked for again.

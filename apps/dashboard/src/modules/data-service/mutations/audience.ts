@@ -84,9 +84,12 @@ import { confirmationDeadline } from "@/modules/time/window";
 
 import {
   canEdit,
+  outcomeOfRefusal,
   resolveSession,
+  sessionDenial,
   type ResolvedSession,
   type ScopeDecision,
+  type SessionRefusal,
   type SessionSource,
 } from "../authorize";
 import {
@@ -94,7 +97,7 @@ import {
   type MembershipRecord as StoredMembership,
   type MutationInput,
 } from "../envelope";
-import { denied, type DenialReason, type MutationOutcome } from "../outcome";
+import { denied, type MutationOutcome } from "../outcome";
 import {
   runMutation,
   type ApplyResult,
@@ -124,17 +127,18 @@ function operationIdOf(input: unknown): string {
 }
 
 /**
- * The session this attempt acts for, or the reason code that refuses it.
+ * The session this attempt acts for, or the refusal that ends it.
  *
  * The two halves are stated apart rather than collapsing a refusal into `undefined`, so the answer a
- * request receives carries the reason the resolver actually gave instead of a coded-in default.
+ * request receives carries the refusal the resolver actually gave instead of a coded-in default — a
+ * denial when the request names no stored session, and the store's own outage when it could not answer.
  */
 type AttemptSession =
   | { readonly ok: true; readonly session: ResolvedSession }
-  | { readonly ok: false; readonly reasonCode: DenialReason };
+  | { readonly ok: false; readonly refusal: SessionRefusal };
 
 /**
- * Resolves the session this attempt acts for, or the reason code that refuses it.
+ * Resolves the session this attempt acts for, or the refusal that ends it.
  *
  * A mutation's request envelope carries no session identifier, because a request body may never name
  * its own authority: the identity is the development-session cookie, read through
@@ -152,9 +156,9 @@ async function attemptSession(source?: SessionSource): Promise<AttemptSession> {
     const resolved = await resolveSession(source);
     return resolved.ok
       ? { ok: true, session: resolved.session }
-      : { ok: false, reasonCode: resolved.denial.reasonCode };
+      : { ok: false, refusal: resolved.refusal };
   } catch {
-    return { ok: false, reasonCode: "session-unavailable" };
+    return { ok: false, refusal: sessionDenial("session-unavailable") };
   }
 }
 
@@ -1042,7 +1046,7 @@ export async function signupForPurpose(
 ): Promise<MutationOutcome> {
   const attempt = await attemptSession(source);
   if (!attempt.ok) {
-    return denied({ operationId: operationIdOf(input), reasonCode: attempt.reasonCode });
+    return outcomeOfRefusal(attempt.refusal, operationIdOf(input));
   }
 
   return runMutation<SignupPayload, SignupResult>({
@@ -1074,7 +1078,7 @@ export async function confirmMembership(
 ): Promise<MutationOutcome> {
   const attempt = await attemptSession(source);
   if (!attempt.ok) {
-    return denied({ operationId: operationIdOf(input), reasonCode: attempt.reasonCode });
+    return outcomeOfRefusal(attempt.refusal, operationIdOf(input));
   }
 
   return runMutation<ConfirmPayload, ConfirmResult>({
@@ -1108,7 +1112,7 @@ export async function setPreference(
 ): Promise<MutationOutcome> {
   const attempt = await attemptSession(source);
   if (!attempt.ok) {
-    return denied({ operationId: operationIdOf(input), reasonCode: attempt.reasonCode });
+    return outcomeOfRefusal(attempt.refusal, operationIdOf(input));
   }
 
   return runMutation<PreferencePayload, PreferenceResult>({
@@ -1142,7 +1146,7 @@ export async function unsubscribe(
 ): Promise<MutationOutcome> {
   const attempt = await attemptSession(source);
   if (!attempt.ok) {
-    return denied({ operationId: operationIdOf(input), reasonCode: attempt.reasonCode });
+    return outcomeOfRefusal(attempt.refusal, operationIdOf(input));
   }
 
   return runMutation<UnsubscribePayload, UnsubscribeResult>({

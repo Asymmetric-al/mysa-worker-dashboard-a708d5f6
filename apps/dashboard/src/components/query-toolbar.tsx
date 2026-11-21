@@ -100,15 +100,20 @@ import type { ValueState } from "@/modules/data-service/envelope";
  *
  * `id` is the identifier the service filters by and `label` is what the worker reads; the two are
  * never assumed to be the same string. `count` is the whole-result count the read reported for this
- * value — a genuine `0` prints as `0` — and `countState` says when the count is not a number at all
- * (withheld, unknown, unavailable), which is the only way a count may be rendered as a word.
+ * value — a genuine `0` prints as `0` — and `countState` qualifies it: a state whose count is not a
+ * number at all (withheld, unknown, unavailable) prints as its word, and an incomplete subtotal
+ * prints its number with the state's own word beside it.
  */
 export interface FacetValueSpec {
   readonly id: string;
   readonly label: string;
   /** The whole-result count of matching records for this value, when the read supplied one. */
   readonly count?: number;
-  /** The state of `count` when it is not a plain number. `withheld`, `unknown` and `unavailable` print as words. */
+  /**
+   * The state of `count`. `withheld`, `unknown` and `unavailable` print as words and never as a
+   * number; `incomplete-subtotal` prints its number with the state's word beside it, because the
+   * figure is known and only the coverage behind it is partial.
+   */
   readonly countState?: ValueState;
   /** The tone of a value that carries a condition of its own, for example an expired referral status. */
   readonly tone?: StatusTone;
@@ -509,9 +514,24 @@ function appliedChips(
   return chips;
 }
 
-/** How a facet value's count renders: a number, a state word, or nothing. */
+/**
+ * How a facet value's count renders: a number, a number carrying its state's word, a state word
+ * alone, or nothing.
+ *
+ * `number-with-state` is the one variant that carries both, because exactly one state carries a
+ * figure as well as a condition: a partial subtotal is a real count over coverage the source did not
+ * complete, so it prints its digits and the state's own word beside them. A state word alone is used
+ * where there is no number to print, which is why `withheld`, `unknown` and `unavailable` never
+ * render as a figure.
+ */
 type FacetCountView =
   | { readonly kind: "number"; readonly text: string }
+  | {
+      readonly kind: "number-with-state";
+      readonly text: string;
+      readonly label: string;
+      readonly tone: StatusTone;
+    }
   | { readonly kind: "word"; readonly label: string; readonly tone: StatusTone }
   | { readonly kind: "none" };
 
@@ -519,24 +539,29 @@ type FacetCountView =
  * The rendering of one count, decided by the state the read recorded.
  *
  * The order matters. A withheld, unknown or unavailable count prints its word and never a number, so
- * an unread count can never be mistaken for a zero. A count the read did supply prints as an integer,
- * and `0` prints as `0`, because a value that genuinely matches nothing is a fact worth stating.
+ * an unread count can never be mistaken for a zero. An incomplete subtotal prints its number with
+ * that same word beside it, because the figure is known and only the coverage behind it is partial:
+ * printing the digits alone would let a partial subtotal pass for a complete count. The word itself
+ * comes from `valueStateWord`, so no count can spell a state differently from the rest of the
+ * application. A count the read did supply prints as an integer, and `0` prints as `0`, because a
+ * value that genuinely matches nothing is a fact worth stating.
  */
 function countViewOf(value: FacetValueSpec): FacetCountView {
   const state = value.countState;
-  if (
-    state !== undefined &&
-    state !== "value" &&
-    state !== "zero" &&
-    state !== "incomplete-subtotal"
-  ) {
+  const counted =
+    value.count !== undefined && Number.isFinite(value.count)
+      ? countFormat.format(Math.max(0, Math.trunc(value.count)))
+      : undefined;
+  if (state !== undefined && state !== "value" && state !== "zero") {
     const word = valueStateWord(state);
     if (word !== undefined) {
-      return { kind: "word", label: word.label, tone: word.tone };
+      return state === "incomplete-subtotal" && counted !== undefined
+        ? { kind: "number-with-state", text: counted, label: word.label, tone: word.tone }
+        : { kind: "word", label: word.label, tone: word.tone };
     }
   }
-  if (value.count !== undefined && Number.isFinite(value.count)) {
-    return { kind: "number", text: countFormat.format(Math.max(0, Math.trunc(value.count))) };
+  if (counted !== undefined) {
+    return { kind: "number", text: counted };
   }
   if (state === "zero") {
     return { kind: "number", text: countFormat.format(0) };
@@ -613,10 +638,15 @@ function allColumnsVisible(columns: readonly ColumnSpec[]): Record<string, boole
 // ---------------------------------------------------------------------------------------------
 
 /**
- * One facet value's count, or the word that says why there is no number.
+ * One facet value's count: its number, its number with the word that qualifies it, or the word that
+ * says why there is no number.
  *
  * A word carries its own text as well as its own tone, so `withheld`, `unknown` and `unavailable`
  * never share the rendering of a count, and a screen reader hears the condition rather than silence.
+ * An incomplete subtotal shows both parts — the count, which is known, and the state's word beside
+ * it, which says the coverage behind that count is partial — so a partial subtotal cannot read as a
+ * complete one. The pair stays one wrapping line at the row's end, so the badge moves below the
+ * number rather than pushing the facet higher than its 320 px container.
  */
 function FacetCount({ value }: { readonly value: FacetValueSpec }): ReactNode {
   const view = countViewOf(value);
@@ -624,6 +654,14 @@ function FacetCount({ value }: { readonly value: FacetValueSpec }): ReactNode {
     return (
       <span className="ms-auto shrink-0 tabular-figures text-xs text-muted-foreground">
         {view.text}
+      </span>
+    );
+  }
+  if (view.kind === "number-with-state") {
+    return (
+      <span className="ms-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-1">
+        <span className="tabular-figures text-xs text-muted-foreground">{view.text}</span>
+        <StatusBadge label={view.label} tone={view.tone} srPrefix="Matches" />
       </span>
     );
   }

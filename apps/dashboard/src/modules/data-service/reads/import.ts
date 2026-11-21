@@ -64,6 +64,7 @@ import { instantAt } from "@/modules/time/clock";
 
 import {
   assertScope,
+  readResultOfRefusal,
   resolveSession,
   type ResolvedSession,
   type SessionSource,
@@ -528,7 +529,7 @@ type ScopeResolution =
 async function resolveReadScope(source: SessionSource | undefined): Promise<ScopeResolution> {
   const resolution = await resolveSession(source);
   if (!resolution.ok) {
-    return { ok: false, result: { kind: "denied", denied: resolution.denial } };
+    return { ok: false, result: readResultOfRefusal(resolution.refusal) };
   }
   const { session } = resolution;
   if (session.selected === null) {

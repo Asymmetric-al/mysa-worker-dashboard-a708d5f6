@@ -33,6 +33,7 @@ import {
   type CivilDate,
   type CivilDayStart,
   type DatePrecision,
+  civilDateAt,
   isPreciseDate,
   startOfCivilDay,
 } from "./civil";
@@ -431,6 +432,31 @@ export function shareCutoff(input: {
   }
 
   return { status: "bounded", cutoffInstant, limitedBy: "share-through" };
+}
+
+/**
+ * Reads back the Share-through civil day a frozen coaching cutoff implies, in the zone it was frozen
+ * in: the inverse of {@link shareCutoff}.
+ *
+ * A cutoff is the exclusive start of the civil day after the Share-through date, so the recorded
+ * instant and zone name that day exactly — the day the cutoff falls on, less one. It sits beside
+ * `shareCutoff` so the calendar rule has one implementation in `modules/time`: a reader that states
+ * the day the worker chose reads it back here, and nothing subtracts a day from a cutoff anywhere
+ * else.
+ *
+ * Outcomes: the resolved day, or `null` when the zone cannot be resolved or the day before the cutoff
+ * leaves the representable calendar. `null` is the absence of a day — never a guess, and never the
+ * instant presented as one, because the bound itself still stands when its day cannot be read.
+ */
+export function shareThroughDateOfCutoff(input: {
+  cutoffInstant: Temporal.Instant;
+  frozenZone: string;
+}): CivilDate | null {
+  const dayOfCutoff = civilDateAt(input.cutoffInstant, input.frozenZone);
+  if (dayOfCutoff.status === "refused") {
+    return null;
+  }
+  return addCivilDays(dayOfCutoff.date, -1) ?? null;
 }
 
 /** Whether a coach's read inside an admitted module is open at one instant. */

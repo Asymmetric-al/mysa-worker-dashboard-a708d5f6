@@ -27,6 +27,12 @@
  * server-to-client boundary; both mean the same calendar day and neither is re-derived from a
  * formatted string.
  *
+ * The duration keeps the domain's three states apart: an open-ended share, a share bound to a
+ * Share-through day, and a record that carries no usable duration at all. The last is rendered as
+ * neither of the other two, because a missing duration is not an open-ended share and is never
+ * permission; and a bounded share whose day could not be resolved says exactly that, while the frozen
+ * closing instant it does state still stands beside it.
+ *
  * The four outcomes never collapse. An invitation being recorded, an identity being verified, an
  * acceptance being deliberate and access being live are four independent facts with four independent
  * words, and this surface states them as four rows in one list — a screen reader announces four
@@ -188,10 +194,18 @@ export interface FinancialRange {
   readonly valueState: ValueState;
 }
 
-/** How long the worker chose to share: open-ended, or through one civil date. */
+/**
+ * How long the worker chose to share: open-ended, through one civil date, or not at all.
+ *
+ * `none` is the domain's third state — the record holds no usable duration, which is a different answer
+ * from an open-ended share and is never read as permission. `through-date` states the day the read
+ * resolved from the frozen cutoff, and `null` says no day could be resolved from it: the closing instant
+ * still stands, so that share is neither reported as open-ended nor given a blank date.
+ */
 export type GrantDurationView =
   | { readonly kind: "ongoing" }
-  | { readonly kind: "through-date"; readonly throughDate: CivilDateInput };
+  | { readonly kind: "through-date"; readonly throughDate: CivilDateInput | null }
+  | { readonly kind: "none" };
 
 /**
  * The bound the invitation froze, rendered as the read reports it.
@@ -394,6 +408,29 @@ const DURATION_ONGOING_SENTENCE =
 const DURATION_THROUGH_SENTENCE =
   "You chose to share through the end of that date, and the whole of it stays readable.";
 
+/**
+ * The words for a bounded share whose day the read could not resolve from its frozen bound.
+ *
+ * The bound itself still stands and the closing instant is shown below it, so this state says which
+ * part is missing and which part is known: it is neither an open-ended share nor a blank date.
+ */
+const DURATION_UNRESOLVED_WORD = "Through a day that could not be resolved";
+const DURATION_UNRESOLVED_SENTENCE =
+  "This share was set to run through a calendar day, but that day could not be resolved from the " +
+  "frozen bound, so no date is shown beside it. The closing instant below still stands.";
+
+/**
+ * The words for the domain's third duration state: a record holding no usable duration at all.
+ *
+ * The two facts this state must never blur into are an open-ended share and permission, so its own
+ * sentence states both. It is never shown with a date, a closing instant or an "until you stop it"
+ * sentence, because none of those describes it.
+ */
+const DURATION_NONE_WORD = "No usable duration recorded";
+const DURATION_NONE_SENTENCE =
+  "This relationship records no usable duration, so it is not an open-ended share: nothing is " +
+  "readable under it, because a missing duration is never permission.";
+
 /** What the surface says when no financial range was reviewed and shared at all. */
 const NO_RANGE_SENTENCE =
   "You did not review and share a financial range with this coach, so this grant carries no support " +
@@ -435,6 +472,63 @@ function civilDateText(value: CivilDateInput): string {
   }
   const parsed = parseCivilDate(value);
   return parsed.status === "parsed" ? serialiseCivilDate(parsed.date) : value.trim();
+}
+
+/**
+ * The duration's three parts, resolved together: the value to show, the sentence that explains it, and
+ * whether its Share-through day was resolved and shown.
+ */
+interface DurationStatement {
+  readonly value: ReactNode;
+  readonly sentence: string;
+  readonly dayShown: boolean;
+}
+
+/**
+ * Builds {@link DurationStatement} from the duration the read reported.
+ *
+ * The switch is exhaustive over `GrantDurationView`, so a member added to the union fails to compile
+ * here rather than falling through to another state's words. No state borrows another's: an open-ended
+ * share, a share bound to a resolved day, a share whose day could not be resolved and a record with no
+ * usable duration are four renderings. A date is shown only where the read stated one this component
+ * can read as a calendar day — nothing is derived from a formatted string and no blank date stands in
+ * for a missing one — and `dayShown` is true only in that case, which is the one case where the
+ * civil-day rule decided the bound and may be disclosed with it.
+ */
+function durationStatementOf(duration: GrantDurationView): DurationStatement {
+  switch (duration.kind) {
+    case "ongoing":
+      return {
+        value: <bdi>{DURATION_ONGOING_WORD}</bdi>,
+        sentence: DURATION_ONGOING_SENTENCE,
+        dayShown: false,
+      };
+    case "through-date": {
+      const day = duration.throughDate === null ? null : resolveCivilDate(duration.throughDate);
+      if (day === null) {
+        return {
+          value: <bdi>{DURATION_UNRESOLVED_WORD}</bdi>,
+          sentence: DURATION_UNRESOLVED_SENTENCE,
+          dayShown: false,
+        };
+      }
+      return {
+        value: (
+          <>
+            Through <bdi>{civilDateText(day)}</bdi>
+          </>
+        ),
+        sentence: DURATION_THROUGH_SENTENCE,
+        dayShown: true,
+      };
+    }
+    case "none":
+      return {
+        value: <bdi>{DURATION_NONE_WORD}</bdi>,
+        sentence: DURATION_NONE_SENTENCE,
+        dayShown: false,
+      };
+  }
 }
 
 /** One reviewed range, prepared for rendering: the period, the figure, and any worded problem. */
@@ -717,6 +811,7 @@ export function SharingSummary({
   const range = grant.financialRange === null ? null : buildRangeView(grant.financialRange, locale);
   const cutoffInstant = grant.shareCutoff.instant.trim();
   const ongoing = grant.duration.kind === "ongoing";
+  const duration = durationStatementOf(grant.duration);
 
   const modulesByKey = new Map<ModuleKey, ModuleReadState | null>(
     grant.modules.map((module) => [module.key, module.readState]),
@@ -803,19 +898,9 @@ export function SharingSummary({
           <Section id={`${headingId}-duration`} title={SECTION_TITLES.duration}>
             <p className="flex flex-wrap items-baseline gap-2 text-sm">
               <span className="font-medium">Duration</span>
-              <span>
-                {ongoing ? (
-                  <bdi>{DURATION_ONGOING_WORD}</bdi>
-                ) : (
-                  <>
-                    Through <bdi>{civilDateText(grant.duration.throughDate)}</bdi>
-                  </>
-                )}
-              </span>
+              <span>{duration.value}</span>
             </p>
-            <p className="text-sm text-pretty text-muted-foreground">
-              {ongoing ? DURATION_ONGOING_SENTENCE : DURATION_THROUGH_SENTENCE}
-            </p>
+            <p className="text-sm text-pretty text-muted-foreground">{duration.sentence}</p>
             {cutoffInstant.length === 0 ? (
               <p className="text-sm text-pretty text-muted-foreground">
                 {ongoing ? CUTOFF_ABSENT_ONGOING_SENTENCE : CUTOFF_ABSENT_SENTENCE}
@@ -828,13 +913,13 @@ export function SharingSummary({
                 </p>
                 <p className="text-sm text-pretty text-muted-foreground">
                   {/*
-                   * The civil-day rule is stated only when it actually decided the bound: with an
-                   * earlier source limit in force, presenting the Share-through date as the reason
-                   * would state a rule that did not apply to this share.
+                   * The civil-day rule is stated only when it actually decided the bound and its day is
+                   * shown: with an earlier source limit in force, or with no resolved day, presenting the
+                   * Share-through date as the reason would state a rule that did not apply to this share.
                    */}
-                  {ongoing || grant.shareCutoff.sourceLimitWins
-                    ? ""
-                    : `${CUTOFF_DAY_AFTER_SENTENCE} `}
+                  {duration.dayShown && !grant.shareCutoff.sourceLimitWins
+                    ? `${CUTOFF_DAY_AFTER_SENTENCE} `
+                    : ""}
                   {CUTOFF_EXCLUSIVE_SENTENCE} {CUTOFF_FROZEN_SENTENCE}
                 </p>
                 {grant.shareCutoff.sourceLimitWins ? (

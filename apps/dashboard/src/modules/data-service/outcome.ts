@@ -1,13 +1,14 @@
 /**
- * The closed set of mutation outcomes, the constructors that produce them, and the one mapping
- * from an outcome to an HTTP response.
+ * The closed set of mutation outcomes, the constructors that produce them, and the two guards
+ * that read one back off the wire. The one HTTP response they map to is `response.ts`.
  *
  * Every named mutation in the data service answers with exactly one of the eight outcomes below,
- * and every Route Handler turns that answer into a response through `toResponse`. There is no ninth
- * member and no second ladder: a handler that invented its own status mapping, or a mutation that
- * answered with a boolean, would reintroduce the ambiguity this module exists to remove. The eight
- * members are the contract because each states something genuinely different about what is true
- * after a request:
+ * and every Route Handler turns that answer into a response through `toResponse` in `response.ts`,
+ * the one module in this directory that reaches `next/server`. There is no ninth member and no
+ * second ladder: a handler that invented its own status mapping, or a mutation that answered with
+ * a boolean, would reintroduce the ambiguity this module exists to remove. The eight members are
+ * the contract because each states something genuinely different about what is true after a
+ * request:
  *
  * - `accepted` — applied once, with the new revision.
  * - `alreadyAccepted` — the same `operationId` replayed: the stored result, no new effect, no new
@@ -32,15 +33,16 @@
  * must carry no count, title, existence flag or size, and an absent source must never be presented
  * as an empty list or a zero. Declaring both contracts in this file keeps `outcome.ts` and
  * `envelope.ts` acyclic — the envelope module may import this one, never the reverse — which is
- * also why nothing here refers to the envelope's shape. `readMediaAsset` is the one documented
- * exception: it answers with bytes rather than an envelope, so it carries no `ReadResult`.
+ * also why nothing here refers to the envelope's shape. Every read in the service answers inside that
+ * shape and carries its two failure branches here, so no read is an exception to the contract.
  *
- * The status mapping is fixed and uniform. `denied` is always 403, whether or not the record
- * exists, because a 404-for-missing / 403-for-hidden pair is an existence oracle: a caller could
- * enumerate hidden records from the status code alone. `unknown` is 202 in the other direction —
- * the status says the request was understood and its fate is not known, so a client may not read it
- * as success — and `unavailable` is 503 carrying the source identity and retry guidance, so a
- * surface can name which source is down instead of showing a zero.
+ * The status mapping is fixed and uniform, and it lives in `response.ts` beside `toResponse`.
+ * `denied` is always 403, whether or not the record exists, because a 404-for-missing /
+ * 403-for-hidden pair is an existence oracle: a caller could enumerate hidden records from the
+ * status code alone. `unknown` is 202 in the other direction — the status says the request was
+ * understood and its fate is not known, so a client may not read it as success — and
+ * `unavailable` is 503 carrying the source identity and retry guidance, so a surface can name
+ * which source is down instead of showing a zero.
  *
  * Plan items that put this file in scope: AAP 0.7.1 (the four-field mutation input and this closed
  * outcome set), 0.3.2 (one authorised data path whose outcome the UI renders durably), 0.6.1 and
@@ -49,19 +51,19 @@
  * (a thrown exception is a defect, not a presentation: a fault becomes `unavailable` and an
  * unrecognised failure becomes `unknown`).
  *
- * Layering: this module reaches nothing but the framework-free helpers it reuses and the two fixed
- * stack packages it needs. It imports no store, service, component or feature; it reads no clock,
- * performs no I/O, writes no diagnostic and carries no payload of its own. Nothing here decides
- * whether a caller *may* do something — authorisation happens before an outcome is built — so the
- * only authority this file exercises is over what a denial is allowed to say.
+ * Layering: this module is browser-safe, which is why a Client Component may value-import it. It
+ * reaches nothing but the framework-free helpers it reuses and `zod`, and nothing here imports
+ * `next/server`: the response mapping, the one part of the contract that needs it, lives in
+ * `response.ts`. It imports no store, service, component or feature; it reads no clock, performs
+ * no I/O, writes no diagnostic and carries no payload of its own. Nothing here decides whether a
+ * caller *may* do something — authorisation happens before an outcome is built — so the only
+ * authority this file exercises is over what a denial is allowed to say.
  */
-import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 
 import { isNonEmptyString, isRecord } from "@/lib/guards";
 import type { SourceReference } from "@/lib/ids";
 import { redactDenial } from "@/lib/redaction";
-import { assertNever } from "@/lib/result";
 
 /**
  * The source system name an `unavailable` outcome carries when the local synthetic store itself
@@ -402,50 +404,6 @@ function fieldMessagesFromIssues(error: ZodError): FieldMessages {
   return messages;
 }
 
-/** The envelope member a request body's payload hangs off, as a whole-body schema names it. */
-const PAYLOAD_FIELD_PATH = "payload";
-
-/** The path a field inside the payload arrives under when the whole request body was validated. */
-const PAYLOAD_FIELD_PREFIX = `${PAYLOAD_FIELD_PATH}.`;
-
-/**
- * Re-keys an `invalid` body's fields onto the payload the caller posted, which is the convention
- * every form in this tree already renders: the media picker's field labels are `placement.altText`
- * and `probe.width`, the import mapper reads `byField.confirmedMapping`, and the hooks that
- * pre-validate a payload themselves (`use-save-goal`, `use-follow-up-task`) answer with the payload's
- * own paths. A handler that validated the whole request body reports the same input as
- * `payload.title`, so the transport is the outlier and this is the one place that reconciles it.
- *
- * A path beginning `payload.` loses that prefix and nothing else changes. The bare path `payload`
- * names the payload object as a whole rather than a control, so it becomes `ROOT_FIELD_KEY`: a
- * form-level issue, which is the answer the service already gives for the same input. Every other
- * key is an envelope-level refusal or a payload-relative key the service produced, and passes through
- * untouched. Order is kept — keys in the order they arrived, each key's messages in their own order,
- * and two source keys that collapse onto one append the later messages rather than replace them.
- */
-function payloadRelativeFields(fields: FieldMessages): FieldMessages {
-  const messages: Record<string, string[]> = {};
-  for (const [path, pathMessages] of Object.entries(fields)) {
-    let key = path;
-    if (key === PAYLOAD_FIELD_PATH) {
-      key = ROOT_FIELD_KEY;
-    } else if (key.startsWith(PAYLOAD_FIELD_PREFIX)) {
-      key = key.slice(PAYLOAD_FIELD_PREFIX.length);
-    }
-    const existing = messages[key];
-    if (existing === undefined) {
-      messages[key] = [...pathMessages];
-    } else {
-      for (const message of pathMessages) {
-        if (!existing.includes(message)) {
-          existing.push(message);
-        }
-      }
-    }
-  }
-  return messages;
-}
-
 /**
  * Answers that the payload failed validation, with per-field messages and no side effect.
  *
@@ -489,108 +447,7 @@ export function unknown(input: { operationId: string }): UnknownOutcome {
 }
 
 /**
- * Turns an outcome — or a read result — into the one HTTP response a Route Handler returns.
- *
- * This is the only status ladder in the application. A handler that mapped an outcome itself would
- * be a second policy for the same contract, and the two would eventually disagree about whether a
- * lost acknowledgement is a success.
- *
- * Three properties of the mapping are deliberate and must not be "tidied":
- *
- * - `denied` is 403 for every denial, with the same body shape whether or not the record exists,
- *   because 404-versus-403 is an existence oracle.
- * - `unknown` is 202 and carries the `operationId`; the body promises neither success nor failure.
- * - `unavailable` is 503 and carries `{ system, reference }` plus retry guidance, so a surface can
- *   name the source that is down rather than showing an empty list or a zero.
- *
- * Bodies are the outcome objects themselves — never `{ ok: true }` or `{ data }` wrappers — so the
- * union's discriminant is the contract a client switches on. No caching directive is set on a
- * mutation response: the response is not reusable at all, and a policy header here would be a
- * second, contradictory statement of that.
- *
- * Field keys on an `invalid` body are relative to the payload the caller posted, never to the
- * envelope it arrived in: `fieldErrorsFromInvalid` attaches each message to the control that carried
- * the value, so `title` and `placement.altText` are the keys a form renders. A schema that validated
- * the whole request body reports that same input as `payload.title`, and the prefix is what this
- * mapping removes. An envelope-level refusal keeps its own name (`operationId`, `scope`,
- * `expectedRevision`), and an issue with the payload as a whole — which names no control and belongs
- * to the form — is keyed `ROOT_FIELD_KEY` like every other form-level issue.
- *
- * A read result flattens onto the wire, because the status already discriminates it: 200 carries
- * the envelope itself, 403 the denial and 503 the outage. The `kind` wrapper belongs to the
- * in-process value a read returns, which is what `isReadResult` narrows; a client that has a
- * response reads the status first and then `isOutcome` for the two failure bodies.
- */
-export function toResponse(
-  input: MutationOutcome | ReadResult<unknown>,
-  init?: { headers?: HeadersInit },
-): Response {
-  const headers = new Headers(init?.headers);
-  // Stated explicitly rather than relied on: a body carrying a person's name, a currency code or
-  // a right-to-left string must be decoded as UTF-8 by every client, including curl.
-  headers.set("content-type", "application/json; charset=utf-8");
-
-  if (isReadResult(input)) {
-    switch (input.kind) {
-      case "envelope":
-        // An envelope is scope-dependent private data whose staleness would break whole-query
-        // agreement, so it is never stored by an intermediary or a browser cache.
-        headers.set("cache-control", "no-store");
-        return NextResponse.json(input.envelope === undefined ? null : input.envelope, {
-          status: 200,
-          headers,
-        });
-      case "denied":
-        return respond(input.denied, headers);
-      case "unavailable":
-        return respond(input.unavailable, headers);
-      default:
-        return assertNever(input, "Unhandled read result");
-    }
-  }
-
-  return respond(input, headers);
-}
-
-/**
- * The one status ladder, reached from both arms of `toResponse` so a denial or an outage carries
- * exactly the status it would carry as a bare outcome.
- *
- * The grouped cases are not an accident: `accepted`, `alreadyAccepted` and `unchanged` are three
- * different facts that share one status, and they keep their separate discriminants in the body so
- * a client still distinguishes "applied now" from "applied earlier" from "nothing to do".
- */
-function respond(outcome: MutationOutcome, headers: Headers): Response {
-  switch (outcome.outcome) {
-    case "accepted":
-    case "alreadyAccepted":
-    case "unchanged":
-      return NextResponse.json(outcome, { status: 200, headers });
-    case "conflict":
-      return NextResponse.json(outcome, { status: 409, headers });
-    case "denied":
-      // Redacted once more on the way out: a denial built by hand, without the constructor, still
-      // cannot carry an existence flag, a count, a title or a size.
-      return NextResponse.json(redactDenial(outcome), { status: 403, headers });
-    case "invalid":
-      // Field keys are re-based onto the payload the caller posted at the one boundary every
-      // mutation response crosses, so a handler that validated the whole body and a service that
-      // validated the payload alone answer with one convention.
-      return NextResponse.json(
-        { ...outcome, fields: payloadRelativeFields(outcome.fields) },
-        { status: 422, headers },
-      );
-    case "unavailable":
-      return NextResponse.json(outcome, { status: 503, headers });
-    case "unknown":
-      return NextResponse.json(outcome, { status: 202, headers });
-    default:
-      return assertNever(outcome, "Unhandled mutation outcome");
-  }
-}
-
-/**
- * The store fault raised when a session document exists but cannot be decoded.
+ * The store fault raised for a session document that exists but cannot be decoded.
  *
  * Exported because it is the one name {@link outcomeFromError} maps to `unavailable`, and a mutation
  * module that refuses a document it cannot read is stating the same condition one layer up. A caller
@@ -660,6 +517,34 @@ function storeFaultReference(error: unknown): string | undefined {
 }
 
 /**
+ * Maps a store or medium fault onto the outage it is, or answers `undefined` for any other value.
+ *
+ * This is the one place such a fault becomes an outcome. `outcomeFromError` uses it so a handler's
+ * failure path and the session resolver cannot disagree about what "the store could not answer" looks
+ * like, and a caller that has already established the fault — the resolver, which must answer before
+ * the request reaches its handler — produces exactly the outcome it would have received there. The
+ * reference is the store's own fault name or code (`CorruptJsonError`, `ENOENT`, `EIO` — never a path)
+ * beside the retry that is safe, so an outage names its source without disclosing what it holds.
+ *
+ * `undefined` means the value is not a store fault, and the caller decides what it is instead: an
+ * invalid payload, a refusal, or a defect.
+ */
+export function unavailableFromStoreFault(
+  operationId: string,
+  error: unknown,
+): UnavailableOutcome | undefined {
+  const reference = storeFaultReference(error);
+  if (reference === undefined) {
+    return undefined;
+  }
+  return unavailable({
+    operationId,
+    source: { system: LOCAL_STORE_SYSTEM, reference },
+    guidance: STORE_RETRY_GUIDANCE,
+  });
+}
+
+/**
  * Converts a caught value into the outcome a Route Handler may return.
  *
  * A thrown exception is a defect, not a presentation (AAP 0.15.1), so this function has exactly
@@ -692,13 +577,9 @@ export function outcomeFromError(operationId: string, error: unknown): MutationO
     // again cannot create one.
     return denied({ operationId, reasonCode: "session-unavailable" });
   }
-  const reference = storeFaultReference(error);
-  if (reference !== undefined) {
-    return unavailable({
-      operationId,
-      source: { system: LOCAL_STORE_SYSTEM, reference },
-      guidance: STORE_RETRY_GUIDANCE,
-    });
+  const outage = unavailableFromStoreFault(operationId, error);
+  if (outage !== undefined) {
+    return outage;
   }
   return unknown({ operationId });
 }
@@ -722,7 +603,7 @@ function isSourceReference(value: unknown): value is SourceReference {
  * This is how a client hook and a Route Handler narrow a JSON body without a type assertion. The
  * switch below reads an untrusted string rather than a union, so its final `return false` is the
  * correct closing branch — `assertNever` belongs to the exhaustive switches over `MutationOutcome`
- * in `respond`, where a ninth member must fail to compile.
+ * in `response.ts`'s `respond`, where a ninth member must fail to compile.
  */
 export function isOutcome(value: unknown): value is MutationOutcome {
   if (!isRecord(value)) {

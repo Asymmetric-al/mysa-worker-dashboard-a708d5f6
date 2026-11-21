@@ -1,11 +1,11 @@
 /**
  * The store's filesystem mechanism: one deterministic JSON serialiser, one atomic
- * temp-then-rename writer, one absence-aware reader and one tolerant single-document
- * delete. Policy — which document, when, and under which lock — belongs to
+ * temp-then-rename writer, one absence probe, one absence-aware reader and one tolerant
+ * single-document delete. Policy — which document, when, and under which lock — belongs to
  * `repository.ts`, and no module outside this one and `repository.ts` touches disk.
  */
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm, type FileHandle } from "node:fs/promises";
+import { access, mkdir, open, readFile, rename, rm, type FileHandle } from "node:fs/promises";
 import { dirname } from "node:path";
 
 /** A document that exists but cannot be decoded: carries the path and the parse cause, never the bytes. */
@@ -80,6 +80,25 @@ export async function readJson<T = unknown>(file: string): Promise<T | undefined
     return JSON.parse(text) as T;
   } catch (error) {
     throw new CorruptJsonError(file, error);
+  }
+}
+
+/**
+ * Reports whether a path exists, and is the probe that lets a caller tell an absent store root from an
+ * absent document.
+ *
+ * Absence is the only outcome that answers `false`; every other fault — a permission denial, an I/O
+ * error, a path component that is not a directory — reaches the caller as itself. That is the same
+ * rule {@link readJson} applies to a missing file, and it is decided here so no caller invents a
+ * second reading of it: treating a fault as absence is how an outage becomes an empty result.
+ */
+export async function existsOnDisk(target: string): Promise<boolean> {
+  try {
+    await access(target);
+    return true;
+  } catch (error) {
+    if (isNotFound(error)) return false;
+    throw error;
   }
 }
 

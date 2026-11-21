@@ -103,7 +103,13 @@ import { clampPageSize } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
 import { confirmationDeadline, notificationDeadline } from "@/modules/time/window";
 
-import { assertScope, canReadProtected, resolveSession, type ResolvedSession } from "../authorize";
+import {
+  assertScope,
+  canReadProtected,
+  readResultOfRefusal,
+  resolveSession,
+  type ResolvedSession,
+} from "../authorize";
 import {
   buildEnvelope,
   contentCaptionTrackRecordSchema,
@@ -766,7 +772,7 @@ async function loadWorld(
 async function resolveWorlds(job: string): Promise<WorldResolution> {
   const resolved = await resolveSession();
   if (!resolved.ok) {
-    return { ok: false, result: { kind: "denied", denied: resolved.denial } };
+    return { ok: false, result: readResultOfRefusal(resolved.refusal) };
   }
   const { session } = resolved;
 

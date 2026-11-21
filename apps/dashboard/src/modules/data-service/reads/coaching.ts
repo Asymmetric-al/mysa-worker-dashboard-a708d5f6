@@ -74,6 +74,8 @@ import {
   type ModuleKey,
   type ModuleObservation,
   type ModuleReadState,
+  type PermissionHold,
+  type SubjectAvailability,
 } from "@/modules/coaching/grant";
 import {
   TARGET_MEASURES,
@@ -124,11 +126,13 @@ import {
   type CivilDate,
   type DatePrecision,
 } from "@/modules/time/civil";
+import { shareThroughDateOfCutoff } from "@/modules/time/window";
 
 import { readSession } from "../../store/repository";
 import {
   assertScope,
   canView,
+  readResultOfRefusal,
   resolveSession,
   type ResolvedSession,
   type SessionSource,
@@ -143,6 +147,7 @@ import {
   giftRowRecordSchema,
   interactionRecordSchema,
   partnerRecordSchema,
+  privateNoteRecordSchema,
   project,
   scopeSchema,
   supportProjectionRecordSchema,
@@ -157,6 +162,7 @@ import {
   type Coverage,
   type GiftRowRecord,
   type InteractionRecord,
+  type PrivateNoteRecord,
   type ReadAction,
   type ReadEnvelope,
   type RecordedValueState,
@@ -228,6 +234,12 @@ type StoredCoachingTaskShare = CoachingTaskShareRecord;
  * Only what coaching reads is validated, and the record schemas are the ones `envelope.ts` declares,
  * so a record is read through the one declaration of its shape. Every family is present in a seeded
  * document because the development runtime lays each one down, empty where a session holds none.
+ *
+ * `privateNotes` is optional on purpose: the preparation projection reads it only to state the prose
+ * one private record class holds, so a document carrying no such family says that no note was recorded
+ * — a fact about that document — rather than turning the whole coaching read into an outage over a
+ * family nothing else here needs. The family belongs to the partners read and is written through that
+ * read's own mutations; this file only reads it, so it adds no second owner of it.
  */
 const coachingStateSchema = z.object({
   coachingGrants: z.array(coachingGrantRecordSchema),
@@ -237,6 +249,7 @@ const coachingStateSchema = z.object({
   interactions: z.array(interactionRecordSchema),
   tasks: z.array(taskRecordSchema),
   partners: z.array(partnerRecordSchema),
+  privateNotes: z.array(privateNoteRecordSchema).optional(),
   supportProjection: supportProjectionRecordSchema.nullable(),
   gifts: z.array(giftRowRecordSchema),
   commitments: z.array(commitmentRowRecordSchema),
@@ -292,6 +305,16 @@ interface CoachingDurationView {
    * open-ended one and is never read as permission.
    */
   readonly kind: "ongoing" | "through-date" | "none";
+  /**
+   * The civil Share-through day the frozen cutoff and its zone imply, in the stored `YYYY-MM-DD` form.
+   *
+   * A cutoff is the exclusive start of the civil day after the chosen day, so the two together name it
+   * exactly, through the one implementation in `modules/time/window`. It is `null` when no day can be
+   * stated: an open-ended share has none, a record with no usable duration has none, and a bound whose
+   * frozen zone cannot be resolved is reported as an absent day rather than as a guessed one. The bound
+   * itself is still stated by `cutoffInstant` when only the day is missing.
+   */
+  readonly shareThroughDate: string | null;
   readonly frozenZone: string | null;
   readonly cutoffInstant: string | null;
   readonly boundedBy: "share-through" | "source" | null;
@@ -371,7 +394,7 @@ async function loadCoachingState(job: string, source?: SessionSource): Promise<C
     return { ok: false, result: deniedRead("session-unavailable") };
   }
   if (!resolution.ok) {
-    return { ok: false, result: { kind: "denied", denied: resolution.denial } };
+    return { ok: false, result: readResultOfRefusal(resolution.refusal) };
   }
 
   const { session } = resolution;
@@ -588,7 +611,12 @@ function workingDurationOf(record: CoachingGrantRecord): GrantDuration | null {
     if (cutoff === null) return null;
     return {
       kind: "through-date",
-      shareThroughDate: null,
+      // The day the worker chose is named by the frozen instant and its zone, read back through the
+      // one calendar rule in `modules/time`; a bound whose zone cannot be resolved states no day.
+      shareThroughDate: shareThroughDateOfCutoff({
+        cutoffInstant: cutoff,
+        frozenZone: duration.frozenZone,
+      }),
       frozenZone: duration.frozenZone,
       cutoffInstant: cutoff,
       sourceLimitInstant: null,
@@ -724,6 +752,10 @@ function durationViewOf(episode: {
 }): CoachingDurationView {
   return {
     kind: episode.duration.kind,
+    shareThroughDate:
+      episode.duration.shareThroughDate === null
+        ? null
+        : serialiseCivilDate(episode.duration.shareThroughDate),
     frozenZone: episode.duration.frozenZone,
     cutoffInstant: episode.cutoffInstant?.toString() ?? null,
     boundedBy: episode.duration.limitedBy,
@@ -1181,6 +1213,7 @@ function statedDurationViewOf(
   if (duration === null) {
     return {
       kind: "none",
+      shareThroughDate: null,
       frozenZone: null,
       cutoffInstant: null,
       boundedBy: null,
@@ -1194,6 +1227,8 @@ function statedDurationViewOf(
   const ahead = remaining !== null && remaining > 0;
   return {
     kind: duration.kind,
+    shareThroughDate:
+      duration.shareThroughDate === null ? null : serialiseCivilDate(duration.shareThroughDate),
     frozenZone: duration.frozenZone,
     cutoffInstant: duration.cutoffInstant?.toString() ?? null,
     boundedBy: duration.limitedBy,
@@ -1213,14 +1248,22 @@ function statedDurationViewOf(
  * A preparation record is a different record class from a shared operational fact: its audience is the
  * literal `private`, it is readable only by the principal whose preparation it is, and nothing in this
  * file copies its text into shared history, an export or another record's audience. The projection is
- * narrowed to the four fields a list needs, so contact details and restrictions are absent from the
- * envelope rather than hidden by a component.
+ * narrowed to the six fields a list and its body need, so contact details and restrictions are absent
+ * from the envelope rather than hidden by a component.
+ *
+ * `body` is the record class's own prose — the principal's most recent private note on this record,
+ * which is where a preparation's text is written — and `updatedOn` is the civil day that note was
+ * written on, in the coaching planning zone. Both are `null` when the principal has written no note for
+ * the record, because an absent body is a different fact from an empty one, and an identity field such
+ * as the display name is never placed in this slot. Another principal's note is never read here.
  */
 interface PrivatePreparationView {
   readonly preparationId: string;
   readonly displayName: string;
   readonly tags: readonly string[];
   readonly revision: string;
+  readonly body: string | null;
+  readonly updatedOn: string | null;
 }
 
 /**
@@ -1237,6 +1280,19 @@ interface CoachingOutcomesView {
   readonly accessLive: boolean;
 }
 
+/**
+ * One selected module as this read decided it, with the single state it was found in.
+ *
+ * The state is the coaching module's own answer for one admitted module, so `empty`, `partial`,
+ * `withheld`, `unavailable` and `ended` reach the surface as five different facts, and `null` says the
+ * module is readable and complete with nothing to add. A module the read does not admit has no member
+ * here: authorisation precedes enumeration, so its name is never returned.
+ */
+interface AdmittedModuleView {
+  readonly module: ModuleKey;
+  readonly readState: ModuleReadState | null;
+}
+
 /** One coaching relationship as the worker's own surface reads it, in whatever state it stands. */
 interface WorkerRelationshipView {
   readonly grantId: string;
@@ -1247,6 +1303,26 @@ interface WorkerRelationshipView {
   readonly selectedModules: readonly ModuleKey[];
   /** True when the five switches share nothing, which is different from sharing something unused. */
   readonly sharesNothing: boolean;
+  /**
+   * The source reachability and the permission hold this read established, read from its own evidence.
+   *
+   * Neither is a lifecycle state: a source that cannot be read leaves the episode open and suspends only
+   * the modules that need it, and a temporary hold suspends access without ending anything. `source` is
+   * `unavailable` when at least one module a coach can read right now is in that state, and the hold is
+   * derived from the refusal this read produced rather than set to a fixed value at any call site.
+   */
+  readonly availability: {
+    readonly source: SubjectAvailability;
+    readonly permissionHold: PermissionHold;
+  };
+  /**
+   * The selected modules a coach can read right now, each with the one state the read found it in.
+   *
+   * The list is empty while access is not live: nothing is readable then, and the lifecycle row states
+   * why. It carries only modules this read admitted, so a surface built from it cannot render a state
+   * for a module the grant never switched on.
+   */
+  readonly admittedModules: readonly AdmittedModuleView[];
   readonly duration: CoachingDurationView;
   readonly invitation: {
     readonly issuedAt: string;
@@ -1269,13 +1345,50 @@ interface CoachingOverviewView {
 }
 
 /**
+ * The principal's own most recent private note on one record, with the civil day it was written on.
+ *
+ * A preparation record's prose is the note text the worker wrote about it, so the projection states the
+ * latest one this session's principal authored: another principal's note on the same record is never
+ * read into this projection, because a private note belongs to its author and sharing a record is not a
+ * shared audience. Two notes recorded at the same instant keep the stored order's first, so the same
+ * document always projects the same body. A note whose instant or working day cannot be resolved
+ * contributes no prose rather than a guessed date.
+ */
+function latestPrivateNoteOf(
+  notes: readonly PrivateNoteRecord[],
+  partnerId: string,
+  principalId: string,
+): { readonly body: string; readonly updatedOn: string | null } | null {
+  let latest: PrivateNoteRecord | null = null;
+  let latestAt: Temporal.Instant | null = null;
+  for (const note of notes) {
+    if (note.partnerId !== partnerId || note.authorPrincipalId !== principalId) continue;
+    const createdAt = instantOf(note.createdAt);
+    if (createdAt === null) continue;
+    if (latestAt === null || Temporal.Instant.compare(createdAt, latestAt) > 0) {
+      latest = note;
+      latestAt = createdAt;
+    }
+  }
+  if (latest === null || latestAt === null) return null;
+  const day = civilDateAt(latestAt, COACHING_PLANNING_ZONE);
+  return {
+    body: latest.body,
+    updatedOn: day.status === "resolved" ? serialiseCivilDate(day.date) : null,
+  };
+}
+
+/**
  * The worker's own preparation and sharing situation.
  *
  * Private preparation is listed as its own record class; each relationship is reported with the five
  * independent module switches (all unselected until the worker switches one on), its duration as a
  * separate fact that is never defaulted, the four acceptance outcomes apart, and the module's own
- * refusal when the episode is not open. A relationship the worker revoked or ended is still theirs to
- * review, and a stale control on it explains itself instead of offering a revival.
+ * refusal when the episode is not open. A live relationship also states the availability this read
+ * established and the one state each admitted module was read in, both decided from the relationship's
+ * own evidence: one unavailable source leaves the independent modules usable, and a temporary hold is
+ * reported as a hold rather than as an ending. A relationship the worker revoked or ended is still
+ * theirs to review, and a stale control on it explains itself instead of offering a revival.
  *
  * A relationship lists the ministries the sharing covers, and one made in another ministry is still the
  * worker's own record: it is included, with the ministries it names, rather than hidden because the read
@@ -1294,15 +1407,22 @@ export async function readCoachingOverview(): Promise<
   const { session, state, at } = loaded.context;
   const scope = scoped.scope;
 
+  // A preparation record's prose is its own class's note text, so each record states the principal's
+  // latest private note on it and the day that note stands for. A record with no note keeps both fields
+  // absent, which the surface states as an empty preparation rather than filling the slot with a name.
+  const ownNotes = state.privateNotes ?? [];
   const preparation = state.partners
     .filter((partner) => partner.kind === "private-preparation" && partner.audience === "private")
     .map((partner): PrivatePreparationView => {
       const visible = project(partner, ["partnerId", "displayName", "tags", "revision"] as const);
+      const prose = latestPrivateNoteOf(ownNotes, partner.partnerId, session.principalId);
       return {
         preparationId: visible.partnerId,
         displayName: visible.displayName,
         tags: visible.tags,
         revision: visible.revision,
+        body: prose === null ? null : prose.body,
+        updatedOn: prose === null ? null : prose.updatedOn,
       };
     })
     .toSorted((one, two) => compareCodeUnits(one.displayName, two.displayName));
@@ -1311,6 +1431,15 @@ export async function readCoachingOverview(): Promise<
   const valueStates: Record<string, RecordedValueState> = {};
   let activeGrantId: string | null = null;
   let activeModuleCount = 0;
+
+  // The support source is assembled at most once for this read, and only when a live relationship
+  // actually shares a module that reads it: assembling it eagerly would record a source outage for a
+  // session that shares no financial module at all, which is a diagnostic no read asked for.
+  let support: SupportLoad | null = null;
+  const supportLoad = (): SupportLoad => {
+    support ??= supportProjectionOf(state);
+    return support;
+  };
 
   for (const record of state.coachingGrants) {
     const decision = canView(session, { kind: "coaching-grant", grant: record, now: at });
@@ -1353,6 +1482,52 @@ export async function readCoachingOverview(): Promise<
     const selectedModules = MODULE_KEYS.filter((key) => record.modules[key]);
     const expiresAt = instantOf(record.invitation.expiresAt);
 
+    // What a coach can read right now, decided by the coaching module for each selected module and for
+    // nothing the grant never switched on. A module that reads the support source is `unavailable` while
+    // that source cannot be read, and the independent modules stay usable, which is what keeps an outage
+    // distinct from an ending.
+    const admittedModules: AdmittedModuleView[] = [];
+    if (episode !== null && ministryId !== null) {
+      for (const key of selectedModules) {
+        // The source is assembled at most once, and only for a module that reads it: a session sharing
+        // nothing financial must not record its outage as a diagnostic this read never asked for.
+        const supportSource: SupportLoad | null = isFinancialModule(key) ? supportLoad() : null;
+        const subjectAvailability: SubjectAvailability =
+          supportSource !== null && !supportSource.ok ? "unavailable" : "available";
+        const decision = moduleReadState(
+          working.value,
+          key,
+          accessContextOf(
+            "worker",
+            session.principalId,
+            scope.organizationId,
+            ministryId,
+            subjectAvailability,
+          ),
+          at,
+          observationOf(key, state, supportSource),
+        );
+        // A module this read does not admit is left out rather than listed with a guessed state, so the
+        // surface cannot render a placeholder for something nothing authorised.
+        if (!decision.ok) continue;
+        admittedModules.push({ module: key, readState: decision.value });
+      }
+    }
+
+    // The availability is the read's own evidence, never a fixed answer. The source is unavailable when
+    // a module a coach can read right now is in that state, and the hold is the refusal this read
+    // produced: no stored record in this release carries a permission hold (see `accessContextOf`), so a
+    // hold a source states will arrive through that refusal rather than through a literal set here.
+    const availability: {
+      readonly source: SubjectAvailability;
+      readonly permissionHold: PermissionHold;
+    } = {
+      source: admittedModules.some((entry) => entry.readState === "unavailable")
+        ? "unavailable"
+        : "available",
+      permissionHold: readRefusal?.reason === "permission-hold" ? "temporary" : "none",
+    };
+
     if (episode !== null && activeGrantId === null) {
       activeGrantId = record.grantId;
       activeModuleCount = selectedModules.length;
@@ -1371,6 +1546,8 @@ export async function readCoachingOverview(): Promise<
       modules: MODULE_KEYS.map((key) => ({ module: key, selected: record.modules[key] })),
       selectedModules,
       sharesNothing: selectedModules.length === 0,
+      availability,
+      admittedModules,
       duration:
         episode === null
           ? statedDurationViewOf(working.value.duration, at)
@@ -1957,8 +2134,9 @@ function sharedRevisionViewOf(record: CoachingCheckInRecord): SharedRevisionView
  * The share-through day a frozen cutoff implies, in the zone it was frozen in.
  *
  * A cutoff is the exclusive start of the civil day after the Share-through date, so the recorded instant
- * and zone name that day exactly: the day the cutoff falls on, less one. Deriving it here keeps the
- * calendar rule in `modules/time` and never invents a day the record does not state.
+ * and zone name that day exactly: the day the cutoff falls on, less one. The calendar rule itself stays
+ * in `modules/time` — this reads it back through that one implementation and never invents a day the
+ * record does not state.
  */
 function workingShareDurationOf(
   duration: CoachingDurationRecord,
@@ -1966,11 +2144,14 @@ function workingShareDurationOf(
   if (duration.kind === "ongoing") return ok({ kind: "ongoing" });
   const cutoff = duration.cutoffInstant === null ? null : instantOf(duration.cutoffInstant);
   if (cutoff === null) return err("a shared revision's cutoff could not be read");
-  const dayOfCutoff = civilDateAt(cutoff, duration.frozenZone);
-  if (dayOfCutoff.status === "refused") {
+  const throughOn = shareThroughDateOfCutoff({
+    cutoffInstant: cutoff,
+    frozenZone: duration.frozenZone,
+  });
+  if (throughOn === null) {
     return err("a shared revision's frozen zone could not be resolved");
   }
-  return ok({ kind: "through-date", throughOn: dayOfCutoff.date.subtract({ days: 1 }) });
+  return ok({ kind: "through-date", throughOn });
 }
 
 /**
@@ -2543,11 +2724,19 @@ function receivedFiguresOf(
   ]);
 }
 
-/** What one module's content looks like before its read state is decided, per admitted module. */
+/**
+ * What one module's content looks like before its read state is decided, per admitted module.
+ *
+ * `support` is the support source only for a module that reads it, so a caller that shares nothing
+ * financial never assembles that source and never records its outage. `null` therefore states "this
+ * module does not read the support source", and the two financial modules treat it exactly as they
+ * treat a source that could not be read: an absent presence, which their admission already reports as
+ * `unavailable`.
+ */
 function observationOf(
   module: ModuleKey,
   state: CoachingState,
-  support: SupportLoad,
+  support: SupportLoad | null,
 ): ModuleObservation {
   switch (module) {
     case "targets": {
@@ -2570,14 +2759,18 @@ function observationOf(
       return taskSummaryObservation(states);
     }
     case "support-goal": {
-      if (!support.ok) return { presence: "none", withheldUntilReReviewed: false };
+      if (support === null || !support.ok) {
+        return { presence: "none", withheldUntilReReviewed: false };
+      }
       return {
         presence: storedGoalOf(state) === null ? "none" : "complete",
         withheldUntilReReviewed: false,
       };
     }
     case "support-results": {
-      if (!support.ok) return { presence: "none", withheldUntilReReviewed: false };
+      if (support === null || !support.ok) {
+        return { presence: "none", withheldUntilReReviewed: false };
+      }
       return {
         presence: support.projection.gifts.length === 0 ? "none" : "complete",
         withheldUntilReReviewed: false,

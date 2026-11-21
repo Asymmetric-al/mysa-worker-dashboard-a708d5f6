@@ -267,7 +267,9 @@ const RESET_GUIDANCE =
  * built here — a development document this release cannot read, a context record it cannot read, and a
  * reset that threw — would otherwise be the only outages in the application with no line in the local
  * log. They go through the shared logger with its own source record and nothing else: no session id, no
- * document content, no seed value.
+ * document content, no seed value. An answer this file reaches on its own is decided before or beside
+ * the runner's passes, so it writes the source line and no attempt line: there is no attempt the runner
+ * answered to count.
  */
 function sourceUnavailable(
   operationId: string,
@@ -363,6 +365,12 @@ interface ProbeRequest<P extends MutationResult> {
  * diagnostic, so the boundary is stated at the write itself and not only in the authority question
  * above it.
  *
+ * The pass states `diagnosticPass: "probe"`, so the runner writes no line for the `unchanged` that
+ * sends this control on to its change: that outcome is this file's carry-on signal, not the answer the
+ * caller received, and the attempt's one line is the record pass's line for the outcome that answered.
+ * The control's anomalies are unaffected — a replay, a stale revision, a refused session or a payload
+ * the schema rejects is the caller's answer, and the runner writes its line for it here.
+ *
  * The caller's `expectedRevision` is compared against the token the read published
  * (`dev-runtime/scenario.ts#devStateRevision`, imported rather than re-derived), so a control
  * submitted from a panel that has since moved is a `conflict` with the current document beside the
@@ -383,6 +391,7 @@ async function probeDevelopmentDocument<P extends MutationResult>(
     input: request.input,
     schema: request.schema,
     name: request.name,
+    diagnosticPass: "probe",
     authorize: developmentAuthority,
     readCurrent: (documents) => {
       const parsed = parseSessionMeta(documents.meta);
@@ -603,7 +612,11 @@ export async function selectContext(
 
   // The probe reads the context record the caller's revision belongs to and changes nothing, so an
   // attempt that is invalid, refused, a replay or stale is answered before the switch is attempted and
-  // an unreadable record is reported as an outage instead of being overwritten.
+  // an unreadable record is reported as an outage instead of being overwritten. It states
+  // `diagnosticPass: "probe"`, so the `unchanged` it answers to move this function on to the switch
+  // writes no diagnostic line: the caller's answer is the switch's own outcome, and that is the
+  // attempt's one line. A switch that finds the context already in force answers `unchanged` from this
+  // probe, so it writes no line at all — the module decided that answer itself, before the change.
   let observed: SessionContextRecord | undefined;
 
   const probe = await runMutation<SelectContextPayload, MutationResult>({
@@ -611,6 +624,7 @@ export async function selectContext(
     input,
     schema: selectContextPayloadSchema,
     name: "selectContext",
+    diagnosticPass: "probe",
     authorize,
     readCurrent: (documents) => {
       const stored = storedContextRecord(documents.state);

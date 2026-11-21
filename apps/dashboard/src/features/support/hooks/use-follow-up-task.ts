@@ -23,12 +23,15 @@
  * so the two never disagree about which attempt is which. Nothing here reads a clock or a random
  * source to invent one.
  *
- * **The request is exactly the four-field mutation input.** `{ operationId, scope, expectedRevision,
- * payload }` and nothing else: `mutationInputSchema` is a strict object, so a fifth field would be an
- * `invalid` outcome rather than a discarded one, and an `?action=` query string or a
- * `/api/tasks/create` endpoint would be a second dispatch form for one path. `POST /api/tasks` carries
- * the whole task family, so the handler chooses `createTask` by validating the body against its own
- * schema; sending anything but those four fields would break that dispatch for every caller.
+ * **The request is the four-field mutation input, plus the one routing discriminant.** The body
+ * carries `{ operationId, scope, expectedRevision, payload }` — `mutationInputSchema` is a strict
+ * object, so a fifth field at that level would be an `invalid` outcome rather than a discarded one,
+ * and an `?action=` query string or an `/api/tasks/create` endpoint would be a second dispatch form
+ * for one path. `POST /api/tasks` carries the whole task family, so the handler selects the mutation
+ * from `payload.operation` over its closed set of five names and removes that member before the
+ * mutation's own closed schema reads the payload. The discriminant therefore travels inside `payload`
+ * beside the task fields, supplied by `followUpTaskPayloadSchema` rather than by a caller: it is
+ * routing metadata the handler strips, and never a field a task records.
  *
  * **`expectedRevision` is the caller's, never invented.** It is the revision of the envelope the
  * affordance was rendered from, which is what makes a stale submission a `conflict` preserving the
@@ -242,6 +245,9 @@ export function useFollowUpTask(): FollowUpTaskMutation {
         operationId,
         scope: variables.scope,
         expectedRevision: variables.expectedRevision,
+        // The schema's output carries `operation`, the routing discriminant the handler dispatches on
+        // and removes before the mutation's closed schema validates the payload; it is not a task field
+        // and it is not keyed into the attempt identity above.
         payload: parsed.data,
       };
 

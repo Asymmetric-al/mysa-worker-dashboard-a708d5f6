@@ -102,6 +102,7 @@ import { continuedWindowEnd, newWindowEnd, referralWindowState } from "@/modules
 
 import {
   assertScope,
+  outcomeOfRefusal,
   resolveSession,
   type ResolvedSession,
   type ScopeDecision,
@@ -485,7 +486,7 @@ async function runOutreachMutation<P, R extends MutationResult>(
   try {
     const resolution = await resolveSession(source);
     if (!resolution.ok) {
-      return denied({ operationId: attemptIdOf(input), reasonCode: resolution.denial.reasonCode });
+      return outcomeOfRefusal(resolution.refusal, attemptIdOf(input));
     }
     sessionId = resolution.session.sessionId;
   } catch {

@@ -67,7 +67,11 @@
  * no store (the lint configuration enforces both), and it holds the development state and the failure
  * plan only as the types the modules that own them declare — `DevState` from the development read, and
  * `FailureMode`/`MODE_LABEL`/`DemonstrableTarget` from the failure-plan module — so the words on the
- * panel and the words in a refusal cannot drift apart.
+ * panel and the words in a refusal cannot drift apart. Both modules it takes a value from are
+ * browser-safe: neither the failure-plan module nor the outcome contract reaches `next/server`, whose
+ * only user is the response mapping in `modules/data-service/response.ts`, and no client component
+ * imports that — so `MODE_LABEL`, `isOutcome` and `outcomeFromError` are ordinary value imports and not
+ * an exception to any type-only convention.
  */
 
 import { useCallback, useId, useRef, useState, type ReactElement } from "react";

@@ -67,9 +67,10 @@
  * a `mutations/*` member of the data service: it is reached by a thin route handler and by the domain
  * and integration tests, and it imports no component, feature or application route. It reads the
  * scenario clock through `@/modules/time/clock` and every deadline through `@/modules/time/window`; no
- * machine clock is read anywhere in it. The one exception to the service's no-I/O rule is stated at
- * {@link persistRenditionBytes}, and it exists because a prepared rendition has to become bytes a
- * scope-checked route can serve.
+ * machine clock is read anywhere in it. The one I/O it causes is a prepared rendition's bytes: the media
+ * pipeline returns them, the store's media custody (`@/modules/store/media`) writes them at the reference
+ * the record states, and {@link registerMediaAsset} performs that write only once the transaction naming
+ * them has committed, so this file itself still touches no file.
  *
  * Rule 1 obligations this file keeps. Clause 1: no CMS adapter, second editor, provider client,
  * scheduler, queue or outbox appears here, and every external effect stays simulated and is labelled
@@ -78,9 +79,6 @@
  * release and withdrawn stay distinct, publication is never notification or delivery, and an
  * undetermined effect stays `unknown` and is recovered by identity.
  */
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 
@@ -132,7 +130,7 @@ import {
   type VariantAudience,
   type VariantFamily,
 } from "@/modules/content/variant";
-import { DATA_ROOT } from "@/modules/store/paths";
+import { uploadedMediaReference, writeMediaBytes } from "@/modules/store/media";
 import {
   acceptImage,
   acceptVideo,
@@ -184,7 +182,7 @@ import {
   type Scope,
   type SharePresentationRecord,
 } from "../envelope";
-import { type MutationOutcome, type PerItemResult } from "../outcome";
+import { unknown, type MutationOutcome, type MutationResult, type PerItemResult } from "../outcome";
 import { runMutation, type ApplyResult, type CurrentTarget } from "../operations";
 
 // ---------------------------------------------------------------------------------------------
@@ -3739,49 +3737,18 @@ export async function applyPreset(
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Where a registered upload's prepared bytes are kept: a directory of the git-ignored data tree,
- * beside the session documents and never inside the repository's public files.
- */
-const RENDITION_DIRECTORY = join(DATA_ROOT, "media");
-
-/**
- * The extension a stored rendition file carries, so a person reading the directory recognises what it
- * holds. Nothing decides anything from it: the media type served is the record's own `mimeType`, and a
- * request never reaches a file name.
- */
-const MIME_EXTENSIONS: Readonly<Record<string, string>> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "video/mp4": "mp4",
-  "video/webm": "webm",
-  "text/vtt": "vtt",
-  "text/plain": "txt",
-};
-
-/**
- * Persists one prepared rendition's bytes and answers the reference its record names.
+ * Where a registered upload's prepared bytes go, and when they are written.
  *
- * **The one I/O in this file, and why it is here.** A rendition is bytes: the media module returns the
- * prepared bytes, the record states a reference, and the scope-checked serving read resolves that
- * reference inside the git-ignored data tree. Nothing else in this application can create those bytes,
- * so this function writes them, under `DATA_ROOT/media/<sessionId>/`, and answers the repository-relative
- * reference the serving read resolves against the repository root. The original upload is never written
- * here: only re-encoded or re-muxed bytes leave the pipeline, which is what keeps the source unreachable
- * and its file name out of every consumer's hands.
+ * The bytes are kept by the store's media custody (`@/modules/store/media`), which owns the one reference
+ * form and the one atomic write: `media/uploads/<sessionId>/<assetId>/<renditionId>.<ext>`, inside the
+ * git-ignored data tree and never inside the repository's public files, so the only route to a playback,
+ * poster, caption, transcript or display byte is the scope-checked serving read that re-authorises every
+ * request. The reference is computed inside `apply`, because that is where the asset identity is minted; the
+ * bytes are written only once the transaction that names them has committed, so an attempt the runner
+ * refuses — a scope re-check, a stale revision, a malformed payload — leaves no file behind. The original
+ * upload is never written: only re-encoded or re-muxed bytes leave the pipeline, which is what keeps the
+ * source unreachable and its file name out of every consumer's hands.
  */
-async function persistRenditionBytes(
-  sessionId: string,
-  rendition: MediaRendition,
-): Promise<string> {
-  const directory = join(RENDITION_DIRECTORY, sessionId);
-  await mkdir(directory, { recursive: true });
-  const safeId = rendition.renditionId.replace(/[^A-Za-z0-9_-]/gu, "-");
-  const extension = MIME_EXTENSIONS[rendition.mimeType] ?? "bin";
-  const fileName = `${safeId}.${extension}`;
-  await writeFile(join(directory, fileName), rendition.bytes);
-  return ["", ".data", "media", sessionId, fileName].join("/");
-}
 
 /** Decodes one base64 payload into the bytes the media pipeline inspects, or the refusal it states. */
 function decodeBase64Bytes(value: string, field: string): Uint8Array {
@@ -3939,23 +3906,189 @@ export type RegisteredMediaAssetView = {
   readonly renditions: readonly RegisteredRenditionView[];
 };
 
+/** One registration's prepared bytes, with the custody reference its record states for them. */
+interface PendingRenditionBytes {
+  readonly bytesRef: string;
+  readonly bytes: Uint8Array;
+}
+
+/** Everything one registration prepares, before any of it is written to a record or to disk. */
+interface PreparedRegistration {
+  /** What the image or video pipeline established about the uploaded bytes. */
+  readonly accepted: MediaAcceptanceSuccess<MediaAssetScope>;
+  /** The renditions a record is built from: the accepted one first, then the ancillary ones. */
+  readonly renditions: readonly MediaRendition[];
+  /** The trimmed alternative text the descriptor and every placement inherit. */
+  readonly altText: string;
+  /** The caption the caller stated, or `null` when they stated none. */
+  readonly caption: string | null;
+}
+
 /**
- * Registers one uploaded image or video as a scoped asset with prepared renditions.
+ * Runs the application's one media pipeline over one registration payload under the asset identity the
+ * record will carry.
  *
  * Nothing is decided from a name: the kind comes from the bytes, the image runs the one image pipeline
  * (decode, orient, bound to 8,000 px, resize to at most 2,000 px on its longest edge, re-encode, strip
  * metadata) and the video runs the one video profile (MP4 H.264/AAC or WebM VP8/VP9, at most 100 MiB,
  * 180 s and 1920×1080, copied with its descriptive tags removed and the delivered bytes re-verified). A
- * refusal is `invalid` with the pipeline's own reason and next step, and it leaves the surrounding draft
- * and every successful placement exactly as they were. The original is never served and its name never
- * reaches a consumer.
+ * refusal is thrown as the field-keyed invalid value the runner turns into `invalid` with the pipeline's
+ * own reason and next step, so the surrounding draft and every successful placement stay exactly as they
+ * were. The original is never returned: only re-encoded or re-muxed bytes leave the pipeline.
+ *
+ * The result is deterministic for one payload and one asset identity, which is what lets a replay recover
+ * the files of the attempt it replays: the same bytes, the same rendition identities and the same custody
+ * references come back.
+ */
+async function prepareRegisteredRenditions(
+  payload: RegisterMediaAssetPayload,
+  assetId: string,
+  scope: MediaAssetScope,
+): Promise<PreparedRegistration> {
+  const bytes = decodeBase64Bytes(payload.source.bytesBase64, "source.bytesBase64");
+  const altText = payload.altText ?? payload.placement?.altText ?? "";
+  const caption = payload.caption ?? payload.placement?.caption ?? null;
+
+  const accepted: MediaAcceptanceSuccess<MediaAssetScope> | MediaRefusal =
+    payload.kind === "image"
+      ? await acceptImage({
+          assetId,
+          scope,
+          sourceOriginalRef: { system: "local-upload", reference: assetId },
+          bytes,
+          ...(payload.source.name === undefined ? {} : { sourceName: payload.source.name }),
+          altText,
+          ...(caption === null ? {} : { caption }),
+        })
+      : await acceptVideo({
+          assetId,
+          scope,
+          sourceOriginalRef: { system: "local-upload", reference: assetId },
+          bytes,
+          ...(payload.source.name === undefined ? {} : { sourceName: payload.source.name }),
+        });
+
+  if (accepted.state === "rejected") {
+    const reason = mediaStateReason("rejected", accepted);
+    throw invalidField(
+      "source",
+      reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`,
+    );
+  }
+
+  const renditions: MediaRendition[] = [...accepted.renditions];
+  if (payload.poster !== undefined) {
+    const poster = await prepareRendition({
+      assetId,
+      purpose: "poster",
+      bytes: decodeBase64Bytes(payload.poster.bytesBase64, "poster.bytesBase64"),
+      altText: payload.poster.altText ?? altText,
+      ...(payload.poster.name === undefined ? {} : { sourceName: payload.poster.name }),
+    });
+    if (poster.state === "rejected") {
+      const reason = mediaStateReason("rejected", poster);
+      throw invalidField(
+        "poster",
+        reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`,
+      );
+    }
+    renditions.push(poster.rendition);
+  }
+  if (payload.captions !== undefined) {
+    const captions = await prepareRendition({
+      assetId,
+      purpose: "captions",
+      bytes: new TextEncoder().encode(payload.captions.vtt),
+    });
+    if (captions.state === "rejected") {
+      const reason = mediaStateReason("rejected", captions);
+      throw invalidField(
+        "captions",
+        reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`,
+      );
+    }
+    renditions.push(captions.rendition);
+  }
+  if (payload.transcript !== undefined) {
+    const transcript = await prepareRendition({
+      assetId,
+      purpose: "transcript",
+      bytes: new TextEncoder().encode(payload.transcript.text),
+    });
+    if (transcript.state === "rejected") {
+      const reason = mediaStateReason("rejected", transcript);
+      throw invalidField(
+        "transcript",
+        reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`,
+      );
+    }
+    renditions.push(transcript.rendition);
+  }
+
+  return { accepted, renditions, altText, caption };
+}
+
+/** The asset identity a replayed registration created, or `undefined` when its stored result carries none. */
+function registeredAssetIdOf(result: MutationResult): string | undefined {
+  return isRecord(result) && typeof result.assetId === "string" ? result.assetId : undefined;
+}
+
+/**
+ * Writes the bytes a replayed registration names, so the replay recovers the files as well as the result.
+ *
+ * A replay returns the stored result without re-running `apply`, so the renditions are established again
+ * from the payload under the asset identity that result carries. The pipeline is deterministic, so this
+ * writes exactly the references the first attempt named and leaves bytes that already exist unchanged.
+ */
+async function writeReplayedRegistration(
+  sessionId: string,
+  payload: RegisterMediaAssetPayload,
+  scope: MediaAssetScope,
+  result: MutationResult,
+): Promise<void> {
+  const assetId = registeredAssetIdOf(result);
+  if (assetId === undefined) return;
+
+  const replayed = await prepareRegisteredRenditions(payload, assetId, scope);
+  for (const rendition of replayed.renditions) {
+    await writeMediaBytes(
+      uploadedMediaReference(sessionId, assetId, rendition.renditionId, rendition.mimeType),
+      rendition.bytes,
+    );
+  }
+}
+
+/**
+ * Registers one uploaded image or video as a scoped asset with prepared renditions.
+ *
+ * The pipeline runs inside `apply` and the bytes are written after it: `apply` decides the record, and the
+ * record and its ledger entry commit together, so the bytes of a registration are written only once the
+ * transaction that names them has committed. A refusal, a stale revision, a malformed payload or a store
+ * fault therefore leaves no file behind — the run that would have produced an orphan produces none — and a
+ * caller that lost the acknowledgement recovers the same references by replaying the same operation id.
+ * A byte write that cannot be completed answers `unknown` rather than a success the record cannot serve,
+ * because the operation id is the recovery handle and the replay writes the same references again.
  * Outcomes: `accepted`, `denied`, `invalid`, `alreadyAccepted`, `unavailable`, `unknown`.
  */
 export async function registerMediaAsset(
   sessionId: string,
   input: MutationInput<RegisterMediaAssetPayload>,
 ): Promise<MutationOutcome> {
-  return runMutation({
+  const scope: MediaAssetScope = {
+    organizationId: input.scope.organizationId,
+    ministryId: input.scope.ministryId,
+  };
+
+  /**
+   * The bytes this attempt prepared, each with the reference its record states.
+   *
+   * Held here rather than written inside `apply`, which runs inside the store's transaction: a write there
+   * is not covered by it, so a refusal after the write — the post-apply scope re-check throws
+   * `MutationRefused` — or any store fault would leave bytes on disk that no record names.
+   */
+  const pending: PendingRenditionBytes[] = [];
+
+  const outcome = await runMutation({
     sessionId,
     input,
     schema: registerMediaAssetPayloadSchema,
@@ -3966,102 +4099,22 @@ export async function registerMediaAsset(
       const { state } = opened;
       const payload = input.payload;
       const assetId = newRecordId("asset");
-      const scope: MediaAssetScope = {
-        organizationId: input.scope.organizationId,
-        ministryId: input.scope.ministryId,
-      };
-      const bytes = decodeBase64Bytes(payload.source.bytesBase64, "source.bytesBase64");
-      const altText = payload.altText ?? payload.placement?.altText ?? "";
-      const caption = payload.caption ?? payload.placement?.caption ?? null;
+      const prepared = await prepareRegisteredRenditions(payload, assetId, scope);
+      const { accepted } = prepared;
+      const { altText, caption } = prepared;
       const credit = payload.credit ?? payload.placement?.credit ?? null;
       const language = payload.language ?? payload.placement?.language ?? null;
 
-      const accepted: MediaAcceptanceSuccess<MediaAssetScope> | MediaRefusal =
-        payload.kind === "image"
-          ? await acceptImage({
-              assetId,
-              scope,
-              sourceOriginalRef: { system: "local-upload", reference: assetId },
-              bytes,
-              ...(payload.source.name === undefined ? {} : { sourceName: payload.source.name }),
-              altText,
-              ...(caption === null ? {} : { caption }),
-            })
-          : await acceptVideo({
-              assetId,
-              scope,
-              sourceOriginalRef: { system: "local-upload", reference: assetId },
-              bytes,
-              ...(payload.source.name === undefined ? {} : { sourceName: payload.source.name }),
-            });
-
-      if (accepted.state === "rejected") {
-        const reason = mediaStateReason("rejected", accepted);
-        throw invalidField(
-          "source",
-          reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`,
+      const renditions = prepared.renditions.map((rendition) => {
+        const bytesRef = uploadedMediaReference(
+          sessionId,
+          assetId,
+          rendition.renditionId,
+          rendition.mimeType,
         );
-      }
-
-      const prepared: MediaRendition[] = [...accepted.renditions];
-      if (payload.poster !== undefined) {
-        const poster = await prepareRendition({
-          assetId,
-          purpose: "poster",
-          bytes: decodeBase64Bytes(payload.poster.bytesBase64, "poster.bytesBase64"),
-          altText: payload.poster.altText ?? altText,
-          ...(payload.poster.name === undefined ? {} : { sourceName: payload.poster.name }),
-        });
-        if (poster.state === "rejected") {
-          const reason = mediaStateReason("rejected", poster);
-          throw invalidField(
-            "poster",
-            reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`,
-          );
-        }
-        prepared.push(poster.rendition);
-      }
-      if (payload.captions !== undefined) {
-        const captions = await prepareRendition({
-          assetId,
-          purpose: "captions",
-          bytes: new TextEncoder().encode(payload.captions.vtt),
-        });
-        if (captions.state === "rejected") {
-          const reason = mediaStateReason("rejected", captions);
-          throw invalidField(
-            "captions",
-            reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`,
-          );
-        }
-        prepared.push(captions.rendition);
-      }
-      if (payload.transcript !== undefined) {
-        const transcript = await prepareRendition({
-          assetId,
-          purpose: "transcript",
-          bytes: new TextEncoder().encode(payload.transcript.text),
-        });
-        if (transcript.state === "rejected") {
-          const reason = mediaStateReason("rejected", transcript);
-          throw invalidField(
-            "transcript",
-            reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`,
-          );
-        }
-        prepared.push(transcript.rendition);
-      }
-
-      const renditions: {
-        renditionId: string;
-        purpose: MediaAssetRenditionPurpose;
-        bytesRef: string;
-        mimeType: string;
-      }[] = [];
-      for (const rendition of prepared) {
-        const bytesRef = await persistRenditionBytes(sessionId, rendition);
-        renditions.push(storedRenditionOf(rendition, bytesRef));
-      }
+        pending.push({ bytesRef, bytes: rendition.bytes });
+        return storedRenditionOf(rendition, bytesRef);
+      });
 
       const asset: MediaAssetRecord = {
         assetId,
@@ -4107,6 +4160,26 @@ export async function registerMediaAsset(
       } satisfies ApplyResult<typeof result>;
     },
   });
+
+  // The bytes travel after the outcome, never inside `apply`. `accepted` means the record and its ledger
+  // entry are committed, so the references it states are the ones to write; `alreadyAccepted` means an
+  // earlier attempt committed them and this attempt is its replay; every other outcome changed nothing, so
+  // nothing is written and no byte is left that no record names. A write that fails after the commit is
+  // reported as `unknown`: the effect exists, the caller is told the acknowledgement is what was lost, and
+  // replaying the same operation id re-attempts the very same references.
+  try {
+    if (outcome.outcome === "accepted") {
+      for (const item of pending) {
+        await writeMediaBytes(item.bytesRef, item.bytes);
+      }
+    } else if (outcome.outcome === "alreadyAccepted") {
+      await writeReplayedRegistration(sessionId, input.payload, scope, outcome.result);
+    }
+  } catch {
+    return unknown({ operationId: input.operationId });
+  }
+
+  return outcome;
 }
 
 /** The payload `replacePlacement` and `removePlacement` accept: one draft and one placement. */

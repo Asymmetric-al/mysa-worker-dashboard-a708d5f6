@@ -118,6 +118,7 @@ import {
   assertScope,
   canEdit,
   canExport,
+  outcomeOfRefusal,
   resolveSession,
   type AccessDecision,
   type ResolvedSession,
@@ -196,6 +197,15 @@ const GOAL_ABSENT_REVISION = "absent";
 /** What a caller is told when this session's records could not be read at all. */
 const STORE_UNAVAILABLE_GUIDANCE =
   "This session's records could not be read. Nothing was changed; try again in a moment.";
+
+/**
+ * The store's reference for the support family, reported as a read's source and in diagnostics.
+ *
+ * The reference is a fixed opaque marker naming the record family a reader would ask for. It is never
+ * the session's identity: the session id is the value of the development cookie, so it is a
+ * credential, and a credential has no place in an envelope a browser receives or in a log line.
+ */
+const SUPPORT_SOURCE_REFERENCE = "support";
 
 /**
  * What a caller is told when the financial source answered but its figures could not be computed.
@@ -641,9 +651,9 @@ type SupportContextOutcome =
   | { readonly ok: true; readonly context: SupportReadContext }
   | { readonly ok: false; readonly refusal: DeniedOutcome | UnavailableOutcome };
 
-/** The store's own identity for a session's documents, used as a read's source and for diagnostics. */
-function storeSource(session: ResolvedSession): SourceReference {
-  return { system: LOCAL_STORE_SYSTEM, reference: session.sessionId };
+/** The source a support read reports: the local store, named by its fixed family marker. */
+function storeSource(): SourceReference {
+  return { system: LOCAL_STORE_SYSTEM, reference: SUPPORT_SOURCE_REFERENCE };
 }
 
 /**
@@ -905,7 +915,7 @@ async function readContext(
     return { ok: false, refusal: refused("session-unavailable") };
   }
   if (!resolution.ok) {
-    return { ok: false, refusal: resolution.denial };
+    return { ok: false, refusal: outcomeOfRefusal(resolution.refusal, READ_ATTEMPT_ID) };
   }
   const { session } = resolution;
 
@@ -933,13 +943,13 @@ async function readContext(
   try {
     const documents = await readSession(session.sessionId);
     if (documents === undefined) {
-      return { ok: false, refusal: sourceUnavailable(job, storeSource(session)) };
+      return { ok: false, refusal: sourceUnavailable(job, storeSource()) };
     }
     state = documents.state;
     workloadValue = documents.workload;
     meta = documents.meta;
   } catch {
-    return { ok: false, refusal: sourceUnavailable(job, storeSource(session)) };
+    return { ok: false, refusal: sourceUnavailable(job, storeSource()) };
   }
 
   // An armed scope-denial plan must take effect on the read it names, so it is answered here — after
@@ -952,12 +962,12 @@ async function readContext(
 
   const parsed = supportStateDocumentSchema.safeParse(state);
   if (!parsed.success) {
-    return { ok: false, refusal: sourceUnavailable(job, storeSource(session)) };
+    return { ok: false, refusal: sourceUnavailable(job, storeSource()) };
   }
 
   const workload = workloadDocumentSchema.safeParse(workloadValue);
   if (workloadValue !== undefined && !workload.success) {
-    return { ok: false, refusal: sourceUnavailable(job, storeSource(session)) };
+    return { ok: false, refusal: sourceUnavailable(job, storeSource()) };
   }
   const workloadDocument = workload.success ? workload.data : undefined;
 
@@ -965,7 +975,7 @@ async function readContext(
   if (record === null || record.supportSubjectId !== scope.supportSubjectId) {
     return {
       ok: false,
-      refusal: sourceUnavailable(job, storeSource(session), NO_SUPPORT_PROJECTION_GUIDANCE),
+      refusal: sourceUnavailable(job, storeSource(), NO_SUPPORT_PROJECTION_GUIDANCE),
     };
   }
 

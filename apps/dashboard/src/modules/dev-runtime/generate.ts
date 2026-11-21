@@ -44,7 +44,7 @@ import { allocateMinor, minorUnitsOf, negateMinor, type Money } from "@/modules/
 import { UNKNOWN_CURRENCY } from "@/modules/money/currency";
 import { SUPPORT_BASIS, type SupportBasis } from "@/modules/support/basis";
 import { DATA_ROOT, isSafeSessionId, sessionPaths } from "@/modules/store/paths";
-import { readSession, resetSession, transact } from "@/modules/store/repository";
+import { readSession, resetSession, StoreAbsentError, transact } from "@/modules/store/repository";
 import { civilDateAt, serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
 import { SEED_INSTANT } from "@/modules/time/clock";
 import type { SourceReference } from "@/lib/ids";
@@ -834,11 +834,25 @@ export function buildWorkload(sessionId: string = DEFAULT_WORKLOAD_SESSION_ID): 
  * to, so the store's creating path lays the readable seed down with the workload in the same call —
  * which is what makes `bun run seed:workload` work on a fresh clone without a reset first.
  *
+ * A checkout whose store root does not exist yet is that same "no session to add to" case rather than
+ * an outage: nothing read this session because nothing has been seeded, and the creating path below is
+ * what lays the root down. A fault reading an existing store is not tolerated — it is rethrown, because
+ * writing a seed over a store that could not answer would discard records nobody could read.
+ *
  * The readable seed is otherwise untouched, which is why `reset` followed by `seed:workload` is a clean
  * two-step: the second command adds the large dataset and leaves the seed's records byte-identical.
  */
 async function persistWorkload(sessionId: string, workload: WorkloadDocument): Promise<void> {
-  const existing = await readSession(sessionId);
+  let existing: Awaited<ReturnType<typeof readSession>>;
+  try {
+    existing = await readSession(sessionId);
+  } catch (error) {
+    if (!(error instanceof StoreAbsentError)) {
+      throw error;
+    }
+    existing = undefined;
+  }
+
   if (existing === undefined) {
     await resetSession(sessionId, { ...seedSessionDocuments(sessionId), workload });
     return;

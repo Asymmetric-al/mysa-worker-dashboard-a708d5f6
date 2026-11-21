@@ -69,11 +69,14 @@ import { COACHING_COPY } from "../copy";
  * `audience` is the literal `"private"` rather than a union, so a shared projection can never be passed
  * here by mistake and no reader of this file has to wonder whose copy is on screen. `updatedOn` is a
  * civil date and is `null` when the record carries no date: a date the envelope did not supply is not
- * filled in with today's.
+ * filled in with today's. It arrives as the domain's own `CivilDate` from a client caller, or in the
+ * stored `YYYY-MM-DD` form a Server Component passes, because a `Temporal.PlainDate` is not serialisable
+ * across the server-to-client boundary; both mean the same calendar day and this surface prints it in
+ * that stored form rather than deriving one.
  */
 interface PreparationRecord {
   readonly body: string;
-  readonly updatedOn: CivilDate | null;
+  readonly updatedOn: CivilDate | string | null;
   readonly audience: "private";
 }
 
@@ -113,7 +116,11 @@ export interface PreparationSurfaceProps {
 type PreparationView =
   | { readonly state: "busy" }
   | { readonly state: "unavailable"; readonly source: PreparationSourceIdentity }
-  | { readonly state: "present"; readonly body: string; readonly updatedOn: CivilDate | null }
+  | {
+      readonly state: "present";
+      readonly body: string;
+      readonly updatedOn: CivilDate | string | null;
+    }
   | { readonly state: "absent" };
 
 /**

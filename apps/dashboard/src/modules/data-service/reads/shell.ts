@@ -68,7 +68,13 @@ import {
 import { referralWindowState } from "@/modules/time/window";
 import { readSession } from "@/modules/store/repository";
 
-import { assertScope, canView, resolveSession, type ResolvedSession } from "../authorize";
+import {
+  assertScope,
+  canView,
+  readResultOfRefusal,
+  resolveSession,
+  type ResolvedSession,
+} from "../authorize";
 import {
   buildEnvelope,
   commitmentRowRecordSchema,
@@ -1487,15 +1493,16 @@ function supportValueStates(
 /**
  * Reads the session's admission: which of the five states it is in, the guidance key the shell renders,
  * and — only when admitted — the principal, the selected context and the scenario it runs in.
- * Answers `envelope`, or `denied` when the session cannot be established or a stated context is not
- * admitted.
+ * Answers `envelope`, `denied` when the session cannot be established or a stated context is not
+ * admitted, and `unavailable` when the store itself could not answer.
  */
 export async function readAdmissionState(): Promise<ReadResult<ReadEnvelope<AdmissionStateData>>> {
   const resolution = await resolveSession();
   if (!resolution.ok) {
     // No usable session is a refusal, not an empty workspace: the shell is told nothing about any
-    // record, and it offers the retry or sign-in guidance it owns.
-    return { kind: "denied", denied: resolution.denial };
+    // record, and it offers the retry or sign-in guidance it owns. A store that could not answer is
+    // the different fact, and it reaches the surface as the outage it is.
+    return readResultOfRefusal(resolution.refusal);
   }
   const session = resolution.session;
   const asOf = asOfText(session);
@@ -1597,12 +1604,13 @@ export async function readAdmissionState(): Promise<ReadResult<ReadEnvelope<Admi
 /**
  * Reads the memberships this session may act in, grouped by organisation and ministry, with the one in
  * force marked and `directEntry` set when a single ministry makes a chooser unnecessary. Answers
- * `envelope`, or `denied` for a session that is not signed in.
+ * `envelope`, `denied` for a session that is not signed in, and `unavailable` when the store itself
+ * could not answer.
  */
 export async function readContextChooser(): Promise<ReadResult<ReadEnvelope<ContextChooserData>>> {
   const resolution = await resolveSession();
   if (!resolution.ok) {
-    return { kind: "denied", denied: resolution.denial };
+    return readResultOfRefusal(resolution.refusal);
   }
   const session = resolution.session;
   if (session.sessionState !== "signed-in") {
@@ -1663,12 +1671,13 @@ export async function readContextChooser(): Promise<ReadResult<ReadEnvelope<Cont
 /**
  * Reads the worker's day as Attention, Information and Unfinished work, every item carrying why it is
  * there and where it goes, with received support stated through the one report computation. Answers
- * `envelope`, or `denied` for a session that is not signed in or has no context in force.
+ * `envelope`, `denied` for a session that is not signed in or has no context in force, and
+ * `unavailable` when the store itself could not answer.
  */
 export async function readHome(): Promise<ReadResult<ReadEnvelope<HomeData>>> {
   const resolution = await resolveSession();
   if (!resolution.ok) {
-    return { kind: "denied", denied: resolution.denial };
+    return readResultOfRefusal(resolution.refusal);
   }
   const session = resolution.session;
   if (session.sessionState !== "signed-in") {

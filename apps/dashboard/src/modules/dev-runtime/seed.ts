@@ -17,9 +17,9 @@
  * Nothing here reads the machine clock, `Math.random`, `crypto.randomUUID` or the environment, and
  * nothing here writes: the documents are handed to `store/repository`, which is the only writer.
  *
- * Layering. A development-runtime module: it imports the store's document surface, the sibling
- * scenario module, the time and content domain modules, and `data-service/envelope` for TYPES only,
- * so the data service stays out of this module's runtime graph — `envelope.ts` is the declaration of
+ * Layering. A development-runtime module: it imports the store's document and media-reference surfaces,
+ * the sibling scenario module, the time and content domain modules, and `data-service/envelope` for TYPES
+ * only, so the data service stays out of this module's runtime graph — `envelope.ts` is the declaration of
  * the stored record form both sides share, and it imports no module of this one.
  *
  * What it hands a caller. `SEEDED_PERSONAS` names the ten personas this release seeds, with the
@@ -89,6 +89,7 @@ import type {
 } from "@/modules/data-service/envelope";
 import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { UNKNOWN_CURRENCY } from "@/modules/money/currency";
+import { seededMediaReference } from "@/modules/store/media";
 import type { SessionDocuments } from "@/modules/store/paths";
 import type { CommitmentKind, RecurringBucket } from "@/modules/support/buckets";
 import { GOAL_CAPABILITY } from "@/modules/support/goal";
@@ -1079,14 +1080,107 @@ function buildMembership(
   };
 }
 
+/**
+ * How one seeded rendition's bytes reach the store's media custody when a reset materialises them.
+ *
+ * `copy` takes the committed fixture's bytes as they are: that fixture *is* the rendition, and
+ * `scripts/make-media-fixtures.mjs` is what verified it. `image-display` runs the application's one image
+ * pipeline over the committed original, because a display rendition is a preparation the upload path
+ * performs, so the seed serves what that pipeline produces rather than the source it came from.
+ */
+export type SeededMediaProduction = "copy" | "image-display";
+
+/** One seeded rendition's bytes: where they come from, how they are produced, and where custody keeps them. */
+export interface SeededMediaBytes {
+  /** The asset whose record names these bytes. */
+  readonly assetId: string;
+  /** The rendition the record states for them. */
+  readonly renditionId: string;
+  /**
+   * The file name custody keeps the bytes under, inside the asset's own directory. The reference form —
+   * `media/fixtures/<assetId>/<file>`, relative to the store's data root — belongs to `store/media`, so
+   * this table names the file and that module decides where it lives.
+   */
+  readonly file: string;
+  /** The committed fixture the bytes are read from, under `apps/dashboard/public/fixtures/media/`. */
+  readonly fixture: string;
+  /** How the bytes are produced from that fixture. */
+  readonly producedBy: SeededMediaProduction;
+}
+
+/**
+ * Every byte the seeded inventory serves, in one table.
+ *
+ * A rendition's `bytesRef` is derived from its row, so the record and the file a reset writes cannot
+ * disagree, and the fixture a byte comes from is stated once rather than here and again in the
+ * materialising step. The committed fixtures stay inputs: they are read by a reset and never served,
+ * because the bytes a request can reach live in the store's own data tree and only the re-authorising
+ * media route resolves them.
+ *
+ * The image's display rendition is named `display.jpg`, never the original's revealing file name: what the
+ * pipeline produced is a new image, and the name a camera gave the photograph must not survive into a path
+ * a record states.
+ */
+export const SEEDED_MEDIA_BYTES: readonly SeededMediaBytes[] = Object.freeze([
+  {
+    assetId: "asset-video-welcome",
+    renditionId: "rendition-video-welcome-playback",
+    file: "sample-h264.mp4",
+    fixture: "sample-h264.mp4",
+    producedBy: "copy",
+  },
+  {
+    assetId: "asset-video-welcome",
+    renditionId: "rendition-video-welcome-poster",
+    file: "poster.jpg",
+    fixture: "poster.jpg",
+    producedBy: "copy",
+  },
+  {
+    assetId: "asset-video-welcome",
+    renditionId: "rendition-video-welcome-captions",
+    file: "sample.vtt",
+    fixture: "sample.vtt",
+    producedBy: "copy",
+  },
+  {
+    assetId: "asset-image-portrait",
+    renditionId: "rendition-image-portrait-display",
+    file: "display.jpg",
+    fixture: "IMG_20260814-harbour-youth-group.jpg",
+    producedBy: "image-display",
+  },
+  {
+    assetId: "asset-video-unavailable",
+    renditionId: "rendition-video-unavailable-poster",
+    file: "poster.jpg",
+    fixture: "poster.jpg",
+    producedBy: "copy",
+  },
+]);
+
+/**
+ * The custody reference of one seeded rendition, taken from the one table that states where its bytes come
+ * from. A rendition with no row is a record that would name bytes nothing materialises, so it is refused
+ * here rather than written as a record a reset cannot serve.
+ */
+function seededBytesRefOf(renditionId: string): string {
+  const entry = SEEDED_MEDIA_BYTES.find((candidate) => candidate.renditionId === renditionId);
+  if (entry === undefined) {
+    throw new Error(
+      `No seeded media bytes are declared for ${JSON.stringify(renditionId)}: every rendition the seed records needs a row in SEEDED_MEDIA_BYTES, because that row says which committed fixture a reset materialises and where custody keeps it.`,
+    );
+  }
+  return seededMediaReference(entry.assetId, entry.file);
+}
+
 /** One prepared rendition of a media asset: what is served in place of the original bytes. */
 function rendition(
   renditionId: string,
   purpose: MediaAssetRenditionPurpose,
-  bytesRef: string,
   mimeType: string,
 ): MediaAssetRenditionRecord {
-  return { renditionId, purpose, bytesRef, mimeType };
+  return { renditionId, purpose, bytesRef: seededBytesRefOf(renditionId), mimeType };
 }
 
 /** The bounded presentation every seeded section starts from: plain, single column, start-aligned, cover. */
@@ -1206,7 +1300,16 @@ function assetScope(session: SeededSession, membership: AdmittedMembership): Sco
   };
 }
 
-/** Builds one scoped media asset; `sourceOriginalRef` is private and never served. */
+/**
+ * Builds one scoped media asset; `sourceOriginalRef` is private and never served.
+ *
+ * `tagVerification` is the caller's statement about the bytes this asset actually serves, stated per asset
+ * because the three seeded assets were verified by different things: the image's display rendition is
+ * produced and verified by the application's image pipeline, and the video's playback, poster and caption
+ * bytes are the committed fixtures verified by `scripts/make-media-fixtures.mjs`. One hardcoded value here
+ * would claim for one asset a check that ran for another — and it would claim it for the image in
+ * particular, over bytes that never carried metadata at all.
+ */
 function buildMediaAsset(
   assetId: string,
   kind: MediaAssetRecord["kind"],
@@ -1214,6 +1317,7 @@ function buildMediaAsset(
   sourceOriginalRef: string,
   renditions: readonly MediaAssetRenditionRecord[],
   scope: Scope,
+  tagVerification: MediaAssetRecord["tagVerification"],
 ): MediaAssetRecord {
   return {
     assetId,
@@ -1222,7 +1326,7 @@ function buildMediaAsset(
     sourceOriginalRef,
     renditions,
     scope,
-    tagVerification: { checked: true, residualTags: [] },
+    tagVerification,
     revision: INITIAL_REVISION,
   };
 }
@@ -2306,19 +2410,28 @@ function harbourContentDocuments(): readonly ContentDocumentRecord[] {
 }
 
 /**
- * The three scoped media assets, each describing the committed fixture it actually serves.
+ * The three scoped media assets, each describing the bytes it actually serves.
  *
- * The video's recorded profile is the fixture's own — `sample-h264.mp4` is H.264 High
- * (`avc1.64001f`) at 960x540 with AAC audio and a five-second duration, `poster.jpg` is the matching
- * 960x540 still, and `sample.vtt` is the caption track — so no surface can show a size, a duration or
- * a codec the served bytes contradict. The image's private original carries a revealing file name
- * that is never served and never echoed. The third asset's playback rendition was never prepared and
- * is therefore absent rather than fabricated: its placement shows the poster, the text alternative
- * and a retry, which is how the unavailable state is reachable without an empty player.
+ * Every rendition's `bytesRef` comes from `SEEDED_MEDIA_BYTES`, so a record names a file a reset
+ * materialises in the store's own data tree and never a fixture under `public/`. The video's recorded
+ * profile is the fixture's own — `sample-h264.mp4` is H.264 High (`avc1.64001f`) at 960x540 with AAC audio
+ * and a five-second duration, `poster.jpg` is the matching 960x540 still, and `sample.vtt` is the caption
+ * track — so no surface can show a size, a duration or a codec the served bytes contradict.
  *
- * Preparation itself belongs to the upload path, where `acceptImage()` and `acceptVideo()` decode,
- * re-encode and strip metadata before a file is admitted; the seed records the profile of committed
- * fixtures it does not itself re-encode, so no record here claims a preparation that never ran.
+ * The image is the seed's EXIF-bearing original, which is the input criterion 9's stripping assertion is
+ * built on: `IMG_20260814-harbour-youth-group.jpg` is committed with an Orientation of 6, a camera make and
+ * model, a DateTimeOriginal and a GPS pair, its revealing file name stays private, and the display rendition
+ * served in its place is produced from it by `prepareDisplayImage` at reset — orientation applied, bounded to
+ * 2,000 px on its longest edge, re-encoded and metadata stripped. The profile below is therefore the served
+ * rendition's own 1125x2000 rather than the 2400x1350 the original carries, so a surface that shows a size
+ * shows what was delivered.
+ *
+ * The third asset's playback rendition was never prepared and is therefore absent rather than fabricated: its
+ * placement shows the poster, the text alternative and a retry, which is how the unavailable state is
+ * reachable without an empty player.
+ *
+ * Preparation itself is not performed here: the seed opens no file and holds no bytes, so each asset states
+ * the verification of the bytes it serves and a reset performs the preparation that produces them.
  */
 function harbourMediaAssets(session: SeededSession): readonly MediaAssetRecord[] {
   const scope = assetScope(session, HARBOUR_YOUTH);
@@ -2329,57 +2442,40 @@ function harbourMediaAssets(session: SeededSession): readonly MediaAssetRecord[]
       { container: "mp4", codec: "avc1.64001f", durationSeconds: 5.055, width: 960, height: 540 },
       "media-originals/welcome-sunday-raw.mp4",
       [
-        rendition(
-          "rendition-video-welcome-playback",
-          "playback",
-          "apps/dashboard/public/fixtures/media/sample-h264.mp4",
-          "video/mp4",
-        ),
-        rendition(
-          "rendition-video-welcome-poster",
-          "poster",
-          "apps/dashboard/public/fixtures/media/poster.jpg",
-          "image/jpeg",
-        ),
-        rendition(
-          "rendition-video-welcome-captions",
-          "captions",
-          "apps/dashboard/public/fixtures/media/sample.vtt",
-          "text/vtt",
-        ),
+        rendition("rendition-video-welcome-playback", "playback", "video/mp4"),
+        rendition("rendition-video-welcome-poster", "poster", "image/jpeg"),
+        rendition("rendition-video-welcome-captions", "captions", "text/vtt"),
       ],
       scope,
+      // The committed fixtures are the bytes served here, and `scripts/make-media-fixtures.mjs --check`
+      // verified them: the poster carries no EXIF, ICC profile or comment segment, the caption track is plain
+      // WebVTT, and the clip's container reports a creation timestamp and no descriptive metadata tag.
+      { checked: true, residualTags: [] },
     ),
     buildMediaAsset(
       "asset-image-portrait",
       "image",
-      { container: "jpeg", codec: "mjpeg", durationSeconds: null, width: 960, height: 540 },
-      // A revealing original filename, kept private: it is never echoed into output or served.
+      { container: "jpeg", codec: "jpeg", durationSeconds: null, width: 1125, height: 2000 },
+      // A revealing original filename, kept private: it is never echoed into output or served, and it is not
+      // the name of the rendition's custody file either.
       "media-originals/IMG_20260814-harbour-youth-group.jpg",
-      [
-        rendition(
-          "rendition-image-portrait-display",
-          "display",
-          "apps/dashboard/public/fixtures/media/poster.jpg",
-          "image/jpeg",
-        ),
-      ],
+      [rendition("rendition-image-portrait-display", "display", "image/jpeg")],
       scope,
+      // Produced and verified by `prepareDisplayImage` when a reset materialises it: that pipeline re-reads
+      // the delivered bytes and refuses one still carrying metadata or a copy of the original's file name, so
+      // this states the result of the run that produces the served bytes.
+      { checked: true, residualTags: [] },
     ),
     buildMediaAsset(
       "asset-video-unavailable",
       "video",
       { container: "mp4", codec: "avc1.4d401f", durationSeconds: 95.4, width: 1280, height: 720 },
       "media-originals/evening-talk-raw.mp4",
-      [
-        rendition(
-          "rendition-video-unavailable-poster",
-          "poster",
-          "apps/dashboard/public/fixtures/media/poster.jpg",
-          "image/jpeg",
-        ),
-      ],
+      [rendition("rendition-video-unavailable-poster", "poster", "image/jpeg")],
       scope,
+      // No playback bytes exist for this asset, so the only rendition it serves is the committed poster, which
+      // the fixture script's own check verified carries no EXIF, ICC profile or comment segment.
+      { checked: true, residualTags: [] },
     ),
   ];
 }

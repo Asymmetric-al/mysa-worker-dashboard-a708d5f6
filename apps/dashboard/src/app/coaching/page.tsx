@@ -19,22 +19,23 @@
  * grant states, the four sharing outcomes and the cutoff sentence belong to the family
  * (`features/coaching/components/*` and `features/coaching/copy`); this file maps the envelope onto
  * their prop shapes and adds no wording of its own beyond the destination labels and the page title,
- * which come from the same copy module. Nothing here reads a clock, formats money or computes a
- * percentage: every value is rendered as the read reported it.
+ * which come from the same copy module. The sharing summary is composed through
+ * `./sharing-summary-locale`, which supplies the reader's interface locale from the shell's one
+ * preference provider: a Server Component cannot read a browser preference, and the coaching family may
+ * not import the shell feature that owns it, so that single composition lives beside this route.
+ * Nothing here reads a clock, formats money or computes a percentage: every value is rendered as the
+ * read reported it.
  *
- * **Two projections the overview read does not carry, stated here rather than invented later.**
+ * **Every value this page shows is the read's own.** The overview read carries the private
+ * preparation's prose — the principal's own latest note on the record, with the civil day it stands for
+ * — the relationship's availability, the one state each admitted module was read in, and the civil
+ * Share-through day the frozen cutoff implies. This file chooses which preparation record is current
+ * and maps those facts onto the surfaces' props; it derives none of them. In particular it converts no
+ * instant into a calendar day, because that conversion is the calendar rule `modules/time` owns and a
+ * second implementation of it could move a frozen cutoff, which is the one thing a cutoff must never do.
  *
- * 1. *Preparation text.* The read reports the worker's private preparation records (identity, title,
- *    tags, revision) and not their prose. The surface's absent state would claim the worker has
- *    prepared nothing, so the record the read does report is rendered instead, with no date filled in
- *    for one the envelope did not state.
- * 2. *The share-through day.* The read states the resolved exclusive bound and its zone, not the
- *    civil date the worker chose, so the bound is rendered verbatim by `sharing-summary` and no date
- *    is derived from it here — deriving one would move a frozen cutoff, which is the one thing a
- *    cutoff must never do.
- *
- * The financial range is absent for the same reason: the overview read states none, so the summary
- * renders its own "no range reviewed" sentence instead of a figure this file invented.
+ * The financial range is absent because the overview read states none, so the summary renders its own
+ * "no range reviewed" sentence instead of a figure this file invented.
  *
  * **Landmarks.** The shell above this route owns the single `main` landmark, the navigation rail, the
  * context indicator and the persistent Development data label; this file adds none of them. It renders
@@ -61,15 +62,17 @@ import { buttonVariants } from "@/components/ui/button";
 import PreparationSurface, {
   type PreparationSurfaceProps,
 } from "@/features/coaching/components/preparation-surface";
-import SharingSummary, {
-  type CoachingGrantView,
-  type GrantDurationView,
-  type ModuleRead,
-  type SharingOutcome,
+import type {
+  CoachingGrantView,
+  GrantDurationView,
+  ModuleRead,
+  SharingOutcome,
 } from "@/features/coaching/components/sharing-summary";
 import { COACHING_COPY } from "@/features/coaching/copy";
 import { cn } from "@/lib/cn";
 import { reads } from "@/modules/data-service";
+
+import SharingSummaryLocale from "./sharing-summary-locale";
 
 // ---------------------------------------------------------------------------------------------
 // The envelope's own shape, taken from the read rather than restated
@@ -88,6 +91,9 @@ type CoachingOverviewEnvelope = Extract<CoachingOverviewResult, { kind: "envelop
 type CoachingOverview = CoachingOverviewEnvelope["data"];
 type CoachingRelationship = CoachingOverview["relationships"][number];
 type RelationshipDuration = CoachingRelationship["duration"];
+
+/** One private preparation record as the overview read projects it. */
+type PreparationRecordView = CoachingOverview["preparation"][number];
 
 /** The preparation record the surface accepts, taken from its own props. */
 type PreparationView = PreparationSurfaceProps["preparation"];
@@ -131,17 +137,6 @@ const DESTINATIONS = [
  */
 const DESTINATION_LINK_CLASS = "h-auto min-h-8 max-w-full whitespace-normal py-1.5";
 
-/**
- * The display locale the summary formats through when it is given a financial range.
- *
- * A stored viewer preference lives in the browser, and a Server Component cannot read it, so the
- * interface's default is stated here rather than guessed from the host: the host's locale is a
- * property of the machine that rendered the page, not of the reader. The overview read carries no
- * financial range today, so this value formats nothing; it is declared so the composition is
- * complete and so the summary never falls back to the host's locale on its own.
- */
-const DISPLAY_LOCALE = "en";
-
 // ---------------------------------------------------------------------------------------------
 // The envelope mapped onto the family's props
 // ---------------------------------------------------------------------------------------------
@@ -163,16 +158,41 @@ function currentRelationshipOf(overview: CoachingOverview): CoachingRelationship
 }
 
 /**
- * The preparation record to render, or `null` when the worker holds none.
+ * The preparation record to present: the one that was written to most recently.
  *
- * See the header: the read projects preparation records without their text, so the record it does
- * report is rendered as the surface's preparation. `updatedOn` is `null` because the read states no
- * date — a missing date is left missing rather than filled in with today's.
+ * The read states each record's own prose and the civil day that prose stands for, and reports the
+ * records in its own order — by name. A worker's current preparation is the one updated last, so the
+ * record is chosen by the day it states; when no record states a day, because nothing has been written
+ * on any of them, the read's own first record is presented, since a record with an empty body is still a
+ * record. `null` is reserved for a worker holding no preparation record at all.
+ */
+function currentPreparationOf(
+  records: CoachingOverview["preparation"],
+): PreparationRecordView | null {
+  let current: PreparationRecordView | null = null;
+  let latestDay = "";
+  for (const record of records) {
+    if (record.updatedOn === null) continue;
+    if (current === null || record.updatedOn > latestDay) {
+      current = record;
+      latestDay = record.updatedOn;
+    }
+  }
+  return current ?? records[0] ?? null;
+}
+
+/**
+ * The preparation as the surface renders it, built from the record the read projected.
+ *
+ * The body is the record class's own prose and the date is the day the read resolved for it; both are
+ * passed through unchanged. An absent body becomes an empty string so the surface states that the
+ * preparation has no text in it yet, and a day the read did not state stays absent rather than being
+ * filled in with today's.
  */
 function preparationViewOf(overview: CoachingOverview): PreparationView {
-  const record = overview.preparation[0];
-  if (record === undefined) return null;
-  return { body: record.displayName, updatedOn: null, audience: "private" };
+  const record = currentPreparationOf(overview.preparation);
+  if (record === null) return null;
+  return { body: record.body ?? "", updatedOn: record.updatedOn, audience: "private" };
 }
 
 /** One outcome flag as the summary's own three states. A recorded flag is never `unknown`. */
@@ -181,31 +201,33 @@ function outcomeOf(reached: boolean): SharingOutcome {
 }
 
 /**
- * The duration as the summary reads it.
+ * The duration as the summary reads it, in the read's own three states.
  *
- * An ongoing share says so. Every other shape renders the bound the read resolved — the exclusive
- * instant, in the zone it was frozen in — verbatim: the civil share-through date the worker chose is
- * not part of this read, and converting the bound back into a calendar day would be window
- * arithmetic this file must not perform. A record that states no usable bound renders an empty
- * bound, which the summary already reports as a share that closes on no date.
+ * The overview read states which of the three a relationship stands in — an open-ended share, a share
+ * bound to a Share-through day, or a record carrying no usable duration at all — and it states the
+ * civil day the frozen cutoff implies, in its stored `YYYY-MM-DD` form. All of that is passed through
+ * as it was read: this file converts no instant into a calendar day, because that conversion is the
+ * calendar rule `modules/time` owns and a frozen bound must never be moved by a second implementation
+ * of it. A `through-date` whose day the read could not resolve passes `null` rather than an empty
+ * string, so the summary can say that no day could be resolved instead of rendering a blank one.
  */
 function durationViewOf(duration: RelationshipDuration): GrantDurationView {
   if (duration.kind === "ongoing") return { kind: "ongoing" };
-  return {
-    kind: "through-date",
-    throughDate: duration.cutoffInstant ?? duration.boundInstant ?? "",
-  };
+  if (duration.kind === "none") return { kind: "none" };
+  return { kind: "through-date", throughDate: duration.shareThroughDate };
 }
 
 /**
  * The grant as `sharing-summary` renders it, built only from facts the read stated.
  *
- * - `availability` states what the read itself admitted the episode under: the source answered (an
- *   outage would have returned `unavailable` for the whole read) and the access context carries no
- *   permission hold.
- * - `modules` lists the modules a coach can read *now*. While access is live, every selected module
- *   is admitted and is listed as shared; when access is not live — an unaccepted invitation, a
- *   revocation, an ended episode, a reached cutoff — nothing is readable, so no module is listed and
+ * - `availability` is the read's own answer, passed through unchanged: whether the source behind the
+ *   modules a coach can read answered, and whether a permission hold is in force. Neither is inferred
+ *   here — a whole-read outage returns `unavailable` for this route, so a source that answered for one
+ *   module and not another reaches the summary as that module's state, not as a page-level outage.
+ * - `modules` lists the modules a coach can read *now*, each with the single state the read found it
+ *   in, so an empty, partly covered, held, unavailable or ended module is distinguishable on the
+ *   surface. When access is not live — an unaccepted invitation, a revocation, an ended episode, a
+ *   reached cutoff — nothing is readable, so the read reports no admitted module and nothing is listed;
  *   the lifecycle row above states why.
  * - `outcomes` are the four separate flags the read reports as four separate rows, so an invitation
  *   existing never reads as access, and no row claims a message arrived.
@@ -215,12 +237,15 @@ function durationViewOf(duration: RelationshipDuration): GrantDurationView {
 function grantViewOf(relationship: CoachingRelationship): CoachingGrantView {
   const readable = relationship.outcomes.accessLive;
   const modules: readonly ModuleRead[] = readable
-    ? relationship.selectedModules.map((key) => ({ key, readState: null }))
+    ? relationship.admittedModules.map((admitted) => ({
+        key: admitted.module,
+        readState: admitted.readState,
+      }))
     : [];
 
   return {
     state: relationship.state,
-    availability: { source: "available", permissionHold: "none" },
+    availability: relationship.availability,
     modules,
     duration: durationViewOf(relationship.duration),
     shareCutoff: {
@@ -310,7 +335,9 @@ export default async function CoachingPage(): Promise<ReactElement> {
       </nav>
       {/* Prepare first, then share: the order the worker's own decision takes. */}
       <PreparationSurface preparation={preparationViewOf(overview)} />
-      <SharingSummary grant={grant} locale={DISPLAY_LOCALE} />
+      {/* The summary formats money in the reader's interface locale, which only the client composition
+          beside this route can read; the route itself never states a locale. */}
+      <SharingSummaryLocale grant={grant} />
     </div>
   );
 }

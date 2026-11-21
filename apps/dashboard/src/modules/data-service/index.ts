@@ -217,7 +217,8 @@ export type {
 } from "./envelope";
 export { mutationInputSchema } from "./envelope";
 export type { DenialReason, MutationOutcome, PerItemResult, ReadResult } from "./outcome";
-export { isOutcome, isReadResult, outcomeFromError, toResponse } from "./outcome";
+export { isOutcome, isReadResult, outcomeFromError } from "./outcome";
+export { toResponse } from "./response";
 
 /**
  * The named reads, grouped by the job a caller is doing. Each member re-derives scope from the

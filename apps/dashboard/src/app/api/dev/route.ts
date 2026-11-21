@@ -3,11 +3,11 @@
  * operates exactly one of its five named controls.
  *
  * **What it is.** A thin adapter and nothing else — gate, read the body, validate it, dispatch one named
- * service mutation with the caller's own fields, record the attempt, and map the answer through the one
- * outcome ladder. It holds no clock read, no time arithmetic, no seed content, no scenario list, no
- * failure vocabulary, no store access and no business rule: the scenario registry, the clock offset, the
- * three failure modes with their ten named targets, the deterministic reset, the payload rules,
- * authorisation, revision checks, the operation ledger and every boundary belong to the service
+ * service mutation with the caller's own fields, and map the answer through the one outcome ladder. It
+ * holds no clock read, no time arithmetic, no seed content, no scenario list, no failure vocabulary, no
+ * store access and no business rule: the scenario registry, the clock offset, the three failure modes
+ * with their ten named targets, the deterministic reset, the payload rules, authorisation, revision
+ * checks, the operation ledger, the attempt's diagnostic line and every boundary belong to the service
  * (`@/modules/data-service`), which is the only module this file reaches.
  *
  * **Gate first.** Both handlers begin with `isDevelopment()` from `@/lib/guards`. Outside a development
@@ -63,11 +63,11 @@
  *
  * **What it never does.** It never reads the session cookie itself (the service resolves the session),
  * never imports the synthetic store or the development runtime, never reads the environment directly,
- * never reads the wall clock — the elapsed figure is a `performance.now()` delta for the diagnostic
- * line, never a scenario instant — never writes to the console, never logs a payload, a seed value, a
- * scenario list, a path, an environment value, an email address or an amount, and never
- * offers a rate limit or a cache directive (AAP 0.6.3 states that none is implemented). It is not an
- * Edge route: the store writes through `node:fs`.
+ * never reads the wall clock and never measures a duration — the mutation runner owns the attempt's one
+ * diagnostic line, so this transport writes no diagnostic at all — never writes to the console, never
+ * logs a payload, a seed value, a scenario list, a path, an environment value, an email address or an
+ * amount, and never offers a rate limit or a cache directive (AAP 0.6.3 states that none is
+ * implemented). It is not an Edge route: the store writes through `node:fs`.
  *
  * Plan items that put this file in scope: AAP 0.6.3 (`GET/POST /api/dev` — "read/modify scenario, clock,
  * failure plan; `POST reset`", reachable only with a development session), 0.7.1 (the four-field
@@ -91,7 +91,6 @@
 import { z } from "zod";
 
 import { isDevelopment, isRecord } from "@/lib/guards";
-import { logger, type LogScope } from "@/lib/logger";
 import {
   mutationInputSchema,
   mutations,
@@ -417,14 +416,12 @@ function refusalOnAction(operationId: string, message: string): MutationOutcome 
 }
 
 // ---------------------------------------------------------------------------------------------
-// Dispatch: one named mutation, one attempt line, one response ladder
+// Dispatch: one named mutation, one response ladder
 // ---------------------------------------------------------------------------------------------
 
-/** One dispatched attempt: the identity it carries, the scope it acts in and when it began. */
+/** One dispatched attempt: the identity it carries, which is all this transport needs to know. */
 interface DispatchedAttempt {
   readonly operationId: string;
-  readonly scope: LogScope;
-  readonly startedAt: number;
 }
 
 /**
@@ -433,9 +430,9 @@ interface DispatchedAttempt {
  * The caller's four fields reach the mutation unchanged, so a replay is recognised by identity rather
  * than by a guessed payload. A throw is mapped rather than propagated: a store fault becomes
  * `unavailable` with the source that could not answer, and anything unrecognised becomes `unknown` with
- * the caller's `operationId` for recovery. The attempt is recorded as this transport saw it — one line
- * naming the operation, the scope, the outcome and the elapsed milliseconds, and for an outage the
- * identity of the source — and the payload is not part of that line, by the logger's own construction.
+ * the caller's `operationId` for recovery. The answer is mapped and nothing else: the mutation runner
+ * writes the attempt's one diagnostic line, so this transport adds neither a second line nor a duration
+ * of its own, and the payload is not part of that line by the logger's own construction.
  */
 async function dispatchAttempt(
   attempt: DispatchedAttempt,
@@ -446,16 +443,6 @@ async function dispatchAttempt(
     outcome = await call();
   } catch (error) {
     outcome = outcomeFromError(attempt.operationId, error);
-  }
-
-  logger.mutation({
-    operationId: attempt.operationId,
-    scope: attempt.scope,
-    outcome: outcome.outcome,
-    elapsedMs: performance.now() - attempt.startedAt,
-  });
-  if (outcome.outcome === "unavailable") {
-    logger.sourceUnavailable({ job: "dev", source: outcome.source });
   }
 
   return toResponse(outcome);
@@ -501,7 +488,6 @@ export async function POST(request: Request): Promise<Response> {
     return toResponse(developmentDenial());
   }
 
-  const startedAt = performance.now();
   const body = await readJsonBody(request);
   const operationId = operationIdOf(body);
   const action = devActionOf(body);
@@ -533,45 +519,35 @@ export async function POST(request: Request): Promise<Response> {
         return toResponse(outcomeFromError(operationId, scenario.error));
       }
       const input = scenario.data;
-      return dispatchAttempt({ operationId, scope: input.scope, startedAt }, () =>
-        mutations.dev.setScenario(input),
-      );
+      return dispatchAttempt({ operationId }, () => mutations.dev.setScenario(input));
     }
     case "setClock": {
       if (!clock.success) {
         return toResponse(outcomeFromError(operationId, clock.error));
       }
       const input = clock.data;
-      return dispatchAttempt({ operationId, scope: input.scope, startedAt }, () =>
-        mutations.dev.setClock(input),
-      );
+      return dispatchAttempt({ operationId }, () => mutations.dev.setClock(input));
     }
     case "advanceClock": {
       if (!advanced.success) {
         return toResponse(outcomeFromError(operationId, advanced.error));
       }
       const input = advanced.data;
-      return dispatchAttempt({ operationId, scope: input.scope, startedAt }, () =>
-        mutations.dev.advanceClock(input),
-      );
+      return dispatchAttempt({ operationId }, () => mutations.dev.advanceClock(input));
     }
     case "setFailurePlan": {
       if (!plan.success) {
         return toResponse(outcomeFromError(operationId, plan.error));
       }
       const input = plan.data;
-      return dispatchAttempt({ operationId, scope: input.scope, startedAt }, () =>
-        mutations.dev.setFailurePlan(input),
-      );
+      return dispatchAttempt({ operationId }, () => mutations.dev.setFailurePlan(input));
     }
     case "resetSeed": {
       if (!reset.success) {
         return toResponse(outcomeFromError(operationId, reset.error));
       }
       const input = reset.data;
-      return dispatchAttempt({ operationId, scope: input.scope, startedAt }, () =>
-        mutations.dev.resetSeed(input),
-      );
+      return dispatchAttempt({ operationId }, () => mutations.dev.resetSeed(input));
     }
   }
 }

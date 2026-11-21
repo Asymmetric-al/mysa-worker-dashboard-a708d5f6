@@ -128,6 +128,7 @@ import {
   assertScope,
   canEdit,
   canView,
+  readResultOfRefusal,
   resolveSession,
   type ResolvedSession,
   type SessionResolution,
@@ -252,6 +253,15 @@ type WorkspaceOpen =
   | { readonly ok: false; readonly result: ReadResult<never> };
 
 /**
+ * The store's reference for the content family, reported when this session's records cannot be read.
+ *
+ * The reference is a fixed opaque marker naming the record family a reader would ask for. It is never
+ * the session's identity: the session id is the value of the development cookie, so it is a
+ * credential, and a credential has no place in a refusal a browser receives or in a log line.
+ */
+const CONTENT_SOURCE_REFERENCE = "content";
+
+/**
  * The one refusal a source that cannot be read answers with, logged once so a reader can find the
  * owner without any of the values the read could not return.
  */
@@ -300,7 +310,7 @@ async function openContentWorkspace(job: string, source?: SessionSource): Promis
     };
   }
   if (!resolution.ok) {
-    return { ok: false, result: { kind: "denied", denied: resolution.denial } };
+    return { ok: false, result: readResultOfRefusal(resolution.refusal) };
   }
   const session = resolution.session;
 
@@ -332,18 +342,18 @@ async function openContentWorkspace(job: string, source?: SessionSource): Promis
   try {
     const documents = await readSession(session.sessionId);
     if (documents === undefined) {
-      return { ok: false, result: sourceUnavailable(job, session.sessionId) };
+      return { ok: false, result: sourceUnavailable(job, CONTENT_SOURCE_REFERENCE) };
     }
     state = documents.state;
   } catch {
     // A corrupt or unreadable document is an unavailable source, never an empty workspace: reporting
     // no content would say the ministry has written nothing, which is the opposite of the truth.
-    return { ok: false, result: sourceUnavailable(job, session.sessionId) };
+    return { ok: false, result: sourceUnavailable(job, CONTENT_SOURCE_REFERENCE) };
   }
 
   const parsed = contentWorkspaceSchema.safeParse(state);
   if (!parsed.success) {
-    return { ok: false, result: sourceUnavailable(job, session.sessionId) };
+    return { ok: false, result: sourceUnavailable(job, CONTENT_SOURCE_REFERENCE) };
   }
 
   return {

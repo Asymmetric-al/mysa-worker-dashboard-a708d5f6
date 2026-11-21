@@ -63,6 +63,7 @@ import {
 import {
   assertScope,
   canView,
+  outcomeOfRefusal,
   resolveSession,
   type AuthorizationTarget,
   type ResolvedSession,
@@ -124,6 +125,15 @@ import {
  * reason code.
  */
 const READ_ATTEMPT_ID = "read";
+
+/**
+ * The store's reference for the partner family, reported as a read's source and in diagnostics.
+ *
+ * The reference is a fixed opaque marker naming the record family a reader would ask for. It is never
+ * the session's identity: the session id is the value of the development cookie, so it is a
+ * credential, and a credential has no place in an envelope a browser receives or in a log line.
+ */
+const PARTNERS_SOURCE_REFERENCE = "partners";
 
 /** The zone a dated comparison resolves in when a request states none, so no host zone is ever used. */
 const ROSTER_DEFAULT_TIME_ZONE = "UTC";
@@ -698,9 +708,9 @@ type ContextOutcome =
   | { readonly ok: true; readonly context: PartnerReadContext }
   | { readonly ok: false; readonly refusal: DeniedOutcome | UnavailableOutcome };
 
-/** The store's own identity for a session's documents, used as a read's source and for diagnostics. */
-function storeSource(session: ResolvedSession): SourceReference {
-  return { system: LOCAL_STORE_SYSTEM, reference: session.sessionId };
+/** The source a partner read reports: the local store, named by its fixed family marker. */
+function storeSource(): SourceReference {
+  return { system: LOCAL_STORE_SYSTEM, reference: PARTNERS_SOURCE_REFERENCE };
 }
 
 /**
@@ -720,8 +730,8 @@ function refused(reasonCode: DenialReason): DeniedOutcome {
  * and never a zero: the two are the readings this path exists to prevent. Diagnostics carry the job
  * and the opaque source only, so nothing the read could not establish reaches a log line.
  */
-function sourceUnavailable(job: string, session: ResolvedSession): UnavailableOutcome {
-  const source = storeSource(session);
+function sourceUnavailable(job: string): UnavailableOutcome {
+  const source = storeSource();
   logger.sourceUnavailable({ job, source });
   return unavailable({
     operationId: READ_ATTEMPT_ID,
@@ -776,7 +786,7 @@ async function readContext(job: string, source?: SessionSource): Promise<Context
     return { ok: false, refusal: refused("session-unavailable") };
   }
   if (!resolution.ok) {
-    return { ok: false, refusal: resolution.denial };
+    return { ok: false, refusal: outcomeOfRefusal(resolution.refusal, READ_ATTEMPT_ID) };
   }
   const { session } = resolution;
 
@@ -794,12 +804,12 @@ async function readContext(job: string, source?: SessionSource): Promise<Context
   try {
     const documents = await readSession(session.sessionId);
     if (documents === undefined) {
-      return { ok: false, refusal: sourceUnavailable(job, session) };
+      return { ok: false, refusal: sourceUnavailable(job) };
     }
     state = documents.state;
     meta = documents.meta;
   } catch {
-    return { ok: false, refusal: sourceUnavailable(job, session) };
+    return { ok: false, refusal: sourceUnavailable(job) };
   }
 
   // An armed scope-denial plan must take effect on the read it names, so it is answered here — after
@@ -812,7 +822,7 @@ async function readContext(job: string, source?: SessionSource): Promise<Context
 
   const parsed = partnerStateDocumentSchema.safeParse(state);
   if (!parsed.success) {
-    return { ok: false, refusal: sourceUnavailable(job, session) };
+    return { ok: false, refusal: sourceUnavailable(job) };
   }
   return { ok: true, context: { session, scope, document: parsed.data } };
 }
@@ -1493,7 +1503,7 @@ function rosterFactsOf(
       givingPartition,
       today: resolvedToday.date,
       timeZone: resolvedToday.zone,
-      source: storeSource(context.session),
+      source: storeSource(),
     },
   };
 }
@@ -2034,7 +2044,7 @@ function envelopeOf<T, C extends Coverage = Coverage>(
     envelope: buildEnvelope<T, C>({
       data,
       scope: context.scope,
-      source: storeSource(context.session),
+      source: storeSource(),
       revision,
       asOf: sessionInstant(context.session).toString(),
       coverage: subject.coverage,

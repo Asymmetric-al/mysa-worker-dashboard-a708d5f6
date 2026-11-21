@@ -80,6 +80,7 @@ import { isRecord } from "@/lib/guards";
 import { logger } from "@/lib/logger";
 import {
   canView,
+  readResultOfRefusal,
   resolveSession,
   type ResolvedSession,
   type SessionSource,
@@ -492,7 +493,7 @@ function devStateUnavailable(guidance: string): ReadResult<ReadEnvelope<DevState
  * Reads this session's development state — scenario, clock offset and derived instant, the armed
  * failure plan, the persona catalogue, the scenario availability flags and reset availability — and
  * answers `denied` outside a development build or with no usable session, and `unavailable` when the
- * session's development document cannot be read.
+ * store could not answer or the session's development document cannot be read.
  *
  * `source` names a session directly instead of taking the request cookie. The browser path never
  * supplies one; it exists for the domain and integration tests and the operational scripts that hold
@@ -505,8 +506,9 @@ export async function readDevState(
   const resolved = await resolveSession(source);
   if (!resolved.ok) {
     // A session that cannot be established, or a state that admits nothing, is refused with the one
-    // shape a refusal has: no scenario name, no persona list, no failure-plan detail.
-    return { kind: "denied", denied: resolved.denial };
+    // shape a refusal has: no scenario name, no persona list, no failure-plan detail. A store that
+    // could not answer is the different fact, and it keeps the outage answer this read documents.
+    return readResultOfRefusal(resolved.refusal);
   }
   const session = resolved.session;
 

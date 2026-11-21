@@ -1,18 +1,35 @@
 /**
  * Development-boundary diagnostics: the repository's only diagnostics surface.
  *
- * Exactly two events are recorded. One line per mutation attempt carries the
- * operation id, the scope identifiers, the outcome name and the elapsed time the
- * caller measured where the work happened. One line per `unavailable` read
- * carries the job name and the identity of the source that could not answer.
+ * Exactly two events are recorded. One `mutation` line is written for each mutation
+ * attempt the runner answers, carrying the operation id, the scope identifiers, the
+ * outcome name the caller received and the elapsed time measured where the work
+ * happened. A multi-pass module's `probe` pass is marked as one, so the `unchanged`
+ * that only sends its module on to the change writes no line, while every other
+ * outcome a probe answers is the caller's answer and does. One line per `unavailable`
+ * read carries the job name and the identity of the source that could not answer.
+ *
+ * Three classes of request write no attempt line. One is a request a transport's own
+ * body schema refuses before dispatch — a `POST /api/partners` whose payload its
+ * schema rejects, for example — because the service never evaluated it and no attempt
+ * was answered. Another is an answer a mutation module decides itself before or
+ * beside the passes, such as a development control that finds the requested state
+ * already in force: the module answered and the runner answered nothing, so a line
+ * for it would report an attempt that produced no answer of its own. The third is an
+ * attempt whose request states no readable scope, because both entry shapes are closed
+ * and a line missing one of the four identifiers would describe the attempt in the
+ * wrong context.
  *
  * What is never written is the point of the module. Note bodies, check-in text,
- * message bodies, email addresses, gift amounts and exported rows have no field
- * to travel in: both entry shapes are closed and hold only primitive
- * identifiers, a bounded outcome name and a duration. Redaction therefore holds
- * by construction rather than by inspection, and it is what keeps identities,
- * the selected context, private information and financial facts distinct in
- * diagnostics. `redaction.ts` remains the separate mechanism for error surfaces.
+ * message bodies, email addresses, gift amounts, exported rows and the
+ * development session credential — the value of the httpOnly `dashboard_session`
+ * cookie — have no field to travel in: both entry shapes are closed and hold only
+ * primitive identifiers, a bounded outcome name and a duration. A source is named
+ * by its opaque reference, never by the credential that opened it. Redaction
+ * therefore holds by construction rather than by inspection, and it is what keeps
+ * identities, the selected context, private information and financial facts
+ * distinct in diagnostics. `redaction.ts` remains the separate mechanism for
+ * error surfaces.
  *
  * A line records an outcome name and nothing more. No consent, publication or
  * communication outcome is ever inferred from a log line, a simulated external
@@ -36,11 +53,15 @@ import { isDevelopment } from "@/lib/guards";
 /**
  * The diagnostic subset of the read envelope's scope.
  *
- * These four identifiers are what a diagnostic line names, and nothing more.
- * The envelope's scope contract — its meaning, its derivation and the fact that
- * an equal-looking identifier never establishes identity or authority — is owned
- * by `modules/data-service/envelope.ts`; this type is a projection for
- * diagnostics and must never grow into a second declaration of that contract.
+ * These four identifiers are what a diagnostic line names, and nothing more. Their meaning is the
+ * distinction the product's identity rule turns on: `principalId` is the authenticated principal
+ * whenever the attempt reached the session — the persona that acted, so a refusal is attributable to
+ * it — while `organizationId`, `ministryId` and `supportSubjectId` are the context the attempt claimed
+ * and was evaluated against. A claim is not authority, so the two are never collapsed into one
+ * identifier. The envelope's scope contract — its meaning, its derivation and the fact that an
+ * equal-looking identifier never establishes identity or authority — is owned by
+ * `modules/data-service/envelope.ts`; this type is a projection for diagnostics and must never grow
+ * into a second declaration of that contract.
  */
 export type LogScope = {
   readonly organizationId: string;

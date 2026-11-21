@@ -612,6 +612,40 @@ interface ReceiptContext {
 type ReceiptOutcome = Exclude<MutationOutcome, { readonly outcome: "invalid" }>;
 
 /**
+ * The sentence an `unknown` receipt states about the recovery it actually offers, or `null` when it
+ * offers none.
+ *
+ * It is derived from the controls the caller supplied rather than fixed, because the two recoveries
+ * are different acts. A check re-reads an operation that already exists and applies nothing; a replay
+ * re-sends this same operation under the same identity and is answered with the stored result instead
+ * of a second effect. A receipt that described both while rendering one would claim a read it does
+ * not offer, or hide that the one control it does offer sends the mutation again. Every variant that
+ * renders a control opens with the claim that holds for both: nothing here starts a second attempt.
+ */
+function unknownRecoverySentence(offersCheck: boolean, offersReplay: boolean): string | null {
+  if (offersCheck && offersReplay) {
+    return (
+      "Nothing here starts a second attempt: checking the result reads what happened, and retrying " +
+      "sends this same operation, which answers with its original result instead of repeating the " +
+      "effect."
+    );
+  }
+  if (offersCheck) {
+    return (
+      "Nothing here starts a second attempt: checking the result reads what happened, and applies " +
+      "nothing."
+    );
+  }
+  if (offersReplay) {
+    return (
+      "Nothing here starts a second attempt: retrying sends this same operation, which answers with " +
+      "its original result instead of repeating the effect."
+    );
+  }
+  return null;
+}
+
+/**
  * The sentences and facts one outcome renders.
  *
  * The switch is exhaustive over the seven outcomes that reach it, and its final branch refuses to
@@ -790,6 +824,7 @@ function receiptBody(outcome: ReceiptOutcome, context: ReceiptContext): ReceiptB
     case "unknown": {
       const check = context.run(context.onCheckResult);
       const retry = context.run(context.onRetrySameWork);
+      const recovery = unknownRecoverySentence(check !== undefined, retry !== undefined);
       return {
         summary: (
           <>
@@ -800,11 +835,7 @@ function receiptBody(outcome: ReceiptOutcome, context: ReceiptContext): ReceiptB
             <p>
               Operation <Identifier value={outcome.operationId} />.
             </p>
-            <p>
-              Nothing here starts a second attempt: checking the result reads what happened, and
-              retrying sends this same operation, which answers with its original result instead of
-              repeating the effect.
-            </p>
+            {recovery === null ? null : <p>{recovery}</p>}
             {check === undefined && retry === undefined ? null : (
               <div className="flex flex-wrap items-center gap-2">
                 {check === undefined ? null : (
@@ -1042,15 +1073,17 @@ export function OperationResult({
         </CardTitle>
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-4">
-        {/* The frame is focusable so an action can return the keyboard position here, and carries
-         * no ring of its own: a focus ring around a whole receipt would read as an interactive
-         * surface that it is not. The region announces its own sentences once. */}
+        {/* The frame is focusable so an action can return the keyboard position here, and the token
+         * layer's `:focus-visible` outline is what makes that position visible — nothing is
+         * suppressed here. The ring around a receipt region is the deliberate consequence: whoever
+         * pressed an action on this receipt has to see where the reading position went instead of
+         * guessing at it. The region announces its own sentences once. */}
         <div
           ref={regionRef}
           role={OUTCOME_SEVERITY[outcome.outcome] === "assertive" ? "alert" : "status"}
           aria-labelledby={titleId}
           tabIndex={-1}
-          className="flex min-w-0 flex-col gap-3 text-sm outline-none"
+          className="flex min-w-0 flex-col gap-3 text-sm"
         >
           {summary}
         </div>

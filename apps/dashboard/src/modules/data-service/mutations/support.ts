@@ -72,6 +72,7 @@ import { parseCivilDate, serialiseCivilDate } from "@/modules/time/civil";
 
 import {
   canEdit,
+  outcomeOfRefusal,
   resolveSession,
   type ResolvedSession,
   type ScopeDecision,
@@ -565,7 +566,7 @@ export async function saveGoal(
   try {
     const resolution = await resolveSession(source);
     if (!resolution.ok) {
-      return denied({ operationId, reasonCode: resolution.denial.reasonCode });
+      return outcomeOfRefusal(resolution.refusal, operationId);
     }
     sessionId = resolution.session.sessionId;
   } catch {

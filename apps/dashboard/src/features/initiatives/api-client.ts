@@ -12,12 +12,11 @@
  * and why nothing else in the family may call `fetch`.
  *
  * **Why the narrowing is written here.** `@/modules/data-service` also exports `isOutcome` and
- * `isReadResult`, but its outcome module imports `next/server`, `@/lib/guards` (which reads
- * `process.env`) and the redaction helpers, so a *value* import from it inside a Client Component would
- * drag server-only code into the browser bundle. This module therefore imports types only and
- * re-establishes the closed set as an exhaustive `Record<MutationOutcome["outcome"], check>`: a member
- * added to, renamed in or removed from the union fails typecheck here, instead of letting an
- * unrecognised body through as a valid answer.
+ * `isReadResult`, but that barrel is the whole data surface — every read, every named mutation and the
+ * store behind them — so a *value* import of it inside a Client Component would drag the service into
+ * the browser bundle. This module therefore imports types only and re-establishes the closed set as an
+ * exhaustive `Record<MutationOutcome["outcome"], check>`: a member added to, renamed in or removed from
+ * the union fails typecheck here, instead of letting an unrecognised body through as a valid answer.
  *
  * **What the wire actually carries.** `toResponse` flattens `ReadResult` onto the status — 200 carries
  * the envelope object itself, 403 the denial and 503 the outage, with no `kind` wrapper around any of
@@ -194,9 +193,9 @@ const OUTCOME_CHECKS: { readonly [Name in OutcomeName]: OutcomeCheck } = {
 /**
  * Reports whether a parsed body is one of the eight mutation outcomes.
  *
- * This is the client-side half of the service's contract, written here rather than imported because the
- * service's own `isOutcome` lives beside a `next/server` import (see the module comment). It reads the
- * discriminant as an untrusted string, refuses anything that is not a plain object or not a name the
+ * This is the client-side half of the service's contract, kept here so the family's own exhaustive
+ * `Record<MutationOutcome["outcome"], check>` is what reads the wire (see the module comment). It reads
+ * the discriminant as an untrusted string, refuses anything that is not a plain object or not a name the
  * union declares, and then checks the fields that member must carry — so a truncated or foreign body is
  * refused instead of being presented as an answer the caller can act on.
  */

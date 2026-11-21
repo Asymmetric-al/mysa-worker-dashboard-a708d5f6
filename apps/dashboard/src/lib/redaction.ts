@@ -9,8 +9,9 @@
  * `modules/data-service/authorize.ts`; this module makes sure a decision already
  * made cannot leak through the shape of what leaves the service.
  *
- * Private note bodies, check-in text, message bodies, email addresses and gift
- * amounts never appear in a diagnostic or in an error surface.
+ * Private note bodies, check-in text, message bodies, email addresses, gift
+ * amounts and the development session credential never appear in a diagnostic or
+ * in an error surface.
  *
  * Redaction only removes and replaces values. It never validates, authorises or
  * decides what a caller may see, and it holds no access matrix: the caller names
@@ -51,6 +52,10 @@ export const REDACTED = "[redacted]";
  *   survives whatever the nested member is named
  * - gift amounts: `amount`, `amountMinor`, `minorUnits`, `amounts`, `totals`
  * - exported rows: `rows`, `exportRows`
+ * - the development session credential: `sessionId`, `dashboard_session` — the
+ *   session id is the value of the httpOnly development cookie, so it is a
+ *   credential and never an identifier a diagnostic or an error surface may show;
+ *   a source is named by its opaque reference instead
  *
  * Matching is by key name at any depth, and a matched value is replaced whole, so
  * nothing under it is walked for the values it contains. The list is frozen
@@ -86,6 +91,9 @@ export const SENSITIVE_VALUE_KEYS: readonly string[] = Object.freeze([
   // Exported rows.
   "rows",
   "exportRows",
+  // The development session credential, which is the httpOnly cookie's value.
+  "sessionId",
+  "dashboard_session",
 ]);
 
 /**

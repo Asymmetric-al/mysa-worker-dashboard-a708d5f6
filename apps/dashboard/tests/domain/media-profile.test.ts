@@ -21,11 +21,13 @@
  *   format: no encoder is imported, no assertion library is added and no binary fixture is committed.
  * - The brief names "the six video states" in `media/asset`; they are exported as
  *   `MEDIA_PREPARATION_STATES`, with the label and next step each one shows from `mediaStateReason()`.
- * - The brief expects `seed()` to carry the EXIF-bearing image. It carries the image asset itself —
- *   `asset-image-portrait`, whose private original is named `media-originals/IMG_20260814-...jpg`
- *   and whose display rendition serves the committed `poster.jpg`, a file that carries no metadata.
- *   So the test splices a real EXIF/TIFF segment onto those committed bytes: verifying "no EXIF" on an
- *   input that never had any would prove nothing.
+ * - The brief expects `seed()` to carry the EXIF-bearing image. It does: `asset-image-portrait`'s
+ *   private original is the committed, EXIF-bearing `IMG_20260814-harbour-youth-group.jpg`, and a reset
+ *   produces its display rendition from those bytes with `prepareDisplayImage()`, so the stripping path
+ *   runs over real EXIF in the seeded world. The cases below still splice their own EXIF/TIFF segment
+ *   onto committed bytes, because a case has to own the input it asserts about rather than depend on
+ *   what a reset happened to materialise: verifying "no EXIF" on a file that never had any would prove
+ *   nothing.
  * - `media/video` does not export its post-remux verification, and its copy is forced, so a
  *   descriptive tag cannot be made to survive on the committed fixtures. The rejection branch is
  *   pinned by the refusal code it returns and by the invariant that no accepted rendition carries a

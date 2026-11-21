@@ -21,7 +21,7 @@
  * out at both ends.
  *
  * The wire form, and why the transport looks the way it does. `toResponse` in
- * `modules/data-service/outcome` flattens a read result: 200 carries the envelope itself, 403 the
+ * `modules/data-service/response` flattens a read result: 200 carries the envelope itself, 403 the
  * denial outcome and 503 the outage. So this transport reads the status first, re-wraps the 200 body
  * as the envelope it is, and rejects the other two. A denial or an outage is a contract answer, but it
  * is not a goal: turning either into an envelope with `goal: null` would present "you may not read
@@ -45,11 +45,13 @@
  * spelling here would be a second statement of it, and one the handler could silently ignore while the
  * envelope still looked filtered.
  *
- * Imports are type-only where they could reach server code: `outcome.ts` imports `next/server` for its
- * response mapping, so the contract types come across as types and the parsed body is narrowed with the
- * framework-free guards in `lib/guards`. The envelope's shape is taken from the service itself, so a
- * member renamed or withdrawn in `reads.support.readGoal` stops this file compiling rather than letting
- * a copy of the vocabulary drift.
+ * Imports are type-only where this file needs only types. The outcome contract no longer reaches
+ * `next/server` — its one server-only function, the response mapping, lives in
+ * `modules/data-service/response.ts` — so a Client Component may value-import `outcome.ts`; this hook
+ * still takes the read's signature and the contract types as types, and narrows the parsed body with
+ * the framework-free guards in `lib/guards`. The envelope's shape is taken from the service itself, so
+ * a member renamed or withdrawn in `reads.support.readGoal` stops this file compiling rather than
+ * letting a copy of the vocabulary drift.
  */
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";

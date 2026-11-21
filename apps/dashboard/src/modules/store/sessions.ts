@@ -27,10 +27,10 @@ import { CorruptJsonError, readJson } from "./atomic";
 import { InvalidSessionIdError, isSafeSessionId, listSessionIds, sessionPaths } from "./paths";
 
 /**
- * Name of the development-session cookie, defined once for the whole repository: the Route Handlers
- * and `data-service/authorize.ts` import it instead of repeating the literal. Its attributes
- * (`httpOnly`, `sameSite: "lax"`, `path: "/"`) belong to the HTTP response and stay with the route
- * layer, which keeps this module request-agnostic.
+ * Name of the development-session cookie, defined once for the whole repository: the Route Handlers,
+ * `src/proxy.ts` and `data-service/authorize.ts` import it instead of repeating the literal. Its
+ * attributes (`httpOnly`, `sameSite: "lax"`, `path: "/"`) belong to the HTTP response and stay with
+ * the response layer that mints it, which keeps this module request-agnostic.
  */
 export const SESSION_COOKIE = "dashboard_session";
 
