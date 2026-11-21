@@ -44,6 +44,9 @@ const MESSAGES = {
   pageNumber: "State the page as a whole number of pages from 0, the first page.",
   pageSize: "State the page size as a whole number of rows.",
   pageSizeNeedsPage: "State the page a size applies to: a size with no page would be read as the first page or ignored, and neither is the page that was asked for.",
+  commitmentId: "State the commitment as a non-empty identifier, or omit it: the identifier is compared with the rows the read reports and is never parsed into one.",
+  showAdditionalTypes:
+    "The commitments read reports the three commitment kinds the source distinguishes and no additional type, so this display choice cannot change a result. State it as 0, or omit it: asking for types the read cannot report is refused rather than answered with the same rows under a choice the read did not apply.",
   amountBound: "State an amount bound as a whole number of the selected currency's minor units.",
   amountRangeNeedsBoth: "State both bounds of an amount range: a range compares the minor units of one currency, and one bound alone states no range for the read to apply.",
   periodNeedsBoth: "State both ends of the period, each as a calendar day: one day is not a range, and the ledger's figures are read over a range.",
@@ -205,11 +208,20 @@ export function supportQueryFromSearch(search: URLSearchParams): ParsedQuery<Sup
   });
   return parsed.success ? ok(queryOf(parsed.data)) : err(parsed.error);
 }
-// The commitments list's page window
+// The commitments list's page window, the one commitment a detail names, and the answer its own
+// display choice states with every request
+const FLAG_OFF = "0";
+
 const commitmentsSearchSchema = z
   .strictObject({
     "page.index": wholeNumber(MESSAGES.pageNumber).optional(),
     "page.size": wholeNumber(MESSAGES.pageSize).optional(),
+    commitmentId: z.string().min(1, MESSAGES.commitmentId).optional(),
+    // The list states this display choice on every request it makes. The read reports the three
+    // commitment kinds and no additional type, and its envelope states no capability for one, so only
+    // the value that asks for nothing is admitted here: a request that asks for types the read cannot
+    // produce is refused, rather than answered with the same rows under a choice it never applied.
+    showAdditionalTypes: z.literal(FLAG_OFF, { error: MESSAGES.showAdditionalTypes }).optional(),
   })
   .superRefine((params, context) => {
     if (params["page.size"] !== undefined && params["page.index"] === undefined) {
@@ -220,21 +232,25 @@ const commitmentsSearchSchema = z
       });
     }
   });
-/** Reads the commitments list's page window out of the request's search parameters. */
+/** Reads the commitments list's page window and the commitment a detail names out of the request's search parameters. */
 export function supportPageFromSearch(search: URLSearchParams): ParsedQuery<SupportPageQuery> {
   const parsed = commitmentsSearchSchema.safeParse({
     "page.index": firstValue(search, "page.index"),
     "page.size": firstValue(search, "page.size"),
+    commitmentId: firstValue(search, "commitmentId"),
+    showAdditionalTypes: firstValue(search, "showAdditionalTypes"),
   });
   if (!parsed.success) {
     return err(parsed.error);
   }
   const index = parsed.data["page.index"];
   const size = parsed.data["page.size"];
+  const { commitmentId } = parsed.data;
+  const narrowing = commitmentId === undefined ? {} : { commitmentId };
   if (index === undefined) {
-    return ok({});
+    return ok(narrowing);
   }
-  return ok({ page: size === undefined ? { index } : { index, size } });
+  return ok({ ...narrowing, page: size === undefined ? { index } : { index, size } });
 }
 // The body the report and export posts carry
 const REPORT_IDENTITIES = ["received-period-and-year-to-date", "monthly-history", "partner-month-matrix", "period-comparison"] as const satisfies readonly ReportIdentity[];

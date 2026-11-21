@@ -79,7 +79,7 @@ const LABELS = {
 
 const HEADINGS = {
   dates: "Live dates",
-  fixedTotal: "Fixed total",
+  fixedTotal: "Fixed total progress",
   outcomes: "Outcome history",
   provenance: "Provenance and snapshot",
 } as const;
@@ -90,6 +90,12 @@ const LIST_ACTION_LABEL = "Open the commitments list";
 const READING_LABEL = "Reading this commitment…";
 const CURRENT_ROW_MARKER = "This commitment's outcome";
 const NOT_STATED_DATE = "The source states no date";
+/**
+ * The one override the shared badge needs here: its label can be a whole sentence ("Unknown or stale —
+ * outside the five outcomes"), and the component's own `whitespace-nowrap` over `overflow-hidden` would
+ * cut that label off at 320 CSS px. Allowing the label to wrap keeps every word readable instead.
+ */
+const WRAPPING_BADGE_CLASS = "h-auto max-w-full shrink whitespace-normal text-start";
 
 const READ_ONLY_STATEMENT = "This page is read-only: it cannot post, retry, pause, resume or correct a payment, and no control on it changes anything at the source.";
 const NOT_CASH_STATEMENT =
@@ -274,7 +280,13 @@ function OverviewCard({ row, locale }: OverviewCardProps): ReactElement {
       <Card>
         <CardHeader>
           <CardTitle>
-            <h2 id={OVERVIEW_HEADING_ID}>{kindLabelOf(row.kind)}</h2>
+            {/*
+              The record's identity takes the page's highest heading: this body renders only on
+              `/support/commitments/[commitmentId]`, so it supplies that route's one `h1` and every
+              section below it states `h2`. The rule is the shared detail body's own: the surface's
+              highest heading names the record, never a section.
+            */}
+            <h1 id={OVERVIEW_HEADING_ID}>{kindLabelOf(row.kind)}</h1>
           </CardTitle>
           <CardDescription>
             <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
@@ -306,7 +318,7 @@ function OverviewCard({ row, locale }: OverviewCardProps): ReactElement {
                 Every outcome word comes from the one status vocabulary, whose labels are the support
                 module's `BUCKET_LABELS`, so the same outcome is never spelled two ways.
               */}
-              <StatusBadge {...statusBadgeProps(BUCKET_STATUS, row.bucket)} srPrefix={LABELS.currentOutcome} />
+              <StatusBadge {...statusBadgeProps(BUCKET_STATUS, row.bucket)} srPrefix={LABELS.currentOutcome} className={WRAPPING_BADGE_CLASS} />
             </p>
             <p className="text-sm text-pretty text-muted-foreground">{BUCKET_MEANING[row.bucket]}</p>
           </div>
@@ -314,9 +326,9 @@ function OverviewCard({ row, locale }: OverviewCardProps): ReactElement {
           <p className="text-sm text-pretty">{READ_ONLY_STATEMENT}</p>
           <Separator />
           <section aria-labelledby={DATES_HEADING_ID} className="flex min-w-0 flex-col gap-2">
-            <h3 id={DATES_HEADING_ID} className="text-sm font-semibold">
+            <h2 id={DATES_HEADING_ID} className="text-sm font-semibold">
               {HEADINGS.dates}
-            </h3>
+            </h2>
             <dl className="flex min-w-0 flex-col gap-2 text-sm">
               <Fact term={LABELS.lastSuccessful}>
                 <SourceDate value={row.lastSuccessfulOn} />
@@ -413,7 +425,7 @@ function OutcomeHistoryCard({ buckets, total, current, locale }: OutcomeHistoryP
                   className={cn("flex min-w-0 flex-col gap-1.5 rounded-lg border border-border p-3", isOutside && "bg-muted/40", isCurrent && "ring-1 ring-ring")}
                 >
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <StatusBadge {...statusBadgeProps(BUCKET_STATUS, figure.bucket)} srPrefix={LABELS.outcome} />
+                    <StatusBadge {...statusBadgeProps(BUCKET_STATUS, figure.bucket)} srPrefix={LABELS.outcome} className={WRAPPING_BADGE_CLASS} />
                     <CountFigure count={figure.count} valueState={figure.valueState} locale={locale} />
                     {isCurrent ? <span className="text-xs font-medium">{CURRENT_ROW_MARKER}</span> : null}
                   </div>
@@ -485,11 +497,11 @@ function EnvelopeBody({ envelope, commitmentId, locale, returnHref }: EnvelopeBo
   const row = commitments.find((candidate) => candidate.commitmentRowId === commitmentId);
   // A context in which the source reports no commitment at all is the family's own empty surface.
   if (total === 0) {
-    return <StateNotice kind="empty" headingLevel={2} title={EMPTY_STATES.commitments.title} description={EMPTY_STATES.commitments.body} action={EMPTY_STATES.commitments.action} />;
+    return <StateNotice kind="empty" headingLevel={1} title={EMPTY_STATES.commitments.title} description={EMPTY_STATES.commitments.body} action={EMPTY_STATES.commitments.action} />;
   }
   // An identifier this page's read did not return is stated as that, and no record is invented for it.
   if (row === undefined) {
-    return <StateNotice kind="empty" headingLevel={2} title={NOT_IN_PAGE_TITLE} description={NOT_IN_PAGE_DESCRIPTION} action={{ label: LIST_ACTION_LABEL, href: returnHref }} />;
+    return <StateNotice kind="empty" headingLevel={1} title={NOT_IN_PAGE_TITLE} description={NOT_IN_PAGE_DESCRIPTION} action={{ label: LIST_ACTION_LABEL, href: returnHref }} />;
   }
   return (
     <>
@@ -519,7 +531,7 @@ function CommitmentDetailBody({ scope, commitmentId, locale, dir, listQuery, cla
     content = (
       <StateNotice
         kind="unavailable"
-        headingLevel={2}
+        headingLevel={1}
         title={NO_ANSWER_TITLE}
         description={NO_ANSWER_DESCRIPTION}
         retry={{
@@ -534,13 +546,13 @@ function CommitmentDetailBody({ scope, commitmentId, locale, dir, listQuery, cla
     // No identifier, count, title or size reaches this notice: the answer is the same whether or not a
     // commitment carries the identifier the address named.
     content = (
-      <StateNotice kind="denied" headingLevel={2} title={DENIED_TITLE} description={DENIED_DESCRIPTION} reasonCode={answer.denied.reasonCode} action={{ label: LIST_ACTION_LABEL, href: returnHref }} />
+      <StateNotice kind="denied" headingLevel={1} title={DENIED_TITLE} description={DENIED_DESCRIPTION} reasonCode={answer.denied.reasonCode} action={{ label: LIST_ACTION_LABEL, href: returnHref }} />
     );
   } else if (answer.kind === "unavailable") {
     content = (
       <StateNotice
         kind="unavailable"
-        headingLevel={2}
+        headingLevel={1}
         title={UNAVAILABLE_TITLE}
         description={answer.unavailable.guidance}
         source={answer.unavailable.source}

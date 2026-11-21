@@ -165,9 +165,15 @@ export interface SupportQuery {
   readonly page?: { readonly index?: number; readonly size?: number };
   readonly timeZone?: string;
 }
-/** The page window a list accepts where the read states no period of its own. */
+/** The page window a list accepts where the read states no period of its own, and the one commitment a detail surface names. */
 export interface SupportPageInput {
   readonly page?: { readonly index?: number; readonly size?: number };
+  /**
+   * The commitment a detail surface asks for, compared and never parsed. It selects that commitment's
+   * own row in place of a page of rows, which is what lets a detail route read one commitment without
+   * depending on the page the list happened to be showing; the page window still applies to what is left.
+   */
+  readonly commitmentId?: string;
 }
 // The figures every read states
 /** One currency's stated amount: the exact minor units, the exponent they are read at, and the state that says what kind of value this is. */
@@ -1080,11 +1086,17 @@ export async function readCommitments(query: SupportPageInput = {}, source?: Ses
   const { context } = outcome;
   const rows = context.projection.commitments;
   const ordered = [...rows].sort(compareCommitments);
+  // The one narrowing this read accepts: a detail surface names a single commitment, so the window is
+  // that commitment's own row. `total` stays the count of every commitment the source reports in this
+  // context, because the identifier is a lookup rather than a filter of the whole result, and the two
+  // partitions below are counts of that same whole result — a narrowed read must not report a partition
+  // of one row as if it were the context's.
+  const selected = query.commitmentId === undefined ? ordered : ordered.filter((row) => row.commitmentRowId === query.commitmentId);
   const size = clampPageSize(query.page?.size);
-  const totalPages = Math.max(1, Math.ceil(ordered.length / size));
+  const totalPages = Math.max(1, Math.ceil(selected.length / size));
   const statedIndex = query.page?.index ?? 0;
   const index = Number.isSafeInteger(statedIndex) && statedIndex >= 0 ? Math.min(statedIndex, totalPages - 1) : 0;
-  const window = ordered.slice(index * size, index * size + size);
+  const window = selected.slice(index * size, index * size + size);
   const data: CommitmentsData = {
     commitments: window.map(commitmentFigureOf),
     total: ordered.length,
