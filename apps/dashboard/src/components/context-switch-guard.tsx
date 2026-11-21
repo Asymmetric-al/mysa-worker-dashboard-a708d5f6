@@ -54,11 +54,18 @@
  * contract modules and below every feature. It imports no feature, no store and no service; the
  * `selectContext` dispatcher is supplied by the caller (the shell), which keeps the transport in one
  * place and lets this file hold the ordering contract without owning a second call path.
+ *
+ * Wording: the `copy` prop carries every sentence this dialog asks the decision in — the heading, the
+ * body, the three action labels, the notes and the conflict sentence — because a shared component may
+ * not import a feature's copy and a literal kept here as well would be a second owner for the same
+ * words. The shell passes the object from `src/features/shell/copy/context-switch.ts`, which replaced
+ * the literals this component used to hold; only the progress lines and the two sentences for a handler
+ * that threw remain here, since nothing outside this component describes those.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { TriangleAlertIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactElement } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -181,9 +188,36 @@ export interface OutcomeSummary {
   readonly detail?: OutcomeDetail;
 }
 
-/** The sentence for a conflict, which is the one outcome whose cause the caller can act on. */
-const CONFLICT_SENTENCE =
-  "The context changed while you were deciding, so nothing was switched. Check the current context before choosing again.";
+/**
+ * The words this dialog renders, supplied by the caller.
+ *
+ * They arrive as a prop rather than being written here because `src/components` sits below the feature
+ * layer and may not import a feature's copy, while a second literal wording in this file would give
+ * every sentence two owners. The shell passes the object from
+ * `src/features/shell/copy/context-switch.ts`. Each field is a whole sentence or a whole action label,
+ * and the two values the dialog has to name — the pending context's display name and the caller's
+ * description of the unsaved work — are separate props, so nothing here joins a value into a sentence.
+ */
+export interface ContextSwitchGuardCopy {
+  /** The dialog's heading, naming the decision. */
+  readonly title: string;
+  /** Why the decision comes before the switch: the selection decides what the workspace reads under. */
+  readonly body: string;
+  /** The label of the action that saves through the owning surface and then switches. */
+  readonly saveLabel: string;
+  /** The label of the action that discards the work in progress and switches. */
+  readonly discardLabel: string;
+  /** The label of the action that stays. */
+  readonly stayLabel: string;
+  /** The explanation beside the save action, which the action references as its description. */
+  readonly saveNote: string;
+  /** What counts as unsaved work, and that discarding it is the reader's decision. */
+  readonly unsavedWorkNote: string;
+  /** What a conflict means: the switch was not applied and the input is kept for comparison. */
+  readonly conflictNote: string;
+  /** Why staying is safe: it is the default and nothing is discarded unless the reader chooses it. */
+  readonly stayNote: string;
+}
 
 /**
  * Says what a mutation outcome means for a context switch, exactly once.
@@ -192,8 +226,16 @@ const CONFLICT_SENTENCE =
  * a replay is not "nothing changed", a refusal is not an outage, and an outage is never presented as
  * a failure of the person's decision. The function is exhaustive over {@link MutationOutcome} with
  * no default branch, so a ninth outcome cannot be added without a sentence being written for it.
+ *
+ * `copy` supplies the one sentence the caller owns — the conflict, whose cause the reader can act on —
+ * so the dialog that displays this summary and the notice beside the decision cannot describe the same
+ * outcome in two different ways. The other seven sentences describe the service's own outcome and stay
+ * with it.
  */
-export function summariseOutcome(outcome: MutationOutcome): OutcomeSummary {
+export function summariseOutcome(
+  outcome: MutationOutcome,
+  copy: ContextSwitchGuardCopy,
+): OutcomeSummary {
   switch (outcome.outcome) {
     case "accepted":
       return {
@@ -213,7 +255,7 @@ export function summariseOutcome(outcome: MutationOutcome): OutcomeSummary {
     case "conflict":
       return {
         tone: "refused",
-        sentence: CONFLICT_SENTENCE,
+        sentence: copy.conflictNote,
         detail: { label: "conflict", value: outcome.reason },
       };
     case "denied":
@@ -321,6 +363,11 @@ export interface ContextFenceOptions {
   readonly scope: Scope;
   /** The service's `selectContext` mutation. */
   readonly selectContext: SelectContextDispatch;
+  /**
+   * The caller's words for the outcome, because a result carries a sentence as well as an outcome and
+   * the sentence may not be written twice. The shell passes the same object it hands the guard.
+   */
+  readonly copy: ContextSwitchGuardCopy;
 }
 
 /** What {@link useContextFence} returns. */
@@ -361,7 +408,7 @@ export interface ContextFence {
  * Nothing here is optimistic. The displayed context changes when the caller re-reads under the scope
  * the service accepted, so a refusal, a conflict or an outage leaves the screen exactly as it was.
  */
-export function useContextFence({ scope, selectContext }: ContextFenceOptions): ContextFence {
+export function useContextFence({ scope, selectContext, copy }: ContextFenceOptions): ContextFence {
   const queryClient = useQueryClient();
   const [isSwitching, setIsSwitching] = useState(false);
   const [lastResult, setLastResult] = useState<ContextSwitchResult | null>(null);
@@ -429,7 +476,7 @@ export function useContextFence({ scope, selectContext }: ContextFenceOptions): 
           fenceRef.current = scope;
         }
 
-        const summary = summariseOutcome(outcome);
+        const summary = summariseOutcome(outcome, copy);
         const result: ContextSwitchResult = {
           requestedScope: request.pendingScope,
           operationId,
@@ -447,7 +494,7 @@ export function useContextFence({ scope, selectContext }: ContextFenceOptions): 
         // the fence names it and the caller's recovery check can still be read.
         fenceRef.current = scope;
         const outcome = unknownOutcome({ operationId });
-        const summary = summariseOutcome(outcome);
+        const summary = summariseOutcome(outcome, copy);
         const result: ContextSwitchResult = {
           requestedScope: request.pendingScope,
           operationId,
@@ -463,7 +510,7 @@ export function useContextFence({ scope, selectContext }: ContextFenceOptions): 
         setIsSwitching(false);
       }
     },
-    [queryClient, scope, selectContext],
+    [queryClient, scope, selectContext, copy],
   );
 
   const switchContext = useCallback(
@@ -497,6 +544,12 @@ type GuardAction = "discard" | "save";
 
 /** Props of {@link ContextSwitchGuard}. */
 export interface ContextSwitchGuardProps {
+  /**
+   * The caller's words for the decision: heading, body, the three action labels and the notes. They are
+   * rendered exactly as supplied, so the dialog states no sentence of its own.
+   */
+  readonly copy: ContextSwitchGuardCopy;
+
   /** Whether the dialog is shown. The caller owns this, so a switch is never performed invisibly. */
   readonly open: boolean;
 
@@ -540,7 +593,8 @@ export interface ContextSwitchGuardProps {
   /**
    * The words the shell uses for the context being switched to — "Ministry B", "Northside
    * Ministry". Names, never identifiers: an opaque id here would be unreadable and could be
-   * mistaken for a name. Omitted, the dialog says "the context you selected" and names nothing.
+   * mistaken for a name. Omitted, the description names no context at all rather than naming one
+   * the dialog had to invent.
    */
   readonly pendingScopeLabel?: string;
 
@@ -572,6 +626,7 @@ const IDENTIFIER_CLASS = "mono-identifier break-all";
  * confirmation for the same switch is exactly the drift the project rule forbids.
  */
 export function ContextSwitchGuard({
+  copy,
   open,
   pendingScope,
   unsavedWork,
@@ -585,6 +640,8 @@ export function ContextSwitchGuard({
 }: ContextSwitchGuardProps): ReactElement {
   const [pendingAction, setPendingAction] = useState<GuardAction | null>(null);
   const [actionFailure, setActionFailure] = useState<string | null>(null);
+  // Names the save note so the save action can carry it as its accessible description.
+  const saveNoteId = useId();
   // Read synchronously, so two presses in one frame cannot start two actions.
   const pendingRef = useRef<GuardAction | null>(null);
   const stayRef = useRef<HTMLButtonElement | null>(null);
@@ -657,7 +714,7 @@ export function ContextSwitchGuard({
       ? { tone: "refused", sentence: actionFailure }
       : outcome === null
         ? null
-        : summariseOutcome(outcome);
+        : summariseOutcome(outcome, copy);
 
   return (
     <AlertDialog open={open && pendingScope !== null} onOpenChange={handleOpenChange}>
@@ -677,33 +734,31 @@ export function ContextSwitchGuard({
               <TriangleAlertIcon aria-hidden="true" />
             </AlertDialogMedia>
           )}
-          <AlertDialogTitle>Switch context?</AlertDialogTitle>
+          <AlertDialogTitle>{copy.title}</AlertDialogTitle>
           {/*
-            The description element is itself a paragraph, so both sentences are spans laid out as
-            blocks: nesting a paragraph inside one is invalid markup and React reports it as a
-            hydration error, while the two sentences still read as two lines.
+            The description element is itself a paragraph, so every line is a span laid out as a block:
+            nesting a paragraph inside one is invalid markup and React reports it as a hydration
+            error, while each sentence still reads as its own line.
           */}
           <AlertDialogDescription className="flex flex-col gap-2">
-            <span>
-              {label === "" ? (
-                "Switching to the context you selected."
-              ) : (
-                <>
-                  Switching to <bdi>{label}</bdi>.
-                </>
-              )}
-            </span>{" "}
-            {unsavedWork === undefined ? (
-              <span>
-                What belongs to this context is cleared before the next one loads, so nothing from
-                here can appear afterwards.
-              </span>
-            ) : (
-              <span>
-                <bdi>{unsavedWork.description}</bdi> would be lost if you switch now. Stay here to
-                keep working on it.
+            <span>{copy.body}</span>
+            {label === "" ? null : (
+              // The context being switched to, named by the caller from the membership it read and
+              // isolated from the surrounding direction. A name only: the component adds no sentence
+              // of its own around it.
+              <span className="font-medium text-foreground">
+                <bdi>{label}</bdi>
               </span>
             )}
+            {unsavedWork === undefined ? null : (
+              <>
+                <span>
+                  <bdi>{unsavedWork.description}</bdi>
+                </span>
+                <span>{copy.unsavedWorkNote}</span>
+              </>
+            )}
+            <span>{copy.stayNote}</span>
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -741,6 +796,14 @@ export function ContextSwitchGuard({
           </output>
         )}
 
+        {onSaveAndSwitch === undefined ? null : (
+          // A button label cannot carry this explanation, so the note sits beside the actions it
+          // belongs to and the save action names it as its accessible description.
+          <span id={saveNoteId} className="block text-sm text-balance text-muted-foreground">
+            {copy.saveNote}
+          </span>
+        )}
+
         <AlertDialogFooter>
           {/*
             Stay is first in the DOM, which makes it the control the dialog focuses when it opens
@@ -756,7 +819,7 @@ export function ContextSwitchGuard({
               onStay();
             }}
           >
-            Stay here
+            {copy.stayLabel}
           </AlertDialogAction>
           <AlertDialogAction
             confirmVariant="destructive"
@@ -765,16 +828,17 @@ export function ContextSwitchGuard({
               runAction("discard");
             }}
           >
-            Discard and switch
+            {copy.discardLabel}
           </AlertDialogAction>
           {onSaveAndSwitch === undefined ? null : (
             <AlertDialogAction
               disabled={busyNow}
+              aria-describedby={saveNoteId}
               onClick={() => {
                 runAction("save");
               }}
             >
-              Save and switch
+              {copy.saveLabel}
             </AlertDialogAction>
           )}
         </AlertDialogFooter>
