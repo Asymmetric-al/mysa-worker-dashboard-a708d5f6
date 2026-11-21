@@ -14,23 +14,44 @@
  *
  * What this module declares, and what it leaves alone. It declares keys and their sentences; it
  * does not declare the notice vocabulary. The notice component in `src/components/state-notice.tsx`
- * owns `NoticeKind`, and a partners component passes a matching entry of this module into it:
- * `empty`, `unavailable`, `unknown`, `denied` and `partial-coverage` line up with that component's
- * like-named kinds. `withheld` has no notice kind of its own — it is the word the status badge in
- * `src/components/status-badge.tsx` already renders for a withheld value — so the entry here
- * supplies the explanation a surface shows beside that badge. `loading` belongs to the notice
- * component, and `language-unavailable` to the content family; both are deliberately absent from
- * this vocabulary rather than reimplemented.
+ * owns `NoticeKind`, and the kinds kept here are derived from that type — the import is type-only,
+ * so it is erased at build time and this module still carries no runtime dependency on the
+ * component — so a kind renamed there fails this module's own tuple check and a kind added there
+ * becomes a missing entry in the table below. A partners component passes a matching entry of this
+ * module into the notice: `empty`, `unavailable`, `unknown`, `denied` and `partial-coverage` line up
+ * with that component's like-named kinds. `withheld` is the one entry here that is deliberately not
+ * a notice kind — it is the word the status badge in `src/components/status-badge.tsx` already
+ * renders for a withheld value — so the entry here supplies the explanation a surface shows beside
+ * that badge.
+ * `loading` belongs to the notice component, and `language-unavailable` to the content family; both
+ * are deliberately absent from this vocabulary rather than reimplemented.
  *
  * The module is text and types only. No key here may reach a component (`src/components`), the
  * store, another feature, a clock or a locale: a phrase lives here once, is reused from here, and
  * never becomes a second implementation of a component's job.
  */
 
+import type { NoticeKind } from "@/components/state-notice";
 import type { ValueState } from "@/modules/data-service/envelope";
 
 import { FACET_GROUPING_COPY } from "./facets";
 import { SAVED_VIEW_COPY } from "./privacy";
+
+/**
+ * A notice kind a Partners surface renders, taken from the notice component's own union so a kind
+ * renamed or added there fails to compile here rather than leaving a dead entry in this module.
+ */
+export type SurfaceNoticeState = Exclude<NoticeKind, "loading" | "language-unavailable">;
+
+/**
+ * The one state that is not a notice kind: the word the status badge in
+ * `src/components/status-badge.tsx` renders for a withheld value, whose explanation the entry here
+ * supplies.
+ */
+export type WithheldSurfaceState = "withheld";
+
+/** One state a Partners surface can be in. */
+export type SurfaceState = SurfaceNoticeState | WithheldSurfaceState;
 
 /** The states one Partners surface can be in, listed once so the set has a runtime form as well as a type. */
 export const SURFACE_STATES = [
@@ -40,10 +61,7 @@ export const SURFACE_STATES = [
   "withheld",
   "denied",
   "partial-coverage",
-] as const;
-
-/** One state a Partners surface can be in. */
-export type SurfaceState = (typeof SURFACE_STATES)[number];
+] as const satisfies readonly SurfaceState[];
 
 /** Every Partners surface that needs its own wording, one member per rendered region. */
 export const PARTNERS_SURFACES = [

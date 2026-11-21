@@ -10,6 +10,8 @@
  * shares are rendered by the components from the envelope's own values.
  */
 
+import type { NoticeKind } from "@/components/state-notice";
+
 /** The three states of an initiative working-list membership. */
 export const MEMBERSHIP_STATES = ["included", "removed", "excluded"] as const;
 
@@ -286,10 +288,23 @@ export const INITIATIVE_COPY = {
  * Empty, unavailable, denied and unconfirmed results for this family.
  * Denied wording reveals no count, title or existence; unconfirmed wording offers
  * a result check by operation rather than a repeat.
+ *
+ * The kinds are not declared here: `StateNoticeKind` is the notice component's own union minus the
+ * three kinds this family never reports, so a kind renamed in `components/state-notice.tsx` fails
+ * this tuple's check and a kind added there becomes a missing entry in the table below. Neither can
+ * leave a second declaration to drift out of step with the one the component renders.
  */
-export const STATE_NOTICE_KINDS = ["empty", "unavailable", "denied", "unknown"] as const;
+export type StateNoticeKind = Exclude<
+  NoticeKind,
+  "loading" | "partial-coverage" | "language-unavailable"
+>;
 
-export type StateNoticeKind = (typeof STATE_NOTICE_KINDS)[number];
+export const STATE_NOTICE_KINDS = [
+  "empty",
+  "unavailable",
+  "denied",
+  "unknown",
+] as const satisfies readonly StateNoticeKind[];
 
 export const STATE_NOTICE_COPY: Record<
   StateNoticeKind,
