@@ -1,61 +1,136 @@
 /**
  * The reset operation: every session the store holds is discarded and every seeded session is laid
- * down again from the deterministic seed.
+ * down again from the deterministic seed, leaving the process clock at the seed instant.
  *
- * Plan items that put this file in scope:
- * - AAP 0.7.2 "The reset path" — `bun run reset` deletes `.data/` and re-seeds every session
- *   scenario deterministically, and the Settings screen exposes the same operation through
- *   `resetSeed` with a confirmation. Both produce byte-identical content for the readable seed, which
- *   is what lets every criterion start "from a freshly reset seed".
- * - AAP 0.6.1 "Development runtime" — `resetSeed()` is one of the names the service exposes, and it
- *   lives here rather than inside the script so the same operation serves both callers.
- * - AAP 0.12.1 criterion 21 and AAP 0.12.6 — `bun run reset` succeeds on a clean checkout.
+ * One reset path, three callers. `bun run reset` (`scripts/reset.ts`), the Settings control (through
+ * `data-service/mutations/dev.ts#resetSeed` behind `/api/dev`) and the Playwright project, which
+ * resets before a spec acts so a run never inherits the previous one, all come through this function
+ * rather than rebuilding a world of their own.
  *
- * Two properties this module owes its callers.
- * - Repeating it leaves identical bytes. Each session is written through `resetSession`, the store's
- *   only creating path, with exactly the documents the seed builds, so a second run rewrites the same
- *   content and no document of a previous run survives into the new one.
- * - A failure surfaces. Every store fault is thrown at the caller, so a reset that could not finish
- *   is reported as a failure rather than presented as a partial success.
+ * What a reset leaves behind:
+ * - Exactly the seeded sessions. Every session the store lists is discarded first, so a session a
+ *   browser minted with its own cookie, or a row the seed no longer describes, cannot survive into
+ *   the known world every criterion starts from.
+ * - Identical bytes on a second run. Each session is written through `resetSession`, the store's only
+ *   creating path, with exactly the documents `seed()` builds; the store serialises keys in a fixed
+ *   order and nothing here adds a timestamp, a random id or a "last reset at" field to a document, so
+ *   repeating the reset rewrites the same content. When the reset ran is reported in the return
+ *   value, never stored.
+ * - The clock back at `SEED_INSTANT`. The offset is set last, so a reset that failed part way never
+ *   claims a clock it did not restore. Applying a session's own persisted offset is
+ *   `scenario.ts#applySessionClock`'s job when that session becomes active.
+ * - No workload document. `.workload.json` is deliberately not seeded: the large dataset is built by
+ *   `bun run seed:workload`, so the readable seed stays small and the two steps stay explicit. A
+ *   reset therefore removes a previously generated workload, and the measurement step must follow it.
+ *
+ * A failure surfaces. Every store fault is thrown to the caller — the Settings mutation maps it to
+ * the `unavailable` outcome and `scripts/reset.ts` exits non-zero — because a reset reported as a
+ * success it did not achieve is worse than no reset at all. Nothing is written until the whole world
+ * has been built, so a seed that throws leaves the stored sessions untouched.
+ *
+ * Ordering: the store serialises writes per session, not globally, so a reset is the operator action
+ * that precedes a run and is never called concurrently with a live spec. The documented flow runs
+ * Vitest before Playwright, and the browser suite resets before each spec, so the two never
+ * interleave.
  *
  * Layering: a development-runtime module that imports the store's document surface, the clock's one
- * offset setter and the sibling seed module. It reads no clock of its own, writes no file itself, and
+ * offset setter and the sibling seed module. It reads no clock of its own, writes no file itself and
  * imports no feature, component, route or data-service value.
  */
-import { DATA_ROOT, listSessionIds } from "@/modules/store/paths";
+import { isSafeSessionId, listSessionIds } from "@/modules/store/paths";
 import { resetSession } from "@/modules/store/repository";
-import { setClockOffset } from "@/modules/time/clock";
+import { SEED_INSTANT, setClockOffset } from "@/modules/time/clock";
 
-import { SEEDED_SESSION_IDS, seedSessionDocuments } from "./seed";
+import { seed } from "./seed";
 
-/** What one reset did: where the store lives, what it removed, and what it laid down. */
-export interface ResetSeedReport {
-  readonly storePath: string;
-  readonly removedSessionIds: readonly string[];
-  readonly seededSessionIds: readonly string[];
+/** What one reset did: the sessions it laid down, the ids that disappeared, and the instant it anchored. */
+export interface ResetSummary {
+  /**
+   * The ids `seed()` returned, in seeded order. Each one had its document set replaced, whether or
+   * not the store already held it.
+   */
+  readonly seededSessions: readonly string[];
+  /**
+   * The ids the store held before the reset and does not hold after it: a session a browser created
+   * that the seed does not describe, or a row the seed has stopped seeding. A re-seeded id belongs to
+   * `seededSessions` instead, because it was replaced rather than removed.
+   */
+  readonly removedSessions: readonly string[];
+  /** The process clock offset the reset leaves behind, always `0`: after a reset, `now()` is `SEED_INSTANT`. */
+  readonly clockOffsetMs: 0;
+  /** How many partner records the seed laid down across every session, for the caller's log line. */
+  readonly partners: number;
+  /** `SEED_INSTANT` as ISO text, so a caller reports the anchored instant without importing the clock. */
+  readonly seedInstant: string;
 }
 
 /**
- * Discards every stored session and re-seeds every seeded one, returning what the run did.
+ * Refuses a seeded id the store could not use as a file name, or two seeded rows claiming one id.
  *
- * The listing comes from the store itself, so a session a browser created with its own cookie is
- * removed too — a reset that left one behind would not be the known world the criteria start from.
- * The process clock is returned to the seed instant only after every document is written, so a
- * failed reset never claims a clock it did not restore. The store directory itself is left in place:
- * it belongs to the store, and an empty one is exactly what a reset of nothing leaves behind.
+ * `sessionPaths` would refuse an unsafe id too, but only once the existing sessions had already been
+ * discarded; checking before the first write keeps a bad row from destroying a readable world.
  */
-export async function resetSeed(): Promise<ResetSeedReport> {
-  const removedSessionIds = await listSessionIds();
-  for (const sessionId of removedSessionIds) {
+function assertSeedableSessionIds(sessionIds: readonly string[]): void {
+  const claimedSessionIds = new Set<string>();
+
+  for (const sessionId of sessionIds) {
+    if (!isSafeSessionId(sessionId)) {
+      throw new Error(
+        `Cannot seed session ${JSON.stringify(sessionId)}: a session id becomes a file name, so it must be 1 to 64 characters drawn only from A-Z, a-z, 0-9, underscore and hyphen.`,
+      );
+    }
+
+    if (claimedSessionIds.has(sessionId)) {
+      throw new Error(
+        `Cannot seed two sessions as ${JSON.stringify(sessionId)}: one id names one session's documents, so the second row would overwrite the first.`,
+      );
+    }
+
+    claimedSessionIds.add(sessionId);
+  }
+}
+
+/**
+ * Discards every stored session, re-seeds every seeded one, returns the process clock to the seed
+ * instant, and reports what the run did.
+ *
+ * The listing is taken before anything is written, so the removal set describes the store as the
+ * caller found it rather than a store this reset had already emptied. Every listed id is discarded
+ * with `resetSession` and every seeded id is then written with its three documents, so the store
+ * afterwards holds exactly the seeded sessions and no document of a previous set survives.
+ */
+export async function resetSeed(): Promise<ResetSummary> {
+  const existingSessionIds = await listSessionIds();
+
+  // One build of the whole world per reset, before the first write: every session comes from the same
+  // deterministic pass, and a seed that throws leaves the stored sessions as they were.
+  const sessions = await seed();
+
+  const seededSessionIds = sessions.map((session) => session.sessionId);
+  assertSeedableSessionIds(seededSessionIds);
+  const seededIdSet = new Set(seededSessionIds);
+
+  let partners = 0;
+  for (const session of sessions) {
+    partners += session.documents.state.partners.length;
+  }
+
+  for (const sessionId of existingSessionIds) {
     await resetSession(sessionId);
   }
 
-  const seededSessionIds: string[] = [];
-  for (const sessionId of SEEDED_SESSION_IDS) {
-    await resetSession(sessionId, seedSessionDocuments(sessionId));
-    seededSessionIds.push(sessionId);
+  for (const session of sessions) {
+    await resetSession(session.sessionId, session.documents);
   }
 
+  // Last, so a reset that threw above never claims a clock it did not restore.
   setClockOffset(0);
-  return { storePath: DATA_ROOT, removedSessionIds, seededSessionIds };
+
+  return {
+    seededSessions: seededSessionIds,
+    removedSessions: existingSessionIds.filter((sessionId) => !seededIdSet.has(sessionId)),
+    clockOffsetMs: 0,
+    partners,
+    seedInstant: SEED_INSTANT.toJSON(),
+  };
 }

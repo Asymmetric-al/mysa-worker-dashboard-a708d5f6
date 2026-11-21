@@ -30,10 +30,15 @@ async function main(): Promise<number> {
   try {
     const report = await resetSeed();
     process.stdout.write(
-      `store: ${report.storePath}\n` +
-        `removed sessions: ${String(report.removedSessionIds.length)}\n` +
-        `seeded sessions: ${String(report.seededSessionIds.length)}\n` +
-        `session ids: ${report.seededSessionIds.join(", ")}\n`,
+      `seeded sessions: ${String(report.seededSessions.length)}\n` +
+        `session ids: ${report.seededSessions.join(", ")}\n` +
+        `removed sessions: ${String(report.removedSessions.length)}\n` +
+        (report.removedSessions.length === 0
+          ? ""
+          : `removed session ids: ${report.removedSessions.join(", ")}\n`) +
+        `partner records: ${String(report.partners)}\n` +
+        `seed instant: ${report.seedInstant}\n` +
+        `clock offset: ${String(report.clockOffsetMs)} ms\n`,
     );
     return 0;
   } catch (error) {
