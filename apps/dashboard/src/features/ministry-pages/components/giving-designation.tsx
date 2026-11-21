@@ -4,7 +4,7 @@
  */
 import type { ReactElement } from "react";
 import { SimulationLabel } from "@/components/simulation-label";
-import { StateNotice } from "@/components/state-notice";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/cn";
@@ -53,9 +53,16 @@ function unavailableDescription(cause: GivingUnavailableCause): string {
 /** The Give placement, showing either the one approved Designation or why giving is unavailable here. */
 export function GivingDesignation({ binding, layout = "panel", className }: GivingDesignationProps): ReactElement {
   if (binding.state === "unavailable") {
+    // A missing, revoked or incompatible Designation is a stated absence, not a failed read: the source
+    // answered, so this state never borrows the source-outage notice's "could not be read" body.
     return (
       <div data-slot="giving-designation" data-giving-state="unavailable" data-giving-cause={binding.cause} data-layout={layout} className={cn("flex flex-col gap-2 text-start", className)}>
-        <StateNotice kind="unavailable" title={copy.giving.title} description={unavailableDescription(binding.cause)} />
+        <Alert>
+          <AlertTitle>
+            <h3 className="font-medium">{copy.giving.title}</h3>
+          </AlertTitle>
+          <AlertDescription>{unavailableDescription(binding.cause)}</AlertDescription>
+        </Alert>
         <SimulationLabel effect={copy.giving.simulationKey} />
         <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{copy.giving.previewInertNote}</p>
       </div>

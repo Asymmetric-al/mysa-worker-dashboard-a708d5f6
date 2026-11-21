@@ -239,14 +239,20 @@ function parseAdmittedMemberships(value: unknown): AdmittedMembership[] | undefi
     if (!isRecord(entry)) {
       return undefined;
     }
-    const { organizationId, ministryId, supportSubjectId } = entry;
+    const { organizationId, ministryId, supportSubjectId, organizationLabel, ministryLabel } = entry;
     if (!isNonEmptyString(organizationId) || !isNonEmptyString(ministryId) || !isNonEmptyString(supportSubjectId)) {
       return undefined;
     }
+    // A name the document states is carried through the parse: every development control rewrites the
+    // meta document from this value, so dropping it here would erase the name on the next write. A name
+    // that is empty or not a string states none, and the membership keeps its absence rather than a
+    // blank standing in for one.
     const admission = admittedMembershipSchema.safeParse({
       organizationId,
       ministryId,
       supportSubjectId,
+      ...(isNonEmptyString(organizationLabel) ? { organizationLabel } : {}),
+      ...(isNonEmptyString(ministryLabel) ? { ministryLabel } : {}),
     });
     if (!admission.success) {
       return undefined;

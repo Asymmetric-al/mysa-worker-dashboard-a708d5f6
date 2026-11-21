@@ -1,14 +1,20 @@
 /**
- * The Ministry Updates family's browser transport: `GET /api/updates` answers one Update's variant
- * matrix, and `POST /api/updates` creates one working variant of one Update.
+ * The Ministry Updates family's browser transport: `GET /api/updates` answers the ministry's own
+ * Updates when the request names none and one Update's variant matrix when it names one, and
+ * `POST /api/updates` creates one working variant of one Update.
  *
- * The path carries exactly the two contracts the job "Write and release an Update" gives it —
- * `reads.readVariantOverview` and `mutations.createVariant`; the draft, review, release, notice and
- * withdrawal writes belong to their own handlers, so nothing else lives here. The handler states
- * what the service answered and renames nothing: the read's envelope already tells a draft, a
- * candidate, a current release and a withdrawal apart per edition — including a sibling's prior-good
- * head after a failed release — and a flag added here would be the client-side inference the release
- * forbids.
+ * The path carries exactly three contracts: `reads.findContentDocuments`, the listing read the
+ * Updates surface opens on (the plan's Updates list has no other source), `reads.readVariantOverview`
+ * and `mutations.createVariant`, the two the job "Write and release an Update" names; the draft,
+ * review, release, notice and withdrawal writes belong to their own handlers, so nothing else lives
+ * here. An absent `documentId` is the list the Updates surface opens on — a worker asking what their
+ * ministry has written, with no identity in hand yet — so it is answered with the family's own
+ * documents rather than refused as a malformed request. An identity that is present and blank is a
+ * request defect instead, and the one schema over it answers `invalid` keyed by the field it refuses.
+ * The handler states what the service answered and renames nothing: the read's envelope already tells
+ * a draft, a candidate, a current release and a withdrawal apart per edition — including a sibling's
+ * prior-good head after a failed release — and a flag added here would be the client-side inference
+ * the release forbids.
  *
  * Rule 1 clause 1 (preserve the agreed scope): two exports, no sub-route, no kinds endpoint, no
  * status-shaped endpoint, no provider client and no second transport. Rule 1 clause 2 (reuse the
@@ -21,6 +27,7 @@
  */
 import type { NextRequest } from "next/server";
 import { z } from "zod";
+import { VARIANT_AUDIENCES } from "@/modules/content/variant";
 import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse } from "@/modules/data-service";
 import { sessionIdOf } from "../session-cookie";
 // The store writes through node:fs, so this handler never runs on the edge runtime.
@@ -35,14 +42,12 @@ const UNIDENTIFIED_ATTEMPT = "unidentified-attempt";
 /** The identity a read's refusal is reported under, so an envelope and a refusal answer alike. */
 const READ_ATTEMPT_ID = "read";
 /**
- * The content family this path creates editions of. `createVariant` is the mutation the Worker and
- * Project Page family uses too, so the family is this handler's decision and never the caller's: a
- * body that names one is refused, and pinning it here is what stops a Page edition being created
- * through the Update path.
+ * The content family this path creates editions of, and the one family its list read enumerates.
+ * `createVariant` is the mutation the Worker and Project Page family uses too, so the family is this
+ * handler's decision and never the caller's: a body that names one is refused, and pinning it here is
+ * what stops a Page edition being created through the Update path.
  */
 const UPDATE_FAMILY = "update" as const;
-/** The audiences an Update admits: the closed set the variant record carries. */
-const UPDATE_AUDIENCES = ["public", "approved-supporter"] as const;
 
 const MESSAGES = {
   documentRequired: "This action applies to one Update, so open the Update again and retry rather than pasting an address.",
@@ -59,10 +64,15 @@ const localeTagSchema = z.string({ error: MESSAGES.localeRequired }).trim().min(
 // field they refuse. Direction is derived from the tag there too, so it is not a caller input here.
 const createVariantPayloadSchema = z.strictObject({
   documentId: documentIdSchema,
-  audience: z.enum(UPDATE_AUDIENCES, { error: MESSAGES.audienceInvalid }),
+  audience: z.enum(VARIANT_AUDIENCES, { error: MESSAGES.audienceInvalid }),
   locale: localeTagSchema,
 });
 const createVariantBodySchema = mutationInputSchema(createVariantPayloadSchema);
+
+// The read's one parameter, judged by the same identifier schema the create payload states: present,
+// it names the Update whose matrix is answered, and a blank one is a request defect keyed by field
+// rather than a refusal a caller cannot tell from a denial.
+const updateTargetSchema = z.object({ documentId: documentIdSchema });
 
 const attemptIdentitySchema = z.object({ operationId: z.string() });
 async function jsonBodyOf(request: NextRequest): Promise<unknown> {
@@ -78,14 +88,27 @@ function operationIdentityOf(raw: unknown): string {
   const identity = attemptIdentitySchema.safeParse(raw);
   return identity.success && identity.data.operationId.length > 0 ? identity.data.operationId : UNIDENTIFIED_ATTEMPT;
 }
-/** Answers one Update's variant matrix — every edition with its own draft, candidate and release pointers — in the one read envelope, or the read's own `denied` or `unavailable` refusal. */
+/**
+ * Answers the two reads this path carries: the ministry's own Updates — each with its title, its
+ * editions' own draft, candidate and release pointers and the editions waiting for a release — when
+ * the request names no Update, and one Update's variant matrix when it names one, both in the one
+ * read envelope or as the read's own `denied` or `unavailable` refusal.
+ */
 export async function GET(request: NextRequest): Promise<Response> {
-  // The only parameter this read takes. An absent identity is the read's decision to refuse, and
-  // nothing else may select a principal, persona, organization, ministry, audience or locale: the
-  // scope comes from the session resolution inside the service.
-  const documentId = new URL(request.url).searchParams.get("documentId") ?? "";
+  // The only parameter this read takes. Without it the request is the list the Updates surface opens
+  // on rather than a malformed read, because a worker asking what their ministry has written holds no
+  // identity yet; nothing else may select a principal, persona, organization, ministry, audience or
+  // locale: the scope comes from the session resolution inside the service.
+  const documentId = new URL(request.url).searchParams.get("documentId");
   try {
-    return toResponse(await reads.updates.readVariantOverview({ documentId }));
+    if (documentId === null) {
+      return toResponse(await reads.updates.findContentDocuments({ families: [UPDATE_FAMILY] }));
+    }
+    const target = updateTargetSchema.safeParse({ documentId });
+    if (!target.success) {
+      return toResponse(outcomeFromError(READ_ATTEMPT_ID, target.error));
+    }
+    return toResponse(await reads.updates.readVariantOverview({ documentId: target.data.documentId }));
   } catch (error) {
     // One mapper knows the difference between a store outage and a session that cannot be
     // established, so a thrown fault is answered rather than escaping the boundary.

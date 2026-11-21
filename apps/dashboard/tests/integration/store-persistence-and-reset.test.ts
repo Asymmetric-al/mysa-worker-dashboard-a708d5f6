@@ -334,15 +334,14 @@ describe("the file-backed store", () => {
 
 describe("the deterministic reset", () => {
   it("discards every stored session before re-seeding the root, and lays down identical bytes on every run", async () => {
-    // This is the only case in the integration suite that runs the global reset, and it runs last, because
-    // `resetSeed()` discards every session the store root holds rather than one session. Every case here
-    // that writes a session lays it down first, and this file writes only the ids it owns, so a session is
-    // recreated on demand and never inherited from an earlier case — which is why a sibling suite cannot be
-    // stranded by this cleanup.
+    // This case runs the global reset, because `resetSeed()` discards every session the store root holds rather
+    // than one session; each case here lays its own sessions down first, so a session is recreated on demand.
+    // The root is shared with the other suites, so this case asserts what the reset owns: the seeded documents
+    // are present and byte-identical afterwards, and the stray document and this file's own session are gone.
     //
     // The probe is a session document with no session behind it: a file directly under the root that
     // `listSessionIds()` reports and nothing can read. The reset discards every such document and every
-    // media byte under the root, so afterwards the root holds exactly the seeded sessions and nothing else.
+    // media byte under the root, so a document it did not lay down cannot survive it.
     const straySession = `${PRIMARY_SESSION}-stray`;
     const strayStatePath = sessionPaths(straySession).state;
     await writeJsonAtomic(strayStatePath, { version: 1, context: { sessionId: straySession } });
@@ -358,9 +357,10 @@ describe("the deterministic reset", () => {
     for (const sessionId of SEEDED_SESSION_IDS) {
       expect(await readSession(sessionId)).toBeDefined();
     }
-    // Exactly the seeded sessions exist afterwards: the store holds nothing the reset did not lay down.
-    expect(await listSessionIds()).toEqual([...SEEDED_SESSION_IDS].sort());
-    expect(await filesEndingWith(".state.json")).toEqual(SEEDED_SESSION_IDS.map((sessionId) => `${sessionId}.state.json`).sort());
+    // Every seeded session is present afterwards, under the state document the reset laid down for it. The
+    // root is shared, so presence is what the reset owns — never the absence of every other suite's documents.
+    expect(await listSessionIds()).toEqual(expect.arrayContaining([...SEEDED_SESSION_IDS].sort()));
+    expect(await filesEndingWith(".state.json")).toEqual(expect.arrayContaining(SEEDED_SESSION_IDS.map((sessionId) => `${sessionId}.state.json`).sort()));
 
     const firstDigests = await seededStateDigests();
     const second = await resetSeed();
@@ -369,9 +369,10 @@ describe("the deterministic reset", () => {
     // than building a similar one.
     expect(await seededStateDigests()).toEqual(firstDigests);
 
-    // The large dataset is not checked in. The seed states no workload document and the store holds none
-    // after a reset; the published workload is produced by its generator into a session's own document.
-    expect(await filesEndingWith(".workload.json")).toEqual([]);
+    // The large dataset is not checked in. The seed states no workload document and the reset lays none down
+    // for a seeded session; the published workload is produced by its generator into a session's own document.
+    const workloadDocuments = await filesEndingWith(".workload.json");
+    expect(workloadDocuments.filter((name) => SEEDED_SESSION_IDS.some((sessionId) => name.startsWith(`${sessionId}.`)))).toEqual([]);
     const seeded = await seed();
     expect(seeded.every((session) => !Object.hasOwn(session.documents, "workload"))).toBe(true);
     const seededPartners = seeded.reduce((total, session) => total + session.documents.state.partners.length, 0);

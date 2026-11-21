@@ -1,5 +1,5 @@
 /**
- * The ten content reads: everything the Ministry Updates family and the Worker and Project Page
+ * The eleven content reads: everything the Ministry Updates family and the Worker and Project Page
  * families read, and nothing that changes anything.
  */
 import { Temporal } from "temporal-polyfill";
@@ -7,6 +7,7 @@ import { z } from "zod";
 import { isNonEmptyString } from "@/lib/guards";
 import type { SourceReference } from "@/lib/ids";
 import { logger } from "@/lib/logger";
+import { compareCodeUnits } from "@/lib/ordering";
 import { assertNever } from "@/lib/result";
 import {
   CONTENT_PROFILE_VERSION,
@@ -25,6 +26,7 @@ import { renderToHtml, type RenderMediaPlacement, type RenderRendition, type Ren
 import {
   REVIEW_DECISIONS,
   REVIEW_STEPS_PER_CANDIDATE,
+  VARIANT_FAMILIES,
   admittedAudiences,
   translationStaleness,
   type ContentCandidate,
@@ -37,9 +39,11 @@ import {
 } from "@/modules/content/variant";
 import { mediaStateReason, type MediaRenditionPurpose, type MediaStateReason } from "@/modules/media/asset";
 import { readSession } from "@/modules/store/repository";
+import { GOAL_MEASURE } from "@/modules/support/goal";
 import { instantAt } from "@/modules/time/clock";
 import { assertScope, canEdit, canView, readResultOfRefusal, resolveSession, type ResolvedSession, type SessionResolution, type SessionSource } from "../authorize";
 import {
+  PAGE_SECTION_TYPES,
   buildEnvelope,
   contentCaptionTrackRecordSchema,
   contentDocumentRecordSchema,
@@ -62,6 +66,7 @@ import {
   type ContentKind,
   type MediaAssetKind,
   type MediaPlacementRecord,
+  type PageSectionType,
   type ReadAction,
   type ReadEnvelope,
   type RecordedValueState,
@@ -757,6 +762,132 @@ export async function readVariantOverview(input: { readonly documentId: string; 
     }),
   };
 }
+// findContentDocuments — the listing read both content families' index surfaces use
+/** How a list states one document's title: the edition whose current revision supplied it, or that no edition has one to state. */
+export type ContentDocumentTitleView = { readonly status: "stated"; readonly variantId: string; readonly title: string } | { readonly status: "unstated" };
+/** One canonical document as an index lists it: the document itself, its title, every edition's own independent pointers, and the editions whose candidate has no release head. */
+export interface ContentDocumentIndexEntry {
+  readonly document: ContentDocumentView;
+  readonly title: ContentDocumentTitleView;
+  readonly editions: readonly ContentEditionView[];
+  readonly awaitingRelease: readonly string[];
+}
+/** What a list of content documents states: the families it listed and their documents in document order. */
+export interface ContentDocumentIndexData {
+  readonly families: readonly ContentFamily[];
+  readonly documents: readonly ContentDocumentIndexEntry[];
+}
+/** What a caller asks the list of content documents for: the families to list and the session to read under. */
+export interface ContentDocumentIndexQuery {
+  readonly families?: readonly ContentFamily[];
+  readonly session?: SessionSource;
+}
+
+/**
+ * The families one list states: the set the caller named, or every content family when it named none.
+ * A set carries no order of its own, so the families are stated in the content model's own order, and
+ * a family named twice is one family here as it is in the records.
+ */
+function listedFamiliesOf(requested: readonly ContentFamily[] | undefined): readonly ContentFamily[] {
+  if (requested === undefined) {
+    return VARIANT_FAMILIES;
+  }
+  return VARIANT_FAMILIES.filter((family) => requested.includes(family));
+}
+function digest(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+/**
+ * The revision of a listed collection: how many documents it holds and a digest of their own revisions
+ * at `documentId@revision`, so a document saved, released or withdrawn under an identity the list
+ * already carries states a new collection revision.
+ */
+function collectionRevisionOf(entries: readonly ContentDocumentIndexEntry[]): string {
+  const revisions = entries.map((entry) => `${entry.document.documentId}@${entry.document.recordRevision}`).toSorted(compareCodeUnits);
+  return `content-documents/${String(entries.length)}/${digest(revisions.join("\u0000"))}`;
+}
+/**
+ * The title a list states for one document: the share presentation title of the first of its editions,
+ * in the order the family stores them, whose current revision exists — the saved draft when one is
+ * held, the head release's revision otherwise. A document with no such revision states no title, so
+ * the list never invents a heading for a document that has no revision to take one from.
+ */
+function titleOf(state: ContentWorkspaceState, variants: readonly ContentVariantRecordLike[]): ContentDocumentTitleView {
+  for (const variant of variants) {
+    const revision = currentRevisionOf(state, variant);
+    if (revision !== undefined) {
+      return { status: "stated", variantId: variant.variantId, title: revision.sharePresentation.title };
+    }
+  }
+  return { status: "unstated" };
+}
+/** One document as an index lists it: its own view, its title, every edition's independent draft, candidate and release pointers, and the editions whose candidate has no release head under `readVariantOverview`'s own rule. */
+function indexEntryOf(state: ContentWorkspaceState, record: ContentDocumentRecord, checksums: RevisionChecksums): ContentDocumentIndexEntry {
+  const variants = variantsOf(state, record.documentId);
+  const editions = variants.map((variant) => editionViewOf(state, variant, checksums));
+  return {
+    document: documentViewOf(record),
+    title: titleOf(state, variants),
+    editions,
+    awaitingRelease: editions.filter((edition) => edition.candidateId !== null && edition.releaseHeadId === null).map((edition) => edition.variantId),
+  };
+}
+/**
+ * The actions one list of documents offers, computed across every listed document under the names the
+ * variant matrix uses: a draft to open, a candidate to review and a candidate to publish, each stated
+ * with the reason it is absent when it is.
+ */
+function indexActions(entries: readonly ContentDocumentIndexEntry[]): readonly ReadAction[] {
+  const editions = entries.flatMap((entry) => entry.editions);
+  const hasDraft = editions.some((edition) => edition.draftRevisionId !== null);
+  const awaitingRelease = editions.filter((edition) => edition.candidateId !== null && edition.releaseHeadId === null).length;
+  const hasCandidate = editions.some((edition) => edition.candidateId !== null);
+  return [
+    { name: "open-draft", available: hasDraft, ...(hasDraft ? {} : { reason: "No edition of the listed documents has a saved draft yet." }) },
+    { name: "review-candidate", available: awaitingRelease > 0, ...(awaitingRelease > 0 ? {} : { reason: "No edition of the listed documents has a candidate awaiting review." }) },
+    { name: "publish-variants", available: hasCandidate, ...(hasCandidate ? {} : { reason: "Only a frozen candidate can be published; no edition of the listed documents has one." }) },
+  ];
+}
+/** Lists the content documents of the requested families — every family when none is named — each with its title, its editions' own draft, candidate and release state, and the editions waiting for a release. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read content and `unavailable` when the records cannot be read. */
+export async function findContentDocuments(query: ContentDocumentIndexQuery = {}): Promise<ReadResult<ReadEnvelope<ContentDocumentIndexData>>> {
+  // Authorisation precedes enumeration: a caller who may not read content receives the refusal before a
+  // count, a title or an existence hint is computed, so a list cannot become a disclosure oracle.
+  const opened = await openContentWorkspace("findContentDocuments", query.session);
+  if (!opened.ok) {
+    return opened.result;
+  }
+  const { workspace } = opened;
+  const families = listedFamiliesOf(query.families);
+  const wanted = new Set<ContentFamily>(families);
+  const checksums = checksumsOf(workspace.state);
+  const documents = workspace.state.contentDocuments
+    .filter((record) => wanted.has(record.family))
+    .toSorted((left, right) => compareCodeUnits(left.documentId, right.documentId))
+    .map((record) => indexEntryOf(workspace.state, record, checksums));
+  const data: ContentDocumentIndexData = { families, documents };
+  return {
+    kind: "envelope",
+    envelope: contentEnvelope({
+      workspace,
+      data,
+      source: contentSource(CONTENT_SOURCE_REFERENCE),
+      revision: collectionRevisionOf(documents),
+      // One state per value-bearing member of `data`, and no third: each document's own editions and
+      // awaiting-release list are members of that document's entry, so the list states their absence
+      // there and never invents an aggregate count this read does not return.
+      valueStates: {
+        documents: documents.length === 0 ? "zero" : "value",
+      },
+      actions: indexActions(documents),
+    }),
+  };
+}
+
 // readDraft — the one working revision of one edition
 /** What a draft read states: the working revision, its absence, or a stored document it cannot read. */
 export type ContentDraftData =
@@ -2091,10 +2222,6 @@ function shareImageView(workspace: ContentWorkspace, share: SharePresentationRec
   };
 }
 // readPageCatalogues — the two guided family catalogues
-const PAGE_SECTION_TYPES = ["introduction", "story", "prayer", "milestone", "image", "video", "giving", "progress"] as const;
-/** One section type a page catalogue offers. */
-export type PageSectionType = (typeof PAGE_SECTION_TYPES)[number];
-
 const PAGE_CATALOGUE_REVISION = "page-catalogue-1";
 
 const SECTION_FIELD_KEYS: Readonly<Record<PageSectionType, readonly string[]>> = {
@@ -2628,7 +2755,9 @@ function progressOf(workspace: ContentWorkspace): GivingProgressView | null {
   if (goal === null) {
     return null;
   }
-  if (goal.measure !== "received-support" || projection.basis !== "effective_cash_allocation") {
+  // A page's progress section states one measure, and it is the token the goal module declares — never
+  // a string spelled here, which could drift from the value the goal record actually holds.
+  if (goal.measure !== GOAL_MEASURE || projection.basis !== "effective_cash_allocation") {
     return null;
   }
   const exponent = projection.currencyExponents[goal.amount.currency];

@@ -9,8 +9,10 @@ import { inspectVideo, preparePlaybackRendition, type AdmittedContainer, type Ad
 export type MediaPreparationState = "selected" | "preparing" | "ready" | "rejected" | "cancelled" | "unavailable";
 /** The six states in the order a picker offers them, so no seventh is ever added by accident. */
 export const MEDIA_PREPARATION_STATES: readonly MediaPreparationState[] = ["selected", "preparing", "ready", "rejected", "cancelled", "unavailable"];
-/** The five purposes a rendition can serve. */
-export type MediaRenditionPurpose = "display" | "playback" | "poster" | "captions" | "transcript";
+/** The five purposes a rendition can serve, in the order a placement offers them. */
+export const RENDITION_PURPOSES = ["display", "playback", "poster", "captions", "transcript"] as const;
+/** One rendition purpose, derived from {@link RENDITION_PURPOSES}. */
+export type MediaRenditionPurpose = (typeof RENDITION_PURPOSES)[number];
 /** The purposes `prepareRendition()` supplies for an asset that was already accepted. */
 export type MediaAncillaryRenditionPurpose = "poster" | "captions" | "transcript";
 /** The three ancillary purposes, in the order a placement offers them. */

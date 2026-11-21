@@ -19,7 +19,12 @@
 import { keepPreviousData, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { scopeKey } from "@/components/context-switch-guard";
 import { isNonEmptyString, isRecord } from "@/lib/guards";
-import { isOutcome, isReadResult, type ReadEnvelope, type ReadResult, type Scope, type reads } from "@/modules/data-service";
+// The two guards read a body back off the wire and are needed as values, so they come from
+// `outcome.ts` rather than from the service barrel: a value import of the barrel reaches every named
+// read, every named mutation and the synthetic store behind them, which drags `node:fs` into the
+// browser bundle the list surface is built into. The payload types stay on the barrel, type-only.
+import { isOutcome, isReadResult } from "@/modules/data-service/outcome";
+import type { ReadEnvelope, ReadResult, Scope, reads } from "@/modules/data-service";
 import type { ReferralListQuery } from "../schemas";
 // The address, and the grammar it parses
 /** The one address this folder's reads are served from, kept in one constant so a path correction is a single edit. */
@@ -28,8 +33,8 @@ export const REFERRALS_ENDPOINT = "/api/referrals";
 const REFERRALS_JOB = "referrals";
 /**
  * The four parameter names `GET /api/referrals` parses, taken from the route handler's own grammar.
- * The list a view names travels as `list` on the wire, although the family's query state calls the
- * same value `view`.
+ * The family's query state carries the same four names, so the address below states each one straight
+ * through, with no mapping between the two.
  */
 const WIRE = {
   list: "list",
@@ -181,7 +186,7 @@ export async function fetchReferralRead<TData>(path: string): Promise<ReadResult
 /** The list address for one query: the four parameters the route parses, and nothing it would silently ignore. */
 function referralsListPath(query: ReferralListQuery): string {
   const params = new URLSearchParams();
-  params.set(WIRE.list, query.view);
+  params.set(WIRE.list, query.list);
   if (query.search !== "") {
     params.set(WIRE.search, query.search);
   }
@@ -189,9 +194,8 @@ function referralsListPath(query: ReferralListQuery): string {
   // owns the whole-result total, so neither is computed here.
   params.set(WIRE.page, String(query.page));
   params.set(WIRE.pageSize, String(query.pageSize));
-  // The read owns the ordering: every list it answers is presented newest endpoint first and it takes
-  // no ordering parameter at all, so `sort` stays part of the query state — and therefore of the cache
-  // key — instead of being sent as a parameter nothing would honour.
+  // The read owns the ordering: every list it answers is presented newest endpoint first, and it takes
+  // no ordering parameter at all, so none travels here.
   return `${REFERRALS_ENDPOINT}?${params.toString()}`;
 }
 // The read

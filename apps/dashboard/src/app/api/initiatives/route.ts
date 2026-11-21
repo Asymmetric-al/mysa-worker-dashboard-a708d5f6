@@ -22,6 +22,17 @@ type InitiativeMemberStateName = NonNullable<InitiativeDetailQuery["memberState"
 const READ_ATTEMPT_ID = "read";
 
 const UNIDENTIFIED_ATTEMPT = "unidentified-attempt";
+// What a read refuses, one sentence per field: each names the value the read does not admit and what to
+// send instead, so a wrong request is answered at the field that carries it rather than performed as
+// though it were the request the caller made.
+const READ_MESSAGES = {
+  stateInvalid: "Read initiatives in one of the states an initiative can stand in — open or closed — or leave the state out to read both.",
+  sortInvalid: "Read the list in one of its own orders — name, period-start or state — or leave the order out to read by name.",
+  pageInvalid: "State the page as a whole number from 1, or leave it out to read the first page.",
+  pageSizeInvalid: "State the page size as a whole number from 1, or leave it out and the read applies its own 50-row default and 200-row ceiling.",
+  memberStateInvalid: "Read the working list in one of its three membership states — included, removed or excluded — or leave the state out to read every member.",
+  initiativeIdRequired: "Name the initiative to open by an identifier that is not blank, or leave the identifier out to read the list.",
+} as const;
 // The closed vocabularies the list read admits, stated from its own query type so no wire value is
 // ever asserted into it.
 const INITIATIVE_STATES = ["open", "closed"] as const satisfies readonly InitiativeStateName[];
@@ -67,57 +78,77 @@ const createInitiativePayloadSchema = z
 
 const createInitiativeRequestSchema = mutationInputSchema(createInitiativePayloadSchema);
 
-function isInitiativeState(value: string | null): value is InitiativeStateName {
-  return value !== null && INITIATIVE_STATES.some((admitted) => admitted === value);
-}
-function isInitiativeSort(value: string | null): value is InitiativeSortName {
-  return value !== null && INITIATIVE_SORTS.some((admitted) => admitted === value);
-}
-function isInitiativeMemberState(value: string | null): value is InitiativeMemberStateName {
-  return value !== null && INITIATIVE_MEMBER_STATES.some((admitted) => admitted === value);
-}
-function initiativeListQueryOf(request: Request): InitiativeListQuery {
-  const params = new URL(request.url).searchParams;
-  const state = params.get("state");
-  const search = params.get("search");
-  const sort = params.get("sort");
-  const page = params.get("page");
-  const pageSize = params.get("pageSize");
-  // The query is forwarded, not judged: a state or order this read does not admit is left out rather
-  // than refused or asserted into its types, and the read owns which values exist, the page bounds and
-  // every count, so an unrecognised parameter never fails the request here.
+// The read side: the query grammar this transport admits
+//
+// The collector below reads only the keys this family's reads admit, so an address parameter that
+// belongs to something else is ignored rather than refused; a known parameter carrying a value the
+// read does not admit is refused at that field by the grammar.
+const initiativeListQuerySchema = z.strictObject({
+  state: z.enum(INITIATIVE_STATES, { error: READ_MESSAGES.stateInvalid }).optional(),
+  // An address parameter is always text, so the search states no refusal of its own: the read matches
+  // it against the whole authorised result, and a search that matches nothing is an empty list.
+  search: z.string().optional(),
+  sort: z.enum(INITIATIVE_SORTS, { error: READ_MESSAGES.sortInvalid }).optional(),
+  // The release's 50-row default and 200-row ceiling belong to the read, which clamps the size it is
+  // given and reports the whole-result total, so nothing here defaults, caps, counts or slices a page.
+  page: z.coerce.number({ error: READ_MESSAGES.pageInvalid }).int({ error: READ_MESSAGES.pageInvalid }).min(1, { error: READ_MESSAGES.pageInvalid }).optional(),
+  pageSize: z.coerce.number({ error: READ_MESSAGES.pageSizeInvalid }).int({ error: READ_MESSAGES.pageSizeInvalid }).min(1, { error: READ_MESSAGES.pageSizeInvalid }).optional(),
+});
+type InitiativeListQueryParams = z.output<typeof initiativeListQuerySchema>;
+
+function rawInitiativeListParams(search: URLSearchParams): Record<string, unknown> {
   return {
-    ...(isInitiativeState(state) ? { state } : {}),
-    ...(search === null ? {} : { search }),
-    ...(isInitiativeSort(sort) ? { sort } : {}),
-    ...(page === null ? {} : { page: Number(page) }),
-    ...(pageSize === null ? {} : { pageSize: Number(pageSize) }),
+    state: search.get("state") ?? undefined,
+    search: search.get("search") ?? undefined,
+    sort: search.get("sort") ?? undefined,
+    page: search.get("page") ?? undefined,
+    pageSize: search.get("pageSize") ?? undefined,
   };
 }
 /**
- * The identifier a request names when it asks for one initiative rather than the list, with the
- * narrowing and page that belong to that read. The transport keeps no per-record path for this family,
- * so the detail is addressed on the same route the list is; an absent or blank identifier answers
- * `null`, which leaves the request the list read unchanged.
+ * The question the list read is asked, stated in the read's own vocabulary. Every value here has
+ * already been admitted by the grammar above, so nothing is dropped or defaulted on the way through:
+ * the read still owns which values exist, the page bounds and every count.
  */
-function initiativeDetailRequestOf(request: Request): { readonly initiativeId: string; readonly query: InitiativeDetailQuery } | null {
-  const params = new URL(request.url).searchParams;
-  const initiativeId = params.get("initiativeId");
-  if (initiativeId === null || initiativeId.trim().length === 0) {
-    return null;
-  }
-  const memberState = params.get("memberState");
-  const page = params.get("page");
-  const pageSize = params.get("pageSize");
-  // Forwarded on the same rule the list follows above: the detail read owns which membership states
-  // exist, the page bounds and every count, so an unrecognised parameter is left out, not refused.
+function initiativeListQueryOf(params: InitiativeListQueryParams): InitiativeListQuery {
   return {
-    initiativeId,
-    query: {
-      ...(isInitiativeMemberState(memberState) ? { memberState } : {}),
-      ...(page === null ? {} : { page: Number(page) }),
-      ...(pageSize === null ? {} : { pageSize: Number(pageSize) }),
-    },
+    ...(params.state === undefined ? {} : { state: params.state }),
+    ...(params.search === undefined ? {} : { search: params.search }),
+    ...(params.sort === undefined ? {} : { sort: params.sort }),
+    ...(params.page === undefined ? {} : { page: params.page }),
+    ...(params.pageSize === undefined ? {} : { pageSize: params.pageSize }),
+  };
+}
+/**
+ * The identifier a request names when it asks for one initiative rather than the list. Its presence is
+ * what routes the request to the detail read — the transport keeps no per-record path for this family,
+ * so the record is addressed on the same route the list is — and the grammar below is what judges it,
+ * so an identifier that is present but blank is refused at its own field rather than read as the list.
+ */
+const INITIATIVE_ID_PARAM = "initiativeId";
+
+const initiativeDetailQuerySchema = z.strictObject({
+  initiativeId: z.string({ error: READ_MESSAGES.initiativeIdRequired }).trim().min(1, READ_MESSAGES.initiativeIdRequired),
+  memberState: z.enum(INITIATIVE_MEMBER_STATES, { error: READ_MESSAGES.memberStateInvalid }).optional(),
+  page: z.coerce.number({ error: READ_MESSAGES.pageInvalid }).int({ error: READ_MESSAGES.pageInvalid }).min(1, { error: READ_MESSAGES.pageInvalid }).optional(),
+  pageSize: z.coerce.number({ error: READ_MESSAGES.pageSizeInvalid }).int({ error: READ_MESSAGES.pageSizeInvalid }).min(1, { error: READ_MESSAGES.pageSizeInvalid }).optional(),
+});
+type InitiativeDetailQueryParams = z.output<typeof initiativeDetailQuerySchema>;
+
+function rawInitiativeDetailParams(search: URLSearchParams): Record<string, unknown> {
+  return {
+    initiativeId: search.get(INITIATIVE_ID_PARAM) ?? undefined,
+    memberState: search.get("memberState") ?? undefined,
+    page: search.get("page") ?? undefined,
+    pageSize: search.get("pageSize") ?? undefined,
+  };
+}
+/** The narrowing and page the detail read is asked for, on the same rule the list follows: every value was admitted before it arrived here. */
+function initiativeDetailQueryOf(params: InitiativeDetailQueryParams): InitiativeDetailQuery {
+  return {
+    ...(params.memberState === undefined ? {} : { memberState: params.memberState }),
+    ...(params.page === undefined ? {} : { page: params.page }),
+    ...(params.pageSize === undefined ? {} : { pageSize: params.pageSize }),
   };
 }
 function attemptIdOf(body: unknown): string {
@@ -129,13 +160,26 @@ function attemptIdOf(body: unknown): string {
   const claimed: unknown = Reflect.get(body, "operationId");
   return typeof claimed === "string" && claimed.length > 0 ? claimed : UNIDENTIFIED_ATTEMPT;
 }
-/** One page of initiatives as the request asked for it, or the one initiative the request named: the read's envelope, or the read's own `denied` or `unavailable` refusal. */
+/** One page of initiatives as the request asked for it, or the one initiative the request named: the read's envelope, or the read's own `denied` or `unavailable` refusal. A query the read does not admit is `invalid` at the field that carries it. */
 export async function GET(request: Request): Promise<Response> {
   try {
+    const search = new URL(request.url).searchParams;
     // One route, two reads: the identifier names a detail and its absence names the list, so this
     // family needs no second transport path for the record it opens.
-    const detail = initiativeDetailRequestOf(request);
-    return detail === null ? toResponse(await reads.outreach.readInitiatives(initiativeListQueryOf(request))) : toResponse(await reads.outreach.readInitiative(detail.initiativeId, detail.query));
+    if (search.has(INITIATIVE_ID_PARAM)) {
+      const detail = initiativeDetailQuerySchema.safeParse(rawInitiativeDetailParams(search));
+      if (!detail.success) {
+        // No source behind the read failed here, so a value this read does not admit is answered with
+        // the same per-field `invalid` outcome the write answers, naming the field to correct.
+        return toResponse(outcomeFromError(READ_ATTEMPT_ID, detail.error));
+      }
+      return toResponse(await reads.outreach.readInitiative(detail.data.initiativeId, initiativeDetailQueryOf(detail.data)));
+    }
+    const grammar = initiativeListQuerySchema.safeParse(rawInitiativeListParams(search));
+    if (!grammar.success) {
+      return toResponse(outcomeFromError(READ_ATTEMPT_ID, grammar.error));
+    }
+    return toResponse(await reads.outreach.readInitiatives(initiativeListQueryOf(grammar.data)));
   } catch (error) {
     // One mapper knows a store outage, a session that cannot be established and a lost
     // acknowledgement apart, so a thrown fault is answered rather than escaping the boundary.

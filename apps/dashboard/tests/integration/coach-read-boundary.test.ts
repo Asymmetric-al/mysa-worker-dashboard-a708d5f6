@@ -47,7 +47,7 @@
  *   in, so the coach's session cannot authenticate one.
  */
 import { Temporal } from "temporal-polyfill";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { DENIAL_VALUE_KEYS } from "@/lib/redaction";
 import { mutations, reads, type CoachingGrantRecord, type MutationInput, type Scope } from "@/modules/data-service";
@@ -82,14 +82,23 @@ const WORKER_SOURCE: SessionSource = { sessionId: WORKER_SESSION };
 const SECOND_WORKER_SOURCE: SessionSource = { sessionId: SECOND_WORKER_SESSION };
 /** The workspace the coach's and the worker's sessions are laid down from: the seeded world holding the grant, the worker's work and the one support projection. */
 const WORKER_WORKSPACE = "established-worker";
-/** The workspace with the coaching families alone and no support projection: the world in which a shared financial module's source is genuinely down. */
-const COACHING_ONLY_WORKSPACE = "coach";
-// The three grants the seeded world states, one per lifecycle state a coach read distinguishes
+/** The workspace a coach's own seat is laid down from: the seeded coaching families and the support source their financial module reads. */
+const COACH_SEAT_WORKSPACE = "coach";
+// The three grants the seeded world states, one per lifecycle state a coach read distinguishes, plus a fourth
+// beside them: grant-established-coach-support, the one that shares a reviewed financial range
 const ACTIVE_GRANT_ID = "grant-established-coach";
 
 const REVOKED_GRANT_ID = "grant-revoked-coach";
 
 const ENDED_GRANT_ID = "grant-ended-coach";
+// The one seeded grant that shares a reviewed financial range: the module whose source the unavailable-module
+// scenario can report down while the grant's other modules stay usable
+const SUPPORT_SHARING_GRANT_ID = "grant-established-coach-support";
+// The two seeded seats the scenario case reads: the coach's own seat in the unavailable-module world, and the
+// baseline coach's seat as the control that the scenario is what changed rather than the world
+const SEEDED_DOWN_MODULE_SESSION = "coach-coaching-module-unavailable";
+
+const SEEDED_BASELINE_COACH_SESSION = "coach";
 // The identities, read from the seed's own roster
 const COACH_PRINCIPAL = SEEDED_PERSONAS.coach.principalId;
 
@@ -171,6 +180,19 @@ async function layDownSession(sessionId: string, meta: SessionMetaDocument, work
     state: { ...state, context: contextOf(state, sessionId, meta) },
     operations: structuredClone(template.operations),
     meta,
+  });
+}
+/**
+ * Lays one seeded row's own documents down under its id: the world the development reset builds for that
+ * seat. A case that must read the seeded personas themselves lays the row down first, so it reads the seed's
+ * bytes whether or not a reset has run on this checkout.
+ */
+async function layDownSeededSession(sessionId: string): Promise<void> {
+  const template = await seededWorkspace(sessionId);
+  await resetSession(sessionId, {
+    state: structuredClone(template.state),
+    operations: structuredClone(template.operations),
+    meta: structuredClone(template.meta),
   });
 }
 /** The state document a session holds, read back through the store: the evidence a read wrote nothing and a denial rewrote nothing. */
@@ -315,9 +337,10 @@ async function shareModules(grantId: string, keys: readonly ModuleKey[]): Promis
   for (const key of keys) {
     // Each change presents the revision the record stands at, so a refusal here can only be the module's
     // own answer and never a stale token this file forgot to re-read.
+    const alreadySelected = grantRecord(await stateOf(WORKER_SESSION), grantId).modules[key];
     const outcome = await mutations.coaching.setModule(attempt(workerScope, { grantId, moduleKey: key, enabled: true }, await currentRevisionOf(WORKER_SESSION, grantId)), WORKER_SOURCE);
-    // A module already switched on answers `unchanged`: the selection is the same, so nothing is written.
-    expect(["accepted", "unchanged"]).toContain(outcome.outcome);
+    // The grant's own record states which answer is due: a module already switched on produces no change, so this separates "already selected" from "just selected".
+    expect(outcome.outcome).toBe(alreadySelected ? "unchanged" : "accepted");
   }
 }
 /** The families a coach read must never touch: the worker's own work, not the relationship it shares. */
@@ -399,14 +422,10 @@ async function restoreClocks(): Promise<void> {
 
 let workerScope: Scope;
 
-let previousNodeEnv: string | undefined;
-
 beforeAll(() => {
   // The development controls and the named-session resolution are gated on `NODE_ENV`, so the run is put
-  // in a development build and the environment it arrived with is restored in `afterAll`. The runtime
-  // declares `NODE_ENV` read-only, so the value is written through the environment object itself.
-  previousNodeEnv = process.env.NODE_ENV;
-  Reflect.set(process.env, "NODE_ENV", "development");
+  // in a development build and the environment it arrived with is restored in `afterAll`.
+  vi.stubEnv("NODE_ENV", "development");
 });
 
 beforeEach(async () => {
@@ -424,11 +443,7 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  if (previousNodeEnv === undefined) {
-    Reflect.deleteProperty(process.env, "NODE_ENV");
-  } else {
-    Reflect.set(process.env, "NODE_ENV", previousNodeEnv);
-  }
+  vi.unstubAllEnvs();
   // Every session here is this file's own, so the store is left holding none of its fixtures.
   for (const sessionId of [WORKER_SESSION, COACH_SESSION, SECOND_WORKER_SESSION]) {
     await resetSession(sessionId);
@@ -710,11 +725,10 @@ describe("coach read boundary", () => {
   });
 
   it("leaves the other admitted modules readable when one shared module's source is unavailable", async () => {
-    // The seed pairs the unavailable-coaching-module scenario with a world that holds no support source.
-    // Laid down here, the module that needs that source reports unavailable, the modules that do not stay
-    // usable, and neither is presented as the other.
-    await layDownSession(WORKER_SESSION, workerMeta(), COACHING_ONLY_WORKSPACE);
-    await layDownSession(COACH_SESSION, coachMeta({ scenarioId: "coaching-module-unavailable" }), COACHING_ONLY_WORKSPACE);
+    // The coach's seat runs the unavailable-coaching-module scenario, so the module that reads the support
+    // source reports unavailable, the modules that do not stay usable, and neither is presented as the other.
+    await layDownSession(WORKER_SESSION, workerMeta(), COACH_SEAT_WORKSPACE);
+    await layDownSession(COACH_SESSION, coachMeta({ scenarioId: "coaching-module-unavailable" }), COACH_SEAT_WORKSPACE);
     await shareModules(ACTIVE_GRANT_ID, ["support-goal"]);
     await carryState(WORKER_SESSION, COACH_SESSION);
 
@@ -738,6 +752,64 @@ describe("coach read boundary", () => {
     }
     expect(checkIns.state).not.toBe("unavailable");
     expect(checkIns.sharedCheckIns.length).toBeGreaterThan(0);
+  });
+
+  it("reports one admitted coaching module unavailable in the seeded scenario while the others stay usable", async () => {
+    // AAP 0.12.5 arms this failure with a seeded scenario flag rather than a hand-edited record, so the case
+    // reads the seeded seats themselves: the coach's own seat in the scenario, and the baseline coach's seat
+    // as the control proving the scenario is what changed the module rather than the world.
+    await layDownSeededSession(SEEDED_DOWN_MODULE_SESSION);
+    await layDownSeededSession(SEEDED_BASELINE_COACH_SESSION);
+
+    const down = assertEnvelope(await reads.coach.readCoachSubject({ grantId: SUPPORT_SHARING_GRANT_ID }, { sessionId: SEEDED_DOWN_MODULE_SESSION }));
+    // Exactly the modules the grant shares, and it shares more than the one whose source is down.
+    expect(down.data.modules.map((view) => view.module).sort()).toEqual(["check-ins", "support-goal", "targets"]);
+
+    const goal = down.data.modules.find((view) => view.module === "support-goal");
+    if (goal === undefined || goal.module !== "support-goal") {
+      throw new Error("The shared support-goal module was not enumerated at all, which would hide the outage as an absence.");
+    }
+    // The module whose source the scenario reports down states unavailable, says why, and projects no goal:
+    // an unavailable module is never answered with a value, nor with a blank that reads as an empty one.
+    expect(goal.state).toBe("unavailable");
+    expect(goal.unavailability).not.toBeNull();
+    expect(goal.goal).toBeNull();
+
+    const targets = down.data.modules.find((view) => view.module === "targets");
+    if (targets === undefined || targets.module !== "targets") {
+      throw new Error("The targets module is shared and was not enumerated, which would blank the whole surface for one module's outage.");
+    }
+    expect(targets.state).not.toBe("unavailable");
+    expect(targets.unavailability).toBeNull();
+    expect(targets.progress.length).toBeGreaterThan(0);
+
+    const checkIns = down.data.modules.find((view) => view.module === "check-ins");
+    if (checkIns === undefined || checkIns.module !== "check-ins") {
+      throw new Error("The check-ins module is shared and was not enumerated, which would blank the whole surface for one module's outage.");
+    }
+    // The module is still enumerated and usable — its content is complete, so it states no exception at all
+    // — and the outage of its neighbour changed neither its state nor the reading it carries. This grant
+    // shares no check-in of its own, so nothing is projected into it and nothing is claimed either.
+    expect(checkIns.state).not.toBe("unavailable");
+    expect(checkIns.unavailability).toBeNull();
+    expect(checkIns.state).toBeNull();
+    expect(checkIns.sharedCheckIns).toHaveLength(0);
+
+    // The same read of the same grant through the baseline coach's seat. The source is there and holds the
+    // goal the grant shares, so the module the scenario made unavailable reads as usable figures there.
+    const baseline = assertEnvelope(await reads.coach.readCoachSubject({ grantId: SUPPORT_SHARING_GRANT_ID }, { sessionId: SEEDED_BASELINE_COACH_SESSION }));
+    expect(baseline.data.modules.map((view) => view.module).sort()).toEqual(["check-ins", "support-goal", "targets"]);
+    const baselineGoal = baseline.data.modules.find((view) => view.module === "support-goal");
+    if (baselineGoal === undefined || baselineGoal.module !== "support-goal") {
+      throw new Error("The baseline coach's read enumerated no support-goal module, so it cannot stand as the control.");
+    }
+    expect(baselineGoal.state).not.toBe("unavailable");
+    expect(baselineGoal.goal).not.toBeNull();
+    const baselineTargets = baseline.data.modules.find((view) => view.module === "targets");
+    if (baselineTargets === undefined || baselineTargets.module !== "targets") {
+      throw new Error("The baseline coach's read enumerated no targets module, so it cannot stand as the control.");
+    }
+    expect(baselineTargets.state).not.toBe("unavailable");
   });
 });
 

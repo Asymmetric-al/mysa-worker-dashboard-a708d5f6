@@ -3,7 +3,19 @@
  */
 import { readAudience, readDiscoveryIndex, readInbox, readPreferences, readReceivingList, readReceivingPage, readReceivingPost, readSendResult } from "./reads/audience";
 import { readCheckIns, readCoachPortfolio, readCoachSubject, readCoachingOverview, readTargets, readTaskShares } from "./reads/coaching";
-import { readCandidate, readDraft, readGivingBinding, readPage, readPageCatalogues, readPageLocales, readPreview, readRelease, readSharePresentation, readVariantOverview } from "./reads/content";
+import {
+  findContentDocuments,
+  readCandidate,
+  readDraft,
+  readGivingBinding,
+  readPage,
+  readPageCatalogues,
+  readPageLocales,
+  readPreview,
+  readRelease,
+  readSharePresentation,
+  readVariantOverview,
+} from "./reads/content";
 import { readDevState } from "./reads/dev";
 import { readImportProposal, readImportReceipt } from "./reads/import";
 import { readMediaAsset } from "./reads/media";
@@ -140,6 +152,7 @@ export type {
   ValueState,
 } from "./envelope";
 export { mutationInputSchema } from "./envelope";
+export { closeInitiativePayloadSchema, draftRequestPayloadSchema, presentRequestPayloadSchema, recordRequestResponsePayloadSchema, reopenInitiativePayloadSchema } from "./mutations/outreach";
 export type { DenialReason, MutationOutcome, PerItemResult, ReadResult } from "./outcome";
 export { isOutcome, isReadResult, outcomeFromError } from "./outcome";
 export { toResponse } from "./response";
@@ -156,6 +169,9 @@ export const reads = {
   support: { readSupportOverview, readGifts, readCommitments, readGoal, readReport },
   export: { readExport },
   updates: {
+    // `findContentDocuments` is the same listing read the Page job uses: one enumeration under one
+    // authorisation, never a second implementation of it.
+    findContentDocuments,
     readVariantOverview,
     readDraft,
     readCandidate,
@@ -165,7 +181,7 @@ export const reads = {
   },
   // `readPreview` is the same read the Update job uses: one preview authorisation, reachable from
   // either family's job, never a second implementation of it.
-  pages: { readPageCatalogues, readPage, readPageLocales, readGivingBinding, readPreview },
+  pages: { findContentDocuments, readPageCatalogues, readPage, readPageLocales, readGivingBinding, readPreview },
   media: { readMediaAsset },
   audience: {
     readAudience,

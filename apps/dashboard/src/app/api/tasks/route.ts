@@ -28,7 +28,6 @@ const MESSAGES = {
   plannedTimeOtherDay: "The planned time falls on a different day from the due date, so align the two before saving.",
   timeZoneInvalid: "Choose a time zone this runtime recognises, so a stored plan is read in a stated zone.",
   kindInvalid: "Choose Task or Meeting as the kind of work.",
-  cancelReasonTooLong: "A cancellation reason is a short note, so shorten this one.",
   cancellationNotConfirmed: "Confirm the cancellation, because it is a deliberate act about this task.",
   operationRequired: "State which change this request makes as payload.operation: createTask, editTask, completeTask, reopenTask or cancelTask.",
   bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.",
@@ -44,8 +43,6 @@ const TITLE_MAX_LENGTH = 200;
 const CATEGORY_MAX_LENGTH = 60;
 
 const NOTE_MAX_LENGTH = 2000;
-
-const CANCEL_REASON_MAX_LENGTH = 500;
 
 function codePointLength(value: string): number {
   return Array.from(value).length;
@@ -80,14 +77,6 @@ const noteSchema = z
   .superRefine((value, ctx) => {
     if (codePointLength(value) > NOTE_MAX_LENGTH) {
       ctx.addIssue({ code: "custom", message: MESSAGES.noteTooLong });
-    }
-  });
-const cancelReasonSchema = z
-  .string()
-  .trim()
-  .superRefine((value, ctx) => {
-    if (codePointLength(value) > CANCEL_REASON_MAX_LENGTH) {
-      ctx.addIssue({ code: "custom", message: MESSAGES.cancelReasonTooLong });
     }
   });
 const civilDateSchema = z.iso.date({ error: MESSAGES.dueDateInvalid });
@@ -199,7 +188,6 @@ const cancelTaskPayloadSchema = z.strictObject({
   operation: z.literal("cancelTask"),
   taskId: taskIdSchema,
   confirmed: z.literal(true, { error: MESSAGES.cancellationNotConfirmed }),
-  reason: cancelReasonSchema.optional(),
 });
 // One body schema per mutation: the four-field envelope, with that mutation's own payload
 const createTaskBodySchema = mutationInputSchema(createTaskPayloadSchema);

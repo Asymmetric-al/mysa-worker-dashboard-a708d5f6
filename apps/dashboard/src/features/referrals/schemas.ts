@@ -33,8 +33,6 @@ export const CONTINUE_MESSAGES = {
 export const LIST_QUERY_MESSAGES = {
   viewInvalid: "Choose one of the referral lists: Active, Incomplete date or Expired.",
   searchTooLong: "Shorten the search to 120 characters or fewer.",
-  sortFieldInvalid: "The referral lists are ordered by the end of their window or by their introduction date, so choose one of those.",
-  sortAscendingUnavailable: "The referral lists are presented newest first, so the end of the window and the introduction date are shown descending.",
   statedOnce: "State this filter once; this address carries more than one value for it, so the list cannot tell which was meant.",
   formLevel: "This address does not describe a referral list the application can show, so the default list is shown.",
 } as const;
@@ -161,17 +159,6 @@ export const REFERRAL_PAGE_SIZES = [50, 200] as const;
 export const DEFAULT_REFERRAL_PAGE_SIZE = 50;
 /** The longest search text accepted: a name fragment, bounded so an address cannot carry a document. */
 export const REFERRAL_SEARCH_MAX_LENGTH = 120;
-/** The two keys the referral lists are ordered by, most significant first: the end of the window, then the introduction date. */
-export const REFERRAL_SORT_FIELDS = ["windowEnd", "originalIntroductionOn"] as const;
-/** One key a referral list may be ordered by, derived from {@link REFERRAL_SORT_FIELDS}. */
-export type ReferralSortField = (typeof REFERRAL_SORT_FIELDS)[number];
-/** Validates one ordering of a referral list: a key from the closed set, and the one direction the read honours. */
-export const referralSortSchema = z.strictObject({
-  field: z.enum(REFERRAL_SORT_FIELDS, { error: LIST_QUERY_MESSAGES.sortFieldInvalid }),
-  direction: z.enum(["desc"], { error: LIST_QUERY_MESSAGES.sortAscendingUnavailable }),
-});
-/** The validated ordering of a referral list. */
-export type ReferralSort = z.infer<typeof referralSortSchema>;
 
 function wholeNumberFrom(value: unknown): number | undefined {
   if (typeof value !== "number" && typeof value !== "string") {
@@ -198,27 +185,28 @@ function pageSizeFrom(value: unknown): number {
 const pageFieldSchema = z.unknown().transform(pageFrom);
 
 const pageSizeFieldSchema = z.unknown().transform(pageSizeFrom);
-/** The query state one referral list is read with: which list, the whole-dataset search text, the ordering the list is presented in, the page and the page size. */
+/** The query state one referral list is read with: which list, the whole-dataset search text, the page and the page size. */
 export interface ReferralListQuery {
-  readonly view: ReferralView;
+  readonly list: ReferralView;
   readonly search: string;
-  readonly sort?: ReferralSort;
   readonly page: number;
   readonly pageSize: number;
 }
-/** Validates and normalises a referral list query, whether it arrives as an address's strings or as the numbers a table already holds. */
+/**
+ * Validates and normalises a referral list query, whether it arrives as an address's strings or as the numbers a table already holds.
+ *
+ * This grammar is the `GET /api/referrals` query grammar — `list`, `search`, `page`, `pageSize` — so the state it answers serialises to an address that route parses, and a change on either side is visible against the other.
+ */
 export const referralListQuerySchema = z
   .strictObject({
-    view: z.enum(REFERRAL_VIEWS, { error: LIST_QUERY_MESSAGES.viewInvalid }).optional(),
+    list: z.enum(REFERRAL_VIEWS, { error: LIST_QUERY_MESSAGES.viewInvalid }).optional(),
     search: z.string({ error: LIST_QUERY_MESSAGES.searchTooLong }).trim().max(REFERRAL_SEARCH_MAX_LENGTH, LIST_QUERY_MESSAGES.searchTooLong).optional(),
-    sort: referralSortSchema.optional(),
     page: pageFieldSchema.optional(),
     pageSize: pageSizeFieldSchema.optional(),
   })
   .transform((raw): ReferralListQuery => ({
-    view: raw.view ?? DEFAULT_REFERRAL_VIEW,
+    list: raw.list ?? DEFAULT_REFERRAL_VIEW,
     search: raw.search ?? "",
-    sort: raw.sort,
     page: raw.page ?? 1,
     pageSize: raw.pageSize ?? DEFAULT_REFERRAL_PAGE_SIZE,
   }));
@@ -229,7 +217,7 @@ export type ReferralListQueryParse = { readonly ok: true; readonly query: Referr
 
 const FORM_LEVEL_FIELD = "_root";
 
-const QUERY_KEYS = ["view", "search", "sort", "page", "pageSize"] as const;
+const QUERY_KEYS = ["list", "search", "page", "pageSize"] as const;
 
 function singleValue(searchParams: Record<string, string | string[] | undefined>, key: string, fieldErrors: Record<string, readonly string[]>): string | undefined {
   const raw = searchParams[key];
@@ -246,16 +234,6 @@ function singleValue(searchParams: Record<string, string | string[] | undefined>
   }
   return distinct[0];
 }
-function sortFromText(text: string): { field: string; direction: string } {
-  const separator = text.indexOf(":");
-  if (separator < 0) {
-    return { field: text.trim(), direction: "desc" };
-  }
-  return {
-    field: text.slice(0, separator).trim(),
-    direction: text.slice(separator + 1).trim(),
-  };
-}
 /** Normalises a referral list's address parameters into the query state the read executes. */
 export function parseReferralListQuery(searchParams: Record<string, string | string[] | undefined>): ReferralListQueryParse {
   const fieldErrors: Record<string, readonly string[]> = {};
@@ -265,7 +243,7 @@ export function parseReferralListQuery(searchParams: Record<string, string | str
     if (value === undefined) {
       continue;
     }
-    candidate[key] = key === "sort" ? sortFromText(value) : value;
+    candidate[key] = value;
   }
   const parsed = referralListQuerySchema.safeParse(candidate);
   if (parsed.success && Object.keys(fieldErrors).length === 0) {

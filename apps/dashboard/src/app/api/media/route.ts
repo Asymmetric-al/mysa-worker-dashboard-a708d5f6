@@ -53,6 +53,17 @@ const BYTES_PER_MEBIBYTE = 1024 * 1024;
 // is refused with a readable reason instead of being read into memory and decoded. The image's 10 MiB
 // and 8,000-pixel ceiling, the video's 100 MiB, 180-second and 1920x1080 ceiling, and the exactly-at
 // -limit acceptance of each belong to the service, which measures real content rather than a claim.
+//
+// The same bound reaches the framework from one place: `next.config.ts` raises Next's proxy ceiling
+// for request bodies to this 192 MiB through `experimental.proxyClientMaxBodySize`, which repeats
+// the figure rather than deriving it. That key is global, so every path in this application is
+// admitted up to the ceiling and not only this route: the bound below is the only bound on a media
+// registration, and each other handler's own declared size is the only bound on its request body.
+// The number is derived once, here, because this route's base64-carried 100 MiB video is the one
+// request that legitimately needs it. The key is experimental, so a framework version change must
+// re-check that the ceiling still applies before this handler sees the body: a proxy that fell back
+// to its own 10 MB default would cut a legal registration off before `readBody` could measure it,
+// leaving the constant below describing a bound nothing enforced.
 const MAX_REQUEST_BYTES = 192 * BYTES_PER_MEBIBYTE;
 /** States the transport bound in the words a caller reads when its request is past it. */
 function requestTooLarge(): string {

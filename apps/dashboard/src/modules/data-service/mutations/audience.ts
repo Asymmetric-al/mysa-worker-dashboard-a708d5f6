@@ -498,6 +498,11 @@ export async function signupForPurpose(input: MutationInput<SignupPayload>, sour
     schema: signupPayloadSchema,
     name: "signupForPurpose",
     authorize: () => ({ ok: true }),
+    // The membership family is authorised by the record it addresses rather than by ministry admission:
+    // a reader persona holds its own membership and is admitted to no ministry, so the default
+    // "membership" authority would refuse the signup, the confirmation, the Off or Immediate choice and
+    // the unsubscribe alike before the record's own ownership was ever asked about.
+    scopeAuthority: "owner",
     apply: (context) => applySignup(context, input.payload, membershipScopeOf(input.scope)),
   });
 }
@@ -513,6 +518,7 @@ export async function confirmMembership(input: MutationInput<ConfirmPayload>, so
     schema: confirmPayloadSchema,
     name: "confirmMembership",
     authorize: (resolved) => addressedByCaller(resolved, claimedMembershipId(input)),
+    scopeAuthority: "owner",
     readCurrent: (docs) => currentTargetOf(docs, (memberships) => memberships.find((row) => row.membershipId === claimedMembershipId(input))),
     apply: (context) => applyConfirmation(context, input.payload, membershipScopeOf(input.scope)),
   });
@@ -529,6 +535,7 @@ export async function setPreference(input: MutationInput<PreferencePayload>, sou
     schema: preferencePayloadSchema,
     name: "setPreference",
     authorize: (resolved) => addressedByCaller(resolved, claimedMembershipId(input)),
+    scopeAuthority: "owner",
     readCurrent: (docs) => currentTargetOf(docs, (memberships) => memberships.find((row) => row.membershipId === claimedMembershipId(input))),
     apply: (context) => applyPreference(context, input.payload, membershipScopeOf(input.scope)),
   });
@@ -545,6 +552,7 @@ export async function unsubscribe(input: MutationInput<UnsubscribePayload>, sour
     schema: unsubscribePayloadSchema,
     name: "unsubscribe",
     authorize: () => ({ ok: true }),
+    scopeAuthority: "owner",
     readCurrent: (docs) =>
       currentTargetOf(docs, (memberships) =>
         memberships.find((row) => row.publisherId === input.payload.publisherId && row.purpose === input.payload.purpose && row.membershipId === attempt.session.principalId),

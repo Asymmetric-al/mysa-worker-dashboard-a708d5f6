@@ -19,7 +19,7 @@
  * preview reads one document across sessions.
  */
 import { Temporal } from "temporal-polyfill";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { isRecord } from "@/lib/guards";
 import { newOperationId } from "@/lib/ids";
 import { SEND_OUTCOME_STATES, dedupeKey } from "@/modules/audience/consent";
@@ -87,7 +87,6 @@ const DOCUMENT_REVISION_SEEN = "rev-1";
 
 let scope: Scope;
 
-let environmentBefore: string | undefined;
 // The documents a private session is laid down from
 function principalOf(documents: SessionDocuments): string {
   const meta = parseSessionMeta(documents.meta);
@@ -302,19 +301,11 @@ function refusedFieldNames(outcome: MutationOutcome, what: string): readonly str
 function secondPurpose(): AudiencePurpose {
   return "prayer-email" as unknown as AudiencePurpose;
 }
-/**
- * Sets the build the development gate reads. `process.env.NODE_ENV` is declared read-only by the
- * framework's types and the gate reads its value at call time, so the value is written through the
- * environment record rather than by an assignment the compiler rejects.
- */
-function setNodeEnvironment(value: string): void {
-  Object.assign(process.env, { NODE_ENV: value });
-}
+
 beforeAll(() => {
   // The development controls are gated on the build, never on a caller's claim, so the gate is set here
   // and restored rather than bypassed.
-  environmentBefore = process.env.NODE_ENV;
-  setNodeEnvironment("development");
+  vi.stubEnv("NODE_ENV", "development");
 });
 beforeEach(async () => {
   await layDownSessions();
@@ -330,7 +321,7 @@ afterAll(async () => {
   for (const sessionId of [PUBLISHER_SESSION_ID, READER_SESSION_ID]) {
     await resetSession(sessionId);
   }
-  setNodeEnvironment(environmentBefore ?? "test");
+  vi.unstubAllEnvs();
 });
 
 describe("1. the dedupe identity is exactly four facts", () => {

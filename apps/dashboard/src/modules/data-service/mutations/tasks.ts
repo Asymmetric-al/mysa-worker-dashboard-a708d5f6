@@ -76,7 +76,6 @@ const WORDS = {
   effectiveFromRequired: "Choose the date this change takes effect from, so the dates before it keep the rule they were planned under.",
   resolutionRequired: "Choose one of the three resolutions for a plan that needs review: keep this occurrence, move the next date forward, or stop the series.",
   unfinishedWorkInvalid: "Choose what happens to the unfinished work when the series stops: keep it, or cancel it.",
-  cancelReasonTooLong: "A cancellation reason is a short note, so shorten this one.",
   cancellationNotConfirmed: "Confirm the cancellation, because it is a deliberate act about this task.",
 } as const;
 // Small primitives: lengths, identities and revisions
@@ -85,8 +84,6 @@ const TITLE_MAX_LENGTH = 200;
 const CATEGORY_MAX_LENGTH = 60;
 
 const NOTE_MAX_LENGTH = 2000;
-
-const CANCEL_REASON_MAX_LENGTH = 500;
 
 const TAG_MAX_LENGTH = 60;
 
@@ -538,14 +535,6 @@ const noteText = z
       ctx.addIssue({ code: "custom", message: WORDS.noteTooLong });
     }
   });
-const cancelReasonText = z
-  .string()
-  .trim()
-  .superRefine((value, ctx) => {
-    if (codePointLength(value) > CANCEL_REASON_MAX_LENGTH) {
-      ctx.addIssue({ code: "custom", message: WORDS.cancelReasonTooLong });
-    }
-  });
 const tagText = z
   .string({ error: WORDS.tagRequired })
   .trim()
@@ -761,7 +750,6 @@ export type ReopenTaskPayload = z.infer<typeof reopenTaskSchema>;
 export const cancelTaskSchema = z.strictObject({
   taskId: taskIdText,
   confirmed: z.literal(true, { error: WORDS.cancellationNotConfirmed }),
-  reason: cancelReasonText.optional(),
 });
 /** The validated `cancelTask` payload. */
 export type CancelTaskPayload = z.infer<typeof cancelTaskSchema>;

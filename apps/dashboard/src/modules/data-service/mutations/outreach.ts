@@ -13,6 +13,7 @@ import { DATE_PRECISIONS, parseCivilDate, serialiseCivilDate, startOfCivilDay, t
 import { continuedWindowEnd, newWindowEnd, referralWindowState } from "@/modules/time/window";
 import { assertScope, outcomeOfRefusal, resolveSession, type ResolvedSession, type ScopeDecision, type SessionSource } from "../authorize";
 import {
+  INITIATIVE_STAGES,
   REQUEST_RESPONSE_KINDS,
   initiativeMemberRecordSchema,
   initiativeRecordSchema,
@@ -39,8 +40,6 @@ import { denied, type MutationOutcome, type MutationResult, type PerItemResult }
 const FIRST_REVISION = "rev-1";
 
 const REVISION_COUNTER = /^(?<prefix>.*-)(?<counter>\d+)$/u;
-
-const INITIATIVE_STAGES = ["Not yet asked", "Asked", "Answered", "Follow up due", "Paused"] as const;
 
 const REFERRAL_NEW_WINDOW_DAYS = 14;
 const REFERRAL_CONTINUATION_DAYS = 30;
@@ -453,7 +452,10 @@ export async function addMembers(input: MutationInput<unknown>, source?: Session
         members[index] = {
           ...existing,
           state: "included",
-          returnedAt: null,
+          // Selecting a removed partner again puts them back on the working list, so the field that
+          // names the instant a member was returned to it is stamped here too; the history keeps the
+          // whole account either way.
+          returnedAt: at,
           history: [
             ...existing.history,
             {
@@ -532,9 +534,8 @@ export async function removeMember(input: MutationInput<unknown>, source?: Sessi
       members[index] = {
         ...member,
         state: "removed",
-        // The stored field names the instant the partner left the working list, which is what the
-        // seeded records state; a return clears it and the history keeps both facts.
-        returnedAt: at,
+        // `returnedAt` names the instant a removed member was returned to the working list, so a
+        // removal neither stamps nor clears it; the removal instant lives in the history.
         history: [
           ...member.history,
           {
@@ -599,7 +600,7 @@ export async function returnMember(input: MutationInput<unknown>, source?: Sessi
       members[index] = {
         ...member,
         state: "included",
-        returnedAt: null,
+        returnedAt: at,
         history: [
           ...member.history,
           {
@@ -799,7 +800,8 @@ function storedTermsOf(terms: RequestedTermsPayload): RequestTerms {
     nonFinancial: null,
   };
 }
-const draftRequestPayloadSchema = z.strictObject({
+/** The `draftRequest` payload: the initiative, the recipient it asks, and the purpose and requested terms of the ask. */
+export const draftRequestPayloadSchema = z.strictObject({
   initiativeId: identifierFieldSchema("This change is missing the initiative it belongs to; reopen the initiative and try again."),
   recipientPartnerId: identifierFieldSchema("Choose the person or organization this request is for."),
   // A separate opaque reference: an organization representative is its own record, so this is never
@@ -871,7 +873,8 @@ export async function draftRequest(input: MutationInput<unknown>, source?: Sessi
     },
   });
 }
-const presentRequestPayloadSchema = z.strictObject({
+/** The `presentRequest` payload: the Request, the civil date it was presented on, how it was presented, and which terms version. */
+export const presentRequestPayloadSchema = z.strictObject({
   initiativeId: identifierFieldSchema("This change is missing the initiative it belongs to; reopen the initiative and try again.").optional(),
   requestId: identifierFieldSchema("This change is missing the request it belongs to; reopen the request and try again."),
   presentedOn: civilDateSchema,
@@ -959,7 +962,8 @@ function normaliseResponsePayload(value: unknown): unknown {
     response: { kind, respondentId, standingEvidence: standingEvidence ?? null, termsVersionRef },
   };
 }
-const recordRequestResponsePayloadSchema = z.preprocess(
+/** The `recordRequestResponse` payload: the Request and the named respondent's answer, in the nested shape or the flat one this normalises into it. */
+export const recordRequestResponsePayloadSchema = z.preprocess(
   normaliseResponsePayload,
   z.strictObject({
     initiativeId: identifierFieldSchema("This answer is missing the initiative it belongs to; reopen the initiative and try again.").optional(),
@@ -1046,7 +1050,8 @@ const initiativeHandoffSchema = z.discriminatedUnion("kind", [
     }),
   }),
 ]);
-const closeInitiativePayloadSchema = z
+/** The `closeInitiative` payload: the initiative, how it closes, and where the unfinished work it owns is going. */
+export const closeInitiativePayloadSchema = z
   .strictObject({
     initiativeId: identifierFieldSchema("This change is missing the initiative it belongs to; reopen the initiative and try again."),
     disposition: boundedTextSchema(200, {
@@ -1125,7 +1130,8 @@ export async function closeInitiative(input: MutationInput<unknown>, source?: Se
     },
   });
 }
-const reopenInitiativePayloadSchema = z.strictObject({
+/** The `reopenInitiative` payload: the initiative and an optional reason, which travels back in the result rather than being stored. */
+export const reopenInitiativePayloadSchema = z.strictObject({
   initiativeId: identifierFieldSchema("This change is missing the initiative it belongs to; reopen the initiative and try again."),
   reason: boundedTextSchema(500, {
     required: "Enter a reason or leave the reason empty.",
@@ -1340,10 +1346,9 @@ export async function continueReferral(input: MutationInput<unknown>, source?: S
         refuseField("referralId", "This cycle is itself a continuation, and an introduction carries at most one continuation.");
       }
       const successorId = `${cycle.referralId}-continued`;
-      const alreadyContinued = cycle.consumed || state.referrals.some((row) => row.predecessorId === cycle.referralId);
-      if (alreadyContinued) {
-        return { changed: false };
-      }
+      // The cycle's existing successor, if any, is what the window module judges the cycle by: the
+      // one-successor guard belongs to the engine rather than to a check repeated here.
+      const existingSuccessor = state.referrals.find((row) => row.predecessorId === cycle.referralId);
       if (cycle.datePrecision !== "date") {
         refuseField("referralId", "The introduction date is not precise enough to have had a window, so there is nothing to continue.");
       }
@@ -1369,14 +1374,24 @@ export async function continueReferral(input: MutationInput<unknown>, source?: S
       const continued = continuedWindowEnd({
         acceptedAt: now,
         days: REFERRAL_CONTINUATION_DAYS,
-        cycle: { consumed: false },
+        cycle: {
+          consumed: cycle.consumed,
+          predecessorId: cycle.predecessorId ?? undefined,
+          successorId: existingSuccessor?.referralId,
+        },
       });
       if (continued.status === "refused") {
+        if (continued.reason === "already-consumed") {
+          // A cycle that already carries a successor produces no second one, and nothing is written:
+          // the answer is `unchanged` at the revision the caller now sees.
+          return { changed: false };
+        }
         refuseField("referralId", "This continuation cannot be bounded from the instant it would be accepted.");
       }
       if (state.referrals.some((row) => row.referralId === successorId)) {
-        // The successor's identity is derived from its predecessor, so this is the last guard against a
-        // second cycle for one introduction even if the consumed flag were ever missing.
+        // The engine's own `already-consumed` refusal above is the active guard against a second cycle
+        // for one introduction; this identity check, derived from the predecessor, is the last defence
+        // behind it for a cycle stored without the flag.
         return { changed: false };
       }
       const consumedRevision = nextRevision(cycle.revision);

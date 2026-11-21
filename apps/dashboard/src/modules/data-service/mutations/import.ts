@@ -468,6 +468,7 @@ interface ProposalProjection {
   readonly revision: string;
   readonly fileName: string;
   readonly byteLength: number;
+  readonly fingerprint: ImportFileFingerprint;
   readonly headers: readonly string[];
   readonly rowCount: number;
   readonly columnCount: number;
@@ -488,6 +489,9 @@ function proposalRecordOf(projection: ProposalProjection): ImportProposalRecord 
       rowCount: projection.rowCount,
       columnCount: projection.columnCount,
     },
+    // The fingerprint of the text this import parsed, stated once with the file it describes: it is what
+    // an acceptance carries back, so the file the worker reviewed is the one the acceptance names.
+    fingerprint: { ...projection.fingerprint },
     mapping: mappingRecordsOf(projection.headers, projection.columnCount, projection.mapping),
     rowDecisions: rowDecisionRecordsOf(projection.decisions),
     summary: projection.summary,
@@ -523,7 +527,9 @@ function summaryRecordOf(summary: ImportDecisionSummary | null, rowCount: number
     newEntries: summary.counts.create,
     reusedIdentities: summary.counts.reuse,
     skipped: summary.counts.skip,
-    needsReview: summary.counts.unresolved + summary.blockedRowCount,
+    // A row is reviewed once however many reasons it carries: a row that is both undecided and still
+    // blocked is one row awaiting a decision, so the count can never exceed the rows the file holds.
+    needsReview: summary.rows.filter((row) => row.decisionKind === "unresolved" || row.blockedReasons.length > 0).length,
   };
 }
 function rowDecisionRecordsOf(set: ImportDecisionSet | null): readonly ImportRowDecisionRecord[] {
@@ -536,6 +542,11 @@ function rowDecisionRecordsOf(set: ImportDecisionSet | null): readonly ImportRow
     // The candidate reference's `reference` is the partner identifier the suggestion was built from:
     // this import offers only identities this store holds, so the route is that record.
     targetPartnerId: decision.kind === "reuse" ? decision.candidate.reference : null,
+    // The corrections as the review step received them, so the decision a read publishes can be posted
+    // back as the acceptance it was reviewed as.
+    corrections: decision.kind === "create" || decision.kind === "reuse" ? decision.corrections.map((correction) => ({ columnNumber: correction.columnNumber, value: correction.value })) : [],
+    candidate: decision.kind === "reuse" ? { ...decision.candidate } : null,
+    reason: decision.kind === "skip" ? decision.workerReason : null,
   }));
 }
 function storedDecisionOf(decision: RecordedRowDecision): StoredRowDecision {
@@ -888,6 +899,7 @@ export async function proposeImport(input: MutationInput<ProposeImportPayload>, 
         revision,
         fileName: payload.fileName,
         byteLength: admitted.file.byteLength,
+        fingerprint: fingerprintOf(file),
         headers: file.headers,
         rowCount: file.dataRowCount,
         columnCount: file.columnCount,
@@ -1013,6 +1025,9 @@ export async function setRowDecision(input: MutationInput<SetRowDecisionPayload>
         revision,
         fileName: stored.review.fileName,
         byteLength: stored.review.byteLength,
+        // The fingerprint describes the stored text, which this import never rewrites, so carrying the
+        // recorded one keeps the proposal's file identity stable across its decisions.
+        fingerprint: stored.proposal.fingerprint,
         headers: stored.review.headers,
         rowCount: stored.review.rowCount,
         columnCount: stored.review.columnCount,
@@ -1244,6 +1259,7 @@ export async function acceptImportRows(input: MutationInput<AcceptImportRowsPayl
         revision,
         fileName: review.fileName,
         byteLength: review.byteLength,
+        fingerprint: stored.proposal.fingerprint,
         headers: review.headers,
         rowCount: review.rowCount,
         columnCount: review.columnCount,
@@ -1395,6 +1411,7 @@ export async function cancelImport(input: MutationInput<CancelImportPayload>, se
         revision,
         fileName: review.fileName,
         byteLength: review.byteLength,
+        fingerprint: stored.proposal.fingerprint,
         headers: review.headers,
         rowCount: review.rowCount,
         columnCount: review.columnCount,

@@ -28,15 +28,28 @@
  *   `incomplete-subtotal` values, and the `unavailable` read result, are asserted on real reads.
  * - The seed carries no two records sharing a display name, an email address and a postal address, so
  *   the pair is created deliberately through two `createPrivatePreparation` attempts, then searched for.
+ * - The seed copies one ministry's records into each identity's own world, and every seeded private note
+ *   is authored by the principal whose session holds it, so no seeded session can put a colleague in
+ *   front of another principal's note. The colleague's private read is therefore driven through a
+ *   session laid down as the worker's record set under the colleague's own metadata: one ministry's
+ *   store, two principals, which is the state the per-note principal test exists for.
  * - `resolveSession` answers a session whose core documents are incomplete with the store outage it is,
  *   which is the one honest route to the `unavailable` arm; the fixture that demonstrates it holds a
  *   state and a meta document and no operation ledger, so the store itself raises the fault.
+ * - The protected-media arm lays the world the receiving reads answer a reader from under the literal
+ *   session id they name, through `resetSession` and from the seed's own documents, plus one protected
+ *   edition and the one membership row that edition's grant names. The seed's own video asset is placed
+ *   by a public page edition, so every reader is genuinely admitted to it; a second asset, in a custody
+ *   lane of its own and placed by the protected edition alone, is what makes an edition's media
+ *   protected. Its bytes are the committed fixtures, copied with `writeMediaBytes` — the copy a reset's
+ *   own branch performs — because a whole-store reset is not this file's to run.
  */
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { UPDATE_EMAIL_PURPOSE } from "@/modules/audience/membership";
 import { mutations, reads } from "@/modules/data-service";
 import { canExport, canReadProtected, canView, resolveSession, type ResolvedSession, type SessionSource } from "@/modules/data-service/authorize";
 import {
@@ -49,7 +62,11 @@ import {
   type ValueState,
 } from "@/modules/data-service/envelope";
 import { DENIAL_REASONS, isOutcome, isReadResult, type DeniedOutcome, type MutationOutcome, type ReadResult } from "@/modules/data-service/outcome";
-import { DEFAULT_SESSION_ID, seed, type SeededSessionDocuments, type SessionStateDocument } from "@/modules/dev-runtime/seed";
+import { DEFAULT_SESSION_ID, SEEDED_MEDIA_BYTES, seed, type SeededSessionDocuments, type SessionStateDocument } from "@/modules/dev-runtime/seed";
+import { removeIfExists } from "@/modules/store/atomic";
+import { seededMediaReference, writeMediaBytes } from "@/modules/store/media";
+import { sessionPaths } from "@/modules/store/paths";
+import { resetSession } from "@/modules/store/repository";
 // This file's own sessions: a private id per seeded identity, so no other suite's world is shared
 interface Fixture {
   /** The session id this file owns; every seeded document below is laid down under it. */
@@ -64,10 +81,14 @@ const SECOND_WORKER = "domain-scope-redaction-second-worker";
 const FUNDRAISER = "domain-scope-redaction-fundraiser";
 const COACH = "domain-scope-redaction-coach";
 const READER = "domain-scope-redaction-reader";
+/** The reader the published world's protected edition names in its grant, driven as a distinct seeded session. */
+const SUPPORTER_READER = "domain-scope-redaction-reader-supporter";
 /** A session the store holds no documents for at all: the resolver must refuse it, never invent one. */
 const ABSENT_SESSION = "domain-scope-redaction-absent";
 /** A session whose state document exists and whose operation ledger and meta documents do not: the store's own fault. */
 const OUTAGE_SESSION = "domain-scope-redaction-outage";
+/** The colleague's identity over the worker's record set: one ministry's store read by a second principal. */
+const COLLEAGUE_WORLD = "domain-scope-redaction-colleague-in-worker-world";
 
 const FIXTURES: readonly Fixture[] = [
   // The established worker: two ministries, partial financial coverage, private notes, a private
@@ -82,13 +103,10 @@ const FIXTURES: readonly Fixture[] = [
   { sessionId: FUNDRAISER, seedId: "deputized-fundraiser" },
   { sessionId: COACH, seedId: "coach" },
   { sessionId: READER, seedId: "reader-unauthorized" },
+  // The other reader: the one persona the published world's protected edition holds a grant for, so
+  // the same rendition is asked of a reader it admits and one it does not.
+  { sessionId: SUPPORTER_READER, seedId: "reader-approved-supporter" },
 ];
-
-const DOCUMENT_KEYS = ["state", "operations", "meta"] as const;
-
-type DocumentKey = (typeof DOCUMENT_KEYS)[number];
-
-const DATA_ROOT = fileURLToPath(new URL("../../../../.data/", import.meta.url));
 
 /** The seeded worlds, keyed by the session id this file laid them down under. */
 const seededWorlds = new Map<string, SeededSessionDocuments>();
@@ -96,12 +114,6 @@ const seededWorlds = new Map<string, SeededSessionDocuments>();
 /** The public sessions this file resolves once, so every case acts as the identity it names. */
 const sessions = new Map<string, ResolvedSession>();
 
-function documentPath(sessionId: string, key: DocumentKey): string {
-  return join(DATA_ROOT, `${sessionId}.${key}.json`);
-}
-function serialiseDocument(value: unknown): string {
-  return `${JSON.stringify(value, null, 2)}\n`;
-}
 function worldOf(sessionId: string): SeededSessionDocuments {
   const documents = seededWorlds.get(sessionId);
   if (documents === undefined) {
@@ -135,16 +147,13 @@ function first<T>(items: readonly T[], what: string): T {
 beforeAll(async () => {
   const seeded = await seed();
   const bySeedId = new Map(seeded.map((row) => [row.sessionId, row]));
-  await mkdir(DATA_ROOT, { recursive: true });
   for (const fixture of FIXTURES) {
     const row = bySeedId.get(fixture.seedId);
     if (row === undefined) {
       throw new Error(`The seed lays down no session "${fixture.seedId}", so this file cannot act as it.`);
     }
     seededWorlds.set(fixture.sessionId, row.documents);
-    for (const key of DOCUMENT_KEYS) {
-      await writeFile(documentPath(fixture.sessionId, key), serialiseDocument(row.documents[key]), "utf8");
-    }
+    await resetSession(fixture.sessionId, row.documents);
   }
   // The outage fixture: the commit marker exists and the rest of the document set does not, which is
   // the state a store that lost a write is genuinely in, so the resolver and every read answer with the
@@ -154,9 +163,12 @@ beforeAll(async () => {
     throw new Error(`The seed lays down no session "${DEFAULT_SESSION_ID}", so the outage fixture cannot be built.`);
   }
   seededWorlds.set(OUTAGE_SESSION, outage.documents);
-  await writeFile(documentPath(OUTAGE_SESSION, "state"), serialiseDocument(outage.documents.state), "utf8");
-  await writeFile(documentPath(OUTAGE_SESSION, "meta"), serialiseDocument(outage.documents.meta), "utf8");
-  await rm(documentPath(OUTAGE_SESSION, "operations"), { force: true });
+  await resetSession(OUTAGE_SESSION, outage.documents);
+  await removeIfExists(sessionPaths(OUTAGE_SESSION).operations);
+  // No seeded world lays another principal's private note in front of a colleague's read, so the
+  // colleague's is the worker's record set under the colleague's own metadata: the store's own
+  // documents, composed rather than written, in the state a ministry shared by two principals is in.
+  await resetSession(COLLEAGUE_WORLD, { ...required(seededWorlds.get(FUNDRAISER), "seeded world of the colleague"), state: stateOf(WORKER) });
   for (const fixture of FIXTURES) {
     const resolution = await resolveSession(sourceOf(fixture.sessionId));
     if (!resolution.ok) {
@@ -167,11 +179,9 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   // Only this file's own sessions are removed: the directory holds other suites' worlds.
-  const sessionIds = [...FIXTURES.map((fixture) => fixture.sessionId), OUTAGE_SESSION, ABSENT_SESSION];
+  const sessionIds = [...FIXTURES.map((fixture) => fixture.sessionId), OUTAGE_SESSION, ABSENT_SESSION, COLLEAGUE_WORLD];
   for (const sessionId of sessionIds) {
-    for (const key of DOCUMENT_KEYS) {
-      await rm(documentPath(sessionId, key), { force: true });
-    }
+    await resetSession(sessionId);
   }
 });
 // Reading the two arms of a read result without guessing at them
@@ -440,6 +450,28 @@ describe("a private record stays private", () => {
     // The shared record class is admitted to that same colleague, so the refusal is about the private
     // record rather than about the ministry.
     expect(canView(sessionOf(FUNDRAISER), { kind: "partner", scope: selectedScopeOf(FUNDRAISER), audience: "shared", authorPrincipalId: null }).allowed).toBe(true);
+    // The record-level half of the same rule: a colleague in the same ministry is refused the record itself,
+    // so no preparation field, note body, count or existence hint reaches them.
+    const preparationNotes = stateOf(WORKER).privateNotes.filter((note) => note.partnerId === preparation.partnerId);
+    expect(preparationNotes.length).toBeGreaterThan(0);
+    const colleaguePreparation = denialOf(
+      await reads.partners.readPrivatePreparation({ partnerId: preparation.partnerId }, sourceOf(COLLEAGUE_WORLD)),
+      "the colleague's private read of the preparation record",
+    );
+    expect(colleaguePreparation.reasonCode).toBe("no-permission");
+    expectNoDisclosure(colleaguePreparation, "a colleague's private-preparation refusal");
+    // The same colleague, on the shared person the worker's note is about, is refused the note and shown no preparation field.
+    const notedPerson = required(
+      stateOf(WORKER).privateNotes.find((candidate) => stateOf(WORKER).partners.some((record) => record.partnerId === candidate.partnerId && record.kind === "person")),
+      "private note about a shared person",
+    );
+    const colleaguePerson = envelopeOf(await reads.partners.readPrivatePreparation({ partnerId: notedPerson.partnerId }, sourceOf(COLLEAGUE_WORLD)), "the colleague's private read of a shared person carrying the worker's note");
+    expect(colleaguePerson.data.notes).toEqual([]);
+    expectNoText(textOf(colleaguePerson.data), [notedPerson.body, notedPerson.body.slice(0, 28)], "the colleague's private read of a shared person");
+    expect(colleaguePerson.data.preparation).toBeUndefined();
+    // The author's read of that same record does carry the note, so the read filters per principal rather than answering everyone with nothing.
+    const authorPerson = envelopeOf(await reads.partners.readPrivatePreparation({ partnerId: notedPerson.partnerId }, sourceOf(WORKER)), "the author's private read of the same shared person");
+    expect(authorPerson.data.notes.map((note) => note.body)).toContain(notedPerson.body);
     const otherMinistry = await reads.partners.readPrivatePreparation({ partnerId: preparation.partnerId }, sourceOf(SECOND_WORKER));
     expect(denialOf(otherMinistry, "another ministry reading a private preparation").reasonCode).toBe("no-permission");
     const reader = await reads.partners.readPrivatePreparation({ partnerId: preparation.partnerId }, sourceOf(READER));
@@ -808,5 +840,263 @@ describe("the resolver is the only entry to a scope", () => {
     const after = envelopeOf(await reads.partners.readPartner(foreign.partnerId, {}, sourceOf(SECOND_WORKER)), "the second worker's record after a foreign write");
     expect(after.data.partner.displayName).toBe(before.data.partner.displayName);
     expect(after.revision).toBe(before.revision);
+  });
+});
+
+// Protected media
+//
+// Criterion 19 names protected media among the things a second worker must not retrieve, and criterion 18
+// names protected video, poster, captions and transcript. Both are decided per request by
+// `reads.media.readMediaAsset` — the one read the rendition route calls — so every purpose below is asked
+// of that read, with a `SessionSource`, exactly as the rest of this file asks its reads.
+/** The literal session id whose world the receiving reads answer a reader from: the published world. */
+const PUBLISHED_WORLD = DEFAULT_SESSION_ID;
+/** An address no record carries: every refusal below is asserted identical to the refusal of this one. */
+const NEVER_RECORDED_ASSET = "asset-that-was-never-recorded";
+/** The video asset the protected edition places, in a custody lane of its own. */
+const PROTECTED_ASSET = "asset-video-supporter-only";
+const PROTECTED_REVISION = "rev-update-en-supporter-1";
+const PROTECTED_RELEASE = "release-update-en-approved-supporter-1";
+const PROTECTED_PLACEMENT = "placement-update-supporter-video";
+const WITHDRAWN_AT = "2026-11-20T10:00:00Z";
+/** The seed's own page edition, which places the seed's welcome video: the edition whose reach the case below changes. */
+const NOT_PUBLIC_RELEASE = "release-page-en-1";
+/** Every purpose a receiving read advertises for a video, the one this asset records no bytes for included. */
+const VIDEO_PURPOSES = ["playback", "poster", "captions", "transcript"] as const;
+/** The three purposes the protected asset serves, and so the three a reader can be admitted to. */
+const PROTECTED_SERVED_PURPOSES = ["playback", "poster", "captions"] as const;
+/** The committed fixture each protected rendition carries: the documents the seed serves for its own video. */
+const PROTECTED_RENDITIONS = [
+  { renditionId: "rendition-video-supporter-only-playback", purpose: "playback", file: "sample-h264.mp4", fixture: "sample-h264.mp4", mimeType: "video/mp4" },
+  { renditionId: "rendition-video-supporter-only-poster", purpose: "poster", file: "poster.jpg", fixture: "poster.jpg", mimeType: "image/jpeg" },
+  { renditionId: "rendition-video-supporter-only-captions", purpose: "captions", file: "sample.vtt", fixture: "sample.vtt", mimeType: "text/vtt" },
+] as const;
+/** The directory the committed media fixtures live in, which is the one a reset materialises its bytes from. */
+const MEDIA_FIXTURE_DIRECTORY = fileURLToPath(new URL("../../public/fixtures/media/", import.meta.url));
+/**
+ * Copies one committed fixture to the custody reference a rendition records. This is what a reset's own
+ * copy branch does for the bytes it serves, done here for the two assets this arm reads, because a
+ * whole-store reset is not this file's to run.
+ */
+async function materialiseCopiedBytes(assetId: string, file: string, fixture: string): Promise<void> {
+  const bytes = new Uint8Array(await readFile(join(MEDIA_FIXTURE_DIRECTORY, fixture)));
+  if (bytes.byteLength === 0) {
+    throw new Error(`The committed fixture ${JSON.stringify(fixture)} is empty, so this file cannot serve bytes for "${assetId}".`);
+  }
+  await writeMediaBytes(seededMediaReference(assetId, file), bytes);
+}
+/** The video asset the first scope owns and has playback bytes for: the asset the second worker asks after. */
+function firstScopeVideo(): SessionStateDocument["mediaAssets"][number] {
+  return required(
+    stateOf(WORKER).mediaAssets.find((record) => record.renditions.some((rendition) => rendition.purpose === "playback")),
+    "video asset with playback bytes in the first scope",
+  );
+}
+/** The published world: the seed's own established-worker documents, plus one protected edition placing one asset. */
+function protectedWorld(): SeededSessionDocuments {
+  const seeded = worldOf(WORKER);
+  const scope = first(seeded.state.mediaAssets, "seeded media asset").scope;
+  const publisherId = first(seeded.state.memberships, "seeded membership").publisherId;
+  const asset: SessionStateDocument["mediaAssets"][number] = {
+    assetId: PROTECTED_ASSET,
+    kind: "video",
+    profileCheck: { container: "mp4", codec: "avc1.64001f", durationSeconds: 5.055, width: 960, height: 540 },
+    // The private original the served renditions are produced from: it is never served and never echoed.
+    sourceOriginalRef: "media-originals/supporter-briefing-raw.mp4",
+    renditions: PROTECTED_RENDITIONS.map((record) => ({
+      renditionId: record.renditionId,
+      purpose: record.purpose,
+      bytesRef: seededMediaReference(PROTECTED_ASSET, record.file),
+      mimeType: record.mimeType,
+    })),
+    scope,
+    tagVerification: { checked: true, residualTags: [] },
+    revision: "rev-1",
+  };
+  const placement: SessionStateDocument["contentRevisions"][number]["mediaPlacements"][number] = {
+    placementId: PROTECTED_PLACEMENT,
+    assetId: PROTECTED_ASSET,
+    // An Update's body carries no sections, so the placement sits in the revision rather than in a section.
+    sectionElement: null,
+    position: 0,
+    altText: "A short briefing for supporters on this term's costs.",
+    caption: null,
+    credit: "Harbour Youth",
+  };
+  const membership: SessionStateDocument["memberships"][number] = {
+    // The grant is looked up by the reader's own principal id, so this row is that id and nothing else.
+    membershipId: String(sessionOf(SUPPORTER_READER).principalId),
+    email: "approved.supporter@example.org",
+    displayName: "Approved-supporter reader",
+    publisherId,
+    purpose: UPDATE_EMAIL_PURPOSE,
+    state: "active",
+    acceptedAt: "2026-09-01T09:00:00Z",
+    confirmationDeadline: null,
+    languagePreference: "en",
+    revision: "rev-1",
+  };
+  return {
+    ...seeded,
+    state: {
+      ...seeded.state,
+      mediaAssets: [...seeded.state.mediaAssets, asset],
+      memberships: [...seeded.state.memberships, membership],
+      contentRevisions: seeded.state.contentRevisions.map((revision) => (revision.revisionId === PROTECTED_REVISION ? { ...revision, mediaPlacements: [...revision.mediaPlacements, placement] } : revision)),
+    },
+  };
+}
+/** The same world with its protected edition withdrawn, which is all a withdrawal sets on a release. */
+function withdrawnWorld(): SeededSessionDocuments {
+  const world = protectedWorld();
+  return {
+    ...world,
+    state: {
+      ...world.state,
+      releases: world.state.releases.map((release) => (release.releaseId === PROTECTED_RELEASE ? { ...release, withdrawnAt: WITHDRAWN_AT } : release)),
+    },
+  };
+}
+/** The same world with the placing Page edition's reach set to `not-public`, which is all a reach change sets on a release. */
+function notPublicWorld(): SeededSessionDocuments {
+  const world = protectedWorld();
+  return {
+    ...world,
+    state: {
+      ...world.state,
+      releases: world.state.releases.map((release) => (release.releaseId === NOT_PUBLIC_RELEASE ? { ...release, reach: "not-public" } : release)),
+    },
+  };
+}
+/**
+ * Asserts the caller is refused this address, and that the refusal is the one an address that was never
+ * recorded receives — the same members, the same reason and the same serialised answer — so a retained
+ * rendition address cannot be told apart from one that never existed. Answers the refusal it asserted.
+ */
+async function expectNeutralRefusal(source: SessionSource, assetId: string, rendition: string, what: string, rangeHeader: string | null = null): Promise<DeniedOutcome> {
+  const ask = (asked: string) => (rangeHeader === null ? reads.media.readMediaAsset({ assetId: asked, rendition }, source) : reads.media.readMediaAsset({ assetId: asked, rendition, rangeHeader }, source));
+  const refusedRecorded = await ask(assetId);
+  const refusedNeverRecorded = await ask(NEVER_RECORDED_ASSET);
+  const denial = denialOf(refusedRecorded, what);
+  expect(denial.outcome).toBe("denied");
+  expect(denial.reasonCode).toBe("no-permission");
+  // Three members and nothing else: a fourth would be a fact about the media.
+  expect(Object.keys(denial).toSorted()).toEqual(["operationId", "outcome", "reasonCode"]);
+  expectNoDisclosure(denial, what);
+  expect(textOf(refusedRecorded)).toBe(textOf(refusedNeverRecorded));
+  return denial;
+}
+describe("every rendition re-authorises the request that asks for it", () => {
+  beforeAll(async () => {
+    // The bytes both worlds' renditions are recorded to serve, and the published world the receiving reads
+    // answer a reader from. Both are laid down through the store's own `resetSession` and its media custody,
+    // never by writing the store's on-disk format here.
+    for (const entry of SEEDED_MEDIA_BYTES) {
+      if (entry.producedBy === "copy") {
+        await materialiseCopiedBytes(entry.assetId, entry.file, entry.fixture);
+      }
+    }
+    for (const record of PROTECTED_RENDITIONS) {
+      await materialiseCopiedBytes(PROTECTED_ASSET, record.file, record.fixture);
+    }
+    await resetSession(PUBLISHED_WORLD, protectedWorld());
+  });
+  afterAll(async () => {
+    // The seed's own documents go back under the shared id, so no later suite reads this arm's edition.
+    await resetSession(PUBLISHED_WORLD, worldOf(WORKER));
+  });
+  it("refuses the second worker every purpose of another scope's asset, a byte range included, as one neutral refusal", async () => {
+    const asset = firstScopeVideo();
+    const refusals: DeniedOutcome[] = [];
+    for (const purpose of VIDEO_PURPOSES) {
+      refusals.push(await expectNeutralRefusal(sourceOf(SECOND_WORKER), asset.assetId, purpose, `the second worker's ${purpose} request`));
+    }
+    // A range request is a rendition request: it re-authorises like the whole-entity one, so it cannot
+    // become the way around the refusal.
+    refusals.push(await expectNeutralRefusal(sourceOf(SECOND_WORKER), asset.assetId, "playback", "the second worker's byte-range request", "bytes=0-15"));
+    // Every advertised purpose, and the range, answer the one refusal: no purpose carries a fact another
+    // does not, so asking each of them in turn tells the caller nothing about the asset.
+    expect(new Set(refusals.map((refusal) => refusal.reasonCode))).toEqual(new Set(["no-permission"]));
+    expect(new Set(refusals.map((refusal) => textOf(refusal))).size).toBe(1);
+  });
+  it("serves the owning scope its own playback, poster and captions, whole and as a byte range", async () => {
+    const asset = firstScopeVideo();
+    const lengths = new Map<string, number>();
+    for (const purpose of PROTECTED_SERVED_PURPOSES) {
+      const whole = envelopeOf(await reads.media.readMediaAsset({ assetId: asset.assetId, rendition: purpose }, sourceOf(WORKER)), `the owning scope's ${purpose} rendition`);
+      expect(whole.data.purpose).toBe(purpose);
+      expect(whole.data.status).toBe(200);
+      // Real bytes rather than an empty body: the scope that recorded the asset is served the asset.
+      expect(whole.data.bytes.byteLength).toBeGreaterThan(0);
+      expect(whole.data.contentLength).toBe(whole.data.bytes.byteLength);
+      expect(whole.data.headers["content-range"]).toBeUndefined();
+      lengths.set(purpose, whole.data.contentLength);
+    }
+    const total = required(lengths.get("playback"), "length of the owned playback rendition");
+    const ranged = envelopeOf(await reads.media.readMediaAsset({ assetId: asset.assetId, rendition: "playback", rangeHeader: "bytes=0-15" }, sourceOf(WORKER)), "a byte range of the owning scope's playback rendition");
+    expect(ranged.data.status).toBe(206);
+    expect(ranged.data.bytes.byteLength).toBe(16);
+    expect(ranged.data.headers["content-range"]).toBe(`bytes 0-15/${String(total)}`);
+  });
+  it("refuses the unauthorized reader the protected edition and serves it to the reader holding the grant", async () => {
+    for (const purpose of VIDEO_PURPOSES) {
+      await expectNeutralRefusal(sourceOf(READER), PROTECTED_ASSET, purpose, `the unauthorized reader's ${purpose} request`);
+    }
+    await expectNeutralRefusal(sourceOf(READER), PROTECTED_ASSET, "playback", "the unauthorized reader's byte-range request", "bytes=0-15");
+    const lengths = new Map<string, number>();
+    for (const purpose of PROTECTED_SERVED_PURPOSES) {
+      const served = envelopeOf(await reads.media.readMediaAsset({ assetId: PROTECTED_ASSET, rendition: purpose }, sourceOf(SUPPORTER_READER)), `the approved-supporter reader's ${purpose} rendition`);
+      expect(served.data.purpose).toBe(purpose);
+      expect(served.data.status).toBe(200);
+      expect(served.data.bytes.byteLength).toBeGreaterThan(0);
+      expect(served.data.contentLength).toBe(served.data.bytes.byteLength);
+      lengths.set(purpose, served.data.contentLength);
+    }
+    const total = required(lengths.get("playback"), "length of the protected playback rendition");
+    const ranged = envelopeOf(await reads.media.readMediaAsset({ assetId: PROTECTED_ASSET, rendition: "playback", rangeHeader: "bytes=0-15" }, sourceOf(SUPPORTER_READER)), "the approved-supporter reader's byte range of the protected playback rendition");
+    expect(ranged.data.status).toBe(206);
+    expect(ranged.data.bytes.byteLength).toBe(16);
+    expect(ranged.data.headers["content-range"]).toBe(`bytes 0-15/${String(total)}`);
+  });
+  it("withdraws the protected edition and refuses the reader it served a moment before", async () => {
+    const before = envelopeOf(await reads.media.readMediaAsset({ assetId: PROTECTED_ASSET, rendition: "playback" }, sourceOf(SUPPORTER_READER)), "the approved-supporter reader's rendition before the withdrawal");
+    expect(before.data.status).toBe(200);
+    expect(before.data.bytes.byteLength).toBeGreaterThan(0);
+    await resetSession(PUBLISHED_WORLD, withdrawnWorld());
+    try {
+      for (const purpose of VIDEO_PURPOSES) {
+        await expectNeutralRefusal(sourceOf(SUPPORTER_READER), PROTECTED_ASSET, purpose, `the approved-supporter reader's ${purpose} request after the withdrawal`);
+      }
+      await expectNeutralRefusal(sourceOf(SUPPORTER_READER), PROTECTED_ASSET, "playback", "the approved-supporter reader's byte-range request after the withdrawal", "bytes=0-15");
+    } finally {
+      // The live edition goes back, so the published world is what it was once this case has finished.
+      await resetSession(PUBLISHED_WORLD, protectedWorld());
+    }
+  });
+  it("refuses a not-public page edition's playback, poster and captions to every reader, and still serves the scope that owns the asset", async () => {
+    // Reach decides what a direct link may serve, so an edition set to Not public places media no reader may
+    // fetch. The refusal is the same neutral one an address that was never recorded answers, for every
+    // purpose the edition advertises and for the reader holding the protected-reading grant alike.
+    await resetSession(PUBLISHED_WORLD, notPublicWorld());
+    try {
+      const asset = firstScopeVideo();
+      for (const reader of [READER, SUPPORTER_READER]) {
+        for (const purpose of PROTECTED_SERVED_PURPOSES) {
+          await expectNeutralRefusal(sourceOf(reader), asset.assetId, purpose, `"${reader}" asking a not-public edition for ${purpose}`);
+        }
+      }
+      // The owning scope reads its own world, where the asset's recorded scope is the whole authority: the
+      // reach of the edition that places it takes nothing from the worker who recorded it.
+      for (const purpose of PROTECTED_SERVED_PURPOSES) {
+        const served = envelopeOf(await reads.media.readMediaAsset({ assetId: asset.assetId, rendition: purpose }, sourceOf(WORKER)), `the owning scope's ${purpose} rendition of a not-public edition's asset`);
+        expect(served.data.purpose).toBe(purpose);
+        expect(served.data.status).toBe(200);
+        expect(served.data.bytes.byteLength).toBeGreaterThan(0);
+        expect(served.data.contentLength).toBe(served.data.bytes.byteLength);
+      }
+    } finally {
+      // The listed edition goes back, so the published world is what it was once this case has finished.
+      await resetSession(PUBLISHED_WORLD, protectedWorld());
+    }
   });
 });

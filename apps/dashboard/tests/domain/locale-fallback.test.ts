@@ -27,8 +27,9 @@
  *   the withdrawal presents one from `@/lib/ids`. Minting one in this file would be a copy of the
  *   application's own identity rule.
  * - A session exists only once its documents are written, and no named read or mutation lays one down.
- *   The three sessions this file acts as are therefore written from the deterministic seed's own
- *   documents in the store's document layout, and removed again in `afterAll`.
+ *   The three sessions this file acts as are therefore laid down from the deterministic seed's own
+ *   documents through the store's own `resetSession`, its only creating path, and removed again in
+ *   `afterAll`.
  * - The audience reads (`reads.audience.readPreferences`) resolve the session from the request cookie
  *   and accept no session source, so a framework-free suite cannot call them. The four membership facts
  *   group 4 asserts are therefore taken from the seeded membership records and put to `canReadProtected`,
@@ -36,9 +37,6 @@
  *   language change itself is performed by `withLanguagePreference`, the function the preference
  *   mutation calls, so the change proved harmless is the application's own and not this file's spread.
  */
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Temporal } from "temporal-polyfill";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
@@ -49,6 +47,7 @@ import { mutations, reads, type MutationInput } from "@/modules/data-service";
 import { canReadProtected, resolveSession, type AccessDecision, type ResolvedSession, type SessionSource } from "@/modules/data-service/authorize";
 import { isOutcome, isReadResult, type DenialReason, type MutationOutcome, type ReadResult } from "@/modules/data-service/outcome";
 import { DEFAULT_SESSION_ID, seed, type SeededSessionDocuments, type SeededSessionWithDocuments, type SessionStateDocument } from "@/modules/dev-runtime/seed";
+import { resetSession } from "@/modules/store/repository";
 // This file's own sessions: private ids, so no sibling suite's seeded world is shared or disturbed
 /** The established worker's session: the editions, the tables and the one withdrawal below act under it. */
 const SESSION_ID = "domain-locale-fallback";
@@ -64,11 +63,6 @@ const SOURCE: SessionSource = { sessionId: SESSION_ID };
 const SECOND_SOURCE: SessionSource = { sessionId: SECOND_SESSION_ID };
 
 const READER_SOURCE: SessionSource = { sessionId: READER_SESSION_ID };
-
-/** The store keys a session's three documents by this suffix, and the fixture is written in that shape. */
-const DOCUMENT_KEYS = ["state", "operations", "meta"] as const;
-
-const DATA_ROOT = fileURLToPath(new URL("../../../../.data/", import.meta.url));
 // The seeded content this file resolves over
 /** The Update that carries a public English edition, a public French one, an approved-supporter English one and an Arabic edition with a draft and a frozen candidate but no release. */
 const UPDATE_DOCUMENT = "doc-update-autumn";
@@ -126,10 +120,6 @@ function seededRow(sessions: readonly SeededSessionWithDocuments[], seededId: st
   return row;
 }
 
-function storePath(sessionId: string, key: (typeof DOCUMENT_KEYS)[number]): string {
-  return join(DATA_ROOT, `${sessionId}.${key}.json`);
-}
-
 /**
  * Writes one private session from a seeded one.
  *
@@ -142,14 +132,11 @@ async function layDownSession(seededId: string, sessionId: string, sessions: rea
     ...documents,
     state: { ...documents.state, context: { ...documents.state.context, sessionId } },
   };
-  for (const key of DOCUMENT_KEYS) {
-    await writeFile(storePath(sessionId, key), `${JSON.stringify(owned[key], null, 2)}\n`, "utf8");
-  }
+  await resetSession(sessionId, owned);
 }
 
 async function layDownWorld(): Promise<void> {
   const sessions = await seededSessions();
-  await mkdir(DATA_ROOT, { recursive: true });
   await layDownSession(DEFAULT_SESSION_ID, SESSION_ID, sessions);
   await layDownSession("second-worker", SECOND_SESSION_ID, sessions);
   await layDownSession("reader-unauthorized", READER_SESSION_ID, sessions);
@@ -173,9 +160,7 @@ afterEach(async () => {
 afterAll(async () => {
   // Only this file's own sessions are removed: the directory holds other suites' worlds.
   for (const sessionId of [SESSION_ID, SECOND_SESSION_ID, READER_SESSION_ID]) {
-    for (const key of DOCUMENT_KEYS) {
-      await rm(storePath(sessionId, key), { force: true });
-    }
+    await resetSession(sessionId);
   }
 });
 // Reading the service without guessing at its answers

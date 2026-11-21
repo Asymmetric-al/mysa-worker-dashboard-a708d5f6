@@ -5,7 +5,17 @@
  */
 import { z } from "zod";
 import { assertNever } from "@/lib/result";
-import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse, type MutationInput, type MutationOutcome } from "@/modules/data-service";
+import {
+  draftRequestPayloadSchema,
+  mutationInputSchema,
+  mutations,
+  outcomeFromError,
+  presentRequestPayloadSchema,
+  reads,
+  toResponse,
+  type MutationInput,
+  type MutationOutcome,
+} from "@/modules/data-service";
 // The store behind the service writes through `node:fs`, so this handler never runs on the edge.
 export const runtime = "nodejs";
 // Every request resolves the development session and evaluates the scenario clock once.
@@ -47,10 +57,10 @@ const PAYLOAD_OPERATION_MESSAGE = "State which change this request makes as payl
 const BODY_NOT_JSON_MESSAGE = "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.";
 
 const REQUEST_OPERATIONS = ["draftRequest", "presentRequest"] as const;
-
-type RequestPayload = Parameters<typeof mutations.outreach.draftRequest>[0]["payload"];
-
-const requestBodySchema = mutationInputSchema(z.custom<RequestPayload>());
+// The envelope is judged by the shared schema, and the payload by the schema of the mutation that
+// `payload.operation` names — one authority per mutation, never one schema shared between them — so a
+// payload fault keeps its payload-relative field keys, the ones the service's own refusal states.
+const requestEnvelopeSchema = mutationInputSchema(z.unknown());
 
 const attemptIdentitySchema = z.object({ operationId: z.string() });
 
@@ -72,27 +82,31 @@ function operationIdentityOf(raw: unknown): string {
   const identity = attemptIdentitySchema.safeParse(raw);
   return identity.success && identity.data.operationId.length > 0 ? identity.data.operationId : UNIDENTIFIED_ATTEMPT;
 }
-function payloadOf(payload: RequestPayload): RequestPayload {
+function payloadOf(payload: unknown): unknown {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
     return payload;
   }
   const { operation: _discriminant, ...forwarded } = payload as Readonly<Record<string, unknown>>;
   return forwarded;
 }
-async function dispatch(
-  schema: z.ZodType<MutationInput<RequestPayload>>,
-  raw: unknown,
-  operationId: string,
-  run: (input: MutationInput<RequestPayload>) => Promise<MutationOutcome>,
-): Promise<Response> {
-  const parsed = schema.safeParse(raw);
-  if (!parsed.success) {
-    return toResponse(outcomeFromError(operationId, parsed.error));
+async function dispatch<P>(schema: z.ZodType<P>, raw: unknown, operationId: string, run: (input: MutationInput<unknown>) => Promise<MutationOutcome>): Promise<Response> {
+  const envelope = requestEnvelopeSchema.safeParse(raw);
+  if (!envelope.success) {
+    return toResponse(outcomeFromError(operationId, envelope.error));
+  }
+  // `operation` routes the request and is not part of the change, so it is stripped before the named
+  // mutation's own schema judges what is left. The change is then handed on exactly as it arrived: the
+  // service validates the same wire payload with the same schema before it reads anything, so a civil
+  // date resolves to a day once, there.
+  const forwarded = payloadOf(envelope.data.payload);
+  const payload = schema.safeParse(forwarded);
+  if (!payload.success) {
+    return toResponse(outcomeFromError(envelope.data.operationId, payload.error));
   }
   try {
-    return toResponse(await run({ ...parsed.data, payload: payloadOf(parsed.data.payload) }));
+    return toResponse(await run({ ...envelope.data, payload: forwarded }));
   } catch (error) {
-    return toResponse(outcomeFromError(operationId, error));
+    return toResponse(outcomeFromError(envelope.data.operationId, error));
   }
 }
 /** One named Request change, selected by `payload.operation`. */
@@ -105,9 +119,9 @@ export async function POST(request: Request): Promise<Response> {
   }
   switch (claimed.data.payload.operation) {
     case "draftRequest":
-      return dispatch(requestBodySchema, raw, operationId, mutations.outreach.draftRequest);
+      return dispatch(draftRequestPayloadSchema, raw, operationId, mutations.outreach.draftRequest);
     case "presentRequest":
-      return dispatch(requestBodySchema, raw, operationId, mutations.outreach.presentRequest);
+      return dispatch(presentRequestPayloadSchema, raw, operationId, mutations.outreach.presentRequest);
     default:
       // Unreachable: the two names above are the closed set the discriminant admits, so a third
       // mutation fails to compile at this call instead of reaching the runtime.

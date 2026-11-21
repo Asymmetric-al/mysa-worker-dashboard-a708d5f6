@@ -7,6 +7,7 @@ import { REACH_STATUS } from "@/components/status-badge";
 import type { PresentationChoice } from "@/modules/content/document";
 import type { Reach } from "@/modules/content/reach";
 import type { VariantFamily } from "@/modules/content/variant";
+import { PAGE_SECTION_TYPES, type PageSectionType } from "@/modules/data-service/envelope";
 // Families
 /** A page is a `worker-page` or a `project-page`; `update` belongs to the Ministry Updates family. */
 export type PageFamily = Exclude<VariantFamily, "update">;
@@ -31,10 +32,8 @@ const FAMILIES: Record<PageFamily, FamilyCopy> = {
   },
 };
 // The guided catalogues
-/** The eight section types a guided catalogue offers, declared once. */
-export const PAGE_SECTION_TYPES = ["introduction", "story", "prayer", "milestone", "image", "video", "giving", "progress"] as const;
-
-export type PageSectionType = (typeof PAGE_SECTION_TYPES)[number];
+// The eight section types are the stored record contract's own vocabulary, imported above so a catalogue
+// entry here and the type the service stores are added in one change rather than in two that can drift.
 
 export interface CatalogueSectionCopy {
   readonly label: string;
@@ -217,6 +216,8 @@ const EDITIONS_COPY = {
   publicEditionsOnly: "A Page edition is public. An approved-supporter edition exists for an Update, not for a Page.",
   fallbackNote: "When the requested language has no released edition here, a permitted edition in another language is shown, and the language actually shown is named beside it.",
   languageUnavailable: "Language unavailable",
+  unreleasedTitle: "This language edition has nothing to preview yet",
+  unreleasedDescription: "This edition has neither a draft nor a released revision, so there is nothing to render. No other edition and no earlier revision is shown in its place.",
   translationSourceNote:
     "A translation written by hand records the revision it was translated from, so a later change to that source can be shown as stale. A stale translation is never withdrawn for being stale.",
 } as const;

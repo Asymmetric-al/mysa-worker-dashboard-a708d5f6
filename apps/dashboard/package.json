@@ -6,8 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint --config ../../.oxlintrc.json",
-    "test": "vitest run && playwright test --pass-with-no-tests",
+    "lint": "oxlint --config ../../.oxlintrc.json && bun ../../scripts/check-invariants.ts",
+    "test": "vitest run && playwright test",
     "lines": "bun ../../scripts/count-lines.ts"
   },
   "dependencies": {

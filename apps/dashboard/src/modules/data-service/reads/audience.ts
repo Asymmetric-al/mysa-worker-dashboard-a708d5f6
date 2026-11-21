@@ -96,8 +96,17 @@ export interface PageWindow {
   readonly total: number;
   readonly pageCount: number;
 }
-/** One member of the publisher's audience, projected without the address the record holds. */
+/**
+ * One member of the publisher's audience, projected without the address the record holds.
+ *
+ * `membershipId` and `recipientId` are the same opaque reference under its two names: the membership
+ * the record holds, and the recipient a send result addresses. `membershipId` is the identifier a
+ * membership mutation's payload names, so the Off or Immediate choice, the explicit confirmation and
+ * the unsubscribe can each be submitted for the member this view shows.
+ */
 export interface AudienceMember {
+  readonly membershipId: string;
+  /** The same opaque reference under its send-recipient name, as a notification result records it. */
   readonly recipientId: string;
   readonly displayName: string | null;
   readonly state: DomainMembershipState;
@@ -337,7 +346,8 @@ type StoredState = z.infer<typeof storedStateSchema>;
 
 type StoredRevision = z.infer<typeof storedContentRevisionSchema>;
 
-interface World {
+/** One session's parsed store: the unit both worlds a request may be answered from are expressed in. */
+export interface World {
   readonly sessionId: string;
   readonly state: StoredState;
 }
@@ -384,7 +394,8 @@ async function loadWorld(sessionId: string): Promise<{ readonly ok: true; readon
   }
   return { ok: true, world: { sessionId, state: parsed.data } };
 }
-async function resolveWorlds(job: string, source?: SessionSource): Promise<WorldResolution> {
+/** Resolves the session this read acts for and the two worlds it may answer from — the caller's own, and the published world the reader crossing reaches — or the read's own refusal. */
+export async function resolveWorlds(job: string, source?: SessionSource): Promise<WorldResolution> {
   // The receiving reads take the same optional session source every other read does, so a test or a
   // script can name the session it reads as instead of there being no request cookie to derive one from.
   const resolved = await resolveSession(source);
@@ -407,7 +418,8 @@ async function resolveWorlds(job: string, source?: SessionSource): Promise<World
   return { ok: true, session, own: own.world, published: publisher.world };
 }
 // Scope: the authority a read states, and whether the caller holds it
-function scopeOf(session: ResolvedSession, world: World): Scope | undefined {
+/** The scope a read states in one world: the context the caller selected, the context the world holds, or nothing when neither names one. */
+export function scopeOf(session: ResolvedSession, world: World): Scope | undefined {
   if (session.selected !== null) {
     return session.selected;
   }
@@ -643,7 +655,8 @@ interface ResolvedRelease {
   readonly document: ContentDocumentRecord | undefined;
   readonly domain: Release | undefined;
 }
-function resolveRelease(record: ReleaseRecord, state: StoredState): ResolvedRelease {
+/** Resolves one stored release against the state it lives in: its variant, revision, document and domain release. */
+export function resolveRelease(record: ReleaseRecord, state: StoredState): ResolvedRelease {
   const variant = state.contentVariants.find((candidate) => candidate.variantId === record.variantId);
   const revision = state.contentRevisions.find((candidate) => candidate.revisionId === record.revisionId);
   const document = variant === undefined ? undefined : state.contentDocuments.find((candidate) => candidate.documentId === variant.documentId);
@@ -654,6 +667,10 @@ function resolveRelease(record: ReleaseRecord, state: StoredState): ResolvedRele
     document,
     domain: domainReleaseOf(record, variant, revision),
   };
+}
+/** Reports whether a release still serves its readers: a release that has been withdrawn or superseded serves nobody. */
+export function releaseStillServes(release: Release): boolean {
+  return release.withdrawnAt === undefined && release.supersededBy === undefined;
 }
 function zeroMemberStates(): Record<DomainMembershipState, number> {
   return { active: 0, "awaiting-proof": 0, off: 0, restricted: 0 };
@@ -740,6 +757,7 @@ export async function readAudience(query: AudienceQuery = {}, source?: SessionSo
   }
   const { window, offset, limit } = pageWindowOf(members.length, query);
   const visible = sliceOf(members, offset, limit).map((member): AudienceMember => ({
+    membershipId: member.record.membershipId,
     recipientId: member.record.membershipId,
     displayName: member.record.displayName,
     state: member.access.state,
@@ -870,7 +888,11 @@ export async function readPreferences(source?: SessionSource): Promise<ReadResul
       data,
       scope,
       source: { system: "audience-memberships", reference: publisherId ?? "no-membership" },
-      revision: collectionRevision(domains.map((row) => `${row.membershipId}@${String(row.revision)}`)),
+      // A membership mutation presents the revision the caller read as its `expectedRevision`, and the
+      // token it compares that against is the addressed membership's own stored revision, so this view
+      // publishes exactly that instead of a collection hash no mutation accepts. A reader that holds no
+      // membership has no record revision to present, so the collection revision stands for it.
+      revision: membership?.revision ?? collectionRevision(domains.map((row) => `${row.membershipId}@${String(row.revision)}`)),
       asOf: at.toString(),
       coverage: { from: null, to: null, state: "complete" },
       valueStates: {
@@ -1100,7 +1122,8 @@ function languagePreferenceOf(session: ResolvedSession, own: World, published: W
   }
   return null;
 }
-function grantHeldFor(session: ResolvedSession, scope: Scope, own: World, published: World): boolean {
+/** Reports whether the caller holds a protected-reading grant for this publisher, decided now from the reader's own membership rows. */
+export function grantHeldFor(session: ResolvedSession, scope: Scope, own: World, published: World): boolean {
   return readingGrantOf(
     session,
     readerOwnedMemberships(session, own, published).map((row) => domainMembershipOf(row, scope)),
@@ -1232,7 +1255,7 @@ export async function readReceivingList(query: ReceivingListQuery = {}, source?:
     }
     // Withdrawal and supersession end an edition's service, and a `not-public` edition serves nobody on
     // this list. The reach rule is the one authority for what a release may serve.
-    if (resolved.domain.withdrawnAt !== undefined || resolved.domain.supersededBy !== undefined) {
+    if (!releaseStillServes(resolved.domain)) {
       continue;
     }
     if (record.reach === "not-public") {
@@ -1328,7 +1351,7 @@ export async function readReceivingPost(query: ReceivingPostQuery, source?: Sess
     return deniedRead("no-permission");
   }
   const grantHeld = grantHeldFor(session, scope, own, published);
-  const editions = editionsOf(document.documentId, published.state).filter((edition) => edition.domain.withdrawnAt === undefined && edition.domain.supersededBy === undefined);
+  const editions = editionsOf(document.documentId, published.state).filter((edition) => releaseStillServes(edition.domain));
   const preference = languagePreferenceOf(session, own, published);
   const requestedLocale = requestedLocaleOf(query.locale, preference, editions);
   const resolution = resolveEditionFor({ document, editions, requestedLocale, grantHeld });
@@ -1503,7 +1526,7 @@ export async function readReceivingPage(query: ReceivingPageQuery, source?: Sess
   }
   const grantHeld = grantHeldFor(session, scope, own, published);
   const editions = editionsOf(document.documentId, published.state);
-  const live = editions.filter((edition) => edition.domain.withdrawnAt === undefined && edition.domain.supersededBy === undefined);
+  const live = editions.filter((edition) => releaseStillServes(edition.domain));
   const preference = languagePreferenceOf(session, own, published);
   const requestedLocale = requestedLocaleOf(query.locale, preference, editions);
   const resolution = resolveEditionFor({ document, editions: live, requestedLocale, grantHeld });

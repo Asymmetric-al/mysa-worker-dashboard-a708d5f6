@@ -2,15 +2,17 @@
  * The browser journey runner: one Chromium project driving the real application through the same
  * `bun run dev` script the workspace runs, serial, and from the deterministic seed before every spec.
  *
- * This file also owns the reset every spec performs, because the suite is exactly the specs under
- * `e2e/` and the seed they share is part of the runner rather than a twenty-first spec, a global setup
- * module or a committed session file.
+ * This file also owns everything a spec needs before it reads — the seeded personas it can act as, the
+ * reset that restores their world, and the accessibility audit criterion 20 runs — because the suite is
+ * exactly the specs under `e2e/` and what they share is part of the runner rather than a twenty-first
+ * spec, a global setup module or a committed session file.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { defineConfig, devices, type APIRequestContext } from "@playwright/test";
+import { AxeBuilder } from "@axe-core/playwright";
+import { defineConfig, devices, expect, test as base, type APIRequestContext, type Page } from "@playwright/test";
 
 const DEFAULT_PORT = 3000;
 
@@ -37,6 +39,131 @@ const SEED_TIMEOUT_MS = 120_000;
 /** How much of a response body an error quotes, so a failure is readable without pasting a whole envelope. */
 const DETAIL_LIMIT = 400;
 
+/** The development-session cookie's name, mirrored from `modules/store/sessions.ts`: the cookie is the whole identity a request is authorised as. */
+export const SESSION_COOKIE = "dashboard_session";
+
+/** The kinds of seeded identity the roster holds, as a session's persisted persona record states them. */
+export type SeededPersonaKind = "coach" | "reader" | "reviewer" | "worker";
+
+/** The ten seeded identities a spec may act as, named the way the seed's persona roster names them. */
+export type PersonaName =
+  | "new-worker"
+  | "established-worker"
+  | "second-worker"
+  | "fundraiser"
+  | "coach"
+  | "reviewer"
+  | "reader-public"
+  | "reader-approved-supporter"
+  | "reader-unauthorized"
+  | "subscriber";
+
+/** One seeded identity: the session its cookie names, and the words the application uses for it. */
+export interface SeededPersona {
+  /** The seeded session id this persona's `dashboard_session` cookie carries: the identity a spec acts as. */
+  readonly sessionId: string;
+  /**
+   * The session this runner operates the development reset as for this persona.
+   *
+   * Its own wherever the seeded session admits a membership. The coach and the four readers admit none —
+   * their authority is a coaching grant or a curated public edition rather than a membership — so the
+   * control answers them `denied no-membership` (observed on each of those five sessions) and the
+   * established worker operates the reset instead. One reset lays every seeded session down, and the
+   * response names them all, so the world a spec acts in is restored whichever identity carries it.
+   */
+  readonly resetSessionId: string;
+  /** The label the development panel and the seeded documents use for this identity. */
+  readonly label: string;
+  readonly kind: SeededPersonaKind;
+  /** What this identity is admitted to and may do, in the seed's own words. */
+  readonly description: string;
+}
+
+/**
+ * The seeded persona roster, mirrored from `modules/dev-runtime/seed.ts`: one row per persona of that
+ * module's `SEEDED_PERSONAS`, carrying the session id its `defaultSessionId` names.
+ *
+ * Mirrored rather than imported, because this file configures the test runner and must not load the
+ * application's service module graph — the store, the native media bindings, `next/headers` — merely to
+ * read ten identities the running server already holds. A spec names a persona from this roster, the
+ * runner puts that session id in the cookie, and the application resolves the rest.
+ */
+export const SEEDED_PERSONAS: Readonly<Record<PersonaName, SeededPersona>> = {
+  "new-worker": {
+    sessionId: "new-worker",
+    resetSessionId: "new-worker",
+    label: "New worker",
+    kind: "worker",
+    description: "A worker with no gifts, goal, subscription or integration, starting from a private contact and a task.",
+  },
+  "established-worker": {
+    sessionId: "established-worker",
+    resetSessionId: "established-worker",
+    label: "Established worker",
+    kind: "worker",
+    description: "A worker with years of support, recurring gifts, partners, drafts and pages, across two ministries.",
+  },
+  "second-worker": {
+    sessionId: "second-worker",
+    resetSessionId: "second-worker",
+    label: "Second worker",
+    kind: "worker",
+    description: "A worker in another organization, whose scope shares nothing with the first.",
+  },
+  fundraiser: {
+    sessionId: "deputized-fundraiser",
+    resetSessionId: "deputized-fundraiser",
+    label: "Deputized fundraiser",
+    kind: "worker",
+    description: "Someone deputized to act inside one admitted ministry, and nowhere else.",
+  },
+  coach: {
+    sessionId: "coach",
+    resetSessionId: "established-worker",
+    label: "Coach",
+    kind: "coach",
+    description: "A coach admitted read-only to exactly the modules and periods a worker has shared, until the frozen cutoff.",
+  },
+  reviewer: {
+    sessionId: "content-reviewer",
+    resetSessionId: "content-reviewer",
+    label: "Content reviewer",
+    kind: "reviewer",
+    description: "A reviewer who approves or returns the exact frozen revisions a candidate carries, and nothing else.",
+  },
+  "reader-public": {
+    sessionId: "reader-public",
+    resetSessionId: "established-worker",
+    label: "Public reader",
+    kind: "reader",
+    description: "A reader of the public edition, appearing only in the in-app receiving preview.",
+  },
+  "reader-approved-supporter": {
+    sessionId: "reader-approved-supporter",
+    resetSessionId: "established-worker",
+    label: "Approved-supporter reader",
+    kind: "reader",
+    description: "A reader admitted to the approved-supporter edition and refused anything else.",
+  },
+  "reader-unauthorized": {
+    sessionId: "reader-unauthorized",
+    resetSessionId: "established-worker",
+    label: "Unauthorized reader",
+    kind: "reader",
+    description: "A reader with no grant: the refusal discloses no count, title, size or existence hint.",
+  },
+  subscriber: {
+    sessionId: "subscriber",
+    resetSessionId: "established-worker",
+    label: "Subscriber",
+    kind: "reader",
+    description: "A reader with a purpose-specific membership, choosing Off or Immediate for that purpose alone.",
+  },
+};
+
+/** The persona a spec acts as when it names none: the established worker, which the seed makes its default session. */
+export const DEFAULT_PERSONA: PersonaName = "established-worker";
+
 /**
  * The four identifiers a mutation claims, in the shape the read envelope states them.
  *
@@ -60,7 +187,7 @@ interface DevStateEnvelope {
 type DevStateRead = { readonly kind: "state"; readonly state: DevStateEnvelope } | { readonly kind: "refused"; readonly status: number; readonly outcome: string; readonly detail: string };
 
 /**
- * Restores the deterministic seed before a spec reads anything.
+ * Restores the deterministic seed, as the persona the spec names, before a spec reads anything.
  *
  * The reset travels through the application's own `resetSeed` control rather than editing the store
  * files, for two reasons. The scenario clock is process state inside the running server, so only a
@@ -68,24 +195,34 @@ type DevStateRead = { readonly kind: "state"; readonly state: DevStateEnvelope }
  * clock an earlier spec advanced still advanced, and every later boundary would be judged at it. And the
  * control is the request the Settings reset submits, so a spec that seeds the world the way a person
  * does proves the path a person uses.
+ *
+ * Both requests carry one named seeded session's `dashboard_session` cookie — the persona's own, or the
+ * established worker's for the five personas whose sessions admit no membership — so the reset is
+ * authorised as a stated identity rather than as whatever an empty cookie jar falls back to. Every seeded
+ * session is laid down by the one reset, so naming the control's identity never narrows what is restored.
  */
-export async function resetSeed(request: APIRequestContext): Promise<void> {
-  let read = await readDevState(request);
+export async function resetSeed(request: APIRequestContext, persona: PersonaName = DEFAULT_PERSONA): Promise<void> {
+  const resetSessionId = seededPersona(persona).resetSessionId;
+  const cookie = cookieHeaderFor(resetSessionId);
+  let read = await readDevState(request, cookie);
   // A checkout that has never been seeded holds no session document, and every control resolves a
   // session before it authorises anything, so the store is laid down once and the read repeated. Any
   // other refusal — a denied persona, an unreadable document — is reported as it stands.
   if (read.kind === "refused" && read.outcome === "unavailable") {
     seedStoreFromRepository();
-    read = await readDevState(request);
+    read = await readDevState(request, cookie);
   }
   if (read.kind === "refused") {
-    throw new Error(`resetSeed could not read the development state from ${RESET_URL}: HTTP ${String(read.status)} ${read.outcome} — ${read.detail}`);
+    throw new Error(
+      `resetSeed could not read the development state as the ${seededPersona(persona).label} persona, whose reset runs as ${resetSessionId}, from ${RESET_URL}: HTTP ${String(read.status)} ${read.outcome} — ${read.detail}`,
+    );
   }
   // `scope` and `expectedRevision` are the envelope's own, and the acting principal is the session
   // cookie's: the service re-authorises the scope, answers `conflict` for a revision that no longer
   // stands, and never lets a request nominate the person it acts for. One fresh operationId per call,
   // because each reset is its own attempt rather than a replay of the last one.
   const response = await request.post(RESET_URL, {
+    headers: { cookie },
     data: {
       action: RESET_ACTION,
       operationId: crypto.randomUUID(),
@@ -98,14 +235,29 @@ export async function resetSeed(request: APIRequestContext): Promise<void> {
   const outcome = outcomeOf(parseJson(text));
   if (!response.ok() || (outcome !== "accepted" && outcome !== "alreadyAccepted")) {
     throw new Error(
-      `resetSeed was refused: HTTP ${String(response.status())} ${outcome ?? "no readable outcome"} — ${detailOf(text)}. A spec that could not restore the seed asserts against a world it did not choose, so it stops here instead of reporting a failure the application did not cause.`,
+      `resetSeed was refused as the ${seededPersona(persona).label} persona, whose reset runs as ${resetSessionId}: HTTP ${String(response.status())} ${outcome ?? "no readable outcome"} — ${detailOf(text)}. A spec that could not restore the seed asserts against a world it did not choose, so it stops here instead of reporting a failure the application did not cause.`,
     );
   }
 }
 
-/** Reads this session's development state, reporting a refusal as the outcome it carried. */
-async function readDevState(request: APIRequestContext): Promise<DevStateRead> {
-  const response = await request.get(RESET_URL);
+/** The `Cookie` header a control's requests carry: the one identity this application authorises a control as. */
+function cookieHeaderFor(sessionId: string): string {
+  return `${SESSION_COOKIE}=${sessionId}`;
+}
+
+/** The roster row a persona names, refusing a name the roster does not hold so a mistyped persona cannot reset a session no spec asked for. */
+function seededPersona(persona: PersonaName): SeededPersona {
+  if (!Object.hasOwn(SEEDED_PERSONAS, persona)) {
+    throw new Error(
+      `No seeded persona is named ${JSON.stringify(persona)}. This runner seeds ${Object.keys(SEEDED_PERSONAS).join(", ")}, so a spec states one of those and the reset acts for the session that persona's cookie names.`,
+    );
+  }
+  return SEEDED_PERSONAS[persona];
+}
+
+/** Reads the named persona's development state, reporting a refusal as the outcome it carried. */
+async function readDevState(request: APIRequestContext, cookie: string): Promise<DevStateRead> {
+  const response = await request.get(RESET_URL, { headers: { cookie } });
   const text = await response.text();
   const body = parseJson(text);
   const state = devStateEnvelopeOf(body);
@@ -198,6 +350,89 @@ function detailOf(text: string): string {
   const collapsed = text.trim().replace(/\s+/g, " ");
   return collapsed.length > DETAIL_LIMIT ? `${collapsed.slice(0, DETAIL_LIMIT)}…` : collapsed;
 }
+
+/** The axe-core tag set the accessibility pass audits: WCAG 2.2 level AA, with the level A and 2.1 rules it builds on. */
+const ACCESSIBILITY_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] as const;
+
+/** How many offending nodes one violation names in a failure message, so a broken page reports rather than floods. */
+const VIOLATION_NODE_LIMIT = 3;
+
+/** What one accessibility audit answers, in the shape `@axe-core/playwright` produces it. */
+export type AccessibilityAudit = Awaited<ReturnType<AxeBuilder["analyze"]>>;
+
+/** One rule an audit found a page violating, with the nodes that broke it. */
+export type AccessibilityViolation = AccessibilityAudit["violations"][number];
+
+/**
+ * Audits one page as it stands against the WCAG 2.2 AA tag set.
+ *
+ * The wrapper is thin on purpose: it fixes the tag set, so every spec that asks for an accessibility pass
+ * asks for the same one, and leaves inclusion, exclusion and the moment of the audit to the spec. A spec
+ * drives the surface into the state under test, asserts that state is on screen, and then audits it.
+ */
+export async function auditAccessibility(page: Page): Promise<AccessibilityAudit> {
+  return new AxeBuilder({ page }).withTags([...ACCESSIBILITY_TAGS]).analyze();
+}
+
+/** The serious and critical violations of an audit: the ones a pass may not carry, minor and moderate findings excluded. */
+export function blockingAccessibilityViolations(audit: AccessibilityAudit): readonly AccessibilityViolation[] {
+  return audit.violations.filter((violation) => violation.impact === "critical" || violation.impact === "serious");
+}
+
+/** Asserts an audit found no serious or critical violation, naming each rule that broke and where. */
+export function expectNoBlockingAccessibilityViolations(audit: AccessibilityAudit): void {
+  const violations = blockingAccessibilityViolations(audit);
+  expect(violations, accessibilityFailureMessage(violations)).toEqual([]);
+}
+
+/** The readable account a failed accessibility assertion carries: one line per rule, with its impact, its help link and the nodes it broke on. */
+function accessibilityFailureMessage(violations: readonly AccessibilityViolation[]): string {
+  if (violations.length === 0) {
+    return "The page holds no serious or critical WCAG 2.2 AA violation.";
+  }
+  const rules = violations.map((violation) => {
+    const nodes = violation.nodes.map((node) => node.target.map((selector) => (Array.isArray(selector) ? selector.join(" ") : selector)).join(" "));
+    const shown = nodes.slice(0, VIOLATION_NODE_LIMIT).join(" | ");
+    const rest = nodes.length > VIOLATION_NODE_LIMIT ? ` and ${String(nodes.length - VIOLATION_NODE_LIMIT)} more node(s)` : "";
+    return `- ${violation.id} (${violation.impact ?? "unstated impact"}): ${violation.help} at ${shown}${rest} — ${violation.helpUrl}`;
+  });
+  return `The page holds ${String(violations.length)} serious or critical WCAG 2.2 AA violation(s):\n${rules.join("\n")}`;
+}
+
+/**
+ * The fixtures a spec reaches the application through.
+ *
+ * `persona` states the seeded identity the spec acts as — `test.use({ persona: "coach" })` for a whole
+ * file, or the default otherwise — and the automatic `seedReset` then runs before every test: it puts
+ * that persona's session cookie on the browser context, so every page the spec opens is admitted as that
+ * identity, and it restores the deterministic seed through the application's own control, so the test
+ * starts from the world it names rather than from the one the previous test left behind.
+ */
+type RunnerFixtures = {
+  /** The seeded identity this test acts as. */
+  persona: PersonaName;
+  /** The automatic fixture that admits the persona and restores the seed before the test body runs. */
+  seedReset: void;
+};
+
+/** The runner every spec imports, carrying the seeded persona and the reset it is admitted under. */
+export const test = base.extend<RunnerFixtures>({
+  persona: [DEFAULT_PERSONA, { option: true }],
+  seedReset: [
+    async ({ persona, context, request }, use) => {
+      const seeded = seededPersona(persona);
+      // The cookie is the whole identity: `src/proxy.ts` mints it and `data-service/authorize.ts`
+      // resolves it into a principal and its admitted memberships, so a context carrying this persona's
+      // session id is what makes the page the spec drives act as that persona.
+      await context.addCookies([{ name: SESSION_COOKIE, value: seeded.sessionId, url: BASE_URL }]);
+      await resetSeed(request, persona);
+      await use();
+    },
+    { auto: true },
+  ],
+});
+
+export { expect };
 
 export default defineConfig({
   testDir: "./e2e",

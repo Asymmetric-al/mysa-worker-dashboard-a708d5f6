@@ -1,13 +1,21 @@
 /**
  * The read envelope, the mutation request envelope, the single value-state vocabulary and the stored
- * form of every logical record this application keeps.
+ * form of every logical record this application keeps. Each closed vocabulary a record field draws on is
+ * imported from the module that owns it, and the record-field type declared here is derived from that one
+ * declaration, so a member added to a vocabulary reaches this boundary instead of stopping at it.
  */
 import { z } from "zod";
 import type { SourceReference } from "@/lib/ids";
+import { MEMBERSHIP_STATES } from "@/modules/audience/membership";
 import type { ModuleKey } from "@/modules/coaching/grant";
+import { TARGET_MEASURES } from "@/modules/coaching/target";
 import { CONTENT_DIRECTIONS, type ContentDirection, type ContentDocumentJson } from "@/modules/content/document";
+import { CONTENT_KINDS, RELEASE_REACH_VALUES, VARIANT_AUDIENCES, VARIANT_FAMILIES } from "@/modules/content/variant";
+import { IMPORT_ROW_RESULT_STATES } from "@/modules/import/receipt";
+import type { MediaRenditionPurpose } from "@/modules/media/asset";
 import type { MinorUnits, Money } from "@/modules/money/amount";
 import { COMMITMENT_KINDS, RECURRING_BUCKETS, type CommitmentKind, type RecurringBucket } from "@/modules/support/buckets";
+import { GOAL_MEASURE } from "@/modules/support/goal";
 import { DATE_PRECISIONS, type DatePrecision } from "@/modules/time/civil";
 import { REPEAT_PROFILES, SERIES_STATES, type RepeatProfile, type SeriesState } from "@/modules/time/recurrence";
 // Value states
@@ -233,11 +241,17 @@ export interface AdmittedMembership {
   readonly organizationId: OrganizationId;
   readonly ministryId: MinistryId;
   readonly supportSubjectId: SupportSubjectId;
+  /** The organisation name the source of record states for this context, absent when that source names none. */
+  readonly organizationLabel?: string;
+  /** The ministry name the source of record states for this context, absent when that source names none. */
+  readonly ministryLabel?: string;
 }
 export const admittedMembershipSchema: z.ZodType<AdmittedMembership> = z.object({
   organizationId: organizationIdSchema,
   ministryId: ministryIdSchema,
   supportSubjectId: supportSubjectIdSchema,
+  organizationLabel: z.string().min(1).optional(),
+  ministryLabel: z.string().min(1).optional(),
 });
 /** How far the scenario clock is set ahead of the seed instant, in milliseconds. */
 export interface SessionClockOffset {
@@ -570,6 +584,8 @@ export const initiativeRecordSchema: z.ZodType<InitiativeRecord> = z.object({
 export const INITIATIVE_MEMBER_STATES = ["included", "removed", "excluded"] as const;
 /** Where a partner stands on an initiative's working list. */
 export type InitiativeMemberState = (typeof INITIATIVE_MEMBER_STATES)[number];
+/** The five source-approved stages a working-list member's stage is drawn from, declared once so the stage a write admits and the stage a read lists can never be two lists. */
+export const INITIATIVE_STAGES = ["Not yet asked", "Asked", "Answered", "Follow up due", "Paused"] as const;
 /** One recorded change of a member's state, so a removal or an exclusion is never silent. */
 export interface InitiativeMemberHistoryEntry {
   readonly state: InitiativeMemberState;
@@ -734,9 +750,9 @@ export const referralCycleRecordSchema: z.ZodType<ReferralCycleRecord> = z
 export const SUPPORT_BASES = ["effective_cash_allocation"] as const;
 /** The measure a support figure is reported on. */
 export type SupportBasis = (typeof SUPPORT_BASES)[number];
-/** The measure a support goal is set against, which must be the same basis the projection reports. */
-export const SUPPORT_GOAL_MEASURES = ["received-support"] as const;
-/** Which measure a goal counts. */
+/** The measures a support goal can be set against: the goal module's own {@link GOAL_MEASURE} declaration, held as a one-member tuple so the stored record states exactly the token the goal mutation accepts and the goal read publishes. */
+export const SUPPORT_GOAL_MEASURES = [GOAL_MEASURE] as const;
+/** Which measure a goal counts, derived from {@link SUPPORT_GOAL_MEASURES}. */
 export type SupportGoalMeasure = (typeof SUPPORT_GOAL_MEASURES)[number];
 /** The one writable fact in the support projection. */
 export interface SupportGoalRecord {
@@ -866,13 +882,9 @@ export const commitmentRowRecordSchema: z.ZodType<CommitmentRowRecord> = z
     message: "Only a fixed-total commitment has a promised, fulfilled, released and remaining total; a recurring commitment states none, so an absent total is never read as zero.",
   });
 // Content documents and variants
-/** The three families a content document can belong to. */
-export const CONTENT_FAMILIES = ["update", "worker-page", "project-page"] as const;
-/** Which family of content a document is. */
-export type ContentFamily = (typeof CONTENT_FAMILIES)[number];
-/** The four kinds of Update a worker may write. */
-export const CONTENT_KINDS = ["update", "prayer", "story", "milestone"] as const;
-/** What kind of content a document holds. */
+/** Which family of content a document is, drawn from {@link VARIANT_FAMILIES} in `modules/content/variant.ts`, which declares the three families once. */
+export type ContentFamily = (typeof VARIANT_FAMILIES)[number];
+/** What kind of content a document holds, drawn from {@link CONTENT_KINDS} in `modules/content/variant.ts`, which declares the four kinds once. */
 export type ContentKind = (typeof CONTENT_KINDS)[number];
 /** The one approved giving designation a page release may place. */
 export interface GivingBinding {
@@ -896,7 +908,7 @@ export const givingBindingSchema: z.ZodType<GivingBinding> = z.object({
 });
 export const contentDocumentRecordSchema: z.ZodType<ContentDocumentRecord> = z.object({
   documentId: z.string().min(1),
-  family: z.enum(CONTENT_FAMILIES),
+  family: z.enum(VARIANT_FAMILIES),
   kind: z.enum(CONTENT_KINDS),
   sourceSubject: sourceReferenceSchema,
   siteId: z.string().min(1),
@@ -904,12 +916,10 @@ export const contentDocumentRecordSchema: z.ZodType<ContentDocumentRecord> = z.o
   managedFields: z.array(z.string().min(1)),
   revision: recordRevisionSchema,
 });
-/** The audiences a variant may address. */
-export const CONTENT_AUDIENCES = ["public", "approved-supporter"] as const;
-/** Who a variant is written for. */
-export type ContentAudience = (typeof CONTENT_AUDIENCES)[number];
+/** Who a variant is written for, drawn from {@link VARIANT_AUDIENCES} in `modules/content/variant.ts`, which declares the two audiences once. */
+export type ContentAudience = (typeof VARIANT_AUDIENCES)[number];
 
-export const contentAudienceSchema: z.ZodType<ContentAudience> = z.enum(CONTENT_AUDIENCES);
+export const contentAudienceSchema: z.ZodType<ContentAudience> = z.enum(VARIANT_AUDIENCES);
 /** Where a variant's text came from, when it is a manual translation of another variant. */
 export interface ContentTranslationSource {
   readonly variantId: string;
@@ -1020,13 +1030,29 @@ export function contentRevisionRecordSchema(documentSchema: z.ZodType<ContentDoc
     revision: recordRevisionSchema,
   });
 }
+// The page catalogue
+/** The eight section types a page family's catalogue admits, in the order it offers them, declared once so the module that composes a page and the module that reads its catalogue cannot disagree about what a section may be. */
+export const PAGE_SECTION_TYPES = ["introduction", "story", "prayer", "milestone", "image", "video", "giving", "progress"] as const;
+/** One section type a page catalogue offers, derived from {@link PAGE_SECTION_TYPES}. */
+export type PageSectionType = (typeof PAGE_SECTION_TYPES)[number];
+/** The two preset identities the page catalogue proposes, declared once so a preset's composition and the control that applies it stay one list. */
+export const PAGE_PRESET_IDS = ["preset-opening-and-story", "preset-story-and-prayer"] as const;
+/** One preset identity, derived from {@link PAGE_PRESET_IDS}. */
+export type PagePresetId = (typeof PAGE_PRESET_IDS)[number];
 // Media assets
 /** The two kinds of media an admitted asset can be. */
 export const MEDIA_ASSET_KINDS = ["image", "video"] as const;
 /** Whether an asset is an image or a video, established by its content and never by its extension. */
 export type MediaAssetKind = (typeof MEDIA_ASSET_KINDS)[number];
+// The media module owns the rendition purposes, and the stored record states the same five. This module is
+// imported by browser components, so it binds to the owner's type rather than importing its runtime tuple,
+// which pulls the image and video pipeline in: adding a purpose there and not here fails to compile.
 /** The five purposes a stored rendition can serve. */
-export const MEDIA_ASSET_RENDITION_PURPOSES = ["display", "playback", "poster", "captions", "transcript"] as const;
+export const MEDIA_ASSET_RENDITION_PURPOSES = ["display", "playback", "poster", "captions", "transcript"] as const satisfies readonly MediaRenditionPurpose[];
+
+type UnlistedRenditionPurpose = Exclude<MediaRenditionPurpose, (typeof MEDIA_ASSET_RENDITION_PURPOSES)[number]>;
+/** A compile-time guard rather than a runtime switch: this constant only type-checks while `UnlistedRenditionPurpose` is `never`. */
+export const MEDIA_ASSET_RENDITION_PURPOSES_ARE_COMPLETE: UnlistedRenditionPurpose extends never ? true : false = true;
 /** What a rendition is for. */
 export type MediaAssetRenditionPurpose = (typeof MEDIA_ASSET_RENDITION_PURPOSES)[number];
 /** What the content inspection established about an asset, in the units the limits are stated in. */
@@ -1088,12 +1114,10 @@ export const mediaAssetRecordSchema: z.ZodType<MediaAssetRecord> = z.object({
   revision: recordRevisionSchema,
 });
 // Releases
-/** The three reach values a released edition can have. */
-export const RELEASE_REACHES = ["not-public", "link-public", "listed"] as const;
-/** How far a released edition reaches: not public, public by link only (unlisted and noindex), or listed publicly in the discovery index. */
-export type ReleaseReach = (typeof RELEASE_REACHES)[number];
+/** How far a released edition reaches — not public, public by link only (unlisted and noindex), or listed publicly in the discovery index — drawn from {@link RELEASE_REACH_VALUES} in `modules/content/variant.ts`, which declares the three values once. */
+export type ReleaseReach = (typeof RELEASE_REACH_VALUES)[number];
 
-export const releaseReachSchema: z.ZodType<ReleaseReach> = z.enum(RELEASE_REACHES);
+export const releaseReachSchema: z.ZodType<ReleaseReach> = z.enum(RELEASE_REACH_VALUES);
 /** One release of one variant: an exact frozen revision, in one audience, in one locale. */
 export interface ReleaseRecord {
   readonly releaseId: string;
@@ -1178,9 +1202,7 @@ export const notificationSendResultRecordSchema: z.ZodType<NotificationSendResul
   revision: recordRevisionSchema,
 });
 // Audience membership and preference
-/** The four states a purpose-specific membership can be in. */
-export const MEMBERSHIP_STATES = ["active", "awaiting-proof", "off", "restricted"] as const;
-/** Where a membership stands for one publisher's one purpose. */
+/** Where a membership stands for one publisher's one purpose, drawn from {@link MEMBERSHIP_STATES} in `modules/audience/membership.ts`, which declares the four states once. */
 export type MembershipState = (typeof MEMBERSHIP_STATES)[number];
 /** One purpose-specific membership and the reader's preference. */
 export interface MembershipRecord {
@@ -1288,10 +1310,8 @@ export const coachingGrantRecordSchema: z.ZodType<CoachingGrantRecord> = z.objec
   revision: recordRevisionSchema,
 });
 // Coaching targets
-/** The four canonical measures a target may count. */
-export const COACHING_TARGET_MEASURES = ["calls-made", "personal-messages", "conversations", "meetings-held"] as const;
-/** Which activity a target counts. */
-export type CoachingTargetMeasure = (typeof COACHING_TARGET_MEASURES)[number];
+/** Which activity a target counts, drawn from {@link TARGET_MEASURES} in `modules/coaching/target.ts`, which declares the four measures once. */
+export type CoachingTargetMeasure = (typeof TARGET_MEASURES)[number];
 /** The three periods a target may be set over. */
 export const COACHING_TARGET_PERIOD_KINDS = ["weekly", "monthly", "custom"] as const;
 /** What period a target's quantity applies to. */
@@ -1340,14 +1360,14 @@ export const coachingTargetVersionRecordSchema: z.ZodType<CoachingTargetVersionR
   effectiveFrom: storedCivilDateSchema,
   effectiveTo: storedCivilDateSchema.nullable(),
   quantity: z.int().nonnegative(),
-  measure: z.enum(COACHING_TARGET_MEASURES),
+  measure: z.enum(TARGET_MEASURES),
   calendarStart: storedCivilDateSchema,
 });
 export const coachingTargetRecordSchema: z.ZodType<CoachingTargetRecord> = z.object({
   targetId: z.string().min(1),
   workerPrincipalId: principalIdSchema,
   privateLabel: z.string().min(1),
-  measure: z.enum(COACHING_TARGET_MEASURES),
+  measure: z.enum(TARGET_MEASURES),
   quantity: z.int().nonnegative(),
   period: coachingTargetPeriodRecordSchema,
   calendarStart: storedCivilDateSchema,
@@ -1517,10 +1537,8 @@ export const operationRecordSchema: z.ZodType<OperationRecord> = z.object({
 export const IMPORT_ROW_DECISIONS = ["new-private-entry", "reuse-authorized-identity", "skip", "unresolved"] as const;
 /** What the worker decided about a row. */
 export type ImportRowDecision = (typeof IMPORT_ROW_DECISIONS)[number];
-/** The five results one row can end in, so an accepted row is never confused with an already-accepted one. */
-export const IMPORT_ROW_STATES = ["accepted", "already-accepted", "skipped", "needs-review", "failed"] as const;
-/** What became of one row. */
-export type ImportRowState = (typeof IMPORT_ROW_STATES)[number];
+/** What became of one row — one of five results, so an accepted row is never confused with an already-accepted one — drawn from {@link IMPORT_ROW_RESULT_STATES} in `modules/import/receipt.ts`, which declares them once. */
+export type ImportRowState = (typeof IMPORT_ROW_RESULT_STATES)[number];
 /** What the chosen file is, as measured before any row was processed. */
 export interface ImportFileMetaRecord {
   readonly name: string;
@@ -1528,17 +1546,36 @@ export interface ImportFileMetaRecord {
   readonly rowCount: number;
   readonly columnCount: number;
 }
+/** The content fingerprint of the chosen file, recorded beside its metadata so an acceptance names the version of the file that was reviewed. */
+export interface ImportFileFingerprintRecord {
+  readonly checksum: string;
+  readonly columnCount: number;
+  readonly dataRowCount: number;
+}
+/** A cell the worker rewrote before deciding about its row, at the row's own column position. */
+export interface ImportCellCorrectionRecord {
+  readonly columnNumber: number;
+  readonly value: string;
+}
+/** The source system and opaque reference a reuse decision points at. */
+export interface ImportMatchReferenceRecord {
+  readonly system: string;
+  readonly reference: string;
+}
 /** What one column was mapped to. */
 export interface ImportColumnAssignmentRecord {
   readonly columnIndex: number;
   readonly header: string;
   readonly field: string | null;
 }
-/** What the worker decided about one row, and which existing record a reuse targets. */
+/** What the worker decided about one row, which existing record a reuse targets, and what that decision carried. */
 export interface ImportRowDecisionRecord {
   readonly rowNumber: number;
   readonly decision: ImportRowDecision;
   readonly targetPartnerId: string | null;
+  readonly corrections: readonly ImportCellCorrectionRecord[];
+  readonly candidate: ImportMatchReferenceRecord | null;
+  readonly reason: string | null;
 }
 /** What became of one row, with the route to the record it created or the reason it needs attention. */
 export interface ImportRowResultRecord {
@@ -1558,6 +1595,7 @@ export interface ImportSummaryRecord {
 export interface ImportProposalRecord {
   readonly importOperationId: string;
   readonly fileMeta: ImportFileMetaRecord;
+  readonly fingerprint: ImportFileFingerprintRecord;
   readonly mapping: readonly ImportColumnAssignmentRecord[];
   readonly rowDecisions: readonly ImportRowDecisionRecord[];
   readonly summary: ImportSummaryRecord;
@@ -1571,6 +1609,19 @@ export const importFileMetaRecordSchema: z.ZodType<ImportFileMetaRecord> = z.obj
   rowCount: z.int().nonnegative(),
   columnCount: z.int().nonnegative(),
 });
+export const importFileFingerprintRecordSchema: z.ZodType<ImportFileFingerprintRecord> = z.object({
+  checksum: z.string().min(1),
+  columnCount: z.int().nonnegative(),
+  dataRowCount: z.int().nonnegative(),
+});
+export const importCellCorrectionRecordSchema: z.ZodType<ImportCellCorrectionRecord> = z.object({
+  columnNumber: z.int().positive(),
+  value: z.string(),
+});
+export const importMatchReferenceRecordSchema: z.ZodType<ImportMatchReferenceRecord> = z.object({
+  system: z.string().min(1),
+  reference: z.string().min(1),
+});
 export const importColumnAssignmentRecordSchema: z.ZodType<ImportColumnAssignmentRecord> = z.object({
   columnIndex: z.int().nonnegative(),
   header: z.string().min(1),
@@ -1580,10 +1631,16 @@ export const importRowDecisionRecordSchema: z.ZodType<ImportRowDecisionRecord> =
   rowNumber: z.int().nonnegative(),
   decision: z.enum(IMPORT_ROW_DECISIONS),
   targetPartnerId: z.string().min(1).nullable(),
+  // A document written before a decision carried these members still parses: the decision it records is
+  // the whole of what that document stated, and the defaults say exactly that — no corrections, no
+  // candidate and no reason were recorded, not that none existed.
+  corrections: z.array(importCellCorrectionRecordSchema).default([]),
+  candidate: importMatchReferenceRecordSchema.nullable().default(null),
+  reason: z.string().nullable().default(null),
 });
 export const importRowResultRecordSchema: z.ZodType<ImportRowResultRecord> = z.object({
   rowNumber: z.int().nonnegative(),
-  state: z.enum(IMPORT_ROW_STATES),
+  state: z.enum(IMPORT_ROW_RESULT_STATES),
   partnerId: z.string().min(1).nullable(),
   message: z.string().min(1).nullable(),
 });
@@ -1596,6 +1653,7 @@ export const importSummaryRecordSchema: z.ZodType<ImportSummaryRecord> = z.objec
 export const importProposalRecordSchema: z.ZodType<ImportProposalRecord> = z.object({
   importOperationId: z.string().min(1),
   fileMeta: importFileMetaRecordSchema,
+  fingerprint: importFileFingerprintRecordSchema,
   mapping: z.array(importColumnAssignmentRecordSchema),
   rowDecisions: z.array(importRowDecisionRecordSchema),
   summary: importSummaryRecordSchema,

@@ -649,6 +649,7 @@ describe("one cycle yields exactly one successor", () => {
 });
 const PERMITTED_EXPIRED_FIELDS = [
   "consumed",
+  "continuation",
   "cycleIndex",
   "datePrecision",
   "originalIntroductionOn",
@@ -681,7 +682,6 @@ const WITHHELD_FROM_EXPIRED_HISTORY = [
   "designation",
   "support",
   "consent",
-  "continuation",
   "deadline",
   "successorId",
   "predecessorId",

@@ -17,25 +17,23 @@
  *   plan's `unknown` mode on `publishVariants` is asserted separately, as the lost acknowledgement
  *   that still advances exactly the sibling able to release. The plan's own registry is read first, so
  *   the armed pairing is the registry's rather than this file's guess.
- * - The store is file-backed and this suite may not import it, so the deterministic seed's documents
- *   are laid down under private session ids, one per world, and every read and change runs through the
- *   service against those ids. Laying them down again in `beforeAll` is what makes a second run of
- *   this file start from the same world as the first.
+ * - The store is file-backed, so the deterministic seed's documents are laid down under private session
+ *   ids — through the store's own `resetSession`, its only creating path — one per world, and every read
+ *   and change runs through the service against those ids. Laying them down again before every case is
+ *   what makes each case start from the seeded world, in whatever order the cases run.
  * - Durable recovery under the original `operationId` across a persisted store, and heads surviving a
  *   store reopen, belong to `tests/integration/publish-partial-failure.test.ts`. This file asserts the
  *   identity consequence: which head remains the head, and which frozen revision an answer bound to.
  */
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { mutations, reads, type MutationInput, type Scope } from "@/modules/data-service";
 import { resolveSession } from "@/modules/data-service/authorize";
 import { isOutcome, type InvalidOutcome, type JsonValue, type MutationOutcome, type PerItemResult, type ReadResult } from "@/modules/data-service/outcome";
 import { REVIEW_STEPS_PER_CANDIDATE, VARIANT_AUDIENCES, type ContentRevision } from "@/modules/content/variant";
 import { DEMONSTRABLE_TARGETS } from "@/modules/dev-runtime/failures";
-import { DEFAULT_SESSION_ID, seed, type SessionStateDocument } from "@/modules/dev-runtime/seed";
+import { DEFAULT_SESSION_ID, seed, type SeededSessionDocuments, type SessionStateDocument } from "@/modules/dev-runtime/seed";
+import { resetSession } from "@/modules/store/repository";
 // The worlds these cases start from: two private sessions, each laid down from one seeded session
 /** The canonical Update every case in the baseline world works on. */
 const DOCUMENT_ID = "doc-update-autumn";
@@ -84,11 +82,6 @@ const PARTIAL_SEEDED_SESSION = "established-worker-partial-release";
 /** The seeded session the reviewer identity is laid down from. */
 const REVIEWER_SEEDED_SESSION = "content-reviewer";
 
-/** The store keys a session's three core documents by this suffix; the fixture is written in the shape the store reads. */
-const DOCUMENT_KEYS = ["state", "operations", "meta"] as const;
-
-/** The synthetic store's directory at the repository root. */
-const DATA_ROOT = fileURLToPath(new URL("../../../../.data/", import.meta.url));
 /** One laid-down world: the session it runs as, the source every named call names, and its authority. */
 interface World {
   readonly sessionId: string;
@@ -113,36 +106,45 @@ function required<T>(value: T | undefined, what: string): T {
   }
   return value;
 }
-async function layDown(sessionId: string, documents: { readonly state: SessionStateDocument; readonly operations: unknown; readonly meta: unknown }): Promise<World> {
-  await mkdir(DATA_ROOT, { recursive: true });
-  const rows: Readonly<Record<(typeof DOCUMENT_KEYS)[number], unknown>> = documents;
-  for (const key of DOCUMENT_KEYS) {
-    await writeFile(join(DATA_ROOT, `${sessionId}.${key}.json`), `${JSON.stringify(rows[key], null, 2)}\n`, "utf8");
-  }
+async function layDown(sessionId: string, documents: SeededSessionDocuments): Promise<World> {
+  await resetSession(sessionId, documents);
   return { sessionId, source: { sessionId }, scope: scopeOf(documents.state) };
 }
 let control: World;
 let partial: World;
 let reviewer: World;
+/** The seeded document sets the three worlds are laid down from, captured once so every case starts from the same bytes. */
+let baselineDocuments: SeededSessionDocuments;
+let partialDocuments: SeededSessionDocuments;
+let reviewerDocuments: SeededSessionDocuments;
 const laidDownSessions = [CONTROL_SESSION_ID, PARTIAL_SESSION_ID, REVIEWER_SESSION_ID];
+/**
+ * Re-lays all three worlds from the seed. A case asserts the seeded identities as readily as one it
+ * creates, so no case may inherit the edition, draft, review, release head or withdrawal a sibling case
+ * left behind: the session is restored to the seed before every case, whatever order the cases run in.
+ */
+async function layDownWorlds(): Promise<void> {
+  control = await layDown(CONTROL_SESSION_ID, baselineDocuments);
+  partial = await layDown(PARTIAL_SESSION_ID, partialDocuments);
+  reviewer = await layDown(REVIEWER_SESSION_ID, reviewerDocuments);
+}
 beforeAll(async () => {
   const sessions = await seed();
-  const baseline = required(
+  baselineDocuments = required(
     sessions.find((row) => row.sessionId === DEFAULT_SESSION_ID),
     `session "${DEFAULT_SESSION_ID}"`,
-  );
-  const relieved = required(
+  ).documents;
+  partialDocuments = required(
     sessions.find((row) => row.sessionId === PARTIAL_SEEDED_SESSION),
     `session "${PARTIAL_SEEDED_SESSION}"`,
-  );
-  const reviewing = required(
+  ).documents;
+  reviewerDocuments = required(
     sessions.find((row) => row.sessionId === REVIEWER_SEEDED_SESSION),
     `session "${REVIEWER_SEEDED_SESSION}"`,
-  );
-  control = await layDown(CONTROL_SESSION_ID, baseline.documents);
-  partial = await layDown(PARTIAL_SESSION_ID, relieved.documents);
-  reviewer = await layDown(REVIEWER_SESSION_ID, reviewing.documents);
+  ).documents;
+  await layDownWorlds();
 });
+beforeEach(layDownWorlds);
 afterEach(async () => {
   // Exactly one failure may be armed at a time, and a world that ended a case with one armed would
   // answer the next case's read or change with it. Disarming is therefore unconditional, and it names
@@ -155,9 +157,7 @@ afterEach(async () => {
 afterAll(async () => {
   // Only this file's own documents are removed: the directory holds other suites' worlds.
   for (const sessionId of laidDownSessions) {
-    for (const key of DOCUMENT_KEYS) {
-      await rm(join(DATA_ROOT, `${sessionId}.${key}.json`), { force: true });
-    }
+    await resetSession(sessionId);
   }
 });
 function sourceOf(world: World): { readonly sessionId: string } {

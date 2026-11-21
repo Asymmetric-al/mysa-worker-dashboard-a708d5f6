@@ -17,6 +17,7 @@ import { civilDateAt, parseCivilDate, serialiseCivilDate, type CivilDate, type D
 import { newWindowEnd, referralWindowState, type MidnightResolution, type NewWindowEnd, type ReferralWindowStatus, type WindowRefusalReason } from "@/modules/time/window";
 import { assertScope, canEdit, canView, readResultOfRefusal, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
 import {
+  INITIATIVE_STAGES,
   buildEnvelope,
   initiativeMemberRecordSchema,
   initiativeRecordSchema,
@@ -52,8 +53,6 @@ import { denied, LOCAL_STORE_SYSTEM, unavailable, type DeniedOutcome, type ReadR
 const READ_ATTEMPT_ID = "read";
 
 const OUTREACH_SOURCE_REFERENCE = "outreach";
-
-const SOURCE_APPROVED_STAGES = ["Not yet asked", "Asked", "Answered", "Follow up due", "Paused"] as const;
 
 const NEW_WINDOW_PERIOD_SEARCH_LIMIT = 400;
 // The stored records these reads need
@@ -548,10 +547,11 @@ function stageStateOf(stage: string | null): InitiativeStageState {
   if (stage === null) {
     return "unrecorded";
   }
-  return (SOURCE_APPROVED_STAGES as readonly string[]).includes(stage) ? "admitted" : "retired";
+  // The one list is the source's current one, so a stage a member still carries after the source retires it reads as retired rather than as a missing value.
+  return (INITIATIVE_STAGES as readonly string[]).includes(stage) ? "admitted" : "retired";
 }
 function stageOptionsOf(members: readonly InitiativeMemberRecord[]): readonly InitiativeStageOption[] {
-  const options: InitiativeStageOption[] = SOURCE_APPROVED_STAGES.map((value) => ({
+  const options: InitiativeStageOption[] = INITIATIVE_STAGES.map((value) => ({
     value,
     admitted: true,
   }));
@@ -1078,8 +1078,17 @@ const EXPIRED_REFERRAL_FIELDS = [
   "windowEnd",
   "cycleIndex",
   "consumed",
+  "continuation",
 ] as const satisfies readonly (keyof ReferralDetailRow)[];
-/** One expired cycle as permitted history presents it: an approved identity, its status and its dates. */
+/**
+ * One expired cycle as permitted history presents it: an approved identity, its status, its dates and
+ * the cycle's continuation eligibility.
+ *
+ * `continuation` travels because it is an action condition rather than a record fact: the Expired
+ * views are the ones that carry Continue, so they are the ones that must state whether the cycle may
+ * be continued, or why it may not. No record fact beyond the approved identity, the source
+ * reference, the status and the permitted dates rides with it.
+ */
 export type ExpiredReferralRow = Pick<ReferralDetailRow, (typeof EXPIRED_REFERRAL_FIELDS)[number]>;
 /** One referral as a list row: who it is, when it was introduced, where its window stands. */
 export interface ReferralListRow {
@@ -1499,8 +1508,10 @@ export async function readReferral(referralId: string, source?: SessionSource): 
   const row: ReferralDetailRow = { ...base, deadline: deadlineOf(cycle) };
   const expired = row.status.status === "expired";
   // An expired cycle is answered in the narrow permitted shape whichever route reached it, so its
-  // detail cannot be re-opened into partner access; the continuation policy is stated beside the
-  // projection rather than inside it, because it explains an absent action and discloses no record.
+  // detail cannot be re-opened into partner access. The projection carries the cycle's continuation
+  // eligibility, the action condition the Continue surface states, while no record fact beyond the
+  // approved identity, the source reference, the status and the permitted dates travels with it; the
+  // policy stays beside the projection, since it explains the setting and discloses no record.
   const data: ReferralDetailData = expired
     ? {
         view: "expired-history",

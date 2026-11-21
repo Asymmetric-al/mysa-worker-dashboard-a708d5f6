@@ -6,6 +6,7 @@
 import { z } from "zod";
 import { err, ok, type Result } from "@/lib/result";
 import type { reads } from "@/modules/data-service";
+import { REPORT_IDS } from "@/modules/support/report";
 /** The bounded filter set the query-shaped Support reads accept, taken from a read's own signature rather than restated: a member the service adds, renames or withdraws reaches this file by. */
 export type SupportQuery = NonNullable<Parameters<typeof reads.support.readGifts>[0]>;
 /** The window `readCommitments` accepts, taken from that read's own signature. */
@@ -253,10 +254,8 @@ export function supportPageFromSearch(search: URLSearchParams): ParsedQuery<Supp
   return ok({ ...narrowing, page: size === undefined ? { index } : { index, size } });
 }
 // The body the report and export posts carry
-const REPORT_IDENTITIES = ["received-period-and-year-to-date", "monthly-history", "partner-month-matrix", "period-comparison"] as const satisfies readonly ReportIdentity[];
-
 const BODY_MESSAGES = {
-  reportId: `Name one of the four reports this application computes as query.reportId: ${REPORT_IDENTITIES.join(", ")}. No other report exists, and none is substituted for an identity this build does not compute.`,
+  reportId: `Name one of the four reports this application computes as query.reportId: ${REPORT_IDS.join(", ")}. No other report exists, and none is substituted for an identity this build does not compute.`,
   snapshotId: "State the request identity as a non-empty string, or omit it: it is the caller's own cache discriminator and never the snapshot the service computes.",
   period: "State the period as a preset, as two calendar days (kind: explicit, from, to), or as a calendar year; no other period is read.",
   year: "State a calendar year as a whole four-digit year.",
@@ -267,7 +266,8 @@ const BODY_MESSAGES = {
   page: "State the page window's index and size as whole numbers from zero: the default size and the cap belong to the report engine.",
   timeZone: "Name the zone a period preset resolves in as a non-empty identifier, or omit it and the read uses its declared default.",
 } as const;
-const reportIdentitySchema = z.enum(REPORT_IDENTITIES, { error: BODY_MESSAGES.reportId });
+/** The report identities are the engine's own list, so a report it computes can never be unreachable through this grammar. */
+const reportIdentitySchema = z.enum(REPORT_IDS, { error: BODY_MESSAGES.reportId });
 
 const periodBodySchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("preset"), preset: z.string() }),

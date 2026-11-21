@@ -86,8 +86,8 @@ export interface ReferralViewCopy {
 /**
  * The three lists, which answer three different questions and are never one filtered list.
  *
- * The key set is the schema's view set, so adding or renaming a list fails typecheck here until the
- * words exist for it.
+ * The key set is the value set of the schema's `list` member, so adding or renaming a list fails
+ * typecheck here until the words exist for it.
  */
 const REFERRAL_VIEW_COPY = {
   active: {
@@ -117,7 +117,7 @@ const REFERRAL_VIEW_COPY = {
       actionLabel: null,
     },
   },
-} as const satisfies Readonly<Record<ReferralListQuery["view"], ReferralViewCopy>>;
+} as const satisfies Readonly<Record<ReferralListQuery["list"], ReferralViewCopy>>;
 
 /** The list surface: the three lists, the column and control labels a row shows, and what an empty or unmatched list offers. */
 export const LIST_COPY = {
@@ -162,7 +162,7 @@ export const LIST_COPY = {
  * page, so one page never reads as the whole answer.
  */
 export function listCountCaption(query: ReferralListQuery, total: number): string {
-  const { heading } = LIST_COPY.views[query.view];
+  const { heading } = LIST_COPY.views[query.list];
   const noun = total === 1 ? "referral" : "referrals";
   return `${heading}: ${total} ${noun} in the whole result.`;
 }

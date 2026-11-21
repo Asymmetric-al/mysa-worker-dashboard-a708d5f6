@@ -11,7 +11,7 @@
  */
 import { z } from "zod";
 import { PRESENTATION_CHOICES, type PresentationChoice } from "@/modules/content/document";
-import { mutationInputSchema, type MutationInput } from "@/modules/data-service/envelope";
+import { mutationInputSchema, PAGE_SECTION_TYPES, type MutationInput, type PageSectionType } from "@/modules/data-service/envelope";
 // The annotation types are imported with `import type`, which the compiler erases: they hold each schema
 // below to the service's own payload type without pulling the mutation bodies, the store or `node:fs`
 // into a client bundle. They also keep the defaulted discriminant out of the exported payload types, so
@@ -22,7 +22,6 @@ import type {
   SaveSectionFieldsPayload as ServiceSaveSectionFieldsPayload,
   SectionReferencePayload,
 } from "@/modules/data-service/mutations/content";
-import { PAGE_SECTION_TYPES, type PageSectionType } from "../copy";
 // The four bounded presentation choices
 /** The presentation `saveSectionFields` accepts: exactly the profile's four choices, each required. */
 export const presentationSchema: z.ZodType<PresentationChoice> = z.strictObject({

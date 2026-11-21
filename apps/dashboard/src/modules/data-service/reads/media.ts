@@ -5,21 +5,18 @@
 // from its caller, the store publishes JSON documents only, and no module in `@/modules/media` opens a
 // file. Resolving the record's reference is therefore this read's one piece of custody, delegated to the
 // store module that owns the tree those bytes live in.
-import { z } from "zod";
-import { isNonEmptyString } from "@/lib/guards";
 import { logger } from "@/lib/logger";
 import { redactDenial } from "@/lib/redaction";
 import { assertNever } from "@/lib/result";
+import { isDirectlyReadable } from "@/modules/content/reach";
 import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
 import type { MediaOriginalReference, MediaRendition } from "@/modules/media/asset";
 import { assertReadable, sliceRenditionBytes, type ByteRange, type MediaServingState } from "@/modules/media/serve";
 import { readMediaBytes } from "@/modules/store/media";
-import { readSession } from "@/modules/store/repository";
 import { instantAt } from "@/modules/time/clock";
-import { canView, readResultOfRefusal, resolveSession, type ResolvedSession } from "../authorize";
+import { canView, type ResolvedSession, type SessionSource } from "../authorize";
 import {
   buildEnvelope,
-  mediaAssetRecordSchema,
   type MediaAssetKind,
   type MediaAssetRecord,
   type MediaAssetRenditionPurpose,
@@ -27,8 +24,10 @@ import {
   type ReadAction,
   type ReadEnvelope,
   type RecordedValueState,
+  type Scope,
 } from "../envelope";
-import { denied, LOCAL_STORE_SYSTEM, unavailable, type DenialReason, type ReadResult } from "../outcome";
+import { denied, unavailable, type DenialReason, type ReadResult } from "../outcome";
+import { grantHeldFor, releaseStillServes, resolveRelease, resolveWorlds, scopeOf, type World } from "./audience";
 // What this read answers with
 //
 // The envelope every read answers with, carrying one authorised rendition and its wire facts.
@@ -62,8 +61,6 @@ const MEDIA_SOURCE_SYSTEM = "media-source";
 
 const READ_ATTEMPT_ID = "read";
 
-const STORE_UNREADABLE_REFERENCE = "media-state-unreadable";
-
 const MEDIA_REFUSAL_REASON: DenialReason = "no-permission";
 
 const NO_BYTES = new Uint8Array(0);
@@ -74,53 +71,47 @@ const UNAVAILABLE_GUIDANCE = "These bytes could not be read from their source ri
 
 const MISSING_RENDITION_GUIDANCE =
   "This asset has no prepared rendition for that purpose yet, so there are no bytes to send. Retry once preparation has finished, or choose the file again in the editor.";
-const STORE_UNAVAILABLE_GUIDANCE =
-  "The local synthetic store could not be read for this request, so this asset's renditions could not be established. Retry the request; if it keeps failing, reset the development data from Settings.";
+// The two dynamic segments of the one rendition address, bounded the way every other identifier in this
+// transport is. The class admits every id the application mints (`${prefix}-${crypto.randomUUID()}`) and
+// every seeded one (`rendition-video-welcome-playback`), and nothing longer than a record reference.
+const SEGMENT_MAX_LENGTH = 160;
+
+const SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u;
+
 const KIND_PURPOSES: Readonly<Record<MediaAssetKind, readonly MediaAssetRenditionPurpose[]>> = {
   image: ["display"],
   video: ["playback", "poster", "captions", "transcript"],
 };
-const storedMediaSchema = z.object({
-  mediaAssets: z.array(mediaAssetRecordSchema),
-});
 // The read
-/** Serves one rendition of one asset to one caller, re-authorising the request as it stands now. Answers the rendition's `envelope` — the whole entity, a requested range or an unsatisfiable range — or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the asset cannot be read. */
-export async function readMediaAsset(input: MediaAssetReadInput): Promise<MediaAssetReadResult> {
-  if (!isNonEmptyString(input.assetId) || !isNonEmptyString(input.rendition)) {
+/** Serves one rendition of one asset to one caller — the session the request carries, or the one `source` names — re-authorising it as it stands now. Answers the rendition's `envelope` — the whole entity, a requested range or an unsatisfiable range — or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the asset cannot be read. */
+export async function readMediaAsset(input: MediaAssetReadInput, source?: SessionSource): Promise<MediaAssetReadResult> {
+  // Both segments are bounded before anything reads the store: an address the application could not have
+  // minted is refused without a lookup, so no comparison ever runs on an arbitrarily long value.
+  if (!isMediaSegment(input.assetId) || !isMediaSegment(input.rendition)) {
     return refused();
   }
-  const resolved = await resolveSession();
-  if (!resolved.ok) {
-    // A request that names no session the store holds is refused; a store that could not answer is
-    // the outage it is, and the caller is entitled to hear which of the two it was.
-    return readResultOfRefusal(resolved.refusal);
+  // The same world resolution every receiving read performs — the caller's own world, and the published
+  // world a reader is admitted to when the development crossing applies — so this read words its session
+  // refusal and its store outage once, in one place, instead of deriving them here.
+  const worlds = await resolveWorlds(JOB, source);
+  if (!worlds.ok) {
+    return worlds.result;
   }
-  const { session } = resolved;
-  let documents: Awaited<ReturnType<typeof readSession>>;
-  try {
-    documents = await readSession(session.sessionId);
-  } catch {
-    // A corrupt or unreadable document means the assets cannot be established. The answer says the
-    // source could not be read and nothing else: naming the document, the path or the fault would
-    // disclose where the session's records live, and the caller can do nothing with that.
-    return unreadableStore();
-  }
-  if (documents === undefined) {
-    return refused();
-  }
-  const stored = storedMediaSchema.safeParse(documents.state);
-  if (!stored.success) {
-    return unreadableStore();
-  }
-  const asset = stored.data.mediaAssets.find((record) => record.assetId === input.assetId);
+  const { session, own, published } = worlds;
+  const reading = published.sessionId !== own.sessionId;
+  const asset = (reading ? published : own).state.mediaAssets.find((record) => record.assetId === input.assetId);
   if (asset === undefined) {
     return refused();
   }
-  // The one permission question, asked of the asset's own recorded scope rather than of the context
-  // the request arrived in. `canView` runs the scope assertion for this target, so a caller admitted to
-  // another ministry, a coach, a reader and a second worker all receive the same refusal here.
-  const view = canView(session, { kind: "media-asset", scope: asset.scope });
-  if (!view.allowed) {
+  // One authority per world, and the answer states the scope of the one that admitted it.
+  const authority = reading ? readingAuthority(worlds, asset) : ownAuthority(session, asset);
+  if (authority === undefined) {
+    return refused();
+  }
+  // A withdrawn edition serves nobody, and it says nothing about what it used to serve: the answer is the
+  // serving module's own tombstone, which this read answers as its single refusal. Deciding it before the
+  // rendition resolves keeps a retained address from being told apart from one that never existed.
+  if (authority.state === "withdrawn") {
     return refused();
   }
   const purpose = requestedPurpose(asset, input.rendition);
@@ -140,8 +131,8 @@ export async function readMediaAsset(input: MediaAssetReadInput): Promise<MediaA
   }
   const serving = assertReadable(asset.assetId, preparedRendition(asset, rendition, bytes), {
     allowed: true,
-    scope: asset.scope,
-    assetState: servingStateOf(session.scenarioId),
+    scope: authority.scope,
+    assetState: authority.state,
     requestedPurpose: purpose,
     // The rendition's own bytes reference never travels: it names a location inside the store's data
     // tree, and no response may echo one. The bytes' holder is named by the asset's opaque identity
@@ -151,7 +142,7 @@ export async function readMediaAsset(input: MediaAssetReadInput): Promise<MediaA
   });
   switch (serving.kind) {
     case "readable":
-      return renditionAnswer(session, asset, {
+      return renditionAnswer(session, asset, authority.scope, {
         kind: asset.kind,
         renditionId: serving.renditionId,
         purpose: serving.purpose,
@@ -166,7 +157,7 @@ export async function readMediaAsset(input: MediaAssetReadInput): Promise<MediaA
       // The reader may have this entity; the window simply names none of it. The status and the headers
       // carry the entity's size, and the body is empty by definition, so nothing is truncated and no
       // size is disclosed that the caller was not already authorised to learn.
-      return renditionAnswer(session, asset, {
+      return renditionAnswer(session, asset, authority.scope, {
         kind: asset.kind,
         renditionId: rendition.renditionId,
         purpose: rendition.purpose,
@@ -188,11 +179,74 @@ export async function readMediaAsset(input: MediaAssetReadInput): Promise<MediaA
       return assertNever(serving, "Unhandled media serving decision");
   }
 }
-// Internals: the envelope, the segment, the source, the asset state and the two refusals
+// Internals: the two authorities, the envelope, the segment, the source, the asset state and the two refusals
 //
 // Each one is a single expression of a single fact, so no branch of the read above states its own
 // version of it.
-function renditionAnswer(session: ResolvedSession, asset: MediaAssetRecord, data: MediaRenditionResponse): MediaAssetReadResult {
+interface MediaAuthority {
+  readonly scope: Scope;
+  readonly state: MediaServingState;
+}
+function ownAuthority(session: ResolvedSession, asset: MediaAssetRecord): MediaAuthority | undefined {
+  // The one permission question for the caller's own world, asked of the asset's own recorded scope rather
+  // than of the context the request arrived in. `canView` runs the scope assertion for this target, so a
+  // caller admitted to another ministry, a coach, a reader and a second worker all receive the same refusal
+  // here. Publication state cannot gate this path: an upload is previewed before any release places it, and
+  // a withdrawn edition must stay editable.
+  const view = canView(session, { kind: "media-asset", scope: asset.scope });
+  if (!view.allowed) {
+    return undefined;
+  }
+  return { scope: asset.scope, state: servingStateOf(session.scenarioId) };
+}
+function readingAuthority(worlds: { readonly session: ResolvedSession; readonly own: World; readonly published: World }, asset: MediaAssetRecord): MediaAuthority | undefined {
+  const { session, own, published } = worlds;
+  // The receiving reads' own authority: the scope the caller sees the published world in, and the
+  // protected-reading grant its own membership rows hold at this instant.
+  const scope = scopeOf(session, published);
+  if (scope === undefined) {
+    return undefined;
+  }
+  const grantHeld = grantHeldFor(session, scope, own, published);
+  let liveEditions = 0;
+  let withdrawnEditions = 0;
+  for (const record of published.state.releases) {
+    const resolved = resolveRelease(record, published.state);
+    if (resolved.revision === undefined || !resolved.revision.mediaPlacements.some((placement) => placement.assetId === asset.assetId)) {
+      continue;
+    }
+    if (resolved.domain === undefined || !releaseStillServes(resolved.domain)) {
+      // An edition that no longer serves shows this asset to nobody, whatever audience it named.
+      if (resolved.domain?.withdrawnAt !== undefined) {
+        withdrawnEditions += 1;
+      }
+      continue;
+    }
+    liveEditions += 1;
+    // A placing edition that belongs to a Page must also be one a direct link may serve: `readReceivingPage`
+    // refuses a `not-public` edition at its address, because reach decides what a direct link may serve
+    // (audience.ts:1593-1598). An Update's exact post is served whatever its reach, so the `update` family
+    // keeps the audience rule alone (audience.ts:1331-1341). With no resolved document there is no family to
+    // read, so the Page rule applies and the edition fails closed.
+    if (resolved.document?.family !== "update" && !isDirectlyReadable({ reach: record.reach, withdrawnAt: resolved.domain.withdrawnAt })) {
+      continue;
+    }
+    // The surface's own rule, never a second one: a public edition admits every reader, and a protected
+    // edition admits the reader that holds the grant. The admitted asset's own state is the same fact on
+    // both paths, so the scenario that makes a source unavailable is answered here as it is for the scope
+    // that owns the asset.
+    if (record.audience === "public" || grantHeld) {
+      return { scope, state: servingStateOf(session.scenarioId) };
+    }
+  }
+  // An asset placed only by withdrawn editions is a withdrawn asset, which tombstones rather than answering as
+  // one that never existed. One that no live edition admits is refused like any other unauthorised read.
+  return liveEditions === 0 && withdrawnEditions > 0 ? { scope, state: "withdrawn" } : undefined;
+}
+function isMediaSegment(value: unknown): value is string {
+  return typeof value === "string" && value.length <= SEGMENT_MAX_LENGTH && SEGMENT_PATTERN.test(value);
+}
+function renditionAnswer(session: ResolvedSession, asset: MediaAssetRecord, scope: Scope, data: MediaRenditionResponse): MediaAssetReadResult {
   const valueStates: Readonly<Record<string, RecordedValueState>> = {
     contentLength: data.contentLength === 0 ? "zero" : "value",
   };
@@ -200,7 +254,7 @@ function renditionAnswer(session: ResolvedSession, asset: MediaAssetRecord, data
     kind: "envelope",
     envelope: buildEnvelope({
       data,
-      scope: asset.scope,
+      scope,
       source: bytesSourceOf(asset),
       revision: asset.revision,
       asOf: instantAt(session.clockOffsetMs).toString(),
@@ -240,9 +294,6 @@ function refused(): MediaAssetReadResult {
     kind: "denied",
     denied: redactDenial(denied({ operationId: READ_ATTEMPT_ID, reasonCode: MEDIA_REFUSAL_REASON })),
   };
-}
-function unreadableStore(): MediaAssetReadResult {
-  return unavailableBytes({ system: LOCAL_STORE_SYSTEM, reference: STORE_UNREADABLE_REFERENCE }, STORE_UNAVAILABLE_GUIDANCE);
 }
 function unavailableBytes(source: MediaOriginalReference, guidance: string): MediaAssetReadResult {
   logger.sourceUnavailable({ job: JOB, source });

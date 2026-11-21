@@ -21,19 +21,20 @@
  *   imported here, so the development runtime's one deterministic reset is how a seeded session is
  *   obtained — the route `tests/domain/goal.test.ts` also takes. `mutations.dev.resetSeed` cannot
  *   serve: it is a mutation over a session that must already exist.
- * - `reads.readPreferences` and `reads.readAudience` take no `SessionSource`: they read the request
- *   cookie through `next/headers`, which throws outside a request scope, so a DOM-free suite cannot
- *   call them at all. The property they would have shown — that a page load never confirms — is
- *   proven here against the reads a domain test can execute, `resolveSession` (which every read
- *   performs first) and `reads.readDevState` (which loads the whole session document), and
- *   decisively by the revision the explicit confirmation still has to match afterwards. The
- *   HTTP-level proof that a GET or HEAD never confirms belongs to `e2e/consent-notification.spec.ts`
- *   and is not duplicated here.
- * - The seeded reader personas ("subscriber" and the three readers) carry no admitted membership,
- *   and every mutation authorises its scope under a membership before its own question, so a reader
- *   session cannot sign up or confirm. The proof flow is therefore exercised as the acting person's
- *   own membership — the membership is keyed by the principal who accepted it — in the established
- *   worker's admitted session, which holds no seeded membership of its own.
+ * - The receiving reads accept an optional `SessionSource`, so a DOM-free suite can execute them. The
+ *   property a page load would have shown — that it never confirms — is proven here against
+ *   `resolveSession` (which every read performs first) and `reads.dev.readDevState` (which loads the
+ *   whole session document) rather than by re-reading the preferences view, and decisively by the
+ *   revision the explicit confirmation still has to match afterwards. The HTTP-level proof that a GET
+ *   or HEAD never confirms belongs to `e2e/consent-notification.spec.ts` and is not duplicated here.
+ * - The seeded reader personas ("subscriber" and the three readers) carry no admitted membership, and
+ *   the membership mutations are authorised by the record they address rather than by ministry
+ *   admission, so a reader session signs up, chooses Off or Immediate, confirms and unsubscribes on the
+ *   membership it owns — the record keyed by its own principal, which is the identity a signup mints.
+ *   The window's boundary pair above is still exercised through the established worker's own membership,
+ *   because the acceptance this file measures from is then its own act at a known instant rather than a
+ *   seeded one it takes on trust; the subscriber's case below reads the acceptance and the deadline the
+ *   seed recorded for it.
  * - A mutation finds a named session only when the `SessionSource` is passed as its second
  *   argument, and an accepted outcome carries no payload, so the result a change stored (the
  *   deadline it opened, the pending proof, the state it reached) is read back by replaying the same
@@ -72,6 +73,12 @@ import { advanceClock, setClock } from "@/modules/dev-runtime/scenario";
 const SESSION_ID = "established-worker";
 
 const SOURCE: SessionSource = { sessionId: SESSION_ID };
+/** The seeded reader whose session holds its own membership and no ministry admission: the record it is authorised by. */
+const SUBSCRIBER_SESSION_ID = "subscriber";
+
+const SUBSCRIBER_SOURCE: SessionSource = { sessionId: SUBSCRIBER_SESSION_ID };
+/** The instant the seeded subscriber's membership accepted the proof step, and so the deadline its 168 hours fix. */
+const SUBSCRIBER_ACCEPTED_AT = Temporal.Instant.from("2026-11-16T12:00:00Z");
 /** The window in milliseconds, derived from the module's own stated hours so the two cannot drift. */
 const WINDOW_MILLISECONDS = CONFIRMATION_WINDOW_HOURS * 60 * 60 * 1000;
 
@@ -128,6 +135,16 @@ async function seededPublisher(): Promise<string> {
   return first.publisherId;
 }
 
+async function seededSubscriberRow(): Promise<StoredMembership> {
+  const sessions = await seededWorld();
+  const template = sessions.find((session) => session.sessionId === SUBSCRIBER_SESSION_ID);
+  const [row] = template?.documents.state.memberships ?? [];
+  if (row === undefined) {
+    throw new Error(`The seed lays down no membership in the "${SUBSCRIBER_SESSION_ID}" session, so no case in this file has the reader's own record to confirm.`);
+  }
+  return row;
+}
+
 /** Every seeded membership row, loaded once for each case by the reset that starts it. */
 let seededRows: readonly StoredMembership[] = [];
 
@@ -155,6 +172,15 @@ async function selectedScope(): Promise<Scope> {
   return session.selected;
 }
 
+async function subscriberScope(): Promise<Scope> {
+  // A reader selects no context of its own: the world it reads belongs to the publisher, so the scope its
+  // record sits in carries that world's three references and the reader's own principal id — the identity
+  // the membership is keyed by, and the only authority an owner-authorised change is held to.
+  const publisherScope = await selectedScope();
+  const session = await sessionOf(SUBSCRIBER_SOURCE);
+  return { ...publisherScope, principalId: session.principalId };
+}
+
 async function devStateEnvelope(): Promise<DevStateEnvelope> {
   const result = await reads.dev.readDevState(SOURCE);
   if (result.kind !== "envelope") {
@@ -171,6 +197,17 @@ async function advanceBy(milliseconds: number): Promise<void> {
   // The session's stored offset is what a mutation reads its instant from and the process clock is
   // what every boundary function is given, so the two are asserted to agree rather than assumed to.
   expect(now().epochMilliseconds).toBe(SEED_INSTANT.epochMilliseconds + advanced.value.clockOffsetMs);
+}
+
+/** Moves one session's scenario clock to an absolute instant, the way the development control that steps a scenario does. */
+async function setSessionClockTo(sessionId: string, reached: Temporal.Instant): Promise<void> {
+  const moved = await setClock(sessionId, elapsedMilliseconds(SEED_INSTANT, reached));
+  if (!moved.ok) {
+    throw new Error(`The scenario clock of "${sessionId}" refused the offset that reaches ${reached.toString()}: ${moved.error.code}.`);
+  }
+  // The session's stored offset is what a mutation reads its instant from and the process clock is what
+  // every boundary function is given, so the two are asserted to agree rather than assumed to.
+  expect(now().equals(reached)).toBe(true);
 }
 // The proof step, as this file opens it
 async function openedProofStep(): Promise<ProofStep> {
@@ -348,10 +385,13 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  // The clock is a scenario input, so every case leaves it at the seed instant for the next one.
-  const restored = await setClock(SESSION_ID, 0);
-  if (!restored.ok) {
-    throw new Error(`The scenario clock could not be returned to the seed instant: ${restored.error.code}.`);
+  // The clock is a scenario input, so every case leaves it at the seed instant for the next one — the
+  // subscriber's own clock included, since the cases below act as that reader.
+  for (const sessionId of [SESSION_ID, SUBSCRIBER_SESSION_ID]) {
+    const restored = await setClock(sessionId, 0);
+    if (!restored.ok) {
+      throw new Error(`The scenario clock of "${sessionId}" could not be returned to the seed instant: ${restored.error.code}.`);
+    }
   }
 });
 
@@ -698,5 +738,74 @@ describe("the states and the choices stay honest", () => {
     expect(booleanOf(receipt, "claimsRecall")).toBe(false);
     const unchangedLanguage = preferenceInput(step, "rev-4", { choice: "off", languagePreference: "fr" });
     expect(named(await mutations.audience.setPreference(unchangedLanguage, SOURCE))).toBe("unchanged");
+  });
+});
+
+describe("a reader confirms the membership its own session holds", () => {
+  it("confirms the seeded awaiting-proof membership one second before its seeded deadline, and a repeat changes nothing", async () => {
+    const seeded = await seededSubscriberRow();
+    const scope = await subscriberScope();
+    // The record is the caller's own: its identifier is the session's principal, which is the identity a
+    // signup mints and the one every membership mutation addresses.
+    expect(seeded.membershipId).toBe(scope.principalId);
+    expect(seeded.state).toBe("awaiting-proof");
+    // The acceptance and the deadline are the ones the seed recorded, so the boundary below is this
+    // record's own 168 hours rather than an interval the case chose.
+    expect(seeded.acceptedAt).toBe(SUBSCRIBER_ACCEPTED_AT.toString());
+    const deadline = Temporal.Instant.from(String(seeded.confirmationDeadline));
+    expect(deadline.toString()).toBe("2026-11-23T12:00:00Z");
+    expect(elapsedMilliseconds(SUBSCRIBER_ACCEPTED_AT, deadline)).toBe(WINDOW_MILLISECONDS);
+    const lastSecondInside = deadline.subtract({ seconds: 1 });
+    await setSessionClockTo(SUBSCRIBER_SESSION_ID, lastSecondInside);
+    // The instant the case now reads at is inside the window the record itself states.
+    expect(openWindowAt(SUBSCRIBER_ACCEPTED_AT, now()).deadlineInstant.equals(deadline)).toBe(true);
+    const confirmation: ConfirmArgs = {
+      operationId: newOperationId(),
+      scope,
+      expectedRevision: seeded.revision,
+      payload: { membershipId: seeded.membershipId },
+    };
+    expect(acceptedFrom(await mutations.audience.confirmMembership(confirmation, SUBSCRIBER_SOURCE)).revision).toBe("rev-2");
+    const receipt = replayedResult(await mutations.audience.confirmMembership(confirmation, SUBSCRIBER_SOURCE));
+    expect(textOf(receipt, "state")).toBe("active");
+    expect(nullableTextOf(receipt, "confirmedAt")).toBe(lastSecondInside.toString());
+    // A repeat proves nothing further: the row is active at the revision the acceptance reached, so a
+    // fresh attempt presenting that revision answers `unchanged` and records no second acceptance.
+    const repeated = await mutations.audience.confirmMembership(
+      { operationId: newOperationId(), scope, expectedRevision: "rev-2", payload: { membershipId: seeded.membershipId } },
+      SUBSCRIBER_SOURCE,
+    );
+    expect(named(repeated)).toBe("unchanged");
+    expect(unchangedRevision(repeated)).toBe("rev-2");
+  });
+
+  it("refuses the same confirmation at exactly the seeded deadline and leaves the record confirmable a second earlier", async () => {
+    const seeded = await seededSubscriberRow();
+    const scope = await subscriberScope();
+    const deadline = Temporal.Instant.from(String(seeded.confirmationDeadline));
+    await setSessionClockTo(SUBSCRIBER_SESSION_ID, deadline);
+    // The boundary instant itself is outside the window: it is the first instant the module reports as
+    // expired, and it is exactly the deadline the record's own acceptance fixed.
+    expect(closedWindowAt(SUBSCRIBER_ACCEPTED_AT, now()).deadlineInstant.equals(deadline)).toBe(true);
+    const refused = await mutations.audience.confirmMembership(
+      { operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { membershipId: seeded.membershipId } },
+      SUBSCRIBER_SOURCE,
+    );
+    expect(named(refused)).toBe("invalid");
+    const expiry = firstMessageAbout(refused, "membershipId");
+    expect(expiry.startsWith("confirmation-expired:")).toBe(true);
+    // The reason names the instant the window closed, which is the seeded deadline and not the instant
+    // the refusal happened.
+    expect(instantsIn(expiry).map((instant) => instant.toString())).toEqual([deadline.toString()]);
+    expect(expiry.startsWith("not-awaiting-proof")).toBe(false);
+    // The refusal neither promoted the record nor moved its window: the same row, at the revision the
+    // caller read and one second inside it, still confirms — which is also what proves the identity the
+    // reader's session owns is the record the confirmation reached.
+    await setSessionClockTo(SUBSCRIBER_SESSION_ID, deadline.subtract({ seconds: 1 }));
+    const inside = await mutations.audience.confirmMembership(
+      { operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { membershipId: seeded.membershipId } },
+      SUBSCRIBER_SOURCE,
+    );
+    expect(acceptedFrom(inside).revision).toBe("rev-2");
   });
 });

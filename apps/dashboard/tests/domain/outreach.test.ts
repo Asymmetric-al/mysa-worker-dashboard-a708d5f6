@@ -12,29 +12,23 @@
  *   and its recorded answer cite `terms-v1`.
  * - A response kind is spelled `needs clarification` on input and stored as `needs-clarification`;
  *   the closed set is therefore asserted from what the read reports.
- * - The store is file-backed, and this suite may not import it. So the deterministic seed's own
- *   documents are laid down under this file's private session id, and the one absence the criterion
- *   turns on — no gift, pledge, commitment, task or message was created — is counted from that
- *   session's stored records before and after the change.
+ * - The store is file-backed, so the deterministic seed's own documents are laid down through the
+ *   store's own `resetSession`, its only creating path, under this file's private session id, and the
+ *   one absence the criterion turns on — no gift, pledge, commitment, task or message was created — is
+ *   counted from that session's stored records before and after the change. They are laid down again
+ *   before every case, so each case starts from the seeded initiative in whatever order the cases run.
  */
-import { readFile, mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { isOutcome, type InvalidOutcome, type MutationOutcome, type ReadResult } from "@/modules/data-service/outcome";
 import { mutations, reads, type MutationInput, type Scope } from "@/modules/data-service";
-import { DEFAULT_SESSION_ID, seed, type SessionStateDocument } from "@/modules/dev-runtime/seed";
+import { DEFAULT_SESSION_ID, seed, type SeededSessionDocuments, type SessionStateDocument } from "@/modules/dev-runtime/seed";
 import type { Money } from "@/modules/money/amount";
+import { readSession, resetSession } from "@/modules/store/repository";
 /** This file's own session: a private id, so no other suite's seeded world is shared or disturbed. */
 const SESSION_ID = "domain-outreach";
 
 const SOURCE = { sessionId: SESSION_ID } as const;
-
-/** The store keys a session's three core documents by this suffix; the fixture is written in the shape it reads. */
-const DOCUMENT_KEYS = ["state", "operations", "meta"] as const;
-
-const DATA_ROOT = fileURLToPath(new URL("../../../../.data/", import.meta.url));
 
 /** The seeded initiative whose Request carries the earlier terms version. */
 const SEEDED_INITIATIVE = "initiative-autumn-appeal";
@@ -48,9 +42,6 @@ const PAUSED_SERIES = "series-fortnightly-newsletter";
 /** The membership a `subscribed` column could be mistaken for: recorded, and off rather than consented. */
 const SUBSCRIBED_COLUMN_MEMBERSHIP = "membership-subscribed-column";
 
-function storePath(key: (typeof DOCUMENT_KEYS)[number]): string {
-  return join(DATA_ROOT, `${SESSION_ID}.${key}.json`);
-}
 function required<T>(value: T | undefined, what: string): T {
   if (value === undefined) {
     throw new Error(`The seeded world carries no ${what}, so this case cannot start from it.`);
@@ -59,6 +50,9 @@ function required<T>(value: T | undefined, what: string): T {
 }
 // The world: the deterministic seed, laid down under this file's private session id
 let seededScope: Scope | undefined;
+
+/** The seeded document set every case is laid down from, captured once so each case starts from the seed. */
+let seededDocuments: SeededSessionDocuments | undefined;
 
 /** The authority the seeded context gives this session: every change below is made under it. */
 function scope(): Scope {
@@ -79,23 +73,30 @@ function scopeOf(state: SessionStateDocument): Scope {
     principalId: stored.principalId,
   };
 }
+/**
+ * Lays this file's session down from the seeded documents. The seeded initiative, its presented
+ * Request and its unanswered answer are facts these cases assert as readily as the state they record
+ * themselves, so the session is restored to the seed before every case: no case may inherit a close, a
+ * reopen or a recorded answer from a sibling case, whatever order the cases run in.
+ */
+async function layDownSeededSession(): Promise<void> {
+  const documents = required(seededDocuments, "the seeded session's documents");
+  await resetSession(SESSION_ID, documents);
+  seededScope = scopeOf(documents.state);
+}
 beforeAll(async () => {
   const sessions = await seed();
   const seededSession = required(
     sessions.find((row) => row.sessionId === DEFAULT_SESSION_ID),
     `session "${DEFAULT_SESSION_ID}"`,
   );
-  await mkdir(DATA_ROOT, { recursive: true });
-  for (const key of DOCUMENT_KEYS) {
-    await writeFile(storePath(key), `${JSON.stringify(seededSession.documents[key], null, 2)}\n`, "utf8");
-  }
-  seededScope = scopeOf(seededSession.documents.state);
+  seededDocuments = seededSession.documents;
+  await layDownSeededSession();
 });
+beforeEach(layDownSeededSession);
 afterAll(async () => {
   // Only this session's own documents are removed: the directory holds other suites' worlds.
-  for (const key of DOCUMENT_KEYS) {
-    await rm(storePath(key), { force: true });
-  }
+  await resetSession(SESSION_ID);
 });
 // Reading the outcome set without guessing at it
 function outcomeIs(outcome: MutationOutcome, expected: MutationOutcome["outcome"]): MutationOutcome {
@@ -175,7 +176,11 @@ function identifierAndStateOf(value: unknown): readonly [string, string] {
   return [membershipId, state];
 }
 async function recordCounts(): Promise<RecordCounts> {
-  const document: unknown = JSON.parse(await readFile(storePath("state"), "utf8"));
+  const stored = await readSession(SESSION_ID);
+  if (stored === undefined) {
+    throw new Error("This session is absent from the store, so its records cannot be counted.");
+  }
+  const document: unknown = stored.state;
   const memberships = readArrayMember(document, "memberships");
   const membershipStates: Record<string, string> = {};
   for (const membership of memberships) {
@@ -532,6 +537,10 @@ describe("a Request answers the terms version it was presented", () => {
     expect(new Set(kinds).size).toBe(7);
     expect([...kinds]).toEqual(["agreed", "conditional", "partial", "deferred", "declined", "unanswered", "needs-clarification"]);
 
+    // The answer the refused eighth kind must leave alone is one this case records itself, so the case
+    // holds whatever order the cases run in.
+    acceptedOutcome(await answerAsk(SEEDED_INITIATIVE, "request-autumn-grace", { kind: "agreed", respondentId: "partner-grace-adeyemi", termsVersionRef: "terms-v1" }));
+
     const before = await recordCounts();
     const eighth = invalidOutcome(await answerAsk(SEEDED_INITIATIVE, "request-autumn-grace", { kind: "accepted", respondentId: "partner-grace-adeyemi", termsVersionRef: "terms-v1" }));
     expect(fieldPathsOf(eighth)).toEqual(["response.kind"]);
@@ -767,6 +776,15 @@ describe("closing fences new solicitation and resolves nothing", () => {
     expect(requestRowFor(stillClosed.data.requests.items, presentedBeforeClose).response?.kind).toBe("deferred");
   });
   it("reopens with its closure history and its exclusions intact", async () => {
+    // The arrangement this case turns on — a closed initiative — is one it makes for itself, with the
+    // same close the closed-initiative case performs, so the case does not depend on that case running first.
+    const open = await initiativeDetail(SEEDED_INITIATIVE);
+    acceptedOutcome(
+      await mutations.outreach.closeInitiative(
+        attempt({ initiativeId: SEEDED_INITIATIVE, disposition: "Closed for this year", handoff: { kind: "none", reason: "No further visits planned" } }, open.revision),
+        SOURCE,
+      ),
+    );
     const closed = await initiativeDetail(SEEDED_INITIATIVE);
     expect(closed.data.initiative.lifecycle).toBe("closed");
     const disposition = closed.data.initiative.closureDisposition;

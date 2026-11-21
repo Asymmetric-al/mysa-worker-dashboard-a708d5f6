@@ -76,8 +76,6 @@ const goalSaveInputSchema: z.ZodType<GoalSavePayload> = z
     }
   });
 // The stored projection this mutation reads and writes
-const STORED_GOAL_MEASURE: SupportGoalMeasure = "received-support";
-
 const goalStateDocumentSchema = z.object({
   supportProjection: supportProjectionRecordSchema.nullable(),
 });
@@ -145,7 +143,9 @@ function currentTargetOf(documents: { readonly state: unknown }, scope: Scope): 
 function storedGoalOf(goal: GoalRecord): SupportGoalRecord {
   return {
     amount: { currency: goal.currency, minorUnits: goal.minorUnits },
-    measure: STORED_GOAL_MEASURE,
+    // The token the domain decided, stored as it stands: a second spelling here would be a second
+    // vocabulary for one fact, and the read would publish a value this write refuses.
+    measure: GOAL_MEASURE,
     effectiveFrom: serialiseCivilDate(goal.effectiveFrom),
     revision: String(goal.revision),
   };

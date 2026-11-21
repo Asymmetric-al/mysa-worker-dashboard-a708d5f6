@@ -55,6 +55,8 @@ const FACT_TERM_CLASS = "text-muted-foreground";
 const IDENTIFIER_CLASS = "mono-identifier min-w-0 wrap-anywhere";
 
 const SUCCESSOR_LINK_CLASS = "inline-flex min-h-target max-w-full items-center text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:underline";
+/** The referral detail route a successor link opens, taken from the family's own `/partners/referrals` address so the link stays inside the application's route tree. */
+const REFERRAL_DETAIL_ROUTE = "/partners/referrals";
 // The referral facts this action reads, derived from the read's own signature
 //
 // The service index re-exports `ReferralCycleRecord` but not the detail row the referral read answers
@@ -335,7 +337,7 @@ function ContinuedWindow({
       </p>
       <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
         <span className={FACT_TERM_CLASS}>{EXPIRED_HISTORY_COPY.consumedLabels.continued}</span>
-        <Link href={`/referrals/${encodeURIComponent(successorId)}`} className={SUCCESSOR_LINK_CLASS}>
+        <Link href={`${REFERRAL_DETAIL_ROUTE}/${encodeURIComponent(successorId)}`} className={SUCCESSOR_LINK_CLASS}>
           <bdi className={IDENTIFIER_CLASS}>{successorId}</bdi>
         </Link>
       </p>

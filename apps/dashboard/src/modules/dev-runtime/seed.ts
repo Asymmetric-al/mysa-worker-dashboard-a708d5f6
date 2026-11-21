@@ -58,7 +58,7 @@ import { UNKNOWN_CURRENCY } from "@/modules/money/currency";
 import { seededMediaReference } from "@/modules/store/media";
 import type { SessionDocuments } from "@/modules/store/paths";
 import type { CommitmentKind, RecurringBucket } from "@/modules/support/buckets";
-import { GOAL_CAPABILITY } from "@/modules/support/goal";
+import { GOAL_CAPABILITY, GOAL_MEASURE } from "@/modules/support/goal";
 import { SEED_INSTANT } from "@/modules/time/clock";
 import { startOfCivilDay } from "@/modules/time/civil";
 import { confirmationDeadline, continuedWindowEnd, newWindowEnd } from "@/modules/time/window";
@@ -110,20 +110,26 @@ const HARBOUR_YOUTH: AdmittedMembership = {
   organizationId: ORGANIZATION_HARBOUR,
   ministryId: MINISTRY_YOUTH,
   supportSubjectId: SUPPORT_SUBJECT_YOUTH,
+  organizationLabel: "Harbour Community Church",
+  ministryLabel: "Youth Ministry",
 };
 const HARBOUR_STUDENTS: AdmittedMembership = {
   organizationId: ORGANIZATION_HARBOUR,
   ministryId: MINISTRY_STUDENTS,
   supportSubjectId: SUPPORT_SUBJECT_STUDENTS,
+  organizationLabel: "Harbour Community Church",
+  ministryLabel: "Students Ministry",
 };
 const RIVERBEND_OUTREACH: AdmittedMembership = {
   organizationId: ORGANIZATION_RIVERBEND,
   ministryId: MINISTRY_OUTREACH,
   supportSubjectId: SUPPORT_SUBJECT_OUTREACH,
+  organizationLabel: "Riverbend Chapel",
+  ministryLabel: "Outreach",
 };
 // The seeded sessions
 /** Which workspace a seeded session starts with. */
-export type SeededWorkspace = "new-worker" | "established-worker" | "established-worker-partial-release" | "students-ministry" | "second-worker" | "coach" | "empty";
+export type SeededWorkspace = "new-worker" | "established-worker" | "established-worker-partial-release" | "students-ministry" | "second-worker" | "coach" | "subscriber" | "empty";
 /** The context a seeded session has already selected: three separate references, never one id. */
 export interface SeededContext {
   readonly organizationId: OrganizationId;
@@ -320,13 +326,13 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = deepFreeze([
     sessionId: "subscriber",
     persona: "subscriber",
     label: "Subscriber",
-    description: "A reader with a purpose-specific membership, choosing Off or Immediate for it.",
+    description: "A reader whose own membership is waiting for proof: confirmable inside its 168-hour window, with Off or Immediate available for it.",
     principalId: PRINCIPAL_SUBSCRIBER,
     admittedMemberships: [],
     sessionState: "signed-in",
     scenarioId: DEFAULT_SCENARIO_ID,
     selectedContext: null,
-    workspace: "empty",
+    workspace: "subscriber",
   },
   // A session state belongs to a seat rather than being a persona of its own, so these rows are the
   // established worker's seat in each state: the same person, a different admission. The state is
@@ -381,9 +387,9 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = deepFreeze([
     selectedContext: null,
     workspace: "empty",
   },
-  // The remaining scenarios are worlds over the same records, so each is one more row for the same
-  // persona rather than a second copy of the inventory: a criterion that needs a source down, a
-  // contained edition or a sibling release that failed selects the row that puts it in reach.
+  // The remaining scenarios are worlds over the same records, so each is one more row for the persona
+  // that demonstrates it rather than a second copy of the inventory: a criterion that needs a source down,
+  // a contained edition or a sibling release that failed selects the row that puts it in reach.
   {
     sessionId: "established-worker-media-unavailable",
     persona: "established-worker",
@@ -407,6 +413,21 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = deepFreeze([
     scenarioId: "coaching-module-unavailable",
     selectedContext: HARBOUR_YOUTH,
     workspace: "established-worker",
+  },
+  {
+    // The same scenario on the seat that has to show it: a coach reads its subject's modules, so the row
+    // that demonstrates one module's source down belongs to the coach identity rather than to the worker
+    // whose records are shared.
+    sessionId: "coach-coaching-module-unavailable",
+    persona: "coach",
+    label: "Coach — coaching module unavailable",
+    description: "One admitted coaching module's source is down, and the other admitted modules stay usable.",
+    principalId: PRINCIPAL_COACH,
+    admittedMemberships: [],
+    sessionState: "signed-in",
+    scenarioId: "coaching-module-unavailable",
+    selectedContext: null,
+    workspace: "coach",
   },
   {
     sessionId: "established-worker-continuation-on",
@@ -1430,7 +1451,7 @@ function harbourInitiativeMembers(session: SeededSession): readonly InitiativeMe
       state: "removed",
       stage: null,
       addedAt: "2026-09-02T09:10:00Z",
-      returnedAt: "2026-10-01T10:00:00Z",
+      returnedAt: null,
       history: [
         {
           state: "included",
@@ -1603,7 +1624,7 @@ function harbourSupportProjection(): SupportProjectionRecord {
     lastSourceUpdate: "2026-11-18T09:30:00Z",
     goal: {
       amount: money("USD", 2500000),
-      measure: "received-support",
+      measure: GOAL_MEASURE,
       effectiveFrom: "2026-01-01",
       // A goal's revision is the base revision an edit presents, and the report reads it as a whole
       // number: it is the one seeded revision that is not an opaque token, so it is not "rev-1".
@@ -2177,6 +2198,22 @@ function coachingShare(): CoachingShare {
         revision: INITIAL_REVISION,
       },
       {
+        // The one relationship that shares a reviewed financial range. It exists so that the
+        // unavailable-coaching-module scenario has an admitted module whose source it can report down while
+        // the other admitted modules — targets and check-ins — stay usable beside it. The primary seeded
+        // grant keeps both financial modules off, so a source fault has exactly one module to reach here.
+        grantId: "grant-established-coach-support",
+        workerPrincipalId: PRINCIPAL_ESTABLISHED,
+        coachPrincipalId: PRINCIPAL_COACH,
+        ministryIds: [MINISTRY_YOUTH],
+        modules: { ...modules, "support-goal": true },
+        duration,
+        financialRange: { from: "2026-10-01", to: "2026-10-31", currency: "USD" },
+        state: "active",
+        invitation,
+        revision: INITIAL_REVISION,
+      },
+      {
         // The revoked episode keeps its history: re-enabling a module never restores what was shared.
         grantId: "grant-revoked-coach",
         workerPrincipalId: PRINCIPAL_ESTABLISHED,
@@ -2426,7 +2463,33 @@ function studentsMinistryWorkspace(session: SeededSession): SessionStateDocument
   return stateDocument(session, { partners, gifts, supportProjection, tasks });
 }
 function coachWorkspace(session: SeededSession): SessionStateDocument {
-  return stateDocument(session, coachingShare());
+  // The coach reads the same world the worker shares from, so its session carries the support source those
+  // records are drawn from as well as the coaching families: a shared financial module is then read from a
+  // source that is genuinely there, which is what lets an outage be attributed to a scenario rather than to
+  // an empty session.
+  return stateDocument(session, {
+    ...coachingShare(),
+    supportProjection: harbourSupportProjection(),
+    gifts: harbourGifts(),
+    commitments: harbourCommitments(),
+  });
+}
+// The subscriber: a reader's own purpose-specific membership, waiting for proof
+function subscriberWorkspace(session: SeededSession): SessionStateDocument {
+  const memberships: readonly MembershipRecord[] = [
+    // The person's own membership, keyed by the principal who accepted the proof step. That is the
+    // store's ownership convention — a send result addresses the membership id, and a signup mints
+    // `membershipId: identity` — so a reader session is authorised by the record it owns rather than by
+    // a ministry admission it does not hold. The acceptance and the deadline it opens are the seeded
+    // publisher row's own instants, so the 168-hour boundary is exercised at equality and not "about now".
+    buildMembership(session.principalId, "subscriber@example.org", "awaiting-proof", {
+      displayName: "Subscriber",
+      acceptedAt: "2026-11-16T12:00:00Z",
+      confirmationDeadline: membershipConfirmationDeadline(Temporal.Instant.from("2026-11-16T12:00:00Z")),
+      languagePreference: "en",
+    }),
+  ];
+  return stateDocument(session, { memberships });
 }
 /** Builds the state document a seeded session starts with, from the workspace its row names. */
 export function seedWorkspace(session: SeededSession): SessionStateDocument {
@@ -2443,6 +2506,8 @@ export function seedWorkspace(session: SeededSession): SessionStateDocument {
       return secondWorkerWorkspace(session);
     case "coach":
       return coachWorkspace(session);
+    case "subscriber":
+      return subscriberWorkspace(session);
     case "empty":
       return stateDocument(session, {});
   }

@@ -17,7 +17,7 @@ export interface GoalRecord {
   readonly revision: number;
 }
 /** The measure a support goal is a target for in this release: received support on the one named basis. */
-export const GOAL_MEASURE: SupportMeasure = "received-gifts";
+export const GOAL_MEASURE = "received-gifts" as const satisfies SupportMeasure;
 // The permission gate
 /** The capability that, and only that, permits editing the goal. */
 export const GOAL_CAPABILITY = "canEditGoal";

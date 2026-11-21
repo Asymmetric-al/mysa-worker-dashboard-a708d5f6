@@ -222,21 +222,21 @@ describe("the named inventory", () => {
     for (const entry of namedMembersOf(mutations)) {
       expect(typeof entry.member, `${entry.group}.${entry.name} is a named mutation`).toBe("function");
     }
-    // 51 and 94 are the unique names: any missing name fails here, and so does any name added for a
+    // 52 and 94 are the unique names: any missing name fails here, and so does any name added for a
     // job the plan does not hold.
-    expect(new Set(memberNamesOf(reads)).size).toBe(51);
+    expect(new Set(memberNamesOf(reads)).size).toBe(52);
     expect(new Set(memberNamesOf(mutations)).size).toBe(94);
   });
 
-  it("repeats exactly the eight names two jobs share, and no other name", () => {
-    // One preview authorisation serves both content families, and the seven variant, draft, review,
-    // publish and locale writes are the same bindings the Page job adds its own writes to. A ninth
-    // repeated name would be a second meaning for an existing method.
-    expect(duplicateNamesOf(memberNamesOf(reads))).toEqual(["readPreview"]);
+  it("repeats exactly the nine names two jobs share, and no other name", () => {
+    // One preview authorisation and one listing read serve both content families, and the seven
+    // variant, draft, review, publish and locale writes are the same bindings the Page job adds its
+    // own writes to. A tenth repeated name would be a second meaning for an existing method.
+    expect(duplicateNamesOf(memberNamesOf(reads))).toEqual(["findContentDocuments", "readPreview"]);
     expect(duplicateNamesOf(memberNamesOf(mutations))).toEqual(["approveCandidate", "createVariant", "publishVariants", "requestChanges", "saveDraft", "submitForReview", "withdrawLocale"]);
     // The deliberate re-uses are counted here too, so a lost or an extra entry fails even where the
     // unique total happens to survive it.
-    expect(memberNamesOf(reads).length).toBe(52);
+    expect(memberNamesOf(reads).length).toBe(54);
     expect(memberNamesOf(mutations).length).toBe(101);
   });
 
@@ -367,6 +367,45 @@ describe("accepted, then replayed", () => {
     expect(returned.outcome).toBe("accepted");
   });
 
+  it("answers a voluntary stay as unchanged, keeping the revision and the selection in force", async () => {
+    const session = await sessionOf(HERO);
+    const current = session.selected;
+    if (current === null) {
+      throw new Error("The seeded worker has selected no context, so there is nothing to stay in.");
+    }
+    const target = session.admittedMemberships.find((membership) => membership.ministryId !== current.ministryId);
+    if (target === undefined) {
+      throw new Error("The seeded worker is admitted to one ministry, so this case cannot ask to switch away.");
+    }
+    const heldPayload = {
+      organizationId: target.organizationId,
+      ministryId: target.ministryId,
+      supportSubjectId: target.supportSubjectId,
+      resolveUnsavedWork: "stay" as const,
+    };
+    // The context record's own revision, learned the way the shell learns it: an attempt on a revision
+    // the caller never read is answered with the conflict that states the current one.
+    const stale = await mutations.context.selectContext(attempt(current, "rev-unread", heldPayload), HERO);
+    if (stale.outcome !== "conflict") {
+      throw new Error(`A switch built on a revision the caller never read was answered "${stale.outcome}".`);
+    }
+    // Keeping the work is the caller's answer to the guard's question, not a stale revision: the attempt
+    // presents the revision that stands, so no staleness is claimed, no conflict surface is returned and
+    // nothing is applied.
+    const stayed = await mutations.context.selectContext(attempt(current, stale.currentRevision, heldPayload), HERO);
+    expect(stayed.outcome).toBe("unchanged");
+    if (stayed.outcome !== "unchanged") {
+      throw new Error(`A caller that chose to keep its work was answered "${stayed.outcome}" rather than unchanged.`);
+    }
+    expect(stayed.revision).toBe(stale.currentRevision);
+    expect(Object.hasOwn(stayed, "reason")).toBe(false);
+    // The question was answered, not the switch: the context still in force is the one the caller was
+    // acting in, which a read states in its own scope.
+    const after = envelopeOf(await reads.partners.findPartners({}, HERO), "the partner roster");
+    expect(after.scope.ministryId).toBe(current.ministryId);
+    expect(after.scope.supportSubjectId).toBe(current.supportSubjectId);
+  });
+
   it("answers accepted and replays through the partners job, tagging the record once", async () => {
     const scope = await scopeOf(HERO);
     const revision = (await partnerEnvelope(PARTNER)).revision;
@@ -458,10 +497,12 @@ describe("accepted, then replayed", () => {
       throw new Error("The tagging attempt this case records in the ledger was not accepted.");
     }
     // One identity with one intent hashes to one digest, and a changed payload hashes to another. That
-    // is how `changed-intent` is decided from a stored entry rather than guessed from a repeated id.
-    const digest = intentHash(scope, revision, payload);
-    expect(intentHash(input.scope, input.expectedRevision, input.payload)).toBe(digest);
-    expect(intentHash(scope, revision, { ...payload, tag: "another-probe" })).not.toBe(digest);
+    // is how `changed-intent` is decided from a stored entry rather than guessed from a repeated id. The
+    // revision the attempt presented is the concurrency token and not part of the intent, so the digest
+    // is taken from what the attempt asks for in the scope it claims, and from nothing else.
+    const digest = intentHash(scope, payload);
+    expect(intentHash(input.scope, input.payload)).toBe(digest);
+    expect(intentHash(scope, { ...payload, tag: "another-probe" })).not.toBe(digest);
     // A ledger that never saw the attempt holds nothing under its identity, so the identity is fresh
     // rather than a replay of something that was never accepted.
     const ledger: OperationLedger = emptyLedger();
@@ -481,7 +522,7 @@ describe("accepted, then replayed", () => {
     const recorded = record(ledger, entry);
     expect(lookup(recorded, input.operationId)).toEqual(entry);
     expect(begin(recorded, input.operationId, digest).state).toBe("replay");
-    expect(begin(recorded, input.operationId, intentHash(scope, revision, { ...payload, tag: "another-probe" })).state).toBe("changed-intent");
+    expect(begin(recorded, input.operationId, intentHash(scope, { ...payload, tag: "another-probe" })).state).toBe("changed-intent");
   });
 });
 
@@ -558,6 +599,44 @@ describe("conflict, both kinds", () => {
     for (const reason of reasons) {
       expect(["stale-revision", "changed-intent"]).toContain(reason);
     }
+  });
+
+  it("recovers an accepted attempt retried with the newer revision, and still refuses another intent", async () => {
+    const scope = await scopeOf(HERO);
+    const revision = (await partnerEnvelope(PARTNER)).revision;
+    const acceptedInput = attempt(scope, revision, { partnerId: PARTNER, tag: "follow-up", present: true });
+    const first = await mutations.partners.setTag(acceptedInput, HERO);
+    if (first.outcome !== "accepted") {
+      throw new Error("The attempt whose recovery this case proves was not accepted.");
+    }
+    // A caller that lost the acknowledgement reads the record again — a read reports the revision the
+    // acceptance produced — and retries the same work under the same identity. That revision is the
+    // concurrency token rather than the intent, so the retry is the same attempt: the stored result comes
+    // back, and the recovery a lost caller needs stays reachable after the state has moved on.
+    const retried = await mutations.partners.setTag({ ...acceptedInput, expectedRevision: first.revision }, HERO);
+    expect(retried.outcome).toBe("alreadyAccepted");
+    if (retried.outcome !== "alreadyAccepted") {
+      throw new Error(`The retry that re-read the record was answered "${retried.outcome}" rather than alreadyAccepted.`);
+    }
+    expect(retried.operationId).toBe(acceptedInput.operationId);
+    expect(retried.revision).toBe(first.revision);
+    const replayed = await mutations.partners.setTag(acceptedInput, HERO);
+    if (replayed.outcome !== "alreadyAccepted") {
+      throw new Error(`The identical replay was answered "${replayed.outcome}" rather than alreadyAccepted.`);
+    }
+    expect(retried.result).toEqual(replayed.result);
+    // No second effect: the record stands at the revision the acceptance produced, with one tag.
+    const after = await partnerEnvelope(PARTNER);
+    expect(after.revision).toBe(first.revision);
+    expect(after.data.partner.tags.filter((tag) => tag === "follow-up").length).toBe(1);
+    // The same identity carrying another payload is still a changed intent, whatever revision it presents.
+    const changed = await mutations.partners.setTag({ ...acceptedInput, expectedRevision: first.revision, payload: { partnerId: PARTNER, tag: "newsletter", present: true } }, HERO);
+    expect(changed.outcome).toBe("conflict");
+    if (changed.outcome !== "conflict") {
+      throw new Error(`The same identity carrying another payload was answered "${changed.outcome}" rather than conflicted.`);
+    }
+    expect(changed.reason).toBe("changed-intent");
+    expect((await partnerEnvelope(PARTNER)).data.partner.tags).not.toContain("newsletter");
   });
 });
 

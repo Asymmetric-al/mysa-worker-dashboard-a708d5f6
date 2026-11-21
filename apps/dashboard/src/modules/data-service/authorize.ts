@@ -191,8 +191,11 @@ function admitsScope(session: ResolvedSession, scope: Pick<Scope, "organizationI
 function admitsContext(session: ResolvedSession, organizationId: string, ministryId: string): boolean {
   return session.admittedMemberships.some((membership) => membership.organizationId === organizationId && membership.ministryId === ministryId);
 }
-/** What a request's authority to act in a scope is derived from. */
-export type ScopeAuthority = "membership" | "grant";
+/**
+ * What a request's authority to act in a scope is derived from: admission to a ministry, the coaching
+ * grant relationship, or the addressed record's own ownership.
+ */
+export type ScopeAuthority = "membership" | "grant" | "owner";
 /** Asserts that a caller may act in a scope at all, under the authority its relationship states. */
 export function assertScopeUnder(session: ResolvedSession, scope: Scope, authority: ScopeAuthority): ScopeDecision {
   const gate = sessionGate(session);
@@ -202,7 +205,14 @@ export function assertScopeUnder(session: ResolvedSession, scope: Scope, authori
   if (scope.principalId !== session.principalId) {
     return { ok: false, denial: refuse("not-admitted") };
   }
-  if (authority === "grant") {
+  if (authority !== "membership") {
+    // Two relationships are authorised by something other than ministry admission: "grant" names the
+    // coaching grant, and "owner" names the authority an addressed record's own ownership states. For
+    // an owner — a reader acting on its own membership — the session still has to be live and to name
+    // the principal it acts for, but no ministry admission is asked of it, because a reader persona is
+    // admitted by the record it owns. The record-level question is the next one asked, and it is what
+    // decides the change: `canEdit` on a membership answers `isSelf`, and a caller that addresses
+    // anything else is refused there.
     return { ok: true };
   }
   return admitsScope(session, scope) ? { ok: true } : { ok: false, denial: refuse("no-membership") };

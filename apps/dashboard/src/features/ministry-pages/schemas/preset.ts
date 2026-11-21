@@ -6,7 +6,7 @@ import { z } from "zod";
 // Taken from the module that declares the contract rather than from the `@/modules/data-service`
 // barrel, which re-exports the named reads and mutations that reach `node:fs`; a client form imports
 // this schema.
-import { mutationInputSchema, type MutationInput } from "@/modules/data-service/envelope";
+import { mutationInputSchema, PAGE_PRESET_IDS, type MutationInput } from "@/modules/data-service/envelope";
 // The annotation type is imported with `import type`, which the compiler erases: it holds the schema
 // below to the service's own payload type without pulling the mutation bodies, the store or `node:fs`
 // into a client bundle.
@@ -18,16 +18,13 @@ const PRESET_SCHEMA_MESSAGES = {
   variantInvalid: "Open the language edition you want the preset in.",
 } as const;
 const NO_DRAFT_TARGET_MESSAGE = "Open the page's draft first: a section change names the draft revision it edits.";
-// The presets the catalogue proposes
-type PagePresetId = ServiceApplyPresetPayload["presetId"];
-
-const PRESET_IDS = ["preset-opening-and-story", "preset-story-and-prayer"] as const satisfies readonly PagePresetId[];
 // Field primitives
 const draftTargetShape = {
   draftRevisionId: z.string({ error: PRESET_SCHEMA_MESSAGES.draftRevisionInvalid }).trim().min(1, PRESET_SCHEMA_MESSAGES.draftRevisionInvalid).optional(),
   variantId: z.string({ error: PRESET_SCHEMA_MESSAGES.variantInvalid }).trim().min(1, PRESET_SCHEMA_MESSAGES.variantInvalid).optional(),
 } as const;
-const presetIdField = z.enum(PRESET_IDS, { error: PRESET_SCHEMA_MESSAGES.presetRequired });
+// The presets are the page catalogue's own list, so a preset the service composes cannot be missing here.
+const presetIdField = z.enum(PAGE_PRESET_IDS, { error: PRESET_SCHEMA_MESSAGES.presetRequired });
 // applyPreset
 /** Validates the `applyPreset` payload: the draft the preset is composed into, and the preset chosen. */
 export const applyPresetPayloadSchema: z.ZodType<ServiceApplyPresetPayload> = z

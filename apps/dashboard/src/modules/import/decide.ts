@@ -82,6 +82,42 @@ export interface ImportUnresolvedDecisionInput {
 }
 /** Everything a client may ask for, in one closed union. */
 export type ImportDecisionInput = ImportCreateDecisionInput | ImportReuseDecisionInput | ImportSkipDecisionInput | ImportUnresolvedDecisionInput;
+/** The members one decision carries whatever its kind, so a decision already held can be echoed back as the input a client posts. */
+export interface ImportDecisionEcho {
+  readonly kind: ImportDecisionKind;
+  readonly rowNumber: number;
+  readonly corrections: readonly ImportCellCorrectionInput[];
+  readonly candidate: ImportMatchReference | null;
+  readonly reason: string;
+}
+/** The one input shape a client posts for a decision of this kind, carrying only the members that kind takes. */
+export function decisionInputOf(echo: ImportDecisionEcho): ImportDecisionInput {
+  switch (echo.kind) {
+    case "create":
+      return { kind: "create", rowNumber: echo.rowNumber, corrections: echo.corrections };
+    case "reuse":
+      // A reuse is a decision about one named identity: with no reference to reuse there is nothing this
+      // decision can ask for, so the row is echoed as undecided rather than as a decision that is refused.
+      return echo.candidate === null
+        ? { kind: "unresolved", rowNumber: echo.rowNumber }
+        : { kind: "reuse", rowNumber: echo.rowNumber, candidate: { ...echo.candidate }, corrections: echo.corrections };
+    case "skip":
+      return { kind: "skip", rowNumber: echo.rowNumber, reason: echo.reason };
+    case "unresolved":
+      return { kind: "unresolved", rowNumber: echo.rowNumber };
+  }
+}
+/** The input that records a decision this import already holds, so a read publishes exactly what acceptance takes. */
+export function recordedDecisionInputOf(decision: ImportRowDecision): ImportDecisionInput {
+  const corrections = decision.kind === "create" || decision.kind === "reuse" ? decision.corrections.map((correction) => ({ columnNumber: correction.columnNumber, value: correction.value })) : [];
+  return decisionInputOf({
+    kind: decision.kind,
+    rowNumber: decision.rowNumber,
+    corrections,
+    candidate: decision.kind === "reuse" ? decision.candidate : null,
+    reason: decision.kind === "skip" ? decision.workerReason : "",
+  });
+}
 /** What a decision set was taken against. */
 export interface ImportFileFingerprint {
   readonly checksum: string;

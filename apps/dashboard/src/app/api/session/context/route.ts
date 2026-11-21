@@ -27,7 +27,8 @@
  * names — organisation, ministry and the finance subject the chooser itself reported — plus, when the
  * person has answered the guard's question about work they are holding, their own decision about it:
  * `resolveUnsavedWork` reaches the mutation, which records it in the result's `unsavedWork` and answers
- * `conflict` for `stay`. The principal is not in the payload at all; it is the session's, so no request
+ * `unchanged` for `stay`, because a caller that keeps its work has answered the guard's question and no
+ * switch is attempted. The principal is not in the payload at all; it is the session's, so no request
  * can nominate another person as the one acting.
  *
  * **One response ladder.** Every branch answers through `toResponse`, and a throw is mapped by

@@ -21,7 +21,7 @@ import {
   type SessionContextRecord,
   type SupportSubjectId,
 } from "@/modules/data-service/envelope";
-import { LOCAL_STORE_SYSTEM, ROOT_FIELD_KEY, conflict, denied, invalid, unchanged, unavailable, type MutationOutcome, type MutationResult } from "@/modules/data-service/outcome";
+import { LOCAL_STORE_SYSTEM, ROOT_FIELD_KEY, denied, invalid, unchanged, unavailable, type MutationOutcome, type MutationResult } from "@/modules/data-service/outcome";
 import { runMutation } from "@/modules/data-service/operations";
 import {
   DEMONSTRABLE_TARGETS,
@@ -47,6 +47,7 @@ import {
   type SessionControlRefusal,
   type SessionMetaDocument,
 } from "@/modules/dev-runtime/scenario";
+import { readSession } from "@/modules/store/repository";
 import { SEED_INSTANT, instantAt } from "@/modules/time/clock";
 // The session a request acts for
 const NO_SESSION_ID = "";
@@ -107,6 +108,9 @@ function developmentDocumentUnavailable(operationId: string): MutationOutcome {
 function sessionStateUnavailable(operationId: string): MutationOutcome {
   return sourceUnavailable(operationId, { system: DEV_SOURCE.system, reference: SESSION_STATE_SOURCE_REFERENCE }, SESSION_STATE_GUIDANCE);
 }
+function resetStoreUnavailable(operationId: string): MutationOutcome {
+  return sourceUnavailable(operationId, { system: LOCAL_STORE_SYSTEM, reference: RESET_SOURCE_REFERENCE }, RESET_GUIDANCE);
+}
 // The revision tokens this file advances
 function nextRevision(previous: string): string {
   const trailing = /^(.*?)(\d+)$/.exec(previous);
@@ -143,6 +147,12 @@ async function probeDevelopmentDocument<P extends MutationResult>(request: Probe
     name: request.name,
     diagnosticPass: "probe",
     authorize: developmentAuthority,
+    // The development control is authorised by the build and acts on the caller's own session document,
+    // so ministry admission is not asked of a persona that holds none: `authorize.ts` answers the
+    // `dev-runtime` question ahead of its admission gate, while the runner's default "membership"
+    // authority would refuse the call with `no-membership` before that question was ever put. The
+    // session must still be live and must name the principal it acts for.
+    scopeAuthority: "owner",
     readCurrent: (documents) => {
       const parsed = parseSessionMeta(documents.meta);
       return parsed.ok
@@ -192,7 +202,10 @@ async function recordDevelopmentChange<P extends MutationResult, R extends Mutat
     input: request.input,
     schema: request.schema,
     name: request.name,
+    // As in `probeDevelopmentDocument`: the document changed is the caller's own session document, so no
+    // ministry admission is asked of the persona.
     authorize: developmentAuthority,
+    scopeAuthority: "owner",
     apply: () => ({
       changed: true,
       revision: change.revision,
@@ -325,17 +338,11 @@ export async function selectContext(input: MutationInput<SelectContextPayload>, 
   }
   const resolution = input.payload.resolveUnsavedWork;
   if (resolution === "stay") {
-    // The caller resolved to keep the work it holds. The two-member reason set has no value for a
-    // decision, and this is provably not a reused attempt identity, so the answer states the half that
-    // is stale — the caller's view of the switch it can make — and carries the selection in force
-    // beside the request, which is exactly what the guard puts side by side for the person to compare.
-    return conflict({
-      operationId: input.operationId,
-      currentRevision: observed.revision,
-      current: current ?? null,
-      preservedInput: input.payload,
-      reason: "stale-revision",
-    });
+    // A caller that chose to keep the work it holds has answered the guard's question, so the switch is
+    // not attempted: nothing is applied and no history or activity entry is written. The answer is the
+    // closed set's "no change" with the revision the context still stands at, because no staleness or
+    // reused identity exists to report and a conflict would demand a decision the caller just made.
+    return unchanged({ operationId: input.operationId, revision: observed.revision });
   }
   // The switch: the development document is the authority the session resolver reads, and the state
   // record's context is the selection the shell displays and whose revision the caller presents next.
@@ -670,7 +677,10 @@ export async function setFailurePlan(input: MutationInput<SetFailurePlanPayload>
       input,
       schema: setFailurePlanPayloadSchema,
       name: "setFailurePlan",
+      // As in `probeDevelopmentDocument`: the plan is cleared on the caller's own session document, so no
+      // ministry admission is asked of the persona.
       authorize: developmentAuthority,
+      scopeAuthority: "owner",
       apply: (context) => {
         const meta = context.docs.meta;
         if (!isRecord(meta)) {
@@ -704,7 +714,10 @@ export async function setFailurePlan(input: MutationInput<SetFailurePlanPayload>
     input,
     schema: setFailurePlanPayloadSchema,
     name: "setFailurePlan",
+    // As in `probeDevelopmentDocument`: the plan is armed on the caller's own session document, so no
+    // ministry admission is asked of the persona.
     authorize: developmentAuthority,
+    scopeAuthority: "owner",
     apply: (context) => {
       const meta = context.docs.meta;
       if (!isRecord(meta)) {
@@ -740,6 +753,20 @@ const resetSeedPayloadSchema: z.ZodType<ResetSeedPayload> = z.custom<ResetSeedPa
   (value) => isRecord(value) && Object.keys(value).length === 0,
   "A seed reset states no fields: it discards every stored session and lays every seeded session down again, so there is nothing to choose.",
 );
+/**
+ * The revision token the re-seeded documents publish for one session, or `undefined` when the document
+ * the reset laid down cannot be read; a store fault throws here, so the mutation answers it as the
+ * outage it is rather than as an unreadable document.
+ */
+async function seededDevStateRevision(sessionId: string, principalId: string): Promise<string | undefined> {
+  const documents = await readSession(sessionId);
+  if (documents === undefined) {
+    return undefined;
+  }
+  const parsed = parseSessionMeta(documents.meta);
+  return parsed.ok ? devStateRevision(parsed.value, principalId) : undefined;
+}
+
 /** Discards every stored session, lays every seeded session down again deterministically, returns the scenario clock to the seed instant, and answers one of the eight outcomes. */
 export async function resetSeed(input: MutationInput<ResetSeedPayload>, source?: SessionSource): Promise<MutationOutcome> {
   const acting = await actingSessionContext(source);
@@ -762,7 +789,7 @@ export async function resetSeed(input: MutationInput<ResetSeedPayload>, source?:
   try {
     summary = await resetDevelopmentSeed();
   } catch {
-    return sourceUnavailable(input.operationId, { system: LOCAL_STORE_SYSTEM, reference: RESET_SOURCE_REFERENCE }, RESET_GUIDANCE);
+    return resetStoreUnavailable(input.operationId);
   }
   const result: ResetSeedResult = {
     seededSessions: summary.seededSessions,
@@ -771,10 +798,22 @@ export async function resetSeed(input: MutationInput<ResetSeedPayload>, source?:
     partners: summary.partners,
     seedInstant: summary.seedInstant,
   };
+  let revision: string | undefined;
+  try {
+    revision = await seededDevStateRevision(acting.sessionId, acting.principalId);
+  } catch {
+    revision = undefined;
+  }
+  if (revision === undefined) {
+    // The reset replaced the state the caller presented a revision for, so the only token this answer
+    // can carry is the one the seeded document now produces; the caller's own pre-reset token names a
+    // state the store no longer holds and would answer its next mutation as a stale revision. A document
+    // this boundary has not read yields no token at all: the reset did happen, so the answer is the
+    // store's outage — never a fabricated revision, and never a denial of the effect.
+    return resetStoreUnavailable(input.operationId);
+  }
   return recordDevelopmentChange(request, {
-    // A reset lays down the seed's own documents, so the token this boundary can state honestly is the
-    // one the caller presented; the next `readDevState` reports the seeded document's own token.
-    revision: input.expectedRevision,
+    revision,
     result,
     created: summary.seededSessions,
   });

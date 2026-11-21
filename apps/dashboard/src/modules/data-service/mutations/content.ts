@@ -12,6 +12,8 @@ import { directionOfTag } from "@/modules/content/locale";
 import { buildNotice, resolveRendition, type NoticeRecipient, type RenditionCandidate as NoticeRenditionCandidate } from "@/modules/content/notice";
 import { containEditions, decideReach, withdrawEdition } from "@/modules/content/reach";
 import {
+  VARIANT_AUDIENCES,
+  VARIANT_FAMILIES,
   admittedAudiences,
   applyDraftRevision,
   applyReleaseOutcome,
@@ -34,6 +36,7 @@ import {
 } from "@/modules/content/variant";
 import { uploadedMediaReference, writeMediaBytes } from "@/modules/store/media";
 import {
+  RENDITION_PURPOSES,
   acceptImage,
   acceptVideo,
   mediaStateReason,
@@ -49,8 +52,8 @@ import { instantAt } from "@/modules/time/clock";
 import { notificationDeadline } from "@/modules/time/window";
 import { canEdit, type ResolvedSession, type ScopeDecision } from "../authorize";
 import {
-  CONTENT_AUDIENCES,
-  CONTENT_FAMILIES,
+  PAGE_PRESET_IDS,
+  PAGE_SECTION_TYPES,
   contentCaptionTrackRecordSchema,
   contentDocumentRecordSchema,
   contentVariantRecordSchema,
@@ -74,6 +77,8 @@ import {
   type MediaPlacementRecord,
   type MembershipRecord as StoredMembership,
   type MutationInput,
+  type PagePresetId,
+  type PageSectionType,
   type PrincipalId,
   type NotificationIntentRecord,
   type NotificationRecipientOutcomeRecord,
@@ -99,10 +104,6 @@ export const REVIEW_DECISIONS = ["submitted", "approved", "changes-requested", "
 /** One review decision, derived from {@link REVIEW_DECISIONS}. */
 export type ReviewDecision = (typeof REVIEW_DECISIONS)[number];
 
-const PAGE_SECTION_TYPES = ["introduction", "story", "prayer", "milestone", "image", "video", "giving", "progress"] as const;
-
-type PageSectionType = (typeof PAGE_SECTION_TYPES)[number];
-
 const SECTION_FIELD_KEYS: Readonly<Record<PageSectionType, readonly string[]>> = {
   introduction: ["heading", "body"],
   story: ["heading", "body"],
@@ -121,11 +122,10 @@ const DEFAULT_PRESENTATION: PresentationChoice = {
   alignment: "start",
   imageFit: "cover",
 };
-const PAGE_PRESETS: Readonly<Record<string, readonly PageSectionType[]>> = {
+const PAGE_PRESETS: Readonly<Record<PagePresetId, readonly PageSectionType[]>> = {
   "preset-opening-and-story": ["introduction", "story"],
   "preset-story-and-prayer": ["story", "prayer"],
 };
-const PAGE_PRESET_IDS = ["preset-opening-and-story", "preset-story-and-prayer"] as const;
 
 const NOTICE_SENDER = Object.freeze({
   name: "Update notices",
@@ -488,10 +488,10 @@ const localeTagSchema = z
   .min(2, "Use a content-locale tag such as en, fr or ar-EG.")
   .max(35, "Use a content-locale tag of at most 35 characters, such as ar-EG.")
   .regex(/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/u, "Use a content-locale tag such as en, fr or ar-EG: a language subtag, then any hyphen-separated subtags.");
-const familySchema = z.enum(CONTENT_FAMILIES, {
+const familySchema = z.enum(VARIANT_FAMILIES, {
   error: "A content document is an update, a worker page or a project page.",
 });
-const audienceSchema = z.enum(CONTENT_AUDIENCES, {
+const audienceSchema = z.enum(VARIANT_AUDIENCES, {
   error: "Choose the audience this edition serves: public or approved supporters.",
 });
 const publishModeSchema = z.enum(PUBLISH_MODES, {
@@ -515,7 +515,7 @@ const placementTextSchema = z.strictObject({
 const placementRefSchema = z.strictObject({
   placementId: recordIdSchema.optional(),
   assetId: recordIdSchema,
-  purpose: z.enum(["display", "playback", "poster", "captions", "transcript"]).optional(),
+  purpose: z.enum(RENDITION_PURPOSES).optional(),
   altText: z.string().trim().min(1).max(PLACEMENT_TEXT_MAX_CHARS).optional(),
   caption: optionalPlacementTextSchema,
   credit: optionalPlacementTextSchema,

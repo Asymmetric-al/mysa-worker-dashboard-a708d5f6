@@ -6,7 +6,12 @@ function findRepositoryRoot(startDirectory: string): string {
   let currentDirectory = path.resolve(startDirectory);
   for (;;) {
     for (const marker of REPOSITORY_ROOT_MARKERS) {
-      if (existsSync(path.join(currentDirectory, marker))) {
+      // What this search looks for is the workspace root that the store's runtime directory sits beside, and
+      // neither the directory nor its contents belong in a server bundle. Turbopack cannot bound a path built
+      // from the process directory, so it would otherwise trace the whole project into the server output and
+      // report both call sites as dynamic filesystem access; the directive keeps that inference off a path
+      // that has nothing to contribute to it.
+      if (existsSync(/*turbopackIgnore: true*/ path.join(/*turbopackIgnore: true*/ currentDirectory, marker))) {
         return currentDirectory;
       }
     }

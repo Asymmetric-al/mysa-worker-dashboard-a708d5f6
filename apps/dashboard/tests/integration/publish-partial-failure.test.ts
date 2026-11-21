@@ -568,8 +568,8 @@ describe("publishing one submission whose editions do not share a fate", () => {
       expectedRevision: await storedRevisionToken(approved.candidateId),
       payload: { candidateId: approved.candidateId },
     });
-    expect(secondAnswer.outcome).not.toBe("accepted");
-    expect(["unchanged", "conflict"]).toContain(secondAnswer.outcome);
+    // The revision presented is the candidate record's own immutable token, which a review never advances, so this answer is the no-op the contract names `unchanged` and never a conflict.
+    expect(secondAnswer.outcome).toBe("unchanged");
     // A second submission of the same revision is refused: a new round needs a new revision.
     const resubmission = await mutations.updates.submitForReview(SESSION_ID, {
       operationId: newOperationId(),

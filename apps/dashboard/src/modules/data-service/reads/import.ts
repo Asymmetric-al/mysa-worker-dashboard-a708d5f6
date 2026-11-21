@@ -8,10 +8,11 @@ import { isRecord } from "@/lib/guards";
 import { logger } from "@/lib/logger";
 import { compareCodeUnits } from "@/lib/ordering";
 import { assertNever } from "@/lib/result";
-import type { ImportDecisionKind, ImportDecisionSummary } from "@/modules/import/decide";
+import { decisionInputOf, recordedDecisionInputOf, type ImportDecisionInput, type ImportDecisionKind, type ImportDecisionSummary } from "@/modules/import/decide";
 import { IMPORT_FIELD_VOCABULARY, type ImportFieldId } from "@/modules/import/map";
 import { IMPORT_LIMIT_DESCRIPTORS, type ImportLimitId, type ImportLimitUnit } from "@/modules/import/parse";
 import { IMPORT_RECEIPT_FORMAT, readStoredReceipt, type ImportReceipt, type ImportReceiptRead, type ImportResultRoute } from "@/modules/import/receipt";
+import type { ImportMatchReference } from "@/modules/import/validate";
 import { readSession } from "@/modules/store/repository";
 import { clampPageSize } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
@@ -188,11 +189,15 @@ export interface ImportProposalView {
     readonly rowCount: number;
     readonly columnCount: number;
   };
+  /** The fingerprint of the reviewed file's content, which an acceptance carries back as `fileFingerprint`. */
+  readonly fileFingerprint: string;
   readonly limits: readonly ImportLimitView[];
   readonly columns: readonly ImportProposalColumnView[];
   readonly ignoredColumnIndexes: readonly number[];
   readonly repeatedHeaders: readonly ImportRepeatedHeaderView[];
   readonly decisions: readonly ImportDecisionOption[];
+  /** The decisions this import already holds, in the input shape an acceptance posts back. */
+  readonly recordedDecisions: readonly ImportDecisionInput[];
   readonly summary: ImportProposalSummaryView;
   readonly rows: readonly ImportProposalRowView[];
   readonly rowWindow: ImportRowWindow;
@@ -277,7 +282,11 @@ export interface ImportReceiptView {
     readonly rowCount: number;
     readonly columnCount: number;
   };
+  /** The fingerprint of the file this acceptance read, which an acceptance of it carries back. */
+  readonly fileFingerprint: string;
   readonly mapping: ImportReceiptMappingView;
+  /** The decisions acceptance was reviewed with, in the input shape a further acceptance posts back. */
+  readonly recordedDecisions: readonly ImportDecisionInput[];
   readonly counts: {
     readonly accepted: number;
     readonly alreadyAccepted: number;
@@ -551,6 +560,46 @@ function proposalRouteOf(rowNumber: number, state: ImportRowState | null, partne
       return assertNever(state, "import row state");
   }
 }
+function decisionKindOf(decision: ImportRowDecision): ImportDecisionKind {
+  switch (decision) {
+    case "new-private-entry":
+      return "create";
+    case "reuse-authorized-identity":
+      return "reuse";
+    case "skip":
+      return "skip";
+    case "unresolved":
+      return "unresolved";
+    default:
+      return assertNever(decision, "import row decision");
+  }
+}
+/** The existing identity a stored reuse decision points at, and `null` for a decision that reuses nothing. */
+function storedCandidateOf(decision: ImportRowDecisionRecord): ImportMatchReference | null {
+  if (decision.candidate !== null) {
+    return { ...decision.candidate };
+  }
+  if (decision.decision !== "reuse-authorized-identity" || decision.targetPartnerId === null) {
+    return null;
+  }
+  // A decision recorded before the reference was kept beside the row: this build records every reusable
+  // candidate against the local store, so the identifier it stored there is the reference to echo back.
+  return { system: LOCAL_STORE_SYSTEM, reference: decision.targetPartnerId };
+}
+/** The decisions a stored proposal holds, in row order and in the input shape acceptance posts back. */
+function recordedDecisionInputsOf(decisions: ReadonlyMap<number, ImportRowDecisionRecord>): readonly ImportDecisionInput[] {
+  return [...decisions.values()]
+    .sort((left, right) => left.rowNumber - right.rowNumber)
+    .map((decision) =>
+      decisionInputOf({
+        kind: decisionKindOf(decision.decision),
+        rowNumber: decision.rowNumber,
+        corrections: decision.corrections.map((correction) => ({ columnNumber: correction.columnNumber, value: correction.value })),
+        candidate: storedCandidateOf(decision),
+        reason: decision.reason ?? "",
+      }),
+    );
+}
 function proposalValueStates(
   record: ImportProposalRecord,
   summary: ImportProposalSummaryView,
@@ -679,6 +728,19 @@ function rowDecisionOf(kind: ImportDecisionKind): ImportRowDecision {
       return assertNever(kind, "contact import decision kind");
   }
 }
+/** The decisions a receipt recorded, in row order, once per row, in the input shape acceptance posts back. */
+function receiptDecisionInputsOf(receipt: ImportReceipt): readonly ImportDecisionInput[] {
+  const seen = new Set<number>();
+  const inputs: ImportDecisionInput[] = [];
+  for (const decision of receipt.rowDecisions.decisions) {
+    if (seen.has(decision.rowNumber)) {
+      continue;
+    }
+    seen.add(decision.rowNumber);
+    inputs.push(recordedDecisionInputOf(decision));
+  }
+  return inputs;
+}
 function receiptRevisionOf(receipt: ImportReceipt): string {
   const state = receipt.cancellation === null ? "accepted" : `cancelled:${receipt.cancellation.cancelledAt}`;
   return `${receipt.receiptFormat}:${receipt.fingerprint.checksum}:${state}`;
@@ -802,11 +864,15 @@ export async function readImportProposal(input: ReadImportProposalInput = {}): P
       rowCount: record.fileMeta.rowCount,
       columnCount: record.fileMeta.columnCount,
     },
+    // The content fingerprint the record was written with: this is the value an acceptance presents, so
+    // the file a worker reviewed can be the file an acceptance names without guessing at an identity.
+    fileFingerprint: record.fingerprint.checksum,
     limits,
     columns: columns.columns,
     ignoredColumnIndexes: columns.ignoredColumnIndexes,
     repeatedHeaders: columns.repeatedHeaders,
     decisions: DECISION_OPTIONS,
+    recordedDecisions: recordedDecisionInputsOf(index.decisions),
     summary,
     rows: paged.rows,
     rowWindow: paged.window,
@@ -892,7 +958,9 @@ export async function readImportReceipt(importOperationId: string, input: ReadIm
       rowCount: receipt.fileMeta.rowCount,
       columnCount: receipt.fileMeta.columnCount,
     },
+    fileFingerprint: receipt.fingerprint.checksum,
     mapping: receiptMappingOf(receipt),
+    recordedDecisions: receiptDecisionInputsOf(receipt),
     counts: {
       accepted: receipt.counts.accepted,
       alreadyAccepted: receipt.counts.alreadyAccepted,

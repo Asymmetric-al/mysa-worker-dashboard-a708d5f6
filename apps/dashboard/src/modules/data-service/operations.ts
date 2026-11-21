@@ -174,9 +174,14 @@ function canonicalJson(value: unknown): string {
       return `<unsupported:${typeof value}>`;
   }
 }
-/** The intent of one attempt, as a SHA-256 hex digest. */
-export function intentHash(scope: Scope, expectedRevision: string, payload: unknown): string {
-  const intent = canonicalJson({ scope, expectedRevision, payload });
+/**
+ * The intent of one attempt, as a SHA-256 hex digest: what the attempt asks for, in the context it
+ * claims. The expected revision is deliberately not part of it — that is the concurrency token, which
+ * step four compares against the record with its own `stale-revision` conflict — so a retry of one
+ * attempt that re-read the state first is still the same attempt rather than a changed intent.
+ */
+export function intentHash(scope: Scope, payload: unknown): string {
+  const intent = canonicalJson({ scope, payload });
   return createHash("sha256").update(intent, "utf8").digest("hex");
 }
 // The runner's contract
@@ -363,7 +368,7 @@ export async function runMutation<P, R extends MutationResult>(plan: MutationPla
   }
   // 3 to 7 happen inside one transaction, so the check, the effect and the ledger entry are one write
   // under that session's lock.
-  const intent = intentHash(input.scope, input.expectedRevision, input.payload);
+  const intent = intentHash(input.scope, input.payload);
   try {
     const outcome = await transact<MutationOutcome>(plan.sessionId, async (docs) => {
       // The stored plan is read through the development runtime's one reader and consulted by this

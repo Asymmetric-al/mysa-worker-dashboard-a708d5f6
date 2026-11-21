@@ -20,7 +20,8 @@ function paramsOf(queryState: RecordListQueryState): Readonly<Record<string, str
   const [order] = queryState.sort;
   return {
     // The read names one order at a time and owns the direction of each, so only the leading column's id
-    // travels; a column id the read does not admit is dropped by the route rather than refused here.
+    // travels; the route refuses a column id the read does not admit, keyed at this field, so a table
+    // must offer only the orders the read itself names.
     ...(order === undefined ? {} : { sort: order.id }),
     page: queryState.page,
     pageSize: queryState.pageSize,

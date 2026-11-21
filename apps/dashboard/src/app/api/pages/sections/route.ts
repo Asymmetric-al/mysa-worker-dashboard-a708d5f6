@@ -9,18 +9,21 @@
  * against the mutation it names, forwards the four-field envelope untouched — the service re-derives the
  * session's scope and re-checks that the changed record is still inside it — and maps the outcome once.
  *
- * The vocabularies below are mirrors, and their sources are named rather than imported: the four bounded
- * presentation choices are declared in `modules/content/document.ts`, and the eight admitted section
- * types together with the preset ids are declared by the page catalogue the service serves. A route
- * handler stays on the transport side of that boundary — importing the content module would pull the
- * editor engine into a request path that never renders prose — so the literals are repeated beside the
- * source they mirror. The service re-checks each one before it writes, so a drift between a mirror and its
- * source surfaces as a refusal rather than as a stored value the catalogue does not admit.
+ * The closed vocabularies below are taken from their single declarations rather than restated: the four
+ * bounded presentation choices come from the content profile in `modules/content/document.ts`, and the
+ * eight admitted section types together with the two preset ids come from the stored record contract in
+ * `modules/data-service/envelope.ts`. A section type, a preset or a presentation value the catalogue and
+ * the profile admit is therefore admitted by this grammar in the same change, so nothing the builder
+ * offers can be refused here while the service would store it. The service still re-checks each value
+ * before it writes, and a request naming a value outside a set is refused as `invalid` before any change
+ * reaches the store.
  */
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { isNonEmptyString, isRecord } from "@/lib/guards";
+import { PRESENTATION_CHOICES } from "@/modules/content/document";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse, type MutationInput, type MutationOutcome } from "@/modules/data-service";
+import { PAGE_PRESET_IDS, PAGE_SECTION_TYPES } from "@/modules/data-service/envelope";
 import { sessionIdOf } from "../../session-cookie";
 // The store writes through node:fs and media preparation uses the native image pipeline, so this handler never runs on the edge runtime.
 export const runtime = "nodejs";
@@ -45,21 +48,6 @@ const MESSAGES = {
   preset: "Choose one of the presets this page's catalogue proposes.",
   nothingToSave: "Change a field or an option, or there is nothing to save.",
 } as const;
-
-// The catalogue vocabulary, mirrored from the page catalogue the data service serves.
-const SECTION_TYPES = ["introduction", "story", "prayer", "milestone", "image", "video", "giving", "progress"] as const;
-
-// The four bounded presentation choices, mirrored from PRESENTATION_CHOICES in modules/content/document.ts.
-const TREATMENT_VALUES = ["normal", "emphasized"] as const;
-
-const LAYOUT_VALUES = ["single-column", "two-column-image-text"] as const;
-
-const ALIGNMENT_VALUES = ["start", "center"] as const;
-
-const IMAGE_FIT_VALUES = ["cover", "contain"] as const;
-
-// The presets the catalogue proposes, mirrored from the service's own set.
-const PRESET_IDS = ["preset-opening-and-story", "preset-story-and-prayer"] as const;
 
 // The closed set of changes this path makes. The table below is typed by this tuple, so a member added
 // here without its schema and handler, or removed from here while its schema remains, fails to compile.
@@ -113,10 +101,10 @@ function requireDraftTarget(payload: { readonly draftRevisionId?: string; readon
 // set, or a choice left unstated, is invalid rather than defaulted, because the server cannot know which
 // layout a caller meant and must not invent one.
 const presentationSchema: z.ZodType<SaveSectionFieldsPresentation> = z.strictObject({
-  treatment: z.enum(TREATMENT_VALUES, { error: MESSAGES.treatment }),
-  layout: z.enum(LAYOUT_VALUES, { error: MESSAGES.layout }),
-  alignment: z.enum(ALIGNMENT_VALUES, { error: MESSAGES.alignment }),
-  imageFit: z.enum(IMAGE_FIT_VALUES, { error: MESSAGES.imageFit }),
+  treatment: z.enum(PRESENTATION_CHOICES.treatment, { error: MESSAGES.treatment }),
+  layout: z.enum(PRESENTATION_CHOICES.layout, { error: MESSAGES.layout }),
+  alignment: z.enum(PRESENTATION_CHOICES.alignment, { error: MESSAGES.alignment }),
+  imageFit: z.enum(PRESENTATION_CHOICES.imageFit, { error: MESSAGES.imageFit }),
 });
 
 // One payload schema per mutation. Each is strict and each is held to the service's own payload type, so a
@@ -126,7 +114,7 @@ const addSectionPayloadSchema: z.ZodType<AddSectionPayload & { readonly operatio
   .strictObject({
     operation: z.literal("addSection"),
     ...draftTargetShape,
-    sectionType: z.enum(SECTION_TYPES, { error: MESSAGES.sectionType }),
+    sectionType: z.enum(PAGE_SECTION_TYPES, { error: MESSAGES.sectionType }),
     afterSectionId: sectionReference.optional(),
   })
   .superRefine(requireDraftTarget);
@@ -177,7 +165,7 @@ const applyPresetPayloadSchema: z.ZodType<ApplyPresetPayload & { readonly operat
   .strictObject({
     operation: z.literal("applyPreset"),
     ...draftTargetShape,
-    presetId: z.enum(PRESET_IDS, { error: MESSAGES.preset }),
+    presetId: z.enum(PAGE_PRESET_IDS, { error: MESSAGES.preset }),
   })
   .superRefine(requireDraftTarget);
 

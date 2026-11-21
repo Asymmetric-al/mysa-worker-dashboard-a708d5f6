@@ -10,6 +10,7 @@ import { addMinor, minorUnitsOf, negateMinor, type Money } from "@/modules/money
 import { UNKNOWN_CURRENCY, exponentOf } from "@/modules/money/currency";
 import { formatMinor } from "@/modules/money/format";
 import { SUPPORT_BASIS, type GiftRow, type SupportProjection } from "@/modules/support/basis";
+import { GOAL_MEASURE } from "@/modules/support/goal";
 import {
   PAGE_SIZE_CAP,
   PAGE_SIZE_DEFAULT,
@@ -771,7 +772,7 @@ describe("gaps, coverage and percentages", () => {
     const coverage: Coverage = { from: PERIOD_FROM, to: PERIOD_TO, state: "complete" };
     const goalIn = (currency: string, minorUnits: number): SupportGoalRecord => ({
       amount: amount(currency, minorUnits),
-      measure: "received-support",
+      measure: GOAL_MEASURE,
       effectiveFrom: "2026-01-01",
       revision: "1",
     });

@@ -11,7 +11,9 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { isRecord } from "@/lib/guards";
 import { assertNever } from "@/lib/result";
+import { PRESENTATION_CHOICES } from "@/modules/content/document";
 import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse, type MutationInput, type MutationOutcome } from "@/modules/data-service";
+import { RENDITION_PURPOSES } from "@/modules/media/asset";
 /**
  * The transport layer's one declaration of how a request's development session is read. Both mutations
  * take the session id as an argument, so this handler passes the id that helper reads rather than
@@ -56,18 +58,11 @@ const MESSAGES = {
   bodyRequired: "A saved draft carries the document body, so save it from the editor rather than here.",
 } as const;
 /**
- * The four bounded presentation choices a section may state, declared here as literals because this
- * schema refuses an out-of-set value before the service sees the payload; the content module's own
- * sets hold the same values and remain authoritative for the document itself.
+ * The four bounded presentation choices a section may state, taken from the content profile's single
+ * declaration: this schema refuses an out-of-set value before the service sees the payload, and a
+ * choice the profile admits reaches this walk in the same change rather than being refused here.
  */
-const PRESENTATION_LITERALS = {
-  treatment: ["normal", "emphasized"],
-  layout: ["single-column", "two-column-image-text"],
-  alignment: ["start", "center"],
-  imageFit: ["cover", "contain"],
-} as const;
-
-type PresentationField = keyof typeof PRESENTATION_LITERALS;
+type PresentationField = keyof typeof PRESENTATION_CHOICES;
 
 const PRESENTATION_LABELS: Readonly<Record<PresentationField, string>> = {
   treatment: "text treatment",
@@ -80,7 +75,7 @@ function presentationRefusal(field: PresentationField, admitted: readonly string
   return `A ${PRESENTATION_LABELS[field]} is one of the admitted presentations, ${admitted.join(" or ")}. Any other value is refused here rather than accepted and styled, so choose one of them.`;
 }
 function isPresentationField(key: string): key is PresentationField {
-  return Object.hasOwn(PRESENTATION_LITERALS, key);
+  return Object.hasOwn(PRESENTATION_CHOICES, key);
 }
 /** One presentation value the draft body states outside its admitted set, at the path the body holds it. */
 interface PresentationIssue {
@@ -111,7 +106,7 @@ function presentationIssuesIn(body: unknown): readonly PresentationIssue[] {
     }
     for (const [key, child] of Object.entries(node)) {
       if (isPresentationField(key)) {
-        const admitted: readonly string[] = PRESENTATION_LITERALS[key];
+        const admitted: readonly string[] = PRESENTATION_CHOICES[key];
         if (typeof child !== "string" || !admitted.includes(child)) {
           issues.push({ path: [...path, key], message: presentationRefusal(key, admitted) });
         }
@@ -132,12 +127,10 @@ const revisionReferenceSchema = z.string({ error: MESSAGES.revisionIdRequired })
 const assetReferenceSchema = z.string({ error: MESSAGES.assetIdRequired }).trim().min(1, MESSAGES.assetIdRequired).max(REFERENCE_MAX_LENGTH, MESSAGES.referenceTooLong);
 
 const checksumSchema = z.string({ error: MESSAGES.checksumInvalid }).trim().min(1, MESSAGES.checksumInvalid).max(CHECKSUM_MAX_LENGTH, MESSAGES.checksumInvalid);
-// The five renditions a draft placement may name
-const PLACEMENT_PURPOSES = ["display", "playback", "poster", "captions", "transcript"] as const;
-
+// The five renditions a draft placement may name, taken from the media module's one purpose set
 const mediaPlacementRefSchema = z.strictObject({
   assetId: assetReferenceSchema,
-  purpose: z.enum(PLACEMENT_PURPOSES, { error: MESSAGES.placementPurpose }),
+  purpose: z.enum(RENDITION_PURPOSES, { error: MESSAGES.placementPurpose }),
 });
 // The two payloads, each closed and each naming the one effect it asks for
 const saveDraftPayloadSchema = z

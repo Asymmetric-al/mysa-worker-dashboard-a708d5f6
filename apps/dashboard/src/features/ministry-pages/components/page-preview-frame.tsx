@@ -7,23 +7,12 @@ import { SimulationLabel } from "@/components/simulation-label";
 import { StateNotice } from "@/components/state-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { VideoPlayer, type VideoPlayerCaption } from "@/components/video-player";
 import { cn } from "@/lib/cn";
 import type { SourceReference } from "@/lib/ids";
 import { copy } from "../copy";
 import { GivingDesignation, type GivingBindingView } from "./giving-designation";
 // What a preview read hands this surface
-/** The five purposes a rendition can serve, drawing the same closed set the content profile and the media module record. */
-export type PagePreviewRenditionPurpose = "display" | "playback" | "poster" | "captions" | "transcript";
-/** One rendition the read admitted for the pinned revision. */
-export interface PagePreviewRendition {
-  readonly purpose: PagePreviewRenditionPurpose;
-  readonly renditionId: string;
-  readonly src?: string;
-  readonly label?: string;
-  readonly language?: string;
-}
-/** A preview that may be rendered: the exact revision, the language and direction it is read in, the markup the single renderer produced, and the renditions admitted with it. */
+/** A preview that may be rendered: the exact revision, the language and direction it is read in, and the markup the single renderer produced. */
 export interface PagePreviewAuthorisedView {
   readonly status: "authorised";
   readonly variantId: string;
@@ -32,7 +21,6 @@ export interface PagePreviewAuthorisedView {
   readonly requestedLocale?: string;
   readonly direction: "ltr" | "rtl";
   readonly html: string;
-  readonly renditionIds: readonly PagePreviewRendition[];
   readonly inert: true;
   readonly givingAction: "none";
 }
@@ -46,8 +34,18 @@ export interface PagePreviewUnavailableView {
   readonly status: "unavailable";
   readonly source: SourceReference;
 }
+/** A preview whose requested language no edition of this Page holds: the language asked for, and nothing about any other edition. */
+export interface PagePreviewLanguageUnavailableView {
+  readonly status: "language-unavailable";
+  readonly requestedLocale: string;
+}
+/** A preview whose edition has neither a draft nor a released revision, so there is nothing exact to render. */
+export interface PagePreviewUnreleasedView {
+  readonly status: "unreleased";
+  readonly locale: string;
+}
 /** Every answer this surface renders. */
-export type PagePreviewView = PagePreviewAuthorisedView | PagePreviewDeniedView | PagePreviewUnavailableView;
+export type PagePreviewView = PagePreviewAuthorisedView | PagePreviewDeniedView | PagePreviewUnavailableView | PagePreviewLanguageUnavailableView | PagePreviewUnreleasedView;
 /** Props of {@link PagePreviewFrame}. */
 export interface PagePreviewFrameProps {
   readonly layout: "builder" | "route";
@@ -95,53 +93,6 @@ const IDENTITY_PAIR_CLASS = "flex items-baseline gap-1.5";
 
 const NOTE_CLASS = "text-xs text-muted-foreground text-pretty wrap-anywhere";
 
-function addressOf(rendition: PagePreviewRendition): string {
-  return rendition.src?.trim() ?? "";
-}
-function addressOrUndefined(rendition: PagePreviewRendition): string | undefined {
-  const src = addressOf(rendition);
-  return src.length === 0 ? undefined : src;
-}
-function nameOf(rendition: PagePreviewRendition): string {
-  const label = rendition.label?.trim() ?? "";
-  return label.length > 0 ? label : copy.catalogue.sections.video.label;
-}
-function captionOf(rendition: PagePreviewRendition | undefined): readonly VideoPlayerCaption[] {
-  if (rendition === undefined) {
-    return [];
-  }
-  const src = addressOf(rendition);
-  const language = rendition.language?.trim() ?? "";
-  if (src.length === 0 || language.length === 0) {
-    return [];
-  }
-  const label = rendition.label?.trim() ?? "";
-  return [
-    {
-      src,
-      srcLang: language,
-      label: label.length > 0 ? label : language,
-      default: true,
-    },
-  ];
-}
-interface PlayableRendition {
-  readonly rendition: PagePreviewRendition;
-  readonly src: string;
-}
-function playableRenditions(preview: PagePreviewAuthorisedView): readonly PlayableRendition[] {
-  const playable: PlayableRendition[] = [];
-  for (const rendition of preview.renditionIds) {
-    const src = addressOf(rendition);
-    if (rendition.purpose === "playback" && src.length > 0) {
-      playable.push({ rendition, src });
-    }
-  }
-  return playable;
-}
-function renditionsOf(preview: PagePreviewAuthorisedView, purpose: PagePreviewRenditionPurpose): readonly PagePreviewRendition[] {
-  return preview.renditionIds.filter((rendition) => rendition.purpose === purpose);
-}
 function PreviewHeading({ layout }: { readonly layout: PagePreviewFrameProps["layout"] }): ReactElement {
   return <h2 className={HEADING_CLASS[layout]}>{PREVIEW_HEADING}</h2>;
 }
@@ -180,34 +131,7 @@ function EditionIdentity({ preview, layout }: { readonly preview: PagePreviewAut
     </div>
   );
 }
-// Playback, through the one video surface
-function PreviewMedia({ preview }: { readonly preview: PagePreviewAuthorisedView }): ReactElement | null {
-  const playable = playableRenditions(preview);
-  if (playable.length === 0) {
-    return null;
-  }
-  const posters = renditionsOf(preview, "poster");
-  const captions = renditionsOf(preview, "captions");
-  return (
-    <div data-slot="page-preview-media" className={BODY_CLASS}>
-      {playable.map((entry, index) => {
-        const poster = posters[index];
-        return (
-          <VideoPlayer
-            key={entry.rendition.renditionId}
-            title={nameOf(entry.rendition)}
-            src={entry.src}
-            poster={poster === undefined ? undefined : addressOrUndefined(poster)}
-            captions={captionOf(captions[index])}
-            state="ready"
-            direction={preview.direction}
-          />
-        );
-      })}
-    </div>
-  );
-}
-// The three answers
+// The five answers
 function AuthorisedPreview({
   preview,
   layout,
@@ -223,9 +147,11 @@ function AuthorisedPreview({
       <Alert role={undefined} data-slot="page-preview-inert">
         <AlertDescription>{copy.preview.inertBanner}</AlertDescription>
       </Alert>
-      {/* `preview.html` is the one renderer's output for the pinned revision, placed unchanged. */}
+      {/* `preview.html` is the one renderer's output for the pinned revision, placed unchanged. It already places
+          each image and video once, with the poster, caption track and figcaption the revision carries, so this
+          surface adds no player of its own: a second one would stream the same rendition twice and state the
+          edition's media twice. */}
       <RenderedContent html={preview.html} direction={preview.direction} lang={preview.servedLocale} slot="page-preview-content" className={PREVIEW_CONTENT} />
-      <PreviewMedia preview={preview} />
       {givingBinding === undefined ? null : <GivingDesignation binding={givingBinding} layout="inline" />}
       <p className={NOTE_CLASS}>{copy.preview.recheckedOnOpen}</p>
     </>
@@ -241,6 +167,24 @@ function DeniedPreview({ preview }: { readonly preview: PagePreviewDeniedView })
 function UnavailablePreview({ preview }: { readonly preview: PagePreviewUnavailableView }): ReactElement {
   return <StateNotice kind="unavailable" title={copy.states.unavailableTitle} source={preview.source} headingLevel={3} />;
 }
+// The requested language travels in the marker and in no prose, and no edition that exists is named or
+// counted: which other languages this Page holds is not something this answer discloses.
+function LanguageUnavailablePreview({ preview }: { readonly preview: PagePreviewLanguageUnavailableView }): ReactElement {
+  return (
+    <div data-slot="page-preview-language-unavailable" data-requested-locale={preview.requestedLocale}>
+      <StateNotice kind="language-unavailable" title={copy.editions.languageUnavailable} headingLevel={3} />
+    </div>
+  );
+}
+// An edition with nothing to render is stated as that, never as a refusal and never as an empty page: the
+// words say what is absent so no reader supplies a substitute of their own.
+function UnreleasedPreview({ preview }: { readonly preview: PagePreviewUnreleasedView }): ReactElement {
+  return (
+    <div data-slot="page-preview-unreleased" data-edition-locale={preview.locale}>
+      <StateNotice kind="empty" title={copy.editions.unreleasedTitle} description={copy.editions.unreleasedDescription} headingLevel={3} />
+    </div>
+  );
+}
 function previewBody(preview: PagePreviewView, layout: PagePreviewFrameProps["layout"], givingBinding: GivingBindingView | undefined): ReactElement {
   switch (preview.status) {
     case "authorised":
@@ -249,6 +193,10 @@ function previewBody(preview: PagePreviewView, layout: PagePreviewFrameProps["la
       return <DeniedPreview preview={preview} />;
     case "unavailable":
       return <UnavailablePreview preview={preview} />;
+    case "language-unavailable":
+      return <LanguageUnavailablePreview preview={preview} />;
+    case "unreleased":
+      return <UnreleasedPreview preview={preview} />;
     default: {
       const unhandled: never = preview;
       return unhandled;

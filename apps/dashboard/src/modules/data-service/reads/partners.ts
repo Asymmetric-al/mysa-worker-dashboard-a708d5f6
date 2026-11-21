@@ -398,7 +398,10 @@ function mayReadPartner(context: PartnerReadContext, record: PartnerRecord): boo
     kind: "partner",
     scope: context.scope,
     audience: record.audience,
-    authorPrincipalId: record.audience === "private" ? context.session.principalId : null,
+    // A private record belongs to the principal whose world it was written in, which the document states.
+    // Stating the caller instead would answer the author question with the caller and admit any admitted
+    // colleague to another person's preparation — the leak `canView` refuses an unstated author to prevent.
+    authorPrincipalId: record.audience === "private" ? context.document.context.principalId : null,
   };
   return canView(context.session, target).allowed;
 }

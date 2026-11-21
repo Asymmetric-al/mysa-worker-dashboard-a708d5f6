@@ -1,6 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": ["tsconfig.base.json", ".oxlintrc.json", ".oxfmtrc.json"],
+  "globalDependencies": ["tsconfig.base.json", ".oxlintrc.json", ".oxfmtrc.json", "scripts/check-invariants.ts"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

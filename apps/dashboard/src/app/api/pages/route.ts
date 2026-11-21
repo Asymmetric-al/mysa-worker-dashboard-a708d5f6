@@ -18,7 +18,7 @@ const READ_ATTEMPT_ID = "read";
 const UNIDENTIFIED_ATTEMPT = "unidentified-attempt";
 
 const MESSAGES = {
-  viewRequired: "Say what this request reads as view: catalogues, page, locales or giving-binding.",
+  viewRequired: "Say what this request reads as view: catalogues, documents, page, locales or giving-binding.",
   documentRequired: "Name the Page this request reads as documentId.",
   requestedLocaleInvalid: "A requested language is a language tag such as en or ar; leave it out to read the editions as they stand.",
   releaseInvalid: "A release is named by its opaque identifier; open the edition from its locale list instead of typing one.",
@@ -26,8 +26,12 @@ const MESSAGES = {
   bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.",
 } as const;
 
-// Reads — the four named Page reads, chosen by the one required query parameter
-const READ_VIEWS = ["catalogues", "page", "locales", "giving-binding"] as const;
+// Reads — the five named Page reads, chosen by the one required query parameter
+const READ_VIEWS = ["catalogues", "documents", "page", "locales", "giving-binding"] as const;
+
+// The two Page families this path lists. A Page is one of these two families and never an Update, so
+// the family set is the handler's decision and never a query parameter's.
+const PAGE_FAMILIES = ["worker-page", "project-page"] as const;
 
 const viewTargetSchema = z.object({
   view: z.enum(READ_VIEWS, { error: MESSAGES.viewRequired }),
@@ -69,6 +73,11 @@ async function routeRead(params: URLSearchParams): Promise<Response> {
       // The two guided families and, per family, the admitted section types and their bounded
       // presentation choices: whatever the read answers is the whole admissible set.
       return toResponse(await reads.pages.readPageCatalogues());
+    case "documents":
+      // The admitted Pages themselves, each with its title, every edition's own draft, candidate and
+      // release state and the editions waiting for a release: the list the Pages surface opens on,
+      // and never an Update, whose family this handler does not name.
+      return toResponse(await reads.pages.findContentDocuments({ families: PAGE_FAMILIES }));
     case "page": {
       const target = documentTargetSchema.safeParse({ documentId });
       if (!target.success) {
@@ -105,13 +114,13 @@ async function routeRead(params: URLSearchParams): Promise<Response> {
       );
     }
     default:
-      // Unreachable: the four names above are the closed set the view schema admits, so a fifth read
+      // Unreachable: the five names above are the closed set the view schema admits, so a sixth read
       // fails to compile at this call instead of reaching the runtime.
       return assertNever(view.data.view, "Unhandled Page read");
   }
 }
 
-/** One of the four named Page reads — `catalogues`, `page`, `locales` or `giving-binding` — answered as its own read envelope, or as the denial or outage the read itself reports. */
+/** One of the five named Page reads — `catalogues`, `documents`, `page`, `locales` or `giving-binding` — answered as its own read envelope, or as the denial or outage the read itself reports. */
 export async function GET(request: NextRequest): Promise<Response> {
   try {
     return await routeRead(new URL(request.url).searchParams);

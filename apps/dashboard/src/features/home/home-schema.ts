@@ -35,6 +35,12 @@ export const HOME_REASON_CODES = [
   "import-needs-review",
   "target-needs-attention",
   "source-unavailable",
+  "upcoming",
+  "undated",
+  "commitment-needs-attention",
+  "support-received",
+  "referral-window-active",
+  "referral-window-expired",
 ] as const;
 /** One reason Home labels an item with. */
 export type HomeReasonCode = (typeof HOME_REASON_CODES)[number];

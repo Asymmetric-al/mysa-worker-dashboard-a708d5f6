@@ -10,6 +10,7 @@ import { logger } from "@/lib/logger";
 import { compareCodeUnits } from "@/lib/ordering";
 import { err, ok, type Result } from "@/lib/result";
 import { failureFor, failurePlanOfDocument } from "@/modules/dev-runtime/failures";
+import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
 import {
   CHECKIN_MAX_ANSWER_SCALARS,
   CHECKIN_MAX_QUESTIONS,
@@ -121,6 +122,11 @@ const COACHING_PLANNING_ZONE = "UTC";
 const COACHING_SOURCE_REFERENCE = "coaching";
 
 const SUPPORT_PROJECTION_REFERENCE = "support-projection";
+// The reason a financial module carries when the scenario this session runs in reports the source behind it
+// as down: the module states unavailable and says why, so a surface can never render it as an empty module
+// or as a zero reading for a source nothing could read.
+const COACHING_MODULE_SOURCE_DOWN_REASON =
+  "The source behind this module is reported unavailable in this scenario, so nothing is shown for it rather than a zero or an empty reading.";
 // The stored families these reads parse
 type StoredCoachingTaskShare = CoachingTaskShareRecord;
 
@@ -867,15 +873,16 @@ export async function readCoachingOverview(): Promise<ReadResult<ReadEnvelope<Co
     const expiresAt = instantOf(record.invitation.expiresAt);
     // What a coach can read right now, decided by the coaching module for each selected module and for
     // nothing the grant never switched on. A module that reads the support source is `unavailable` while
-    // that source cannot be read, and the independent modules stay usable, which is what keeps an outage
-    // distinct from an ending.
+    // that source cannot be read — or while the scenario this session runs in reports it down — and the
+    // independent modules stay usable, which is what keeps an outage distinct from an ending.
     const admittedModules: AdmittedModuleView[] = [];
     if (episode !== null && ministryId !== null) {
       for (const key of selectedModules) {
         // The source is assembled at most once, and only for a module that reads it: a session sharing
         // nothing financial must not record its outage as a diagnostic this read never asked for.
         const supportSource: SupportLoad | null = isFinancialModule(key) ? supportLoad() : null;
-        const subjectAvailability: SubjectAvailability = supportSource !== null && !supportSource.ok ? "unavailable" : "available";
+        const subjectAvailability: SubjectAvailability =
+          (supportSource !== null && !supportSource.ok) || moduleSourceReportedDown(session, key) ? "unavailable" : "available";
         const decision = moduleReadState(
           working.value,
           key,
@@ -1712,6 +1719,17 @@ interface CoachSubjectView {
 function isFinancialModule(module: ModuleKey): boolean {
   return module === "support-goal" || module === "support-results";
 }
+// The scenario registry is the single owner of the scenario vocabulary, and the flag its row sets is what
+// this read consults: a session the development panel has switched into the "coaching module unavailable"
+// world reports the source behind a financial module as down, so that module answers as unavailable while
+// the modules that do not read the source stay usable. The fact travels per module rather than per read,
+// which is what keeps one outage from blanking a relationship. A scenario id this build does not define
+// cannot establish that the source is down, so it states nothing rather than inventing an outage — and the
+// registry is never asked about an id it does not define, because it refuses one rather than answering.
+function moduleSourceReportedDown(session: ResolvedSession, module: ModuleKey): boolean {
+  if (!isFinancialModule(module)) return false;
+  return isScenarioId(session.scenarioId) && scenarioFlagsFor(session.scenarioId).coachingModule === "unavailable";
+}
 function receivedFiguresOf(
   projection: SupportProjection,
   range: { readonly from: string; readonly to: string; readonly currency: string },
@@ -1935,14 +1953,17 @@ function coachModulesOf(
   const activities = activityEventsOf(state.interactions);
   const views: CoachModuleView[] = [];
   for (const key of modules) {
-    const financial = isFinancialModule(key);
-    const availability = financial && !support.ok ? "unavailable" : "available";
+    // A financial module's source is down when this session's own support load failed, or when the
+    // scenario the session runs in reports that source unavailable: either way the module is shown as
+    // unavailable, with the reason it carries — the support failure stated as itself, the scenario by its
+    // own words — and the independent modules stay usable beside it.
+    const supportDown = isFinancialModule(key) && !support.ok;
+    const sourceDown = supportDown || moduleSourceReportedDown(session, key);
+    const unavailability = sourceDown ? (support.ok ? COACHING_MODULE_SOURCE_DOWN_REASON : support.reason) : null;
+    const availability: SubjectAvailability = sourceDown ? "unavailable" : "available";
     const decision = moduleReadState(working, key, accessContextOf("coach", session.principalId, scope.organizationId, scope.ministryId, availability), at, observationOf(key, state, support));
     if (!decision.ok) continue;
-    const base = {
-      state: decision.value,
-      unavailability: financial && !support.ok ? support.reason : null,
-    };
+    const base = { state: decision.value, unavailability };
     const index = views.length;
     switch (key) {
       case "targets":
@@ -1967,12 +1988,18 @@ function coachModulesOf(
         });
         break;
       case "support-goal":
-        views.push({ module: key, ...base, goal: support.ok ? coachGoalOf(state) : null });
+        // A goal is a figure like any other: a module whose source is down states no goal at all, rather
+        // than the last goal the store happens to hold.
+        views.push({ module: key, ...base, goal: sourceDown ? null : coachGoalOf(state) });
         break;
       case "support-results": {
         const range = reviewedRangeOf(record);
-        const figures = support.ok && range !== null ? receivedFiguresOf(support.projection, range, scope) : null;
-        const figureProblem = figures !== null && !figures.ok ? figures.error : range === null ? "no reviewed range is recorded" : null;
+        // Nothing is projected from a source that is down. The reviewed range stays the fact the grant
+        // states, the figures are absent rather than zero, and the reason the module states is the one its
+        // figure problem carries, so no surface can show a figure or a zero beside a module it calls
+        // unavailable.
+        const figures = support.ok && !sourceDown && range !== null ? receivedFiguresOf(support.projection, range, scope) : null;
+        const figureProblem = sourceDown ? unavailability : figures !== null && !figures.ok ? figures.error : range === null ? "no reviewed range is recorded" : null;
         views.push({
           module: key,
           ...base,

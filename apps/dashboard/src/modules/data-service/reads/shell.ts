@@ -807,21 +807,28 @@ function selectionOf(record: SessionContextRecord): StoredSelection | undefined 
   };
 }
 function groupAdmissions(memberships: readonly AdmittedMembership[], selected: AdmissionContext | undefined): readonly ContextChooserGroup[] {
-  const groups = new Map<string, { ministries: AdmittedMinistryEntry[] }>();
+  const groups = new Map<string, { organizationLabel: string; ministries: AdmittedMinistryEntry[] }>();
   for (const membership of memberships) {
-    const existing = groups.get(membership.organizationId) ?? { ministries: [] };
+    const existing = groups.get(membership.organizationId) ?? { organizationLabel: "", ministries: [] };
+    // A blank label means the source of record named no name for that context: the surface then shows
+    // the opaque reference rather than a blank presented as a name. The name is never derived here.
     existing.ministries.push({
       ministryId: membership.ministryId,
-      ministryLabel: "",
+      ministryLabel: membership.ministryLabel ?? "",
       supportSubjectId: membership.supportSubjectId,
       selected:
         selected !== undefined && selected.organizationId === membership.organizationId && selected.ministryId === membership.ministryId && selected.supportSubjectId === membership.supportSubjectId,
     });
+    // Understood only from the memberships' own statements, the group states the first name any of
+    // them gives its organisation, and stays blank while none of them names one.
+    if (existing.organizationLabel === "" && membership.organizationLabel !== undefined) {
+      existing.organizationLabel = membership.organizationLabel;
+    }
     groups.set(membership.organizationId, existing);
   }
   return [...groups.entries()].map(([organizationId, group]) => ({
     organizationId,
-    organizationLabel: "",
+    organizationLabel: group.organizationLabel,
     ministries: group.ministries,
   }));
 }

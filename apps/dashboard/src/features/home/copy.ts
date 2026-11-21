@@ -1,14 +1,28 @@
 /**
  * Home's single wording source: the page heading and its lead sentence, the three section headings
  * with their descriptions, empty states and first actions, the short label behind every reason Home
- * can show, and the notices a section renders in place of items.
+ * can show, the wording every reason the Home read states arrives with, and the notices a section
+ * renders in place of items.
  *
  * No value is stated here. A phrase that needs a variable — a count, a period, a last-seen time —
  * arrives from the read envelope as text, so this module formats nothing and states no number, date,
  * amount or percentage of its own. Effect labelling is owned once, by `components/simulation-label`,
  * and is never restated or paraphrased here.
  */
+import type { reads } from "@/modules/data-service";
 import type { HomeReasonCode, HomeSectionKey } from "./home-schema";
+
+// The reason vocabulary the Home read states
+/**
+ * The reasons `readHome` answers with, taken from the read itself rather than restated. A type-only
+ * import of the service erases at build time, so naming the service here pulls no store, no session
+ * and no handler into a client bundle; it only makes this file fail to compile when the service's
+ * vocabulary moves.
+ */
+type HomeReadData = Extract<Awaited<ReturnType<typeof reads.context.readHome>>, { readonly kind: "envelope" }>["envelope"]["data"];
+
+/** Why one item is on Home, in the service's own kebab-case vocabulary. */
+export type HomeReasonKey = HomeReadData["items"][number]["reason"];
 
 // The page
 /** Home's `h1` and the one sentence that answers the question the page exists to answer: who needs the worker's attention. */
@@ -74,6 +88,12 @@ export const REASON_LABELS: Record<HomeReasonCode, string> = {
   "import-needs-review": "Import needs review",
   "target-needs-attention": "Target needs attention",
   "source-unavailable": "Source unavailable",
+  upcoming: "Upcoming",
+  undated: "Undated",
+  "commitment-needs-attention": "Commitment needs attention",
+  "support-received": "Support received",
+  "referral-window-active": "Referral window open",
+  "referral-window-expired": "Referral window expired",
 };
 
 /** The label an item carries when the envelope sends a reason code this family does not label. */
@@ -84,6 +104,128 @@ export const UNKNOWN_REASON_LABEL = "Needs attention";
  * explained instead of blank, and claims nothing about why it arrived.
  */
 export const UNKNOWN_REASON_LABEL_NOTE = "This item is listed because something about it needs your attention, and the reason it arrived with is not one this page can name yet.";
+
+/**
+ * The wording one service reason arrives with: the badge code the row labels it with, the words on
+ * the destination link, the subject to show when the envelope states no label, and the one sentence
+ * saying why the item is on Home.
+ */
+export type HomeItemWording = {
+  /** The short label code the row renders as a badge. */
+  readonly code: HomeReasonCode;
+  /** The words shown on the destination link. */
+  readonly destinationLabel: string;
+  /** The subject to show when the envelope states no label for the item. */
+  readonly fallbackTitle: string;
+  /** One sentence saying why the item is on Home. States no number, date, amount or percentage. */
+  readonly sentence: string;
+};
+
+/**
+ * Every reason `readHome` can state, worded once.
+ *
+ * The table is total on purpose: it is keyed by the service's own closed vocabulary and typed as a
+ * `Record`, never a `Partial` and never a lookup with a fallback, so a reason added to the service
+ * fails this file's compilation until it has words. A fallback would let a new reason reach a row
+ * that had to invent its own sentence, which is exactly the guesswork this table exists to prevent.
+ *
+ * A sentence states no value. Anything a reader needs as a figure, a date, an amount or a currency
+ * lives at the destination the row links to, which states it with its own coverage and basis; the
+ * item's own support figure is deliberately not restated here, and the contents of an item's detail
+ * line arrive from the envelope as text.
+ */
+export const ITEM_WORDING: Record<HomeReasonKey, HomeItemWording> = {
+  "task-overdue": {
+    code: "overdue",
+    destinationLabel: "Open Work",
+    fallbackTitle: "Task",
+    sentence: "This task is past the day it was due and is still open.",
+  },
+  "task-due-today": {
+    code: "due-today",
+    destinationLabel: "Open Work",
+    fallbackTitle: "Task",
+    sentence: "This task is due today and is still open.",
+  },
+  "task-upcoming": {
+    code: "upcoming",
+    destinationLabel: "Open Work",
+    fallbackTitle: "Task",
+    sentence: "This task is dated after today and is still open.",
+  },
+  "task-undated": {
+    code: "undated",
+    destinationLabel: "Open Work",
+    fallbackTitle: "Task",
+    sentence: "This task has no date the calendar can read, so the Work list is where its date is decided.",
+  },
+  "series-plan-needs-review": {
+    code: "plan-needs-review",
+    destinationLabel: "Review the series",
+    fallbackTitle: "Recurring series",
+    sentence: "This recurring series has missed occurrences and its plan needs review.",
+  },
+  "commitment-needs-attention": {
+    code: "commitment-needs-attention",
+    destinationLabel: "Open the commitment",
+    fallbackTitle: "Commitment",
+    sentence: "The recorded outcome of this commitment needs attention.",
+  },
+  "support-received-this-period": {
+    code: "support-received",
+    destinationLabel: "Open Support",
+    fallbackTitle: "Received support",
+    sentence: "Received support for the current period is stated by Support, with the amounts, currencies and coverage it was read under.",
+  },
+  "interaction-recorded": {
+    code: "response-recorded",
+    destinationLabel: "Open the partner",
+    fallbackTitle: "Interaction",
+    sentence: "An interaction with this partner was recorded recently.",
+  },
+  "referral-window-active": {
+    code: "referral-window-active",
+    destinationLabel: "Open the referral",
+    fallbackTitle: "Referral",
+    sentence: "This referral's New window is open now.",
+  },
+  "referral-window-expired": {
+    code: "referral-window-expired",
+    destinationLabel: "Open the referral",
+    fallbackTitle: "Referral",
+    sentence: "This referral's New window has closed, and the referral states what that leaves.",
+  },
+  "target-placed-on-home": {
+    code: "target-needs-attention",
+    destinationLabel: "Open Targets",
+    fallbackTitle: "Coaching target",
+    sentence: "This coaching target is placed on Home and counts only from recorded activity.",
+  },
+  "draft-saved": {
+    code: "draft-saved",
+    destinationLabel: "Resume the draft",
+    fallbackTitle: "Content draft",
+    sentence: "A draft of this edition is saved and has not been sent for review.",
+  },
+  "candidate-awaiting-review": {
+    code: "awaiting-review",
+    destinationLabel: "Open the review",
+    fallbackTitle: "Content candidate",
+    sentence: "This edition is frozen as a candidate and is waiting for review.",
+  },
+  "import-awaiting-decisions": {
+    code: "import-needs-review",
+    destinationLabel: "Open the import",
+    fallbackTitle: "Contact import",
+    sentence: "This contact import is waiting for its row decisions.",
+  },
+  "notification-needs-attention": {
+    code: "notice-needs-attention",
+    destinationLabel: "Open Delivery",
+    fallbackTitle: "Notification",
+    sentence: "A notification for this published edition needs attention, and Delivery records what each send came back as.",
+  },
+};
 
 // The notices a section renders instead of items
 /** The heading and the sentence of one notice. */
