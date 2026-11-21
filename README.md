@@ -332,6 +332,31 @@ Two configuration facts follow from those versions and are recorded here so a re
 
 `docs/architecture.md` records one design-level deviation of its own, on the release transport: `GET /api/variants` keeps `audience` and `locale` in its grammar and refuses a bad value by field, but forwards neither, because an edition's audience and locale are properties of the `variantId` it names and the read already states them in its envelope.
 
+### Plan-text and inventory divergences
+
+The three entries that follow are divergences between the plan's own text and the delivered tree, recorded here for the same reason the version record is — so a reader checks the tree against the record instead of mistaking a plan shorthand for an unmet requirement.
+
+**The family-verb shorthand in the API rows.** Six of the plan's API rows write a family-wide `GET/POST`; the delivered handlers give each sub-path only the verbs its named read or mutation needs, and every named read and mutation behind those rows is dispatched on exactly the path its row names. The delivered verb set is:
+
+- `GET/POST` on `/api/initiatives` and `/api/initiatives/requests`; `POST` only on `/api/initiatives/members`, `/stages`, `/requests/response`, `/close`, `/reopen`.
+- `GET/POST` on `/api/updates`, `/api/drafts`, `/api/review`, `/api/notify`; `GET` on `/api/variants`; `POST` on `/api/publish` and `/api/withdraw`.
+- `GET/POST` on `/api/pages`; `POST` on `/api/pages/sections`, `/release`, `/withdraw`, `/reach`; `GET` on `/api/pages/preview`.
+- `GET/POST` on `/api/audience` and `/api/preferences`; `POST` on `/api/unsubscribe` and `/api/confirm` — the confirmation is never on `GET`/`HEAD`, which is the row's own requirement.
+- `GET/POST` on `/api/coaching`, `/api/coaching/targets`, `/api/coaching/checkins`, `/api/coaching/taskshare`; `POST` on `/api/coaching/grants` and `/api/coaching/modules`; `GET` on `/api/coaching/subjects`.
+- `GET` only on `/api/inbox`.
+
+No handler serves a verb the plan's own mutation column names no read or mutation for, so nothing the rows require is missing, and no second transport was added to make a shorthand literal.
+
+**The delivered test inventory.** The plan's file map and register fix 44 test files (18 domain, 6 integration and 20 browser specs); the tree carries 27 vitest files — the 24 planned plus three that assert behaviour the plan requires and that no planned file covers, each named with the job it serves:
+
+- `tests/domain/time-zone-resolution.test.ts` — a request's time-zone identifier is judged exactly as the reader that would use it judges it, which is the `timeZone` parameter every zone-resolved read states.
+- `tests/integration/referrals-list-transport.test.ts` — the referrals list transport reads the flat wire the handler writes: the 200 envelope, the 403 denial and the 503 outage, plus the ways a request ends without an answer.
+- `tests/integration/workload-timing.test.ts` — the measurement harness for the plan's published-workload timing, skipped unless `WORKLOAD_MEASUREMENT=1`.
+
+The register therefore measures 27 files on this tree and 47 once the 20 browser specs land, not 44, and no planned file is missing.
+
+**The sixth media fixture.** The plan's structure tree and file map name five media fixtures and the tree carries six: `public/fixtures/media/IMG_20260814-harbour-youth-group.jpg` is the EXIF-bearing private original that `asset-image-portrait` names as its `sourceOriginalRef` and the input the media-metadata criterion runs over; its authoring route, licence, byte count, digest and metadata record are in `docs/architecture.md`.
+
 ## Known limitations
 
 - **CSV formula neutralisation leaves a leading tab.** A cell beginning with `=`, `+`, `-`, `@` or a full-width variant is quoted and prefixed with a tab, which survives in the data. There is no universal strategy that both neutralises a spreadsheet formula and round-trips an arbitrary cell, so the behaviour is disclosed here and in the export's own metadata rather than hidden.
@@ -374,4 +399,4 @@ The inputs left these decisions open; each is stated as a changeable assumption 
 
 ## Repository documentation
 
-This file and `docs/architecture.md` are the only two documentation deliverables. The architecture note carries the layering rules, the design-system gap register and lint gap register, the future-connection seam map, the media provenance and licence record, and the measurement method in full. Nothing else documents the build, and a local `metering-inventory.md` is ignored by `.gitignore` and never tracked.
+This file and `docs/architecture.md` are the only two documentation deliverables. The architecture note carries the layering rules, the design-system gap register and lint gap register, the future-connection seam map, the media provenance and licence record, the delivered-structure record of the transport-support and boundary files the plan's tree does not enumerate, and the measurement method in full. Nothing else documents the build, and a local `metering-inventory.md` is ignored by `.gitignore` and never tracked.
