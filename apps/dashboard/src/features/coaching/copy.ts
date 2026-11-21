@@ -909,3 +909,26 @@ export const COACHING_COPY: Readonly<Record<CoachingSurface, SurfaceCopy>> = {
   },
 };
 
+// ---------------------------------------------------------------------------------------------
+// How a target's plan changes over time
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The one standing sentence a target's history states beside its version list.
+ *
+ * It words the rule the domain enforces and no surface may contradict: a change to the quantity, the
+ * measure or the calendar start begins a version from the date it takes effect, a period that has
+ * closed keeps the version that covered it, and no two versions cover the same day — the period where
+ * a change landed is never split into a prorated bridge, and nothing is prorated at all. A history
+ * surface renders this sentence rather than writing its own, so the guarantee reads the same beside
+ * the target form, the version list and a shared read.
+ *
+ * It states a property of the plan, not of a person: it claims nothing about effort, activity or a
+ * count, and it is deliberately silent about the current period, whose count can still change.
+ */
+export const TARGET_VERSION_GUARANTEE =
+  "A change to the quantity, the measure or the calendar start begins a new version of the plan " +
+  "from the date it takes effect, and a period that has closed keeps the version it was measured " +
+  "against: no two versions cover the same day, and the period where a change landed is never " +
+  "split into a prorated bridge.";
+
