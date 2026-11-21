@@ -43,8 +43,9 @@
  * Layering: a feature hook above the shared component layer and the data-service contracts, and below
  * nothing but the family's own components. It imports `scopeKey` as the only scope-key builder in the
  * application (so the context fence can clear this read with every other), the read-result contract as
- * a type plus its one shape guard, the envelope's `Scope`, and `MinorUnits` for the range values as a
- * type only — no money arithmetic happens here. It reaches no store, no report engine, no Route
+ * a type plus its one shape guard, the envelope's `Scope`, and the money module's `minorUnitsOf`, whose
+ * validation is the only way a stated range bound becomes a `MinorUnits` value; no money arithmetic
+ * happens here. It reaches no store, no report engine, no Route
  * Handler and no second router; the relative same-origin `fetch` below keeps the session cookie
  * travelling and keeps the server from calling its own HTTP surface.
  */
@@ -55,7 +56,7 @@ import { scopeKey } from "@/components/context-switch-guard";
 import type { reads } from "@/modules/data-service";
 import type { FinancialCoverage, ReadEnvelope, Scope } from "@/modules/data-service/envelope";
 import { isReadResult, type ReadResult } from "@/modules/data-service/outcome";
-import type { MinorUnits } from "@/modules/money/amount";
+import { minorUnitsOf, type MinorUnits } from "@/modules/money/amount";
 
 // ---------------------------------------------------------------------------------------------
 // Paging
@@ -130,6 +131,11 @@ export type GiftRecipientQuery =
  * decides which of them a caller may use and a facet the read did not offer is never invented here.
  * `giftId` narrows the same read to one row for the detail route; it is not a filter and it is not a
  * `readGift`.
+ *
+ * `pageSize` is the positive integer the view states rather than one of the two sizes the ledger's
+ * control offers: the ledger shows 50 rows by default and caps at 200 (AAP 0.6.3, 0.8.1), and any
+ * other positive integer a URL or a caller states travels through unchanged, because clamping to the
+ * cap is the service's decision and not this module's (AAP 0.8.7).
  */
 export interface GiftsQuery {
   readonly period: GiftPeriodQuery;
@@ -140,7 +146,7 @@ export interface GiftsQuery {
   readonly search?: string;
   readonly sort?: { readonly key: string; readonly direction: "asc" | "desc" };
   readonly page: number;
-  readonly pageSize: GiftsPageSize;
+  readonly pageSize: number;
   readonly giftId?: string;
 }
 
@@ -318,8 +324,8 @@ export function parseGiftsQuery(source: URLSearchParams | string): GiftsQuery {
 function amountRangeOf(
   params: URLSearchParams,
 ): { readonly minMinor?: MinorUnits; readonly maxMinor?: MinorUnits } | undefined {
-  const minMinor = minorUnitsOf(params.get(PARAM.amountMin));
-  const maxMinor = minorUnitsOf(params.get(PARAM.amountMax));
+  const minMinor = statedMinorUnitsOf(params.get(PARAM.amountMin));
+  const maxMinor = statedMinorUnitsOf(params.get(PARAM.amountMax));
   if (minMinor === undefined && maxMinor === undefined) {
     return undefined;
   }
@@ -333,27 +339,36 @@ function amountRangeOf(
 const SIGNED_INTEGER_PATTERN = /^-?\d+$/;
 
 /**
- * The page size a URL states, carried as the service will receive it.
+ * The page size a URL states, read as the ledger will send it.
  *
- * `GiftsPageSize` is the pair of sizes the ledger's control offers, and a link or a restored URL may
- * state a different one. AAP 0.8.7 makes the 200-row cap the service's clamp, so substituting the
- * default here would change the request the worker's own link expressed; the stated integer travels
- * through unchanged and the envelope reports the size the service actually served. The assertion is
- * the same compile-time-only brand the envelope mints for its identifiers: at runtime the value is an
- * ordinary number, and a value that is not a positive integer never reaches it.
+ * The two sizes the ledger's control offers are the documented default and cap, and a link or a
+ * restored URL may state any positive integer beside them. An absent, malformed or non-positive value
+ * falls back to the default so the ledger always has a real first view, while a stated size above the
+ * cap is carried through as given: AAP 0.8.7 makes clamping the service's decision, so substituting
+ * the default here would change the request the worker's own link expressed.
  */
-function statedPageSize(value: string | null): GiftsPageSize {
+function statedPageSize(value: string | null): number {
   const parsed = integerOf(value);
   if (parsed === undefined || parsed <= FIRST_PAGE) {
     return GIFTS_PAGE_SIZE_DEFAULT;
   }
-  return parsed as GiftsPageSize;
+  return parsed;
 }
 
-/** A stated amount in minor units; a fractional, unsafe or non-numeric bound is omitted. */
-function minorUnitsOf(value: string | null): MinorUnits | undefined {
+/**
+ * A stated amount bound in minor units; a fractional, unsafe or non-numeric bound is omitted.
+ *
+ * The bound is built by the money module's own constructor rather than asserted into the brand, so it
+ * is the same validated value every other amount in the application is. `integerOf` has already
+ * refused everything that is not a safe integer, and a stated negative zero is carried as the zero it
+ * means, because refusing it would drop a bound the worker's own link expressed.
+ */
+function statedMinorUnitsOf(value: string | null): MinorUnits | undefined {
   const parsed = integerOf(value);
-  return parsed === undefined ? undefined : (parsed as MinorUnits);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  return minorUnitsOf(parsed === 0 ? 0 : parsed);
 }
 
 /** A signed integer exactly as written, or `undefined` — no rounding, truncation or float parsing. */

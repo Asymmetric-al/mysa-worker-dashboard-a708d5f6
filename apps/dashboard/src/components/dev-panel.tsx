@@ -30,9 +30,10 @@
  *   while one is armed, because the service refuses a second arming rather than replacing the first:
  *   the panel mirrors that refusal instead of promising a replacement it cannot produce.
  * - **A reset that is destructive by construction.** The store is discarded and re-seeded from the
- *   deterministic seed, so the reset goes through the shared review step (`components/action-review`)
- *   with its destructive treatment, states exactly what is lost and that a reset which cannot complete
- *   leaves the stored sessions as they were, and renders its result through the shared receipt.
+ *   deterministic seed, with every stored session discarded before the seeded ones are written, so
+ *   the reset goes through the shared review step (`components/action-review`) with its destructive
+ *   treatment, states exactly what is lost and that a failure part way can leave some sessions
+ *   discarded or only partly written, and renders its result through the shared receipt.
  * - **One durable receipt for everything else.** A scenario switch, a clock change and an arming are
  *   reversible development acts, so they confirm inline and report through `components/operation-result`
  *   — the application's only receipt. The panel never infers success from an absent error: the outcome
@@ -401,8 +402,9 @@ const RESET_DESCRIPTION =
   "seed, so the same readable records come back and a journey can be repeated from the same starting " +
   "point. Partners, notes, interactions, tasks, drafts, releases, audience memberships, coaching " +
   "grants and media records you created are discarded, the clock returns to the seed instant, and an " +
-  "armed failure plan is cleared with the document that held it. A reset that cannot complete leaves " +
-  "the stored sessions as they were.";
+  "armed failure plan is cleared with the document that held it. Every stored session is " +
+  "discarded before the seeded ones are written, so a reset that fails part way can leave " +
+  "sessions discarded or only partly written. Running it again restores the seeded world.";
 
 /** What the reset dialog adds before the person confirms it. */
 const RESET_CONSEQUENCE =

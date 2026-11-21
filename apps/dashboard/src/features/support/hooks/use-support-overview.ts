@@ -82,6 +82,13 @@ export interface UseSupportOverviewOptions {
   readonly initialEnvelope?: SupportOverviewRead | undefined;
 }
 
+/**
+ * The one endpoint this hook reads, stated once so every failure names the request that failed and no
+ * second path can appear beside it. Relative, so the request stays inside this origin and carries the
+ * development-session cookie the handler derives the scope from.
+ */
+const OVERVIEW_ENDPOINT = "/api/support";
+
 /** The job segment of the cache key: one overview entry per scope, and no parameter segment. */
 const OVERVIEW_JOB = "overview";
 
@@ -134,20 +141,38 @@ function scenarioAnchorOf(result: SupportOverviewRead): number | undefined {
 /**
  * The overview read over the browser transport: one same-origin `GET` answered with a read result.
  *
- * A transport fault or an unparsable body rejects this query, because neither produced a contract
- * answer and the only honest presentations of that are the caller's unavailable state — never an
- * empty overview, a zero, or an `unavailable` result whose source this file made up.
+ * Both the request and the body read are guarded, so a transport fault or an unparsable body rejects
+ * this query with an `Error` that names the endpoint and the status and keeps the underlying cause:
+ * neither produced a contract answer, and the caller renders its own unavailable state from that
+ * rejection — never an empty overview, a zero, or an `unavailable` result whose source this file made
+ * up.
  */
 async function fetchSupportOverview(): Promise<SupportOverviewRead> {
-  const response = await fetch("/api/support", {
-    method: "GET",
-    headers: { accept: "application/json" },
-    credentials: "same-origin",
-  });
-  const payload: unknown = await response.json();
-  if (!isOverviewRead(payload)) {
-    throw new Error(`/api/support answered ${response.status} without a read result`);
+  let response: Response;
+  try {
+    response = await fetch(OVERVIEW_ENDPOINT, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      credentials: "same-origin",
+    });
+  } catch (cause) {
+    throw new Error(`GET ${OVERVIEW_ENDPOINT} could not be completed.`, { cause });
   }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch (cause) {
+    throw new Error(
+      `GET ${OVERVIEW_ENDPOINT} answered ${response.status} with a body that is not JSON.`,
+      { cause },
+    );
+  }
+
+  if (!isOverviewRead(payload)) {
+    throw new Error(`GET ${OVERVIEW_ENDPOINT} answered ${response.status} without a read result.`);
+  }
+
   return payload;
 }
 

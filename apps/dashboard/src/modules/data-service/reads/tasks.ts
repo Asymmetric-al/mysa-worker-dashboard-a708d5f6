@@ -31,7 +31,9 @@
  * Scope is never an argument. Each read resolves the development session, asserts the selected scope
  * through `../authorize`, and only then enumerates, so a refused read carries no count, title,
  * existence flag or size. An absent store, an undecodable document and an unresolvable time zone are
- * `unavailable` with the source that failed — never an empty list and never a zero.
+ * `unavailable` naming the source that failed — never an empty list and never a zero. A browser
+ * request naming a zone this runtime cannot resolve never reaches that branch: the transport refuses
+ * the request by field first, so an outage here is what an in-process caller sees.
  *
  * Plan items: AAP 0.6.1 "Reads: tasks and series", 0.7.1 "Plan and finish work" and "Keep a series
  * useful", 0.8.2 (work, interactions and recurrence), 0.8.7 (fixed values and boundary semantics),
@@ -160,6 +162,17 @@ const READ_ATTEMPT_ID = "read";
 
 /** The source system that owns the time-zone database a civil day is resolved against. */
 const TIME_ZONE_SYSTEM = "time-zone-database";
+
+/**
+ * The source a civil day is resolved against, named once and opaquely.
+ *
+ * A source reference is an opaque handle: it is never parsed for meaning, never compared across
+ * systems and never rendered as if its form carried meaning. The zone a request named is request
+ * input, not a source identity, so echoing it here would present the caller's own text as the name of
+ * a system — and would differ between two callers reading the same source. `reference` therefore says
+ * which of that source's jobs failed, and the request's own value stays in the request.
+ */
+const CALENDAR_SOURCE: SourceReference = { system: TIME_ZONE_SYSTEM, reference: "calendar" };
 
 /** The store's reference for the work family: the two collections every read here consults. */
 const WORK_REFERENCE = "work";
@@ -327,12 +340,6 @@ function unavailableRead(
   };
 }
 
-/** The calendar source a civil day is resolved against, named by the zone the read asked for. */
-function calendarSource(timeZone: string): SourceReference {
-  const reference = timeZone.trim();
-  return { system: TIME_ZONE_SYSTEM, reference: reference.length > 0 ? reference : "unset" };
-}
-
 /** Either "today" in a named zone or the outage that kept it from being resolved. */
 type ResolvedToday =
   | { readonly status: "resolved"; readonly date: CivilDate; readonly text: string }
@@ -344,6 +351,10 @@ type ResolvedToday =
  * The instant is handed in rather than read again, so a read evaluates every boundary at one instant.
  * A zone the runtime cannot resolve is an unavailable calendar rather than a fallback to UTC: a due
  * date judged against an assumed zone would put work in a list the worker never asked for.
+ *
+ * The browser transport refuses such a request at its own boundary, by field, before this read runs,
+ * so this is the answer an untyped in-process caller reaches: a read has no `invalid` result to give,
+ * and `unavailable` is the only honest one left when it cannot judge a day at all.
  */
 function todayForRead(job: string, timeZone: string, instant: ScenarioInstant): ResolvedToday {
   const resolved = todayInZone(timeZone, instant);
@@ -356,7 +367,7 @@ function todayForRead(job: string, timeZone: string, instant: ScenarioInstant): 
   }
   return {
     status: "unavailable",
-    result: unavailableRead(job, calendarSource(timeZone), CALENDAR_UNREADABLE_GUIDANCE),
+    result: unavailableRead(job, CALENDAR_SOURCE, CALENDAR_UNREADABLE_GUIDANCE),
   };
 }
 
@@ -433,9 +444,10 @@ function orderTasks(left: TaskRecord, right: TaskRecord, sort: readonly TaskSort
  * Normalises the ordering a caller asked for.
  *
  * A field outside the closed set or a direction that is not `asc`/`desc` is dropped rather than
- * trusted, and an instruction list that ends up empty falls back to the agreed order. The type already
- * forbids both, so this only faces an untyped request — a Route Handler reading a query string — and
- * it refuses to let such a caller put a list in an order nothing else can reproduce.
+ * trusted, and an instruction list that ends up empty falls back to the agreed order. The type
+ * already forbids both, and the browser transport refuses such an ordering by field before this read
+ * runs, so the tolerance here covers only an untyped in-process call — and it keeps that call from
+ * putting a list in an order nothing else can reproduce.
  */
 function normaliseSort(sort: readonly TaskSort[] | undefined): readonly TaskSort[] {
   if (sort === undefined || sort.length === 0) {
@@ -560,9 +572,11 @@ const TASK_LIST_NAMES = [
 /**
  * The list a caller asked for, or `all` when the name is not one of the five.
  *
- * A name outside the set is answered with the complete list rather than with nothing: a surface that
- * sent a list name this build does not have still sees its work, and no read invents a sixth list to
- * answer it with.
+ * A name outside the set is answered with the complete list rather than with nothing, and no read
+ * invents a sixth list to answer it with. The browser transport refuses such a name at its own
+ * boundary — a request naming a list this build does not have is `invalid` on `list`, so a surface is
+ * never shown more rows than it asked for — which leaves this fallback to an untyped in-process call
+ * that cannot be refused by field.
  */
 function normaliseListName(list: TaskListName): TaskListName {
   return (TASK_LIST_NAMES as readonly string[]).includes(list) ? list : "all";

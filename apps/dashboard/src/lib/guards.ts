@@ -1,10 +1,13 @@
 /**
  * Guards for the development boundary and for untrusted parsed input.
  *
- * This is the only module in `src/lib` that reads `process.env`, and it reads
- * only `NODE_ENV`. It imports nothing and carries no module directive, so the
- * shell (which renders the Development data label) and Route Handlers (which
- * gate the development controls) can both use it.
+ * This is the application's only reader of `process.env`, and it reads only
+ * `NODE_ENV`. It accepts only the closed set of environments declared below and
+ * refuses any other value rather than guessing which runtime a mistyped one meant,
+ * so a deployment cannot keep the development runtime enabled by accident. It
+ * imports nothing and carries no module directive, so the shell (which renders the
+ * Development data label) and Route Handlers (which gate the development controls)
+ * can both use it.
  *
  * The narrowing helpers here only narrow. Schema validation belongs to the data
  * service, so no second validation path may start in this module.
@@ -28,15 +31,49 @@ export class DevelopmentOnlyError extends Error {
   }
 }
 
+/** The environments `NODE_ENV` may name; any other value is a typo, not a runtime. */
+const ADMITTED_ENVIRONMENTS: readonly string[] = ["development", "test", "production"];
+
+/**
+ * Reads `NODE_ENV` and answers the environment it names.
+ *
+ * An absent variable — unset, or set to the empty string — answers `development`, the
+ * answer this gate has always given it. A value outside the admitted set throws
+ * instead: the application refuses to guess which runtime a mistyped value meant,
+ * because guessing wrongly leaves the development controls and the seeded world
+ * enabled in a deployment whose operator mistyped the value.
+ */
+function readEnvironment(): string {
+  // Held as a plain string: the ambient type names only the three standard values, but
+  // the value arrives from the environment and can hold anything an operator typed.
+  const environment: string | undefined = process.env.NODE_ENV;
+  if (environment === undefined || environment === "") {
+    return "development";
+  }
+  if (!ADMITTED_ENVIRONMENTS.includes(environment)) {
+    throw new Error(
+      `"${environment}" is not an environment this application recognises. NODE_ENV admits ` +
+        `only ${ADMITTED_ENVIRONMENTS.join(", ")}; a mistyped value must not leave the ` +
+        "development runtime and its seeded world enabled.",
+    );
+  }
+  return environment;
+}
+
 /**
  * Reports whether the application is running outside a production build; the
  * development-session gate for the `/api/dev` namespace.
+ *
+ * Answers `true` in the development and test environments, `false` in production and
+ * where `process` is absent, and throws when `NODE_ENV` holds a value the application
+ * does not recognise rather than treating it as development.
  */
 export function isDevelopment(): boolean {
-  // `typeof process` keeps this safe where `process` is absent. Next inlines
+  // `typeof process` keeps this safe where `process` is absent, so a browser bundle
+  // without it never takes the development branch. Next inlines
   // `process.env.NODE_ENV` at build time, so the check also holds in a Client
   // Component without shipping the whole environment to the browser.
-  return typeof process !== "undefined" && process.env.NODE_ENV !== "production";
+  return typeof process !== "undefined" && readEnvironment() !== "production";
 }
 
 /**

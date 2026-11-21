@@ -38,7 +38,7 @@
  * with the export line by line. The locale only changes a digit's grouping, never a figure.
  */
 
-import type { MinorUnits, Money } from "@/modules/money/amount";
+import { minorUnitsOf, type MinorUnits, type Money } from "@/modules/money/amount";
 import { formatMinor } from "@/modules/money/format";
 import { REPORT_IDS, type ReportResult, type ReportRow } from "@/modules/support/report";
 
@@ -483,7 +483,7 @@ function printRows(result: ReportResult, locale: string): readonly PrintRow[] {
  * `unavailable`. The stand-in therefore never becomes a figure; it exists so a state that says no
  * amount may be stated is not formatted as if it held one.
  */
-const NO_AMOUNT_MINOR_UNITS: MinorUnits = 0 as MinorUnits;
+const NO_AMOUNT_MINOR_UNITS: MinorUnits = minorUnitsOf(0);
 
 /**
  * One summary line per currency, each naming the measure it states and the currency code it is in.

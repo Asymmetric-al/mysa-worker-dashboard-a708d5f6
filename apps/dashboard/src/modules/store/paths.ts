@@ -78,6 +78,9 @@ const SESSION_DOCUMENT_SUFFIX: Readonly<Record<SessionDocumentKey, string>> = {
   workload: ".workload.json",
 };
 
+/** Every suffix a session's documents end in, derived from the table above so a fifth document needs no second list. */
+const SESSION_DOCUMENT_SUFFIXES: readonly string[] = Object.values(SESSION_DOCUMENT_SUFFIX);
+
 /** Describes a refused session id for a message: JSON quoting escapes control characters, and a long value is summarized rather than echoed. */
 function describeSessionIdValue(value: unknown): string {
   if (typeof value === "string") {
@@ -133,11 +136,19 @@ function hasErrorCode(error: unknown, code: string): boolean {
 }
 
 /**
- * Lists the ids of the sessions present in the store.
+ * Lists the ids of the sessions present in the store, recognising an id by any of the four documents
+ * a session owns rather than by its state document alone.
+ *
+ * Requiring the state document would hide the orphan a crash can leave: `repository.ts` deletes that
+ * commit marker first, so a fault before the sibling deletes finish leaves documents that no
+ * `readSession` reports and that no listing recognising only the marker would ever discard — the
+ * documents would then be read back if that cookie returned. The state document still decides what a
+ * reader may see, because `listSessions` re-reads it for every id this function returns.
  *
  * An absent store is a fresh checkout, so it reads as an empty list; every other read fault is
- * rethrown rather than disguised as an empty store. Files that are not a session's state document
- * — the sibling documents, an interrupted `*.tmp` write, a stray directory — are never sessions.
+ * rethrown rather than disguised as an empty store. An entry that names no session is skipped: a
+ * directory, a file ending in none of the document suffixes, an interrupted `*.tmp` write, and a
+ * name whose remainder is not a safe session id. The result is in code-unit order.
  */
 export async function listSessionIds(): Promise<string[]> {
   let entries: Dirent[];
@@ -150,19 +161,24 @@ export async function listSessionIds(): Promise<string[]> {
     throw error;
   }
 
-  const stateSuffix = SESSION_DOCUMENT_SUFFIX.state;
-  const sessionIds: string[] = [];
+  // A session's four documents are four entries in one directory, so the ids are collected as a set.
+  const sessionIds = new Set<string>();
   for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(stateSuffix)) {
+    if (!entry.isFile()) {
       continue;
     }
 
-    const sessionId = entry.name.slice(0, -stateSuffix.length);
+    const documentSuffix = SESSION_DOCUMENT_SUFFIXES.find((suffix) => entry.name.endsWith(suffix));
+    if (documentSuffix === undefined) {
+      continue;
+    }
+
+    const sessionId = entry.name.slice(0, -documentSuffix.length);
     if (isSafeSessionId(sessionId)) {
-      sessionIds.push(sessionId);
+      sessionIds.add(sessionId);
     }
   }
 
   // Code-unit order keeps two runs and two machines in agreement; ids never need locale collation.
-  return sessionIds.sort();
+  return [...sessionIds].sort();
 }

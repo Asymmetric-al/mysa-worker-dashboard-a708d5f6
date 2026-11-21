@@ -98,6 +98,10 @@ import {
   type MutationInput,
   type MutationOutcome,
 } from "@/modules/data-service";
+/* The two constructors come from the module that owns them rather than through the service barrel,
+ * which re-exports the conversion helpers only: one constructor per outcome is what keeps denial
+ * redaction mechanical, so an answer built here is built the same way every other answer is. */
+import { denied, invalid } from "@/modules/data-service/outcome";
 
 /**
  * Every request is evaluated per request: the service reads the development-session cookie, so the same
@@ -129,6 +133,15 @@ type DevAction = (typeof DEV_ACTIONS)[number];
 
 /** Membership as a lookup, so a parsed body's action is checked rather than trusted. */
 const DEV_ACTION_SET: ReadonlySet<string> = new Set<string>(DEV_ACTIONS);
+
+/**
+ * The attempt marker a read answer carries where a mutation would carry its operation id.
+ *
+ * A `GET` performs no effect, so it has no operation to name and mints no identifier of its own.
+ * `"read"` is the non-unique attempt marker the other read handlers answer with, which keeps a
+ * failed read from looking like a change someone could replay.
+ */
+const READ_ATTEMPT_MARKER = "read";
 
 /**
  * The attempt marker a request carries when no attempt was lodged.
@@ -332,12 +345,12 @@ function isDevAction(value: unknown): value is DevAction {
  * says nothing about whether a session exists.
  */
 function developmentDenial(): MutationOutcome {
-  return { outcome: "denied", operationId: UNREACHED_ATTEMPT, reasonCode: "capability-absent" };
+  return denied({ operationId: UNREACHED_ATTEMPT, reasonCode: "capability-absent" });
 }
 
 /** The refusal a body earns when it does not resolve to exactly one action this handler accepts. */
 function refusalOnAction(operationId: string, message: string): MutationOutcome {
-  return { outcome: "invalid", operationId, fields: { action: [message] } };
+  return invalid({ operationId, fields: { action: [message] } });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -395,15 +408,20 @@ async function dispatchAttempt(
  * scenario's availability flags and whether a reset is available — as the development read's envelope,
  * unchanged.
  *
- * Outcomes: the envelope (200), `denied` without any development detail outside a development build, or
- * the read's own `unavailable`/`denied`. Nothing is filtered, recomputed or selected by query parameter,
- * so the panel offers exactly what the service advertises.
+ * Outcomes: the envelope (200), `denied` without any development detail outside a development build,
+ * `unavailable` or `unknown` for a thrown store or unrecognised fault, or the read's own
+ * `unavailable`/`denied`. Nothing is filtered, recomputed or selected by query parameter, so the panel
+ * offers exactly what the service advertises.
  */
 export async function GET(): Promise<Response> {
   if (!isDevelopment()) {
     return toResponse(developmentDenial());
   }
-  return toResponse(await reads.dev.readDevState());
+  try {
+    return toResponse(await reads.dev.readDevState());
+  } catch (error) {
+    return toResponse(outcomeFromError(READ_ATTEMPT_MARKER, error));
+  }
 }
 
 /**

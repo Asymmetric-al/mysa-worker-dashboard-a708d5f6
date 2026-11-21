@@ -268,6 +268,29 @@ const NO_STATED_CAPABILITIES: readonly string[] = Object.freeze([]);
 const STORE_UNAVAILABLE_GUIDANCE =
   "This session's records could not be read, so no list, count or amount is shown rather than an empty one. Retry the read; if it keeps failing, reset the seeded development data.";
 
+/**
+ * The source a stated time zone is resolved against: the zone database this runtime reads a named
+ * calendar from.
+ *
+ * The reference is opaque like every source reference, and it is deliberately not the zone string the
+ * request carried: a request value is not a source identity, it is already reported back at the field
+ * it arrived in, and a reference whose form a reader could parse would invite exactly the reading
+ * `SourceReference` forbids.
+ */
+const CALENDAR_SOURCE: SourceReference = { system: "time-zone-database", reference: "calendar" };
+
+/**
+ * The guidance a roster read carries when the zone it was asked for cannot be resolved.
+ *
+ * "No date was judged" is stated because the counts and days this refusal stands in for are exactly
+ * what it must never be mistaken for: an overdue count taken in UTC for a caller who named another
+ * zone, or a last-received-gift day read off a calendar they never asked about, is a figure about the
+ * wrong month. The correction it names is the one the caller can make: state a zone this runtime
+ * resolves, or state none and take the declared UTC default.
+ */
+const CALENDAR_UNAVAILABLE_GUIDANCE =
+  "No date in this roster was judged in an assumed time zone, so no overdue count, last-activity day or last-received-gift day is shown rather than one computed in a calendar you did not ask for. Choose a time zone this runtime resolves in Settings, or omit the zone and the read uses UTC, and read the roster again.";
+
 /** The wording a facet uses when the source states no partner attribution for its fact. */
 const NO_PARTNER_ATTRIBUTION =
   "The source states this fact for the support subject and attributes it to no partner, so the roster cannot narrow by it. It is shown here rather than offered as a filter that would match nothing.";
@@ -659,6 +682,24 @@ function sourceUnavailable(job: string, session: ResolvedSession): UnavailableOu
 }
 
 /**
+ * The one answer a stated zone this runtime cannot resolve produces.
+ *
+ * A zone identifier is the caller's own naming of a calendar, so one the runtime cannot resolve is
+ * refused rather than swapped for UTC: the overdue counts, last-activity days and last-received-gift
+ * days below are all judged in that calendar, and a substituted one would report work and giving
+ * against a zone nobody asked about. Diagnostics carry the job and the opaque source only, never the
+ * string the request carried.
+ */
+function calendarUnavailable(job: string): UnavailableOutcome {
+  logger.sourceUnavailable({ job, source: CALENDAR_SOURCE });
+  return unavailable({
+    operationId: READ_ATTEMPT_ID,
+    source: CALENDAR_SOURCE,
+    guidance: CALENDAR_UNAVAILABLE_GUIDANCE,
+  });
+}
+
+/**
  * Resolves the session, asserts its selected scope and parses the records it holds.
  *
  * The order is the contract: the session first, because no request names a scope of its own; then the
@@ -753,7 +794,14 @@ function sessionInstant(session: ResolvedSession): Temporal.Instant {
   return instantAt(session.clockOffsetMs);
 }
 
-/** The zone a dated comparison resolves in: the request's, or UTC when it states none. */
+/**
+ * The zone a dated comparison resolves in: the request's own zone, or the declared UTC default when
+ * the request names none.
+ *
+ * A stated zone is returned exactly as it was named and is never replaced. A zone this runtime cannot
+ * resolve is refused by `todayIn` below, so the default here stays what it is documented to be — the
+ * zone for a request that states none — and never a substitute for one that was stated.
+ */
 function zoneOf(timeZone: string | undefined): string {
   const stated = timeZone === undefined ? "" : timeZone.trim();
   return stated === "" ? ROSTER_DEFAULT_TIME_ZONE : stated;
@@ -1126,22 +1174,37 @@ interface RosterFacts {
   readonly giving: GivingOutcome;
   /** The calendar day the dated comparisons resolve against. */
   readonly today: CivilDate;
-  /** The zone that day was resolved in, which is the request's when it resolves. */
+  /** The zone that day was resolved in: the request's own, or UTC when it names none. */
   readonly timeZone: string;
   /** The store's identity for this session's documents. */
   readonly source: SourceReference;
 }
 
-/** Resolves a calendar day in a named zone, falling back to UTC only when the zone cannot resolve. */
-function todayIn(zone: string, at: Temporal.Instant): { date: CivilDate; zone: string } {
+/** The answer to "can the roster's facts be built": the facts, or the one refusal the read returns. */
+type RosterFactsOutcome =
+  | { readonly kind: "ready"; readonly facts: RosterFacts }
+  | { readonly kind: "unavailable"; readonly refusal: UnavailableOutcome };
+
+/** Either the day a dated comparison resolves against, or the calendar that could not be read. */
+type ResolvedRosterDay =
+  | { readonly status: "resolved"; readonly date: CivilDate; readonly zone: string }
+  | { readonly status: "unavailable"; readonly refusal: UnavailableOutcome };
+
+/**
+ * Resolves the calendar day the roster judges its dates against, in the zone the request states.
+ *
+ * The stated zone is never replaced. A zone this runtime cannot resolve refuses the read instead of
+ * falling back to UTC, because every dated judgement made below — an overdue count, a last-activity
+ * day, a last-received-gift day — is a statement about a calendar, and one made in a zone the caller
+ * did not name is a statement about days they never asked about. Only a request that states no zone
+ * takes the declared default, which `zoneOf` above supplies and documents as such.
+ */
+function todayIn(job: string, zone: string, at: Temporal.Instant): ResolvedRosterDay {
   const resolved = todayInZone(zone, at);
   if (resolved.status === "resolved") {
-    return { date: resolved.date, zone };
+    return { status: "resolved", date: resolved.date, zone };
   }
-  return {
-    date: at.toZonedDateTimeISO(ROSTER_DEFAULT_TIME_ZONE).toPlainDate(),
-    zone: ROSTER_DEFAULT_TIME_ZONE,
-  };
+  return { status: "unavailable", refusal: calendarUnavailable(job) };
 }
 
 /**
@@ -1217,20 +1280,28 @@ function compareIdentifiers(left: string, right: string): number {
 }
 
 /**
- * Builds the roster's whole-dataset facts.
+ * Builds the roster's whole-dataset facts, or returns the refusal that keeps them from being built.
  *
  * Every record that reaches these maps has already passed the record-level permission question, so no
  * count below can disclose a record the caller may not read. Giving facts are measured only when the
  * support subject's own question permitted them, and they are measured at the report engine's
  * projection grain, so a row's currencies and last day come from the same rows the reports would sum.
+ *
+ * A zone this runtime cannot resolve refuses the whole read before a single map is built: the overdue
+ * counts and the last-activity and last-received-gift days below are judgements made in that calendar,
+ * and a judgement made in a substituted one is not a fact about the caller's records.
  */
 function rosterFactsOf(
+  job: string,
   context: PartnerReadContext,
   selection: PartnerGivingSelection,
-): RosterFacts {
+): RosterFactsOutcome {
   const { document } = context;
   const at = sessionInstant(context.session);
-  const resolvedToday = todayIn(zoneOf(selection.timeZone), at);
+  const resolvedToday = todayIn(job, zoneOf(selection.timeZone), at);
+  if (resolvedToday.status === "unavailable") {
+    return { kind: "unavailable", refusal: resolvedToday.refusal };
+  }
 
   const partners = document.partners.filter((record) => mayReadPartner(context, record));
 
@@ -1306,21 +1377,27 @@ function rosterFactsOf(
   }
 
   return {
-    partners,
-    initiatives: document.initiatives,
-    lastActivity,
-    taskFacts,
-    referralStatus,
-    initiativeIds: new Map(
-      [...includedMembers].map(([partnerId, ids]) => [partnerId, [...ids].sort(compareIdentifiers)]),
-    ),
-    givingCurrencies,
-    lastReceivedOn,
-    givingPermitted,
-    giving,
-    today: resolvedToday.date,
-    timeZone: resolvedToday.zone,
-    source: storeSource(context.session),
+    kind: "ready",
+    facts: {
+      partners,
+      initiatives: document.initiatives,
+      lastActivity,
+      taskFacts,
+      referralStatus,
+      initiativeIds: new Map(
+        [...includedMembers].map(([partnerId, ids]) => [
+          partnerId,
+          [...ids].sort(compareIdentifiers),
+        ]),
+      ),
+      givingCurrencies,
+      lastReceivedOn,
+      givingPermitted,
+      giving,
+      today: resolvedToday.date,
+      timeZone: resolvedToday.zone,
+      source: storeSource(context.session),
+    },
   };
 }
 
@@ -2029,7 +2106,7 @@ function rowOf(
  *
  * The outcome set is `envelope` with one page of rows and the whole-result total, `denied` when the
  * session, the context or the request is not admitted, and `unavailable` when the records cannot be
- * read.
+ * read or the stated time zone cannot be resolved.
  */
 export async function findPartners(
   query: PartnerRosterQuery = {},
@@ -2040,7 +2117,11 @@ export async function findPartners(
     return refusalOf(outcome.refusal);
   }
   const { context } = outcome;
-  const facts = rosterFactsOf(context, query);
+  const factsOutcome = rosterFactsOf("findPartners", context, query);
+  if (factsOutcome.kind !== "ready") {
+    return refusalOf(factsOutcome.refusal);
+  }
+  const facts = factsOutcome.facts;
   const selection = appliedSelectionOf(facts, query.applied);
   const term = (query.search ?? "").trim().toLowerCase();
 
@@ -2104,8 +2185,9 @@ export async function findPartners(
  * whole-result count of records carrying each.
  *
  * The outcome set is `envelope` with the facet set, `denied` when the session or the context is not
- * admitted, and `unavailable` when the records cannot be read. A facet whose own source did not
- * answer is reported inside the envelope as `unavailable` rather than as an empty facet.
+ * admitted, and `unavailable` when the records cannot be read or the stated time zone cannot be
+ * resolved. A facet whose own source did not answer is reported inside the envelope as `unavailable`
+ * rather than as an empty facet.
  */
 export async function readFacets(
   query: PartnerGivingSelection = {},
@@ -2116,7 +2198,11 @@ export async function readFacets(
     return refusalOf(outcome.refusal);
   }
   const { context } = outcome;
-  const facts = rosterFactsOf(context, query);
+  const factsOutcome = rosterFactsOf("readFacets", context, query);
+  if (factsOutcome.kind !== "ready") {
+    return refusalOf(factsOutcome.refusal);
+  }
+  const facts = factsOutcome.facts;
   const facets = buildFacets(facts);
 
   const valueStates: Record<string, RecordedValueState> = {};
@@ -2196,8 +2282,14 @@ export async function readSavedViews(
   const { context } = outcome;
 
   // The facet set a view is judged against is the one this caller receives now, so a view is flagged
-  // against exactly the filters the surface would offer.
-  const facts = rosterFactsOf(context, {});
+  // against exactly the filters the surface would offer. This read states no zone, so the day it
+  // resolves against is the declared default and a calendar refusal cannot arise here; the union is
+  // still handled, because a refusal is never dropped on the way out.
+  const factsOutcome = rosterFactsOf("readSavedViews", context, {});
+  if (factsOutcome.kind !== "ready") {
+    return refusalOf(factsOutcome.refusal);
+  }
+  const facts = factsOutcome.facts;
   const facets = buildFacets(facts);
 
   const views: PartnerSavedView[] = [];

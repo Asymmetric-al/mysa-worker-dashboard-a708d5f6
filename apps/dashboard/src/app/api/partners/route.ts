@@ -39,6 +39,7 @@ import {
   type ReadEnvelope,
   type ReadResult,
 } from "@/modules/data-service";
+import { isResolvableTimeZone, parseCivilDate } from "@/modules/time/civil";
 
 /**
  * The envelope a service read answers with, taken from the read's own signature.
@@ -143,6 +144,14 @@ function wholeNumber(message: string) {
  * which facets exist, how their values combine, how many rows a page holds, or what any count is: a
  * facet id or value the read does not admit narrows nothing, and the read reports the filters that
  * actually took effect in `data.applied`.
+ *
+ * A period is held to the two things a range needs that its shape alone does not say — each end is a
+ * day the calendar holds, written in the stored `YYYY-MM-DD` form, and its start falls on or before
+ * its end — and a stated zone is held to the one thing it must be for the read to use it: resolvable
+ * by this runtime. Each is refused here, at the field it arrived in, rather than left to the read: an
+ * unreadable period would otherwise answer a bare "no giving figures", and an unresolvable zone would
+ * leave the roster's overdue, last-activity and last-received-gift days substituted with a calendar
+ * nobody asked for, or reported as a source outage for a value the caller supplied.
  */
 const rosterQuerySchema = z
   .strictObject({
@@ -165,6 +174,7 @@ const rosterQuerySchema = z
     to: z.string().min(1, "State both ends of the period, or omit both.").optional(),
     timeZone: z
       .string()
+      .trim()
       .min(1, "Name the zone the period resolves in, or omit it and the read uses UTC.")
       .optional(),
   })
@@ -191,6 +201,49 @@ const rosterQuerySchema = z
         path: ["period"],
         message:
           "State both ends of the period: one date is not a range, and the roster's giving figures are read over a range.",
+      });
+    }
+    if (params.from !== undefined && params.to !== undefined) {
+      const from = parseCivilDate(params.from);
+      const to = parseCivilDate(params.to);
+      if (from.status === "refused") {
+        context.addIssue({
+          code: "custom",
+          path: ["from"],
+          message: `Write the period's start in the stored form YYYY-MM-DD. The value "${params.from}" is not a day the calendar holds, and a start the roster cannot place on the calendar cannot bound the period its giving figures are read over.`,
+        });
+      }
+      if (to.status === "refused") {
+        context.addIssue({
+          code: "custom",
+          path: ["to"],
+          message: `Write the period's end in the stored form YYYY-MM-DD. The value "${params.to}" is not a day the calendar holds, and an end the roster cannot place on the calendar cannot bound the period its giving figures are read over.`,
+        });
+      }
+      // Two values the civil-date module accepted are complete `YYYY-MM-DD` days, which order
+      // chronologically exactly as they are written — the same comparison the roster's own stored
+      // days are judged by — so the ends are compared as they stand, without a date constructed
+      // here to say what the stored form already says.
+      if (from.status === "parsed" && to.status === "parsed" && params.from > params.to) {
+        context.addIssue({
+          code: "custom",
+          path: ["to"],
+          message: `State the period's end on or after its start. The period "${params.from}" to "${params.to}" spans no day, so no giving figure is read over it and none is stated.`,
+        });
+      }
+    }
+    // A blank value is already refused above, at the same field, so only a value the caller actually
+    // named is judged for resolvability: a caller who left it empty is told the one thing to correct
+    // rather than being told twice about the same empty string.
+    if (
+      params.timeZone !== undefined &&
+      params.timeZone.length > 0 &&
+      !isResolvableTimeZone(params.timeZone)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["timeZone"],
+        message: `Name a time zone this runtime resolves, or omit it and the read uses UTC. The value "${params.timeZone}" names no zone this runtime holds, and a zone it cannot resolve would judge the roster's overdue, last-activity and last-received-gift days in a calendar the request did not ask for.`,
       });
     }
     for (const expression of params.facet ?? []) {
@@ -336,9 +389,9 @@ function attemptIdOf(body: unknown): string {
  * Reads the partner roster and the facet set describing the same query, as one envelope.
  *
  * Outcome set: `envelope` (the roster page under its own members, with `data.facets` beside it),
- * `denied` (no admitted session or context) and `unavailable` (the records could not be read). A
- * refusal from either read ends the request with that refusal — it is never replaced by an empty
- * roster, an empty facet set or a zeroed count.
+ * `denied` (no admitted session or context), `unavailable` (the records could not be read) and
+ * `unknown` (a failure whose fate is not known). A refusal from either read ends the request with
+ * that refusal — it is never replaced by an empty roster, an empty facet set or a zeroed count.
  */
 export async function GET(request: NextRequest): Promise<Response> {
   const search = new URL(request.url).searchParams;
@@ -348,24 +401,31 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
   const query = assembleRosterQuery(params.data);
 
-  const roster = await reads.partners.findPartners(query);
-  if (roster.kind !== "envelope") {
-    return toResponse(roster);
-  }
+  try {
+    const roster = await reads.partners.findPartners(query);
+    if (roster.kind !== "envelope") {
+      return toResponse(roster);
+    }
 
-  // The same query object, so the counts describe the filter set the rows were read under.
-  const facets = await reads.partners.readFacets(query);
-  if (facets.kind !== "envelope") {
-    return toResponse(facets);
-  }
+    // The same query object, so the counts describe the filter set the rows were read under.
+    const facets = await reads.partners.readFacets(query);
+    if (facets.kind !== "envelope") {
+      return toResponse(facets);
+    }
 
-  const folded: RosterEnvelopeWithFacets = {
-    ...roster.envelope,
-    data: { ...roster.envelope.data, facets: facets.envelope.data },
-    valueStates: { ...roster.envelope.valueStates, ...facets.envelope.valueStates },
-  };
-  const result: ReadResult<RosterEnvelopeWithFacets> = { kind: "envelope", envelope: folded };
-  return toResponse(result);
+    const folded: RosterEnvelopeWithFacets = {
+      ...roster.envelope,
+      data: { ...roster.envelope.data, facets: facets.envelope.data },
+      valueStates: { ...roster.envelope.valueStates, ...facets.envelope.valueStates },
+    };
+    const result: ReadResult<RosterEnvelopeWithFacets> = { kind: "envelope", envelope: folded };
+    return toResponse(result);
+  } catch (error) {
+    // An exception here is a defect rather than a presentation: the service answers refusals as
+    // outcomes, so a throw means a store or medium fault, or a failure whose fate is not known. The
+    // read attempted no effect, so the outcome carries the marker rather than an operation id.
+    return toResponse(outcomeFromError(UNATTEMPTED_REQUEST_ID, error));
+  }
 }
 
 /**

@@ -2,6 +2,7 @@
 
 import { createContext, useContext, type ComponentPropsWithoutRef } from "react";
 import { cn } from "@/lib/cn";
+import { isDevelopment } from "@/lib/guards";
 
 /**
  * Raised in a development build when one `ScrollRegion` is rendered inside another.
@@ -24,19 +25,6 @@ const DEFAULT_STICKY_OFFSET = "var(--app-shell-sticky-offset, 4rem)";
 
 /** The accessible name of the enclosing region, or `null` at the top of a surface. */
 const ScrollRegionContext = createContext<string | null>(null);
-
-/**
- * True outside a production build.
- *
- * The check is written inline rather than routed through the development-boundary module in
- * `lib/guards`: it is a single comparison, and Next inlines `process.env.NODE_ENV` in a
- * Client Component, so the development-only branch is dropped from the shipped bundle. The
- * `typeof` guard keeps the read safe if this module is ever evaluated where `process` is
- * absent.
- */
-function isDevelopmentBuild(): boolean {
-  return typeof process !== "undefined" && process.env.NODE_ENV !== "production";
-}
 
 /** Props of {@link ScrollRegion}. */
 export interface ScrollRegionProps extends Omit<
@@ -96,8 +84,10 @@ export function ScrollRegion({
 
   // Development reports the nesting rather than silently rendering two scroll ports; a
   // production build renders the region, because a duplicated wrapper must not take a
-  // worker's page down.
-  if (isDevelopmentBuild() && enclosingLabel !== null) {
+  // worker's page down. The question is asked of `@/lib/guards`, the application's one
+  // development gate, so a change to what counts as a development build reaches this
+  // component too instead of leaving a second copy of the comparison behind.
+  if (isDevelopment() && enclosingLabel !== null) {
     throw new Error(
       `${SCROLL_REGION_NESTING_ERROR}: "${label}" is rendered inside "${enclosingLabel}". ` +
         "Keep the outermost region and remove the inner wrapper, so the content has exactly " +

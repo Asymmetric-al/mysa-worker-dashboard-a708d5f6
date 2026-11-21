@@ -64,6 +64,14 @@ export type CivilDayStart =
 const MIDNIGHT = Temporal.PlainTime.from("00:00");
 
 /**
+ * The instant the zone-resolvability probe converts.
+ *
+ * Whether an identifier names a time zone does not depend on the instant it is resolved at, so the
+ * probe uses the epoch rather than reading a clock this module must never read.
+ */
+const ZONE_PROBE_INSTANT: Temporal.Instant = Temporal.Instant.fromEpochMilliseconds(0);
+
+/**
  * The one accepted storage form: four-digit year, two-digit month, two-digit day, nothing else.
  *
  * A pattern rather than the parser alone, because Temporal's date parser also accepts a date-time
@@ -151,6 +159,18 @@ export function civilDateAt(instant: Temporal.Instant, timeZone: string): ZonedC
  */
 export function todayInZone(timeZone: string, now: Temporal.Instant): ZonedCivilDate {
   return resolveCivilDateAt(now, timeZone);
+}
+
+/**
+ * Whether this runtime resolves a time-zone identifier.
+ *
+ * A request that names a zone this runtime cannot resolve is a request-level defect, not an outage:
+ * the browser transport asks this question and refuses the request by field before any read runs, so
+ * a read is never left judging a day in a zone the caller did not ask for. The question is put to the
+ * one conversion every reader uses, so this answer cannot disagree with the one a read would get.
+ */
+export function isResolvableTimeZone(timeZone: string): boolean {
+  return resolveCivilDateAt(ZONE_PROBE_INSTANT, timeZone).status === "resolved";
 }
 
 /**

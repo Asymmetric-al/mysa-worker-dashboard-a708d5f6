@@ -43,8 +43,10 @@
  * submit, so a stale envelope can produce a `denied` but never an unauthorised save); it renders no
  * receipt and no toast, because the caller composes the shared review step and the durable
  * `operation-result` that say what happened. A throw is a defect rather than a presentation (AAP
- * 0.15.1): the values this hook resolves with are the eight outcomes, and a response that is not one
- * of them rejects so the caller presents recovery under the same identity instead of a resend.
+ * 0.15.1): both the request and the body read are guarded, so a transport failure or a body that is
+ * not one of the eight outcomes resolves with the union's own `unknown` member carrying this
+ * attempt's `operationId` — the token the same submission replays, so the receipt offers its
+ * check-the-result recovery, and never a success, a failure or a resend.
  *
  * Rule 1 obligations this file keeps. *Clause 1 (preserve the agreed scope):* one mutation, with no
  * financial administration, second goal or provider path beside it. *Clause 2 (reuse the patterns):*
@@ -63,7 +65,12 @@ import type { input as SchemaInput } from "zod";
 import { scopeKey } from "@/components/context-switch-guard";
 import { newOperationId } from "@/lib/ids";
 import type { MutationInput, Scope } from "@/modules/data-service/envelope";
-import { invalid, isOutcome, type MutationOutcome } from "@/modules/data-service/outcome";
+import {
+  invalid,
+  isOutcome,
+  unknown as unknownOutcome,
+  type MutationOutcome,
+} from "@/modules/data-service/outcome";
 
 import { goalSavePayloadSchema, type GoalSavePayload } from "../schemas";
 
@@ -78,16 +85,6 @@ const SAVE_GOAL_PATH = "/api/support/goal";
  * at every set of parameters. Nothing else is refreshed, because a goal save changes one target.
  */
 const REFRESHED_JOBS = ["goal", "overview", "report"] as const;
-
-/**
- * What a save whose response could not be read leaves behind, in the only terms that are true.
- *
- * The request may have been applied and its acknowledgement lost, so this is not a failure message and
- * not a success message: it is the diagnostic that goes with the rejection, and the caller's recovery
- * keeps the same `operationId`. No outcome is invented here: `unknown` is the service's to answer.
- */
-const UNCONFIRMED_SAVE =
-  "The goal save's response was not one of the eight mutation outcomes, so whether it was applied is unknown; the same operationId recovers the result.";
 
 /**
  * The payload a caller submits: the goal form's own values, before the amount becomes money.
@@ -237,20 +234,25 @@ export function useSaveGoal(): UseMutationResult<MutationOutcome, Error, SaveGoa
         payload: checked.data,
       };
 
-      const response = await fetch(SAVE_GOAL_PATH, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify(input),
-      });
+      let response: Response;
+      try {
+        response = await fetch(SAVE_GOAL_PATH, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(input),
+        });
+      } catch {
+        return unknownOutcome({ operationId: identity.operationId });
+      }
 
       /* The status is not the answer: `denied` is a 403 and `unknown` a 202, and neither is a failure of
        * the transport. The body is the outcome, so a body that cannot be read as one leaves the effect's
-       * fate genuinely unknown — which is a rejection the caller recovers from by identity, never a
-       * second save and never a quietly assumed success. */
+       * fate genuinely unknown — answered with the union's `unknown` member and this attempt's
+       * `operationId`, never a second save and never a quietly assumed success. */
       const answered: unknown = await response.json().catch(() => undefined);
       if (!isOutcome(answered)) {
-        throw new Error(UNCONFIRMED_SAVE);
+        return unknownOutcome({ operationId: identity.operationId });
       }
 
       return answered;

@@ -4,14 +4,21 @@
  * `setClock`, `advanceClock`, `setFailurePlan` and `resetSeed`. `readDevState` is a read, so it has no
  * body and no schema here.
  *
- * Each schema is the whole four-field mutation input `{ operationId, scope, expectedRevision,
- * payload }`: `mutationInputSchema` supplies the first three, so this file never re-declares them, and
- * every payload mirrors the field names and shapes the service mutation in
- * `modules/data-service/mutations/dev.ts` validates — `scenarioId`, `offsetIso`, `bySeconds`,
- * `{ mode, target: { kind, name } }`, and an empty object for the reset. Matching that service is what
- * keeps a panel-offered value from being refused as `invalid` a moment after it was accepted here. The
- * confirmation a reset needs is the shared review step's, not a wire field, because the reset mutation
- * accepts no field at all.
+ * Each schema is the whole five-member wire body the route accepts:
+ *
+ *     { action, operationId, scope, expectedRevision, payload }
+ *
+ * `action` is routing metadata, not a mutation field: it says which of the five controls the body asks
+ * for, and the route removes it before the service validates the four fields of the mutation input.
+ * `mutationInputSchema` therefore stays the one declaration of `operationId`, `scope` and
+ * `expectedRevision` — this file never re-declares them — and every payload mirrors the field names
+ * and shapes the service mutation in `modules/data-service/mutations/dev.ts` validates —
+ * `scenarioId`, `offsetIso`, `bySeconds`, `{ mode, target: { kind, name } }`, and an empty object for
+ * the reset. Matching that service is what keeps a panel-offered value from being refused as `invalid`
+ * a moment after it was accepted here, and carrying the discriminant is what keeps a body this file
+ * accepts from being refused as `invalid` keyed `action` at the transport. The confirmation a reset
+ * needs is the shared review step's, not a wire field, because the reset mutation accepts no field at
+ * all.
  *
  * The envelope module is imported rather than the `@/modules/data-service` barrel: the barrel's value
  * imports reach `node:fs/promises` (scoped media serving and media registration), while this module is
@@ -26,7 +33,8 @@
 
 import { z } from "zod";
 
-import { mutationInputSchema } from "@/modules/data-service/envelope";
+import { isRecord } from "@/lib/guards";
+import { mutationInputSchema, type MutationInput } from "@/modules/data-service/envelope";
 
 /**
  * The largest clock amount these schemas accept, in seconds — roughly ten years.
@@ -40,6 +48,8 @@ export const CLOCK_OFFSET_GUARD_SECONDS = 315_360_000;
 
 /** Every field refusal these schemas produce, stated once so no schema repeats a literal inline. */
 const DEV_SCHEMA_MESSAGES = {
+  actionRequired:
+    "A development request names the action it asks for, so send the control's own action with the rest of the request.",
   identifierRequired:
     "This change names no record, so choose the value it applies to and submit again.",
   identifierTooLong:
@@ -95,6 +105,57 @@ const advanceClockPayloadSchema = z.object({
 /** The `resetSeed` payload: a reset states nothing, so a field sent with it changes nothing. */
 const resetSeedPayloadSchema = z.object({});
 
+/**
+ * One validated development request: the four-field mutation input, plus the action it names.
+ *
+ * The route reads the discriminant to choose one of the five mutations and the service reads the four
+ * fields it validates, so both reach a parsed body's own members without this file restating either.
+ */
+export type DevRequest<Action extends DevMutationName, Payload> = MutationInput<Payload> & {
+  readonly action: Action;
+};
+
+/**
+ * The four fields the service judges, with the discriminant removed, or `undefined` when the body
+ * does not name this action.
+ *
+ * Unreachable behind the literal the request schema checks first, and kept for the same reason the
+ * route's own projection exists: a schema that hands the envelope a body must have verified the
+ * action it strips, rather than trusting an earlier stage to have done it.
+ */
+function requestProjectionOf(
+  raw: unknown,
+  action: DevMutationName,
+): Record<string, unknown> | undefined {
+  if (!isRecord(raw) || raw.action !== action) {
+    return undefined;
+  }
+  const projection: Record<string, unknown> = { ...raw };
+  delete projection.action;
+  return projection;
+}
+
+/**
+ * Builds one control's request schema: its discriminant, the service's own input envelope around this
+ * control's payload shape, and the parsed body carrying the action it named.
+ *
+ * The discriminant is checked first, so a body naming another control answers with one issue at
+ * `action` rather than with the payload messages of a control it never named. The body is read
+ * loosely so a field the envelope does not expect survives the first stage and is refused there by
+ * name instead of being dropped silently. Returning the projection as `unknown` is what lets the
+ * envelope, whose input it does not constrain, receive it.
+ */
+function developmentRequestSchema<Action extends DevMutationName, Payload>(
+  action: Action,
+  payload: z.ZodType<Payload>,
+): z.ZodType<DevRequest<Action, Payload>> {
+  return z
+    .looseObject({ action: z.literal(action, { error: DEV_SCHEMA_MESSAGES.actionRequired }) })
+    .transform((raw): unknown => requestProjectionOf(raw, action))
+    .pipe(mutationInputSchema(payload))
+    .transform((input) => ({ action, ...input }));
+}
+
 /** One call a failure plan may target: which kind of call it is, and the name the runtime advertises. */
 export type AdvertisedFailureTarget = { kind: "read" | "mutation"; name: string };
 
@@ -105,16 +166,22 @@ export type AdvertisedFailurePlan = {
 };
 
 /** Validates setScenario — accepted | alreadyAccepted | unchanged | conflict | denied | invalid | unavailable | unknown. */
-export const setScenarioRequestSchema = mutationInputSchema(setScenarioPayloadSchema);
+export const setScenarioRequestSchema = developmentRequestSchema(
+  "setScenario",
+  setScenarioPayloadSchema,
+);
 
 /** Validates setClock — accepted | alreadyAccepted | unchanged | conflict | denied | invalid | unavailable | unknown. */
-export const setClockRequestSchema = mutationInputSchema(setClockPayloadSchema);
+export const setClockRequestSchema = developmentRequestSchema("setClock", setClockPayloadSchema);
 
 /** Validates advanceClock — accepted | alreadyAccepted | unchanged | conflict | denied | invalid | unavailable | unknown. */
-export const advanceClockRequestSchema = mutationInputSchema(advanceClockPayloadSchema);
+export const advanceClockRequestSchema = developmentRequestSchema(
+  "advanceClock",
+  advanceClockPayloadSchema,
+);
 
 /** Validates resetSeed — accepted | alreadyAccepted | unchanged | conflict | denied | invalid | unavailable | unknown. */
-export const resetSeedRequestSchema = mutationInputSchema(resetSeedPayloadSchema);
+export const resetSeedRequestSchema = developmentRequestSchema("resetSeed", resetSeedPayloadSchema);
 
 /** Validates setFailurePlan against the modes and targets the caller's development read advertises. */
 export function makeSetFailurePlanRequestSchema(advertised: AdvertisedFailurePlan) {
@@ -156,22 +223,22 @@ export function makeSetFailurePlanRequestSchema(advertised: AdvertisedFailurePla
       }
     });
 
-  return mutationInputSchema(planSchema);
+  return developmentRequestSchema("setFailurePlan", planSchema);
 }
 
-/** The validated setScenario request: the four-field envelope and the scenario this session runs in. */
+/** The validated setScenario request: the action named, the four-field envelope and the scenario to run. */
 export type SetScenarioRequest = z.infer<typeof setScenarioRequestSchema>;
 
-/** The validated setClock request: the four-field envelope and the instant the clock should read. */
+/** The validated setClock request: the action named, the four-field envelope and the instant to read. */
 export type SetClockRequest = z.infer<typeof setClockRequestSchema>;
 
-/** The validated advanceClock request: the four-field envelope and the forward move in seconds. */
+/** The validated advanceClock request: the action named, the four-field envelope and the forward move. */
 export type AdvanceClockRequest = z.infer<typeof advanceClockRequestSchema>;
 
-/** The validated setFailurePlan request: the four-field envelope, one mode and the one call it arms. */
+/** The validated setFailurePlan request: the action named, the four-field envelope and the call it arms. */
 export type SetFailurePlanRequest = z.infer<ReturnType<typeof makeSetFailurePlanRequestSchema>>;
 
-/** The validated resetSeed request: the four-field envelope and no payload field to state. */
+/** The validated resetSeed request: the action named, the four-field envelope and no payload field. */
 export type ResetSeedRequest = z.infer<typeof resetSeedRequestSchema>;
 
 /** The five development mutations this family sends, verb-first and identical to the service's names. */

@@ -1,9 +1,13 @@
 /**
  * The browser transport for the one task model.
  *
- * `GET` forwards the caller's query — `list`, `displayTimeZone`, `page`, `pageSize` and `sort`
- * (repeated or comma-separated `field:direction` tokens) — to `reads.work.listTasks` untouched and
- * answers with its envelope. The read owns every default, clamp and rejection behind those names.
+ * `GET` reads the caller's query — `list`, `displayTimeZone`, `page`, `pageSize` and `sort`
+ * (repeated or comma-separated `field:direction` tokens) — and refuses one that names a display zone
+ * it cannot resolve, a list outside the five, or an ordering outside the four fields and two
+ * directions, because a due date judged in an assumed zone puts work in a list nobody asked for and a
+ * silently widened list or changed order answers a question the caller did not ask. A query that
+ * passes goes to `reads.work.listTasks` as stated, and the read owns the page window, the 50-row
+ * default and the 200-row cap behind those names.
  *
  * `POST` runs exactly one named mutation. Its discriminant is `payload.operation`, whose closed set
  * is `createTask`, `editTask`, `completeTask`, `reopenTask` and `cancelTask` — the mutation names
@@ -31,6 +35,7 @@ import {
   type MutationInput,
   type MutationOutcome,
 } from "@/modules/data-service";
+import { isResolvableTimeZone } from "@/modules/time/civil";
 
 // The store writes through node:fs, so this handler never runs on the edge runtime.
 export const runtime = "nodejs";
@@ -53,8 +58,9 @@ const READ_ATTEMPT_ID = "read";
  *
  * The field messages repeat the service's own wording for the same rules, because the mutation
  * re-validates every payload under identical constraints: a worker who corrects a field must not be
- * told two different things about it depending on which layer refused it. The two transport messages
- * at the end describe a request this file had to refuse before any mutation saw it.
+ * told two different things about it depending on which layer refused it. The transport messages
+ * after them describe a request this file refused before any mutation or read saw it: the write
+ * side's two, and the read side's own refusals of a query value the service does not admit.
  */
 const MESSAGES = {
   titleRequired:
@@ -85,6 +91,16 @@ const MESSAGES = {
     "State which change this request makes as payload.operation: createTask, editTask, completeTask, reopenTask or cancelTask.",
   bodyNotJson:
     "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.",
+  displayTimeZoneRequired:
+    "State the display time zone this view is read in, so every date in it is judged in the zone you chose rather than one this request assumes.",
+  displayTimeZoneBlank:
+    "Name the display time zone rather than leaving it blank, so no date in this view is judged in a zone nobody chose.",
+  displayTimeZoneUnresolvable:
+    "Name a display time zone this runtime resolves, such as UTC or Europe/London, so every date in this view is read in a zone that exists.",
+  listInvalid:
+    "Read one of the five lists — today, upcoming, overdue, all or undated — so the view holds the work you asked for rather than a wider list you did not.",
+  sortInvalid:
+    "Order the list as field:direction, with the field dueOn, title, category or status and the direction asc or desc, so the rows arrive in the order you asked for.",
 } as const;
 
 // ---------------------------------------------------------------------------------------------
@@ -399,7 +415,7 @@ const TASK_OPERATIONS = [
 ] as const;
 
 // ---------------------------------------------------------------------------------------------
-// The read side: the query the request stated, forwarded as it stands
+// The read side: the query grammar this transport admits
 // ---------------------------------------------------------------------------------------------
 
 /** The declared parameter shape of the one read this handler serves. */
@@ -409,49 +425,166 @@ type TaskListQuery = Parameters<typeof reads.work.listTasks>[0];
 type TaskSortInstruction = NonNullable<TaskListQuery["sort"]>[number];
 
 /**
- * The query exactly as the request stated it.
+ * The five lists this transport admits, checked against the read's own type.
  *
- * Nothing is whitelisted, renamed, defaulted or clamped here: `list` is handed over as written and
- * the read answers a name it does not know with the complete list (`normaliseListName`), drops an
- * ordering field or direction outside its closed set (`normaliseSort`), applies 50 rows by default
- * and caps a page at 200 (`clampPageSize`), and forgives a page that is not a number (`pageWindow`).
- * The two narrowings below are the transport's whole job: a URL carries text, and the read declares
- * which text it reads.
- *
- * An absent `displayTimeZone` is forwarded as blank rather than invented. The read then answers that
- * the calendar could not be resolved, which is the honest result: a due date judged against an
- * assumed zone would put work in a list the worker never asked for.
+ * The names are repeated here because the read's tuple is not re-exported through the service's
+ * index, and the `satisfies` clause is what makes the repetition safe: a name the read drops or
+ * renames fails to compile in this schema, and a sixth list it adds stays simply unoffered here —
+ * this path admits the five the Work family fixes, so no request can widen one of them into another.
  */
-function taskListQueryOf(request: Request): TaskListQuery {
-  const params = new URL(request.url).searchParams;
-  const page = params.get("page");
-  const pageSize = params.get("pageSize");
+const TASK_LIST_NAMES = [
+  "today",
+  "upcoming",
+  "overdue",
+  "all",
+  "undated",
+] as const satisfies readonly TaskListQuery["list"][];
+
+/** The fields a list may be ordered by, checked against the read's own type. */
+const TASK_SORT_FIELDS = [
+  "dueOn",
+  "title",
+  "category",
+  "status",
+] as const satisfies readonly TaskSortInstruction["field"][];
+
+/** The two directions an ordering may take, checked against the read's own type. */
+const TASK_SORT_DIRECTIONS = [
+  "asc",
+  "desc",
+] as const satisfies readonly TaskSortInstruction["direction"][];
+
+/** Whether a token names a field this path admits as an ordering. */
+function isTaskSortField(value: string): value is TaskSortInstruction["field"] {
+  return TASK_SORT_FIELDS.some((admitted) => admitted === value);
+}
+
+/** Whether a token names a direction this path admits. */
+function isTaskSortDirection(value: string): value is TaskSortInstruction["direction"] {
+  return TASK_SORT_DIRECTIONS.some((admitted) => admitted === value);
+}
+
+/**
+ * The display time zone the view is read in: stated, non-blank and resolvable here.
+ *
+ * Three states and three messages, because each asks the caller for something different: a request
+ * that names no zone, one that names an empty zone, and one that names a zone no calendar can read.
+ * Each state reports once — a blank value is refused as blank and not also as a name no database
+ * holds, so the caller reads the one thing to correct. The last question is put to
+ * `@/modules/time/civil`, the module that owns every boundary judgement behind this surface and the
+ * same conversion the read judges "today" with — so a zone admitted here is a zone the read can use,
+ * and a caller is never sent away with a mistake the read would refuse.
+ */
+const displayTimeZoneSchema = z
+  .string({ error: MESSAGES.displayTimeZoneRequired })
+  .trim()
+  .superRefine((value, ctx) => {
+    if (value.length === 0) {
+      ctx.addIssue({ code: "custom", message: MESSAGES.displayTimeZoneBlank });
+      return;
+    }
+    if (!isResolvableTimeZone(value)) {
+      ctx.addIssue({ code: "custom", message: MESSAGES.displayTimeZoneUnresolvable });
+    }
+  });
+
+/**
+ * The list a request states, judged against the five this read answers.
+ *
+ * Only a stated name is judged: a request that names no list is read as the complete one below, which
+ * is the behaviour this path has always documented for a list it was not given.
+ */
+const listNameSchema = z.enum(TASK_LIST_NAMES, { error: MESSAGES.listInvalid });
+
+/**
+ * The ordering a request states: `field:direction` tokens, repeated or comma-separated, in the order
+ * given.
+ *
+ * One inadmissible token refuses the whole ordering — reported once, on `sort`, which is the key a
+ * sort control is addressable by — and the message names every field and direction this read admits.
+ * Refusing rather than dropping the token is what keeps a list in the order the caller asked for: a
+ * field or direction silently discarded would answer in the default order while the surface still
+ * showed the order it had requested, and nothing downstream would ever check it.
+ */
+const sortSchema = z
+  .array(z.string())
+  .transform((tokens: readonly string[], context): readonly TaskSortInstruction[] => {
+    const instructions: TaskSortInstruction[] = [];
+    for (const token of tokens) {
+      const separator = token.indexOf(":");
+      const field = separator === -1 ? token : token.slice(0, separator);
+      const direction = separator === -1 ? "" : token.slice(separator + 1);
+      if (!isTaskSortField(field) || !isTaskSortDirection(direction)) {
+        // No path, so the issue lands on `sort` itself rather than on one token's index.
+        context.addIssue({ code: "custom", message: MESSAGES.sortInvalid });
+        return z.NEVER;
+      }
+      instructions.push({ field, direction });
+    }
+    return instructions;
+  });
+
+/**
+ * The grammar of the task-list query, judged before the read is called.
+ *
+ * Three vocabularies are closed here — the five lists, the four ordering fields and the two
+ * directions — because a request naming something this read does not admit is a request-level
+ * mistake, and the honest answer names the value it got wrong instead of answering with a wider list
+ * or a different order than the one asked for. `page` and `pageSize` are deliberately outside it: the
+ * read owns the 50-row default, the 200-row cap and the forgiving page window, and a second judgement
+ * at this boundary would be a second owner of a contract the envelope's `total` and `pageCount` are
+ * read beside.
+ */
+const taskListQuerySchema = z.object({
+  displayTimeZone: displayTimeZoneSchema,
+  list: listNameSchema.optional(),
+  sort: sortSchema.optional(),
+});
+
+/** The query parameters as that schema names them. */
+type TaskListQueryParams = z.output<typeof taskListQuerySchema>;
+
+/**
+ * The parameters the request stated, gathered without interpretation.
+ *
+ * An absent parameter is passed as `undefined` rather than as an empty string, so "not stated" and
+ * "stated as empty" stay different requests: the first keeps the read's documented default — the
+ * complete list and the agreed due-date-then-title order — and the second is a value this boundary
+ * has to judge. A repeated or comma-separated `sort` keeps every token, because the order the caller
+ * stated is the sequence of those tokens and nothing here reorders them.
+ */
+function rawTaskListParams(search: URLSearchParams): Record<string, unknown> {
+  const sort = search.getAll("sort").flatMap((value) => value.split(","));
 
   return {
-    list: (params.get("list") ?? "") as TaskListQuery["list"],
-    displayTimeZone: params.get("displayTimeZone") ?? "",
-    page: page === null ? undefined : Number(page),
-    pageSize: pageSize === null ? undefined : Number(pageSize),
-    sort: sortInstructionsOf(params),
+    displayTimeZone: search.get("displayTimeZone") ?? undefined,
+    list: search.get("list") ?? undefined,
+    sort: sort.length === 0 ? undefined : sort,
   };
 }
 
 /**
- * The ordering the request stated: `sort=field:direction`, repeated or comma-separated, in the order
- * given. A token with no direction is passed on whole, so the read — never this handler — is what
- * reports an ordering it will not use.
+ * The query the read is called with, once the request's values have been admitted.
+ *
+ * This boundary decides whether the values the request carries are ones this read admits, and it
+ * invents none of them: `displayTimeZone` is handed over as the request stated it, trimmed, because a
+ * due date is a civil day in a stated zone and a defaulted zone would put work in a list nobody asked
+ * for. A request that states no list is read as the complete one, and one that states no ordering
+ * leaves the read's agreed order alone. `page` and `pageSize` travel as `Number(...)` — `undefined`
+ * when the URL carries neither — so the read keeps the clamp and the forgiving page window behind
+ * them. No count, order, filter or slice is decided here.
  */
-function sortInstructionsOf(params: URLSearchParams): readonly TaskSortInstruction[] | undefined {
-  const tokens = params.getAll("sort").flatMap((value) => value.split(","));
-  if (tokens.length === 0) {
-    return undefined;
-  }
-  return tokens.map((token) => {
-    const separator = token.indexOf(":");
-    const field = separator === -1 ? token : token.slice(0, separator);
-    const direction = separator === -1 ? "" : token.slice(separator + 1);
-    return { field, direction } as TaskSortInstruction;
-  });
+function taskListQueryOf(search: URLSearchParams, params: TaskListQueryParams): TaskListQuery {
+  const page = search.get("page");
+  const pageSize = search.get("pageSize");
+
+  return {
+    list: params.list ?? "all",
+    displayTimeZone: params.displayTimeZone,
+    page: page === null ? undefined : Number(page),
+    pageSize: pageSize === null ? undefined : Number(pageSize),
+    ...(params.sort === undefined ? {} : { sort: params.sort }),
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -547,10 +680,24 @@ async function dispatch<P extends { readonly operation: string }>(
  * The answer is always one envelope — `data`, `scope`, `source`, `revision`, `asOf`, `coverage`,
  * `valueStates`, `actions` — never a bare array and never a handler-computed total. A denial carries
  * no count, title or existence hint, and an unavailable source is neither an empty list nor a zero.
+ *
+ * A request naming no display time zone, one this runtime cannot resolve, a list outside the five or
+ * an ordering outside the closed sets is refused as `invalid` with the field named before the read is
+ * called: nothing behind the read is down, and answering an outage would tell every client without a
+ * persisted zone to wait for a source that is healthy.
  */
 export async function GET(request: Request): Promise<Response> {
+  const search = new URL(request.url).searchParams;
+
   try {
-    return toResponse(await reads.work.listTasks(taskListQueryOf(request)));
+    const grammar = taskListQuerySchema.safeParse(rawTaskListParams(search));
+    if (!grammar.success) {
+      // A value this read does not admit is a request-level refusal, answered with the same
+      // per-field `invalid` outcome the five mutations answer, because no source behind the read
+      // failed and a caller has to be told which field to correct.
+      return toResponse(outcomeFromError(READ_ATTEMPT_ID, grammar.error));
+    }
+    return toResponse(await reads.work.listTasks(taskListQueryOf(search, grammar.data)));
   } catch (error) {
     // One mapper knows the difference between a store outage, a session that cannot be established
     // and a lost acknowledgement, so a thrown fault is answered rather than escaping the boundary.

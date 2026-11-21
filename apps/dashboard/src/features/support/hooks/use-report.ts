@@ -51,10 +51,6 @@ const REPORT_JOB = "report";
 /** The prefix that marks a request identity as a report's rather than a record's. */
 const SNAPSHOT_ID_PREFIX = "report-";
 
-/** FNV-1a's 32-bit offset basis and prime, named once for {@link fnv1a32}. */
-const FNV_OFFSET_BASIS = 0x811c9dc5;
-const FNV_PRIME = 0x01000193;
-
 // ---------------------------------------------------------------------------------------------
 // What the service answers with, derived from the service
 // ---------------------------------------------------------------------------------------------
@@ -174,34 +170,21 @@ function canonicalJson(value: unknown): string {
 }
 
 /**
- * The FNV-1a 32-bit hash of a string's UTF-8 bytes, as eight lowercase hex characters.
- *
- * FNV-1a is a pure function of its input with no state, table or seed to carry between runs, and
- * `Math.imul` is the exact 32-bit multiply it needs. Hashing UTF-8 bytes rather than UTF-16 code
- * units is what keeps an accented or right-to-left query value's identity the same in the browser, in
- * Node and in a test. Being 32 bits wide, two different queries could in principle collide; the
- * identity distinguishes the queries one surface asks, and it is not an authority or a secret.
- */
-function fnv1a32(input: string): string {
-  let hash = FNV_OFFSET_BASIS;
-  for (const byte of new TextEncoder().encode(input)) {
-    hash ^= byte;
-    hash = Math.imul(hash, FNV_PRIME) >>> 0;
-  }
-  return hash.toString(16).padStart(8, "0");
-}
-
-/**
  * A pure, deterministic identity for one report request: equal queries give equal ids on every
- * render, in every component and in the export call, and different queries give different ones.
- * Derived from the canonical serialisation of the query and hashed with FNV-1a 32; it reads no clock,
- * no random source and no counter, so the same query identifies itself identically across a reload,
- * a process and a machine. The export mints it from the same query the screen used, which is how the
- * downloaded file and the page it came from are known to answer one question; the `asOf`, the
- * coverage and every computed number remain the service's.
+ * render, in every component and in the export call, and two distinct queries can never share one.
+ *
+ * The identity is the canonical serialisation of the query itself, not a digest of it.
+ * {@link canonicalJson} visits object members in sorted key order and leaves explicitly-undefined
+ * members out, so equal queries give equal text and any difference in a field the request sends gives
+ * different text; because that text is the query rather than a fixed-width hash of it, no two distinct
+ * queries can collide. It reads no clock, no random source and no counter, so the same query
+ * identifies itself identically across a reload, a process and a machine. The export mints it from
+ * the same query the screen used, which is how the downloaded file and the page it came from are
+ * known to answer one question; the `asOf`, the coverage and every computed number remain the
+ * service's.
  */
 export function reportSnapshotId(query: ReportRequestQuery): string {
-  return `${SNAPSHOT_ID_PREFIX}${fnv1a32(canonicalJson(query))}`;
+  return `${SNAPSHOT_ID_PREFIX}${canonicalJson(query)}`;
 }
 
 // ---------------------------------------------------------------------------------------------
