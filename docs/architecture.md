@@ -177,3 +177,10 @@ Before those caches the same measurement, run the same way on the same workload,
 **Tracked line count.** `bun run lines` runs the request's command verbatim, `git ls-files | grep -v -e '^bun.lock$' | xargs wc -l`, and it prints `TOTAL 98537` against `LIMIT 100000` — `STATUS PASS`, exit 0 — so the delivered tree stands at **98,537 tracked lines**, 6,192 of them the `wc` line counts of the six binary media fixtures the request excludes (92,345 without them). The figure covers tracked files only, because `git ls-files` lists nothing else, and the measurement command is unchanged from the request's own pipeline.
 
 **`Virtual` is not installed.** `@tanstack/react-virtual` stays out because no rendered-row measurement crossed a threshold: the table paginates at 50 rows, capped at 200, over pages the service processes, so no surface renders a window large enough to need a virtualiser. `Virtual` is added only after a documented measurement that says so — a rendered-row timing on a real page, recorded here in the same shape as the two numbers above.
+
+## Release transport deviation: `audience` and `locale`
+
+`GET /api/variants` states four search parameters — `view`, `variantId`, `audience` and `locale` — and forwards only the first two. `readRelease` accepts `{ variantId, releaseId?, session? }` and `readSharePresentation` accepts `{ variantId, session? }`: an edition's audience and locale are properties of the variant that `variantId` identifies, and both reads state that edition's own audience and locale in the envelope. There is therefore no filter for either parameter to reach, and the route does not invent a second read to give them one.
+
+Both remain in the route's own grammar, so a value outside `public`/`approved-supporter`, an empty tag, or a parameter stated twice is refused with a message keyed to its field instead of being quietly accepted or read first-wins. A surface that sends them receives the edition `variantId` names, whose `data.audience` and `data.locale` state what was actually read: the envelope never echoes the request back as though a filter had been applied.
+

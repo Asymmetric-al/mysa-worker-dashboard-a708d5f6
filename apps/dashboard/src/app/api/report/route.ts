@@ -3,6 +3,8 @@
  */
 import type { NextRequest } from "next/server";
 import { outcomeFromError, reads, toResponse } from "@/modules/data-service";
+// The report and the export post bodies share one grammar, so the two artifacts of a query can only
+// be produced from the same reading of it.
 import { reportRequestSchema, supportQueryOf } from "../support/query";
 /** The store behind the service writes through `node:fs`, so this handler never runs on the edge. */
 export const runtime = "nodejs";
@@ -10,10 +12,21 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const READ_ATTEMPT_MARKER = "read";
+/**
+ * The body of either documented shape: the `{ query, snapshotId }` wrapper the report hook sends, or
+ * the bare query a direct caller sends. The filter set has no member named `query`, so one strict
+ * schema reads both and neither consumer needs a grammar of its own.
+ */
+function requestBodyOf(body: unknown): unknown {
+  if (typeof body === "object" && body !== null && !Array.isArray(body) && Object.hasOwn(body, "query")) {
+    return body;
+  }
+  return { query: body };
+}
 /** Computes one of the four fixed reports for the query the body states. */
 export async function POST(request: NextRequest): Promise<Response> {
   const body: unknown = await request.json().catch(() => undefined);
-  const parsed = reportRequestSchema.safeParse(body);
+  const parsed = reportRequestSchema.safeParse(requestBodyOf(body));
   if (!parsed.success) {
     return toResponse(outcomeFromError(READ_ATTEMPT_MARKER, parsed.error));
   }
