@@ -60,13 +60,14 @@ function ToggleGroup({
   )
 }
 
-/* BLITZY [A11Y]: the pressed fill this group inherits (`aria-pressed:bg-muted` in toggleVariants)
- * measures about 1.06:1 against the unpressed surface — below WCAG 2.2 SC 1.4.11's 3:1 for a state
- * indicator. It is implemented as the design system ships it, with `aria-pressed` carrying the state
- * for assistive technology, and flagged for designer review rather than darkened here.
+/* BLITZY [A11Y]: the pressed fill this group inherits (`aria-pressed:bg-highlight` in
+ * toggleVariants) is --highlight, which measures 4.83:1 against the page in the light theme and
+ * 7.56:1 in dark, so the pressed state is perceivable on screen rather than only announced through
+ * aria-pressed.
  *
- * Base UI marks a pressed toggle with `data-pressed`, so the registry's `data-[state=on]` classes below
- * are inert and are kept only for fidelity to the registry source.
+ * Base UI's Toggle sets both `aria-pressed` and a `data-pressed` attribute and never a `data-state`,
+ * so the registry's `data-[state=on]` classes below are inert and are kept only for fidelity to the
+ * registry source.
  */
 function ToggleGroupItem({
   className,
@@ -84,7 +85,7 @@ function ToggleGroupItem({
       data-size={context.size || size}
       data-spacing={context.spacing}
       className={cn(
-        "shrink-0 group-data-[spacing=0]/toggle-group:rounded-none group-data-[spacing=0]/toggle-group:px-3 group-data-[spacing=0]/toggle-group:shadow-none focus:z-10 focus-visible:z-10 group-data-[spacing=0]/toggle-group:has-data-[icon=inline-end]:pr-2.5 group-data-[spacing=0]/toggle-group:has-data-[icon=inline-start]:pl-2.5 group-data-horizontal/toggle-group:data-[spacing=0]:first:rounded-l-3xl group-data-vertical/toggle-group:data-[spacing=0]:first:rounded-t-3xl group-data-horizontal/toggle-group:data-[spacing=0]:last:rounded-r-3xl group-data-vertical/toggle-group:data-[spacing=0]:last:rounded-b-3xl data-[state=on]:bg-muted group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:border-l-0 group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:border-t-0 group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-l group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-t",
+        "shrink-0 group-data-[spacing=0]/toggle-group:rounded-none group-data-[spacing=0]/toggle-group:px-3 group-data-[spacing=0]/toggle-group:shadow-none focus:z-10 focus-visible:z-10 group-data-[spacing=0]/toggle-group:has-data-[icon=inline-end]:pe-2.5 group-data-[spacing=0]/toggle-group:has-data-[icon=inline-start]:ps-2.5 group-data-horizontal/toggle-group:data-[spacing=0]:first:rounded-s-3xl group-data-vertical/toggle-group:data-[spacing=0]:first:rounded-t-3xl group-data-horizontal/toggle-group:data-[spacing=0]:last:rounded-e-3xl group-data-vertical/toggle-group:data-[spacing=0]:last:rounded-b-3xl data-[state=on]:bg-muted group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:border-s-0 group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:border-t-0 group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-s group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-t",
         toggleVariants({
           variant: context.variant || variant,
           size: context.size || size,

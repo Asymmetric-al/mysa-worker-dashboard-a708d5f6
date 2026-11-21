@@ -75,7 +75,7 @@ import {
 import { PaginationBar } from "@/components/pagination-bar";
 import { ScrollRegion } from "@/components/scroll-region";
 import { StateNotice } from "@/components/state-notice";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -908,19 +908,29 @@ export function RecordList<TRow extends RowData>({
                           className={HEAD_CELL_CLASS}
                         >
                           {canSort ? (
-                            // A real button, not a click handler on the cell: it is reachable by
-                            // Tab, activated by Enter and Space, and its 24px floor is met by the
-                            // header row's own height. No drag participates in sorting (2.5.7).
-                            <button
-                              type="button"
+                            // The design system's Button, not a click handler on the cell: it is
+                            // reachable by Tab, activated by Enter and Space, and no drag takes
+                            // part in sorting (WCAG 2.5.7). Base UI renders it on a native
+                            // `type="button"`, so it can never submit an enclosing form, and
+                            // `size="sm"` is 32 CSS px tall — above the 24x24 floor (WCAG 2.5.8)
+                            // without changing the header row's height. `-ms-3` cancels the
+                            // button's own `px-3` so the sortable label lines up with the
+                            // non-sortable ones, whose cell supplies that padding. The ring is
+                            // stated explicitly at full strength rather than left to the variant's
+                            // default, so the one focus indicator this control has is never
+                            // halved; the variant now draws the same full-strength ring, and
+                            // tailwind-merge keeps them identical.
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="-ms-3 max-w-full focus-visible:ring-ring"
                               onClick={() => {
                                 handleSort(column);
                               }}
-                              className="-ms-1 inline-flex min-h-6 max-w-full cursor-pointer items-center gap-1.5 rounded-sm px-1 text-start hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]"
                             >
                               <table.FlexRender header={header} />
                               <SortIndicator direction={sortDirection} />
-                            </button>
+                            </Button>
                           ) : (
                             <table.FlexRender header={header} />
                           )}

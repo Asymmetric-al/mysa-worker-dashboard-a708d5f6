@@ -12,12 +12,19 @@
  * here without touching a single caller.
  *
  * The SDK supplies dismissal (`bindLayer`), focus return (`keepFocus`), roving
- * focus (`createRovingFocus`) and typeahead (`createTypeahead`). It exposes
- * modal focus containment only inside its dialog popup primitive, so that one
- * step — initial focus and the Tab cycle — is completed here and recorded in the
- * design-system gap register in `docs/architecture.md`. Everything else is
- * delegated: no focus management, arrow-key movement or dismissal logic is
- * reimplemented in this file.
+ * focus (`createRovingFocus`) and typeahead (`createTypeahead`) from its
+ * framework-agnostic core. Its React bindings supply the React-level half:
+ * `mergeProps` composes the behaviour's own props with the caller's element
+ * props, so the caller's handlers run first and can refuse a move with
+ * `preventDefault`, refs merge with their cleanups, `className` and `style`
+ * combine, and every other prop the caller passes wins outright. Every props bag
+ * this file hands back is composed there rather than reimplemented here.
+ *
+ * The SDK exposes modal focus containment only inside its dialog popup
+ * primitive, so that one step — initial focus and the Tab cycle — is completed
+ * here and recorded in the design-system gap register in `docs/architecture.md`.
+ * Everything else is delegated: no focus management, arrow-key movement or
+ * dismissal logic is reimplemented in this file.
  *
  * The application never reaches for the Base UI primitives from here. Base UI is
  * the substrate inside `src/components/ui` and the documented fallback there, so
@@ -37,6 +44,7 @@ import {
   type RovingOrientation,
   type Store,
 } from "@ui-sdk/core";
+import { mergeProps } from "@ui-sdk/react/primitive";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 
@@ -276,7 +284,10 @@ export type RovingFocusOptions = {
   onActiveKeyChange?: (key: string | null) => void;
 };
 
-/** What one item of a roving group spreads onto its element. */
+/**
+ * The props one item of a roving group spreads onto its element: the behaviour's
+ * own props, which `getItemProps` composes with the caller's own element props.
+ */
 export type RovingItemProps = {
   /** Registers the item's element with the group. */
   ref: (element: HTMLElement | null) => void | (() => void);
@@ -292,8 +303,16 @@ export type RovingItemProps = {
 export type RovingFocusApi = {
   /** The item holding the group's tab stop, or `null` before the group decides. */
   activeKey: string | null;
-  /** The props for one item, by the key the caller gives it. */
-  getItemProps: (key: string) => RovingItemProps;
+  /**
+   * The props for one item, by the key the caller gives it, composed with the
+   * caller's own element props: those handlers run first and can refuse a move
+   * with `preventDefault`, their `ref`, `className` and `style` combine with the
+   * behaviour's, and every other prop the caller passes wins outright.
+   */
+  getItemProps: <Own extends Record<string, unknown> = Record<string, never>>(
+    key: string,
+    ownProps?: Own,
+  ) => RovingItemProps & Own;
   /** Moves focus to an item, including one that has not rendered yet. */
   focusItem: (key: string) => void;
 };
@@ -404,27 +423,38 @@ export function useRovingFocus(options: RovingFocusOptions = {}): RovingFocusApi
   });
 
   const getItemProps = useCallback(
-    (key: string): RovingItemProps => {
+    <Own extends Record<string, unknown> = Record<string, never>>(
+      key: string,
+      ownProps?: Own,
+    ): RovingItemProps & Own => {
       // The stop comes from React state so the item re-renders with it; the
       // store's options only feed the SDK's own `claims` rule.
       const state: RovingState = { stop: activeKey, options: store.get().options };
 
-      return {
-        ref: refFor(key),
-        tabIndex: roving.tabIndex(state, { key, props: { key } }) === "0" ? 0 : -1,
-        onKeyDown: (event) => {
-          if (event.defaultPrevented) {
-            return;
-          }
-          const element = registration.elements.get(key);
-          if (element !== undefined) {
-            roving.keydown(event.nativeEvent, element);
-          }
-        },
-        onFocus: () => {
-          roving.remember(key);
-        },
-      };
+      // The behaviour's props come first, so the caller's own handlers run ahead
+      // of them and a refusal there skips the move, while the registering `ref`
+      // and the class names combine and a plain prop the caller repeats wins.
+      const composed: Record<string, unknown> = mergeProps(
+        {
+          ref: refFor(key),
+          tabIndex: roving.tabIndex(state, { key, props: { key } }) === "0" ? 0 : -1,
+          onKeyDown: (event) => {
+            if (event.defaultPrevented) {
+              return;
+            }
+            const element = registration.elements.get(key);
+            if (element !== undefined) {
+              roving.keydown(event.nativeEvent, element);
+            }
+          },
+          onFocus: () => {
+            roving.remember(key);
+          },
+        } satisfies RovingItemProps,
+        ownProps ?? {},
+      );
+
+      return composed as RovingItemProps & Own;
     },
     [activeKey, refFor, registration, roving, store],
   );

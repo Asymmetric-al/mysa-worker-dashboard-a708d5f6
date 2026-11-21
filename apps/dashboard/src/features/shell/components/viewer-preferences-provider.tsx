@@ -24,10 +24,13 @@
  * so the server markup and the first client render agree and no hydration warning is produced.
  *
  * Formatting only. `Intl.DateTimeFormat` renders an instant the service supplied, in the viewer's
- * chosen locale and zone. No offset arithmetic, no day boundary and no deadline is computed here:
+ * chosen locale and zone. A zone this platform cannot resolve — a name typed where the browser has no
+ * zone data at all — is kept exactly as typed, and rendering then degrades to the platform's own
+ * zone rather than failing, because a presentation preference must never make a record unreadable.
+ * No offset arithmetic, no day boundary and no deadline is computed here:
  * `@/modules/time` owns every boundary and `@/modules/money` owns every amount, and neither may be
- * duplicated in a view. This module never reads the machine clock and never constructs an instant
- * of its own — it only renders one it was given.
+ * duplicated in a view. This module never reads the machine clock and never invents an instant: the
+ * one it renders is the one it was given.
  *
  * Scope, against the project rule: clause 1 (no settings record, no second store, no new transport,
  * nothing scaffolded for a later integration), clause 2 (one owner for these three preferences
@@ -171,6 +174,15 @@ function isViewerAppearance(value: string): value is ViewerAppearance {
 }
 
 /**
+ * Whether this platform can resolve an IANA zone at all: the one answer to that question, which the
+ * display-zone setter, the stored read and the settings panel all ask, so a platform without
+ * `Intl.DateTimeFormat` is recognised once instead of by checks that can drift apart.
+ */
+export function canResolveTimeZone(): boolean {
+  return typeof Intl !== "undefined" && typeof Intl.DateTimeFormat === "function";
+}
+
+/**
  * Canonicalises a language tag, and answers `null` for one `Intl` cannot read. A tag that reaches
  * `lang` or a formatter must be valid, so an invalid choice is refused rather than stored.
  */
@@ -190,6 +202,21 @@ function canonicalTimeZone(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * The zone a chosen or stored value becomes. Where the platform can resolve a zone, only a name it
+ * knows survives, exactly as before. Where it cannot resolve one, nothing on that platform can check
+ * a name at all, so the name is adopted as given — untouched, since canonicalising it is exactly the
+ * work the absent API would have done — and the renderer is what degrades; refusing it would leave
+ * the plain-text control unable to hold any value at all. A blank entry names no zone on either
+ * platform.
+ */
+function adoptedTimeZone(value: string): string | null {
+  if (!canResolveTimeZone()) {
+    return value.trim().length === 0 ? null : value;
+  }
+  return canonicalTimeZone(value);
 }
 
 /** The browser's own zone. Called only after mount, never during a server render. */
@@ -227,8 +254,8 @@ function browserStorage(): Storage | null {
 
 /**
  * Reads the one browser-local key into whatever part of it is usable. A malformed payload, an
- * unknown appearance, an unreadable language tag or an unknown zone is dropped field by field, so
- * one bad value cannot discard the other two.
+ * unknown appearance, an unreadable language tag or a zone this platform cannot resolve is dropped
+ * field by field, so one bad value cannot discard the other two.
  */
 function readStoredPreferences(): ViewerPreferencesPatch {
   const storage = browserStorage();
@@ -256,7 +283,7 @@ function readStoredPreferences(): ViewerPreferencesPatch {
       }
     }
     if (typeof record.displayTimeZone === "string") {
-      const timeZone = canonicalTimeZone(record.displayTimeZone);
+      const timeZone = adoptedTimeZone(record.displayTimeZone);
       if (timeZone !== null) {
         stored.displayTimeZone = timeZone;
       }
@@ -395,7 +422,7 @@ export function ViewerPreferencesProvider({ children }: ViewerPreferencesProvide
   }, []);
 
   const setDisplayTimeZone = useCallback((nextTimeZone: string) => {
-    const timeZone = canonicalTimeZone(nextTimeZone);
+    const timeZone = adoptedTimeZone(nextTimeZone);
     if (timeZone === null) {
       return;
     }
@@ -448,6 +475,11 @@ const DEFAULT_INSTANT_FORMAT: Intl.DateTimeFormatOptions = {
  * display zone always wins over any `timeZone` passed in `options`, because that zone is the whole
  * point of the preference. A civil date — a due date, an introduction date — is not an instant and
  * is formatted by `@/modules/time` instead, so a display-zone change can never shift one.
+ *
+ * A display preference never makes a record unreadable, so a zone the platform cannot use — the
+ * name adopted as typed on a platform with no zone data, most often — degrades rather than throws:
+ * the same instant is rendered in the platform's own zone, and where the platform can render no
+ * formatted instant at all, as its ISO 8601 form. What is shown is always the instant given.
  */
 export function formatViewerInstant(
   instant: ViewerInstant,
@@ -455,13 +487,26 @@ export function formatViewerInstant(
   options: Intl.DateTimeFormatOptions = DEFAULT_INSTANT_FORMAT,
 ): string {
   const milliseconds = typeof instant === "number" ? instant : Date.parse(instant);
-  if (!Number.isFinite(milliseconds)) {
+  const moment = new Date(milliseconds);
+  if (Number.isNaN(moment.getTime())) {
     throw new RangeError(
       `formatViewerInstant received a value that is not an ISO 8601 instant: ${String(instant)}`,
     );
   }
-  return Intl.DateTimeFormat(preferences.interfaceLocale, {
-    ...options,
-    timeZone: preferences.displayTimeZone,
-  }).format(milliseconds);
+  try {
+    return Intl.DateTimeFormat(preferences.interfaceLocale, {
+      ...options,
+      timeZone: preferences.displayTimeZone,
+    }).format(milliseconds);
+  } catch {
+    // The chosen zone is unusable here, which says nothing about the instant itself.
+  }
+  const platformOptions: Intl.DateTimeFormatOptions = { ...options };
+  delete platformOptions.timeZone;
+  try {
+    return Intl.DateTimeFormat(preferences.interfaceLocale, platformOptions).format(milliseconds);
+  } catch {
+    // No formatted rendering of any kind on this platform, so the instant keeps a readable form.
+  }
+  return moment.toISOString();
 }

@@ -2,9 +2,11 @@
 
 import * as React from "react"
 import { AlertDialog as AlertDialogPrimitive } from "@base-ui/react/alert-dialog"
+import type { VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/cn"
 
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
+import { useDirection } from "@/components/ui/direction"
 
 function AlertDialog({ ...props }: AlertDialogPrimitive.Root.Props) {
   return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />
@@ -30,7 +32,7 @@ function AlertDialogOverlay({
     <AlertDialogPrimitive.Backdrop
       data-slot="alert-dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/80 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "fixed inset-0 isolate z-50 bg-overlay/80 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
         className
       )}
       {...props}
@@ -45,6 +47,9 @@ function AlertDialogContent({
 }: AlertDialogPrimitive.Popup.Props & {
   size?: "default" | "sm"
 }) {
+  // The direction provider is React context only, so portalled content would otherwise follow
+  // the page rather than the application. Stating it here keeps the alert dialog in that direction.
+  const direction = useDirection()
   return (
     <AlertDialogPortal>
       <AlertDialogOverlay />
@@ -56,6 +61,7 @@ function AlertDialogContent({
           the visible area, which is what WCAG 2.2 reflow and Focus Not Obscured assume. The
           registry's own max-width rules are left untouched. */}
       <AlertDialogPrimitive.Popup
+        dir={direction}
         data-slot="alert-dialog-content"
         data-size={size}
         className={cn(
@@ -76,7 +82,7 @@ function AlertDialogHeader({
     <div
       data-slot="alert-dialog-header"
       className={cn(
-        "grid grid-rows-[auto_1fr] place-items-center gap-1.5 text-center has-data-[slot=alert-dialog-media]:grid-rows-[auto_auto_1fr] has-data-[slot=alert-dialog-media]:gap-x-6 sm:group-data-[size=default]/alert-dialog-content:place-items-start sm:group-data-[size=default]/alert-dialog-content:text-left sm:group-data-[size=default]/alert-dialog-content:has-data-[slot=alert-dialog-media]:grid-rows-[auto_1fr]",
+        "grid grid-rows-[auto_1fr] place-items-center gap-1.5 text-center has-data-[slot=alert-dialog-media]:grid-rows-[auto_auto_1fr] has-data-[slot=alert-dialog-media]:gap-x-6 sm:group-data-[size=default]/alert-dialog-content:place-items-start sm:group-data-[size=default]/alert-dialog-content:text-start sm:group-data-[size=default]/alert-dialog-content:has-data-[slot=alert-dialog-media]:grid-rows-[auto_1fr]",
         className
       )}
       {...props}
@@ -156,14 +162,29 @@ function AlertDialogDescription({
   )
 }
 
+/* The confirmation control of a consequential action takes its styling from the one name this
+ * surface documents: `confirmVariant`. `destructive` is what a withdrawal, a stopped series, a
+ * revoked grant or a discarded draft takes, and every other value comes from the shared Button's
+ * own scale, so the confirm action states no colour of its own. The Button's `variant` prop is
+ * omitted from the accepted props on purpose: `confirmVariant` is the single documented route, so
+ * a caller cannot style this action two ways.
+ */
+type AlertDialogConfirmVariant = NonNullable<
+  VariantProps<typeof buttonVariants>["variant"]
+>
+
 function AlertDialogAction({
   className,
+  confirmVariant = "default",
   ...props
-}: React.ComponentProps<typeof Button>) {
+}: Omit<React.ComponentProps<typeof Button>, "variant"> & {
+  confirmVariant?: AlertDialogConfirmVariant
+}) {
   return (
     <Button
       data-slot="alert-dialog-action"
       className={cn(className)}
+      variant={confirmVariant}
       {...props}
     />
   )

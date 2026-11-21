@@ -36,9 +36,9 @@
  *     usable list. A platform that cannot resolve a zone at all degrades to a plain text field, which
  *     is the only case free text is accepted.
  *
- * Enumeration is read only after hydration (`usePlatformReady`), so the server render, the hydration
- * render and the browser render never disagree about the option list, and no zone data is shipped
- * with the application.
+ * Enumeration — and the platform capability that decides between a list and the text field — is read
+ * only after hydration (`usePlatformReady`), so the server render, the hydration render and the
+ * browser render never disagree about the control, and no zone data is shipped with the application.
  */
 
 import { useCallback, useId, useMemo, useState, useSyncExternalStore } from "react";
@@ -56,6 +56,7 @@ import { Separator } from "@/components/ui/separator";
 
 import {
   VIEWER_APPEARANCES,
+  canResolveTimeZone,
   useViewerPreferences,
   type ViewerAppearance,
 } from "./viewer-preferences-provider";
@@ -218,11 +219,6 @@ interface TimeZoneChoices {
   readonly all: readonly string[];
 }
 
-/** Whether this platform can resolve an IANA zone, which is the least the control needs. */
-function canResolveTimeZone(): boolean {
-  return typeof Intl !== "undefined" && typeof Intl.DateTimeFormat === "function";
-}
-
 /** Every IANA zone the platform publishes, or none where it cannot enumerate them. */
 function enumerableTimeZones(): readonly string[] {
   try {
@@ -241,12 +237,21 @@ function enumerableTimeZones(): readonly string[] {
   }
 }
 
-/** The mode this render can offer: enumeration only once the browser has hydrated. */
+/**
+ * The mode this render can offer. Until the browser render has hydrated, the documented shortlist is
+ * offered, so the server markup and the hydration render agree; only afterwards is the platform's own
+ * capability asked, which is why the capability check sits after `platformReady` and not before it —
+ * asking it first would render a text field on a browser without zone data while the server rendered
+ * a list, which React reports as a hydration mismatch and repairs by re-rendering the subtree.
+ */
 function timeZoneMode(platformReady: boolean): TimeZoneMode {
+  if (!platformReady) {
+    return "documented";
+  }
   if (!canResolveTimeZone()) {
     return "text";
   }
-  return platformReady && enumerableTimeZones().length > 0 ? "enumerated" : "documented";
+  return enumerableTimeZones().length > 0 ? "enumerated" : "documented";
 }
 
 /** The zones the time-zone control offers, with the zone in use guaranteed present. */
@@ -358,29 +363,18 @@ export function SettingsPreferencePanel() {
     [displayTimeZone, setDisplayTimeZone],
   );
 
-  /* The text field applies every keystroke, because the provider keeps the zone it can resolve and
-   * refuses the rest. It announces on blur, where the typed text and the applied zone can be compared
-   * — and that comparison is also what restores the field, since re-rendering a controlled input puts
-   * the applied zone back into it. No second copy of the preference is kept to do this. */
-  const announceTypedTimeZone = useCallback(
-    (typed: string) => {
-      const candidate = typed.trim();
-      if (candidate === displayTimeZone) {
-        setAnnouncement(`Display time zone: ${displayTimeZone}`);
-        return;
-      }
-      if (candidate.length === 0) {
-        setAnnouncement(
-          `Display time zone: ${displayTimeZone}. No time zone was entered, so this has not changed.`,
-        );
-        return;
-      }
-      setAnnouncement(
-        `Display time zone: ${displayTimeZone}. ${candidate} is not a time zone this browser knows, so this has not changed.`,
-      );
-    },
-    [displayTimeZone],
-  );
+  /* The text field exists only where the platform has no zone data, so nothing on this path can check
+   * a name: the provider adopts what was typed and the renderer degrades. The announcement therefore
+   * reports the zone now in force and says plainly that this browser cannot check names, rather than
+   * calling a name unknown to a browser that cannot know any name. Blur is where it speaks, and the
+   * applied value is read back from the provider — no second copy of the preference is kept. A blank
+   * entry needs no announcement of its own: the provider refuses it and React restores the zone in
+   * force, so the field can never be emptied and the zone reported here is always the applied one. */
+  const announceTypedTimeZone = useCallback(() => {
+    setAnnouncement(
+      `Display time zone: ${displayTimeZone}. This browser cannot check time-zone names, so the name is used exactly as typed.`,
+    );
+  }, [displayTimeZone]);
 
   return (
     <Card>
@@ -482,8 +476,8 @@ export function SettingsPreferencePanel() {
                 onChange={(event) => {
                   setDisplayTimeZone(event.currentTarget.value);
                 }}
-                onBlur={(event) => {
-                  announceTypedTimeZone(event.currentTarget.value);
+                onBlur={() => {
+                  announceTypedTimeZone();
                 }}
               />
             ) : (
@@ -518,7 +512,7 @@ export function SettingsPreferencePanel() {
               Changes how dates and times are shown to you. A date with no time of day — a due date,
               an introduction date — keeps the day the service recorded, and no deadline moves.
               {mode === "text"
-                ? " This browser cannot list time zones, so type the zone name, for example Europe/Berlin."
+                ? " This browser cannot list or check time-zone names, so the name you type is used exactly as typed, for example Europe/Berlin."
                 : ""}
             </p>
           </div>

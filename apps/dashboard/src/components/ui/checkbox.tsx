@@ -4,20 +4,22 @@ import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox"
 import { cn } from "@/lib/cn"
 import { CheckIcon } from "lucide-react"
 
-/* BLITZY [A11Y]: the design system restyles, rather than removes, the focus
- * indicator — `outline-none` plus a 3px ring at 50% alpha over --ring — which
- * composites to about 1.55:1 against the page background in the light theme,
- * under SC 1.4.11's 3:1. A standalone disabled checkbox is dimmed only inside a
- * Field group (`group-has-disabled/field`), so it is announced disabled through
- * aria-disabled but not visually changed. Both are the published values and are
- * kept as drawn; flagged for designer review instead of silently altered.
+/* BLITZY [A11Y]: the design system restyles, rather than removes, the focus indicator — a
+ * full-strength `ring-ring` at the declared 3px width, which measures 4.83:1 against the page
+ * background in the light theme and so clears SC 1.4.11's 3:1. `outline-none` no longer leaves
+ * a focused control without an indicator, because the token layer's forced-colors outline is
+ * drawn in a system colour where the ring itself is replaced. The disabled state is drawn from
+ * the `data-disabled` attribute Base UI emits on this root span, because the registry's
+ * `disabled:` variant cannot match a non-native control: the root is a span beside a visually
+ * hidden input, so `:disabled` never matches and a standalone disabled checkbox would otherwise
+ * keep its enabled appearance.
  */
 function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
   return (
     <CheckboxPrimitive.Root
       data-slot="checkbox"
       className={cn(
-        "peer relative flex size-4 shrink-0 items-center justify-center rounded-sm border border-input transition-shadow outline-none group-has-disabled/field:opacity-50 group-has-[:focus-visible]/field-label:ring-0 group-has-[:focus-visible]/field-label:not-data-checked:border-input after:absolute after:-inset-x-3 after:-inset-y-2 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-[3px] aria-invalid:ring-destructive/20 aria-invalid:aria-checked:border-primary dark:bg-input/30 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground group-has-[:focus-visible]/field-label:data-checked:border-primary dark:data-checked:bg-primary",
+"peer relative flex size-4 shrink-0 items-center justify-center rounded-sm border border-input transition-shadow outline-none group-has-disabled/field:opacity-50 group-has-[:focus-visible]/field-label:ring-0 group-has-[:focus-visible]/field-label:not-data-checked:border-input after:absolute after:-inset-x-3 after:-inset-y-2 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring data-disabled:cursor-not-allowed data-disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-[3px] aria-invalid:ring-destructive/20 aria-invalid:aria-checked:border-primary dark:bg-input/30 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:border-primary data-checked:bg-primary data-checked:text-primary-foreground group-has-[:focus-visible]/field-label:data-checked:border-primary dark:data-checked:bg-primary",
         className
       )}
       {...props}

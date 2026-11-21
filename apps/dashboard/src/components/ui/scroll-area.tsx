@@ -5,11 +5,9 @@ import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area"
 // Registry `cn` placeholder -> this repository's single class-merge utility; no `cn` package.
 import { cn } from "@/lib/cn"
 
-/* BLITZY [A11Y]: the viewport's only focus indicator is this registry component's
- * `focus-visible:ring-ring/50` — `--ring` at 50% alpha, which measures about 1.5:1 against the
- * page surface and so below the 3:1 WCAG 2.2 expects of a focus indicator. The design system's
- * value is kept as published and flagged for designer review: the correction belongs in the
- * theme's `--ring` token, which every Maia component shares, not in this one surface. */
+/* BLITZY [A11Y]: the viewport's focus indicator is `focus-visible:ring-ring` at the shared
+ * focus-ring width, which measures 4.83:1 against the page in the light theme and 4.12:1 in dark —
+ * above the 3:1 WCAG 2.2 expects of a focus indicator, in both themes. */
 
 function ScrollArea({
   className,
@@ -24,7 +22,7 @@ function ScrollArea({
     >
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
+        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-1"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
@@ -45,7 +43,7 @@ function ScrollBar({
       data-orientation={orientation}
       orientation={orientation}
       className={cn(
-        "flex touch-none p-px transition-colors select-none data-horizontal:h-2.5 data-horizontal:flex-col data-horizontal:border-t data-horizontal:border-t-transparent data-vertical:h-full data-vertical:w-2.5 data-vertical:border-l data-vertical:border-l-transparent",
+        "flex touch-none p-px transition-colors select-none data-horizontal:h-2.5 data-horizontal:flex-col data-horizontal:border-t data-horizontal:border-t-transparent data-vertical:h-full data-vertical:w-2.5 data-vertical:border-s data-vertical:border-s-transparent",
         className
       )}
       {...props}

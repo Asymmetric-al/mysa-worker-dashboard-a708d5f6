@@ -57,9 +57,35 @@ function EmptyMedia({
   )
 }
 
-function EmptyTitle({ className, ...props }: React.ComponentProps<"div">) {
+/** The heading levels a surrounding page can need; the level is the caller's, not the title's. */
+export type EmptyTitleHeadingLevel = 1 | 2 | 3 | 4 | 5 | 6
+
+/** The heading element for each level, so a titled empty state joins the document outline. */
+const EMPTY_TITLE_HEADING_TAG: Readonly<
+  Record<EmptyTitleHeadingLevel, "h1" | "h2" | "h3" | "h4" | "h5" | "h6">
+> = {
+  1: "h1",
+  2: "h2",
+  3: "h3",
+  4: "h4",
+  5: "h5",
+  6: "h6",
+}
+
+function EmptyTitle({
+  className,
+  headingLevel,
+  ...props
+}: React.ComponentProps<"div"> & { headingLevel?: EmptyTitleHeadingLevel }) {
+  // A bare div stays the default because the composed caller already renders its own heading in
+  // this slot (`state-notice` puts a `NoticeHeading` inside `EmptyTitle`); a forced heading would
+  // nest one heading in another and double the page outline. A caller that has no heading of its
+  // own states `headingLevel` and gets a real one.
+  const HeadingTag =
+    headingLevel === undefined ? "div" : EMPTY_TITLE_HEADING_TAG[headingLevel]
+
   return (
-    <div
+    <HeadingTag
       data-slot="empty-title"
       className={cn(
         "font-heading text-lg font-medium tracking-tight",
@@ -70,7 +96,10 @@ function EmptyTitle({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function EmptyDescription({ className, ...props }: React.ComponentProps<"p">) {
+function EmptyDescription({
+  className,
+  ...props
+}: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="empty-description"

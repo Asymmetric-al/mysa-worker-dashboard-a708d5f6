@@ -72,16 +72,15 @@ type BadgeVariant = NonNullable<ComponentProps<typeof Badge>["variant"]>;
  * carries, in the order a reader expects: support arriving is `--positive`, something needing
  * attention is `--warning`, and an adverse or withdrawn outcome is `--destructive`.
  *
- * BLITZY [A11Y]: the design system's own `destructive` badge variant paints `--destructive` text on a
- * 10% destructive tint, which measures 3.99:1 in the light theme — below the WCAG 2.2 AA 4.5:1
- * minimum for 12px text. This label therefore uses the destructive pair the same token layer carries
- * for text on a filled surface (`--destructive` with `--destructive-foreground`, 4.56:1 light,
- * higher in dark) rather than repeating a sub-AA pair on every withdrawn, revoked and failed badge.
- * The token itself is not altered here; the tint's contrast remains flagged where it is defined, in
- * `components/ui/badge.tsx`.
+ * BLITZY [A11Y]: the system's `destructive` badge variant now paints the filled destructive pair the
+ * token layer carries (`--destructive` with `--destructive-foreground`, 4.56:1 in the light theme and
+ * 6.19:1 in dark), and this label uses the same pair for the same reason: a withdrawn, revoked or
+ * failed state carries an adverse meaning, so it is painted as a strong filled chip rather than a
+ * faint tint.
  *
- * `muted-foreground` is deliberately absent: on the `--secondary` fill it measures 4.39:1, so a muted
- * label keeps `--foreground` text on the outlined surface and stays legible.
+ * `muted-foreground` is deliberately absent: the `muted` tone is the outlined chip, so its text keeps
+ * `--foreground`. The least insistent tone is expressed by the absence of a fill, not by dimming the
+ * text on one.
  */
 const TONE_APPEARANCE: Readonly<
   Record<StatusTone, { readonly variant: BadgeVariant; readonly className?: string }>

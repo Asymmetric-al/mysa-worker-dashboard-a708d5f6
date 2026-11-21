@@ -5,6 +5,7 @@ import { Dialog as SheetPrimitive } from "@base-ui/react/dialog"
 import { cn } from "@/lib/cn"
 
 import { Button } from "@/components/ui/button"
+import { useDirection } from "@/components/ui/direction"
 import { XIcon } from "lucide-react"
 
 function Sheet({ ...props }: SheetPrimitive.Root.Props) {
@@ -28,7 +29,7 @@ function SheetOverlay({ className, ...props }: SheetPrimitive.Backdrop.Props) {
     <SheetPrimitive.Backdrop
       data-slot="sheet-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/80 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs",
+        "fixed inset-0 z-50 bg-overlay/80 transition-opacity duration-150 data-ending-style:opacity-0 data-starting-style:opacity-0 supports-backdrop-filter:backdrop-blur-xs",
         className
       )}
       {...props}
@@ -46,10 +47,14 @@ function SheetContent({
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
 }) {
+  // The direction provider is React context only, so portalled content would otherwise follow
+  // the page rather than the application. Stating it here keeps the sheet in that direction.
+  const direction = useDirection()
   return (
     <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Popup
+        dir={direction}
         data-slot="sheet-content"
         data-side={side}
         className={cn(
@@ -68,7 +73,7 @@ function SheetContent({
             render={
               <Button
                 variant="ghost"
-                className="absolute top-4 right-4"
+                className="absolute top-4 end-4"
                 size="icon-sm"
               />
             }

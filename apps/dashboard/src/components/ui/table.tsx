@@ -70,7 +70,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        "border-b transition-colors hover:bg-muted/50 hover:row-state-indicator has-aria-expanded:bg-muted/50 has-aria-expanded:row-state-indicator data-[state=selected]:bg-muted data-[state=selected]:row-state-indicator",
         className
       )}
       {...props}
@@ -79,9 +79,12 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
 }
 
 function TableHead({ className, ...props }: React.ComponentProps<"th">) {
+  // A column header is the default this recipe serves; the attribute sits before the spread so a
+  // caller marks a row header by passing `scope="row"` and wins.
   return (
     <th
       data-slot="table-head"
+      scope="col"
       className={cn(
         "h-12 px-3 text-start align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pe-0",
         className

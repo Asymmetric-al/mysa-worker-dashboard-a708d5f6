@@ -751,7 +751,7 @@ export function ContextSwitchGuard({
           */}
           <AlertDialogAction
             ref={stayRef}
-            variant="outline"
+            confirmVariant="outline"
             onClick={() => {
               onStay();
             }}
@@ -759,7 +759,7 @@ export function ContextSwitchGuard({
             Stay here
           </AlertDialogAction>
           <AlertDialogAction
-            variant="destructive"
+            confirmVariant="destructive"
             disabled={busyNow}
             onClick={() => {
               runAction("discard");

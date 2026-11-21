@@ -98,10 +98,12 @@ function BreadcrumbEllipsis({
   ...props
 }: React.ComponentProps<"span">) {
   return (
+    /* Neither `role="presentation"` nor `aria-hidden` belongs here: the truncated trail is
+       announced from the `sr-only` text below, and either attribute would take it out of the
+       accessibility tree. Unlike the separator's chevron, this mark stands in for pages the
+       reader has not been shown, so it is not decorative. */
     <span
       data-slot="breadcrumb-ellipsis"
-      role="presentation"
-      aria-hidden="true"
       className={cn(
         "flex size-5 items-center justify-center [&>svg]:size-4",
         className

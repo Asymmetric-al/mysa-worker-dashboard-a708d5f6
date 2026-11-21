@@ -3,12 +3,15 @@
  * its values from here; none of them declares a colour, radius, shadow or spacing
  * literal of its own.
  *
- * Colours are the shadcn 4.23.0 `base-maia` token block on the Zinc base colour, taken
- * verbatim from the registry's Zinc OKLCH pairs. Zinc has no destructive-foreground and
- * no positive or warning semantic, so those three pairs are added to both blocks from
- * values the palette already carries: the positive and warning pairs use the pinned
- * Tailwind palette's green and amber steps, and every added pair keeps text on its own
- * filled surface at WCAG AA.
+ * Colours are the shadcn 4.23.0 `base-maia` token block on the Zinc base colour. Zinc has no
+ * destructive-foreground and no positive or warning semantic, so those three pairs are added to
+ * both blocks from values the palette already carries: the positive and warning pairs use the
+ * pinned Tailwind palette's green and amber steps, and every added pair keeps text on its own
+ * filled surface at WCAG AA. The values that carry an accessibility floor — the focus ring, the
+ * field boundary, the muted foreground, the interaction-state fill and both data-series ramps —
+ * are placed at the value that meets that floor rather than at the published one: a Zinc step
+ * wherever the palette provides one, and a step of the same hue and chroma where it does not (the
+ * two data-series ramps). Each is documented where it is declared.
  */
 
 @import "tailwindcss";
@@ -63,6 +66,9 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
+  --color-highlight-foreground: var(--highlight-foreground);
+  --color-highlight: var(--highlight);
+  --color-overlay: var(--overlay);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
@@ -99,19 +105,31 @@
   --card-foreground: oklch(0.141 0.005 285.823);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.141 0.005 285.823);
+  /* The modal and sheet scrim is a token rather than a palette literal, so it follows the
+   * theme. It is painted at 80% (`bg-overlay/80`); this step renders the same near-black
+   * scrim the palette literal did in the light theme.
+   */
+  --overlay: oklch(0.141 0.005 285.823);
   --primary: oklch(0.21 0.006 285.885);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.967 0.001 286.375);
   --secondary-foreground: oklch(0.21 0.006 285.885);
   --muted: oklch(0.967 0.001 286.375);
-  /* BLITZY [A11Y]: the design system's Zinc muted foreground measures about 4.4:1 when
-   * placed on the muted surface — just under the 4.5:1 WCAG AA minimum for body text,
-   * though it clears 4.8:1 on the page background. Kept as the design system specifies
-   * and flagged for designer review.
+  /* The palette's Zinc 500 step measures 4.39:1 on the --muted surface, under the 4.5:1 WCAG AA
+   * minimum for body text, so the next darker Zinc step is used: it measures 7.02:1 on --muted
+   * and 7.73:1 on the page.
    */
-  --muted-foreground: oklch(0.552 0.016 285.938);
+  --muted-foreground: oklch(0.442 0.017 285.786);
   --accent: oklch(0.967 0.001 286.375);
   --accent-foreground: oklch(0.21 0.006 285.885);
+  /* The interaction-state fill: pressed, highlighted and selected. The quiet-surface tokens
+   * above (--secondary, --muted, --accent) carry 1.10:1 against the page, so a state drawn in
+   * one of them is imperceptible and they cannot serve as the indicator as well. This pair
+   * measures 4.83:1 against the page and against a popover, and its own foreground text
+   * measures 4.62:1 on it.
+   */
+  --highlight: oklch(0.552 0.016 285.938);
+  --highlight-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
   --positive: oklch(0.527 0.154 150.069);
@@ -119,18 +137,26 @@
   --warning: oklch(0.555 0.163 48.998);
   --warning-foreground: oklch(0.985 0 0);
   --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  /* BLITZY [A11Y]: the design system's Zinc ring value measures about 2.6:1 against
-   * the page background — under the 3:1 WCAG 1.4.11 minimum for a focus indicator.
-   * Implemented exactly as the design system specifies and flagged for designer review
-   * rather than darkened here.
+  /* --input is the field-boundary token: a text field's only visible boundary is this border,
+   * so it has to reach the 3:1 floor of SC 1.4.11, and this step measures 4.83:1 against the
+   * page and against a card. --border stays the decorative rule token (table rules, dividers)
+   * and is not the field boundary.
    */
-  --ring: oklch(0.705 0.015 286.067);
-  --chart-1: oklch(0.871 0.006 286.286);
-  --chart-2: oklch(0.552 0.016 285.938);
-  --chart-3: oklch(0.442 0.017 285.786);
-  --chart-4: oklch(0.37 0.013 285.805);
-  --chart-5: oklch(0.274 0.006 286.033);
+  --input: oklch(0.552 0.016 285.938);
+  /* The palette's Zinc ring step measures 2.63:1 against the page, under the 3:1 a focus
+   * indicator must reach. This step measures 4.83:1, and every component draws it at full
+   * strength — no half-strength alpha — at the one declared width.
+   */
+  --ring: oklch(0.552 0.016 285.938);
+  /* One data-series ramp per theme. Each step clears the 3:1 non-text floor against the page
+   * (3.30, 5.00, 7.60, 11.60, 17.60:1) and consecutive steps are 1.52:1 apart, so series stay
+   * distinguishable while every series is still labelled rather than identified by colour alone.
+   */
+  --chart-1: oklch(0.645 0.008 286);
+  --chart-2: oklch(0.543 0.008 286);
+  --chart-3: oklch(0.445 0.008 286);
+  --chart-4: oklch(0.344 0.008 286);
+  --chart-5: oklch(0.213 0.008 286);
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.141 0.005 285.823);
@@ -139,10 +165,13 @@
   --sidebar-accent: oklch(0.967 0.001 286.375);
   --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
   --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.705 0.015 286.067);
+  --sidebar-ring: oklch(0.552 0.016 285.938);
 
   --target-size-min: 1.5rem;
-  --focus-ring-width: 2px;
+  /* One focus-visible width. The design system's components draw a 3px ring, so the declared
+   * width matches what they draw and the base focus outline below consumes this value.
+   */
+  --focus-ring-width: 3px;
   --focus-ring-offset: 2px;
   --scroll-pad-block-start: 4rem;
 }
@@ -156,6 +185,10 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.21 0.006 285.885);
   --popover-foreground: oklch(0.985 0 0);
+  /* The dark scrim is true black at 80%, so the panel behind it stays the brightest
+   * surface on the screen.
+   */
+  --overlay: oklch(0 0 0);
   --primary: oklch(0.92 0.004 286.32);
   --primary-foreground: oklch(0.21 0.006 285.885);
   --secondary: oklch(0.274 0.006 286.033);
@@ -164,6 +197,12 @@
   --muted-foreground: oklch(0.705 0.015 286.067);
   --accent: oklch(0.274 0.006 286.033);
   --accent-foreground: oklch(0.985 0 0);
+  /* The same interaction-state fill in the dark theme: a step that clears the 3:1 state floor
+   * against the page and a popover rather than repeating the quiet surface, and carries its own
+   * foreground text above 7:1.
+   */
+  --highlight: oklch(0.705 0.015 286.067);
+  --highlight-foreground: oklch(0.141 0.005 285.823);
   --destructive: oklch(0.704 0.191 22.216);
   /* A dark-theme destructive surface is a light red, so its foreground has to be dark;
    * the palette's near-white would sit at about 2.8:1 on it.
@@ -174,13 +213,17 @@
   --warning: oklch(0.828 0.189 84.429);
   --warning-foreground: oklch(0.205 0 0);
   --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
+  --input: oklch(0.552 0.016 285.938);
   --ring: oklch(0.552 0.016 285.938);
-  --chart-1: oklch(0.871 0.006 286.286);
-  --chart-2: oklch(0.552 0.016 285.938);
-  --chart-3: oklch(0.442 0.017 285.786);
-  --chart-4: oklch(0.37 0.013 285.805);
-  --chart-5: oklch(0.274 0.006 286.033);
+  /* The same ramp read from the dark end: 3.39/5.21/8.02/12.34/18.99:1 against the page and
+   * 3.02/4.65/7.15/11.00/16.93:1 against a card, with 1.54:1 between consecutive steps — the
+   * widest separation available while the darkest step still clears 3:1 on a card.
+   */
+  --chart-1: oklch(0.506 0.008 286);
+  --chart-2: oklch(0.609 0.008 286);
+  --chart-3: oklch(0.721 0.008 286);
+  --chart-4: oklch(0.845 0.008 286);
+  --chart-5: oklch(0.984 0.008 286);
   --radius: 0.625rem;
   --sidebar: oklch(0.21 0.006 285.885);
   --sidebar-foreground: oklch(0.985 0 0);
@@ -192,14 +235,14 @@
   --sidebar-ring: oklch(0.552 0.016 285.938);
 
   --target-size-min: 1.5rem;
-  --focus-ring-width: 2px;
+  --focus-ring-width: 3px;
   --focus-ring-offset: 2px;
   --scroll-pad-block-start: 4rem;
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
     /* Focus Not Obscured (2.4.11): scroll padding is not inherited, so every scroll
      * container carries the offset that clears the sticky shell and sticky table
      * header. On an element that does not scroll the declaration is inert.
@@ -219,11 +262,24 @@
     scroll-margin-block-start: var(--scroll-pad-block-start);
   }
 
-  /* Focus is always visible. Components may restyle the ring for their own surface;
-   * they never remove it, and it is drawn from the same token in both themes.
+  /* Focus is always visible. Components may restyle the ring for their own surface; where
+   * they set `outline-none` to draw a ring instead, the forced-colors block below restores
+   * an outline, and the ring and the outline are drawn from the same token in both themes.
    */
   :focus-visible {
     outline: var(--focus-ring-width) solid var(--ring);
+    outline-offset: var(--focus-ring-offset);
+  }
+}
+
+/* The system palette replaces every colour in forced-colors mode, so a component that sets
+ * `outline-none` to draw its own ring would leave a focused control with no indicator at
+ * all. This restores the declared-width outline in a system colour; it is unlayered so it
+ * outranks the utility layer's own outline utilities.
+ */
+@media (forced-colors: active) {
+  *:focus-visible {
+    outline: var(--focus-ring-width) solid CanvasText;
     outline-offset: var(--focus-ring-offset);
   }
 }
@@ -242,6 +298,28 @@
   font-variant-ligatures: none;
   font-variant-numeric: tabular-nums;
   unicode-bidi: isolate;
+}
+
+/* A table row's hover and selection state: a 3px bar in the interaction-state fill on the row's
+ * start edge, drawn by that row's first cell. Filling the whole row instead would have to invert
+ * the text of every descendant, and a cell holding a muted amount, a destructive label or a badge
+ * would not survive that, so the state is carried by an indicator that leaves the row's own text
+ * colours alone. `inset-inline-start` keeps the bar on the start edge in a right-to-left table,
+ * and the pseudo-element takes no space, so selecting a row never moves its content.
+ */
+@utility row-state-indicator {
+  & > *:first-child {
+    position: relative;
+  }
+
+  & > *:first-child::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 3px;
+    background-color: var(--highlight);
+  }
 }
 
 /* Motion collapses rather than disappears: a transition tied to a state change still

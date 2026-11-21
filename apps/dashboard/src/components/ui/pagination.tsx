@@ -7,7 +7,6 @@ import { ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from "lucide-re
 function Pagination({ className, ...props }: React.ComponentProps<"nav">) {
   return (
     <nav
-      role="navigation"
       aria-label="pagination"
       data-slot="pagination"
       className={cn("mx-auto flex w-full justify-center", className)}
@@ -71,10 +70,10 @@ function PaginationPrevious({
     <PaginationLink
       aria-label="Go to previous page"
       size="default"
-      className={cn("pl-2!", className)}
+      className={cn("ps-2!", className)}
       {...props}
     >
-      <ChevronLeftIcon data-icon="inline-start" />
+      <ChevronLeftIcon className="rtl:rotate-180" data-icon="inline-start" />
       <span className="hidden sm:block">{text}</span>
     </PaginationLink>
   )
@@ -89,11 +88,11 @@ function PaginationNext({
     <PaginationLink
       aria-label="Go to next page"
       size="default"
-      className={cn("pr-2!", className)}
+      className={cn("pe-2!", className)}
       {...props}
     >
       <span className="hidden sm:block">{text}</span>
-      <ChevronRightIcon data-icon="inline-end" />
+      <ChevronRightIcon className="rtl:rotate-180" data-icon="inline-end" />
     </PaginationLink>
   )
 }
@@ -103,8 +102,11 @@ function PaginationEllipsis({
   ...props
 }: React.ComponentProps<"span">) {
   return (
+    /* The wrapper carries no `aria-hidden`: the `sr-only` text below is the alternative a
+       screen reader reads for the pages this mark stands in for, and a hidden wrapper would
+       take that text out of the accessibility tree with the rest of its subtree. The icon
+       stays decorative on its own, because lucide marks an unlabelled icon `aria-hidden`. */
     <span
-      aria-hidden
       data-slot="pagination-ellipsis"
       className={cn(
         "flex size-9 items-center justify-center [&_svg:not([class*='size-'])]:size-4",

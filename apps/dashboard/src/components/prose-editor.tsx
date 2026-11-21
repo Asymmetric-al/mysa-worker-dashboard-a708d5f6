@@ -435,10 +435,10 @@ function unreadableFailure(issues: readonly DocumentIssue[]): SaveFailure {
  * `aria-pressed`. Every control is at least 32 CSS px square (above the 24 px minimum), carries an
  * accessible name, and is reachable and operable from the keyboard.
  *
- * BLITZY [A11Y]: the design system's pressed treatment (`aria-pressed:bg-muted` on a transparent
- * toggle) measures about 1.06:1 against the unpressed surface, below WCAG 2.2 SC 1.4.11's 3:1 for a
- * state indicator. It is implemented as the system ships it — `aria-pressed` still carries the state
- * for assistive technology — and flagged for designer review rather than darkened here.
+ * BLITZY [A11Y]: the pressed treatment (`aria-pressed:bg-highlight` with
+ * `aria-pressed:text-highlight-foreground` on the toolbar's transparent toggle) paints --highlight,
+ * which measures 4.83:1 against the page in the light theme and 7.56:1 in dark, so Bold and Italic
+ * carry a visible pressed state as well as `aria-pressed`.
  */
 interface ToolbarControlProps {
   readonly label: string;
@@ -1324,7 +1324,7 @@ export function ProseEditor({
       <div
         className={cn(
           "min-h-40 min-w-0 rounded-lg border border-input bg-input/30 motion-safe:transition-colors",
-          "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50",
+          "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring",
           readOnly && "border-transparent bg-transparent",
         )}
       >
