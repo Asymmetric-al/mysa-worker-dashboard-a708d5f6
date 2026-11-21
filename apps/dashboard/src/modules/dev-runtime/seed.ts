@@ -91,6 +91,7 @@ import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { UNKNOWN_CURRENCY } from "@/modules/money/currency";
 import type { SessionDocuments } from "@/modules/store/paths";
 import type { CommitmentKind, RecurringBucket } from "@/modules/support/buckets";
+import { GOAL_CAPABILITY } from "@/modules/support/goal";
 import { SEED_INSTANT } from "@/modules/time/clock";
 import { startOfCivilDay } from "@/modules/time/civil";
 import { confirmationDeadline, continuedWindowEnd, newWindowEnd } from "@/modules/time/window";
@@ -257,6 +258,35 @@ export type PersonaId =
   | "reader-approved-supporter"
   | "reader-unauthorized"
   | "subscriber";
+
+/**
+ * What each persona may do beyond admission, as the capability set its session states.
+ *
+ * The only capability this release defines is the support goal's `canEditGoal`
+ * (`modules/support/goal.ts` owns its name and its test; importing the name keeps one declaration of
+ * it). Admission alone never implies it: two principals admitted to the same ministry can sit on
+ * either side of it, which is exactly what makes the goal read-only for one of them and editable for
+ * the other.
+ *
+ * Who holds it, and why. A worker sets the target for the support they raise, so every worker persona
+ * holds it — including the deputized fundraiser, whose seat exists to raise support inside one
+ * admitted ministry. A content reviewer acts in the ministry for content and never for finance, and a
+ * coach, reader or subscriber relates to a publication rather than to a ministry's target and holds
+ * no membership at all; none of them holds it. That absence is a real, seeded state: the reviewer
+ * session opens the same Support surface, sees the same goal and is offered no way to change it.
+ */
+const CAPABILITIES_BY_PERSONA: Readonly<Record<PersonaId, readonly string[]>> = Object.freeze({
+  "new-worker": Object.freeze([GOAL_CAPABILITY]),
+  "established-worker": Object.freeze([GOAL_CAPABILITY]),
+  "second-worker": Object.freeze([GOAL_CAPABILITY]),
+  fundraiser: Object.freeze([GOAL_CAPABILITY]),
+  coach: Object.freeze([]),
+  reviewer: Object.freeze([]),
+  "reader-public": Object.freeze([]),
+  "reader-approved-supporter": Object.freeze([]),
+  "reader-unauthorized": Object.freeze([]),
+  subscriber: Object.freeze([]),
+});
 
 /** One persona, the words it is named by, and the session a spec selects when it means that persona. */
 export interface SeededPersona {
@@ -3050,6 +3080,7 @@ function buildSessionDocuments(session: SeededSession): SeededSessionDocuments {
       admittedMemberships: session.admittedMemberships,
       sessionState: session.sessionState,
       scenarioId: session.scenarioId,
+      capabilities: CAPABILITIES_BY_PERSONA[session.persona],
       selectedContext:
         selected === null
           ? null

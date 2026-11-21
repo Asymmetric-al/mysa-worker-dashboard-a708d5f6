@@ -101,6 +101,15 @@ export interface ResolvedSession {
   readonly admittedMemberships: readonly AdmittedMembership[];
   /** The selected context, or `null` for a session that has not chosen one (or may never choose). */
   readonly selected: Scope | null;
+  /**
+   * What the person acting in this session may do beyond admission: capability names their owning
+   * domain modules test (`modules/support/goal.ts` owns `canEditGoal`, the only one this release has).
+   *
+   * It travels on the session because no record establishes it — two principals admitted to the same
+   * ministry do not hold the same capabilities — and it is empty for a session document that states
+   * none, so an unstated capability denies the action rather than granting it.
+   */
+  readonly capabilities: readonly string[];
   readonly scenarioId: string;
   /**
    * How far the session's controllable clock stands ahead of the seed instant, in milliseconds.
@@ -216,6 +225,9 @@ const storedSessionMetaSchema = z.object({
       supportSubjectId: supportSubjectIdSchema,
     })
     .nullable(),
+  // A session document written before the session stated any capability resolves to none, which
+  // denies every capability-gated action rather than granting one by omission.
+  capabilities: z.array(z.string().min(1)).default([]),
 });
 
 /** The members {@link storedSessionMetaSchema} yields, named so the resolver's steps stay readable. */
@@ -257,6 +269,7 @@ function resolvedSession(sessionId: string, meta: StoredSessionMeta): ResolvedSe
       principalId: meta.principalId,
       selectedContext: meta.selectedContext,
     }),
+    capabilities: meta.capabilities,
     scenarioId: meta.scenarioId,
     clockOffsetMs: meta.clockOffsetMs,
   };

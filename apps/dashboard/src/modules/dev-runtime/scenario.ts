@@ -292,10 +292,16 @@ const SESSION_META_VERSION = 1;
 /**
  * Everything the development runtime persists beside a session's records.
  *
- * One document holds the scenario, the clock offset, the armed failure plan, the admission state and
- * the selected context, so a session restored from disk is restored whole. `selectedContext` is
- * nullable because it is chosen after admission succeeds, and it stays `null` for a session that
- * never got that far.
+ * One document holds the scenario, the clock offset, the armed failure plan, the admission state, the
+ * selected context and the session's capability set, so a session restored from disk is restored
+ * whole. `selectedContext` is nullable because it is chosen after admission succeeds, and it stays
+ * `null` for a session that never got that far.
+ *
+ * `capabilities` is the session's own statement of what the person acting in it may do beyond
+ * admission — a capability a domain module names, such as the support goal's `canEditGoal`, held by
+ * one principal and not by another inside the same ministry. It lives with the session because
+ * nothing about a record establishes it, and it is deliberately empty for a document written before
+ * the field existed, so an unstated capability denies rather than grants.
  */
 export interface SessionMetaDocument {
   version: 1;
@@ -306,6 +312,7 @@ export interface SessionMetaDocument {
   principalId: string;
   admittedMemberships: AdmittedMembership[];
   selectedContext: SelectedContext | null;
+  capabilities: string[];
 }
 
 /** Why a stored meta document, or a control request, was refused. */
@@ -495,6 +502,30 @@ function parseAdmittedMemberships(value: unknown): AdmittedMembership[] | undefi
 }
 
 /**
+ * Reads a session's capability set, or `undefined` when the value is not a list of distinct names.
+ *
+ * A capability is an opaque name a domain module owns (`canEditGoal` is `modules/support/goal.ts`'s),
+ * so this module validates the shape of the list and never the meaning of a member: naming one here
+ * that no module owns would grant nothing, because every capability question is asked by its owner.
+ * A repeat is refused rather than collapsed, on the same reasoning as a repeated admission, and an
+ * absent field is the empty list — a document written before the field existed states no capability,
+ * which denies rather than grants.
+ */
+function parseCapabilities(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const capabilities: string[] = [];
+  for (const entry of value) {
+    if (!isNonEmptyString(entry) || capabilities.includes(entry)) {
+      return undefined;
+    }
+    capabilities.push(entry);
+  }
+  return capabilities;
+}
+
+/**
  * Reads the selected context: `null` for a session that has not chosen one, the context itself when
  * all three references are present, and `undefined` when the value is neither.
  */
@@ -526,8 +557,9 @@ function parseSelectedContext(value: unknown): SelectedContext | null | undefine
  * The principal, the admitted memberships and the admission state are required, because this module
  * never invents a principal and never generates an id: a session that names nobody is not a session,
  * and a fabricated identity would make an isolation test prove nothing. The rest default to the
- * state every session starts in — the baseline scenario, the seed instant and the disarmed failure
- * plan — so a seed row states only what it is actually varying.
+ * state every session starts in — the baseline scenario, the seed instant, the disarmed failure
+ * plan, no selected context and no capability — so a seed row states only what it is actually
+ * varying.
  */
 export interface SessionMetaSeedInput {
   principalId: string;
@@ -537,6 +569,7 @@ export interface SessionMetaSeedInput {
   clockOffsetMs?: number;
   failurePlan?: FailurePlanDocument;
   selectedContext?: SelectedContext | null;
+  capabilities?: readonly string[];
 }
 
 /**
@@ -596,6 +629,13 @@ export function buildSessionMeta(input: SessionMetaSeedInput): SessionMetaDocume
     );
   }
 
+  const capabilities = parseCapabilities(input.capabilities ?? []);
+  if (capabilities === undefined) {
+    throw new TypeError(
+      "A session meta document's capability set is zero or more distinct non-empty capability names.",
+    );
+  }
+
   return {
     version: SESSION_META_VERSION,
     scenarioId,
@@ -605,6 +645,7 @@ export function buildSessionMeta(input: SessionMetaSeedInput): SessionMetaDocume
     principalId,
     admittedMemberships: memberships,
     selectedContext,
+    capabilities,
   };
 }
 
@@ -717,6 +758,21 @@ export function parseSessionMeta(value: unknown): Result<SessionMetaDocument, Se
     );
   }
 
+  // An absent capability set is a document written before the field existed, and it resolves to no
+  // capability rather than to a refusal: every capability question fails closed, so reading such a
+  // document as read-only is the honest answer, while refusing it would report an unreadable session
+  // for a file that is merely older. A present value that is not a list of distinct names is refused
+  // like every other unusable field, because it states something this build cannot honour.
+  const capabilities = parseCapabilities(value.capabilities ?? []);
+  if (capabilities === undefined) {
+    return err(
+      refuse(
+        "meta-unreadable",
+        "The stored session's capability set is zero or more distinct non-empty capability names.",
+      ),
+    );
+  }
+
   return ok({
     version: SESSION_META_VERSION,
     scenarioId,
@@ -726,6 +782,7 @@ export function parseSessionMeta(value: unknown): Result<SessionMetaDocument, Se
     principalId,
     admittedMemberships,
     selectedContext,
+    capabilities,
   });
 }
 
