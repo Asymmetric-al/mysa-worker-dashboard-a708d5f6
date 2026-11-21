@@ -281,6 +281,29 @@ function taskListQueryOf(search: URLSearchParams, params: TaskListQueryParams): 
     ...(params.sort === undefined ? {} : { sort: params.sort }),
   };
 }
+// The second read on this path: the dated agenda, which the request names rather than the transport guessing
+type AgendaReadQuery = Parameters<typeof reads.work.readAgenda>[0];
+
+const READ_PARAM = "read";
+
+const AGENDA_READ = "readAgenda";
+
+const agendaQuerySchema = z.object({ displayTimeZone: displayTimeZoneSchema });
+
+type AgendaQueryParams = z.output<typeof agendaQuerySchema>;
+
+function rawAgendaParams(search: URLSearchParams): Record<string, unknown> {
+  return { displayTimeZone: search.get("displayTimeZone") ?? undefined };
+}
+function agendaQueryOf(search: URLSearchParams, params: AgendaQueryParams): AgendaReadQuery {
+  const page = search.get("page");
+  const pageSize = search.get("pageSize");
+  return {
+    displayTimeZone: params.displayTimeZone,
+    page: page === null ? undefined : Number(page),
+    pageSize: pageSize === null ? undefined : Number(pageSize),
+  };
+}
 // The write side: one named mutation per request
 const attemptIdentitySchema = z.object({ operationId: z.string() });
 
@@ -323,10 +346,19 @@ async function dispatch<P extends { readonly operation: string }>(
   }
 }
 // The two verbs
-/** One page of one task list, exactly as the request asked for it. */
+/** One page of one task list or of the dated agenda, exactly as the request asked for it. */
 export async function GET(request: Request): Promise<Response> {
   const search = new URL(request.url).searchParams;
   try {
+    // The agenda shares this job's path, so the request states which read it asks for and a request
+    // that states none stays the task list it has always been.
+    if (search.get(READ_PARAM) === AGENDA_READ) {
+      const agenda = agendaQuerySchema.safeParse(rawAgendaParams(search));
+      if (!agenda.success) {
+        return toResponse(outcomeFromError(READ_ATTEMPT_ID, agenda.error));
+      }
+      return toResponse(await reads.work.readAgenda(agendaQueryOf(search, agenda.data)));
+    }
     const grammar = taskListQuerySchema.safeParse(rawTaskListParams(search));
     if (!grammar.success) {
       // A value this read does not admit is a request-level refusal, answered with the same

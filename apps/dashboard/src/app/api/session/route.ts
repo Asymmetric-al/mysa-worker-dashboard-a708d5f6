@@ -1,5 +1,6 @@
 /**
- * `GET /api/session` — what this session is admitted to, in the one read envelope.
+ * `GET /api/session` — what this session is admitted to, in the one read envelope: the admission
+ * statement by default, and the context chooser when the browser names that job in the query string.
  */
 import { outcomeFromError, reads, toResponse } from "@/modules/data-service";
 /** Admission is derived from the request's session cookie on every call, so the answer must never be cached: a stored render would serve one session's context — or a `signed-in` state — to a. */
@@ -8,9 +9,32 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const READ_ATTEMPT_MARKER = "read";
-/** Answers with this session's admission statement: the state, its guidance key, and — only when admitted — the principal, the selected context and the scenario the session runs in, inside the. */
-export async function GET(): Promise<Response> {
+
+/**
+ * The one job this path serves besides the admission statement: the context chooser, which the shell's
+ * `hooks/use-context-chooser` reads.
+ *
+ * It rides the declared session handler with the job in the query string (AAP 0.6.3 declares `GET
+ * /api/session` and `POST /api/session/context` for this family, and nothing else), so the browser
+ * reaches the chooser without a second endpoint: a path per job would be a second transport for one
+ * read, and the caller has to name which read it wants either way.
+ */
+const CONTEXT_CHOOSER_JOB = "context-chooser";
+
+/**
+ * Answers with this session's admission statement — the state, its guidance key and, only when
+ * admitted, the principal and the context in force — or, when the chooser job is named, with the
+ * memberships this session may act in, grouped by organisation and ministry by the read that enumerated
+ * them.
+ */
+export async function GET(request: Request): Promise<Response> {
+  const job = new URL(request.url).searchParams.get("job");
   try {
+    // A job the shell does not name answers the admission statement, which is this path's own read and
+    // the only one a caller who named no job can mean.
+    if (job === CONTEXT_CHOOSER_JOB) {
+      return toResponse(await reads.context.readContextChooser());
+    }
     return toResponse(await reads.context.readAdmissionState());
   } catch (error) {
     return toResponse(outcomeFromError(READ_ATTEMPT_MARKER, error));

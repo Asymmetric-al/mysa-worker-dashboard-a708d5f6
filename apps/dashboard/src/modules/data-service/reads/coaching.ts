@@ -1550,8 +1550,11 @@ function coachPortfolioScope(session: ResolvedSession, ministryIds: readonly str
   });
 }
 /** The subjects this coach holds an open, in-cutoff grant for. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
-export async function readCoachPortfolio(): Promise<ReadResult<ReadEnvelope<CoachPortfolioView>>> {
-  const loaded = await loadCoachingState("readCoachPortfolio");
+export async function readCoachPortfolio(source?: SessionSource): Promise<ReadResult<ReadEnvelope<CoachPortfolioView>>> {
+  // The source is optional so the browser transport keeps resolving the request's own session, while a
+  // caller that names one — an integration test, a script — reads the coach's listing through the same
+  // authorisation, exactly as `readCoachSubject` already allowed.
+  const loaded = await loadCoachingState("readCoachPortfolio", source);
   if (!loaded.ok) return loaded.result;
   const { session, state, at } = loaded.context;
   const subjects: CoachPortfolioSubjectView[] = [];

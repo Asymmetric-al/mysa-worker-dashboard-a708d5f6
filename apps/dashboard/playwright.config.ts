@@ -1,27 +1,250 @@
-import { defineConfig } from "@playwright/test";
-const port = Number(process.env.PORT ?? 3000);
-const baseURL = `http://127.0.0.1:${port}`;
+/**
+ * The browser journey runner: one Chromium project driving the real application through the same
+ * `bun run dev` script the workspace runs, serial, and from the deterministic seed before every spec.
+ *
+ * This file also owns the reset every spec performs, because the suite is exactly the specs under
+ * `e2e/` and the seed they share is part of the runner rather than a twenty-first spec, a global setup
+ * module or a committed session file.
+ */
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+
+import { defineConfig, devices, type APIRequestContext } from "@playwright/test";
+
+const DEFAULT_PORT = 3000;
+
+/** This clone's development server port, which `PORT` states so simultaneous checkouts never collide. */
+const port = portFrom(process.env);
+/** The origin the journeys drive: this clone's server and nothing else, because there is no deployment. */
+const BASE_URL = `http://127.0.0.1:${port}`;
+
+/** One committed asset the application serves with no store and no session, which is what readiness is judged on. */
+const READY_URL = `${BASE_URL}/icon.svg`;
+
+/** The development-control handler (AAP 0.6.3): the one named control a spec operates before it reads. */
+export const RESET_URL = `${BASE_URL}/api/dev`;
+
+const RESET_ACTION = "resetSeed";
+
+const SCOPE_MEMBERS = ["organizationId", "ministryId", "supportSubjectId", "principalId"] as const;
+
+/** The two workspace manifests that only the checkout's root holds, which is what makes the root findable from any directory inside it. */
+const REPOSITORY_ROOT_MARKERS = ["turbo.json", "bun.lock"] as const;
+
+const SEED_TIMEOUT_MS = 120_000;
+
+/** How much of a response body an error quotes, so a failure is readable without pasting a whole envelope. */
+const DETAIL_LIMIT = 400;
+
+/**
+ * The four identifiers a mutation claims, in the shape the read envelope states them.
+ *
+ * Declared structurally rather than imported: this file configures the test runner, which must not load
+ * the application's service module graph — the store, the native media bindings, `next/headers` — merely
+ * to read a four-string contract the responses already carry.
+ */
+export interface ResetScope {
+  readonly organizationId: string;
+  readonly ministryId: string;
+  readonly supportSubjectId: string;
+  readonly principalId: string;
+}
+
+/** The two members of a `GET /api/dev` envelope a reset presents: the authority it ran under and the revision it saw. */
+interface DevStateEnvelope {
+  readonly scope: ResetScope;
+  readonly revision: string;
+}
+
+type DevStateRead = { readonly kind: "state"; readonly state: DevStateEnvelope } | { readonly kind: "refused"; readonly status: number; readonly outcome: string; readonly detail: string };
+
+/**
+ * Restores the deterministic seed before a spec reads anything.
+ *
+ * The reset travels through the application's own `resetSeed` control rather than editing the store
+ * files, for two reasons. The scenario clock is process state inside the running server, so only a
+ * control the server itself applies returns it to the seed instant — a file-level reset would leave a
+ * clock an earlier spec advanced still advanced, and every later boundary would be judged at it. And the
+ * control is the request the Settings reset submits, so a spec that seeds the world the way a person
+ * does proves the path a person uses.
+ */
+export async function resetSeed(request: APIRequestContext): Promise<void> {
+  let read = await readDevState(request);
+  // A checkout that has never been seeded holds no session document, and every control resolves a
+  // session before it authorises anything, so the store is laid down once and the read repeated. Any
+  // other refusal — a denied persona, an unreadable document — is reported as it stands.
+  if (read.kind === "refused" && read.outcome === "unavailable") {
+    seedStoreFromRepository();
+    read = await readDevState(request);
+  }
+  if (read.kind === "refused") {
+    throw new Error(`resetSeed could not read the development state from ${RESET_URL}: HTTP ${String(read.status)} ${read.outcome} — ${read.detail}`);
+  }
+  // `scope` and `expectedRevision` are the envelope's own, and the acting principal is the session
+  // cookie's: the service re-authorises the scope, answers `conflict` for a revision that no longer
+  // stands, and never lets a request nominate the person it acts for. One fresh operationId per call,
+  // because each reset is its own attempt rather than a replay of the last one.
+  const response = await request.post(RESET_URL, {
+    data: {
+      action: RESET_ACTION,
+      operationId: crypto.randomUUID(),
+      scope: read.state.scope,
+      expectedRevision: read.state.revision,
+      payload: {},
+    },
+  });
+  const text = await response.text();
+  const outcome = outcomeOf(parseJson(text));
+  if (!response.ok() || (outcome !== "accepted" && outcome !== "alreadyAccepted")) {
+    throw new Error(
+      `resetSeed was refused: HTTP ${String(response.status())} ${outcome ?? "no readable outcome"} — ${detailOf(text)}. A spec that could not restore the seed asserts against a world it did not choose, so it stops here instead of reporting a failure the application did not cause.`,
+    );
+  }
+}
+
+/** Reads this session's development state, reporting a refusal as the outcome it carried. */
+async function readDevState(request: APIRequestContext): Promise<DevStateRead> {
+  const response = await request.get(RESET_URL);
+  const text = await response.text();
+  const body = parseJson(text);
+  const state = devStateEnvelopeOf(body);
+  if (response.ok() && state !== undefined) {
+    return { kind: "state", state };
+  }
+  return { kind: "refused", status: response.status(), outcome: outcomeOf(body) ?? "unreadable", detail: detailOf(text) };
+}
+
+/**
+ * Lays the deterministic seed down through the repository's own reset command.
+ *
+ * A clean checkout cannot reset itself through the application: the store directory does not exist yet,
+ * so the first read answers `unavailable` and there is no session document to authorise a control
+ * against. `bun run reset` is the documented command that creates it, and the running server picks the
+ * documents up on its next read; the reset in `resetSeed` then runs through the application as usual and
+ * returns the clock to the seed instant.
+ */
+function seedStoreFromRepository(): void {
+  const root = repositoryRootFrom(process.cwd());
+  const seeded = spawnSync("bun", ["run", "reset"], { cwd: root, encoding: "utf8", timeout: SEED_TIMEOUT_MS });
+  if (seeded.error !== undefined) {
+    throw new Error(`Seeding the synthetic store with \`bun run reset\` could not run: ${seeded.error.message}`);
+  }
+  if (seeded.status !== 0) {
+    throw new Error(`Seeding the synthetic store with \`bun run reset\` exited ${String(seeded.status)}: ${detailOf(seeded.stderr ?? "")}`);
+  }
+}
+
+/** The checkout this runner belongs to: the nearest ancestor of the working directory holding both workspace manifests. */
+function repositoryRootFrom(startDirectory: string): string {
+  let current = startDirectory;
+  for (;;) {
+    if (REPOSITORY_ROOT_MARKERS.every((marker) => existsSync(join(current, marker)))) {
+      return current;
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      throw new Error(
+        `No directory up to the filesystem root from ${JSON.stringify(startDirectory)} holds both ${REPOSITORY_ROOT_MARKERS.join(" and ")}, so this runner cannot find the checkout whose store it has to seed. Run the specs from inside the checkout.`,
+      );
+    }
+    current = parent;
+  }
+}
+
+function portFrom(environment: Readonly<Record<string, string | undefined>>): number {
+  const stated = environment.PORT;
+  if (stated === undefined || stated.trim().length === 0) {
+    return DEFAULT_PORT;
+  }
+  const parsed = Number(stated);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535) {
+    throw new Error(
+      `PORT must be a whole TCP port between 1 and 65535, and this run states ${JSON.stringify(stated)}. State the port this clone was given, so the runner drives the server it starts.`,
+    );
+  }
+  return parsed;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The outcome a mutation or a refused read answered with, or `undefined` for a body that carries none. */
+function outcomeOf(body: unknown): string | undefined {
+  return isRecord(body) && typeof body.outcome === "string" ? body.outcome : undefined;
+}
+
+function isResetScope(value: unknown): value is ResetScope {
+  return isRecord(value) && SCOPE_MEMBERS.every((member) => typeof value[member] === "string" && value[member].length > 0);
+}
+
+function devStateEnvelopeOf(body: unknown): DevStateEnvelope | undefined {
+  if (!isRecord(body) || !isResetScope(body.scope) || typeof body.revision !== "string" || body.revision.length === 0) {
+    return undefined;
+  }
+  return { scope: body.scope, revision: body.revision };
+}
+
+function detailOf(text: string): string {
+  const collapsed = text.trim().replace(/\s+/g, " ");
+  return collapsed.length > DETAIL_LIMIT ? `${collapsed.slice(0, DETAIL_LIMIT)}…` : collapsed;
+}
 
 export default defineConfig({
-  // The browser journeys are added under `e2e/` as they are written, so an empty spec set is not a
-  // failure: the `test` script passes `--pass-with-no-tests`, and vitest gates `tests/` in the meantime.
   testDir: "./e2e",
-  // A journey mutates the one synthetic store, so specs never run beside each other.
+  outputDir: "test-results",
+  // One stateful synthetic store carries the scenario, the clock offset and the armed failure plan, so
+  // two specs beside each other would race on all three and the determinism the journeys claim would be
+  // false. Serial execution is what makes the browser tests evidence.
   fullyParallel: false,
   workers: 1,
+  // A retry turns a determinism defect into a passing run, and every criterion is meant to pass on its
+  // first attempt from a reset seed.
   retries: 0,
-  reporter: [["list"]],
-  outputDir: "test-results",
+  // A focused or skipped test committed to the branch would silently narrow the suite, so CI refuses one.
+  forbidOnly: !!process.env.CI,
+  // The list keeps a failing spec readable in the terminal; the HTML report holds the attachments a
+  // failure is diagnosed from and is written under a git-ignored directory.
+  reporter: [["list"], ["html", { open: "never" }]],
+  // The development server compiles a route on its first request, and the whole-query criterion runs a
+  // full 100,000-row export inside one test, so a journey is bounded well above the default 30 s rather
+  // than imposing a limit the export it has to prove would fail.
+  timeout: 180_000,
+  expect: { timeout: 15_000 },
   use: {
-    baseURL,
+    baseURL: BASE_URL,
+    // The evidence a failure is read from, kept only when something failed. No video: no criterion is
+    // verified from one.
     trace: "retain-on-failure",
+    screenshot: "only-on-failure",
     video: "off",
+    // Criterion 20's reduced-motion pass: every retained job still completes with motion suppressed.
+    reducedMotion: "reduce",
   },
+  // One project, one browser (AAP 0.9.2). The 320 px, keyboard, 200% zoom and reduced-motion passes are
+  // set per test inside the accessibility spec, so no second project and no second engine exists.
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
+    // The application as the workspace runs it, so the suite exercises the command a person runs.
     command: "bun run dev",
-    port,
+    // Readiness is one committed asset rather than a page or a read. A read answers 503 until the store
+    // has been seeded, and a route may be mid-compile or not yet written, so probing either would stall
+    // startup on the very state the first spec's reset exists to create; the icon is served from the
+    // application's own metadata files and needs neither a store nor a session.
+    url: READY_URL,
     env: { PORT: String(port), NEXT_TELEMETRY_DISABLED: "1" },
-    reuseExistingServer: true,
+    // Outside CI a server already listening on this clone's port is reused; in CI it never is, so a stale
+    // server cannot stand in for the build under test.
+    reuseExistingServer: !process.env.CI,
     timeout: 180_000,
     stdout: "pipe",
     stderr: "pipe",

@@ -331,7 +331,14 @@ function domainRevisionOf(record: StoredContentRevision, document: ContentDocume
     createdAt: Temporal.Instant.from(record.createdAt),
   };
 }
-function domainReleaseOf(record: ReleaseRecord, variant: ContentVariantRecord | undefined, checksum: string): Release {
+/**
+ * One stored release as the content module states it. The digest is the one the release's own revision
+ * carries: filled from whichever revision a caller happens to be publishing, two different revisions of
+ * one edition look identical to `isReleaseUnchanged`, and a genuinely new revision is then answered as
+ * already published instead of becoming the edition's next head.
+ */
+function domainReleaseOf(record: ReleaseRecord, variant: ContentVariantRecord | undefined, state: ContentMutationState): Release {
+  const released = state.contentRevisions.find((candidate) => candidate.revisionId === record.revisionId);
   const withdrawnAt = instantOf(record.withdrawnAt);
   return {
     releaseId: record.releaseId,
@@ -341,7 +348,7 @@ function domainReleaseOf(record: ReleaseRecord, variant: ContentVariantRecord | 
     locale: { tag: record.locale, direction: variant?.direction ?? directionOfTag(record.locale) },
     publishedAt: Temporal.Instant.from(record.publishedAt),
     reach: record.reach,
-    contentChecksum: checksum,
+    contentChecksum: released?.contentChecksum ?? "",
     ...(withdrawnAt === undefined ? {} : { withdrawnAt }),
     ...(record.supersededBy === null ? {} : { supersededBy: record.supersededBy }),
   };
@@ -1277,7 +1284,11 @@ export async function publishVariants(sessionId: string, input: MutationInput<Pu
         }
         const domainVariant = domainVariantOf(variant);
         const domainRevision = domainRevisionOf(revision, parsed.document);
-        const domainHead = head === undefined ? undefined : domainReleaseOf(head, variant, revision.contentChecksum);
+        // The head is compared against the revision it published, never against the revision being
+        // released: "already publishes exactly this revision" is the only no-op, while another revision
+        // of the same edition is a new release that supersedes the head. `domainReleaseOf` reads the
+        // digest from the head's own revision, so the comparison uses what the head actually published.
+        const domainHead = head === undefined ? undefined : domainReleaseOf(head, variant, state);
         if (domainHead !== undefined && isReleaseUnchanged(domainHead, domainRevision)) {
           attempts.push({
             variantId: variant.variantId,
@@ -1426,8 +1437,17 @@ function publisherOf(state: ContentMutationState): string | undefined {
   const publishers = [...new Set(state.memberships.filter((membership) => membership.purpose === UPDATE_EMAIL_PURPOSE).map((membership) => membership.publisherId))].sort();
   return publishers.length === 1 ? publishers[0] : undefined;
 }
-function alreadyAcceptedCopy(state: ContentMutationState, publisherId: string, recipientId: string): boolean {
-  const intents = new Map(state.notificationIntents.filter((intent) => intent.publisherId === publisherId && intent.purpose === UPDATE_EMAIL_PURPOSE).map((intent) => [intent.intentId, intent]));
+/**
+ * Whether this recipient already holds a copy of this Update. A person eligible for two audiences or
+ * two languages of one publication receives one copy, so a second edition of the same document issues
+ * them none. The guard is scoped to this publisher's intents for this document — a different Update is
+ * a different publication, and suppressing its copy would leave a second Update reaching nobody — and
+ * only accepted or possibly accepted work counts, because a failed copy may still be attempted again.
+ */
+function alreadyCoveredOnDocument(state: ContentMutationState, publisherId: string, documentId: string, recipientId: string): boolean {
+  const intents = new Set(
+    state.notificationIntents.filter((intent) => intent.publisherId === publisherId && intent.purpose === UPDATE_EMAIL_PURPOSE && intent.documentId === documentId).map((intent) => intent.intentId),
+  );
   return state.notificationResults.some((result) => {
     if (!intents.has(result.intentId)) {
       return false;
@@ -1512,7 +1532,7 @@ export async function requestNotification(sessionId: string, input: MutationInpu
       let alreadyCovered = 0;
       let link = `/preview/${encodeURIComponent(document.documentId)}`;
       for (const recipient of eligibility.eligible) {
-        if (alreadyAcceptedCopy(state, publisherId, recipient.recipientId)) {
+        if (alreadyCoveredOnDocument(state, publisherId, document.documentId, recipient.recipientId)) {
           alreadyCovered += 1;
           continue;
         }
@@ -1643,7 +1663,7 @@ async function withdrawDocumentFamily(sessionId: string, input: MutationInput<Do
       const withdrawnIds: string[] = [];
       const nextReleases = releases.map((release) => {
         const variant = state.contentVariants.find((candidate) => candidate.variantId === release.variantId);
-        const domain = domainReleaseOf(release, variant, "");
+        const domain = domainReleaseOf(release, variant, state);
         const withdrawal = withdrawEdition(domain, { at });
         withdrawnIds.push(withdrawal.release.releaseId);
         if (release.withdrawnAt !== null) {
@@ -1699,7 +1719,7 @@ export async function withdrawLocale(sessionId: string, input: MutationInput<Loc
       if (head === undefined || head.withdrawnAt !== null) {
         return { changed: false };
       }
-      const withdrawal = withdrawEdition(domainReleaseOf(head, variant, ""), {
+      const withdrawal = withdrawEdition(domainReleaseOf(head, variant, state), {
         at: scenarioInstant(context.session),
       });
       const stored = storedReleaseOf(withdrawal.release, nextRevision(head.revision), head);
@@ -1821,7 +1841,7 @@ export async function stopShowingPublicly(sessionId: string, input: MutationInpu
         domainReleaseOf(
           release,
           state.contentVariants.find((variant) => variant.variantId === release.variantId),
-          "",
+          state,
         ),
       );
       const contained = containEditions(domains, { at });

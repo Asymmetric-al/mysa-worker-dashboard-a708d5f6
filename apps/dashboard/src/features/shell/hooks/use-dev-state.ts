@@ -13,11 +13,21 @@
  * a context switch has to clear this entry with the rest of the cache (AAP 0.7.2, and the fence in
  * `components/context-switch-guard`). `staleTime: 0` is deliberate: the revision this read reports is
  * the `expectedRevision` the panel's next control must present, so a stale copy would produce a
- * conflict that is this hook's fault rather than the person's. Explicit refetching only — no interval,
- * no polling, because nothing in this release observes the runtime in the background (assumption A12).
+ * conflict that is this hook's fault rather than the person's.
  *
  * `enabled` is the caller's environment gate: in a build without the development runtime the query is
  * never sent, so a production page makes no request to a handler that would refuse it.
+ *
+ * **The three deliberate absences, so none reads as an omission.** No interval-driven refetch, no timer
+ * and no focus-driven tick (assumption A12: nothing observes this runtime in the background), so the
+ * state is refetched only when a control settles (`use-dev-mutations`) or a person asks — a read the
+ * panel did not request would also move the displayed instant under a boundary test's feet. No
+ * discarded-result flag: the key leads with the scope, and the context fence cancels in-flight reads and
+ * empties the cache before it moves, so an envelope for a context other than this one cannot be returned
+ * and such a flag could only ever be false. And no fourth result arm beside the read's own three:
+ * `ReadResult` answers `envelope` or the reason it could not be built (`denied`, `unavailable`), and a
+ * request that never arrived is the second of those with the transport named as its source — `unknown` is
+ * the vocabulary of a mutation whose effect may have landed, which a read never has.
  */
 
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
@@ -51,10 +61,7 @@ export function devStateQueryKey(scope: Scope) {
  * `enabled` false leaves the query idle and unsent, which is how a production build renders no
  * development control and also asks the server for nothing.
  */
-export function useDevState(
-  scope: Scope,
-  enabled: boolean,
-): UseQueryResult<DevStateReadResult, Error> {
+export function useDevState(scope: Scope, enabled: boolean): UseQueryResult<DevStateReadResult, Error> {
   return useQuery<DevStateReadResult, Error>({
     queryKey: devStateQueryKey(scope),
     queryFn: readDevState,

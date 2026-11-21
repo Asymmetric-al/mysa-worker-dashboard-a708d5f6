@@ -1,6 +1,6 @@
 /**
- * `GET /api/initiatives` — one page of this ministry's initiatives — and `POST /api/initiatives`, the
- * one creation this path performs.
+ * `GET /api/initiatives` — one page of this ministry's initiatives, or one initiative's detail when the
+ * request names it — and `POST /api/initiatives`, the one creation this path performs.
  */
 import { z } from "zod";
 import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse } from "@/modules/data-service";
@@ -15,6 +15,10 @@ type InitiativeStateName = NonNullable<InitiativeListQuery["state"]>;
 
 type InitiativeSortName = NonNullable<InitiativeListQuery["sort"]>;
 
+type InitiativeDetailQuery = NonNullable<Parameters<typeof reads.outreach.readInitiative>[1]>;
+
+type InitiativeMemberStateName = NonNullable<InitiativeDetailQuery["memberState"]>;
+
 const READ_ATTEMPT_ID = "read";
 
 const UNIDENTIFIED_ATTEMPT = "unidentified-attempt";
@@ -23,6 +27,8 @@ const UNIDENTIFIED_ATTEMPT = "unidentified-attempt";
 const INITIATIVE_STATES = ["open", "closed"] as const satisfies readonly InitiativeStateName[];
 
 const INITIATIVE_SORTS = ["name", "period-start", "state"] as const satisfies readonly InitiativeSortName[];
+
+const INITIATIVE_MEMBER_STATES = ["included", "removed", "excluded"] as const satisfies readonly InitiativeMemberStateName[];
 
 function nonBlank(message: string): z.ZodString {
   // Trimming is tested here rather than stated as `.trim().min(1)`, so a value of blanks is refused
@@ -67,6 +73,9 @@ function isInitiativeState(value: string | null): value is InitiativeStateName {
 function isInitiativeSort(value: string | null): value is InitiativeSortName {
   return value !== null && INITIATIVE_SORTS.some((admitted) => admitted === value);
 }
+function isInitiativeMemberState(value: string | null): value is InitiativeMemberStateName {
+  return value !== null && INITIATIVE_MEMBER_STATES.some((admitted) => admitted === value);
+}
 function initiativeListQueryOf(request: Request): InitiativeListQuery {
   const params = new URL(request.url).searchParams;
   const state = params.get("state");
@@ -85,6 +94,32 @@ function initiativeListQueryOf(request: Request): InitiativeListQuery {
     ...(pageSize === null ? {} : { pageSize: Number(pageSize) }),
   };
 }
+/**
+ * The identifier a request names when it asks for one initiative rather than the list, with the
+ * narrowing and page that belong to that read. The transport keeps no per-record path for this family,
+ * so the detail is addressed on the same route the list is; an absent or blank identifier answers
+ * `null`, which leaves the request the list read unchanged.
+ */
+function initiativeDetailRequestOf(request: Request): { readonly initiativeId: string; readonly query: InitiativeDetailQuery } | null {
+  const params = new URL(request.url).searchParams;
+  const initiativeId = params.get("initiativeId");
+  if (initiativeId === null || initiativeId.trim().length === 0) {
+    return null;
+  }
+  const memberState = params.get("memberState");
+  const page = params.get("page");
+  const pageSize = params.get("pageSize");
+  // Forwarded on the same rule the list follows above: the detail read owns which membership states
+  // exist, the page bounds and every count, so an unrecognised parameter is left out, not refused.
+  return {
+    initiativeId,
+    query: {
+      ...(isInitiativeMemberState(memberState) ? { memberState } : {}),
+      ...(page === null ? {} : { page: Number(page) }),
+      ...(pageSize === null ? {} : { pageSize: Number(pageSize) }),
+    },
+  };
+}
 function attemptIdOf(body: unknown): string {
   if (typeof body !== "object" || body === null) {
     return UNIDENTIFIED_ATTEMPT;
@@ -94,10 +129,13 @@ function attemptIdOf(body: unknown): string {
   const claimed: unknown = Reflect.get(body, "operationId");
   return typeof claimed === "string" && claimed.length > 0 ? claimed : UNIDENTIFIED_ATTEMPT;
 }
-/** One page of initiatives, exactly as the request asked for it: the read's envelope, or the read's own `denied` or `unavailable` refusal. */
+/** One page of initiatives as the request asked for it, or the one initiative the request named: the read's envelope, or the read's own `denied` or `unavailable` refusal. */
 export async function GET(request: Request): Promise<Response> {
   try {
-    return toResponse(await reads.outreach.readInitiatives(initiativeListQueryOf(request)));
+    // One route, two reads: the identifier names a detail and its absence names the list, so this
+    // family needs no second transport path for the record it opens.
+    const detail = initiativeDetailRequestOf(request);
+    return detail === null ? toResponse(await reads.outreach.readInitiatives(initiativeListQueryOf(request))) : toResponse(await reads.outreach.readInitiative(detail.initiativeId, detail.query));
   } catch (error) {
     // One mapper knows a store outage, a session that cannot be established and a lost
     // acknowledgement apart, so a thrown fault is answered rather than escaping the boundary.

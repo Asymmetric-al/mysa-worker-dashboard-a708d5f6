@@ -28,7 +28,7 @@ import { readSession } from "@/modules/store/repository";
 import { clampPageSize } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
 import { confirmationDeadline, notificationDeadline } from "@/modules/time/window";
-import { assertScope, canReadProtected, readResultOfRefusal, resolveSession, type ResolvedSession } from "../authorize";
+import { assertScope, canReadProtected, readResultOfRefusal, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
 import {
   buildEnvelope,
   contentCaptionTrackRecordSchema,
@@ -384,8 +384,10 @@ async function loadWorld(sessionId: string): Promise<{ readonly ok: true; readon
   }
   return { ok: true, world: { sessionId, state: parsed.data } };
 }
-async function resolveWorlds(job: string): Promise<WorldResolution> {
-  const resolved = await resolveSession();
+async function resolveWorlds(job: string, source?: SessionSource): Promise<WorldResolution> {
+  // The receiving reads take the same optional session source every other read does, so a test or a
+  // script can name the session it reads as instead of there being no request cookie to derive one from.
+  const resolved = await resolveSession(source);
   if (!resolved.ok) {
     return { ok: false, result: readResultOfRefusal(resolved.refusal) };
   }
@@ -692,8 +694,8 @@ export interface AudienceQuery {
   readonly pageSize?: number;
 }
 /** The publisher's audience for the one purpose this release keeps memberships for. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
-export async function readAudience(query: AudienceQuery = {}): Promise<ReadResult<ReadEnvelope<AudienceView>>> {
-  const worlds = await resolveWorlds("readAudience");
+export async function readAudience(query: AudienceQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<AudienceView>>> {
+  const worlds = await resolveWorlds("readAudience", source);
   if (!worlds.ok) {
     return worlds.result;
   }
@@ -804,8 +806,8 @@ export async function readAudience(query: AudienceQuery = {}): Promise<ReadResul
   };
 }
 /** The reader's own preference record for the one purpose this release keeps memberships for. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
-export async function readPreferences(): Promise<ReadResult<ReadEnvelope<PreferencesView>>> {
-  const worlds = await resolveWorlds("readPreferences");
+export async function readPreferences(source?: SessionSource): Promise<ReadResult<ReadEnvelope<PreferencesView>>> {
+  const worlds = await resolveWorlds("readPreferences", source);
   if (!worlds.ok) {
     return worlds.result;
   }
@@ -938,8 +940,8 @@ export interface InboxQuery {
   readonly pageSize?: number;
 }
 /** The synthetic inbox of the receiving persona: one message per recipient and notification intent. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
-export async function readInbox(query: InboxQuery = {}): Promise<ReadResult<ReadEnvelope<InboxView>>> {
-  const worlds = await resolveWorlds("readInbox");
+export async function readInbox(query: InboxQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<InboxView>>> {
+  const worlds = await resolveWorlds("readInbox", source);
   if (!worlds.ok) {
     return worlds.result;
   }
@@ -1208,8 +1210,8 @@ export interface ReceivingListQuery {
   readonly pageSize?: number;
 }
 /** The Updates a receiving reader may open now. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
-export async function readReceivingList(query: ReceivingListQuery = {}): Promise<ReadResult<ReadEnvelope<ReceivingListView>>> {
-  const worlds = await resolveWorlds("readReceivingList");
+export async function readReceivingList(query: ReceivingListQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<ReceivingListView>>> {
+  const worlds = await resolveWorlds("readReceivingList", source);
   if (!worlds.ok) {
     return worlds.result;
   }
@@ -1308,8 +1310,8 @@ export interface ReceivingPostQuery {
   readonly locale?: string;
 }
 /** One Update at its exact post, re-authorised on every open. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
-export async function readReceivingPost(query: ReceivingPostQuery): Promise<ReadResult<ReadEnvelope<ReceivingPostView>>> {
-  const worlds = await resolveWorlds("readReceivingPost");
+export async function readReceivingPost(query: ReceivingPostQuery, source?: SessionSource): Promise<ReadResult<ReadEnvelope<ReceivingPostView>>> {
+  const worlds = await resolveWorlds("readReceivingPost", source);
   if (!worlds.ok) {
     return worlds.result;
   }
@@ -1417,8 +1419,8 @@ export interface DiscoveryIndexQuery {
   readonly pageSize?: number;
 }
 /** The discovery index: the page editions that reach a public listing, and nothing else. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
-export async function readDiscoveryIndex(query: DiscoveryIndexQuery = {}): Promise<ReadResult<ReadEnvelope<DiscoveryIndexView>>> {
-  const worlds = await resolveWorlds("readDiscoveryIndex");
+export async function readDiscoveryIndex(query: DiscoveryIndexQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<DiscoveryIndexView>>> {
+  const worlds = await resolveWorlds("readDiscoveryIndex", source);
   if (!worlds.ok) {
     return worlds.result;
   }
@@ -1484,8 +1486,8 @@ export interface ReceivingPageQuery {
   readonly locale?: string;
 }
 /** One page edition served by direct link, re-authorised on every request. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
-export async function readReceivingPage(query: ReceivingPageQuery): Promise<ReadResult<ReadEnvelope<ReceivingPageView>>> {
-  const worlds = await resolveWorlds("readReceivingPage");
+export async function readReceivingPage(query: ReceivingPageQuery, source?: SessionSource): Promise<ReadResult<ReadEnvelope<ReceivingPageView>>> {
+  const worlds = await resolveWorlds("readReceivingPage", source);
   if (!worlds.ok) {
     return worlds.result;
   }
@@ -1659,8 +1661,8 @@ export interface SendResultQuery {
   readonly pageSize?: number;
 }
 /** The per-send results of one notification intent. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
-export async function readSendResult(query: SendResultQuery): Promise<ReadResult<ReadEnvelope<SendResultView>>> {
-  const worlds = await resolveWorlds("readSendResult");
+export async function readSendResult(query: SendResultQuery, source?: SessionSource): Promise<ReadResult<ReadEnvelope<SendResultView>>> {
+  const worlds = await resolveWorlds("readSendResult", source);
   if (!worlds.ok) {
     return worlds.result;
   }
