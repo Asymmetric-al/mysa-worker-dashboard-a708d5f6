@@ -2,6 +2,10 @@
 /**
  * The one review surface for both content families: the frozen revision a reviewer answers, and the
  * single decision they can give it.
+ *
+ * A candidate whose answer is already recorded is reported as that record, with no decision offered:
+ * the review step answers a submission once, and a surface that kept asking would offer an action the
+ * review mutations refuse.
  */
 import { useId, useState, type ReactElement } from "react";
 import ActionReview from "@/components/action-review";
@@ -38,6 +42,11 @@ export interface CandidateView {
   readonly renderedHtml: string;
   readonly mediaRenditions: readonly CandidateMediaRendition[];
   readonly staleTranslation?: boolean;
+  /**
+   * The decision the reviewer recorded for this candidate, as the read states it, or `null` while its
+   * record still stands at `submitted` — the one state in which the decision is the reviewer's to give.
+   */
+  readonly decision: ReviewDecision | null;
 }
 // The decision's payload
 /** The decision the reviewer gave, and the frozen identity it answers. */
@@ -159,6 +168,37 @@ const DECISION_COPY: Readonly<Record<ReviewDecision, DecisionCopy>> = {
     consequence: "The candidate is closed and this edition keeps whatever it published before. Nothing is " + "deleted, no release is withdrawn and no message is sent to anyone.",
   },
 };
+interface RecordedDecisionCopy {
+  readonly title: string;
+  readonly sentence: string;
+}
+/** The words for a candidate that has been answered, so the surface states the record instead of the decision form. */
+const RECORDED_DECISION_COPY: Readonly<Record<ReviewDecision, RecordedDecisionCopy>> = {
+  approved: {
+    title: "This candidate is approved",
+    sentence:
+      "The reviewer's answer is recorded as an approval for this audience and language. Approval " +
+      "publishes nothing and notifies nobody: releasing the edition is a separate step on its own " +
+      "surface, and a simulated notice is separate again.",
+  },
+  "changes-requested": {
+    title: "A change to this candidate was requested",
+    sentence:
+      "The reviewer's answer is recorded as a request for changes, so the author's next attempt is a " +
+      "new submission with a new revision. This candidate is answered, not re-reviewed, and its earlier " +
+      "submission stays on record.",
+  },
+  rejected: {
+    title: "This candidate was rejected",
+    sentence:
+      "The reviewer's answer is recorded as a rejection, so this candidate ends and the author's next " +
+      "attempt is a new submission. Nothing is deleted, no release is withdrawn and no message is sent " +
+      "to anyone.",
+  },
+};
+const RECORDED_DECISION_HEADING = "The decision on record";
+
+const NO_FURTHER_DECISION_SENTENCE = "No further decision is offered here: this candidate has already been answered, so a further review needs a new submission with a new revision.";
 const RENDITION_PURPOSE_WORDS: Readonly<Record<RenditionPurpose, string>> = {
   display: "Display image",
   playback: "Playback video",
@@ -264,12 +304,24 @@ function previewDocumentOf(html: string, locale: VariantLocale, title: string): 
     "</html>"
   );
 }
+/**
+ * The lifecycle word the edition carries on this surface.
+ *
+ * A frozen candidate still awaiting its answer is the state the lifecycle vocabulary already names.
+ * Once a reviewer approves it, the edition is approved and awaiting a release that is a separate step,
+ * so the surface says so rather than claiming a review that has already been given. A refusal clears
+ * the edition's candidate, so a read that still holds one is a submission state, which is what the
+ * edition record itself states.
+ */
+function lifecycleOfDecision(decision: ReviewDecision | null): ContentLifecycleState {
+  return decision === "approved" ? "approved" : "candidate";
+}
 function variantTabsOf(candidates: readonly CandidateView[]): readonly VariantTab[] {
   return candidates.map((candidate) => ({
     variantId: candidate.variantId,
     audience: candidate.audience,
     locale: candidate.locale,
-    lifecycle: "candidate",
+    lifecycle: lifecycleOfDecision(candidate.decision),
   }));
 }
 function switcherFamilyOf(family: ReviewFamily): VariantFamily {
@@ -607,6 +659,26 @@ function DecisionStep({
     </div>
   );
 }
+// The answer, when one is already recorded
+function RecordedDecision({ decision, level }: { readonly decision: ReviewDecision; readonly level: SubHeadingLevel }): ReactElement {
+  const titleId = useId();
+  const Heading = SUB_HEADING_TAG[level];
+  const copy = RECORDED_DECISION_COPY[decision];
+  return (
+    <section aria-labelledby={titleId} data-slot="review-recorded-decision" data-decision={decision} className="flex min-w-0 flex-col gap-3">
+      <Heading id={titleId} className="text-base font-medium text-pretty">
+        {RECORDED_DECISION_HEADING}
+      </Heading>
+      <Alert variant="default" role={undefined}>
+        <AlertTitle>{copy.title}</AlertTitle>
+        <AlertDescription>
+          <p className="text-pretty">{copy.sentence}</p>
+          <p className="text-pretty">{NO_FURTHER_DECISION_SENTENCE}</p>
+        </AlertDescription>
+      </Alert>
+    </section>
+  );
+}
 // The panel
 /** The one review surface. */
 export function ReviewPanel({
@@ -676,7 +748,11 @@ export function ReviewPanel({
           )}
         </CardContent>
       </Card>
-      {active === undefined ? null : policyRequiresReview ? (
+      {active === undefined ? null : active.decision !== null ? (
+        // The read states an answer for this candidate, so the surface reports the record instead of
+        // offering a decision the service would refuse as already given.
+        <RecordedDecision decision={active.decision} level={partLevel} />
+      ) : policyRequiresReview ? (
         <DecisionStep key={active.variantId} candidate={active} scope={scope} expectedRevision={expectedRevision} onDecide={onDecide} level={partLevel} />
       ) : (
         <Alert variant="default" role={undefined} data-slot="review-not-required">

@@ -3,7 +3,7 @@ import StatusBadge, { type StatusTone } from "@/components/status-badge";
 import { cn } from "@/lib/cn";
 import { translationStaleness, type ContentVariant, type Release, type ReleaseOutcome, type TranslationSourceContext } from "@/modules/content/variant";
 /** Every state an edition can be in, listed once so the closed set has a runtime form as well as a type. */
-export const CONTENT_LIFECYCLE_STATES = ["not-started", "draft", "candidate", "released", "partially-released", "withdrawn", "superseded-head", "stale-translation"] as const;
+export const CONTENT_LIFECYCLE_STATES = ["not-started", "draft", "candidate", "approved", "released", "partially-released", "withdrawn", "superseded-head", "stale-translation"] as const;
 /** One state of an edition. */
 export type ContentLifecycleState = (typeof CONTENT_LIFECYCLE_STATES)[number];
 /** The word, the tone and the meaning of one lifecycle state. */
@@ -28,6 +28,12 @@ export const LIFECYCLE_STATUS: Readonly<Record<ContentLifecycleState, LifecycleS
     label: "Submitted for review",
     tone: "info",
     explanation: "Frozen for its one review step. A reviewer can approve it or ask for changes, and only a release lets an audience read it.",
+  },
+  approved: {
+    label: "Approved",
+    tone: "positive",
+    explanation:
+      "A reviewer approved this frozen candidate for this audience and language. Approval publishes nothing and notifies nobody: the release is a separate step, and a simulated notice is separate again.",
   },
   released: {
     label: "Published",

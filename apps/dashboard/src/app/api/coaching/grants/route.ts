@@ -1,23 +1,28 @@
 /**
- * `POST /api/coaching/grants` — the coaching relationship's own lifecycle writes.
+ * `POST /api/coaching/grants` — the four coaching-grant lifecycle writes, selected by `payload.action`.
  */
 import { z } from "zod";
 import { assertNever } from "@/lib/result";
-import { mutationInputSchema, mutations, outcomeFromError, toResponse, type MutationInput, type MutationOutcome } from "@/modules/data-service";
+import { mutationInputSchema, mutations, outcomeFromError, toResponse, type MutationOutcome } from "@/modules/data-service";
+import { invalid } from "@/modules/data-service/outcome";
 /** The store writes through `node:fs`, so this handler never runs on the edge runtime. */
 export const runtime = "nodejs";
-/** The mutation resolves the development session and evaluates the scenario clock once per request. */
+/** Each write resolves the development session and evaluates the scenario clock once per request, so no answer is cached. */
 export const dynamic = "force-dynamic";
 
 const UNIDENTIFIED_ATTEMPT = "unidentified-attempt";
 
 const MESSAGES = {
-  operationRequired: "State which change this request makes as payload.operation: inviteCoach, revokeGrant, endCoaching, acceptInvitation or leaveCoaching.",
-  bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.",
+  verb: "Name the change this request makes as payload.action: acceptInvitation, revokeGrant, endCoaching or leaveCoaching.",
+  body: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.",
+  reference: "A grant reference is the opaque identifier a coaching read handed out. A name, an email address, a job title, a household or a project is not that reference and grants nothing.",
 } as const;
-// One payload type per named mutation, read from the mutation that validates it
-type InviteCoachPayload = Parameters<typeof mutations.coaching.inviteCoach>[0]["payload"];
 
+const GRANT_VERBS = ["acceptInvitation", "revokeGrant", "endCoaching", "leaveCoaching"] as const;
+
+const grantReference = z.string().trim().min(1, MESSAGES.reference);
+// The payload each mutation accepts, taken from the mutation itself: a change to one of them fails to
+// compile here, so this transport cannot fall out of step with the service it forwards to.
 type AcceptInvitationPayload = Parameters<typeof mutations.coach.acceptInvitation>[0]["payload"];
 
 type RevokeGrantPayload = Parameters<typeof mutations.coaching.revokeGrant>[0]["payload"];
@@ -25,80 +30,106 @@ type RevokeGrantPayload = Parameters<typeof mutations.coaching.revokeGrant>[0]["
 type EndCoachingPayload = Parameters<typeof mutations.coaching.endCoaching>[0]["payload"];
 
 type LeaveCoachingPayload = Parameters<typeof mutations.coach.leaveCoaching>[0]["payload"];
+// One payload schema per mutation, strict at its own level: a field the mutation does not accept — an
+// address-derived identity, a status or state the service must derive, a module map, a cutoff or a
+// duration — is named in an `invalid` answer rather than stripped and ignored.
+const acceptInvitationPayload = z.strictObject({
+  action: z.literal("acceptInvitation"),
+  grantId: grantReference,
+  // The invitation revision the coach actually saw, in either form a coaching read hands out.
+  invitationRevision: z.union([z.number().int().min(0), grantReference]).optional(),
+}) satisfies z.ZodType<AcceptInvitationPayload & { readonly action: "acceptInvitation" }>;
 
-type WirePayload<Payload, Operation extends string> = Payload & { readonly operation: Operation };
-// One body schema per mutation: the four-field envelope around that mutation's own payload
-const inviteCoachBodySchema = mutationInputSchema(z.custom<WirePayload<InviteCoachPayload, "inviteCoach">>());
-const acceptInvitationBodySchema = mutationInputSchema(z.custom<WirePayload<AcceptInvitationPayload, "acceptInvitation">>());
-const revokeGrantBodySchema = mutationInputSchema(z.custom<WirePayload<RevokeGrantPayload, "revokeGrant">>());
-const endCoachingBodySchema = mutationInputSchema(z.custom<WirePayload<EndCoachingPayload, "endCoaching">>());
-const leaveCoachingBodySchema = mutationInputSchema(z.custom<WirePayload<LeaveCoachingPayload, "leaveCoaching">>());
+const revokeGrantPayload = z.strictObject({ action: z.literal("revokeGrant"), grantId: grantReference }) satisfies z.ZodType<RevokeGrantPayload & { readonly action: "revokeGrant" }>;
 
-const GRANT_OPERATIONS = ["inviteCoach", "revokeGrant", "endCoaching", "acceptInvitation", "leaveCoaching"] as const;
-// Reading the request
-const attemptIdentitySchema = z.object({ operationId: z.string() });
+const endCoachingPayload = z.strictObject({ action: z.literal("endCoaching"), grantId: grantReference }) satisfies z.ZodType<EndCoachingPayload & { readonly action: "endCoaching" }>;
 
-const discriminantSchema = z.object(
-  {
-    payload: z.object({ operation: z.enum(GRANT_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }),
-  },
-  { error: MESSAGES.bodyNotJson },
-);
-async function jsonBodyOf(request: Request): Promise<unknown> {
+const leaveCoachingPayload = z.strictObject({ action: z.literal("leaveCoaching"), grantId: grantReference }) satisfies z.ZodType<LeaveCoachingPayload & { readonly action: "leaveCoaching" }>;
+// One request schema per mutation: the four-field envelope around that mutation's own payload
+const acceptInvitationRequest = mutationInputSchema(acceptInvitationPayload);
+
+const revokeGrantRequest = mutationInputSchema(revokeGrantPayload);
+
+const endCoachingRequest = mutationInputSchema(endCoachingPayload);
+
+const leaveCoachingRequest = mutationInputSchema(leaveCoachingPayload);
+// Which change this request makes is read on its own first, so a body whose payload no mutation accepts is
+// still told which change it failed to name.
+const verbRead = z.object({ payload: z.object({ action: z.enum(GRANT_VERBS, { error: MESSAGES.verb }) }, { error: MESSAGES.verb }) }, { error: MESSAGES.body });
+// The attempt's identity is read on its own too, so a refusal reports the attempt it refused
+const attemptRead = z.object({ operationId: z.string().min(1).max(64) });
+
+async function bodyOf(request: Request): Promise<unknown> {
   try {
-    const body: unknown = await request.json();
-    return body;
+    return await request.json();
   } catch {
+    // A body that could not be read produced no effect, so it is `invalid` and never `unknown`.
     return undefined;
   }
 }
-function operationIdentityOf(raw: unknown): string {
-  const identity = attemptIdentitySchema.safeParse(raw);
-  return identity.success && identity.data.operationId.length > 0 ? identity.data.operationId : UNIDENTIFIED_ATTEMPT;
+function attemptOf(raw: unknown): string {
+  const stated = attemptRead.safeParse(raw);
+  return stated.success ? stated.data.operationId : UNIDENTIFIED_ATTEMPT;
 }
-function payloadOf<T extends { readonly operation: string }>(payload: T): Omit<T, "operation"> {
-  const { operation: _discriminant, ...forwarded } = payload;
-  return forwarded;
+function refusal(operationId: string, error: z.ZodError): Response {
+  return toResponse(invalid({ operationId, fields: error }));
 }
-async function dispatch<Wire extends { readonly operation: string }>(
-  schema: z.ZodType<MutationInput<Wire>>,
-  raw: unknown,
-  operationId: string,
-  run: (input: MutationInput<Omit<Wire, "operation">>) => Promise<MutationOutcome>,
-): Promise<Response> {
-  const parsed = schema.safeParse(raw);
-  if (!parsed.success) {
-    return toResponse(outcomeFromError(operationId, parsed.error));
-  }
+async function answer(operationId: string, write: () => Promise<MutationOutcome>): Promise<Response> {
   try {
-    return toResponse(await run({ ...parsed.data, payload: payloadOf(parsed.data.payload) }));
+    return toResponse(await write());
   } catch (error) {
-    return toResponse(outcomeFromError(parsed.data.operationId, error));
+    // One mapper tells a store outage from a lost acknowledgement; this boundary never guesses between them.
+    return toResponse(outcomeFromError(operationId, error));
   }
 }
-// The one verb
-/** One named relationship mutation, selected by `payload.operation`. */
+/** Applies exactly one named coaching-grant change and answers with one of the eight outcomes: `accepted`, `alreadyAccepted` for a replay of the same operationId, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function POST(request: Request): Promise<Response> {
-  const raw = await jsonBodyOf(request);
-  const operationId = operationIdentityOf(raw);
-  const claimed = discriminantSchema.safeParse(raw);
-  if (!claimed.success) {
-    return toResponse(outcomeFromError(operationId, claimed.error));
+  const raw: unknown = await bodyOf(request);
+  const operationId = attemptOf(raw);
+  const verb = verbRead.safeParse(raw);
+  if (!verb.success) {
+    return refusal(operationId, verb.error);
   }
-  switch (claimed.data.payload.operation) {
-    case "inviteCoach":
-      return dispatch(inviteCoachBodySchema, raw, operationId, mutations.coaching.inviteCoach);
-    case "revokeGrant":
-      return dispatch(revokeGrantBodySchema, raw, operationId, mutations.coaching.revokeGrant);
-    case "endCoaching":
-      return dispatch(endCoachingBodySchema, raw, operationId, mutations.coaching.endCoaching);
-    case "acceptInvitation":
-      return dispatch(acceptInvitationBodySchema, raw, operationId, mutations.coach.acceptInvitation);
-    case "leaveCoaching":
-      return dispatch(leaveCoachingBodySchema, raw, operationId, mutations.coach.leaveCoaching);
+  // The four verbs share one payload shape and the ledger hashes only the scope, the expected revision and
+  // the payload, so one operationId must never be reused across verbs: that reuse would read as a replay of
+  // the first verb instead of as changed intent.
+  switch (verb.data.payload.action) {
+    case "acceptInvitation": {
+      const parsed = acceptInvitationRequest.safeParse(raw);
+      if (!parsed.success) return refusal(operationId, parsed.error);
+      const { grantId, invitationRevision } = parsed.data.payload;
+      return answer(operationId, () =>
+        mutations.coach.acceptInvitation({
+          operationId,
+          scope: parsed.data.scope,
+          expectedRevision: parsed.data.expectedRevision,
+          payload: invitationRevision === undefined ? { grantId } : { grantId, invitationRevision },
+        }),
+      );
+    }
+    case "revokeGrant": {
+      const parsed = revokeGrantRequest.safeParse(raw);
+      if (!parsed.success) return refusal(operationId, parsed.error);
+      return answer(operationId, () =>
+        mutations.coaching.revokeGrant({ operationId, scope: parsed.data.scope, expectedRevision: parsed.data.expectedRevision, payload: { grantId: parsed.data.payload.grantId } }),
+      );
+    }
+    case "endCoaching": {
+      const parsed = endCoachingRequest.safeParse(raw);
+      if (!parsed.success) return refusal(operationId, parsed.error);
+      return answer(operationId, () =>
+        mutations.coaching.endCoaching({ operationId, scope: parsed.data.scope, expectedRevision: parsed.data.expectedRevision, payload: { grantId: parsed.data.payload.grantId } }),
+      );
+    }
+    case "leaveCoaching": {
+      const parsed = leaveCoachingRequest.safeParse(raw);
+      if (!parsed.success) return refusal(operationId, parsed.error);
+      return answer(operationId, () =>
+        mutations.coach.leaveCoaching({ operationId, scope: parsed.data.scope, expectedRevision: parsed.data.expectedRevision, payload: { grantId: parsed.data.payload.grantId } }),
+      );
+    }
     default:
-      // Unreachable: the five names above are the closed set the discriminant schema admits, so a sixth
-      // mutation fails to compile at this call instead of reaching the runtime.
-      return assertNever(claimed.data.payload.operation, "Unhandled coaching grant mutation");
+      // Unreachable: the enum above is the closed set of four verbs, so a fifth fails to compile at this call.
+      return assertNever(verb.data.payload.action, "Unhandled coaching grant mutation");
   }
 }

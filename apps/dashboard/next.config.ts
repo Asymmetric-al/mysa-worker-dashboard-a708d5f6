@@ -14,6 +14,14 @@ const nextConfig: NextConfig = {
   // runtime instead: one Node module instance per process rather than one per
   // compiled chunk, which is what the single in-process data service relies on.
   serverExternalPackages: ["sharp", "mediabunny"],
+  // A media registration travels as base64 text inside JSON, so the largest admitted video (100 MiB)
+  // states as roughly 133 MiB before its poster, caption track and envelope are counted. Next's proxy —
+  // this application's one request-level file, which mints the development session cookie — otherwise
+  // cuts every request body off at 10 MB, which would make the 10 MiB image and the 100 MiB video the
+  // media profile admits unreachable through POST /api/media. The bound matches that route's own
+  // transport bound, so a request past it is refused there with a readable reason rather than silently
+  // truncated here.
+  experimental: { proxyClientMaxBodySize: "192mb" },
   // Next 16 answers 403 to cross-origin development requests for /_next resources
   // from a host it was not told about, and the browser journeys drive the dev server
   // from these loopback hosts. It is read in development only, so it widens nothing

@@ -726,7 +726,10 @@ function initiativeActions(input: {
     edits.allowed && returned ? { name: "returnMember", available: true } : refused("returnMember", "No removed member is available to return."),
     edits.allowed && listed ? { name: "setStage", available: true } : refused("setStage", "A stage is recorded against an included member, and the working list has none."),
     edits.allowed && !closed ? { name: "draftRequest", available: true } : refused("draftRequest", "This initiative is closed, so no new Request may be drafted."),
-    edits.allowed && awaitingPresentation ? { name: "presentRequest", available: true } : refused("presentRequest", "No drafted Request is waiting to be presented."),
+    // Presenting is the moment an ask reaches somebody, so closure fences it as it fences a new ask.
+    edits.allowed && awaitingPresentation && !closed
+      ? { name: "presentRequest", available: true }
+      : refused("presentRequest", closed ? "This initiative is closed, so no new solicitation may be presented." : "No drafted Request is waiting to be presented."),
     edits.allowed && awaitingResponse ? { name: "recordRequestResponse", available: true } : refused("recordRequestResponse", "No presented Request is waiting for a response."),
     edits.allowed && !closed ? { name: "closeInitiative", available: true } : refused("closeInitiative", "This initiative is already closed."),
     edits.allowed && closed ? { name: "reopenInitiative", available: true } : refused("reopenInitiative", "Only a closed initiative can be reopened."),

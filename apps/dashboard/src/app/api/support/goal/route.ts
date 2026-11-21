@@ -3,7 +3,6 @@
  */
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { isRecord } from "@/lib/guards";
 import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse } from "@/modules/data-service";
 import { supportQueryFromSearch } from "../query";
 /** The store behind the service writes through `node:fs`, so this handler never runs on the edge. */
@@ -17,13 +16,17 @@ const UNIDENTIFIED_ATTEMPT = "unidentified-attempt";
 
 type GoalPayload = Parameters<typeof mutations.support.saveGoal>[0]["payload"];
 
+// The payload's own rule is the service's single goal schema, not a second copy here: it decides the
+// currency's exponent, the measure and the effective day, so a schema at this boundary that refused
+// what it admits — or admitted what it refuses — would make the transport disagree with the mutation
+// it carries. This read only states that a payload is present.
 const saveGoalRequestSchema = mutationInputSchema(z.custom<GoalPayload>());
 
 function attemptIdOf(body: unknown): string {
-  if (!isRecord(body)) {
+  if (typeof body !== "object" || body === null) {
     return UNIDENTIFIED_ATTEMPT;
   }
-  const claimed = body.operationId;
+  const claimed: unknown = (body as { readonly operationId?: unknown }).operationId;
   return typeof claimed === "string" && claimed.length > 0 ? claimed : UNIDENTIFIED_ATTEMPT;
 }
 /** Answers with the support goal, its progress, the capability that governs editing it and the period the percentage was measured over. */
@@ -40,7 +43,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     return toResponse(outcomeFromError(READ_ATTEMPT_MARKER, error));
   }
 }
-/** Saves the goal the body states, and answers with exactly one of the service's eight outcomes: `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or. */
+/** Saves the goal the body states, and answers with exactly one of the service's eight outcomes: `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function POST(request: NextRequest): Promise<Response> {
   const body: unknown = await request.json().catch(() => undefined);
   const parsed = saveGoalRequestSchema.safeParse(body);

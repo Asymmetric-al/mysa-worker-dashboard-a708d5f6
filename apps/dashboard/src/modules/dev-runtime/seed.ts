@@ -52,6 +52,7 @@ import type {
   TaskRecord,
   TaskSeriesRecord,
 } from "@/modules/data-service/envelope";
+import type { PublishMode, ReviewDecision } from "@/modules/data-service/mutations/content";
 import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { UNKNOWN_CURRENCY } from "@/modules/money/currency";
 import { seededMediaReference } from "@/modules/store/media";
@@ -882,6 +883,38 @@ function buildRelease(releaseId: string, variantId: string, revisionId: string, 
     revision: INITIAL_REVISION,
   };
 }
+/**
+ * One frozen candidate's review record, in the stored shape the content mutations validate: a review
+ * that is under way is `submitted`, with no decision, no deciding instant and no deciding principal.
+ */
+interface ContentReviewRecord {
+  readonly candidateId: string;
+  readonly variantId: string;
+  readonly revisionId: string;
+  readonly notifyMode: PublishMode;
+  readonly decision: ReviewDecision;
+  readonly note: string | null;
+  readonly submittedAt: string;
+  readonly decidedAt: string | null;
+  readonly decidedByPrincipalId: string | null;
+  readonly revision: string;
+}
+function buildContentReview(candidateId: string, variantId: string, revisionId: string, submittedAt: string, overrides: Partial<ContentReviewRecord> = {}): ContentReviewRecord {
+  return {
+    candidateId,
+    variantId,
+    revisionId,
+    // A submission that asks for no notices is recorded as publish-only, the mode the review surface states.
+    notifyMode: "publish-only",
+    decision: "submitted",
+    note: null,
+    submittedAt,
+    decidedAt: null,
+    decidedByPrincipalId: null,
+    revision: INITIAL_REVISION,
+    ...overrides,
+  };
+}
 function assetScope(session: SeededSession, membership: AdmittedMembership): Scope {
   return {
     organizationId: membership.organizationId,
@@ -930,6 +963,7 @@ export interface SessionStateDocument {
   readonly contentDocuments: readonly ContentDocumentRecord[];
   readonly contentVariants: readonly ContentVariantRecord[];
   readonly contentRevisions: readonly ContentRevisionRecord[];
+  readonly contentReviews: readonly ContentReviewRecord[];
   readonly releases: readonly ReleaseRecord[];
   readonly mediaAssets: readonly MediaAssetRecord[];
   readonly memberships: readonly MembershipRecord[];
@@ -989,6 +1023,7 @@ function stateDocument(session: SeededSession, families: WorkspaceFamilies): Ses
     contentDocuments: families.contentDocuments ?? [],
     contentVariants: families.contentVariants ?? [],
     contentRevisions: families.contentRevisions ?? [],
+    contentReviews: families.contentReviews ?? [],
     releases: families.releases ?? [],
     mediaAssets: families.mediaAssets ?? [],
     memberships: families.memberships ?? [],
@@ -1676,6 +1711,7 @@ interface HarbourContent {
   readonly contentDocuments: readonly ContentDocumentRecord[];
   readonly contentVariants: readonly ContentVariantRecord[];
   readonly contentRevisions: readonly ContentRevisionRecord[];
+  readonly contentReviews: readonly ContentReviewRecord[];
   readonly releases: readonly ReleaseRecord[];
   readonly mediaAssets: readonly MediaAssetRecord[];
 }
@@ -1897,6 +1933,10 @@ function harbourContentVariants(): readonly ContentVariantRecord[] {
     buildContentVariant("variant-page-harbour-youth-ar-public", "doc-page-harbour-youth", "public", "ar", "rtl", { draftRevisionId: "rev-page-ar-draft-1" }),
   ];
 }
+// The failed sibling's frozen candidate carries the submission record that put it under review, so a fresh-seed reviewer can answer it.
+function harbourContentReviews(): readonly ContentReviewRecord[] {
+  return [buildContentReview("rev-update-ar-candidate-1", "variant-update-autumn-ar-public", "rev-update-ar-candidate-1", "2026-11-14T09:45:00Z")];
+}
 function harbourReleases(): readonly ReleaseRecord[] {
   return [
     buildRelease("release-update-en-1", "variant-update-autumn-en-public", "rev-update-en-1", "public", "en", "2026-11-10T09:00:00Z", "link-public"),
@@ -1918,6 +1958,7 @@ function harbourContent(session: SeededSession): HarbourContent {
     contentDocuments: harbourContentDocuments(),
     contentVariants: harbourContentVariants(),
     contentRevisions: harbourContentRevisions(),
+    contentReviews: harbourContentReviews(),
     releases: harbourReleases(),
     mediaAssets: harbourMediaAssets(session),
   };
@@ -2320,6 +2361,7 @@ function establishedWorkerWorkspace(session: SeededSession): SessionStateDocumen
     contentDocuments: content.contentDocuments,
     contentVariants: content.contentVariants,
     contentRevisions: content.contentRevisions,
+    contentReviews: content.contentReviews,
     releases: content.releases,
     mediaAssets: content.mediaAssets,
     memberships: harbourMemberships(),

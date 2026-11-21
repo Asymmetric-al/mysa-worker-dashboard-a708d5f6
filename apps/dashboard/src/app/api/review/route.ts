@@ -53,12 +53,12 @@ const noteSchema = z.string({ error: MESSAGES.noteBlank }).trim().min(1, MESSAGE
 // strict, because Zod strips an unknown key by default: a field this path does not admit has to be
 // refused by name, not dropped, so no answer can carry a decision the review record does not hold.
 const submitForReviewPayloadSchema = z.strictObject({
-  op: z.literal("submitForReview"),
+  operation: z.literal("submitForReview"),
   variantId: variantIdSchema,
   revisionId: revisionIdSchema,
 });
 const approveCandidatePayloadSchema = z.strictObject({
-  op: z.literal("approveCandidate"),
+  operation: z.literal("approveCandidate"),
   candidateId: candidateIdSchema,
 });
 // The reviewer's own words, bounded once and shared by the two steps that carry them.
@@ -68,20 +68,20 @@ const reviewerNoteFields = {
   reason: noteSchema.optional(),
 } as const;
 const requestChangesPayloadSchema = z.strictObject({
-  op: z.literal("requestChanges"),
+  operation: z.literal("requestChanges"),
   ...reviewerNoteFields,
 });
 const rejectCandidatePayloadSchema = z.strictObject({
-  op: z.literal("rejectCandidate"),
+  operation: z.literal("rejectCandidate"),
   ...reviewerNoteFields,
 });
-// A per-mutation schema set on a shared path, selected by `op` — not a universal dispatcher: there is
-// no table name, no field map and no branch that forwards a key its step does not declare.
-const reviewPayloadSchema = z.discriminatedUnion("op", [submitForReviewPayloadSchema, approveCandidatePayloadSchema, requestChangesPayloadSchema, rejectCandidatePayloadSchema]);
+// A per-mutation schema set on a shared path, selected by `operation` — not a universal dispatcher:
+// there is no table name, no field map and no branch that forwards a key its step does not declare.
+const reviewPayloadSchema = z.discriminatedUnion("operation", [submitForReviewPayloadSchema, approveCandidatePayloadSchema, requestChangesPayloadSchema, rejectCandidatePayloadSchema]);
 
 type ReviewPayload = z.output<typeof reviewPayloadSchema>;
 
-type ReviewOperation = ReviewPayload["op"];
+type ReviewOperation = ReviewPayload["operation"];
 
 type ReviewRequest = MutationInput<ReviewPayload>;
 // A body that is not a JSON object is answered in the same words whatever it holds, so the caller is
@@ -103,15 +103,15 @@ function operationIdentityOf(raw: unknown): string {
   const identity = attemptIdentitySchema.safeParse(raw);
   return identity.success && identity.data.operationId.length > 0 ? identity.data.operationId : UNIDENTIFIED_ATTEMPT;
 }
-/** `op` selects the step here; the service's own payload schemas do not know it, so it is removed before the call. */
-function withoutOperation<P extends { readonly op: ReviewOperation }>(payload: P): Omit<P, "op"> {
-  const { op: _discriminant, ...forwarded } = payload;
+/** `operation` selects the step here; the service's own payload schemas do not know it, so it is removed before the call. */
+function withoutOperation<P extends { readonly operation: ReviewOperation }>(payload: P): Omit<P, "operation"> {
+  const { operation: _discriminant, ...forwarded } = payload;
   return forwarded;
 }
 /** One review step per request: the switch calls exactly one named mutation and never chains two. */
 async function runReview(sessionId: string, input: ReviewRequest): Promise<MutationOutcome> {
   const { payload } = input;
-  switch (payload.op) {
+  switch (payload.operation) {
     case "submitForReview":
       return mutations.updates.submitForReview(sessionId, { ...input, payload: withoutOperation(payload) });
     case "approveCandidate":
@@ -151,7 +151,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   }
 }
 /**
- * One review step, named by `payload.op`, answered with exactly one of the service's eight outcomes:
+ * One review step, named by `payload.operation`, answered with exactly one of the service's eight outcomes:
  * `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or
  * `unknown`. A second answer to the same candidate is the service's decision, not this handler's.
  */

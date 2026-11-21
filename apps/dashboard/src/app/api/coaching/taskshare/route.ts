@@ -5,6 +5,12 @@
 import { z } from "zod";
 import { assertNever } from "@/lib/result";
 import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse, type MutationInput, type MutationOutcome } from "@/modules/data-service";
+/**
+ * The `invalid` constructor comes from the module that owns the outcome union rather than through the
+ * service barrel, which re-exports the conversion helpers only: a refusal built here is built the way
+ * every other refusal is, so its field messages reach a form through one convention.
+ */
+import { invalid } from "@/modules/data-service/outcome";
 /** The store reads and writes through `node:fs`, so this handler never runs on the edge runtime. */
 export const runtime = "nodejs";
 /** Both verbs resolve the development session and evaluate the scenario clock once per request. */
@@ -16,8 +22,19 @@ const READ_ATTEMPT_ID = "read";
 const MESSAGES = {
   operationRequired: "State which change this request makes as payload.operation: shareTaskSummary or stopTaskShare.",
   bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.",
+  pageInvalid: "Read the page as a whole number of one or more, so the summaries arrive on the page you asked for rather than one this read chose.",
+  pageSizeInvalid: "Read the page size as a whole number of one or more, so the summaries arrive in pages of the size you asked for; the service applies its own cap.",
 } as const;
-// One payload type per named mutation, read from the mutation that validates it
+/**
+ * One payload type per named mutation, read from the mutation that validates it rather than restated
+ * here: the service's own strict schema stays the single definition of the field names it admits, so a
+ * key added, renamed or removed there is neither refused by a stale copy nor invented by this file. The
+ * reviewed description's own bound — at most 240 Unicode code points, refused by name with the measured
+ * count and never truncated — and the re-review a summary needs once its task has changed meaning are
+ * judged there too, before anything is written, so neither is restated here. The discriminant that
+ * selects the mutation is `payload.operation`, the name every browser transport in this application
+ * uses for it.
+ */
 type ShareTaskSummaryPayload = Parameters<typeof mutations.coaching.shareTaskSummary>[0]["payload"];
 
 type StopTaskSharePayload = Parameters<typeof mutations.coaching.stopTaskShare>[0]["payload"];
@@ -28,27 +45,41 @@ const shareTaskSummaryBodySchema = mutationInputSchema(z.custom<WirePayload<Shar
 const stopTaskShareBodySchema = mutationInputSchema(z.custom<WirePayload<StopTaskSharePayload, "stopTaskShare">>());
 
 const TASK_SHARE_OPERATIONS = ["shareTaskSummary", "stopTaskShare"] as const;
-// The read side: the page window the request stated, forwarded as it stands
+// The read side: the page window the request stated, and nothing else it could ask for
 type TaskShareListQuery = Parameters<typeof reads.coaching.readTaskShares>[0];
 
-function taskShareListQueryOf(request: Request): TaskShareListQuery {
-  const params = new URL(request.url).searchParams;
-  const page = params.get("page");
-  const pageSize = params.get("pageSize");
-  return {
-    page: page === null ? undefined : Number(page),
-    pageSize: pageSize === null ? undefined : Number(pageSize),
-  };
+const POSITIVE_WHOLE_NUMBER = /^[1-9][0-9]*$/u;
+/** A paging parameter as a URL carries it: a whole number of one or more, and nothing else. */
+function pagingParameter(message: string) {
+  return z
+    .string()
+    .trim()
+    .superRefine((value, ctx) => {
+      if (!POSITIVE_WHOLE_NUMBER.test(value) || !Number.isSafeInteger(Number(value))) {
+        ctx.addIssue({ code: "custom", message });
+      }
+    })
+    .transform((value) => Number(value));
+}
+/**
+ * The page window a caller may state. The default of 25 rows and the cap of 100 are the service's own
+ * rules, so nothing here clamps them; a value that is not a whole number of one or more is refused by
+ * the name of the parameter, so a caller is never quietly shown a page it did not ask for. No record
+ * selector, state filter or persona is admitted: the session decides whose summaries these are.
+ */
+const taskShareListQuerySchema = z.object({
+  page: pagingParameter(MESSAGES.pageInvalid).optional(),
+  pageSize: pagingParameter(MESSAGES.pageSizeInvalid).optional(),
+});
+function rawTaskShareListParams(search: URLSearchParams): Record<string, unknown> {
+  return { page: search.get("page") ?? undefined, pageSize: search.get("pageSize") ?? undefined };
 }
 // The write side: one named mutation per request
 const attemptIdentitySchema = z.object({ operationId: z.string() });
 
-const discriminantSchema = z.object(
-  {
-    payload: z.object({ operation: z.enum(TASK_SHARE_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }),
-  },
-  { error: MESSAGES.bodyNotJson },
-);
+const discriminantSchema = z.object({
+  payload: z.object({ operation: z.enum(TASK_SHARE_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }),
+});
 async function jsonBodyOf(request: Request): Promise<unknown> {
   try {
     const body: unknown = await request.json();
@@ -56,6 +87,10 @@ async function jsonBodyOf(request: Request): Promise<unknown> {
   } catch {
     return undefined;
   }
+}
+/** The JSON object a change arrives in, or `undefined` when the body is absent or is not one. */
+function jsonObjectOf(raw: unknown): Record<string, unknown> | undefined {
+  return typeof raw === "object" && raw !== null && !Array.isArray(raw) ? (raw as Record<string, unknown>) : undefined;
 }
 function operationIdentityOf(raw: unknown): string {
   const identity = attemptIdentitySchema.safeParse(raw);
@@ -85,7 +120,14 @@ async function dispatch<Wire extends { readonly operation: string }>(
 /** One page of the worker's shared task summaries, each with the description that was reviewed, the task's live due date and status, and whether the description still matches the task. */
 export async function GET(request: Request): Promise<Response> {
   try {
-    return toResponse(await reads.coaching.readTaskShares(taskShareListQueryOf(request)));
+    const grammar = taskShareListQuerySchema.safeParse(rawTaskShareListParams(new URL(request.url).searchParams));
+    if (!grammar.success) {
+      // A paging value this read does not admit is a request-level refusal answered with the same
+      // per-field `invalid` outcome the two mutations answer, because no source behind the read failed
+      // and the caller has to be told which parameter to correct.
+      return toResponse(outcomeFromError(READ_ATTEMPT_ID, grammar.error));
+    }
+    return toResponse(await reads.coaching.readTaskShares(grammar.data satisfies TaskShareListQuery));
   } catch (error) {
     // One mapper knows the difference between a store outage, a session that cannot be established and
     // a lost acknowledgement, so a thrown fault is answered rather than escaping the boundary.
@@ -96,7 +138,13 @@ export async function GET(request: Request): Promise<Response> {
 export async function POST(request: Request): Promise<Response> {
   const raw = await jsonBodyOf(request);
   const operationId = operationIdentityOf(raw);
-  const claimed = discriminantSchema.safeParse(raw);
+  const body = jsonObjectOf(raw);
+  if (body === undefined) {
+    // A body that never arrived as a JSON object is named where it went wrong — `body` — rather than
+    // under a root key a form cannot place against anything the caller sent.
+    return toResponse(invalid({ operationId, fields: { body: [MESSAGES.bodyNotJson] } }));
+  }
+  const claimed = discriminantSchema.safeParse(body);
   if (!claimed.success) {
     return toResponse(outcomeFromError(operationId, claimed.error));
   }

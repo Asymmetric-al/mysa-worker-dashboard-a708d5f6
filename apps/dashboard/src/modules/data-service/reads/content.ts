@@ -23,6 +23,7 @@ import { PREVIEW_RENDITION_PURPOSES, authorisePreview, type PreviewDenialReason 
 import { REACH_VALUES, isDirectlyReadable, isListedPublicly, reachMetadata, withdrawEdition, type Reach, type ReachMetadata, type Tombstone } from "@/modules/content/reach";
 import { renderToHtml, type RenderMediaPlacement, type RenderRendition, type RenderRenditionPurpose, type RenderRenditions } from "@/modules/content/render";
 import {
+  REVIEW_DECISIONS,
   REVIEW_STEPS_PER_CANDIDATE,
   admittedAudiences,
   translationStaleness,
@@ -31,6 +32,7 @@ import {
   type ContentRevision,
   type ContentVariant,
   type Release,
+  type ReviewDecision,
   type TranslationStaleness,
 } from "@/modules/content/variant";
 import { mediaStateReason, type MediaRenditionPurpose, type MediaStateReason } from "@/modules/media/asset";
@@ -88,10 +90,43 @@ const storedContentRevisionSchema = z.object({
 });
 type StoredContentRevision = z.infer<typeof storedContentRevisionSchema>;
 
+/**
+ * The release mode a submission records, named as the review mutations store it. The release review's
+ * `publish-and-notify-now` is the stored `publish-and-notify`: one mode under the two names its own
+ * surface and its record give it.
+ */
+const SUBMITTED_RELEASE_MODES = ["publish-only", "publish-and-notify"] as const;
+/** One release mode a submission can record. */
+type SubmittedReleaseMode = (typeof SUBMITTED_RELEASE_MODES)[number];
+
+/**
+ * The review record one frozen candidate's answer is written to, read as the three facts this read
+ * states: the candidate the record answers, the decision recorded on it and the release mode it was
+ * submitted under.
+ *
+ * The record is written by the review mutations, which own its note, instants and deciding principal;
+ * the read restates none of those, so the only decision values it knows are the submission state and
+ * the three answers the content module names, and the only release mode values are the two a
+ * submission can ask for.
+ */
+const submittedReviewDecisionSchema = z.literal("submitted");
+
+const storedReviewDecisionSchema: z.ZodType<"submitted" | ReviewDecision> = z.union([submittedReviewDecisionSchema, z.enum(REVIEW_DECISIONS)]);
+
+const contentReviewRecordSchema = z.object({
+  candidateId: z.string().min(1),
+  notifyMode: z.enum(SUBMITTED_RELEASE_MODES),
+  decision: storedReviewDecisionSchema,
+});
+type ContentReviewRecord = z.infer<typeof contentReviewRecordSchema>;
+
 const contentWorkspaceSchema = z.object({
   contentDocuments: z.array(contentDocumentRecordSchema),
   contentVariants: z.array(contentVariantRecordSchema),
   contentRevisions: z.array(storedContentRevisionSchema),
+  // A session whose state document predates the review record family holds none, which is a session
+  // with no answer recorded rather than an unreadable one.
+  contentReviews: z.array(contentReviewRecordSchema).default([]),
   releases: z.array(releaseRecordSchema),
   mediaAssets: z.array(mediaAssetRecordSchema),
   supportProjection: supportProjectionRecordSchema.nullable().optional(),
@@ -326,6 +361,17 @@ function findDocument(state: ContentWorkspaceState, documentId: string): Content
 }
 function findVariant(state: ContentWorkspaceState, variantId: string): ContentVariantRecordLike | undefined {
   return state.contentVariants.find((candidate) => candidate.variantId === variantId);
+}
+/**
+ * The edition whose frozen candidate this identity is.
+ *
+ * A candidate is identified by the revision it froze, so a review surface that names the candidate
+ * rather than the edition still reaches the variant it belongs to; the variant's own pointer is the
+ * only place that pairing is recorded. A candidate the variant no longer holds matches nothing, which
+ * is what keeps a superseded candidate from being presented as the one the edition now carries.
+ */
+function variantOfFrozenCandidate(state: ContentWorkspaceState, candidateId: string): ContentVariantRecordLike | undefined {
+  return state.contentVariants.find((variant) => variant.candidateId === candidateId);
 }
 function variantsOf(state: ContentWorkspaceState, documentId: string): readonly ContentVariantRecordLike[] {
   return state.contentVariants.filter((variant) => variant.documentId === documentId);
@@ -943,7 +989,9 @@ export type ContentCandidateData =
       readonly review: {
         readonly steps: typeof REVIEW_STEPS_PER_CANDIDATE;
         readonly round: typeof REVIEW_STEPS_PER_CANDIDATE;
-        readonly decision: null;
+        // The answer recorded for this candidate, and `null` only while its record says `submitted`,
+        // which is the one state in which the review step is still the reviewer's to give.
+        readonly decision: ReviewDecision | null;
         readonly approvalScope: "this-variant-only";
       };
       readonly recordRevision: string;
@@ -976,7 +1024,11 @@ export type ContentCandidateData =
       readonly reason: string;
       readonly recordRevision: string;
     };
-/** Reads the candidate frozen for one edition: the exact revision it froze, its rendered HTML, the difference from the current release and the single review step it may receive. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
+/**
+ * Reads the candidate frozen for one edition: the exact revision it froze, its rendered HTML, the difference from the current release and the single review step it may receive.
+ *
+ * The identity may be the edition's own or the frozen candidate it holds, because a review surface names the candidate it asks a reviewer to answer and a candidate is identified by the revision it froze. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it, and `unavailable` when the records cannot be read.
+ */
 export async function readCandidate(input: { readonly variantId: string; readonly session?: SessionSource }): Promise<ReadResult<ReadEnvelope<ContentCandidateData>>> {
   const opened = await openContentWorkspace("readCandidate", input.session);
   if (!opened.ok) {
@@ -986,7 +1038,7 @@ export async function readCandidate(input: { readonly variantId: string; readonl
   if (!isNonEmptyString(input.variantId)) {
     return recordNotFound();
   }
-  const record = findVariant(workspace.state, input.variantId);
+  const record = findVariant(workspace.state, input.variantId) ?? variantOfFrozenCandidate(workspace.state, input.variantId);
   if (record === undefined) {
     return recordNotFound();
   }
@@ -1103,6 +1155,11 @@ export async function readCandidate(input: { readonly variantId: string; readonl
     candidatePlacements: frozen.mediaPlacements,
     releasePlacements: headRevision === undefined ? [] : headRevision.mediaPlacements,
   });
+  // The record the review mutations write when this candidate is answered, resolved by the candidate's
+  // own identity: the record names the frozen revision, so a decision is reported only for the candidate
+  // it was given to, never inferred from the edition's pointers or from another edition's answer.
+  const reviewRecord = workspace.state.contentReviews.find((candidate) => candidate.candidateId === candidateId);
+  const decision = recordedDecisionOf(reviewRecord);
   const data: ContentCandidateData = {
     status: "reviewable",
     document,
@@ -1124,7 +1181,7 @@ export async function readCandidate(input: { readonly variantId: string; readonl
     review: {
       steps: REVIEW_STEPS_PER_CANDIDATE,
       round: REVIEW_STEPS_PER_CANDIDATE,
-      decision: null,
+      decision,
       approvalScope: "this-variant-only",
     },
     recordRevision: record.revision,
@@ -1140,23 +1197,120 @@ export async function readCandidate(input: { readonly variantId: string; readonl
         changedSections: diff.sections.length === 0 ? "zero" : "value",
         changedPlacements: diff.placements.length === 0 ? "zero" : "value",
       },
-      actions: [
-        { name: "approve", available: true },
-        { name: "request-changes", available: true },
-        { name: "reject", available: true },
-        {
-          name: "publish-only",
-          available: true,
-          reason: "Releasing this candidate sends no message; notification is a separate decision.",
-        },
-        {
-          name: "publish-and-notify-now",
-          available: true,
-          reason: "Only a reviewer who chooses it turns a release into a notification request.",
-        },
-      ],
+      actions: candidateReviewActions(reviewRecord),
     }),
   };
+}
+/** The answer recorded for one candidate, and `null` while its record still stands at `submitted`. */
+function recordedDecisionOf(review: ContentReviewRecord | undefined): ReviewDecision | null {
+  return review === undefined || review.decision === "submitted" ? null : review.decision;
+}
+// The refusals the review mutations give, in their own words, so a reviewer reads one vocabulary
+// whichever surface states the condition.
+/** What `answerReview` refuses when no record holds the candidate being answered. */
+const NO_SUBMISSION_REASON = "No submission is open for review under this identity, so reopen the edition and submit it again.";
+
+/** What `answerReview` refuses when the candidate's record already carries an answer. */
+const ALREADY_ANSWERED_REASON = "This candidate has already been answered, so a further review needs a new submission.";
+
+/** What `publishVariants` refuses while the candidate's record is still unanswered. */
+const AWAITING_REVIEW_REASON = "This edition is still awaiting its one review, so it cannot be released yet.";
+
+/** What `publishVariants` refuses after a reviewer asked for changes. */
+const CHANGES_REQUESTED_REASON = "The reviewer asked for changes, so this edition needs a new revision and a new submission.";
+
+/** What `publishVariants` refuses after a reviewer rejected the submission. */
+const REJECTED_REASON = "The reviewer rejected this submission, so it needs a new revision and a new submission.";
+
+/** What releasing a candidate means, stated on the two actions that would do it. */
+const PUBLISH_ONLY_REASON = "Releasing this candidate sends no message; notification is a separate decision.";
+
+const NOTIFY_NOW_REASON = "Only a reviewer who chooses it turns a release into a notification request.";
+
+/** What `publishVariants` refuses when a release names the mode this edition was not submitted under. */
+const NOT_ASKED_FOR_REASON = "A reviewer cannot release this edition with a mode the submission did not ask for, so a new submission is required.";
+
+/** One release action: the name it is stated by, the recorded mode it asks for and what it means when it is available. */
+interface ReleaseActionOffer {
+  readonly name: string;
+  readonly mode: SubmittedReleaseMode;
+  readonly meaning: string;
+}
+/**
+ * The two release actions, each with the recorded mode it asks `publishVariants` for.
+ *
+ * The choice of mode belongs to the submission rather than to the release, so each action names the
+ * mode a reviewer would have to be reading on the record for that action to be the one it releases.
+ */
+const RELEASE_ACTION_OFFERS: readonly ReleaseActionOffer[] = [
+  { name: "publish-only", mode: "publish-only", meaning: PUBLISH_ONLY_REASON },
+  { name: "publish-and-notify-now", mode: "publish-and-notify", meaning: NOTIFY_NOW_REASON },
+];
+/**
+ * Why a release cannot be offered for this candidate, or `null` when it can.
+ *
+ * `publishVariants` releases only a candidate whose recorded decision is `approved` and names the
+ * condition it found on every other: an unanswered submission, a rejection and a request for changes
+ * each keep their own words, and a candidate with no record at all has no submission open whose
+ * approval a release could stand on.
+ */
+function releaseRefusalOf(review: ContentReviewRecord | undefined, decision: ReviewDecision | null): string | null {
+  if (review === undefined) {
+    return NO_SUBMISSION_REASON;
+  }
+  switch (decision) {
+    case "approved":
+      return null;
+    case null:
+      return AWAITING_REVIEW_REASON;
+    case "changes-requested":
+      return CHANGES_REQUESTED_REASON;
+    case "rejected":
+      return REJECTED_REASON;
+  }
+}
+/**
+ * The actions this candidate's review step will accept, with the service's own refusal on every one
+ * it will not.
+ *
+ * A read offers only what the mutation behind an action would accept: `answerReview` refuses a
+ * candidate whose record is already answered and one whose record is missing, and `publishVariants`
+ * releases only a candidate whose recorded decision is `approved` and whose release mode is the mode
+ * the submission asked for. An unavailable action therefore states the refusal the service itself
+ * gives, so the page and a refused attempt say the same thing.
+ */
+function candidateReviewActions(review: ContentReviewRecord | undefined): readonly ReadAction[] {
+  const decision = recordedDecisionOf(review);
+  // One answer per submission: the three decisions are available together or not at all.
+  const answerable = review !== undefined && decision === null;
+  const answerReason = review === undefined ? NO_SUBMISSION_REASON : ALREADY_ANSWERED_REASON;
+  const releaseRefusal = releaseRefusalOf(review, decision);
+  return [
+    { name: "approve", available: answerable, ...(answerable ? {} : { reason: answerReason }) },
+    { name: "request-changes", available: answerable, ...(answerable ? {} : { reason: answerReason }) },
+    { name: "reject", available: answerable, ...(answerable ? {} : { reason: answerReason }) },
+    ...RELEASE_ACTION_OFFERS.map((offer) => releaseActionOf(offer, review, releaseRefusal)),
+  ];
+}
+/**
+ * One release action, available only when it is the mode the submission asked for and the recorded
+ * decision lets this edition be released.
+ *
+ * The mode is checked first because the submission fixes it: a reviewer changes it only by submitting
+ * the edition again, whereas the review refusal clears the moment the candidate is approved.
+ * `publishVariants` refuses a mode the submission did not ask for in either direction — the narrower
+ * publish-only request included, since the record rather than the release decides whether a notice is
+ * part of this edition — so the action the submission did not ask for stays unavailable while its
+ * record stands, and only the recorded mode's action opens on approval.
+ */
+function releaseActionOf(offer: ReleaseActionOffer, review: ContentReviewRecord | undefined, releaseRefusal: string | null): ReadAction {
+  if (review !== undefined && offer.mode !== review.notifyMode) {
+    return { name: offer.name, available: false, reason: NOT_ASKED_FOR_REASON };
+  }
+  if (releaseRefusal !== null) {
+    return { name: offer.name, available: false, reason: releaseRefusal };
+  }
+  return { name: offer.name, available: true, reason: offer.meaning };
 }
 function candidateDiff(input: {
   readonly candidate: ContentDocumentJson;

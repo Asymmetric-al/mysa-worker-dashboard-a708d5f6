@@ -903,6 +903,12 @@ function presentRequestFor(documents: StoredDocuments, state: OutreachState, acc
   if (payload.initiativeId !== undefined && payload.initiativeId !== request.initiativeId) {
     refuseField("initiativeId", "This Request belongs to a different initiative.");
   }
+  if (initiative.state === "closed") {
+    // Closure fences new solicitation, and presenting is the moment an ask reaches a person. An
+    // answer to an ask already presented stays recordable — `recordRequestResponse` does not consult
+    // closure, because closing fences asking rather than the respondent's own reply.
+    refuseField("initiativeId", "This initiative is closed, so no new solicitation may be presented.");
+  }
   const presentation: RequestPresentation = {
     presentedOn: serialiseCivilDate(payload.presentedOn),
     manner: payload.manner,

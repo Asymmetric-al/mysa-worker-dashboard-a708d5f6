@@ -8,6 +8,9 @@ export const runtime = "nodejs";
 // The change resolves the development session and evaluates the scenario clock once per request.
 export const dynamic = "force-dynamic";
 
+// The payload's field names and its closed set of response kinds belong to the service: its schema is
+// strict and also accepts the flat answer shape, so narrowing it again here would duplicate the
+// vocabulary and refuse a shape the mutation admits.
 type RecordRequestResponsePayload = Parameters<typeof mutations.outreach.recordRequestResponse>[0]["payload"];
 
 const recordResponseRequestSchema = mutationInputSchema(z.custom<RecordRequestResponsePayload>());
