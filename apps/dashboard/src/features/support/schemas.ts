@@ -489,8 +489,15 @@ const FOLLOW_UP_TASK_KINDS = ["default", "meeting"] as const satisfies readonly 
  * That absence is the point of the action: it creates one ordinary task to work through, and it writes
  * no financial record, sends no message, records no interaction and creates no stewardship obligation.
  * Completing the task later proves nothing about contact, payment or fulfilment either.
+ *
+ * `operation` is not a task field. It is the routing discriminant `POST /api/tasks` selects the
+ * mutation by, declared as a defaulted literal so that this schema's *output* — which is what the
+ * hook sends — names the change it makes. A caller composing a follow-up states a title and a due
+ * date and no routing metadata, which is why `use-follow-up-task.ts` types what it accepts with
+ * {@link FollowUpTaskInput} while the request it composes carries the parsed output.
  */
 export const followUpTaskPayloadSchema = z.object({
+  operation: z.literal("createTask").default("createTask"),
   title: titleSchema,
   category: categorySchema,
   dueOn: optionalCivilDaySchema,
@@ -500,3 +507,9 @@ export const followUpTaskPayloadSchema = z.object({
 
 /** The validated `createTask` payload for a gift's thank-you follow-up. */
 export type FollowUpTaskPayload = z.infer<typeof followUpTaskPayloadSchema>;
+
+/**
+ * The same payload as a caller states it: the task's own fields, with the routing discriminant
+ * absent because this schema supplies it.
+ */
+export type FollowUpTaskInput = z.input<typeof followUpTaskPayloadSchema>;

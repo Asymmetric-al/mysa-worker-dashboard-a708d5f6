@@ -1318,16 +1318,18 @@ export const reopenTaskSchema = z.strictObject({ taskId: taskIdText });
 export type ReopenTaskPayload = z.infer<typeof reopenTaskSchema>;
 
 /**
- * The `cancelTask` payload: the task, and the confirmation the composer's deliberate act produces.
+ * The `cancelTask` payload: the task, and the confirmation its deliberate act must carry.
  *
- * Cancelling never deletes the record and never claims anything about the work, so the payload carries
- * no outcome, no contact flag and no money. A reason is accepted as the caller's own short note about
- * why the work stopped, and it is not written into the task: the stored record has no field for a
+ * The payload must carry that confirmation: a payload that states none is refused with the
+ * confirmation message, so the deliberate act is never assumed from the caller's silence. Cancelling
+ * never deletes the record and never claims anything about the work, so the payload carries no
+ * outcome, no contact flag and no money. A reason is accepted as the caller's own short note about why
+ * the work stopped, and it is not written into the task: the stored record has no field for a
  * free-text reason, and appending one to the note would later read as history rather than as a reason.
  */
 export const cancelTaskSchema = z.strictObject({
   taskId: taskIdText,
-  confirmed: z.literal(true, { error: WORDS.cancellationNotConfirmed }).optional(),
+  confirmed: z.literal(true, { error: WORDS.cancellationNotConfirmed }),
   reason: cancelReasonText.optional(),
 });
 

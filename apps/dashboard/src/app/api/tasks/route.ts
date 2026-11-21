@@ -7,9 +7,16 @@
  *
  * `POST` runs exactly one named mutation. Its discriminant is `payload.operation`, whose closed set
  * is `createTask`, `editTask`, `completeTask`, `reopenTask` and `cancelTask` — the mutation names
- * themselves, the same key `features/work/schemas/task.ts` and
- * `modules/data-service/mutations/tasks.ts` carry. It is routing metadata rather than a task field,
- * so it selects one schema and is removed before that mutation's own strict schema reads the payload.
+ * themselves, so it is routing metadata rather than a task field: it selects one schema here and is
+ * removed before that mutation's own strict schema reads the payload, which is why
+ * `modules/data-service/mutations/tasks.ts` declares no such member.
+ *
+ * The rule every client payload schema follows, and every remaining handler follows with it: the
+ * payload carries `operation` as routing metadata, each client schema states it as a defaulted literal
+ * so the schema's *output* — the wire payload the hooks compose — carries it, and the handler removes
+ * it before the mutation's own closed schema reads the payload. The shape alone could not choose the
+ * mutation, because `completeTask` and `reopenTask` are both an identifier and nothing else, so a
+ * payload that states no `operation` is refused `invalid` keyed `payload.operation`.
  */
 
 import { z } from "zod";
@@ -358,15 +365,17 @@ const reopenTaskPayloadSchema = z.strictObject({
 });
 
 /**
- * The `cancelTask` payload: the task, the confirmation the composer produces, and an optional reason.
+ * The `cancelTask` payload: the task, the confirmation the request must state, and an optional reason.
  *
  * Cancelling is not a delete: no `delete`, `purge`, `archive` or `remove` field exists here, and the
- * mutation keeps the record. A reason is the caller's own short note about why the work stopped.
+ * mutation keeps the record. The confirmation is required on the wire rather than merely offered — a
+ * request that states none is refused with the confirmation message — because cancelling is a
+ * deliberate act. A reason is the caller's own short note about why the work stopped.
  */
 const cancelTaskPayloadSchema = z.strictObject({
   operation: z.literal("cancelTask"),
   taskId: taskIdSchema,
-  confirmed: z.literal(true, { error: MESSAGES.cancellationNotConfirmed }).optional(),
+  confirmed: z.literal(true, { error: MESSAGES.cancellationNotConfirmed }),
   reason: cancelReasonSchema.optional(),
 });
 
@@ -504,6 +513,12 @@ function payloadOf<T extends { readonly operation: string }>(payload: T): Omit<T
  * The four contract fields are forwarded untouched, `expectedRevision` and `operationId` included, so
  * a replay still answers with the stored result instead of applying a second effect and a stale
  * revision still reaches the service as a `conflict`. Nothing is minted, bumped or stripped.
+ *
+ * A throw from the mutation is converted here rather than propagated: the caller always receives one
+ * of the closed outcomes, never a framework error page. `outcomeFromError` is the one mapper that
+ * knows the difference, so a store or network fault becomes `unavailable` with the source named and
+ * an unrecognised failure becomes `unknown` carrying this attempt's `operationId` — the same
+ * conversion the read above performs, and the second mapper this file would otherwise need.
  */
 async function dispatch<P extends { readonly operation: string }>(
   schema: z.ZodType<MutationInput<P>>,
@@ -515,7 +530,11 @@ async function dispatch<P extends { readonly operation: string }>(
   if (!parsed.success) {
     return toResponse(outcomeFromError(operationId, parsed.error));
   }
-  return toResponse(await run({ ...parsed.data, payload: payloadOf(parsed.data.payload) }));
+  try {
+    return toResponse(await run({ ...parsed.data, payload: payloadOf(parsed.data.payload) }));
+  } catch (error) {
+    return toResponse(outcomeFromError(operationId, error));
+  }
 }
 
 // ---------------------------------------------------------------------------------------------

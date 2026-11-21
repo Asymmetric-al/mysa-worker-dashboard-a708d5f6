@@ -11,7 +11,9 @@
  * only ever become work to do. What leaves this file is the schema's *output*, not the object the
  * caller handed over, so a financial field smuggled into a payload is dropped before the request is
  * sent rather than trusted because a type said it could not be there. That absence is criterion 8's
- * defence, and it holds whatever a later caller does.
+ * defence, and it holds whatever a later caller does. The one member that output adds to what a caller
+ * states is `operation`, the routing discriminant `POST /api/tasks` selects `createTask` by, which is
+ * why this hook accepts `FollowUpTaskInput` and sends `parsed.data`.
  *
  * **One identity per intent.** `createTask` is recoverable by identity: replaying an `operationId`
  * returns the task already created instead of creating a second one. The identity therefore belongs to
@@ -80,7 +82,11 @@ import {
   type MutationOutcome,
 } from "@/modules/data-service/outcome";
 
-import { followUpTaskPayloadSchema, type FollowUpTaskPayload } from "../schemas";
+import {
+  followUpTaskPayloadSchema,
+  type FollowUpTaskInput,
+  type FollowUpTaskPayload,
+} from "../schemas";
 
 // ---------------------------------------------------------------------------------------------
 // The one handler, and the cache segments a created task can appear under
@@ -113,15 +119,16 @@ const AGENDA_JOB = "agenda";
  * The input one follow-up submission presents, before this hook adds the attempt identity.
  *
  * `scope` is the context the person is acting in, `expectedRevision` the revision of the envelope the
- * affordance was rendered from, and `payload` the schema-validated task. `operationId` is optional and
- * exists for a caller that already owns the identity of the attempt — the shared review step mints one
- * per intent and passes it here — so a replay is recognised by identity rather than guessed from a
- * repeated payload.
+ * affordance was rendered from, and `payload` the task as the caller states it — `FollowUpTaskInput`,
+ * which carries no routing metadata, because the schema supplies `operation` and this hook sends its
+ * parsed output. `operationId` is optional and exists for a caller that already owns the identity of
+ * the attempt — the shared review step mints one per intent and passes it here — so a replay is
+ * recognised by identity rather than guessed from a repeated payload.
  */
 export interface FollowUpTaskVariables {
   readonly scope: Scope;
   readonly expectedRevision: string;
-  readonly payload: FollowUpTaskPayload;
+  readonly payload: FollowUpTaskInput;
   readonly operationId?: string;
 }
 
@@ -164,7 +171,7 @@ function intentText(value: unknown): string {
  * changed one always produces a different text. It is never a hash of a clock or a random source: the
  * identity derived from it must be reproducible across a retry, or a replay would create a second task.
  */
-function intentKeyOf(scope: Scope, expectedRevision: string, payload: FollowUpTaskPayload): string {
+function intentKeyOf(scope: Scope, expectedRevision: string, payload: FollowUpTaskInput): string {
   return JSON.stringify([
     scope.organizationId,
     scope.ministryId,

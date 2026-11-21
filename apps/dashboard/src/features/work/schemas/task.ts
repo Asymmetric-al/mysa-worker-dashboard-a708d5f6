@@ -13,6 +13,13 @@
  * default strip mode for exactly that reason: a smuggled envelope field inside a payload is dropped
  * rather than trusted.
  *
+ * One member is not a task field. `operation` is the routing discriminant `POST /api/tasks` selects
+ * the mutation by, and each schema below declares it as a defaulted literal because **the schema's
+ * output is the wire payload**: a caller states the fields of the task and the request it composes
+ * still names the change it makes. The handler strips the member again before the mutation's own
+ * closed schema reads the payload, so `modules/data-service/mutations/tasks.ts` stays free of it and
+ * the discriminant remains one routing fact rather than a second description of a task.
+ *
  * These schemas decide shape, never admissibility. Whether a due date has passed, whether a linked
  * record still exists, whether the caller may change this task and whether a series admits one more
  * occurrence are all the service's questions, answered against the record as it stands and the
@@ -347,6 +354,7 @@ export function refinePlannedTimePairing(value: PlannedTimePairing, ctx: z.Refin
  */
 export const createTaskSchema = z
   .object({
+    operation: z.literal("createTask").default("createTask"),
     title: taskTitleSchema,
     category: taskCategorySchema,
     dueOn: civilDateSchema.optional(),
@@ -378,6 +386,7 @@ export type CreateTaskPayload = z.infer<typeof createTaskSchema>;
  */
 export const editTaskSchema = z
   .object({
+    operation: z.literal("editTask").default("editTask"),
     taskId: taskIdSchema,
     title: taskTitleSchema,
     category: taskCategorySchema,
@@ -408,6 +417,7 @@ export type EditTaskPayload = z.infer<typeof editTaskSchema>;
  * meeting counts as held only when an interaction records that it happened.
  */
 export const completeTaskSchema = z.object({
+  operation: z.literal("completeTask").default("completeTask"),
   taskId: taskIdSchema,
 });
 
@@ -426,6 +436,7 @@ export type CompleteTaskPayload = z.infer<typeof completeTaskSchema>;
  * and neither states anything about who was contacted or what was given.
  */
 export const reopenTaskSchema = z.object({
+  operation: z.literal("reopenTask").default("reopenTask"),
   taskId: taskIdSchema,
 });
 
@@ -445,6 +456,7 @@ export type ReopenTaskPayload = z.infer<typeof reopenTaskSchema>;
  * later reads as history, and the task record has no field for one.
  */
 export const cancelTaskSchema = z.object({
+  operation: z.literal("cancelTask").default("cancelTask"),
   taskId: taskIdSchema,
   confirmed: z.literal(true, { error: TASK_SCHEMA_MESSAGES.cancelConfirmationRequired }),
 });

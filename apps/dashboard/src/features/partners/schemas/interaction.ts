@@ -529,9 +529,14 @@ function refineNextTaskPlan(value: NextTaskPlan, context: z.RefinementCtx): void
  * This is the minimal carry-over, not a task composer. The Work family owns task authoring, and nothing
  * here grows toward it: no repeat profile, no parent task, no attachment and no completion state, because
  * those are authored where work is planned rather than as a side effect of recording what happened.
+ *
+ * `operation` is not a task field: it is the routing discriminant `POST /api/tasks` selects the mutation
+ * by, defaulted here because this schema's output is the wire payload, so a caller states the task and
+ * the request still names the change it makes.
  */
 export const nextTaskPayloadSchema = z
   .strictObject({
+    operation: z.literal("createTask").default("createTask"),
     title: requiredText(
       INTERACTION_MESSAGES.taskTitleInvalid,
       INTERACTION_MESSAGES.taskTitleRequired,
