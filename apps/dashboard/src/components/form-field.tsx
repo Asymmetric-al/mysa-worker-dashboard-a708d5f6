@@ -420,7 +420,11 @@ export function FormFieldGroup({
       id={id}
       className={cn("min-w-0 border-0 p-0", className)}
       aria-describedby={describedBy}
-      aria-required={required ? true : undefined}
+      /* No `aria-required` here. A fieldset's implicit role is `group`, which does not support the
+       * attribute, so an audit reports the required group as invalid ARIA rather than as required.
+       * The requirement is carried where it is valid and where this component's own contract puts it:
+       * the caller passes the render prop's `required` to the control set's `aria-required`, and the
+       * legend shows the visible marker. */
     >
       <FieldLegend
         id={legendId}
