@@ -129,6 +129,12 @@ const PREVIEW_LIMIT = 600;
  * the pinned stack, so the block rhythm of the editing region is stated here against the semantic
  * tokens: no colour literal, no radius literal and no shadow. Logical properties (`ps-*`, `border-s`)
  * keep the indentation of lists and quotations on the reading side in right-to-left authoring.
+ *
+ * A code block wraps inside the column rather than scrolling sideways. The editing DOM belongs to
+ * ProseMirror, so a `pre` cannot be wrapped in the labelled, focusable `ScrollRegion`, and only a
+ * table's own labelled scroll region may scroll horizontally. Stating the wrapping here, instead of
+ * inheriting it from the editor library's base stylesheet, keeps a code block from ever becoming a
+ * scroll container with no accessible name and no keyboard path to its overflow.
  */
 const EDITOR_PROSE_CLASS = cn(
   "min-h-40 w-full px-3 py-2.5 text-sm leading-6 text-foreground outline-none",
@@ -140,7 +146,7 @@ const EDITOR_PROSE_CLASS = cn(
   "[&_ol]:my-2 [&_ol]:list-decimal [&_ol]:ps-6",
   "[&_li]:my-0.5",
   "[&_blockquote]:my-3 [&_blockquote]:border-s-2 [&_blockquote]:border-border [&_blockquote]:ps-3 [&_blockquote]:text-muted-foreground",
-  "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs",
+  "[&_pre]:my-3 [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:whitespace-pre-wrap [&_pre]:break-words",
   "[&_code]:rounded-sm [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs",
   "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
   "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-3",
@@ -1372,7 +1378,7 @@ export function ProseEditor({
             {saveState.operationId === null ? null : (
               <p>
                 Attempt{" "}
-                <bdi className="font-mono break-all">{saveState.operationId}</bdi>
+                <bdi className="mono-identifier break-all">{saveState.operationId}</bdi>
               </p>
             )}
           </AlertDescription>

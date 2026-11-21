@@ -25,11 +25,14 @@
  *   admitted sets, so the renderer cannot produce an element the profile does not admit. The
  *   `./json/react` and `./pm/*` entries are not used: this module has no React runtime and no editor
  *   instance to render from.
- * - Output attributes. `href` and `rel` on a link, `dir` on the block that states direction, and
- *   `start` on a numbered list that does not begin at 1 are the only attributes written here; no
- *   `class`, `style`, `id`, `on*`, `srcdoc` or data attribute can be produced from stored JSON.
- *   `start` is written because the profile admits it precisely so a stored list keeps its numbering,
- *   and it is a validated non-negative integer rather than text.
+ * - Output attributes. `href` and `rel` on a link, `dir` on the block that states direction, `start`
+ *   on a numbered list that does not begin at 1, and `label` on a caption track are the only
+ *   attributes written here; no `class`, `style`, `id`, `on*`, `srcdoc` or data attribute can be
+ *   produced from stored JSON. `start` is written because the profile admits it precisely so a stored
+ *   list keeps its numbering, and it is a validated non-negative integer rather than text. `label` is
+ *   the caption track's name in the player's caption menu, in the edition's own language, and it comes
+ *   from the caller: this module renders no translated text and resolves no locale, so a fixed menu
+ *   name would mislabel every edition that reads in another language, an RTL one included.
  * - Presentation choices are admitted and validated, and emit no attribute: this profile stores no
  *   styling, so a treatment, layout, alignment or image-fit value never becomes a class, an inline
  *   style or CSS here.
@@ -146,6 +149,12 @@ export interface RenderMediaPlacement {
   readonly captionsId?: string;
   /** BCP-47 language of the caption track, when that track states one. */
   readonly captionsLanguage?: string;
+  /**
+   * The caption track's name in the player's caption menu, in the edition's own language. The caller
+   * states it: this module renders no translated text and resolves no locale. An absent label leaves
+   * the attribute off, and the player then names the track from `srclang`.
+   */
+  readonly captionsLabel?: string;
 }
 
 /**
@@ -323,7 +332,9 @@ function renditionAt(
 /**
  * The caption track of a video placement, rendered inside the player, or nothing when no captions
  * rendition is admitted. The track's path is a scoped request like the video's own, so a caption
- * cannot become a route around a denied video.
+ * cannot become a route around a denied video. Its menu name comes from the placement, in the
+ * edition's own language: an absent or blank label writes no attribute at all, and the player then
+ * names the track from `srclang`.
  */
 function captionTrack(renditions: RenderRenditions, placement: RenderMediaPlacement): string {
   const captions = renditionAt(renditions, placement.captionsId, "captions");
@@ -335,7 +346,9 @@ function captionTrack(renditions: RenderRenditions, placement: RenderMediaPlacem
     language !== undefined && LANGUAGE_TAG_PATTERN.test(language)
       ? ` srclang="${escapeHtml(language)}"`
       : "";
-  return `<track kind="captions" src="${escapeHtml(captions)}"${srclang} label="Captions">`;
+  const name = placement.captionsLabel?.trim() ?? "";
+  const label = name.length > 0 ? ` label="${escapeHtml(name)}"` : "";
+  return `<track kind="captions" src="${escapeHtml(captions)}"${srclang}${label}>`;
 }
 
 /**

@@ -8,17 +8,23 @@
  * leaving its text intact, so a name, a note or an identifier still round-trips character
  * for character.
  *
+ * A cell opens at the field's first character and again after every line break inside it,
+ * because a reader that re-splits the quoted field on CR or LF sees a new row there. The
+ * prefix is therefore placed at each of those positions, and a neutralised multi-line value
+ * carries it again after the line break.
+ *
  * Every field of every export passes through `neutralizeCell` exactly once (`csv.ts`); no
- * other module escapes CSV content. No universal mitigation exists — the leading tab stays
- * part of the data on reimport — and that residual is disclosed in the artefact's metadata
- * record rather than hidden here.
+ * other module escapes CSV content. No universal mitigation exists — the tab stays part of
+ * the data on reimport — and that residual is disclosed in the artefact's metadata record
+ * rather than hidden here.
  */
 
 /**
- * The character placed before a neutralised value.
+ * The character placed at each cell start that would otherwise open with a formula trigger.
  *
- * A leading tab keeps a spreadsheet from reading the cell text as a formula, which is the
- * mitigation OWASP records for formula injection; the tab remains part of the field.
+ * A tab ahead of the trigger keeps a spreadsheet from reading that cell's text as a formula,
+ * which is the mitigation OWASP records for formula injection; the tab remains part of the
+ * field.
  */
 export const NEUTRALISER_PREFIX = "\t";
 
@@ -61,24 +67,45 @@ function isDangerousAt(value: string, index: number): boolean {
 }
 
 /**
+ * Whether a spreadsheet could begin a cell at `index`: the value's first character, or the
+ * first character after a line break, because a reader that re-splits the quoted field on
+ * CR or LF sees a new row there.
+ *
+ * A CRLF run ends its row at the LF, so the position holding that LF is not a cell start —
+ * its predecessor is the CR — while the position after it is. Neither `requiresNeutralisation`
+ * nor `neutralizeCell` decides this for itself, so detection and mitigation cannot disagree,
+ * and the prefix never lands between CR and LF.
+ */
+function opensCellAt(value: string, index: number): boolean {
+  if (index === 0) {
+    return true;
+  }
+
+  if (index < 0 || index >= value.length) {
+    return false;
+  }
+
+  const previous = value.charCodeAt(index - 1);
+
+  if (previous === LINE_FEED) {
+    return true;
+  }
+
+  return previous === CARRIAGE_RETURN && value.charCodeAt(index) !== LINE_FEED;
+}
+
+/** Whether a cell opens at `index` with a character a spreadsheet reads as a formula. */
+function startsDangerousCell(value: string, index: number): boolean {
+  return opensCellAt(value, index) && isDangerousAt(value, index);
+}
+
+/**
  * Whether `value` holds a formula trigger at any position where a spreadsheet could begin
  * a cell. An empty value never needs neutralising.
  */
 export function requiresNeutralisation(value: string): boolean {
-  if (isDangerousAt(value, 0)) {
-    return true;
-  }
-
   for (let index = 0; index < value.length; index += 1) {
-    const codeUnit = value.charCodeAt(index);
-    const opensCell = codeUnit === CARRIAGE_RETURN || codeUnit === LINE_FEED;
-
-    // A spreadsheet reads a line break inside a quoted field as the start of a new row, so
-    // the character after a CR or LF opens a cell even though this reader sees one value.
-    // Testing only the first character would leave "note\r\n=cmd" executable. A CRLF run
-    // needs no special case: the LF that follows the CR is itself a trigger, so the run is
-    // caught either at the CR or at the LF.
-    if (opensCell && isDangerousAt(value, index + 1)) {
+    if (startsDangerousCell(value, index)) {
       return true;
     }
   }
@@ -96,7 +123,9 @@ export function quoteField(value: string): string {
 }
 
 /**
- * Renders `value` as one inert, fully quoted CSV field.
+ * Renders `value` as one inert, fully quoted CSV field: the neutraliser sits at every cell
+ * start whose first character a spreadsheet would read as a formula, and the value's own
+ * characters follow in their original order, otherwise untouched.
  */
 export function neutralizeCell(value: string): string {
   // The decision is made on the logical cell value, before quoting. Quoting stops a
@@ -109,7 +138,19 @@ export function neutralizeCell(value: string): string {
   // in its own right and takes the prefix again ("\t=cmd" becomes "\t\t=cmd"). An
   // "already prefixed?" check would let such a value escape neutralisation, so correctness
   // rests on every field passing through this function exactly once, which `csv.ts` does.
-  const neutralised = requiresNeutralisation(value) ? `${NEUTRALISER_PREFIX}${value}` : value;
+  let neutralised = "";
+  let copied = 0;
 
-  return quoteField(neutralised);
+  for (let index = 0; index < value.length; index += 1) {
+    if (!startsDangerousCell(value, index)) {
+      continue;
+    }
+
+    // Everything since the previous insertion is copied across in one piece, so the only
+    // characters this function adds are prefixes and no original character is rewritten.
+    neutralised = `${neutralised}${value.slice(copied, index)}${NEUTRALISER_PREFIX}`;
+    copied = index;
+  }
+
+  return quoteField(`${neutralised}${value.slice(copied)}`);
 }

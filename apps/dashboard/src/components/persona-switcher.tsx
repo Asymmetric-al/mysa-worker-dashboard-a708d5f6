@@ -427,7 +427,7 @@ export function PersonaSwitcher({
             ) : activePersona === undefined ? (
               <>
                 <span className="font-medium">an unrecognised persona</span>
-                <bdi className="min-w-0 font-mono break-all">{activeId}</bdi>
+                <bdi className="min-w-0 mono-identifier break-all">{activeId}</bdi>
               </>
             ) : (
               <>
@@ -497,7 +497,7 @@ export function PersonaSwitcher({
                     ) : (
                       <>
                         {"The session state "}
-                        <bdi className="font-mono break-all">{activeState}</bdi>
+                        <bdi className="mono-identifier break-all">{activeState}</bdi>
                         {" is not one this control can label."}
                       </>
                     )}

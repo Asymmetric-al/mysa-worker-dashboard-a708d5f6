@@ -85,7 +85,7 @@ export function AmountValue({
   const { text, accessibleLabel } = formatMinor(money, valueState, locale);
 
   return (
-    <span className={cn("tabular-nums", EMPHASIS[emphasis], className)} title={accessibleLabel}>
+    <span className={cn("tabular-figures", EMPHASIS[emphasis], className)} title={accessibleLabel}>
       <bdi>{text}</bdi>
       {accessibleLabel === text ? null : <span className="sr-only">{accessibleLabel}</span>}
     </span>

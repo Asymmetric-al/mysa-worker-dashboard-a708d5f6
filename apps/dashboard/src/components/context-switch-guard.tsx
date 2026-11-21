@@ -560,7 +560,7 @@ const SAVE_FAILED =
   "The save did not report a result, so the switch did not happen. Nothing here has been discarded; check whether the save is in place before trying again.";
 
 /** How an opaque value renders: isolated from the surrounding direction, in the mono utility. */
-const IDENTIFIER_CLASS = "font-mono break-all";
+const IDENTIFIER_CLASS = "mono-identifier break-all";
 
 /**
  * The Save / Discard / Stay guard for a context change.

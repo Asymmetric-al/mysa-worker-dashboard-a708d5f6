@@ -79,7 +79,7 @@ export function DevBanner({ scenarioId, className }: DevBannerProps) {
               direction and the monospace utility keeps a mixed-direction name or number from
               reordering the words around it. `break-all` keeps an unusually long identifier
               inside the line instead of overflowing the viewport. */}
-          <bdi className="font-mono break-all">{scenario}</bdi>
+          <bdi className="mono-identifier break-all">{scenario}</bdi>
         </span>
       )}
     </div>

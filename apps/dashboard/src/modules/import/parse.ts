@@ -1,11 +1,18 @@
 /**
- * Contact import, steps one and two: the displayed limits are enforced before anything is
- * processed, then a UTF-8 CSV text is read into ordered headers and ordered rows.
+ * Contact import, steps one and two: a UTF-8 CSV text is held to every displayed limit and read into
+ * ordered headers and ordered rows.
+ *
+ * The limits are decided in the order their units allow. The byte count, the workbook signature and
+ * the UTF-8/binary checks are decided on the raw bytes before the parser sees them. The column,
+ * nonblank-row, record-count and per-cell limits are decided on the parser's records as it produces
+ * them, and the tokenisation is abandoned at the first record that breaks a whole-file limit, so no
+ * over-limit record ever reaches mapping or validation.
  *
  * Scope: AAP 0.6.1 import-module row (`checkLimits()`, `parseCsv()`); 0.8.7 fixed values (5 MiB,
  * 5000 nonblank data rows, 60 columns, 2000 code points per cell, each with its exact boundary);
- * 0.2.1 (csv-parse 7.0.3, `bom` enabled, limits enforced before processing, never a generic
- * column-mapped mode); 0.9.1/0.11.1 (`modules/import/{parse,map,validate,decide,receipt}.ts`).
+ * 0.2.1 (csv-parse 7.0.3 streaming parser, `bom` enabled, limits enforced on the records as they
+ * arrive, never a generic column-mapped mode); 0.9.1/0.11.1
+ * (`modules/import/{parse,map,validate,decide,receipt}.ts`).
  *
  * This file also declares the import module's shared types, because no import here may reach the
  * record store, the data service, a feature folder or a component folder, and the module has no
@@ -13,7 +20,7 @@
  * file crosses an external boundary, so none carries a schema.
  */
 
-import { parse } from "csv-parse/sync";
+import { parse } from "csv-parse";
 
 // ---------------------------------------------------------------------------------------------
 // Phase A: the limits, declared once
@@ -211,10 +218,10 @@ const OLE2_SIGNATURE: readonly number[] = [0xd0, 0xcf, 0x11, 0xe0];
 
 /**
  * The most records one scan materialises. The byte ceiling alone cannot bound this: a 5 MiB file of
- * newlines holds millions of one-field records, and an eager parse of them would exhaust memory on
- * a host running many tasks. The bound sits far above any file that fits the row limit, so reaching
- * it means the file is not a contact list this importer reviews — refused as such, never counted
- * wrongly.
+ * newlines holds millions of one-field records, and materialising them all would exhaust memory on a
+ * host running many tasks. The scan abandons the tokenisation at this record, and the bound sits far
+ * above any file that fits the row limit, so reaching it means the file is not a contact list this
+ * importer reviews — refused as such, never counted wrongly.
  */
 const RECORD_SCAN_LIMIT = 100_000;
 
@@ -228,9 +235,10 @@ const MAX_RECORD_SIZE = IMPORT_MAX_COLUMNS * IMPORT_MAX_CELL_CODE_POINTS * 4 + 4
 
 interface CsvScan {
   readonly headerCells: string[];
-  readonly dataRecords: readonly string[][];
+  readonly dataRecords: string[][];
   readonly blankRecordCount: number;
-  readonly scanLimitReached: boolean;
+  /** Faults that refuse one row each, derived in the same record pass that numbers the rows. */
+  readonly rowFaults: ImportRowFault[];
 }
 
 type ScanOutcome =
@@ -354,40 +362,158 @@ function parserFaultRefusal(error: unknown): ImportRefusal {
 }
 
 /**
- * The one tokenisation of the file: csv-parse in plain array mode, with every limit-relevant fact
- * derived from the records as parsed. Both entry points below read its result, so headers, rows,
- * blank counts and row numbering cannot diverge between the check and the parse.
+ * Thrown from `on_record` to abandon the tokenisation at the first record that breaks a whole-file
+ * limit. csv-parse reports it as the parse's own error, so the records after it are never tokenised
+ * and no record over a limit reaches mapping or validation.
  */
-function scanCsv(text: string): ScanOutcome {
-  let records: string[][];
-  try {
-    records = parse(text, {
-      // An unstripped byte-order mark becomes part of the first header cell, turning "Email" into
-      // "\uFEFFEmail" and silently breaking every mapping that looks the column up by its name.
-      bom: true,
-      delimiter: CSV_DELIMITER,
-      max_record_size: MAX_RECORD_SIZE,
-      // Ragged rows and blank lines are kept exactly as parsed so they can be reported, corrected
-      // or counted; dropping them would hide a row, padding them would invent cells.
-      relax_column_count: true,
-      skip_empty_lines: false,
-      to: RECORD_SCAN_LIMIT + 1,
+class ScanAborted extends Error {
+  readonly refusal: ImportRefusal;
+
+  constructor(refusal: ImportRefusal) {
+    super(refusal.message);
+    this.name = "ScanAborted";
+    this.refusal = refusal;
+  }
+}
+
+function tooManyColumnsRefusal(measured: number): ImportRefusal {
+  return refusal(
+    "too-many-columns",
+    `The header row has ${measured} columns; the limit is ${IMPORT_MAX_COLUMNS} columns. Remove the extra columns and try again.`,
+    "columns",
+    measured,
+  );
+}
+
+function tooManyRowsRefusal(measured: number): ImportRefusal {
+  // The scan stops at the first row over the limit instead of counting the rest of the file, so the
+  // number is a floor; the message says "at least" and still names the limit and what was measured.
+  return refusal(
+    "too-many-rows",
+    `This file holds at least ${measured} nonblank data rows; the limit is ${IMPORT_MAX_DATA_ROWS} nonblank data rows. Split the file and import it in parts.`,
+    "data-rows",
+    measured,
+  );
+}
+
+function recordScanExceededRefusal(): ImportRefusal {
+  return refusal(
+    "record-scan-exceeded",
+    `This file holds more than ${RECORD_SCAN_LIMIT} records including blank rows, and the importer reviews up to ${IMPORT_MAX_DATA_ROWS} nonblank data rows. Remove the empty rows and try again.`,
+    "data-rows",
+    RECORD_SCAN_LIMIT + 1,
+  );
+}
+
+/**
+ * Writes the text through csv-parse's streaming parser and hands each record to `onRecord` as it is
+ * tokenised. Resolves once the text is consumed, and rejects with whatever stopped the parse: the
+ * `ScanAborted` that `onRecord` threw, or the parser's own fault.
+ */
+function tokeniseCsv(text: string, onRecord: (record: string[]) => string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    parse(
+      text,
+      {
+        // An unstripped byte-order mark becomes part of the first header cell, turning "Email" into
+        // "\uFEFFEmail" and silently breaking every mapping that looks the column up by its name.
+        bom: true,
+        delimiter: CSV_DELIMITER,
+        max_record_size: MAX_RECORD_SIZE,
+        // Ragged rows and blank lines are kept exactly as parsed so they can be reported, corrected
+        // or counted; dropping them would hide a row, padding them would invent cells.
+        relax_column_count: true,
+        skip_empty_lines: false,
+        on_record: onRecord,
+      },
+      (error) => {
+        if (error === undefined) {
+          resolve();
+          return;
+        }
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * The one tokenisation of the file: csv-parse in plain array mode, with each limit decided on the
+ * record that tests it. Both entry points below read its result, so headers, rows, blank counts and
+ * row numbering cannot diverge between the check and the parse.
+ */
+async function scanCsv(text: string): Promise<ScanOutcome> {
+  const dataRecords: string[][] = [];
+  const rowFaults: ImportRowFault[] = [];
+  let headerCells: string[] | null = null;
+  let blankRecordCount = 0;
+  let recordCount = 0;
+
+  const onRecord = (record: string[]): string[] => {
+    recordCount += 1;
+    if (recordCount > RECORD_SCAN_LIMIT) throw new ScanAborted(recordScanExceededRefusal());
+
+    // Blank records — an empty line, a delimiter-only line and a line of spaces — are counted and
+    // never become a data row, ahead of the header as well as after it.
+    if (isBlankRecord(record)) {
+      blankRecordCount += 1;
+      return record;
+    }
+
+    const header = headerCells;
+    if (header === null) {
+      // The first record with any content names the columns, so its cell count is the file's column
+      // count and the 61st column refuses the file here, before a single data record is read.
+      const trimmed = record.map((cell) => cell.trim());
+      if (trimmed.length > IMPORT_MAX_COLUMNS) {
+        throw new ScanAborted(tooManyColumnsRefusal(trimmed.length));
+      }
+      headerCells = trimmed;
+      return record;
+    }
+
+    // The 1-based position among nonblank data rows, so the header and blank rows are never
+    // numbered and the 5001st such row is the first that breaks the limit.
+    const rowNumber = dataRecords.length + 1;
+    if (rowNumber > IMPORT_MAX_DATA_ROWS) throw new ScanAborted(tooManyRowsRefusal(rowNumber));
+
+    // Both row faults come from this same pass, so a too-long cell or a shape mismatch refuses its
+    // own row only and the rest of the file stays importable.
+    if (record.length !== header.length) {
+      rowFaults.push({
+        rowNumber,
+        kind: "ragged-row",
+        columnNumber: null,
+        measured: record.length,
+        message: `Row ${rowNumber} has ${record.length} columns but the header row names ${header.length}. Line the row up with the header before accepting it.`,
+      });
+    }
+
+    record.forEach((cell, cellIndex) => {
+      const codePoints = countCodePoints(cell);
+      if (codePoints <= IMPORT_MAX_CELL_CODE_POINTS) return;
+      rowFaults.push({
+        rowNumber,
+        kind: "cell-too-long",
+        columnNumber: cellIndex + 1,
+        measured: codePoints,
+        message: `Row ${rowNumber}, column ${cellIndex + 1} is ${codePoints} characters long; the limit is ${IMPORT_MAX_CELL_CODE_POINTS} characters per cell. Shorten the cell or skip this row.`,
+      });
     });
+
+    dataRecords.push(record);
+    return record;
+  };
+
+  try {
+    await tokeniseCsv(text, onRecord);
   } catch (error) {
+    if (error instanceof ScanAborted) return refused(error.refusal);
     return refused(parserFaultRefusal(error));
   }
 
-  let headerIndex = -1;
-  for (let index = 0; index < records.length; index += 1) {
-    const record = records[index];
-    if (record !== undefined && !isBlankRecord(record)) {
-      headerIndex = index;
-      break;
-    }
-  }
-
-  const headerRecord = headerIndex === -1 ? undefined : records[headerIndex];
-  if (headerRecord === undefined) {
+  const header = headerCells;
+  if (header === null) {
     return refused(
       refusal(
         "no-header-row",
@@ -398,73 +524,8 @@ function scanCsv(text: string): ScanOutcome {
     );
   }
 
-  // The header is the first record with any content, so at least one header cell is non-empty by
-  // construction: a record of only empty cells is a blank row and was skipped above.
-  const headerCells = headerRecord.map((cell) => cell.trim());
-
-  const dataRecords: string[][] = [];
-  // Blank records before the header are ignored like any other blank row, so the header may follow
-  // a leading empty line without that line becoming a column.
-  let blankRecordCount = headerIndex;
-  for (let index = headerIndex + 1; index < records.length; index += 1) {
-    const record = records[index];
-    if (record === undefined) continue;
-    if (isBlankRecord(record)) {
-      blankRecordCount += 1;
-      continue;
-    }
-    dataRecords.push(record);
-  }
-
-  return {
-    ok: true,
-    scan: {
-      headerCells,
-      dataRecords,
-      blankRecordCount,
-      scanLimitReached: records.length >= RECORD_SCAN_LIMIT + 1,
-    },
-  };
-}
-
-function structuralRefusals(scan: CsvScan): ImportRefusal[] {
-  if (scan.scanLimitReached) {
-    return [
-      refusal(
-        "record-scan-exceeded",
-        `This file holds more than ${RECORD_SCAN_LIMIT} records including blank rows, and the importer reviews up to ${IMPORT_MAX_DATA_ROWS} nonblank data rows. Remove the empty rows and try again.`,
-        "data-rows",
-        RECORD_SCAN_LIMIT + 1,
-      ),
-    ];
-  }
-
-  const refusals: ImportRefusal[] = [];
-  const columnCount = scan.headerCells.length;
-  const dataRowCount = scan.dataRecords.length;
-
-  if (columnCount > IMPORT_MAX_COLUMNS) {
-    refusals.push(
-      refusal(
-        "too-many-columns",
-        `The header row has ${columnCount} columns; the limit is ${IMPORT_MAX_COLUMNS} columns. Remove the extra columns and try again.`,
-        "columns",
-        columnCount,
-      ),
-    );
-  }
-
-  if (dataRowCount > IMPORT_MAX_DATA_ROWS) {
-    refusals.push(
-      refusal(
-        "too-many-rows",
-        `This file has ${dataRowCount} nonblank data rows; the limit is ${IMPORT_MAX_DATA_ROWS} nonblank data rows. Split the file and import it in parts.`,
-        "data-rows",
-        dataRowCount,
-      ),
-    );
-  } else if (dataRowCount === 0) {
-    refusals.push(
+  if (dataRecords.length === 0) {
+    return refused(
       refusal(
         "no-data-rows",
         "This file has a header row but no data rows. Add at least one contact row and try again.",
@@ -474,42 +535,10 @@ function structuralRefusals(scan: CsvScan): ImportRefusal[] {
     );
   }
 
-  return refusals;
-}
-
-function rowFaultsFor(
-  records: readonly (readonly string[])[],
-  columnCount: number,
-): ImportRowFault[] {
-  const faults: ImportRowFault[] = [];
-
-  records.forEach((record, recordIndex) => {
-    const rowNumber = recordIndex + 1;
-
-    if (record.length !== columnCount) {
-      faults.push({
-        rowNumber,
-        kind: "ragged-row",
-        columnNumber: null,
-        measured: record.length,
-        message: `Row ${rowNumber} has ${record.length} columns but the header row names ${columnCount}. Line the row up with the header before accepting it.`,
-      });
-    }
-
-    record.forEach((cell, cellIndex) => {
-      const codePoints = countCodePoints(cell);
-      if (codePoints <= IMPORT_MAX_CELL_CODE_POINTS) return;
-      faults.push({
-        rowNumber,
-        kind: "cell-too-long",
-        columnNumber: cellIndex + 1,
-        measured: codePoints,
-        message: `Row ${rowNumber}, column ${cellIndex + 1} is ${codePoints} characters long; the limit is ${IMPORT_MAX_CELL_CODE_POINTS} characters per cell. Shorten the cell or skip this row.`,
-      });
-    });
-  });
-
-  return faults;
+  return {
+    ok: true,
+    scan: { headerCells: header, dataRecords, blankRecordCount, rowFaults },
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -517,13 +546,16 @@ function rowFaultsFor(
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Enforces every displayed limit on a chosen file before anything is processed, returning either
- * the admitted file (UTF-8 text plus its measured structure) or the refusals that stopped it.
+ * Enforces every displayed limit on a chosen file and returns either the admitted file (the UTF-8
+ * text plus its measured structure) or the refusals that stopped it. The byte count, the workbook
+ * signature and the UTF-8/binary checks are decided on the bytes before the parser sees them; the
+ * column, row, cell-length and record-count limits are decided on the parser's records as they
+ * arrive, and the tokenisation is abandoned at the first record that breaks a whole-file limit.
  */
-export function checkLimits(
+export async function checkLimits(
   bytes: Uint8Array,
   displayName = "the chosen file",
-): ImportLimitCheckResult {
+): Promise<ImportLimitCheckResult> {
   // Size comes first: it is the only limit decidable from the byte count alone, and it bounds the
   // cost of every later step — decode, tokenise, count.
   if (bytes.byteLength === 0) {
@@ -567,11 +599,8 @@ export function checkLimits(
   const binaryRefusal = binaryControlRefusal(decoded.text);
   if (binaryRefusal !== null) return refused(binaryRefusal);
 
-  const scanned = scanCsv(decoded.text);
+  const scanned = await scanCsv(decoded.text);
   if (!scanned.ok) return refused(...scanned.refusals);
-
-  const refusals = structuralRefusals(scanned.scan);
-  if (refusals.length > 0) return refused(...refusals);
 
   return {
     ok: true,
@@ -585,7 +614,7 @@ export function checkLimits(
         columnCount: scanned.scan.headerCells.length,
         dataRowCount: scanned.scan.dataRecords.length,
         blankRowCount: scanned.scan.blankRecordCount,
-        rowFaults: rowFaultsFor(scanned.scan.dataRecords, scanned.scan.headerCells.length),
+        rowFaults: [...scanned.scan.rowFaults],
       },
     },
   };
@@ -597,14 +626,12 @@ export function checkLimits(
 
 /**
  * Reads admitted UTF-8 CSV text into ordered headers and ordered nonblank rows, refusing rather
- * than returning an empty success when the text cannot be used.
+ * than returning an empty success when the text cannot be used. It runs the same record-by-record
+ * scan as `checkLimits()`, so a text that arrived without that check is still held to every limit.
  */
-export function parseCsv(text: string): ParseCsvResult {
-  const scanned = scanCsv(text);
+export async function parseCsv(text: string): Promise<ParseCsvResult> {
+  const scanned = await scanCsv(text);
   if (!scanned.ok) return refused(...scanned.refusals);
-
-  const refusals = structuralRefusals(scanned.scan);
-  if (refusals.length > 0) return refused(...refusals);
 
   const headers = [...scanned.scan.headerCells];
   const columnCount = headers.length;
@@ -622,7 +649,7 @@ export function parseCsv(text: string): ParseCsvResult {
       columnCount,
       dataRowCount: rows.length,
       blankRowCount: scanned.scan.blankRecordCount,
-      rowFaults: rowFaultsFor(scanned.scan.dataRecords, columnCount),
+      rowFaults: [...scanned.scan.rowFaults],
     },
   };
 }
