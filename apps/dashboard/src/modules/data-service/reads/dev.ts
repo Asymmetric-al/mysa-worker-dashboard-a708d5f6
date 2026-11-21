@@ -136,7 +136,7 @@ const DEV_SOURCE_SYSTEM = "dev-runtime";
 const DEV_SOURCE_REFERENCE = "session-meta";
 
 /** The source identity an `unavailable` answer carries. */
-const DEV_SOURCE = Object.freeze({
+export const DEV_SOURCE = Object.freeze({
   system: DEV_SOURCE_SYSTEM,
   reference: DEV_SOURCE_REFERENCE,
 });
@@ -471,8 +471,12 @@ function activePersonaIdOf(personas: readonly DevPersona[], principalId: string)
  * scenario, the offset, the admission state or the armed failure changes it. It is reported rather
  * than assumed, so a caller that wants to detect "the state moved since I looked" has one honest
  * comparison instead of a timestamp it would have to invent.
+ *
+ * Exported because the controls that take that `expectedRevision` — `data-service/mutations/dev.ts` —
+ * must derive the identical token: two derivations would drift, and a drift would turn every control
+ * submitted from a current panel into a false conflict. This read is the token's one definition.
  */
-function devStateRevision(meta: SessionMetaDocument, principalId: string): string {
+export function devStateRevision(meta: SessionMetaDocument, principalId: string): string {
   const plan =
     meta.failurePlan === EMPTY_FAILURE_PLAN
       ? "none"
@@ -635,4 +639,3 @@ export async function readDevState(
 
   return { kind: "envelope", envelope };
 }
-

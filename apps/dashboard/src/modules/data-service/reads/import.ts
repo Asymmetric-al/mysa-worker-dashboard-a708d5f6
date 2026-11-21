@@ -179,13 +179,49 @@ const importStateDocumentSchema = z.object({
 });
 
 /**
- * The operation ledger document: an append-only entry list, checked entry by entry through the record
- * schema `envelope.ts` declares. Only its scope and its result are read here — the scope is the
- * authority a proposal was recorded under, and the result is where an acceptance keeps its receipt.
+ * The operation ledger document, in either arrangement this build finds it in.
+ *
+ * The service's own ledger appends an accepted attempt to a `records` map keyed by `operationId`, and
+ * the deterministic seed writes the same entries as an `entries` array. Both are the same information,
+ * so both are read here rather than one being reported as an unreadable document — which would lose the
+ * ownership of every proposal and the receipt of every acceptance the moment a session accepted its
+ * first operation. Only the scope and the result are read from an entry: the scope is the authority a
+ * proposal was recorded under, and the result is where an acceptance keeps its receipt.
  */
 const operationLedgerDocumentSchema = z.object({
-  entries: z.array(operationRecordSchema),
+  entries: z.array(operationRecordSchema).optional(),
+  records: z.record(z.string().min(1), operationRecordSchema).optional(),
 });
+
+/**
+ * Every entry of a stored ledger, normalised from whichever arrangement the document holds, or null when
+ * the document is not a ledger this build can read.
+ *
+ * An entry whose map key disagrees with its own `operationId`, or one identity recorded twice with
+ * different intent, is refused rather than merged: a ledger that cannot say which attempt an entry
+ * belongs to cannot establish whose work it is.
+ */
+function ledgerEntriesOf(
+  document: z.infer<typeof operationLedgerDocumentSchema>,
+): readonly OperationRecord[] | null {
+  if (document.entries === undefined && document.records === undefined) {
+    return null;
+  }
+  const byId = new Map<string, OperationRecord>();
+  for (const entry of document.entries ?? []) {
+    if (byId.has(entry.operationId)) {
+      return null;
+    }
+    byId.set(entry.operationId, entry);
+  }
+  for (const [operationId, entry] of Object.entries(document.records ?? {})) {
+    if (entry.operationId !== operationId || byId.has(operationId)) {
+      return null;
+    }
+    byId.set(operationId, entry);
+  }
+  return [...byId.values()];
+}
 
 /** What one read needs from the session's documents. `null` means the document could not be read. */
 interface ImportDocuments {
@@ -544,7 +580,7 @@ async function readImportDocuments(sessionId: string): Promise<ImportDocuments |
     const ledger = operationLedgerDocumentSchema.safeParse(documents.operations);
     return {
       proposals: state.success ? state.data.importProposals : null,
-      entries: ledger.success ? ledger.data.entries : null,
+      entries: ledger.success ? ledgerEntriesOf(ledger.data) : null,
     };
   } catch {
     // A corrupt or unreadable document means the store cannot answer. The refusal says that and
