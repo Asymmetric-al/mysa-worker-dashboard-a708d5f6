@@ -1,5 +1,7 @@
 /**
- * `POST /api/initiatives/close` — the one way a browser closes an initiative's solicitation.
+ * `POST /api/initiatives/close` — the browser transport for the one named `closeInitiative` change,
+ * which fences further solicitation and records where the unfinished work it owns is going. Closing
+ * never resolves an outstanding obligation silently: the service reports every item it leaves open.
  */
 import { z } from "zod";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse } from "@/modules/data-service";
@@ -21,7 +23,7 @@ function attemptIdOf(body: unknown): string {
   const claimed: unknown = (body as { operationId?: unknown }).operationId;
   return typeof claimed === "string" && claimed.length > 0 ? claimed : UNIDENTIFIED_ATTEMPT;
 }
-/** Closes one initiative, recording how its unfinished work is handed on or resolved. */
+/** Closes one initiative, recording how its unfinished work is handed on or resolved. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function POST(request: Request): Promise<Response> {
   const body: unknown = await request.json().catch(() => undefined);
   const parsed = closeInitiativeRequestSchema.safeParse(body);

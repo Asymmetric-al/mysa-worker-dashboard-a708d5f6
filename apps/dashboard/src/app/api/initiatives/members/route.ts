@@ -2,82 +2,113 @@
  * `POST /api/initiatives/members` — the three changes that act on one initiative's reviewed working
  * list: `addMembers`, `removeMember` and `returnMember`.
  */
+import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { assertNever } from "@/lib/result";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse, type MutationInput, type MutationOutcome } from "@/modules/data-service";
 // The store behind the service writes through `node:fs`, so this handler never runs on the edge.
 export const runtime = "nodejs";
 // Every request resolves the development session and evaluates the scenario clock once.
 export const dynamic = "force-dynamic";
+// No `GET` is exported here on purpose, and neither is any other verb: the working list is read by
+// `readInitiative` inside the initiative page, so a list handler on this path would be a second
+// enumeration path beside that read. Next answers 405 to every other verb because none exists.
 
 const UNIDENTIFIED_ATTEMPT = "unidentified-attempt";
 
-const PAYLOAD_OPERATION_MESSAGE = "State which change this request makes as payload.operation: addMembers, removeMember or returnMember.";
+const ACTION_MESSAGE = "State which change this request makes as payload.action: add, remove or return.";
 
-const BODY_NOT_JSON_MESSAGE = "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.";
+const initiativeIdField = z.string().trim().min(1, "Name the initiative this working-list change belongs to.");
 
-const MEMBER_OPERATIONS = ["addMembers", "removeMember", "returnMember"] as const;
+const partnerIdField = z.string().trim().min(1, "This selection is missing a partner; reopen the member picker and choose again.");
 
-type MemberPayload = Parameters<typeof mutations.outreach.addMembers>[0]["payload"];
+const memberIdField = z.string().trim().min(1, "Name the working-list member this change belongs to.");
 
-const memberRequestSchema = mutationInputSchema(z.custom<MemberPayload>());
+const reasonField = z.string().trim().min(1, "Enter a reason or leave the reason empty.").optional();
+// One strict schema per change, so a request can state only the change it names. Strictness is what
+// keeps the three states apart: a filter, a facet, an `allMatching` flag, an audience or consent
+// field, a `state` or a `stage`, and a `deleteHistory` or `cascade` request are refused as
+// unrecognised keys rather than dropped, so a selection is only ever the partners the worker ticked
+// and a removal can never reach another record's history or obligations.
+const addSelectionSchema = z.strictObject({
+  action: z.literal("add"),
+  initiativeId: initiativeIdField,
+  partnerIds: z.array(partnerIdField).min(1, "Choose at least one partner to add."),
+});
 
-const attemptIdentitySchema = z.object({ operationId: z.string() });
+const removeSelectionSchema = z.strictObject({
+  action: z.literal("remove"),
+  initiativeId: initiativeIdField,
+  memberId: memberIdField,
+  // The service records this in the member's own history: leaving it out is a valid removal, and a
+  // blank reason is refused rather than saved as though none was given.
+  reason: reasonField,
+});
 
-const discriminantSchema = z.object(
-  {
-    payload: z.object({ operation: z.enum(MEMBER_OPERATIONS, { error: PAYLOAD_OPERATION_MESSAGE }) }, { error: PAYLOAD_OPERATION_MESSAGE }),
-  },
-  { error: BODY_NOT_JSON_MESSAGE },
-);
-async function jsonBodyOf(request: Request): Promise<unknown> {
+const returnSelectionSchema = z.strictObject({
+  action: z.literal("return"),
+  initiativeId: initiativeIdField,
+  memberId: memberIdField,
+});
+
+const membersPayloadSchema = z.discriminatedUnion("action", [addSelectionSchema, removeSelectionSchema, returnSelectionSchema], { error: ACTION_MESSAGE });
+
+type MemberChange = z.infer<typeof membersPayloadSchema>;
+// The four-field envelope is composed from the shared schema instead of restated, so `operationId`,
+// `scope`, `expectedRevision` and the presence of `payload` are judged exactly as every other
+// mutation in the application judges them.
+const membersRequestSchema = mutationInputSchema(membersPayloadSchema);
+
+async function jsonBodyOf(request: NextRequest): Promise<unknown> {
   try {
-    const body: unknown = await request.json();
-    return body;
+    return await request.json();
   } catch {
+    // An absent or non-JSON body is the caller's mistake rather than a fault: `undefined` reaches the
+    // schema, whose refusal is the ordinary `invalid` outcome.
     return undefined;
   }
 }
-function operationIdentityOf(raw: unknown): string {
-  const identity = attemptIdentitySchema.safeParse(raw);
-  return identity.success && identity.data.operationId.length > 0 ? identity.data.operationId : UNIDENTIFIED_ATTEMPT;
-}
-function payloadOf(payload: MemberPayload): MemberPayload {
-  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-    return payload;
+
+function attemptIdOf(body: unknown): string {
+  if (typeof body !== "object" || body === null) {
+    return UNIDENTIFIED_ATTEMPT;
   }
-  const { operation: _discriminant, ...forwarded } = payload as Readonly<Record<string, unknown>>;
-  return forwarded;
+  const claimed: unknown = (body as { operationId?: unknown }).operationId;
+  return typeof claimed === "string" && claimed.length > 0 ? claimed : UNIDENTIFIED_ATTEMPT;
 }
-async function dispatch(schema: z.ZodType<MutationInput<MemberPayload>>, raw: unknown, operationId: string, run: (input: MutationInput<MemberPayload>) => Promise<MutationOutcome>): Promise<Response> {
-  const parsed = schema.safeParse(raw);
+
+/**
+ * Forwards one validated change to the one named mutation it asks for. The `action` word routes the
+ * request and is not part of the change, so each branch states the payload that mutation defines;
+ * eligibility, the member's state, history, permission, idempotency and the outcome are the service's
+ * to decide and pass through untouched.
+ */
+async function runMemberChange(input: MutationInput<MemberChange>): Promise<MutationOutcome> {
+  const { payload } = input;
+  switch (payload.action) {
+    case "add":
+      return mutations.outreach.addMembers({ ...input, payload: { initiativeId: payload.initiativeId, partnerIds: payload.partnerIds } });
+    case "remove":
+      return mutations.outreach.removeMember({
+        ...input,
+        payload: { initiativeId: payload.initiativeId, memberId: payload.memberId, ...(payload.reason === undefined ? {} : { reason: payload.reason }) },
+      });
+    case "return":
+      return mutations.outreach.returnMember({ ...input, payload: { initiativeId: payload.initiativeId, memberId: payload.memberId } });
+  }
+}
+
+/** Adds, removes or returns the explicitly selected working-list members, and answers one outcome. */
+export async function POST(request: NextRequest): Promise<Response> {
+  const body = await jsonBodyOf(request);
+  const parsed = membersRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return toResponse(outcomeFromError(operationId, parsed.error));
+    return toResponse(outcomeFromError(attemptIdOf(body), parsed.error));
   }
   try {
-    return toResponse(await run({ ...parsed.data, payload: payloadOf(parsed.data.payload) }));
+    return toResponse(await runMemberChange(parsed.data));
   } catch (error) {
-    return toResponse(outcomeFromError(operationId, error));
-  }
-}
-/** One named working-list change, selected by `payload.operation`. */
-export async function POST(request: Request): Promise<Response> {
-  const raw = await jsonBodyOf(request);
-  const operationId = operationIdentityOf(raw);
-  const claimed = discriminantSchema.safeParse(raw);
-  if (!claimed.success) {
-    return toResponse(outcomeFromError(operationId, claimed.error));
-  }
-  switch (claimed.data.payload.operation) {
-    case "addMembers":
-      return dispatch(memberRequestSchema, raw, operationId, mutations.outreach.addMembers);
-    case "removeMember":
-      return dispatch(memberRequestSchema, raw, operationId, mutations.outreach.removeMember);
-    case "returnMember":
-      return dispatch(memberRequestSchema, raw, operationId, mutations.outreach.returnMember);
-    default:
-      // Unreachable: the three names above are the closed set the discriminant admits, so a fourth
-      // mutation fails to compile at this call instead of reaching the runtime.
-      return assertNever(claimed.data.payload.operation, "Unhandled working-list mutation");
+    // The shared mapper is the only place that tells a store outage from a lost acknowledgement, and
+    // the identity it answers with is the one the caller supplied.
+    return toResponse(outcomeFromError(parsed.data.operationId, error));
   }
 }

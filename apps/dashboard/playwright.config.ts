@@ -3,6 +3,8 @@ const port = Number(process.env.PORT ?? 3000);
 const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
+  // The browser journeys are added under `e2e/` as they are written, so an empty spec set is not a
+  // failure: the `test` script passes `--pass-with-no-tests`, and vitest gates `tests/` in the meantime.
   testDir: "./e2e",
   // A journey mutates the one synthetic store, so specs never run beside each other.
   fullyParallel: false,

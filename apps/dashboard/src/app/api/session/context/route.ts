@@ -95,7 +95,8 @@ function operationIdOf(body: unknown): string {
 }
 
 /**
- * Moves the session into the context the body names and answers with one of the closed outcomes.
+ * Moves the session into the context the body names and answers with one of the closed outcomes —
+ * accepted, alreadyAccepted, unchanged, conflict, denied, invalid, unavailable or unknown.
  *
  * A body that does not validate answers `invalid` with the service's own per-field messages, keyed by the
  * field path that carried the value, and nothing is dispatched. A replay of an attempt already recorded
