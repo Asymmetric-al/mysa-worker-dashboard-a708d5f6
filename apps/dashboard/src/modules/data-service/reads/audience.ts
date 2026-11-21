@@ -62,6 +62,16 @@ const SIMULATED_GIVING_DESTINATION = "giving-destination";
 function updateHref(documentId: string): string {
   return `/preview/${encodeURIComponent(documentId)}`;
 }
+/**
+ * The address of one edition of one Update: the document's own address plus the language this edition is
+ * read in. Both are needed because one Update may be released in several languages, and without the
+ * language in the address two editions would share one address and the second would open the first. The
+ * locale is a request, not a grant: the exact-post read still resolves it against the editions this reader
+ * is admitted to, and still answers *Language unavailable* when none of them is in that language.
+ */
+function editionHref(documentId: string, localeTag: string): string {
+  return `${updateHref(documentId)}?locale=${encodeURIComponent(localeTag)}`;
+}
 function pageHref(documentId: string, localeTag: string): string {
   return `/preview/pages/${encodeURIComponent(documentId)}/${encodeURIComponent(localeTag)}`;
 }
@@ -731,7 +741,7 @@ export async function readReceivingList(query: ReceivingListQuery = {}, source?:
       reach: record.reach,
       title: resolved.revision.sharePresentation.title,
       description: resolved.revision.sharePresentation.description,
-      href: updateHref(resolved.document.documentId),
+      href: editionHref(resolved.document.documentId, resolved.domain.locale.tag),
     });
   }
   editions.sort((left, right) => {

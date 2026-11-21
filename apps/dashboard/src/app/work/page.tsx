@@ -23,14 +23,14 @@ import type { ReactElement } from "react";
 
 import { StateNotice } from "@/components/state-notice";
 import type { TaskComposerInitialValues, TaskLinkChoice, TaskLinkChoices } from "@/features/work/components/task-composer";
-import WorkTaskLists from "@/features/work/components/work-task-lists";
+import TaskLists from "@/features/work/components/task-lists";
 import { partnerLabelsOf } from "@/features/work/copy/partner-labels";
 import { PLANNING_TIME_ZONE_CHOICES } from "@/features/work/copy/planning-zones";
 import { initiativeLinkValue, partnerLinkValue } from "@/features/work/copy/task-links";
 import type { TaskListKey } from "@/features/work/copy/task-status";
 import { assertNever } from "@/lib/result";
 import { reads } from "@/modules/data-service";
-import { REPORT_DEFAULT_TIME_ZONE } from "@/modules/support/report";
+import { PAGE_SIZE_DEFAULT, REPORT_DEFAULT_TIME_ZONE } from "@/modules/support/report";
 
 // ---------------------------------------------------------------------------------------------
 // Shapes, taken from the service rather than restated
@@ -67,8 +67,12 @@ const AGENDA_HREF = "/work/agenda";
 /** The zone every date on this page is judged in, stated on the page rather than assumed silently. */
 const DISPLAY_TIME_ZONE = REPORT_DEFAULT_TIME_ZONE;
 
-/** The page window each list is read at, and the page of records a new task may link to: both are the documented cap, so each answer states the whole result it holds rather than a page nobody can see past. */
-const TASK_PAGE_SIZE = 200;
+/**
+ * The page window each list is read at: the documented default, which is the page the surface opens on, so the
+ * first paint states exactly the window the worker sees rather than a page they cannot see past. The pager offers
+ * the documented cap of 200 beside it, and the service refuses anything larger.
+ */
+const TASK_PAGE_SIZE = PAGE_SIZE_DEFAULT;
 
 const LINK_CHOICE_PAGE_SIZE = 200;
 
@@ -189,7 +193,7 @@ export default async function WorkPage({ searchParams }: WorkPageProps): Promise
         </p>
       </div>
       {primary.kind === "envelope" ? (
-        <WorkTaskLists
+        <TaskLists
           scope={primary.envelope.scope}
           expectedRevision={primary.envelope.revision}
           lists={lists}

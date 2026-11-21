@@ -1,11 +1,31 @@
 "use client";
-/** The referral lists: */
+/**
+ * The referral lists: the three lists that answer three different questions — Active, Incomplete date
+ * and the narrow permitted Expired history — over one read that filters, orders, pages and counts the
+ * whole authorised result.
+ *
+ * The address is the only owner of the query state, so a view switch, a search, a page and the
+ * browser's own Back button all arrive as one string, and a detail visit returns to the same list in
+ * the same state. Nothing is filtered, sorted, paged or totalled here: the service executes every
+ * stage and answers the whole-result total beside the rows of one page. An address the family's own
+ * parser refuses is shown with the refusals it raised and read with the module's default query, so a
+ * hand-edited address never becomes a view this surface invented. The composing route renders this
+ * per request, because the query state is read from the address.
+ *
+ * `RecordList` already states a loading, empty and unavailable result inside itself, so this surface
+ * renders a `StateNotice` only for a read result that exists before any row does — a denial, an
+ * outage, a refused request, or a page whose named list has not arrived yet — and never a second one
+ * for a state the preset already announces.
+ *
+ * No selection is offered: referrals carry no bulk action, and a selection is never an audience, a
+ * consent or a campaign.
+ */
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { PaginationBar } from "@/components/pagination-bar";
 import RecordList, { type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
-import QueryToolbar from "@/components/query-toolbar";
+import QueryToolbar, { type FacetSpec } from "@/components/query-toolbar";
 import StateNotice from "@/components/state-notice";
 import StatusBadge, { statusBadgeProps, VALUE_STATE_WORDS, type StatusTone } from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -32,7 +52,15 @@ const ADDRESS = { list: "list", search: "search", page: "page", pageSize: "pageS
 const REFERRAL_ROUTE_PREFIX = "/partners/referrals";
 /** The page the schema counts from: the read slices from `(page - 1) * pageSize`, so pages start at 1. */
 const FIRST_PAGE = 1;
-const ITEM_NOUN = "referral";
+/** The noun the shared pager states its counts in. It is plural because that is the form the preset composes into every sentence it builds from it ("Showing 1–2 of 2 referrals", "No referrals"), as every other list states its own. */
+const ITEM_NOUN = "referrals";
+/**
+ * The toolbar offers no facet and no applied filter: the only narrowing these lists admit is the
+ * search the read runs over the whole authorised result, and a permitted history may not be filtered
+ * by a fact it is not allowed to show. Both are stated once as empty rather than allocated per render.
+ */
+const NO_FACETS: readonly FacetSpec[] = [];
+const NO_APPLIED_FILTERS: Readonly<Record<string, readonly string[]>> = {};
 /** The query an address that states nothing this surface can honour is read with: the family's own default list and page size, so a refused address never invents a view from the parts that parsed. */
 const DEFAULT_LIST_QUERY: ReferralListQuery = { list: DEFAULT_REFERRAL_VIEW, search: "", page: FIRST_PAGE, pageSize: DEFAULT_REFERRAL_PAGE_SIZE };
 /** The address as the family's parser reads it: its parameters as a record, with a parameter stated more than once kept as every value it carries so the parser can refuse the address rather than this … */
@@ -117,6 +145,7 @@ function ViewSwitcher({ current, hrefOf }: { readonly current: ReferralView; rea
     </nav>
   );
 }
+/** One referral list in the presentation its address names: the switcher across the three lists, the heading and explanation the copy gives that view, the search over the whole result, the count of that whole result, the order the read applies, and the rows of one page. */
 export function ReferralList({ scope, dir, className }: ReferralListProps): ReactElement {
   const router = useRouter();
   const pathname = usePathname();
@@ -198,7 +227,13 @@ export function ReferralList({ scope, dir, className }: ReferralListProps): Reac
       setColumnVisibility(next.columnVisibility);
       // No column is sortable, so the ordering the preset reports is always empty; the read's own
       // order is stated above the table rather than sent as a parameter nothing would honour.
-      commit({ ...latestQuery.current, page: Math.max(FIRST_PAGE, next.page), pageSize: next.pageSize });
+      const page = Math.max(FIRST_PAGE, next.page);
+      if (page === latestQuery.current.page && next.pageSize === latestQuery.current.pageSize) {
+        // Only the visible columns changed. That is a display choice the address does not carry, so
+        // re-writing the address here would record a change the read is not asked to run again.
+        return;
+      }
+      commit({ ...latestQuery.current, page, pageSize: next.pageSize });
     },
     [commit],
   );
@@ -296,9 +331,10 @@ export function ReferralList({ scope, dir, className }: ReferralListProps): Reac
     } else if (list.total === 0) {
       body =
         query.search === "" ? (
-          // The genuine empty list. The action the view's copy declares is offered only where it has
-          // an address to land on, and recording an introduction has no route in this application's
-          // route tree yet, so no control is rendered that would lead nowhere.
+          // The genuine empty list. An introduction is recorded against the partner it refers to —
+          // the form needs that partner's identity, its revision and its source — so this list has no
+          // partner to attach one to, and the view's declared action is left off here rather than
+          // rendered as a control that would lead nowhere.
           <StateNotice kind="empty" title={LIST_COPY.views[query.list].empty.title} description={LIST_COPY.views[query.list].empty.body} headingLevel={3} />
         ) : (
           // An empty result under a search is a different fact from an empty list, and its remedy is
@@ -362,7 +398,7 @@ export function ReferralList({ scope, dir, className }: ReferralListProps): Reac
         <h2 className="font-heading text-xl font-semibold text-pretty wrap-anywhere">{LIST_COPY.views[query.list].heading}</h2>
         <p className="max-w-prose text-sm text-muted-foreground text-pretty wrap-anywhere">{LIST_COPY.views[query.list].explanation}</p>
       </div>
-      <QueryToolbar label={LIST_COPY.search.label} search={{ value: query.search, onChange: handleSearchChange, placeholder: LIST_COPY.search.placeholder }} facets={[]} applied={{}} onAppliedChange={handleAppliedChange} pending={referrals.isFetching} />
+      <QueryToolbar label={LIST_COPY.search.label} search={{ value: query.search, onChange: handleSearchChange, placeholder: LIST_COPY.search.placeholder }} facets={NO_FACETS} applied={NO_APPLIED_FILTERS} onAppliedChange={handleAppliedChange} pending={referrals.isFetching} />
       <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{LIST_COPY.search.hint}</p>
       {/* An address the family's parser refused: each refusal is shown in the family's own words,
           keyed by the field it concerns, and the list below is the module's default query. */}
