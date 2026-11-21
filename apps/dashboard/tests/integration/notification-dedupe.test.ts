@@ -17,6 +17,10 @@
  * — so no case depends on another suite's records or on the shared seeded session ids. The recipient's
  * session is re-laid from the publisher's world after each submission, which is how the receiving
  * preview reads one document across sessions.
+ *
+ * The send result of every intent here also accounts for the ceiling it was accepted for: each eligible
+ * recipient appears exactly once, as a copy or as an entry naming why they received none, so the four
+ * eligible recipients of the seeded audience reconcile with the one copy a second edition still owes.
  */
 import { Temporal } from "temporal-polyfill";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,7 +29,16 @@ import { newOperationId } from "@/lib/ids";
 import { SEND_OUTCOME_STATES, dedupeKey } from "@/modules/audience/consent";
 import { UPDATE_EMAIL_PURPOSE, type AudiencePurpose } from "@/modules/audience/membership";
 import { buildNotice, resolveRendition, type RenditionCandidate } from "@/modules/content/notice";
-import { mutations, reads, type MutationOutcome, type NotificationIntentRecord, type NotificationSendResultRecord, type ReadResult, type Scope } from "@/modules/data-service";
+import {
+  mutations,
+  reads,
+  NOTIFICATION_UNSERVED_REASONS,
+  type MutationOutcome,
+  type NotificationIntentRecord,
+  type NotificationSendResultRecord,
+  type ReadResult,
+  type Scope,
+} from "@/modules/data-service";
 import { resolveSession, type SessionSource } from "@/modules/data-service/authorize";
 import { DEFAULT_SESSION_ID, seedSessionDocuments, type SessionStateDocument } from "@/modules/dev-runtime/seed";
 import { parseSessionMeta } from "@/modules/dev-runtime/scenario";
@@ -581,5 +594,69 @@ describe("6. a definite failure comes from real input and retries only while the
     const intents = intentsFor(state, UPDATE_DOCUMENT_ID, PUBLIC_ENGLISH_RELEASE);
     expect(intents).toHaveLength(1);
     expect(intents[0]?.intentId).toBe(SEEDED_INTENT_ID);
+  });
+});
+
+describe("7. a second edition accounts for every eligible recipient", () => {
+  it("names each recipient the earlier intent already covered, and issues no second copy", async () => {
+    // The seeded notice of this Update recorded a copy for all four eligible recipients, so the
+    // protected edition of the same Update owes a copy only to the one whose copy failed. The others
+    // are eligible all the same, and the ceiling the intent is accepted for counts them.
+    const supporter = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: SUPPORTER_ENGLISH_RELEASE });
+    expect((await notify(supporter)).outcome).toBe("accepted");
+    const { state } = await storedDocuments();
+    const [intent] = intentsFor(state, UPDATE_DOCUMENT_ID, SUPPORTER_ENGLISH_RELEASE);
+    if (intent === undefined) {
+      throw new Error("The protected edition's notice recorded no intent, so what it recorded cannot be accounted for.");
+    }
+    const audience = await audienceOf();
+    const eligibleIds = audience.data.members
+      .filter((row) => row.eligible)
+      .map((row) => row.recipientId)
+      .toSorted();
+    const sendResult = await sendResultOf(intent.intentId);
+    const copies = sendResult.data.counts.accepted + sendResult.data.counts.failed + sendResult.data.counts.unknown;
+    const unservedIds = sendResult.data.unserved.map((entry) => entry.recipientId);
+    // The ceiling is the audience the intent was accepted for, and the record answers it: every eligible
+    // recipient appears exactly once, as a copy or as an entry naming why they received none.
+    expect(sendResult.data.rows.length).toBe(copies);
+    expect(sendResult.data.page.total).toBe(copies);
+    expect(sendResult.data.ceilingCount).toBe(eligibleIds.length);
+    expect(sendResult.data.ceilingCount).toBe(copies + sendResult.data.unserved.length);
+    expect([...sendResult.data.rows.map((row) => row.recipientId), ...unservedIds].toSorted()).toEqual(eligibleIds);
+    // An exclusion is a value the surface can render rather than a missing number, and its reason comes
+    // from the closed set the record declares.
+    expect(sendResult.valueStates.unserved).toBe("value");
+    expect([...NOTIFICATION_UNSERVED_REASONS]).toEqual(["already-covered", "no-eligible-rendition"]);
+    for (const entry of sendResult.data.unserved) {
+      expect(NOTIFICATION_UNSERVED_REASONS).toContain(entry.reason);
+    }
+    // The stored record states the same account, so the read is publishing what was written rather than
+    // reconstructing it.
+    const [recorded] = sendResultsFor(state, intent.intentId);
+    expect(recorded?.unserved.map((entry) => entry.recipientId)).toEqual(unservedIds);
+
+    // Each unserved recipient holds an accepted or possibly accepted copy of this Update already, from
+    // the seeded intent: the entry names that intent and the rendition it pinned them to.
+    const seeded = await sendResultOf(SEEDED_INTENT_ID);
+    for (const entry of sendResult.data.unserved) {
+      expect(entry.reason).toBe("already-covered");
+      if (entry.reason !== "already-covered") {
+        throw new Error(`The recipient "${entry.recipientId}" was recorded unserved for ${entry.reason}, which this seeded audience does not produce.`);
+      }
+      expect(entry.coveredByIntentId).toBe(SEEDED_INTENT_ID);
+      const earlier = seeded.data.rows.find((row) => row.recipientId === entry.recipientId);
+      if (earlier === undefined) {
+        throw new Error(`The recipient "${entry.recipientId}" is named as already covered, and the seeded intent records no copy for them.`);
+      }
+      expect(entry.coveredByRenditionId).toBe(earlier.renditionId);
+      expect(sendResult.data.rows.some((row) => row.recipientId === entry.recipientId)).toBe(false);
+    }
+
+    // One Update, one message: the covered recipient's copy is still the only one she holds.
+    await mirrorPublisherWorld(RECIPIENT_ID);
+    const inbox = await inboxOf(READER_SOURCE);
+    expect(inbox.data.messages).toHaveLength(1);
+    expect(inbox.data.messages[0]?.intentId).toBe(SEEDED_INTENT_ID);
   });
 });

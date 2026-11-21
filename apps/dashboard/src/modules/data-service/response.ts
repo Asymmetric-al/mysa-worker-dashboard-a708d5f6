@@ -10,7 +10,11 @@ const PAYLOAD_FIELD_PATH = "payload";
 const PAYLOAD_FIELD_PREFIX = `${PAYLOAD_FIELD_PATH}.`;
 
 function payloadRelativeFields(fields: FieldMessages): FieldMessages {
-  const messages: Record<string, string[]> = {};
+  // A re-based path is still the caller's own text, so it may name a member of `Object.prototype` or
+  // be `__proto__` itself. A map keeps every path an ordinary key here for the same reason: on a plain
+  // object `constructor` would answer with the inherited function and `__proto__` would change the
+  // object's prototype, so the 422 body would either throw or lose the message it has to carry.
+  const messages = new Map<string, string[]>();
   for (const [path, pathMessages] of Object.entries(fields)) {
     let key = path;
     if (key === PAYLOAD_FIELD_PATH) {
@@ -18,9 +22,9 @@ function payloadRelativeFields(fields: FieldMessages): FieldMessages {
     } else if (key.startsWith(PAYLOAD_FIELD_PREFIX)) {
       key = key.slice(PAYLOAD_FIELD_PREFIX.length);
     }
-    const existing = messages[key];
+    const existing = messages.get(key);
     if (existing === undefined) {
-      messages[key] = [...pathMessages];
+      messages.set(key, [...pathMessages]);
     } else {
       for (const message of pathMessages) {
         if (!existing.includes(message)) {
@@ -29,7 +33,7 @@ function payloadRelativeFields(fields: FieldMessages): FieldMessages {
       }
     }
   }
-  return messages;
+  return Object.fromEntries(messages);
 }
 /** Turns an outcome — or a read result — into the one HTTP response a Route Handler returns. */
 export function toResponse(input: MutationOutcome | ReadResult<unknown>, init?: { headers?: HeadersInit }): Response {

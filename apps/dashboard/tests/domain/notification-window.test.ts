@@ -554,7 +554,7 @@ describe("an uncertain outcome is recovered by identity, never resent", () => {
     }
     // The stored records state no delivery or reading fact either, so no surface can report one from
     // them: the send result and its copies carry exactly the members the record model allows.
-    expect(Object.keys(seededResult).toSorted()).toEqual(["intentId", "recipients", "recordedAt", "revision", "sendResultId"]);
+    expect(Object.keys(seededResult).toSorted()).toEqual(["intentId", "recipients", "recordedAt", "revision", "sendResultId", "unserved"]);
     for (const copy of seededResult.recipients) {
       expect(Object.keys(copy).toSorted()).toEqual(["at", "recipientId", "renditionId", "state"]);
     }

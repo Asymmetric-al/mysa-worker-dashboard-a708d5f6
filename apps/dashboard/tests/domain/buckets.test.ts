@@ -3,13 +3,26 @@
  * `outside-partition` value that keeps evidence which is unknown or stale out of them, and the
  * structural rules a bucket obeys — no sixth state, no retry affordance, no debt, no amount and no
  * monthly equivalent.
+ *
+ * Each absence is proven twice: over the module's own export list, which is the cheap guard, and over
+ * the rows the service builds from the published seed, which is where a field added inside the read
+ * path would actually appear. A row exists only in a stored session, and the store's `resetSession` is
+ * the only path that creates one, so this file lays its own private session down from the seed's
+ * documents and removes it again in `afterAll`. Both are fixture plumbing: every rule under test is
+ * still the one `modules/support/buckets.ts` and `modules/data-service/reads/support.ts` apply.
  */
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { reads } from "@/modules/data-service";
+import type { SessionSource } from "@/modules/data-service/authorize";
+import { seed, type SeededSessionWithDocuments } from "@/modules/dev-runtime/seed";
 import type { Money } from "@/modules/money/amount";
+import { resetSession } from "@/modules/store/repository";
 import * as buckets from "@/modules/support/buckets";
 const ALL_BUCKETS: readonly buckets.RecurringBucket[] = [...buckets.PARTITION_BUCKETS, buckets.OUTSIDE_PARTITION];
 
 const ALL_EVIDENCE: readonly buckets.RecurringEvidence["observed"][] = ["settled", "pending", "scheduled", "needs-attention", "not-received", "unknown", "stale"];
+/** The words that would state an action this application never performs — a retry — or a fact it never claims — that an unreceived occurrence is a debt being collected. */
+const AFFORDANCE_OR_DEBT = /retry|owed|debt|dunning|collect/i;
 
 function usd(minorUnits: number): Money {
   return { currency: "USD", minorUnits: minorUnits as Money["minorUnits"] };
@@ -28,6 +41,55 @@ function commitmentRow(overrides: Partial<buckets.CommitmentRow> = {}): buckets.
 function keysDeep(value: object): readonly string[] {
   return Object.entries(value).flatMap(([key, child]) => (child !== null && typeof child === "object" ? [key, ...keysDeep(child)] : [key]));
 }
+// The rows the read path builds, from the published seed in a session of this file's own
+/** The private session the read-path case acts in: a shared seeded id would put this file's fixtures in a sibling suite's world. */
+const SESSION_ID = "domain-buckets-shape";
+const SOURCE: SessionSource = { sessionId: SESSION_ID };
+type CommitmentsRead = Awaited<ReturnType<typeof reads.support.readCommitments>>;
+type CommitmentRowFigure = Extract<CommitmentsRead, { readonly kind: "envelope" }>["envelope"]["data"]["commitments"][number];
+/** The seeded world, built once: the documents are deterministic, so the session below always starts from the same bytes. */
+let seededWorld: Promise<readonly SeededSessionWithDocuments[]> | undefined;
+function seededSessions(): Promise<readonly SeededSessionWithDocuments[]> {
+  seededWorld ??= seed();
+  return seededWorld;
+}
+/**
+ * Lays the seeded harbour workspace down under this file's own session id, from the documents the seed
+ * publishes rather than from a literal written here. The seed's own document types are used rather than
+ * the store's opaque set, because the workspace is read here. The state document is given this same id,
+ * because a record set states the session that owns it.
+ */
+async function layDownSession(): Promise<void> {
+  const sessions = await seededSessions();
+  const template = sessions.find((session) => session.sessionId === "established-worker");
+  if (template === undefined) {
+    throw new Error('The seed lays down no "established-worker" workspace, so the read path has no commitments to state.');
+  }
+  const { documents } = template;
+  await resetSession(SESSION_ID, {
+    ...documents,
+    state: { ...documents.state, context: { ...documents.state.context, sessionId: SESSION_ID } },
+  });
+}
+beforeAll(layDownSession, 120_000);
+afterAll(async () => {
+  // The session is this file's own, so the store is left holding none of its fixtures.
+  await resetSession(SESSION_ID);
+});
+/** The commitment rows the service builds for the seeded context, or a throw when it refuses to state them. */
+async function seededCommitmentRows(): Promise<readonly CommitmentRowFigure[]> {
+  const result = await reads.support.readCommitments({}, SOURCE);
+  if (result.kind !== "envelope") {
+    throw new Error(`The commitments read for "${SESSION_ID}" answered "${result.kind}" instead of an envelope, so there are no rows to inspect.`);
+  }
+  const { commitments, total } = result.envelope.data;
+  // The window the read returns is the whole seeded list, so no row the seed states is left unexamined.
+  if (commitments.length !== total) {
+    throw new Error(`The commitments read returned ${String(commitments.length)} rows of ${String(total)}, so a page window would hide rows this case is meant to inspect.`);
+  }
+  return commitments;
+}
+
 describe("the bucket vocabulary", () => {
   it("closes the partition at exactly five outcomes", () => {
     expect(buckets.PARTITION_BUCKETS).toHaveLength(5);
@@ -108,12 +170,12 @@ describe("evidence that cannot be placed", () => {
   });
 });
 describe("what a bucket does not say", () => {
-  const AFFORDANCE_OR_DEBT = /retry|owed|debt|dunning|collect/i;
   it("offers no retry affordance and no debt shape on a not-received occurrence", () => {
     const bucketState = buckets.bucketFor({ observed: "not-received" });
     expect(bucketState).toBe("not-received");
     // The classification is a string primitive, so it holds no field at all; the scan below covers
-    // the two places an affordance could still appear — the row a badge renders and the module.
+    // the two places an affordance could still appear here — the row a badge renders and the module —
+    // and the case at the end of this file covers the row the read path builds.
     expect(typeof bucketState).toBe("string");
     const row = commitmentRow({
       kind: "fixed-total",
@@ -167,5 +229,31 @@ describe("the five measures stay five", () => {
     expect(inPartition).toHaveLength(5);
     expect([...inPartition]).toEqual([...buckets.PARTITION_BUCKETS]);
     expect([...outsidePartition]).toEqual([buckets.OUTSIDE_PARTITION]);
+  });
+});
+describe("the row the read path builds", () => {
+  /** The words that would state a measure taken from gifts — a donation, or an average of receipts — which no commitment row may carry. */
+  const GIFT_MEASURE = /gift|donation|averag/i;
+  it("states a bucket the module names, and no retry affordance, debt shape, gift measure or monthly equivalent", async () => {
+    const rows = await seededCommitmentRows();
+    // The seeded commitments cover every value, so the scans below reach a row in each state rather
+    // than whichever rows the seed happens to list first.
+    expect(new Set(rows.map((row) => row.bucket))).toEqual(new Set(buckets.RECURRING_BUCKETS));
+    for (const row of rows) {
+      // The bucket is the module's own value, labelled and partitioned by the module, so a field set
+      // added inside the read path cannot state a seventh value or carry a badge of its own.
+      expect(typeof row.bucket).toBe("string");
+      expect(buckets.RECURRING_BUCKETS).toContain(row.bucket);
+      expect(row.inPartition).toBe(buckets.isInPartition(row.bucket));
+      expect(row.bucketLabel).toBe(buckets.BUCKET_LABELS[row.bucket]);
+      // A retry affordance or a debt shape anywhere in the row, at any depth, would offer an action
+      // this application never performs and would read a missing collection as the donor's debt.
+      expect(keysDeep(row).filter((key) => AFFORDANCE_OR_DEBT.test(key))).toEqual([]);
+      expect(keysDeep(row).filter((key) => GIFT_MEASURE.test(key))).toEqual([]);
+      // No seeded commitment states a source monthly equivalent, so a figure here would be one the read
+      // averaged rather than the qualified calculation the model permits. The field itself legitimately
+      // stays, carrying null.
+      expect(row.monthlyEquivalent).toBeNull();
+    }
   });
 });

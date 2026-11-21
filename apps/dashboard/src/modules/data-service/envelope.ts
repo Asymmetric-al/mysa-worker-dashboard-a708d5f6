@@ -10,6 +10,7 @@ import { MEMBERSHIP_STATES } from "@/modules/audience/membership";
 import type { ModuleKey } from "@/modules/coaching/grant";
 import { TARGET_MEASURES } from "@/modules/coaching/target";
 import { CONTENT_DIRECTIONS, type ContentDirection, type ContentDocumentJson } from "@/modules/content/document";
+import { RENDITION_REFUSAL_REASONS, type RenditionRefusalReason } from "@/modules/content/notice";
 import { CONTENT_KINDS, RELEASE_REACH_VALUES, VARIANT_AUDIENCES, VARIANT_FAMILIES } from "@/modules/content/variant";
 import { IMPORT_ROW_RESULT_STATES } from "@/modules/import/receipt";
 import type { MediaRenditionPurpose } from "@/modules/media/asset";
@@ -1170,11 +1171,18 @@ export interface NotificationRecipientOutcomeRecord {
   readonly state: NotificationRecipientState;
   readonly at: string;
 }
-/** The recorded outcome of one notification intent, per recipient. */
+/**
+ * The recorded outcome of one notification intent: one copy per recipient the intent served, and one
+ * entry per eligible recipient it did not. The two lists together account for the intent's
+ * `ceilingCount`, so a reader reconciles the ceiling with what was recorded — every eligible recipient
+ * appears exactly once, as a copy or as unserved — instead of meeting a ceiling larger than the copies
+ * it can see with nothing naming the difference.
+ */
 export interface NotificationSendResultRecord {
   readonly sendResultId: string;
   readonly intentId: string;
   readonly recipients: readonly NotificationRecipientOutcomeRecord[];
+  readonly unserved: readonly NotificationUnservedRecipientRecord[];
   readonly recordedAt: string;
   readonly revision: string;
 }
@@ -1184,6 +1192,43 @@ export const notificationRecipientOutcomeRecordSchema: z.ZodType<NotificationRec
   state: z.enum(NOTIFICATION_RECIPIENT_STATES),
   at: storedInstantSchema,
 });
+/** Why one eligible recipient received no copy from one notification intent. */
+export const NOTIFICATION_UNSERVED_REASONS = ["already-covered", "no-eligible-rendition"] as const;
+/** One reason an eligible recipient received no copy, derived from {@link NOTIFICATION_UNSERVED_REASONS}. */
+export type NotificationUnservedReason = (typeof NOTIFICATION_UNSERVED_REASONS)[number];
+/**
+ * One eligible recipient a notification intent did not serve, with the fact that accounts for them. It
+ * exists so the intent's ceiling reconciles with what it recorded: every eligible recipient appears
+ * exactly once in the send result, as a copy or here. `already-covered` names the earlier intent of
+ * this same document whose copy the person already holds — one Update reaches one person once, however
+ * many audiences and languages of it they are eligible for — and `no-eligible-rendition` names the
+ * resolver's own refusal for a recipient nothing readable can be pinned for.
+ */
+export type NotificationUnservedRecipientRecord =
+  | {
+      readonly recipientId: string;
+      readonly reason: "already-covered";
+      readonly coveredByIntentId: string;
+      readonly coveredByRenditionId: string;
+    }
+  | {
+      readonly recipientId: string;
+      readonly reason: "no-eligible-rendition";
+      readonly renditionRefusal: RenditionRefusalReason;
+    };
+export const notificationUnservedRecipientRecordSchema: z.ZodType<NotificationUnservedRecipientRecord> = z.discriminatedUnion("reason", [
+  z.object({
+    recipientId: z.string().min(1),
+    reason: z.literal("already-covered"),
+    coveredByIntentId: z.string().min(1),
+    coveredByRenditionId: z.string().min(1),
+  }),
+  z.object({
+    recipientId: z.string().min(1),
+    reason: z.literal("no-eligible-rendition"),
+    renditionRefusal: z.enum(RENDITION_REFUSAL_REASONS),
+  }),
+]);
 export const notificationIntentRecordSchema: z.ZodType<NotificationIntentRecord> = z.object({
   intentId: z.string().min(1),
   publisherId: z.string().min(1),
@@ -1198,6 +1243,10 @@ export const notificationSendResultRecordSchema: z.ZodType<NotificationSendResul
   sendResultId: z.string().min(1),
   intentId: z.string().min(1),
   recipients: z.array(notificationRecipientOutcomeRecordSchema),
+  // Required, not defaulted: a send result that leaves this empty says every eligible recipient was
+  // served, so an absent list would be read as an account nobody wrote. Every result this build records
+  // states it, and `bun run reset` rebuilds the seed that does.
+  unserved: z.array(notificationUnservedRecipientRecordSchema),
   recordedAt: storedInstantSchema,
   revision: recordRevisionSchema,
 });

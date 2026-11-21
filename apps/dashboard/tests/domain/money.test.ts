@@ -355,8 +355,16 @@ describe("an amount of an unknown currency", () => {
   });
 });
 describe("the financial modules' source", () => {
-  const FINANCIAL_MODULES = ["../../src/modules/support/report.ts", "../../src/modules/export/csv.ts", "../../src/modules/export/neutralize.ts"] as const;
-  const REQUIRED_FILES = ["currency.ts", "amount.ts", "format.ts", "report.ts", "csv.ts", "neutralize.ts"] as const;
+  const FINANCIAL_MODULES = [
+    "../../src/modules/support/report.ts",
+    "../../src/modules/support/goal.ts",
+    "../../src/modules/support/buckets.ts",
+    "../../src/modules/support/basis.ts",
+    "../../src/modules/data-service/reads/support.ts",
+    "../../src/modules/export/csv.ts",
+    "../../src/modules/export/neutralize.ts",
+  ] as const;
+  const REQUIRED_FILES = ["currency.ts", "amount.ts", "format.ts", "report.ts", "goal.ts", "buckets.ts", "basis.ts", "support.ts", "csv.ts", "neutralize.ts"] as const;
   const FLOATING_POINT_SHAPES: readonly RegExp[] = [/\bparseFloat\b/, /\.\s*toFixed\s*\(/, /\bNumber\s*\([^()]*\)\s*\/\s*100\b/];
   function sourceFiles(): readonly URL[] {
     const moneyDirectory = new URL("../../src/modules/money/", import.meta.url);

@@ -1051,9 +1051,17 @@ function workerTargetViewOf(record: CoachingTargetRecord, target: TargetRecord, 
     revision: record.revision,
   };
 }
-/** The worker's own targets, over the four canonical measures only. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
-export async function readTargets(input: { readonly page?: number; readonly pageSize?: number } = {}): Promise<ReadResult<ReadEnvelope<TargetsView>>> {
-  const loaded = await loadCoachingState("readTargets");
+/**
+ * The worker's own targets, over the four canonical measures only. Answers `envelope`, or the read's own
+ * refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read.
+ * A caller that names no source reads the request's own session; one that names a source reads the
+ * session it names, through the same authorisation.
+ */
+export async function readTargets(
+  input: { readonly page?: number; readonly pageSize?: number } = {},
+  source?: SessionSource,
+): Promise<ReadResult<ReadEnvelope<TargetsView>>> {
+  const loaded = await loadCoachingState("readTargets", source);
   if (!loaded.ok) return loaded.result;
   const scoped = workerScope(loaded.context);
   if (!scoped.ok) return scoped.result;

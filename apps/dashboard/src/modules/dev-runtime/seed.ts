@@ -2124,6 +2124,9 @@ function harbourNotificationResults(): readonly NotificationSendResultRecord[] {
       sendResultId: "send-result-update-autumn-en",
       intentId: "intent-update-autumn-en",
       recipients,
+      // The seeded intent serves all four eligible recipients of its ceiling — accepted, failed and
+      // unknown outcomes are all a recorded copy — so no recipient of this intent went unserved.
+      unserved: [],
       recordedAt: "2026-11-10T09:07:00Z",
       revision: INITIAL_REVISION,
     },

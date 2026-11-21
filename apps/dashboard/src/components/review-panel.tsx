@@ -32,6 +32,16 @@ export interface CandidateMediaRendition {
   readonly purpose: RenditionPurpose;
   readonly url: string;
 }
+/** The decision recorded for one candidate: what was answered, by which principal identity, when, and the note left with it. */
+export interface RecordedCandidateDecision {
+  readonly decision: ReviewDecision;
+  /** The principal identity that gave this answer, or `null` when the record states none. */
+  readonly decidedByPrincipalId: string | null;
+  /** The deciding instant as the record holds it, an ISO 8601 instant, or `null` when the record states none. */
+  readonly decidedAt: string | null;
+  /** The note the reviewer left for the author, or `null` when they left none. */
+  readonly note: string | null;
+}
 /** One frozen candidate, exactly as the review read returned it. */
 export interface CandidateView {
   readonly variantId: string;
@@ -41,12 +51,22 @@ export interface CandidateView {
   readonly contentChecksum: string;
   readonly renderedHtml: string;
   readonly mediaRenditions: readonly CandidateMediaRendition[];
+  /**
+   * The state this edition's own records state — its draft, its candidate, its release head — derived
+   * through the one lifecycle implementation, so the badge never reports a decision in place of a fact
+   * about what this edition has published.
+   */
+  readonly lifecycle: ContentLifecycleState;
   readonly staleTranslation?: boolean;
   /**
    * The decision the reviewer recorded for this candidate, as the read states it, or `null` while its
    * record still stands at `submitted` — the one state in which the decision is the reviewer's to give.
+   *
+   * This is the answer in one place: the word, the principal that gave it, the instant and the note.
+   * Nothing here is inferred from the session reading the page, so an identity or instant the record
+   * does not carry is reported as not stated rather than filled in.
    */
-  readonly decision: ReviewDecision | null;
+  readonly decisionRecord: RecordedCandidateDecision | null;
 }
 // The decision's payload
 /** The decision the reviewer gave, and the frozen identity it answers. */
@@ -96,7 +116,15 @@ export interface ReviewPanelProps {
   readonly expectedRevision: string;
   readonly onDecide: (input: MutationInput<ReviewDecisionPayload>) => Promise<MutationOutcome>;
   readonly siblingStanding?: readonly ReviewSiblingStanding[];
-  readonly headingLevel?: 2 | 3;
+  /**
+   * The level this panel's own title occupies on the page that composes it.
+   *
+   * The caller owns the page outline, so the shared panel never states a level of its own: a route
+   * that renders no title of its own takes level 1 and the panel is the screen's top-level heading,
+   * while a route that already states one asks for level 2. Every section below the title steps down
+   * exactly one level from whatever is asked for, so no level is skipped either way.
+   */
+  readonly headingLevel?: 1 | 2 | 3;
   readonly className?: string;
 }
 // Words: this surface's vocabulary, declared once
@@ -107,14 +135,22 @@ const SHORT_CHECKSUM_LENGTH = 12;
 
 const NOT_STATED_TEXT = "Not stated";
 
-const PANEL_HEADING_TAG = { 2: "h2", 3: "h3" } as const;
+const PANEL_HEADING_TAG = { 1: "h1", 2: "h2", 3: "h3" } as const;
 
 const SUB_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 
 type SubHeadingLevel = keyof typeof SUB_HEADING_TAG;
 
-function subHeadingLevelOf(panelLevel: 2 | 3): SubHeadingLevel {
-  return panelLevel === 2 ? 3 : 4;
+/** The level the panel's own sections take: one below its title, so the outline never skips a level. */
+function subHeadingLevelOf(panelLevel: keyof typeof PANEL_HEADING_TAG): SubHeadingLevel {
+  switch (panelLevel) {
+    case 1:
+      return 2;
+    case 2:
+      return 3;
+    case 3:
+      return 4;
+  }
 }
 interface FamilyCopy {
   readonly title: string;
@@ -197,6 +233,24 @@ const RECORDED_DECISION_COPY: Readonly<Record<ReviewDecision, RecordedDecisionCo
   },
 };
 const RECORDED_DECISION_HEADING = "The decision on record";
+
+const DECIDED_BY_LABEL = "Decided by";
+
+const DECIDED_AT_LABEL = "Decided at";
+
+const DECISION_NOTE_LABEL = "Note for the author";
+
+const NO_DECISION_NOTE_TEXT = "No note was left with this answer.";
+
+/**
+ * Why the instant is printed as it is stored.
+ *
+ * An instant formatted for a locale and a zone is formatted twice — once on the server and once in the
+ * browser — and the two can differ, so a decision would appear to have been given at two times. The
+ * record's own ISO 8601 instant is stated unchanged instead: it names the same moment wherever it is
+ * read, and it is precise enough to tell two answers apart.
+ */
+const DECISION_INSTANT_SENTENCE = "The instant is stated exactly as the record holds it, in ISO 8601 (UTC), so the same answer reads the same on every device.";
 
 const NO_FURTHER_DECISION_SENTENCE = "No further decision is offered here: this candidate has already been answered, so a further review needs a new submission with a new revision.";
 const RENDITION_PURPOSE_WORDS: Readonly<Record<RenditionPurpose, string>> = {
@@ -307,21 +361,26 @@ function previewDocumentOf(html: string, locale: VariantLocale, title: string): 
 /**
  * The lifecycle word the edition carries on this surface.
  *
- * A frozen candidate still awaiting its answer is the state the lifecycle vocabulary already names.
- * Once a reviewer approves it, the edition is approved and awaiting a release that is a separate step,
- * so the surface says so rather than claiming a review that has already been given. A refusal clears
- * the edition's candidate, so a read that still holds one is a submission state, which is what the
- * edition record itself states.
+ * The edition's own records decide every state but one: an approved candidate keeps its pointer in
+ * place until the edition is released, so the records alone still read "submitted for review" for a
+ * candidate that has already been answered. The answer is what moves that edition on, so approval is
+ * stated here rather than left to the store. A requested change and a rejection clear the pointer
+ * themselves, so the records state the state and this surface restates it unchanged: an edition that
+ * published before keeps saying so, and nothing claims a review that has already been given.
  */
-function lifecycleOfDecision(decision: ReviewDecision | null): ContentLifecycleState {
-  return decision === "approved" ? "approved" : "candidate";
+function lifecycleOfDecision(decision: ReviewDecision | null, edition: ContentLifecycleState): ContentLifecycleState {
+  return decision === "approved" ? "approved" : edition;
+}
+/** The decision word this candidate's record states, and `null` while it states none. */
+function decisionOf(candidate: CandidateView): ReviewDecision | null {
+  return candidate.decisionRecord === null ? null : candidate.decisionRecord.decision;
 }
 function variantTabsOf(candidates: readonly CandidateView[]): readonly VariantTab[] {
   return candidates.map((candidate) => ({
     variantId: candidate.variantId,
     audience: candidate.audience,
     locale: candidate.locale,
-    lifecycle: lifecycleOfDecision(candidate.decision),
+    lifecycle: lifecycleOfDecision(decisionOf(candidate), candidate.lifecycle),
   }));
 }
 function switcherFamilyOf(family: ReviewFamily): VariantFamily {
@@ -660,12 +719,18 @@ function DecisionStep({
   );
 }
 // The answer, when one is already recorded
-function RecordedDecision({ decision, level }: { readonly decision: ReviewDecision; readonly level: SubHeadingLevel }): ReactElement {
+function RecordedDecision({ record, level }: { readonly record: RecordedCandidateDecision; readonly level: SubHeadingLevel }): ReactElement {
   const titleId = useId();
   const Heading = SUB_HEADING_TAG[level];
-  const copy = RECORDED_DECISION_COPY[decision];
+  const copy = RECORDED_DECISION_COPY[record.decision];
+  // The three facts the record holds about the answer itself. Each is stated as the record holds it and
+  // never filled in from the session reading the page: a reviewer recognises their own answer from the
+  // principal and the instant, and an author reads the words they were asked to act on.
+  const principal = record.decidedByPrincipalId?.trim() ?? "";
+  const instant = record.decidedAt?.trim() ?? "";
+  const note = record.note?.trim() ?? "";
   return (
-    <section aria-labelledby={titleId} data-slot="review-recorded-decision" data-decision={decision} className="flex min-w-0 flex-col gap-3">
+    <section aria-labelledby={titleId} data-slot="review-recorded-decision" data-decision={record.decision} className="flex min-w-0 flex-col gap-3">
       <Heading id={titleId} className="text-base font-medium text-pretty">
         {RECORDED_DECISION_HEADING}
       </Heading>
@@ -673,6 +738,27 @@ function RecordedDecision({ decision, level }: { readonly decision: ReviewDecisi
         <AlertTitle>{copy.title}</AlertTitle>
         <AlertDescription>
           <p className="text-pretty">{copy.sentence}</p>
+          <dl data-slot="review-decision-record" className="grid min-w-0 gap-x-4 gap-y-2 text-sm sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
+            <dt className="text-muted-foreground">{DECIDED_BY_LABEL}</dt>
+            <dd className="min-w-0 wrap-anywhere">{principal === "" ? <span className="text-muted-foreground">{NOT_STATED_TEXT}</span> : <bdi className="mono-identifier">{principal}</bdi>}</dd>
+            <dt className="text-muted-foreground">{DECIDED_AT_LABEL}</dt>
+            <dd className="min-w-0 wrap-anywhere">
+              {instant === "" ? (
+                <span className="text-muted-foreground">{NOT_STATED_TEXT}</span>
+              ) : (
+                <bdi>
+                  <time dateTime={instant} className="mono-identifier tabular-figures">
+                    {instant}
+                  </time>
+                </bdi>
+              )}
+            </dd>
+            <dt className="text-muted-foreground">{DECISION_NOTE_LABEL}</dt>
+            <dd className="min-w-0">
+              {note === "" ? <span className="text-muted-foreground">{NO_DECISION_NOTE_TEXT}</span> : <bdi className="block break-words text-pretty whitespace-pre-wrap">{note}</bdi>}
+            </dd>
+          </dl>
+          <p className="text-sm text-muted-foreground text-pretty">{DECISION_INSTANT_SENTENCE}</p>
           <p className="text-pretty">{NO_FURTHER_DECISION_SENTENCE}</p>
         </AlertDescription>
       </Alert>
@@ -748,10 +834,10 @@ export function ReviewPanel({
           )}
         </CardContent>
       </Card>
-      {active === undefined ? null : active.decision !== null ? (
+      {active === undefined ? null : active.decisionRecord !== null ? (
         // The read states an answer for this candidate, so the surface reports the record instead of
         // offering a decision the service would refuse as already given.
-        <RecordedDecision decision={active.decision} level={partLevel} />
+        <RecordedDecision record={active.decisionRecord} level={partLevel} />
       ) : policyRequiresReview ? (
         <DecisionStep key={active.variantId} candidate={active} scope={scope} expectedRevision={expectedRevision} onDecide={onDecide} level={partLevel} />
       ) : (

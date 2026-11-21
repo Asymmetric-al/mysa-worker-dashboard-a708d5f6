@@ -336,6 +336,77 @@ describe("the four-field input", () => {
 async function documentRevision(): Promise<string> {
   return envelopeOf(await reads.updates.readVariantOverview({ documentId: UPDATE_DOCUMENT, session: HERO }), "readVariantOverview").revision;
 }
+// The bulk actions, and the seeded rows they act on
+/** An open task of the worker's own, so a bulk action may change it. */
+const OWNED_OPEN_TASK = "task-care-jo";
+/** The worker's other open task, undated on purpose, so nothing about the first row's date decides it. */
+const OWNED_UNDATED_TASK = "task-undated-prayer";
+/** The worker's own task that is already complete, so completing it again must change nothing. */
+const COMPLETED_TASK = "task-completed-intro";
+/** An open task in the second worker's ministry, which the selected worker may not change. */
+const FOREIGN_TASK = "task-river-invite-owen";
+/** The private tag these cases apply. The seed sets no task tags at all, so the first attempt writes it. */
+const BULK_TAG = "contract-bulk";
+/** One row of a bulk action's answer, as the stored result carries it. */
+const BULK_ROW_SCHEMA = z.object({
+  taskId: z.string(),
+  state: z.enum(["accepted", "unchanged", "excluded", "failed"]),
+  revision: z.string().nullable(),
+  createdTaskId: z.string().nullable(),
+  reasonCode: z.string().nullable(),
+  reason: z.string().nullable(),
+});
+/** A bulk action's own answer: one row per selected task, the counts derived from those rows, and the tasks created. */
+const BULK_ANSWER_SCHEMA = z.object({
+  items: z.array(BULK_ROW_SCHEMA),
+  acceptedCount: z.number().int(),
+  unchangedCount: z.number().int(),
+  excludedCount: z.number().int(),
+  failedCount: z.number().int(),
+  createdTaskIds: z.array(z.string()),
+});
+type BulkAnswer = z.infer<typeof BULK_ANSWER_SCHEMA>;
+/**
+ * The answer a caller recovers after losing the acknowledgement: re-querying the accepted identity
+ * returns the stored result, which is where the per-item rows live — each row's state, the task it
+ * created and the reason code that explains a row left alone — beside the counts derived from them.
+ * The rows are what a bulk action owes instead of one aggregate result, so they are read and checked
+ * here rather than summarised.
+ */
+async function recoveredBulkAnswer<P>(run: (input: MutationInput<P>) => Promise<MutationOutcome>, input: MutationInput<P>): Promise<BulkAnswer> {
+  const recovered = await run(input);
+  expect(recovered.outcome).toBe("alreadyAccepted");
+  if (recovered.outcome !== "alreadyAccepted") {
+    throw new Error(`Re-querying the accepted bulk attempt was answered "${recovered.outcome}", so no stored per-item answer can be read.`);
+  }
+  const parsed = BULK_ANSWER_SCHEMA.safeParse(recovered.result);
+  expect(parsed.success).toBe(true);
+  if (!parsed.success) {
+    throw new Error(`The stored bulk answer states no per-item rows with their counts: ${parsed.error.message}`);
+  }
+  return parsed.data;
+}
+/** One row of a bulk answer, by the task it answered for, so a missing row fails by name. */
+function bulkRowOf(answer: BulkAnswer, taskId: string): BulkAnswer["items"][number] {
+  const row = answer.items.find((entry) => entry.taskId === taskId);
+  if (row === undefined) {
+    throw new Error(`The bulk answer reported no row for ${taskId}, so it answered for the selection instead of per row.`);
+  }
+  return row;
+}
+/** The revision one task stands at as a list reports it, so a per-item row can be held to the record it names. */
+async function listedRevisionOf(taskId: string): Promise<string> {
+  const rows = envelopeOf(await reads.work.listTasks({ list: "all", displayTimeZone: "UTC", pageSize: 200 }, HERO), "listTasks").data.tasks;
+  const row = rows.find((entry) => entry.taskId === taskId);
+  if (row === undefined) {
+    throw new Error(`The task ${taskId} stands in no list the worker reads, so no record stands behind that row.`);
+  }
+  return row.revision;
+}
+/** How much work the worker still owes: the upcoming list holds only tasks awaiting action. */
+async function openTotal(): Promise<number> {
+  return envelopeOf(await reads.work.listTasks({ list: "upcoming", displayTimeZone: "UTC" }, HERO), "listTasks").data.total;
+}
 describe("accepted, then replayed", () => {
   it("answers accepted and replays through the shell job, returning the seeded context", async () => {
     const session = await sessionOf(HERO);
@@ -419,6 +490,131 @@ describe("accepted, then replayed", () => {
     const before = await taskTotal();
     await acceptedThenReplayed((input) => mutations.work.createTask(input, HERO), attempt(scope, NO_RECORD, { title: "Call about the autumn appeal" }));
     expect(await taskTotal()).toBe(before + 1);
+  });
+
+  it("answers accepted and replays through the work job's tag, reporting one row per selected task", async () => {
+    const scope = await scopeOf(HERO);
+    // One row the worker owns and one from the second worker's ministry, so the answer has to be per
+    // item: a selection is not an authority, and the row that may not change is reported as excluded
+    // rather than quietly skipped or folded into one aggregate "done".
+    const input = attempt(scope, NO_RECORD, { taskIds: [OWNED_OPEN_TASK, FOREIGN_TASK], tag: BULK_TAG });
+    await acceptedThenReplayed((value) => mutations.work.bulkApplyTag(value, HERO), input);
+    const answer = await recoveredBulkAnswer((value) => mutations.work.bulkApplyTag(value, HERO), input);
+    // One row per selected task, in the selection's own order, so nothing selected goes unanswered.
+    expect(answer.items.map((row) => row.taskId)).toEqual([OWNED_OPEN_TASK, FOREIGN_TASK]);
+    const tagged = bulkRowOf(answer, OWNED_OPEN_TASK);
+    expect(tagged.state).toBe("accepted");
+    // The row states the revision its task stands at and no reason code: nothing refused it.
+    expect(tagged.revision).toBe(await listedRevisionOf(OWNED_OPEN_TASK));
+    expect(tagged.reasonCode).toBeNull();
+    const refusedRow = bulkRowOf(answer, FOREIGN_TASK);
+    expect(refusedRow.state).toBe("excluded");
+    expect(refusedRow.reasonCode).toBe("not-editable");
+    // The excluded row states a reason and no revision: nothing of it was written, and nothing about it
+    // is disclosed to a scope that may not read it.
+    expect(refusedRow.reason).not.toBeNull();
+    expect(refusedRow.revision).toBeNull();
+    // The counts are derived from those rows rather than counted separately, and the selection tagged
+    // exactly one task.
+    expect([answer.acceptedCount, answer.unchangedCount, answer.excludedCount, answer.failedCount]).toEqual([1, 0, 1, 0]);
+    // Applying the same tag again under a fresh identity is no second effect: the action answers
+    // `unchanged`, which it answers only when every selected row already carries the tag as the
+    // caller's own — so the first attempt wrote the tag once and left it there.
+    const reapplied = await mutations.work.bulkApplyTag(attempt(scope, NO_RECORD, { taskIds: [OWNED_OPEN_TASK], tag: BULK_TAG }), HERO);
+    expect(reapplied.outcome).toBe("unchanged");
+    // Beside a row that does not carry the tag yet, the tagged row is still reported per item as
+    // unchanged with `already-tagged`: it is named, the reason is stated, and the only tag written is
+    // the other row's.
+    const mixedInput = attempt(scope, NO_RECORD, { taskIds: [OWNED_OPEN_TASK, OWNED_UNDATED_TASK], tag: BULK_TAG });
+    expect((await mutations.work.bulkApplyTag(mixedInput, HERO)).outcome).toBe("accepted");
+    const mixed = await recoveredBulkAnswer((value) => mutations.work.bulkApplyTag(value, HERO), mixedInput);
+    const held = bulkRowOf(mixed, OWNED_OPEN_TASK);
+    expect(held.state).toBe("unchanged");
+    expect(held.reasonCode).toBe("already-tagged");
+    expect(bulkRowOf(mixed, OWNED_UNDATED_TASK).state).toBe("accepted");
+    expect([mixed.acceptedCount, mixed.unchangedCount]).toEqual([1, 1]);
+  });
+
+  it("answers accepted and replays through the work job's completion, finishing only the rows it can", async () => {
+    const scope = await scopeOf(HERO);
+    const openBefore = await openTotal();
+    // Three rows in three states: the worker's open task, the worker's completed task, and the second
+    // worker's task. Completing a selection must answer for each row, because completing a task proves
+    // only that the task was completed — never a conversation, and never another ministry's work.
+    const input = attempt(scope, NO_RECORD, { taskIds: [OWNED_OPEN_TASK, COMPLETED_TASK, FOREIGN_TASK] });
+    const first = await acceptedThenReplayed((value) => mutations.work.bulkCompleteTasks(value, HERO), input);
+    const answer = await recoveredBulkAnswer((value) => mutations.work.bulkCompleteTasks(value, HERO), input);
+    expect(answer.items.map((row) => row.taskId)).toEqual([OWNED_OPEN_TASK, COMPLETED_TASK, FOREIGN_TASK]);
+    const completed = bulkRowOf(answer, OWNED_OPEN_TASK);
+    expect(completed.state).toBe("accepted");
+    expect(completed.revision).toBe(await listedRevisionOf(OWNED_OPEN_TASK));
+    // The completed task repeats no series, so no successor was minted: the row names no created task
+    // and the answer reports none.
+    expect(completed.createdTaskId).toBeNull();
+    expect(first.created).toBeUndefined();
+    const alreadyComplete = bulkRowOf(answer, COMPLETED_TASK);
+    expect(alreadyComplete.state).toBe("unchanged");
+    expect(alreadyComplete.reasonCode).toBe("already-complete");
+    // An unchanged row states the revision it already stood at, which is the record nothing was written to.
+    expect(alreadyComplete.revision).toBe(await listedRevisionOf(COMPLETED_TASK));
+    const refusedRow = bulkRowOf(answer, FOREIGN_TASK);
+    expect(refusedRow.state).toBe("excluded");
+    expect(refusedRow.reasonCode).toBe("not-editable");
+    expect(refusedRow.revision).toBeNull();
+    expect([answer.acceptedCount, answer.unchangedCount, answer.excludedCount, answer.failedCount]).toEqual([1, 1, 1, 0]);
+    // Exactly one task left the work still owed, and the two replays behind this case left it there: a
+    // completion that ran twice would have taken a second row out of the worker's list.
+    expect(await openTotal()).toBe(openBefore - 1);
+  });
+
+  it("answers accepted and replays through the work job's follow-ups, creating one task per selected row", async () => {
+    const scope = await scopeOf(HERO);
+    const before = await taskTotal();
+    // Two rows the worker owns, and one template: the action creates one ordinary follow-up task for
+    // each selected row, not one task for the selection.
+    const input = attempt(scope, NO_RECORD, { taskIds: [OWNED_OPEN_TASK, OWNED_UNDATED_TASK], template: { title: "Call after the visit" } });
+    const first = await acceptedThenReplayed((value) => mutations.work.bulkCreateTasks(value, HERO), input);
+    const answer = await recoveredBulkAnswer((value) => mutations.work.bulkCreateTasks(value, HERO), input);
+    expect(answer.items.map((row) => row.taskId)).toEqual([OWNED_OPEN_TASK, OWNED_UNDATED_TASK]);
+    for (const row of answer.items) {
+      expect(row.state).toBe("accepted");
+    }
+    // Each row names the task it created, and two rows never name the same task.
+    const created = answer.items.map((row) => row.createdTaskId);
+    for (const createdTaskId of created) {
+      expect(createdTaskId).not.toBeNull();
+    }
+    expect(new Set(created).size).toBe(2);
+    expect(answer.createdTaskIds).toEqual(created);
+    expect(first.created).toEqual(answer.createdTaskIds);
+    expect(answer.acceptedCount).toBe(2);
+    // Two tasks exist that did not before — and the two replays behind this case created no third, so
+    // the total stands at exactly the count the first attempt produced.
+    expect(await taskTotal()).toBe(before + 2);
+  });
+
+  it("answers accepted and replays through the work job's tag removal, reporting one row per selected task", async () => {
+    const scope = await scopeOf(HERO);
+    // The tag has to exist before it can be taken off, and the seed sets none: one attempt writes it.
+    expect((await mutations.work.bulkApplyTag(attempt(scope, NO_RECORD, { taskIds: [OWNED_OPEN_TASK], tag: BULK_TAG }), HERO)).outcome).toBe("accepted");
+    // Removing it from a row that carries it, from a row that does not, and from a row in another
+    // ministry must answer for each: removed, absent and not editable are three different facts, and
+    // only the first is a change.
+    const input = attempt(scope, NO_RECORD, { taskIds: [OWNED_OPEN_TASK, OWNED_UNDATED_TASK, FOREIGN_TASK], tag: BULK_TAG });
+    await acceptedThenReplayed((value) => mutations.work.bulkRemoveTag(value, HERO), input);
+    const answer = await recoveredBulkAnswer((value) => mutations.work.bulkRemoveTag(value, HERO), input);
+    expect(answer.items.map((row) => row.taskId)).toEqual([OWNED_OPEN_TASK, OWNED_UNDATED_TASK, FOREIGN_TASK]);
+    const removed = bulkRowOf(answer, OWNED_OPEN_TASK);
+    expect(removed.state).toBe("accepted");
+    expect(removed.revision).toBe(await listedRevisionOf(OWNED_OPEN_TASK));
+    const absent = bulkRowOf(answer, OWNED_UNDATED_TASK);
+    expect(absent.state).toBe("unchanged");
+    expect(absent.reasonCode).toBe("tag-absent");
+    expect(bulkRowOf(answer, FOREIGN_TASK).reasonCode).toBe("not-editable");
+    expect([answer.acceptedCount, answer.unchangedCount, answer.excludedCount, answer.failedCount]).toEqual([1, 1, 1, 0]);
+    // The tag is gone from the row: applying it again is a fresh change rather than a no-op, which is
+    // only true if the removal was written once.
+    expect((await mutations.work.bulkApplyTag(attempt(scope, NO_RECORD, { taskIds: [OWNED_OPEN_TASK], tag: BULK_TAG }), HERO)).outcome).toBe("accepted");
   });
 
   it("answers accepted and replays through the import job, proposing the file once", async () => {

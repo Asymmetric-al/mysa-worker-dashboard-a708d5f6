@@ -20,6 +20,9 @@ const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "16rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
+// The phone drawer's id, declared once so the trigger that opens it and the sheet that renders it
+// cannot disagree about which element `aria-controls` names.
+const SIDEBAR_MOBILE_DIALOG_ID = "sidebar-mobile-dialog";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
 type SidebarContextProps = {
@@ -154,6 +157,13 @@ function Sidebar({
       <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
         <SheetContent
           dir={dir}
+          // The trigger outside this sheet names the surface it opens, so the drawer carries the one
+          // id declared above. It exists only while the drawer is open, and the trigger states
+          // `aria-controls` only then, so the relationship is never pointed at an absent element.
+          id={SIDEBAR_MOBILE_DIALOG_ID}
+          // Modality is a fact here — focus is trapped, the page behind is hidden and the body does not
+          // scroll — so the drawer declares it rather than leaving a reader to infer it.
+          aria-modal="true"
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
@@ -218,7 +228,7 @@ function Sidebar({
   );
 }
 function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar } = useSidebar();
+  const { toggleSidebar, isMobile, openMobile } = useSidebar();
   return (
     <Button
       data-sidebar="trigger"
@@ -226,6 +236,12 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
       variant="ghost"
       size="icon-sm"
       className={cn(className)}
+      // On a phone this button opens the one navigation drawer, so it says what kind of surface that
+      // is and whether it is open. The desktop rail it collapses is not a dialog, so neither state is
+      // claimed at that width.
+      aria-haspopup={isMobile ? "dialog" : undefined}
+      aria-expanded={isMobile ? openMobile : undefined}
+      aria-controls={isMobile && openMobile ? SIDEBAR_MOBILE_DIALOG_ID : undefined}
       onClick={(event) => {
         onClick?.(event);
         toggleSidebar();
@@ -380,6 +396,11 @@ function SidebarMenuButton({
     tooltip?: string | React.ComponentProps<typeof TooltipContent>;
   } & VariantProps<typeof sidebarMenuButtonVariants>) {
   const { isMobile, state } = useSidebar();
+  // The tooltip only restores the words the icon-only rail has clipped, so it is mounted only where
+  // its content can be seen: the collapsed rail above the compact breakpoint. Mounted on a phone it
+  // would be `display:none` and still open on the focus the drawer moves to its first link, whose
+  // dismiss handler would then consume the Escape that closes the drawer.
+  const showsTooltip = tooltip !== undefined && !isMobile && state === "collapsed";
   const comp = useRender({
     defaultTagName: "button",
     props: mergeProps<"button">(
@@ -388,7 +409,7 @@ function SidebarMenuButton({
       },
       props,
     ),
-    render: !tooltip ? render : <TooltipTrigger render={render} />,
+    render: showsTooltip ? <TooltipTrigger render={render} /> : render,
     state: {
       slot: "sidebar-menu-button",
       sidebar: "menu-button",
@@ -396,7 +417,7 @@ function SidebarMenuButton({
       active: isActive,
     },
   });
-  if (!tooltip) {
+  if (!showsTooltip || tooltip === undefined) {
     return comp;
   }
   if (typeof tooltip === "string") {
@@ -407,7 +428,7 @@ function SidebarMenuButton({
   return (
     <Tooltip>
       {comp}
-      <TooltipContent side="right" align="center" hidden={state !== "collapsed" || isMobile} {...tooltip} />
+      <TooltipContent side="right" align="center" {...tooltip} />
     </Tooltip>
   );
 }

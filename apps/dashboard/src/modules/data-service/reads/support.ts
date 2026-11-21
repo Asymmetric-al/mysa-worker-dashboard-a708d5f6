@@ -174,6 +174,12 @@ export interface SupportPageInput {
    * depending on the page the list happened to be showing; the page window still applies to what is left.
    */
   readonly commitmentId?: string;
+  /**
+   * The caller's display choice for additional source-supplied commitment types. Every commitment the
+   * source supplies is already in the answer, and the read states the capability's availability, with
+   * its reason, in the envelope's actions, so the choice cannot change a row.
+   */
+  readonly showAdditionalTypes?: boolean;
 }
 // The figures every read states
 /** One currency's stated amount: the exact minor units, the exponent they are read at, and the state that says what kind of value this is. */
@@ -222,7 +228,6 @@ export interface CommitmentFigure {
   readonly kind: CommitmentKind;
   readonly cadence: string;
   readonly perOccurrence: Money;
-  readonly perOccurrenceState: ValueState;
   readonly bucket: RecurringBucket;
   readonly bucketLabel: string;
   readonly inPartition: boolean;
@@ -943,6 +948,8 @@ const COMMITMENT_PERIOD_REASON =
   "A commitment is the source's current standing rather than an occurrence inside a period, so no period filter applies to it. The dates it last collected and is next eligible on are stated on the commitment itself.";
 const COMMITMENT_CURRENCY_REASON =
   "Each commitment states its own currency and its own cadence, so a currency filter would hide commitments rather than restate them. The list is read whole and never summed across currencies.";
+const SHOW_ADDITIONAL_TYPES_REASON =
+  "The finance source supplies the three commitment kinds it distinguishes — an automatic recurring gift, a manual recurring gift and a fixed total — and no additional type, so asking to show additional source-supplied types cannot add a row. Every commitment the source reports is already in this list.";
 function compareCommitments(left: CommitmentRow, right: CommitmentRow): number {
   const leftKind = COMMITMENT_KINDS.indexOf(left.kind);
   const rightKind = COMMITMENT_KINDS.indexOf(right.kind);
@@ -961,7 +968,6 @@ function commitmentFigureOf(row: CommitmentRow): CommitmentFigure {
     kind: row.kind,
     cadence: row.cadence,
     perOccurrence: row.perOccurrence,
-    perOccurrenceState: statedAmountStateOf(row.perOccurrence),
     bucket: row.bucketState,
     bucketLabel: BUCKET_LABELS[row.bucketState],
     inPartition: isInPartition(row.bucketState),
@@ -1112,7 +1118,9 @@ export async function readCommitments(query: SupportPageInput = {}, source?: Ses
     valueStates[`commitmentKinds.${figure.kind}.count`] = recordedStateOf(figure.valueState);
   }
   for (const figure of data.commitments) {
-    valueStates[`commitments.${figure.commitmentRowId}.perOccurrence`] = recordedStateOf(figure.perOccurrenceState);
+    // The field's one state lives in this map, recorded from the amount itself: the envelope derives the
+    // partial subtotal from coverage, so no row states a second state for the same field.
+    valueStates[`commitments.${figure.commitmentRowId}.perOccurrence`] = recordedStateOf(statedAmountStateOf(figure.perOccurrence));
     valueStates[`commitments.${figure.commitmentRowId}.monthlyEquivalent`] = figure.monthlyEquivalent === null ? "unknown" : recordedStateOf(figure.monthlyEquivalent.valueState);
     if (figure.fixedTotal === null) {
       continue;
@@ -1133,6 +1141,7 @@ export async function readCommitments(query: SupportPageInput = {}, source?: Ses
       revision: context.revision,
       valueStates,
       actions: [
+        { name: "showAdditionalTypes", available: false, reason: SHOW_ADDITIONAL_TYPES_REASON },
         { name: "filterByPeriod", available: false, reason: COMMITMENT_PERIOD_REASON },
         { name: "filterByCurrency", available: false, reason: COMMITMENT_CURRENCY_REASON },
         { name: "pageRows", available: true },

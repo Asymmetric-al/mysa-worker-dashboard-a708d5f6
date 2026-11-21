@@ -105,14 +105,15 @@ const SUBMITTED_RELEASE_MODES = ["publish-only", "publish-and-notify"] as const;
 type SubmittedReleaseMode = (typeof SUBMITTED_RELEASE_MODES)[number];
 
 /**
- * The review record one frozen candidate's answer is written to, read as the three facts this read
- * states: the candidate the record answers, the decision recorded on it and the release mode it was
- * submitted under.
+ * The review record one frozen candidate's answer is written to, read as the facts the review surface
+ * states: the candidate the record answers, the edition it belongs to, the decision recorded on it,
+ * the release mode it was submitted under, and — once a decision is recorded — the note, instant and
+ * deciding principal the review mutations wrote.
  *
- * The record is written by the review mutations, which own its note, instants and deciding principal;
- * the read restates none of those, so the only decision values it knows are the submission state and
- * the three answers the content module names, and the only release mode values are the two a
- * submission can ask for.
+ * The record is the one place a decided candidate is still paired with its edition: a requested change
+ * and a rejection both clear the edition's `candidateId`, so this record is what lets a reviewer reopen
+ * the answer they gave instead of reading a refusal. `variantId` is therefore required, and no field
+ * here is derived from the edition's pointers.
  */
 const submittedReviewDecisionSchema = z.literal("submitted");
 
@@ -120,8 +121,12 @@ const storedReviewDecisionSchema: z.ZodType<"submitted" | ReviewDecision> = z.un
 
 const contentReviewRecordSchema = z.object({
   candidateId: z.string().min(1),
+  variantId: z.string().min(1),
   notifyMode: z.enum(SUBMITTED_RELEASE_MODES),
   decision: storedReviewDecisionSchema,
+  note: z.string().nullable(),
+  decidedAt: storedInstantSchema.nullable(),
+  decidedByPrincipalId: z.string().min(1).nullable(),
 });
 type ContentReviewRecord = z.infer<typeof contentReviewRecordSchema>;
 
@@ -377,6 +382,37 @@ function findVariant(state: ContentWorkspaceState, variantId: string): ContentVa
  */
 function variantOfFrozenCandidate(state: ContentWorkspaceState, candidateId: string): ContentVariantRecordLike | undefined {
   return state.contentVariants.find((variant) => variant.candidateId === candidateId);
+}
+/** The edition a candidate read's identity resolves to, and the candidate that identity names. */
+interface CandidateResolution {
+  readonly record: ContentVariantRecordLike;
+  /** The candidate the identity names, or `null` when it names an edition with nothing under review. */
+  readonly candidateId: string | null;
+}
+/**
+ * Resolves the identity a review surface names to the edition it belongs to and the candidate it means.
+ *
+ * An identity may name the edition itself, the candidate the edition currently holds, or a candidate
+ * that has already been answered. The third case is why this exists: a requested change and a
+ * rejection both clear the edition's `candidateId`, so the candidate an answer was given to survives
+ * only in its own review record. An identity nothing here pairs with an edition resolves to nothing,
+ * and the caller refuses it exactly as it refuses an identity that never existed.
+ */
+function resolveCandidateIdentity(state: ContentWorkspaceState, identity: string): CandidateResolution | undefined {
+  const edition = findVariant(state, identity);
+  if (edition !== undefined) {
+    return { record: edition, candidateId: edition.candidateId };
+  }
+  const holding = variantOfFrozenCandidate(state, identity);
+  if (holding !== undefined) {
+    return { record: holding, candidateId: identity };
+  }
+  const answered = state.contentReviews.find((review) => review.candidateId === identity);
+  if (answered === undefined) {
+    return undefined;
+  }
+  const record = findVariant(state, answered.variantId);
+  return record === undefined ? undefined : { record, candidateId: identity };
 }
 function variantsOf(state: ContentWorkspaceState, documentId: string): readonly ContentVariantRecordLike[] {
   return state.contentVariants.filter((variant) => variant.documentId === documentId);
@@ -1104,6 +1140,22 @@ export interface CandidateDiffView {
   readonly sections: readonly CandidateSectionChange[];
   readonly placements: readonly CandidatePlacementChange[];
 }
+/**
+ * The answer one candidate carries, as its review record states it: the decision given, the principal
+ * identity that gave it, the instant it was given and the note that went with it.
+ *
+ * The actor and the instant are what let a reviewer recognise their own answer, and the note is what
+ * the author was asked to act on. All three are `null` for a record that has not been answered, and the
+ * read never fills one in from another record: an unstated principal stays unstated rather than being
+ * replaced by whoever is reading.
+ */
+export interface CandidateDecisionRecord {
+  readonly decision: ReviewDecision;
+  readonly decidedByPrincipalId: string | null;
+  /** The deciding instant exactly as the record holds it, an ISO 8601 instant, so it serialises to a client component. */
+  readonly decidedAt: string | null;
+  readonly note: string | null;
+}
 /** What a candidate read states: frozen and reviewable, absent, unreadable, or not resolvable. */
 export type ContentCandidateData =
   | {
@@ -1117,12 +1169,24 @@ export type ContentCandidateData =
       readonly renderedHtml: string;
       readonly placements: readonly ContentPlacementView[];
       readonly diff: CandidateDiffView;
+      /**
+       * The release standing at this edition's head, as the store holds it, or `null` when the edition
+       * has published nothing.
+       *
+       * The surface derives the edition's lifecycle word from it through the one lifecycle
+       * implementation, so a decided candidate is reported in the state its own records state — a
+       * published edition keeps saying it published — instead of a word guessed from the decision.
+       */
+      readonly headRelease: Release | null;
       readonly review: {
         readonly steps: typeof REVIEW_STEPS_PER_CANDIDATE;
         readonly round: typeof REVIEW_STEPS_PER_CANDIDATE;
         // The answer recorded for this candidate, and `null` only while its record says `submitted`,
         // which is the one state in which the review step is still the reviewer's to give.
         readonly decision: ReviewDecision | null;
+        // The same answer as a record, with the principal, the instant and the note; `null` exactly
+        // when `decision` is, so a surface states the record instead of inferring it from the word.
+        readonly recorded: CandidateDecisionRecord | null;
         readonly approvalScope: "this-variant-only";
       };
       readonly recordRevision: string;
@@ -1158,7 +1222,7 @@ export type ContentCandidateData =
 /**
  * Reads the candidate frozen for one edition: the exact revision it froze, its rendered HTML, the difference from the current release and the single review step it may receive.
  *
- * The identity may be the edition's own or the frozen candidate it holds, because a review surface names the candidate it asks a reviewer to answer and a candidate is identified by the revision it froze. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it, and `unavailable` when the records cannot be read.
+ * The identity may be the edition's own, the frozen candidate it holds, or a candidate already answered, because a review surface names the candidate it asks a reviewer to answer and that candidate is identified by the revision it froze. An answered candidate is read as the decision on record: its edition, the revision it froze and that record, never as a refusal, since a requested change and a rejection clear the edition's pointer and only the review record still pairs them. This read authorises before it enumerates, so a session that may not read the workspace, and an identity that pairs with no edition, both receive the same refusal. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it, and `unavailable` when the records cannot be read.
  */
 export async function readCandidate(input: { readonly variantId: string; readonly session?: SessionSource }): Promise<ReadResult<ReadEnvelope<ContentCandidateData>>> {
   const opened = await openContentWorkspace("readCandidate", input.session);
@@ -1169,10 +1233,11 @@ export async function readCandidate(input: { readonly variantId: string; readonl
   if (!isNonEmptyString(input.variantId)) {
     return recordNotFound();
   }
-  const record = findVariant(workspace.state, input.variantId) ?? variantOfFrozenCandidate(workspace.state, input.variantId);
-  if (record === undefined) {
+  const resolution = resolveCandidateIdentity(workspace.state, input.variantId);
+  if (resolution === undefined) {
     return recordNotFound();
   }
+  const { record } = resolution;
   const documentRecord = findDocument(workspace.state, record.documentId);
   if (documentRecord === undefined) {
     return recordNotFound();
@@ -1181,7 +1246,7 @@ export async function readCandidate(input: { readonly variantId: string; readonl
   const variant = variantOf(record);
   const audience = record.audience;
   const locale = localeOf(record.locale, record.direction);
-  const candidateId = record.candidateId;
+  const candidateId = resolution.candidateId;
   if (candidateId === null) {
     const data: ContentCandidateData = {
       status: "none",
@@ -1309,10 +1374,12 @@ export async function readCandidate(input: { readonly variantId: string; readonl
     renderedHtml: rendered.html,
     placements,
     diff,
+    headRelease: head === undefined ? null : releaseOf(head, checksums),
     review: {
       steps: REVIEW_STEPS_PER_CANDIDATE,
       round: REVIEW_STEPS_PER_CANDIDATE,
       decision,
+      recorded: recordedDecisionRecordOf(reviewRecord),
       approvalScope: "this-variant-only",
     },
     recordRevision: record.revision,
@@ -1335,6 +1402,27 @@ export async function readCandidate(input: { readonly variantId: string; readonl
 /** The answer recorded for one candidate, and `null` while its record still stands at `submitted`. */
 function recordedDecisionOf(review: ContentReviewRecord | undefined): ReviewDecision | null {
   return review === undefined || review.decision === "submitted" ? null : review.decision;
+}
+/**
+ * The answer recorded for one candidate as a record, and `null` while its record still stands at
+ * `submitted`.
+ *
+ * The decision word and this record are read from the same stored record in the same pass, so the two
+ * cannot disagree about whether an answer exists; only the fields a surface needs to name the actor,
+ * the instant and the note are added here. A field the record leaves empty stays `null` rather than
+ * being filled from the session reading it.
+ */
+function recordedDecisionRecordOf(review: ContentReviewRecord | undefined): CandidateDecisionRecord | null {
+  const decision = recordedDecisionOf(review);
+  if (review === undefined || decision === null) {
+    return null;
+  }
+  return {
+    decision,
+    decidedByPrincipalId: review.decidedByPrincipalId,
+    decidedAt: review.decidedAt,
+    note: review.note,
+  };
 }
 // The refusals the review mutations give, in their own words, so a reviewer reads one vocabulary
 // whichever surface states the condition.

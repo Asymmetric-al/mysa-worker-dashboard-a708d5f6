@@ -24,21 +24,21 @@
  * Divergences from the assigned dependency list, recorded because they change how the rules are
  * reached rather than what they assert:
  *
- * - `reads.readCheckIns`, `reads.readTaskShares` and `reads.readTargets` take no session source, so a
- *   framework-free test — which has no request cookie — would only ever receive their cookie-less
- *   refusal. The worker-side observations this file needs therefore come from the service mutations'
- *   outcomes and from the session document a mutation wrote, read through the store's own
- *   `readSession`. The coach-side observation comes from `reads.readCoachSubject`, which does take a
- *   source, so the coach read asserted here is the real one.
+ * - `reads.readCheckIns` and `reads.readTaskShares` take no session source, so a framework-free test —
+ *   which has no request cookie — would only ever receive their cookie-less refusal. The worker-side
+ *   observations this file needs therefore come from the service mutations' outcomes and from the
+ *   session document a mutation wrote, read through the store's own `readSession`. The coach-side
+ *   observation comes from `reads.readCoachSubject`, and the paged list from `reads.readTargets`; both
+ *   take a source, so the coach read and the target list asserted here are the real ones.
  * - The rules that belong to a module rather than to the service are asserted against that module —
  *   `captureQuestions` and the three check-in states, `safeTaskSummary` and the share read states, the
  *   target version resolution — and the rules that belong to the service are asserted through
  *   `mutations.coaching.*` and `mutations.coach.*`. No rule is computed in this file that either of
  *   them owns.
- * - No service mutation lays a session down — the seed builds its documents in memory — so the two
- *   sessions this file owns are written with the store's `resetSession` and removed again in
- *   `afterAll`. Both carry this file's own ids, so no other suite's records are touched, and neither
- *   seeded session is read or written by this file.
+ * - No service mutation lays a session down — the seed builds its documents in memory — so the sessions
+ *   this file owns are written with the store's `resetSession` and removed again in `afterAll`. Each
+ *   carries this file's own id, so no other suite's records are touched, and no seeded session is read
+ *   or written by this file.
  * - The coach's session is handed the record set the worker's session holds, which is how the seed
  *   itself models the relationship: its coach workspace carries the same coaching records as the
  *   worker's. That is what lets the coach read be asked about the check-in and the summary this file
@@ -96,16 +96,20 @@ import { resolveSession, type SessionSource } from "@/modules/data-service/autho
 import { isOutcome, type MutationOutcome } from "@/modules/data-service/outcome";
 import { DEFAULT_SESSION_ID, SEEDED_PERSONAS, seed, type SeededSessionDocuments, type SeededSessionWithDocuments, type SessionStateDocument } from "@/modules/dev-runtime/seed";
 import { readSession, resetSession } from "@/modules/store/repository";
-// The two sessions this file owns, and the world each starts from
+// The sessions this file owns, and the world each starts from
 const WORKER_SESSION = "domain-coaching-limits";
 
 const COACH_SESSION = "domain-coaching-limits-coach";
+/** The paging case's own session: the seeded world's documents, with a target history longer than either page bound. */
+const PAGING_SESSION = `${WORKER_SESSION}-paging`;
 
 const SEEDED_COACH_SESSION = "coach";
 
 const WORKER: SessionSource = { sessionId: WORKER_SESSION };
 
 const COACH: SessionSource = { sessionId: COACH_SESSION };
+
+const PAGING: SessionSource = { sessionId: PAGING_SESSION };
 /** The grant the seeded worker holds with the seeded coach: active, sharing targets and check-ins. */
 const ACTIVE_GRANT = "grant-established-coach";
 /** A task that does not recur, so its one occurrence is the task itself. */
@@ -120,6 +124,12 @@ const DISPLAY_ZONE = "Europe/London";
 const SEEDED_AT = Temporal.Instant.from("2026-11-20T00:00:00Z");
 /** 256 KiB in bytes, the ceiling the serialised check-in request is measured against. */
 const REQUEST_CEILING_BYTES = 262_144;
+/** AAP 0.8.7's coaching list page size: 25 rows by default, clamped to 100 at most. */
+const PAGE_SIZE_DEFAULT = 25;
+
+const PAGE_SIZE_CAP = 100;
+/** The length the paging session's history is made: past the 25-row default and past the 100-row cap. */
+const PAGING_HISTORY_LENGTH = 103;
 // The narrowed result shapes the domain modules answer with
 interface Ok<T> {
   readonly ok: true;
@@ -414,9 +424,10 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  // Both sessions are this file's own, so the store is left holding none of its fixtures.
+  // Every session this file writes is its own, so the store is left holding none of its fixtures.
   await resetSession(WORKER_SESSION);
   await resetSession(COACH_SESSION);
+  await resetSession(PAGING_SESSION);
 });
 // The module's own payload shape, for the cases that assert a property of the module itself
 function questionsOf(wordings: readonly string[]): readonly CheckInQuestion[] {
@@ -440,6 +451,121 @@ describe("the limits the release fixes", () => {
     // 256 KiB, the ceiling measured on the serialised request rather than on an answer.
     expect(CHECKIN_MAX_REQUEST_BYTES).toBe(REQUEST_CEILING_BYTES);
     expect(TASK_SUMMARY_MAX_CODE_POINTS).toBe(240);
+  });
+});
+// The target list's paging, read through the one read that answers it
+type TargetsData = Extract<Awaited<ReturnType<typeof reads.coaching.readTargets>>, { readonly kind: "envelope" }>["envelope"]["data"];
+
+/**
+ * Lays down the paging session: the seeded world's own documents with a target history long enough to cross
+ * both page bounds. The clones are synthetic repetitions of one seeded shape — a private label, a measure and
+ * a weekly period the worker already set — added only so a page boundary falls inside the history; each takes
+ * its own `targetId` and its own version `revisionId`, because the read names a target and its plan by those
+ * ids. They keep the seeded principal, so the read counts them as that worker's own history and no other
+ * principal's.
+ */
+async function layDownPagingWorld(): Promise<void> {
+  const { state, operations, meta } = world.worker;
+  const shape = required(state.coachingTargets.at(0), "the seeded target the paging history repeats");
+  const eligible = state.coachingTargets.filter((record) => record.workerPrincipalId === shape.workerPrincipalId).length;
+  const clones = Array.from({ length: Math.max(0, PAGING_HISTORY_LENGTH - eligible) }, (_, index) => ({
+    ...shape,
+    targetId: `${shape.targetId}-paging-${String(index)}`,
+    versions: shape.versions.map((version) => ({ ...version, revisionId: `${version.revisionId}-paging-${String(index)}` })),
+  }));
+  await resetSession(PAGING_SESSION, {
+    meta,
+    operations,
+    // As in the worker's session, the record set states the session that owns it rather than naming another.
+    state: {
+      ...state,
+      context: { ...state.context, sessionId: PAGING_SESSION },
+      coachingTargets: [...state.coachingTargets, ...clones],
+    },
+  });
+}
+/**
+ * Every target id the paging session holds for the principal the read serves — the whole eligible history,
+ * which `page.total` must count and which walking the pages must reach exactly.
+ */
+async function pagingHistory(): Promise<readonly string[]> {
+  const resolution = await resolveSession(PAGING);
+  if (!resolution.ok) {
+    throw new Error(`The session "${PAGING_SESSION}" could not be resolved, so it holds no history to page`);
+  }
+  const documents = await readSession(PAGING_SESSION);
+  if (documents === undefined) {
+    throw new Error(`The session "${PAGING_SESSION}" holds no documents, so it holds no history to page`);
+  }
+  const { coachingTargets } = documents.state as SessionStateDocument;
+  const history = coachingTargets.filter((record) => record.workerPrincipalId === resolution.session.principalId);
+  return history.map((record) => record.targetId);
+}
+
+async function pagingPage(query: { readonly page?: number; readonly pageSize?: number }): Promise<TargetsData> {
+  const result = await reads.coaching.readTargets(query, PAGING);
+  if (result.kind !== "envelope") {
+    throw new Error(`The targets read answered "${result.kind}" instead of an envelope`);
+  }
+  return result.envelope.data;
+}
+/**
+ * AAP 0.8.7 fixes the coaching list page size at 25 rows by default with a 100-row cap, and states that
+ * "eligible history is never truncated by the cap"; that is the value Criterion 16 rests on. The clauses are
+ * asserted against the read that produces them rather than against the constants, because a constant copied
+ * into a test proves only that the constant was copied. The session below holds a history longer than both
+ * bounds, so the short default page, the full capped page and the walk across every page are all observed.
+ */
+describe("the list page size", () => {
+  beforeAll(async () => {
+    await layDownPagingWorld();
+  });
+
+  it("pages 25 rows by default, clamps a larger request to 100, and loses no target to the cap", async () => {
+    const history = await pagingHistory();
+    // The history has to cross both bounds for either clause to mean anything: past the 25-row default, and
+    // past the 100-row cap, so the capped request is answered with a full page of the same history.
+    expect(history.length).toBeGreaterThan(PAGE_SIZE_CAP);
+    expect(new Set(history).size).toBe(history.length);
+
+    // The default: 25 rows, the cap named at 100, and a total that counts the whole eligible history rather
+    // than the page in hand. AAP 0.8.7 fixes the 25 and the 100.
+    const first = await pagingPage({});
+    expect(first.page.index).toBe(0);
+    expect(first.page.size).toBe(PAGE_SIZE_DEFAULT);
+    expect(first.targets.length).toBe(PAGE_SIZE_DEFAULT);
+    expect(first.page.cappedAt).toBe(PAGE_SIZE_CAP);
+    expect(first.page.total).toBe(history.length);
+    expect(first.page.totalPages).toBe(Math.ceil(history.length / PAGE_SIZE_DEFAULT));
+    // A page is a window on 25 distinct targets, never one target repeated to fill the rows.
+    expect(new Set(first.targets.map((target) => target.targetId)).size).toBe(PAGE_SIZE_DEFAULT);
+
+    // The cap: a request for 500 rows is clamped to 100. The clamp bounds one page only — the total still
+    // counts every eligible target — which is "never truncated by the cap" read at its source.
+    const capped = await pagingPage({ pageSize: 500 });
+    expect(capped.page.size).toBe(PAGE_SIZE_CAP);
+    expect(capped.targets.length).toBe(PAGE_SIZE_CAP);
+    expect(capped.page.total).toBe(history.length);
+    expect(capped.page.totalPages).toBe(Math.ceil(history.length / PAGE_SIZE_CAP));
+
+    // The history: walking every index the default size produces yields each eligible target exactly once,
+    // with none missing, so nothing falls off the end of the list however long it grows.
+    const walked: string[] = [];
+    for (let index = 0; index < first.page.totalPages; index += 1) {
+      const page = await pagingPage({ page: index });
+      walked.push(...page.targets.map((target) => target.targetId));
+    }
+    expect(walked.length).toBe(history.length);
+    expect(new Set(walked).size).toBe(history.length);
+    expect(new Set(walked)).toEqual(new Set(history));
+
+    // The page size is validated rather than trusted: zero and a fractional request each fall back to the
+    // 25-row default, so a malformed request reads a page instead of a zero-length one.
+    for (const pageSize of [0, 2.5]) {
+      const held = await pagingPage({ pageSize });
+      expect(held.page.size).toBe(PAGE_SIZE_DEFAULT);
+      expect(held.targets.length).toBe(PAGE_SIZE_DEFAULT);
+    }
   });
 });
 

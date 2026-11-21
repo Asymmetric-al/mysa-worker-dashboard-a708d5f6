@@ -151,7 +151,7 @@ export type {
   TaskSeriesRecord,
   ValueState,
 } from "./envelope";
-export { mutationInputSchema } from "./envelope";
+export { NOTIFICATION_UNSERVED_REASONS, mutationInputSchema } from "./envelope";
 export { closeInitiativePayloadSchema, draftRequestPayloadSchema, presentRequestPayloadSchema, recordRequestResponsePayloadSchema, reopenInitiativePayloadSchema } from "./mutations/outreach";
 export type { DenialReason, MutationOutcome, PerItemResult, ReadResult } from "./outcome";
 export { isOutcome, isReadResult, outcomeFromError } from "./outcome";

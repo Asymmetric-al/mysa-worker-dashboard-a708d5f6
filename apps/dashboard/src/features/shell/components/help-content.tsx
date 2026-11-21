@@ -50,12 +50,13 @@
  * no hook, no event handler, no read and no clock in this module, which is what keeps the page fully
  * server-rendered for every persona and every session state.
  *
- * **Headings, direction and narrow screens.** The route owns the page's single `h1`, so the five
- * sections open at level two and each state, setting and destination at level three. Every value stated
- * here is fixed copy rather than a record value, which is why no `<bdi>` isolation is needed; classes
- * are logical utilities resolving to the tokens declared once in `styles/globals.css`, targets are at
- * least 24x24 CSS px with the shared focus ring, and the sections stack in one column at 320 CSS pixels
- * without horizontal scrolling.
+ * **Headings, direction and narrow screens.** The route owns the page's single `h1` and the section
+ * that holds this content at level two, so the five cards open at level three and every nested state,
+ * switch, setting, labelled effect and destination at level four — each strictly below the card that
+ * holds it. Every value stated here is fixed copy rather than a record value, which is why no `<bdi>`
+ * isolation is needed; classes are logical utilities resolving to the tokens declared once in
+ * `styles/globals.css`, targets are at least 24x24 CSS px with the shared focus ring, and the sections
+ * stack in one column at 320 CSS pixels without horizontal scrolling.
  */
 
 import Link from "next/link";
@@ -273,7 +274,7 @@ export function HelpContent({ className }: HelpContentProps): ReactElement {
         <Card>
           <CardHeader>
             <CardTitle>
-              <h2 id={SECTION_IDS.session}>Getting in and session states</h2>
+              <h3 id={SECTION_IDS.session}>Getting in and session states</h3>
             </CardTitle>
             <CardDescription>{SESSION_INTRO}</CardDescription>
           </CardHeader>
@@ -281,7 +282,7 @@ export function HelpContent({ className }: HelpContentProps): ReactElement {
             {SESSION_STATE_SECTIONS.map((state, index) => (
               <div key={state.key} className="flex min-w-0 flex-col gap-2">
                 {index === 0 ? null : <Separator />}
-                <h3 className="font-medium">{state.title}</h3>
+                <h4 className="font-medium">{state.title}</h4>
                 <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{state.body}</p>
                 {state.steps.length === 0 ? null : (
                   <>
@@ -306,14 +307,14 @@ export function HelpContent({ className }: HelpContentProps): ReactElement {
         <Card>
           <CardHeader>
             <CardTitle>
-              <h2 id={SECTION_IDS.context}>Choosing and switching context</h2>
+              <h3 id={SECTION_IDS.context}>Choosing and switching context</h3>
             </CardTitle>
             <CardDescription>{CHOOSER_COPY.body}</CardDescription>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-col gap-4">
             <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{CHOOSER_COPY.oneMinistryNote}</p>
             <Separator />
-            <h3 className="font-medium">{CONTEXT_SWITCH_COPY.title}</h3>
+            <h4 className="font-medium">{CONTEXT_SWITCH_COPY.title}</h4>
             <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{CONTEXT_SWITCH_COPY.body}</p>
             <dl className="flex min-w-0 flex-col gap-3">
               {SWITCH_CHOICES.map((choice) => (
@@ -334,7 +335,7 @@ export function HelpContent({ className }: HelpContentProps): ReactElement {
         <Card>
           <CardHeader>
             <CardTitle>
-              <h2 id={SECTION_IDS.settings}>Settings</h2>
+              <h3 id={SECTION_IDS.settings}>Settings and its preferences</h3>
             </CardTitle>
             <CardDescription>{SETTINGS_INTRO}</CardDescription>
           </CardHeader>
@@ -342,7 +343,7 @@ export function HelpContent({ className }: HelpContentProps): ReactElement {
             {SETTING_FACTS.map((fact, index) => (
               <div key={fact.heading} className="flex min-w-0 flex-col gap-2">
                 {index === 0 ? null : <Separator />}
-                <h3 className="font-medium">{fact.heading}</h3>
+                <h4 className="font-medium">{fact.heading}</h4>
                 <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{fact.body}</p>
               </div>
             ))}
@@ -355,14 +356,14 @@ export function HelpContent({ className }: HelpContentProps): ReactElement {
         <Card>
           <CardHeader>
             <CardTitle>
-              <h2 id={SECTION_IDS.development}>Development data and simulated effects</h2>
+              <h3 id={SECTION_IDS.development}>The synthetic dataset and where each effect is labelled</h3>
             </CardTitle>
             <CardDescription>{DEVELOPMENT_INTRO}</CardDescription>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-col gap-4">
             <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{DEVELOPMENT_LABEL_POINTER}</p>
             <Separator />
-            <h3 className="font-medium">Where an effect is labelled</h3>
+            <h4 className="font-medium">Where an effect is labelled</h4>
             <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{SIMULATED_INTRO}</p>
             <dl className="flex min-w-0 flex-col gap-3">
               {SIMULATED_BOUNDARIES.map((boundary) => (
@@ -383,7 +384,7 @@ export function HelpContent({ className }: HelpContentProps): ReactElement {
         <Card>
           <CardHeader>
             <CardTitle>
-              <h2 id={SECTION_IDS.destinations}>Where each job begins</h2>
+              <h3 id={SECTION_IDS.destinations}>Where each job begins</h3>
             </CardTitle>
             <CardDescription>{DESTINATIONS_INTRO}</CardDescription>
           </CardHeader>
@@ -394,11 +395,11 @@ export function HelpContent({ className }: HelpContentProps): ReactElement {
                   <li key={destination.href} className="flex min-w-0 flex-col gap-2">
                     {/* The heading holds the destination itself, so the link's text is the heading's
                         text and a screen reader hears one name for one destination. */}
-                    <h3 className="flex min-w-0 flex-wrap items-center">
+                    <h4 className="flex min-w-0 flex-wrap items-center">
                       <Link href={destination.href} className={cn(buttonVariants({ variant: "outline", size: "sm" }), DESTINATION_LINK_CLASS)}>
                         {destination.label}
                       </Link>
-                    </h3>
+                    </h4>
                     {destination.description === "" ? null : <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{destination.description}</p>}
                   </li>
                 ))}

@@ -23,6 +23,24 @@ const AMOUNT_BOUND = /^-?\d{1,15}$/u;
 function firstValue(search: URLSearchParams, name: string): string | undefined {
   return search.get(name) ?? undefined;
 }
+/**
+ * Every name the request stated, with the value it stated, so the closed grammar below decides which
+ * names a read admits instead of a fixed list of names quietly discarding the rest. A name stated twice
+ * keeps its first value: one search parameter states one thing. The names gather in a map first, so a
+ * name such as `__proto__` arrives at the grammar as an ordinary key and is refused by name like any
+ * other: assigned to a plain object, that name would change the object's prototype and the parameter
+ * would vanish, answering the request as though it had stated no such thing.
+ */
+function statedSearchValues(search: URLSearchParams): Record<string, string> {
+  const stated = new Map<string, string>();
+  for (const name of new Set(search.keys())) {
+    const value = firstValue(search, name);
+    if (value !== undefined) {
+      stated.set(name, value);
+    }
+  }
+  return Object.fromEntries(stated);
+}
 function wholeNumber(message: string) {
   return z
     .string()
@@ -47,7 +65,7 @@ const MESSAGES = {
   pageSizeNeedsPage: "State the page a size applies to: a size with no page would be read as the first page or ignored, and neither is the page that was asked for.",
   commitmentId: "State the commitment as a non-empty identifier, or omit it: the identifier is compared with the rows the read reports and is never parsed into one.",
   showAdditionalTypes:
-    "The commitments read reports the three commitment kinds the source distinguishes and no additional type, so this display choice cannot change a result. State it as 0, or omit it: asking for types the read cannot report is refused rather than answered with the same rows under a choice the read did not apply.",
+    "State the additional-types display choice as 1 to ask the source for additional commitment types, as 0 for the list without that choice, or omit it: no other value states a choice this read can carry.",
   amountBound: "State an amount bound as a whole number of the selected currency's minor units.",
   amountRangeNeedsBoth: "State both bounds of an amount range: a range compares the minor units of one currency, and one bound alone states no range for the read to apply.",
   periodNeedsBoth: "State both ends of the period, each as a calendar day: one day is not a range, and the ledger's figures are read over a range.",
@@ -57,6 +75,30 @@ const MESSAGES = {
   recipientNeedsPartner: "State the partner a partner attribution names: the filter narrows to one record's own reference, and a kind with no reference would narrow to nothing.",
   partnerNeedsRecipient: "State the partner attribution beside a partnerId, because a reference with no attribution named would be a filter this transport could only drop.",
 } as const;
+
+function unadmittedSearchParameterMessage(name: string): string {
+  return `This read accepts no search parameter named "${name}", so remove it: a name the read does not declare is refused rather than ignored, because a read that ignored it would answer a page or a result the caller did not ask for.`;
+}
+
+/**
+ * Re-keys the grammar's single rejected-names issue onto each name it carries, so a caller is told which
+ * search parameter to remove instead of reading one message that lists several. Every other issue passes
+ * through untouched.
+ */
+function refusedSearchParameters(error: z.ZodError): z.ZodError {
+  type Issue = NonNullable<ConstructorParameters<typeof z.ZodError>[0]>[number];
+  const issues: Issue[] = [];
+  for (const issue of error.issues) {
+    if (issue.code === "unrecognized_keys") {
+      for (const name of issue.keys) {
+        issues.push({ code: "custom", path: [...issue.path, name], message: unadmittedSearchParameterMessage(name) });
+      }
+    } else {
+      issues.push(issue);
+    }
+  }
+  return new z.ZodError(issues);
+}
 const supportSearchSchema = z
   .strictObject({
     period: z.string().optional(),
@@ -188,29 +230,16 @@ function queryOf(params: SupportSearchParams): SupportQuery {
     ...(page === undefined ? {} : { page }),
   };
 }
-/** Reads a Support read's query out of the request's search parameters. */
+/** Reads a Support read's query out of the request's search parameters, refusing by name every parameter the grammar does not declare. */
 export function supportQueryFromSearch(search: URLSearchParams): ParsedQuery<SupportQuery> {
-  const parsed = supportSearchSchema.safeParse({
-    period: firstValue(search, "period"),
-    from: firstValue(search, "from"),
-    to: firstValue(search, "to"),
-    currency: firstValue(search, "currency"),
-    amountMin: firstValue(search, "amountMin"),
-    amountMax: firstValue(search, "amountMax"),
-    recipient: firstValue(search, "recipient"),
-    partnerId: firstValue(search, "partnerId"),
-    designation: firstValue(search, "designation"),
-    method: firstValue(search, "method"),
-    search: firstValue(search, "search"),
-    sortField: firstValue(search, "sortField"),
-    sortDirection: firstValue(search, "sortDirection"),
-    page: firstValue(search, "page"),
-    pageSize: firstValue(search, "pageSize"),
-  });
-  return parsed.success ? ok(queryOf(parsed.data)) : err(parsed.error);
+  // Every name the request stated goes to the closed grammar, so the grammar decides which names this
+  // read admits: a name it does not declare is refused by name, never read as if it were absent.
+  const parsed = supportSearchSchema.safeParse(statedSearchValues(search));
+  return parsed.success ? ok(queryOf(parsed.data)) : err(refusedSearchParameters(parsed.error));
 }
-// The commitments list's page window, the one commitment a detail names, and the answer its own
-// display choice states with every request
+// The commitments list's page window, the one commitment a detail names, and the display choice its own
+// control states with every request
+const FLAG_ON = "1";
 const FLAG_OFF = "0";
 
 const commitmentsSearchSchema = z
@@ -218,11 +247,15 @@ const commitmentsSearchSchema = z
     "page.index": wholeNumber(MESSAGES.pageNumber).optional(),
     "page.size": wholeNumber(MESSAGES.pageSize).optional(),
     commitmentId: z.string().min(1, MESSAGES.commitmentId).optional(),
-    // The list states this display choice on every request it makes. The read reports the three
-    // commitment kinds and no additional type, and its envelope states no capability for one, so only
-    // the value that asks for nothing is admitted here: a request that asks for types the read cannot
-    // produce is refused, rather than answered with the same rows under a choice it never applied.
-    showAdditionalTypes: z.literal(FLAG_OFF, { error: MESSAGES.showAdditionalTypes }).optional(),
+    // The list states this display choice on every request it makes, so both of its values are admitted
+    // here and the parsed choice is forwarded to the read. The read answers it by publishing the
+    // additional-types capability, with the reason it cannot change a row, in the envelope's actions:
+    // the source supplies the three commitment kinds it distinguishes and no other. The choice is
+    // therefore neither refused at this boundary nor silently dropped at it.
+    showAdditionalTypes: z
+      .enum([FLAG_ON, FLAG_OFF], { error: MESSAGES.showAdditionalTypes })
+      .transform((value) => value === FLAG_ON)
+      .optional(),
   })
   .superRefine((params, context) => {
     if (params["page.size"] !== undefined && params["page.index"] === undefined) {
@@ -233,21 +266,21 @@ const commitmentsSearchSchema = z
       });
     }
   });
-/** Reads the commitments list's page window and the commitment a detail names out of the request's search parameters. */
+/** Reads the commitments list's page window, the commitment a detail names and the additional-types display choice out of the request's search parameters, refusing by name every parameter the grammar does not declare. */
 export function supportPageFromSearch(search: URLSearchParams): ParsedQuery<SupportPageQuery> {
-  const parsed = commitmentsSearchSchema.safeParse({
-    "page.index": firstValue(search, "page.index"),
-    "page.size": firstValue(search, "page.size"),
-    commitmentId: firstValue(search, "commitmentId"),
-    showAdditionalTypes: firstValue(search, "showAdditionalTypes"),
-  });
+  // The same closed grammar decides which names this read admits, so a parameter it does not declare is
+  // refused by name rather than dropped from the page or the detail the caller asked for.
+  const parsed = commitmentsSearchSchema.safeParse(statedSearchValues(search));
   if (!parsed.success) {
-    return err(parsed.error);
+    return err(refusedSearchParameters(parsed.error));
   }
   const index = parsed.data["page.index"];
   const size = parsed.data["page.size"];
-  const { commitmentId } = parsed.data;
-  const narrowing = commitmentId === undefined ? {} : { commitmentId };
+  const { commitmentId, showAdditionalTypes } = parsed.data;
+  const narrowing: SupportPageQuery = {
+    ...(commitmentId === undefined ? {} : { commitmentId }),
+    ...(showAdditionalTypes === undefined ? {} : { showAdditionalTypes }),
+  };
   if (index === undefined) {
     return ok(narrowing);
   }

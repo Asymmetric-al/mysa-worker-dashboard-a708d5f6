@@ -154,17 +154,22 @@ export function denied(input: { operationId: string; reasonCode: DenialReason })
   });
 }
 function fieldMessagesFromIssues(error: ZodError): FieldMessages {
-  const messages: Record<string, string[]> = {};
+  // A field path is the caller's own text, so it may name a member of `Object.prototype` or be
+  // `__proto__` itself. Accumulating in a map keeps every path an ordinary key: a plain object would
+  // answer `constructor` with the inherited function, and assigning `__proto__` would change the
+  // object's prototype rather than record a message, so a refusal for either name would escape this
+  // function as a throw instead of arriving as the `invalid` outcome.
+  const messages = new Map<string, string[]>();
   for (const issue of error.issues) {
     const key = issue.path.length === 0 ? ROOT_FIELD_KEY : issue.path.map((segment) => String(segment)).join(".");
-    const existing = messages[key];
+    const existing = messages.get(key);
     if (existing === undefined) {
-      messages[key] = [issue.message];
+      messages.set(key, [issue.message]);
     } else if (!existing.includes(issue.message)) {
       existing.push(issue.message);
     }
   }
-  return messages;
+  return Object.fromEntries(messages);
 }
 /** Answers that the payload failed validation, with per-field messages and no side effect. */
 export function invalid(input: { operationId: string; fields: FieldMessages | ZodError }): InvalidOutcome {

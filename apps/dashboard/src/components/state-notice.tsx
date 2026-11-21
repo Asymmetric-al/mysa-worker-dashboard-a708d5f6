@@ -111,6 +111,8 @@ function NoticeButton({ action, variant, size, pending, onRun }: NoticeButtonPro
     </Button>
   );
 }
+const COVERAGE_DATE_CLASS = "whitespace-nowrap";
+
 function CoverageGapSentence({ coverage }: { readonly coverage: Coverage }): ReactNode {
   const { from, to } = coverage;
   if (from === null && to === null) {
@@ -119,20 +121,21 @@ function CoverageGapSentence({ coverage }: { readonly coverage: Coverage }): Rea
   if (to === null) {
     return (
       <>
-        The source covers records from <bdi>{from}</bdi> onwards; every date before that one is outside the covered period.
+        The source covers records from <bdi className={COVERAGE_DATE_CLASS}>{from}</bdi> onwards; every date before that one is outside the covered period.
       </>
     );
   }
   if (from === null) {
     return (
       <>
-        The source covers records up to <bdi>{to}</bdi>; every date after that one is outside the covered period.
+        The source covers records up to <bdi className={COVERAGE_DATE_CLASS}>{to}</bdi>; every date after that one is outside the covered period.
       </>
     );
   }
   return (
     <>
-      The source covers records from <bdi>{from}</bdi> to <bdi>{to}</bdi>; every date before or after that range is outside the covered period.
+      The source covers records from <bdi className={COVERAGE_DATE_CLASS}>{from}</bdi> to <bdi className={COVERAGE_DATE_CLASS}>{to}</bdi>; every date before or after that range is outside the covered
+      period.
     </>
   );
 }

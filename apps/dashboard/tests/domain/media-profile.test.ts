@@ -214,6 +214,37 @@ function mvhdCreationTime(bytes: Uint8Array): number {
   }
   return view.getUint32(marker + 8);
 }
+// The profile a video gets is decided by the content of its container, so the honest out-of-range input
+// is a real container whose own stated value is out of range: these two helpers start from the committed
+// MP4, which carries the sample layout a muxer writes, and change nothing but the number the container
+// states — the media timescale every sample duration is counted in, and the display size its video
+// sample entry declares.
+const VIDEO_SAMPLE_ENTRY = "avc1";
+
+function withVideoTimescale(bytes: Uint8Array, timescale: number): Uint8Array {
+  const rewritten = Uint8Array.from(bytes);
+  const mediaHeader = indexOfAscii(rewritten, "mdhd");
+  if (mediaHeader < 0) throw new Error("the fixture must state a media header for its samples to be timed in");
+  // A version 1 header widens the creation and modification instants to 64 bits, which moves the
+  // timescale from the sixteenth byte of the box to the twenty-fourth.
+  const timescaleAt = (rewritten[mediaHeader + 4] ?? 0) === 1 ? mediaHeader + 24 : mediaHeader + 16;
+  new DataView(rewritten.buffer, rewritten.byteOffset, rewritten.byteLength).setUint32(timescaleAt, timescale);
+  return rewritten;
+}
+function withVideoDisplaySize(bytes: Uint8Array, width: number, height: number): Uint8Array {
+  const rewritten = Uint8Array.from(bytes);
+  // This file's first "avc1" bytes are the brand string "isomavc1" in its file type box rather than a
+  // sample entry, so the entry is the one the sample description box holds.
+  const sampleDescriptions = indexOfAscii(rewritten, "stsd");
+  if (sampleDescriptions < 0) throw new Error("the fixture must state a sample description for its video track");
+  const entryInStsd = indexOfAscii(rewritten.subarray(sampleDescriptions), VIDEO_SAMPLE_ENTRY);
+  if (entryInStsd < 0) throw new Error(`the fixture must carry an ${VIDEO_SAMPLE_ENTRY} sample entry`);
+  const entry = sampleDescriptions + entryInStsd;
+  const view = new DataView(rewritten.buffer, rewritten.byteOffset, rewritten.byteLength);
+  view.setUint16(entry + 28, width);
+  view.setUint16(entry + 30, height);
+  return rewritten;
+}
 function firstOf<T>(items: readonly T[], what: string): T {
   const item = items[0];
   if (item === undefined) throw new Error(`the seed must provide ${what}`);
@@ -789,6 +820,55 @@ describe("the video profile is decided by the content of the container", () => {
       expect(refused.code).toBe("use-acceptance-entry-point");
     }
     expect([...ANCILLARY_RENDITION_PURPOSES]).toEqual(["poster", "captions", "transcript"]);
+  });
+});
+// The video limits, exactly at their boundary — the counterpart of the image boundaries proven above
+describe("the video limits are exact at their boundaries", () => {
+  it("refuses one byte over 100 MiB before any container reader sees it, and refuses nothing at 100 MiB for its size", async () => {
+    // Driven through the pipeline's own byte gate with buffers of exactly the two sizes, as the image
+    // ceiling is. Bytes of nothing at all, so at the ceiling the gate passes and the content check
+    // answers instead: the only way to tell a limit from an off-by-one is that content which is not a
+    // video is refused for its content, never for its size.
+    const atLimit = videoRefusal(await inspectVideo({ bytes: new Uint8Array(VIDEO_MAX_BYTES) }));
+    expect(atLimit.code).toBe("not-a-video");
+    expect(atLimit.code).not.toBe("too-large-bytes");
+    const overLimit = videoRefusal(await inspectVideo({ bytes: new Uint8Array(VIDEO_MAX_BYTES + 1) }));
+    expect(overLimit.code).toBe("too-large-bytes");
+    // The reason states both numbers it compares, so a worker can see how far past the ceiling the file is.
+    expect(overLimit.message).toContain((VIDEO_MAX_BYTES + 1).toLocaleString("en-US"));
+    expect(overLimit.message).toContain(VIDEO_MAX_BYTES.toLocaleString("en-US"));
+    expect(overLimit.action).toBeDefined();
+  });
+  it("refuses a video past the 180-second ceiling the container itself reports", async () => {
+    // The committed clip is 150,150 sample units long, and stated in a media timescale of 830 that is
+    // 180.9 seconds: the duration is the container's own arithmetic, never an elapsed wall-clock time.
+    const refusal = videoRefusal(await inspectVideo({ bytes: withVideoTimescale(fixture("sample-h264.mp4"), 830) }));
+    expect(refusal.code).toBe("too-long-duration");
+    expect(refusal.message).toContain("180.9 seconds");
+    expect(refusal.message).toContain(`the limit is ${VIDEO_MAX_DURATION_S} seconds`);
+    // Actionable: it names the trim that would admit the video rather than calling the file invalid.
+    expect(refusal.action).toBeDefined();
+  });
+  it("refuses a video wider or taller than its display ceiling, admitting exactly 1920x1080", async () => {
+    const source = fixture("sample-h264.mp4");
+    const overCeiling = [
+      [VIDEO_MAX_WIDTH, VIDEO_MAX_HEIGHT + 1],
+      [VIDEO_MAX_WIDTH + 1, VIDEO_MAX_HEIGHT],
+    ] as const;
+    for (const [width, height] of overCeiling) {
+      const refusal = videoRefusal(await inspectVideo({ bytes: withVideoDisplaySize(source, width, height) }));
+      expect(refusal.code).toBe("too-large-dimensions");
+      // The reason names the pair the container states against the pair the profile admits, so the
+      // refusal is a boundary the worker can act on rather than a bare rejection.
+      expect(refusal.message).toContain(`${width}x${height}`);
+      expect(refusal.message).toContain(`${VIDEO_MAX_WIDTH}x${VIDEO_MAX_HEIGHT}`);
+      expect(refusal.action).toBeDefined();
+    }
+    // The same rewrite at exactly the ceiling is admitted, which is what makes the bound exact and the
+    // rewrite faithful: one pixel more on either axis is the whole difference being judged.
+    const admitted = videoCheck(await inspectVideo({ bytes: withVideoDisplaySize(source, VIDEO_MAX_WIDTH, VIDEO_MAX_HEIGHT) }));
+    expect(admitted.width).toBe(VIDEO_MAX_WIDTH);
+    expect(admitted.height).toBe(VIDEO_MAX_HEIGHT);
   });
 });
 // Phase F — local processing, never a production claim

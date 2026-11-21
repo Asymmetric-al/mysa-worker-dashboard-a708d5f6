@@ -152,6 +152,13 @@ const FILTER_ACTION_LABELS: Readonly<Record<string, string>> = {
   filterByCurrency: "Currency",
 };
 
+/**
+ * The one action the envelope states that this section must not list. The additional-types display
+ * choice is not a filter: the composed list renders it as its own control beside the rows, with the
+ * read's own reason for it, so it is skipped here rather than described as a filter this list refuses.
+ */
+const ADDITIONAL_TYPES_ACTION = "showAdditionalTypes";
+
 // ---------------------------------------------------------------------------------------------
 // The window the URL states
 // ---------------------------------------------------------------------------------------------
@@ -200,6 +207,9 @@ function pageQueryOf(params: SearchParams): CommitmentsQuery {
 function refusedFiltersOf(actions: readonly ReadAction[]): readonly RefusedFilter[] {
   const refused: RefusedFilter[] = [];
   for (const action of actions) {
+    if (action.name === ADDITIONAL_TYPES_ACTION) {
+      continue;
+    }
     if (action.available || action.reason === undefined) {
       continue;
     }

@@ -5,7 +5,9 @@
  * single implementation both content families use. This route composes it: it resolves the session's
  * scope and the frozen revision through `reads.updates.readCandidate` and renders what the read
  * answered. It computes no count, no revision, no checksum, no eligibility and no permission, and it
- * holds no state — every value the panel shows comes from the envelope.
+ * holds no state — every value the panel shows comes from the envelope, including the edition's
+ * lifecycle word, which is derived from the records the same envelope carried by the one implementation
+ * of that derivation rather than stated here.
  *
  * **Why the panel is reached through the family module.** The panel takes the reviewer's decision as
  * a function, and a function cannot cross from a Server Component to a client component. Server
@@ -24,6 +26,7 @@
  * file adds no detail to it.
  */
 import type { ReactElement } from "react";
+import { lifecycleOf } from "@/components/draft-status";
 import type { CandidateView } from "@/components/review-panel";
 import StateNotice from "@/components/state-notice";
 import { UpdateReviewSurface } from "@/features/updates/components/review-surface";
@@ -35,12 +38,14 @@ type CandidateData = CandidateEnvelope["data"];
 type ReviewableCandidate = Extract<CandidateData, { status: "reviewable" }>;
 // Fixed values
 /**
- * The level a notice's own heading occupies.
+ * The level this route's one heading occupies.
  *
- * The review panel states its title at this same level, so both states of this route present one
- * top-level heading and neither adds a second, competing one above the shared surface.
+ * Every arm of this page states exactly one top-level heading and nothing above it: the shell renders
+ * no `h1`, so level 1 is this screen's own title — the panel's, or the notice's — and the panel steps
+ * its own sections down from there. A sibling route states its `h1` itself and asks the panel for
+ * level 2 instead, which is why the level is a prop of the shared panel rather than a constant in it.
  */
-const PAGE_HEADING_LEVEL = 2;
+const PAGE_HEADING_LEVEL = 1;
 
 /** The title of the refusal, which states the condition and nothing about what may exist here. */
 const DENIED_TITLE = "This review is not available in this session";
@@ -79,10 +84,13 @@ const NO_CANDIDATE_ID = "";
 // The envelope, mapped onto the panel's view of one candidate
 /**
  * The frozen candidate as the panel shows it: the exact revision and checksum the reviewer answers,
- * the body rendered by the read, and the renditions this read was admitted to serve.
+ * the body rendered by the read, the renditions this read was admitted to serve, and the decision on
+ * record when there is one.
  *
- * Every field is copied from the read. Nothing is derived, recomputed or substituted, so the checksum
- * a reviewer sees is the one the mutation will be answered against.
+ * Every field is copied from the read, with one exception that is not a value but a word: the edition's
+ * lifecycle state, derived from the records the same read returned through the application's one
+ * lifecycle implementation. The route derives it rather than the panel, because the panel is given one
+ * candidate and the release head is what decides whether a decided edition still says it published.
  */
 function candidateViewOf(data: ReviewableCandidate): CandidateView {
   return {
@@ -95,7 +103,8 @@ function candidateViewOf(data: ReviewableCandidate): CandidateView {
     mediaRenditions: data.placements.flatMap((placement) =>
       placement.renditions.map((rendition) => ({ purpose: rendition.purpose, url: rendition.path })),
     ),
-    decision: data.review.decision,
+    lifecycle: lifecycleOf(data.variant, data.headRelease ?? undefined),
+    decisionRecord: data.review.recorded,
   };
 }
 /**
@@ -125,6 +134,7 @@ function surfaceOf(envelope: CandidateEnvelope): ReactElement {
           // required.
           policyRequiresReview
           notifyRequestedByAuthor={RELEASE_MODE_STATED}
+          headingLevel={PAGE_HEADING_LEVEL}
         />
       );
     case "none":
@@ -139,6 +149,7 @@ function surfaceOf(envelope: CandidateEnvelope): ReactElement {
           expectedRevision={envelope.revision}
           policyRequiresReview={false}
           notifyRequestedByAuthor={RELEASE_MODE_STATED}
+          headingLevel={PAGE_HEADING_LEVEL}
         />
       );
     case "invalid":

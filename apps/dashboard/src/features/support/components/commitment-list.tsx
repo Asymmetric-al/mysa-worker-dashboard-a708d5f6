@@ -28,10 +28,12 @@
  * grain are stated once, framed as the measure these rows are deliberately kept outside of, so the
  * two are never read as one figure.
  *
- * **Where its state lives.** The one optional choice — whether the source's additional
- * source-supplied commitment types are asked for — is carried in the URL, so a commitment-detail
- * visit returns to the same list state, and it is answered by `useCommitments`, which wraps the same
- * service read the server render uses.
+ * **Where its state lives, and the one optional choice.** The page window is carried in the URL, so a
+ * commitment-detail visit returns to the same list state, and it is answered by `useCommitments`, which
+ * wraps the same service read the server render uses. The read also publishes the additional-types
+ * capability, with the reason it cannot change a row, in the envelope's actions: the option is stated
+ * to the reader here with that reason, and it is offered as a live choice only when the read reports
+ * it available.
  */
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -85,10 +87,11 @@ const DETAILS_PATH = "/support/commitments";
 /** The word the outcome badge carries before the bucket's own label, so a badge is never just a colour. */
 const OUTCOME_SR_PREFIX = "Recurring outcome";
 /**
- * The capability the envelope must state as available before this surface offers the one optional
- * choice. No read states it today, so no control renders and nothing explains a capability the
- * envelope does not claim — a control that cannot change what the source returns would be a promise
- * this surface cannot keep.
+ * The capability the envelope states for the one optional display choice. The read publishes it, with
+ * its own reason, whenever the source supplies no additional commitment type, and this surface states
+ * the option with that reason rather than leaving the capability unmentioned: the control is offered as
+ * a live choice only when the read reports it available, and a reader meets an explained absence
+ * instead of a promise this surface cannot keep.
  */
 const SHOW_ADDITIONAL_TYPES_ACTION = "showAdditionalTypes";
 /** The label of that one choice, stated in the source's own terms. */
@@ -333,6 +336,7 @@ export function CommitmentList({ scope, locale, dir, initialEnvelope, className 
   const router = useRouter();
   const pathname = usePathname();
   const revealFieldId = useId();
+  const revealReasonId = useId();
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(NOTHING_HIDDEN);
   // The URL is the list's state, so a detail visit, a refresh and a shared link all return to the same
   // page and the same answer to the one optional choice.
@@ -382,7 +386,7 @@ export function CommitmentList({ scope, locale, dir, initialEnvelope, className 
         header: "Per occurrence",
         enableSorting: false,
         cell: ({ row }) => (
-          <AmountValue money={row.original.perOccurrence} valueState={recordedState(valueStates, row.original.commitmentRowId, "perOccurrence") ?? row.original.perOccurrenceState} locale={locale} />
+          <AmountValue money={row.original.perOccurrence} valueState={recordedState(valueStates, row.original.commitmentRowId, "perOccurrence") ?? UNSTATED_VALUE_STATE} locale={locale} />
         ),
       },
       {
@@ -540,7 +544,7 @@ export function CommitmentList({ scope, locale, dir, initialEnvelope, className 
       </>,
     );
   }
-  const admitsAdditionalTypes = actions.some((action) => action.name === SHOW_ADDITIONAL_TYPES_ACTION && action.available);
+  const additionalTypesAction = actions.find((action) => action.name === SHOW_ADDITIONAL_TYPES_ACTION);
   return surface(
     <>
       <ReadOnlyStatement />
@@ -551,13 +555,15 @@ export function CommitmentList({ scope, locale, dir, initialEnvelope, className 
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <SnapshotStatement basis={SUPPORT_BASIS} currencies={NO_CURRENCIES} period={null} coverage={coverage} asOf={asOf} isCurrentPeriod={false} locale={locale} />
-          {admitsAdditionalTypes ? (
+          {additionalTypesAction === undefined ? null : (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor={revealFieldId} className="cursor-pointer items-start leading-snug font-normal">
+              <Label htmlFor={revealFieldId} className={cn("items-start leading-snug font-normal", additionalTypesAction.available && "cursor-pointer")}>
                 <Checkbox
                   id={revealFieldId}
                   className="mt-0.5"
                   checked={query.showAdditionalTypes}
+                  disabled={!additionalTypesAction.available}
+                  aria-describedby={additionalTypesAction.reason === undefined ? undefined : revealReasonId}
                   onCheckedChange={(checked: boolean) => {
                     // A changed facet starts the list at its first page rather than stranding the
                     // reader on a page the narrower result may not have.
@@ -567,8 +573,13 @@ export function CommitmentList({ scope, locale, dir, initialEnvelope, className 
                 <span className="min-w-0 break-words">{SHOW_ADDITIONAL_TYPES_LABEL}</span>
               </Label>
               <p className="text-xs text-muted-foreground">{SHOW_ADDITIONAL_TYPES_NOTE}</p>
+              {additionalTypesAction.reason === undefined ? null : (
+                <p id={revealReasonId} className="text-xs text-muted-foreground">
+                  {additionalTypesAction.reason}
+                </p>
+              )}
             </div>
-          ) : null}
+          )}
         </CardContent>
       </Card>
       <div className="flex min-w-0 flex-col gap-3">

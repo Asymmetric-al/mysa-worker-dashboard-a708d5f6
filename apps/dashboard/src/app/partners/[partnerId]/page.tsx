@@ -9,7 +9,7 @@ import { reads, type ReadAction, type ReadEnvelope, type ReadResult } from "@/mo
 // Fixed values: the destinations this route offers, and the wording the Partners family already owns
 const ROSTER_HREF = "/partners";
 
-const WORK_HREF = "/work";
+const WORK_PATH = "/work";
 
 const EDIT_SUFFIX = "/edit";
 
@@ -59,6 +59,14 @@ function admitted(actions: readonly ReadAction[], name: string): boolean {
 function partnerHref(partnerId: string, suffix: string): string {
   return `${ROSTER_HREF}/${encodeURIComponent(partnerId)}${suffix}`;
 }
+/**
+ * The address of the Work family's own destination for work about this record. `/work` is that
+ * family's route and this file composes none of it, so the partner travels as an encoded
+ * query-parameter value the Work surface reads — data, never a path segment, and never parsed here.
+ */
+function workHref(partnerId: string): string {
+  return `${WORK_PATH}?partnerId=${encodeURIComponent(partnerId)}`;
+}
 // The record's own destinations
 /** Whether each of the record's admitted actions has a destination on this route. */
 interface RecordActionsProps {
@@ -90,7 +98,7 @@ function RecordActions({ partnerId, contactEditsAdmitted, logInteractionAdmitted
   }
   if (createTaskAdmitted) {
     actions.push(
-      <Link key="create-task" className={actionClass} href={WORK_HREF}>
+      <Link key="create-task" className={actionClass} href={workHref(partnerId)}>
         {PARTNER_ACTION_LABELS.createFollowUpTask}
       </Link>,
     );
@@ -147,7 +155,7 @@ export default async function PartnerDetailPage({ params }: PartnerDetailPagePro
   const privatePreparation = privateNoteAdmitted ? await reads.partners.readPrivatePreparation({ partnerId }) : null;
   const links: PartnerDetailLinks = {
     ...(logInteractionAdmitted ? { logInteraction: partnerHref(partnerId, NEW_INTERACTION_SUFFIX) } : {}),
-    ...(createTaskAdmitted ? { createTask: WORK_HREF } : {}),
+    ...(createTaskAdmitted ? { createTask: workHref(partnerId) } : {}),
     addPreparation: ROSTER_HREF,
   };
   return (

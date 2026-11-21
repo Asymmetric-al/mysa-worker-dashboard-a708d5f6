@@ -256,8 +256,12 @@ async function readJsonBody(response: Response): Promise<unknown> {
   }
 }
 async function fetchGifts(query: GiftsQuery): Promise<GiftsReadResult> {
-  const stated = toGiftsParams(query).toString();
-  const response = await fetch(`${GIFTS_ENDPOINT}?${stated}`, {
+  // The URL carries the list state; this request states only the filter set the read accepts, so the row a
+  // detail surface locates by `giftId` stays in the address bar rather than travelling as a filter the
+  // read does not declare.
+  const requested = toGiftsParams(query);
+  requested.delete(PARAM.giftId);
+  const response = await fetch(`${GIFTS_ENDPOINT}?${requested.toString()}`, {
     method: "GET",
     headers: { accept: "application/json" },
     credentials: "same-origin",

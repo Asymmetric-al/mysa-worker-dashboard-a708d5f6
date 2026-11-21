@@ -53,6 +53,7 @@ import {
   type MediaAssetRecord,
   type MembershipRecord as StoredMembership,
   type NotificationSendResultRecord,
+  type NotificationUnservedRecipientRecord,
   type ReadEnvelope,
   type RecordedValueState,
   type ReleaseReach,
@@ -295,7 +296,14 @@ export interface SendResultRow {
   readonly retry: { readonly available: boolean; readonly reason: string };
   readonly recovery: { readonly intentId: string };
 }
-/** The per-send results of one notification intent. */
+/**
+ * The per-send results of one notification intent: one row per recipient the intent served, and one
+ * entry per eligible recipient it did not. The two lists account for the intent's ceiling, so
+ * `ceilingCount` equals the copies recorded (`counts.accepted + counts.failed + counts.unknown`) plus
+ * `unserved.length` whenever the audience has not changed since the intent was accepted — a ceiling
+ * larger than the rows alone says who the notice did not reach and why, never leaving the difference
+ * unexplained.
+ */
 export interface SendResultView {
   readonly intentId: string;
   readonly releaseId: string;
@@ -306,6 +314,7 @@ export interface SendResultView {
   readonly ceilingCount: number;
   readonly counts: Readonly<Record<SendOutcomeState, number>>;
   readonly rows: readonly SendResultRow[];
+  readonly unserved: readonly NotificationUnservedRecipientRecord[];
   readonly usefulness: {
     readonly state: "within-usefulness" | "past-usefulness";
     readonly deadline: string;
@@ -1714,6 +1723,21 @@ export async function readSendResult(query: SendResultQuery, source?: SessionSou
     }
   }
   const ordered = [...byRecipient.values()].sort((left, right) => compareCodeUnits(left.copy.recipientId, right.copy.recipientId));
+  // One entry per eligible recipient this intent did not serve, published as the send result recorded it
+  // and visible under the same rule as the rows: a reader admitted to the intent sees every recipient, and
+  // anyone else sees only their own accounting. An entry is listed in full rather than paged, because the
+  // intent's ceiling bounds it.
+  const unservedByRecipient = new Map<string, NotificationUnservedRecipientRecord>();
+  for (const entry of results.flatMap((result) => result.unserved)) {
+    if (!admitted && entry.recipientId !== session.principalId) {
+      continue;
+    }
+    if (byRecipient.has(entry.recipientId) || unservedByRecipient.has(entry.recipientId)) {
+      continue;
+    }
+    unservedByRecipient.set(entry.recipientId, entry);
+  }
+  const unserved = [...unservedByRecipient.values()].sort((left, right) => compareCodeUnits(left.recipientId, right.recipientId));
   const intendedAt = instantOf(intent.intendedAt);
   if (intendedAt === undefined) {
     return sourceUnavailableRead("readSendResult", "unreadable-intent-instant");
@@ -1754,6 +1778,7 @@ export async function readSendResult(query: SendResultQuery, source?: SessionSou
     ceilingCount: intent.ceilingCount,
     counts,
     rows: sliceOf(rows, offset, limit),
+    unserved,
     usefulness:
       usefulness.status === "within-usefulness"
         ? {
@@ -1774,7 +1799,7 @@ export async function readSendResult(query: SendResultQuery, source?: SessionSou
       data,
       scope,
       source: { system: "notification-results", reference: intent.intentId },
-      revision: collectionRevision(rows.map((row) => `${row.recipientId}@${row.state}@${row.renditionId}`)),
+      revision: collectionRevision([...rows.map((row) => `${row.recipientId}@${row.state}@${row.renditionId}`), ...unserved.map((entry) => `${entry.recipientId}@${entry.reason}`)]),
       asOf: at.toString(),
       coverage: { from: null, to: at.toString(), state: "complete" },
       valueStates: {
@@ -1782,6 +1807,7 @@ export async function readSendResult(query: SendResultQuery, source?: SessionSou
         "counts.accepted": countState(counts.accepted),
         "counts.failed": countState(counts.failed),
         "counts.unknown": countState(counts.unknown),
+        unserved: countState(unserved.length),
         "page.total": countState(window.total),
         "page.pageCount": countState(window.pageCount),
         "usefulness.remainingMilliseconds": data.usefulness.remainingMilliseconds === null ? "unknown" : countState(data.usefulness.remainingMilliseconds),

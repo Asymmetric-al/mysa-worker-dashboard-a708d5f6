@@ -57,7 +57,7 @@ async function readJsonBody(response: Response): Promise<unknown> {
   }
 }
 // The hook
-/** Submits the gift's thank-you follow-up as `createTask`, answering with one of the eight outcomes — `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable`. */
+/** Submits the gift's thank-you follow-up as `createTask`, answering with one of the eight outcomes — `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable`, `unknown`. */
 export function useFollowUpTask(): FollowUpTaskMutation {
   const queryClient = useQueryClient();
   const attemptRef = useRef<FollowUpAttempt | null>(null);

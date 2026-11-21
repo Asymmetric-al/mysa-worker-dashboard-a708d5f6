@@ -5,6 +5,7 @@
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { isRecord } from "@/lib/guards";
+import { compareCodeUnits } from "@/lib/ordering";
 import { UPDATE_EMAIL_PURPOSE, type MemberChoice, type MembershipRecord as DomainMembership } from "@/modules/audience/membership";
 import { eligibleRecipients, type EligibilityResult, type NotificationIntent as EligibilityIntent } from "@/modules/audience/resolve";
 import { parseDocument, presentationChoiceSchema, type ContentDocumentJson, type ContentSection, type DocumentIssue, type PresentationChoice } from "@/modules/content/document";
@@ -83,6 +84,7 @@ import {
   type NotificationIntentRecord,
   type NotificationRecipientOutcomeRecord,
   type NotificationSendResultRecord,
+  type NotificationUnservedRecipientRecord,
   type ReleaseReach,
   type ReleaseRecord,
   type Scope,
@@ -382,6 +384,14 @@ const UNRESOLVED_TARGET_REVISION = "no-such-record";
 function unresolvedTarget(): CurrentTarget {
   return { kind: "record", revision: UNRESOLVED_TARGET_REVISION, value: null };
 }
+/**
+ * The revision an edition write is compared against. A stored content revision is immutable once
+ * written, so its own `revision` token never advances: comparing it would refuse the envelope every
+ * read of that edition publishes. The revision the reads publish is the edition record's —
+ * `readDraft`'s envelope `revision` and `recordRevision`, `readCandidate`'s, `readRelease`'s and
+ * `readVariantOverview`'s edition `recordRevision` all state it — and it advances with every write to
+ * the edition. So a write compares the edition record's revision, and only a superseded one conflicts.
+ */
 function recordTarget(revision: string, value: unknown): CurrentTarget {
   return { kind: "record", revision, value };
 }
@@ -819,12 +829,8 @@ export async function saveDraft(sessionId: string, input: MutationInput<SaveDraf
     authorize: (session) => editorialDecision(session, input.scope),
     readCurrent: (docs) => {
       const opened = contentStateOrUndefined(docs);
-      if (opened === undefined) {
-        return unresolvedTarget();
-      }
-      const variant = opened.state.contentVariants.find((candidate) => candidate.variantId === input.payload.variantId);
-      const draft = variant === undefined || variant.draftRevisionId === null ? undefined : opened.state.contentRevisions.find((candidate) => candidate.revisionId === variant.draftRevisionId);
-      return draft === undefined ? { kind: "absent" } : recordTarget(draft.revision, draft);
+      const variant = opened?.state.contentVariants.find((candidate) => candidate.variantId === input.payload.variantId);
+      return variant === undefined ? unresolvedTarget() : recordTarget(variant.revision, variant);
     },
     apply: (context) => {
       const opened = openState(context.docs);
@@ -928,8 +934,8 @@ export async function submitForReview(sessionId: string, input: MutationInput<Su
     authorize: (session) => editorialDecision(session, input.scope),
     readCurrent: (docs) => {
       const opened = contentStateOrUndefined(docs);
-      const record = opened?.state.contentRevisions.find((candidate) => candidate.revisionId === input.payload.revisionId);
-      return record === undefined ? unresolvedTarget() : recordTarget(record.revision, record);
+      const variant = opened?.state.contentVariants.find((candidate) => candidate.variantId === input.payload.variantId);
+      return variant === undefined ? unresolvedTarget() : recordTarget(variant.revision, variant);
     },
     apply: (context) => {
       const opened = openState(context.docs);
@@ -1015,7 +1021,8 @@ async function answerReview(input: {
     readCurrent: (docs) => {
       const opened = contentStateOrUndefined(docs);
       const record = opened?.state.contentRevisions.find((candidate) => candidate.revisionId === input.mutation.payload.candidateId);
-      return record === undefined ? unresolvedTarget() : recordTarget(record.revision, record);
+      const variant = record === undefined ? undefined : opened?.state.contentVariants.find((candidate) => candidate.variantId === record.variantId);
+      return variant === undefined ? unresolvedTarget() : recordTarget(variant.revision, variant);
     },
     apply: (context) => {
       const opened = openState(context.docs);
@@ -1437,23 +1444,38 @@ function publisherOf(state: ContentMutationState): string | undefined {
   const publishers = [...new Set(state.memberships.filter((membership) => membership.purpose === UPDATE_EMAIL_PURPOSE).map((membership) => membership.publisherId))].sort();
   return publishers.length === 1 ? publishers[0] : undefined;
 }
+/** The recorded copy that already covers one recipient: the earlier intent it came from and the rendition it pinned. */
+interface CoveringCopy {
+  readonly intentId: string;
+  readonly renditionId: string;
+}
 /**
- * Whether this recipient already holds a copy of this Update. A person eligible for two audiences or
- * two languages of one publication receives one copy, so a second edition of the same document issues
- * them none. The guard is scoped to this publisher's intents for this document — a different Update is
- * a different publication, and suppressing its copy would leave a second Update reaching nobody — and
- * only accepted or possibly accepted work counts, because a failed copy may still be attempted again.
+ * The copy this recipient already holds of this Update, and which recorded intent it came from. A person
+ * eligible for two audiences or two languages of one publication receives one copy, so a second edition of
+ * the same document issues them none. The guard is scoped to this publisher's intents for this document — a
+ * different Update is a different publication, and suppressing its copy would leave a second Update reaching
+ * nobody — and only accepted or possibly accepted work counts, because a failed copy may still be attempted
+ * again. Where several earlier intents cover the person, the earliest by intent id is the one named, so the
+ * account a reader reconciles is the same on every read.
  */
-function alreadyCoveredOnDocument(state: ContentMutationState, publisherId: string, documentId: string, recipientId: string): boolean {
+function alreadyCoveredOnDocument(state: ContentMutationState, publisherId: string, documentId: string, recipientId: string): CoveringCopy | undefined {
   const intents = new Set(
     state.notificationIntents.filter((intent) => intent.publisherId === publisherId && intent.purpose === UPDATE_EMAIL_PURPOSE && intent.documentId === documentId).map((intent) => intent.intentId),
   );
-  return state.notificationResults.some((result) => {
+  const covers: CoveringCopy[] = [];
+  for (const result of state.notificationResults) {
     if (!intents.has(result.intentId)) {
-      return false;
+      continue;
     }
-    return result.recipients.some((copy) => copy.recipientId === recipientId && (copy.state === "accepted" || copy.state === "unknown"));
-  });
+    for (const copy of result.recipients) {
+      if (copy.recipientId !== recipientId || (copy.state !== "accepted" && copy.state !== "unknown")) {
+        continue;
+      }
+      covers.push({ intentId: result.intentId, renditionId: copy.renditionId });
+    }
+  }
+  covers.sort((left, right) => compareCodeUnits(left.intentId, right.intentId) || compareCodeUnits(left.renditionId, right.renditionId));
+  return covers[0];
 }
 /** Submits one immediate notice for one published edition of this publisher's Update email. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function requestNotification(sessionId: string, input: MutationInput<RequestNotificationPayload>): Promise<MutationOutcome> {
@@ -1527,13 +1549,24 @@ export async function requestNotification(sessionId: string, input: MutationInpu
         },
       ];
       const copies: NotificationRecipientOutcomeRecord[] = [];
+      const unserved: NotificationUnservedRecipientRecord[] = [];
       const recipients: { recipientId: string; dedupeKey: string }[] = [];
       let unconfirmed = 0;
       let alreadyCovered = 0;
       let link = `/preview/${encodeURIComponent(document.documentId)}`;
+      // Every eligible recipient this intent does not serve is recorded as unserved, with the fact that
+      // accounts for them, so the ceiling below reconciles with the record: one copy for each recipient
+      // served, one entry for each one not.
       for (const recipient of eligibility.eligible) {
-        if (alreadyCoveredOnDocument(state, publisherId, document.documentId, recipient.recipientId)) {
+        const covering = alreadyCoveredOnDocument(state, publisherId, document.documentId, recipient.recipientId);
+        if (covering !== undefined) {
           alreadyCovered += 1;
+          unserved.push({
+            recipientId: recipient.recipientId,
+            reason: "already-covered",
+            coveredByIntentId: covering.intentId,
+            coveredByRenditionId: covering.renditionId,
+          });
           continue;
         }
         const admitted: NoticeRecipient = {
@@ -1544,6 +1577,7 @@ export async function requestNotification(sessionId: string, input: MutationInpu
         const pinned = resolveRendition({ recipient: admitted, candidates, siteDefaultLocale: "" });
         if (pinned.status !== "pinned") {
           unconfirmed += 1;
+          unserved.push({ recipientId: recipient.recipientId, reason: "no-eligible-rendition", renditionRefusal: pinned.reason });
           continue;
         }
         // The message is constructed here, at submission time, so what would be submitted is the
@@ -1566,9 +1600,9 @@ export async function requestNotification(sessionId: string, input: MutationInpu
         });
         recipients.push({ recipientId: recipient.recipientId, dedupeKey: recipient.dedupeKey });
       }
-      // The covered count is the audience this intent was accepted for, which is who the copies above
-      // were offered to — never the smaller number the caller acknowledged, so the record agrees with
-      // what was issued and a later signup can never expand it (`NotificationIntentRecord` in envelope.ts).
+      // The covered count is the audience this intent was accepted for — who the loop above served or
+      // recorded as unserved — never the smaller number the caller acknowledged, so the record agrees
+      // with the ceiling and a later signup can never expand it (`NotificationIntentRecord` in envelope.ts).
       const ceilingCount = eligibility.eligible.length;
       const intent: NotificationIntentRecord = {
         intentId,
@@ -1584,6 +1618,7 @@ export async function requestNotification(sessionId: string, input: MutationInpu
         sendResultId: newRecordId("send-result"),
         intentId,
         recipients: copies,
+        unserved,
         recordedAt: at.toString(),
         revision: INITIAL_REVISION_TOKEN,
       };
@@ -1891,7 +1926,8 @@ export async function restoreRevisionAsDraft(sessionId: string, input: MutationI
     readCurrent: (docs) => {
       const opened = contentStateOrUndefined(docs);
       const record = opened?.state.contentRevisions.find((candidate) => candidate.revisionId === input.payload.revisionId);
-      return record === undefined ? unresolvedTarget() : recordTarget(record.revision, record);
+      const variant = record === undefined ? undefined : opened?.state.contentVariants.find((candidate) => candidate.variantId === record.variantId);
+      return variant === undefined ? unresolvedTarget() : recordTarget(variant.revision, variant);
     },
     apply: (context) => {
       const opened = openState(context.docs);
@@ -2080,15 +2116,11 @@ async function editDraftSections<P extends { readonly draftRevisionId?: string; 
     authorize: (session) => editorialDecision(session, input.mutation.scope),
     readCurrent: (docs) => {
       const opened = contentStateOrUndefined(docs);
-      if (opened === undefined) {
-        return unresolvedTarget();
-      }
       const payload = input.mutation.payload;
-      const variant =
-        payload.draftRevisionId === undefined && payload.variantId !== undefined ? opened.state.contentVariants.find((candidate) => candidate.variantId === payload.variantId) : undefined;
-      const revisionId = payload.draftRevisionId ?? variant?.draftRevisionId ?? undefined;
-      const record = revisionId === undefined ? undefined : opened.state.contentRevisions.find((candidate) => candidate.revisionId === revisionId);
-      return record === undefined ? unresolvedTarget() : recordTarget(record.revision, record);
+      const variantId =
+        payload.variantId ?? opened?.state.contentRevisions.find((candidate) => candidate.revisionId === payload.draftRevisionId)?.variantId;
+      const variant = variantId === undefined ? undefined : opened?.state.contentVariants.find((candidate) => candidate.variantId === variantId);
+      return variant === undefined ? unresolvedTarget() : recordTarget(variant.revision, variant);
     },
     apply: (context) => {
       const opened = openState(context.docs);
@@ -2721,15 +2753,11 @@ export async function replacePlacement(sessionId: string, input: MutationInput<P
     authorize: (session) => editorialDecision(session, input.scope),
     readCurrent: (docs) => {
       const opened = contentStateOrUndefined(docs);
-      if (opened === undefined) {
-        return unresolvedTarget();
-      }
       const payload = input.payload;
-      const variant =
-        payload.draftRevisionId === undefined && payload.variantId !== undefined ? opened.state.contentVariants.find((candidate) => candidate.variantId === payload.variantId) : undefined;
-      const revisionId = payload.draftRevisionId ?? variant?.draftRevisionId ?? undefined;
-      const record = revisionId === undefined ? undefined : opened.state.contentRevisions.find((candidate) => candidate.revisionId === revisionId);
-      return record === undefined ? unresolvedTarget() : recordTarget(record.revision, record);
+      const variantId =
+        payload.variantId ?? opened?.state.contentRevisions.find((candidate) => candidate.revisionId === payload.draftRevisionId)?.variantId;
+      const variant = variantId === undefined ? undefined : opened?.state.contentVariants.find((candidate) => candidate.variantId === variantId);
+      return variant === undefined ? unresolvedTarget() : recordTarget(variant.revision, variant);
     },
     apply: (context) => {
       const opened = openState(context.docs);
@@ -2794,15 +2822,11 @@ export async function removePlacement(sessionId: string, input: MutationInput<Pl
     authorize: (session) => editorialDecision(session, input.scope),
     readCurrent: (docs) => {
       const opened = contentStateOrUndefined(docs);
-      if (opened === undefined) {
-        return unresolvedTarget();
-      }
       const payload = input.payload;
-      const variant =
-        payload.draftRevisionId === undefined && payload.variantId !== undefined ? opened.state.contentVariants.find((candidate) => candidate.variantId === payload.variantId) : undefined;
-      const revisionId = payload.draftRevisionId ?? variant?.draftRevisionId ?? undefined;
-      const record = revisionId === undefined ? undefined : opened.state.contentRevisions.find((candidate) => candidate.revisionId === revisionId);
-      return record === undefined ? unresolvedTarget() : recordTarget(record.revision, record);
+      const variantId =
+        payload.variantId ?? opened?.state.contentRevisions.find((candidate) => candidate.revisionId === payload.draftRevisionId)?.variantId;
+      const variant = variantId === undefined ? undefined : opened?.state.contentVariants.find((candidate) => candidate.variantId === variantId);
+      return variant === undefined ? unresolvedTarget() : recordTarget(variant.revision, variant);
     },
     apply: (context) => {
       const opened = openState(context.docs);

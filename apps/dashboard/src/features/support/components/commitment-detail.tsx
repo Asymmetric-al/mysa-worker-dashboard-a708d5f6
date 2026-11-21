@@ -142,6 +142,10 @@ function valueStateAt(valueStates: Readonly<Record<string, ValueState>>, path: s
 function fixedTotalStatePath(commitmentId: string, field: FixedTotalField): string {
   return `commitments.${commitmentId}.fixedTotal.${field}`;
 }
+/** The path the commitments read records one commitment's per-occurrence amount's state under. */
+function perOccurrenceStatePath(commitmentId: string): string {
+  return `commitments.${commitmentId}.perOccurrence`;
+}
 function integerText(value: number, locale: string): string {
   try {
     return new Intl.NumberFormat(locale).format(value);
@@ -271,9 +275,10 @@ function CommitmentDetailSkeleton({ dir, className }: { readonly dir?: "ltr" | "
 // The record's own facts: what it is, where it stands, and the dates the source reports
 interface OverviewCardProps {
   readonly row: CommitmentRowFigure;
+  readonly valueStates: Readonly<Record<string, ValueState>>;
   readonly locale: string;
 }
-function OverviewCard({ row, locale }: OverviewCardProps): ReactElement {
+function OverviewCard({ row, valueStates, locale }: OverviewCardProps): ReactElement {
   const pause = pauseReadingOf(row.pause);
   return (
     <section aria-labelledby={OVERVIEW_HEADING_ID} className="min-w-0">
@@ -306,7 +311,7 @@ function OverviewCard({ row, locale }: OverviewCardProps): ReactElement {
           <dl className="flex min-w-0 flex-col gap-1">
             <dt className="text-sm font-medium text-muted-foreground">{LABELS.perOccurrence}</dt>
             <dd className="min-w-0">
-              <AmountValue money={row.perOccurrence} valueState={row.perOccurrenceState} locale={locale} emphasis="headline" />
+              <AmountValue money={row.perOccurrence} valueState={valueStateAt(valueStates, perOccurrenceStatePath(row.commitmentRowId))} locale={locale} emphasis="headline" />
             </dd>
           </dl>
           <p className="text-sm text-pretty text-muted-foreground">{NOT_CASH_STATEMENT}</p>
@@ -505,7 +510,7 @@ function EnvelopeBody({ envelope, commitmentId, locale, returnHref }: EnvelopeBo
   }
   return (
     <>
-      <OverviewCard row={row} locale={locale} />
+      <OverviewCard row={row} valueStates={envelope.valueStates} locale={locale} />
       {row.fixedTotal === null ? null : <FixedTotalCard commitmentId={row.commitmentRowId} fixedTotal={row.fixedTotal} valueStates={envelope.valueStates} locale={locale} />}
       <OutcomeHistoryCard buckets={buckets} total={total} current={row.bucket} locale={locale} />
       <ProvenanceCard envelope={envelope} row={row} locale={locale} />

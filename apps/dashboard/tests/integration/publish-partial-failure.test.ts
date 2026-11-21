@@ -171,22 +171,17 @@ async function releaseView(variantId: string, releaseId?: string) {
   return result.envelope;
 }
 /**
- * The revision token a stored revision record stands at. Every mutation that acts on a revision
- * compares the caller's `expectedRevision` against the record it is about to change, so the token is
- * read from that record rather than assumed; a first-time draft has no record to compare against and
- * needs none.
+ * The revision the draft read publishes, which is the `expectedRevision` a save from that view
+ * presents. It is taken from the envelope the read returns rather than from the session's stored
+ * records, so the envelope-to-mutation contract is what this suite proves: a read that advertised a
+ * revision the write refuses fails here instead of passing unnoticed.
  */
-async function storedRevisionToken(revisionId: string): Promise<string> {
-  const state = await storedState();
-  const record = state.contentRevisions.find((candidate) => candidate.revisionId === revisionId);
-  if (record === undefined) {
-    throw new Error(`The session's stored content holds no revision ${JSON.stringify(revisionId)}, so a change to it cannot be prepared.`);
+async function draftEnvelopeRevision(variantId: string): Promise<string> {
+  const result = await reads.updates.readDraft({ variantId, session: SESSION });
+  if (result.kind !== "envelope") {
+    throw new Error(`The draft of ${variantId} answered an envelope of kind "${result.kind}" rather than the draft itself.`);
   }
-  return record.revision;
-}
-/** The revision a draft save must present: the working revision's own token, or the edition's when it holds no draft yet. */
-async function draftSaveExpectation(edition: { readonly draftRevisionId: string | null; readonly recordRevision: string }): Promise<string> {
-  return edition.draftRevisionId === null ? edition.recordRevision : storedRevisionToken(edition.draftRevisionId);
+  return result.envelope.revision;
 }
 /** The accepted change, or a failure that names the outcome the service actually answered. */
 function acceptedOutcome(outcome: MutationOutcome): Extract<MutationOutcome, { outcome: "accepted" }> {
@@ -206,12 +201,11 @@ function createdId(outcome: Extract<MutationOutcome, { outcome: "accepted" }>, w
 // The named mutations this suite drives, and nothing else
 /** Writes one edition's working draft, then freezes it as the single candidate under review. */
 async function saveDraftAndSubmit(variantId: string, prose: readonly string[], direction: "ltr" | "rtl" = "ltr"): Promise<{ readonly draftRevisionId: string; readonly candidateId: string }> {
-  const edition = await editionView(variantId);
   const saved = acceptedOutcome(
     await mutations.updates.saveDraft(SESSION_ID, {
       operationId: newOperationId(),
       scope: scope(),
-      expectedRevision: await draftSaveExpectation(edition),
+      expectedRevision: await draftEnvelopeRevision(variantId),
       payload: { variantId, body: documentBody(prose, direction) },
     }),
   );
@@ -220,19 +214,20 @@ async function saveDraftAndSubmit(variantId: string, prose: readonly string[], d
     await mutations.updates.submitForReview(SESSION_ID, {
       operationId: newOperationId(),
       scope: scope(),
-      expectedRevision: await storedRevisionToken(draftRevisionId),
+      expectedRevision: await draftEnvelopeRevision(variantId),
       payload: { variantId, revisionId: draftRevisionId, notifyMode: PUBLISH_ONLY },
     }),
   );
   return { draftRevisionId, candidateId: createdId(submitted, "submission") };
 }
 /** Answers one frozen candidate, which is the review's whole and only step. */
-async function answerReviewAsApproved(candidateId: string): Promise<void> {
+async function answerReviewAsApproved(variantId: string, candidateId: string): Promise<void> {
+  const candidate = await candidateView(variantId);
   acceptedOutcome(
     await mutations.updates.approveCandidate(SESSION_ID, {
       operationId: newOperationId(),
       scope: scope(),
-      expectedRevision: await storedRevisionToken(candidateId),
+      expectedRevision: candidate.revision,
       payload: { candidateId },
     }),
   );
@@ -246,7 +241,7 @@ interface ApprovedEdition {
 /** The three writes criterion 9 names — save, submit, approve — made through the named mutations and nothing else. */
 async function draftSubmitAndApprove(variantId: string, prose: readonly string[], direction: "ltr" | "rtl" = "ltr"): Promise<ApprovedEdition> {
   const written = await saveDraftAndSubmit(variantId, prose, direction);
-  await answerReviewAsApproved(written.candidateId);
+  await answerReviewAsApproved(variantId, written.candidateId);
   const candidate = await candidateView(variantId);
   if (candidate.data.status !== "reviewable") {
     throw new Error(`The approved edition ${JSON.stringify(variantId)} holds no readable candidate, so the review step did not complete.`);
@@ -417,7 +412,7 @@ describe("publishing one submission whose editions do not share a fate", () => {
       throw new Error("The seeded Arabic edition must hold a frozen candidate for this case to start from it.");
     }
     expect(seededCandidate.data.review.decision).toBeNull();
-    await answerReviewAsApproved(seededCandidate.data.candidate.candidateId);
+    await answerReviewAsApproved(PUBLIC_AR_EDITION, seededCandidate.data.candidate.candidateId);
     const firstPublication = acceptedOutcome(await mutations.updates.publishVariants(SESSION_ID, await publicationInput([{ variantId: PUBLIC_AR_EDITION }])));
     expect(firstPublication.items?.[0]?.state).toBe("released");
     const before = await editionView(PUBLIC_AR_EDITION);
@@ -511,7 +506,7 @@ describe("publishing one submission whose editions do not share a fate", () => {
       await mutations.updates.saveDraft(SESSION_ID, {
         operationId: newOperationId(),
         scope: scope(),
-        expectedRevision: await draftSaveExpectation(beforeEdit),
+        expectedRevision: await draftEnvelopeRevision(PUBLIC_EN_EDITION),
         payload: { variantId: PUBLIC_EN_EDITION, body: documentBody(LATER_PROSE) },
       }),
     );
@@ -565,7 +560,7 @@ describe("publishing one submission whose editions do not share a fate", () => {
     const secondAnswer = await mutations.updates.approveCandidate(SESSION_ID, {
       operationId: newOperationId(),
       scope: scope(),
-      expectedRevision: await storedRevisionToken(approved.candidateId),
+      expectedRevision: (await candidateView(PUBLIC_EN_EDITION)).revision,
       payload: { candidateId: approved.candidateId },
     });
     // The revision presented is the candidate record's own immutable token, which a review never advances, so this answer is the no-op the contract names `unchanged` and never a conflict.
@@ -574,7 +569,7 @@ describe("publishing one submission whose editions do not share a fate", () => {
     const resubmission = await mutations.updates.submitForReview(SESSION_ID, {
       operationId: newOperationId(),
       scope: scope(),
-      expectedRevision: await storedRevisionToken(approved.candidateId),
+      expectedRevision: await draftEnvelopeRevision(PUBLIC_EN_EDITION),
       payload: { variantId: PUBLIC_EN_EDITION, revisionId: approved.draftRevisionId },
     });
     expect(resubmission.outcome).toBe("invalid");
@@ -592,5 +587,64 @@ describe("publishing one submission whose editions do not share a fate", () => {
     const state = await storedState();
     expect(state.releases.filter((release) => release.variantId === PUBLIC_EN_EDITION)).toHaveLength(2);
     expect(state.releases.filter((release) => release.revisionId === approved.candidateId)).toHaveLength(1);
+  });
+});
+
+describe("the revision a draft read publishes", () => {
+  it("accepts a save presenting it and conflicts on the superseded one, keeping the caller's input", async () => {
+    const matrix = await variantMatrix();
+    const published = matrix.data.editions.find((edition) => edition.variantId === PUBLIC_EN_EDITION);
+    if (published === undefined) {
+      throw new Error(`The variant matrix of ${DOCUMENT_ID} holds no edition ${JSON.stringify(PUBLIC_EN_EDITION)}.`);
+    }
+    // The draft read publishes the edition record's revision, and the matrix states the same token.
+    const envelopeRevision = await draftEnvelopeRevision(PUBLIC_EN_EDITION);
+    expect(envelopeRevision).toBe(published.recordRevision);
+    const firstBody = documentBody(["Autumn at Harbour Youth", "A save presenting the revision the read published."]);
+    const saved = acceptedOutcome(
+      await mutations.updates.saveDraft(SESSION_ID, {
+        operationId: newOperationId(),
+        scope: scope(),
+        expectedRevision: envelopeRevision,
+        payload: { variantId: PUBLIC_EN_EDITION, body: firstBody },
+      }),
+    );
+    // The save moved the edition's own revision, and the next read publishes the moved one.
+    expect(saved.revision).not.toBe(envelopeRevision);
+    const advanced = await draftEnvelopeRevision(PUBLIC_EN_EDITION);
+    expect(advanced).toBe(saved.revision);
+    // The revision the first read published is superseded, so a save presenting it is a conflict that
+    // states the current revision and hands back the payload it refused to apply.
+    const supersededBody = documentBody(LATER_PROSE);
+    const refused = await mutations.updates.saveDraft(SESSION_ID, {
+      operationId: newOperationId(),
+      scope: scope(),
+      expectedRevision: envelopeRevision,
+      payload: { variantId: PUBLIC_EN_EDITION, body: supersededBody },
+    });
+    expect(refused.outcome).toBe("conflict");
+    if (refused.outcome !== "conflict") {
+      throw new Error(`A save on a superseded revision must be a conflict, and the service answered ${describeOutcome(refused)}.`);
+    }
+    expect(refused.reason).toBe("stale-revision");
+    expect(refused.currentRevision).toBe(advanced);
+    expect(refused.preservedInput).toEqual({ variantId: PUBLIC_EN_EDITION, body: supersededBody });
+    // Nothing was applied: the edition still points at the revision the accepted save wrote.
+    const firstRevisionId = createdId(saved, "draft save");
+    expect((await editionView(PUBLIC_EN_EDITION)).draftRevisionId).toBe(firstRevisionId);
+    // A second save presenting the revision the read now publishes is accepted, which is the sequence
+    // the envelope contract exists for: no save is refused the revision its own read advertised.
+    const second = acceptedOutcome(
+      await mutations.updates.saveDraft(SESSION_ID, {
+        operationId: newOperationId(),
+        scope: scope(),
+        expectedRevision: advanced,
+        payload: { variantId: PUBLIC_EN_EDITION, body: documentBody(["Autumn at Harbour Youth", "A second save, on the revision the read now publishes."]) },
+      }),
+    );
+    expect(second.revision).not.toBe(advanced);
+    const secondRevisionId = createdId(second, "second save");
+    expect((await editionView(PUBLIC_EN_EDITION)).draftRevisionId).toBe(secondRevisionId);
+    expect(await draftEnvelopeRevision(PUBLIC_EN_EDITION)).toBe(second.revision);
   });
 });

@@ -16,6 +16,7 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
+import { assertNever } from "@/lib/result";
 import type { MutationInput, ReadEnvelope, Scope, ValueState } from "@/modules/data-service/envelope";
 import { ROOT_FIELD_KEY, type MutationOutcome } from "@/modules/data-service/outcome";
 import { exponentOf, UNKNOWN_CURRENCY } from "@/modules/money/currency";
@@ -83,16 +84,6 @@ const FORM_FIELD_ORDER = ["amount", "effectiveFrom", "currency", "measure"] as c
 
 const CIVIL_DAY_NOTE = "a calendar day, with no time of day and no zone behind it";
 
-/** The status a denied read answers with; a denial is never presented as an outage. */
-const DENIED_STATUS = /\bstatus 403\b/u;
-
-/** Whether a failed goal read was a denial or an outage, from the only evidence this layer holds. */
-function failureKindOf(error: Error): "denied" | "unavailable" {
-  // The hook reports a non-OK transport answer through the message it throws, so the status a denial
-  // carries is read from there. Presenting a denial as an outage would invite a retry that cannot
-  // help, and presenting an outage as a denial would claim an authority question nobody asked.
-  return DENIED_STATUS.test(error.message) ? "denied" : "unavailable";
-}
 /**
  * The envelope this panel renders, when the caller forwarded the goal read's own envelope.
  *
@@ -407,23 +398,17 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
 /** The single goal surface: what the goal is, how far it has been met, and — only where the read permits it — the change. */
 export function GoalPanel({ scope, locale, dir, initialEnvelope, className }: GoalPanelProps): ReactElement {
   const titleId = useId();
-  const envelope = useMemo(() => goalEnvelopeOf(initialEnvelope), [initialEnvelope]);
-  const query = useGoal({ scope, initialEnvelope: envelope });
+  const seed = useMemo(() => goalEnvelopeOf(initialEnvelope), [initialEnvelope]);
+  const query = useGoal({ scope, initialEnvelope: seed });
   const [editing, setEditing] = useState(false);
   if (query.isPending) {
     return <StateNotice kind="loading" title="Reading the support goal" headingLevel={3} className={className} />;
   }
   if (query.isError) {
-    const failure = failureKindOf(query.error);
-    return failure === "denied" ? (
-      <StateNotice
-        kind="denied"
-        title="The support goal is not readable in this context"
-        description="The goal, its amount and its progress are read under the selected context, and this session holds no authority for it."
-        headingLevel={3}
-        className={className}
-      />
-    ) : (
+    // A read that never answered, or answered in a form none of the three arms describes, is the one
+    // failure the arm switch cannot state: it is reported as the outage it is, with the retry that
+    // re-requests it, and no status is read back out of the error to guess at another arm.
+    return (
       <StateNotice
         kind="unavailable"
         title="The support goal could not be read"
@@ -439,7 +424,47 @@ export function GoalPanel({ scope, locale, dir, initialEnvelope, className }: Go
       />
     );
   }
-  const { data, actions } = query.data;
+  const result = query.data;
+  if (result.kind === "denied") {
+    // A refusal is stated as a refusal: the arm's own reason code, and no amount, count or title
+    // beside it, because the answer is the same whether or not a goal exists in this context.
+    return (
+      <StateNotice
+        kind="denied"
+        title="The support goal is not readable in this context"
+        description="The goal, its amount and its progress are read under the selected context, and this session holds no authority for it."
+        reasonCode={result.denied.reasonCode}
+        headingLevel={3}
+        className={className}
+      />
+    );
+  }
+  if (result.kind === "unavailable") {
+    // The source's own identity and retry guidance, never an outage worded over the arm that carries it.
+    return (
+      <StateNotice
+        kind="unavailable"
+        title="The support goal could not be read"
+        description={result.unavailable.guidance}
+        source={result.unavailable.source}
+        retry={{
+          label: "Read the goal again",
+          onClick: async () => {
+            await query.refetch();
+          },
+        }}
+        headingLevel={3}
+        className={className}
+      />
+    );
+  }
+  if (result.kind !== "envelope") {
+    // A fourth arm added to the goal read's contract fails compilation here rather than rendering as a
+    // goal, so no unstated arm can ever fall through to the amount and the progress below.
+    return assertNever(result, "The goal read answered with an arm this panel does not render.");
+  }
+  const envelope = result.envelope;
+  const { data, actions } = envelope;
   const goal = data.goal;
   const measureLabel = MEASURE_LABELS[data.measure];
   const editAction = actions.find((action) => action.name === GOAL_CAPABILITY);
@@ -469,7 +494,7 @@ export function GoalPanel({ scope, locale, dir, initialEnvelope, className }: Go
               <p className="text-sm text-pretty text-muted-foreground">{EMPTY_STATES.goal.body}</p>
             </div>
           ) : (
-            <GoalFacts goal={goal} locale={locale} measureLabel={measureLabel} valueState={goalAmountStateOf(query.data)} />
+            <GoalFacts goal={goal} locale={locale} measureLabel={measureLabel} valueState={goalAmountStateOf(envelope)} />
           )}
           <div className="flex min-w-0 flex-col gap-2">
             <h3 className="text-sm font-medium">Progress</h3>
@@ -485,10 +510,10 @@ export function GoalPanel({ scope, locale, dir, initialEnvelope, className }: Go
           </div>
           <SnapshotStatement
             basis={SUPPORT_BASIS}
-            currencies={[goal === null ? query.data.coverage.currency : goal.amount.currency]}
+            currencies={[goal === null ? envelope.coverage.currency : goal.amount.currency]}
             period={{ from: data.period.from, to: data.period.to }}
-            coverage={query.data.coverage}
-            asOf={query.data.asOf}
+            coverage={envelope.coverage}
+            asOf={envelope.asOf}
             isCurrentPeriod={data.period.state === "in-progress"}
             locale={locale}
           />
@@ -497,7 +522,7 @@ export function GoalPanel({ scope, locale, dir, initialEnvelope, className }: Go
             <>
               <Separator />
               <GoalForm
-                envelope={query.data}
+                envelope={envelope}
                 locale={locale}
                 onClose={() => {
                   setEditing(false);

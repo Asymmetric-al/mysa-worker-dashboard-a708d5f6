@@ -148,7 +148,7 @@ Four configuration decisions belong beside these. `react/set-state-in-effect` is
 
 A third decision is scoped to `src/components/scroll-region.tsx`: `jsx-a11y/no-noninteractive-tabindex` admits a focusable `section` in that one file. WCAG 2.2 2.1.1 Keyboard requires the application's single horizontally scrollable region to take focus, so keyboard users can scroll it with the arrow keys, and the rule otherwise refuses `tabIndex` on the `section` that carries the region landmark. The rule stays at error in every other file.
 
-A fourth decision is the formatter's line width. `.oxfmtrc.json` sets `printWidth` to 200 rather than Oxfmt 0.79.0's 100 default, and the tracked tree is written to 200 rather than to the default: `bunx oxfmt --check .` reports 20 of 452 files non-canonical at 200 and 407 of 452 at 100 — the exact count moves as the tree does, and the proportion does not. No gate checks format — `bun run format` writes in place and no task runs `oxfmt --check` — so the width is a stated choice about the tree's canonical form rather than an enforced one.
+A fourth decision is the formatter's line width. `.oxfmtrc.json` sets `printWidth` to 200 rather than Oxfmt 0.79.0's 100 default, and the tracked tree is written to 200 rather than to the default: `bunx oxfmt --check .` reports 21 of 452 files non-canonical at 200 and 407 of 452 at 100 — the exact count moves as the tree does, and the proportion does not. No gate checks format — `bun run format` writes in place and no task runs `oxfmt --check` — so the width is a stated choice about the tree's canonical form rather than an enforced one.
 
 ## Measured workload and performance
 

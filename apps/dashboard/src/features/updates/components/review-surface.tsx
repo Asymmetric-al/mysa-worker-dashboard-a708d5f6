@@ -51,6 +51,13 @@ export interface UpdateReviewSurfaceProps {
   readonly policyRequiresReview: boolean;
   /** Whether the author's submission asked for notices as well as a release. */
   readonly notifyRequestedByAuthor: boolean;
+  /**
+   * The level the shared panel's title takes on the page composing it.
+   *
+   * This route states no title of its own — the panel is the screen's heading — so it asks for level 1
+   * and the panel steps its own sections down from there.
+   */
+  readonly headingLevel: 1 | 2 | 3;
 }
 /**
  * One named review mutation, as `POST /api/review` dispatches it on `payload.operation`.
@@ -129,23 +136,22 @@ export function UpdateReviewSurface({
   expectedRevision,
   policyRequiresReview,
   notifyRequestedByAuthor,
+  headingLevel,
 }: UpdateReviewSurfaceProps): ReactElement {
   const [onScreenVariantId, setOnScreenVariantId] = useState(activeVariantId);
   const router = useRouter();
   const decide = useCallback(
     async (input: MutationInput<ReviewDecisionPayload>): Promise<MutationOutcome> => {
       const outcome = await postReviewAnswer(input, candidateId);
-      // An approval that resolved changes what the read states about this candidate — the decision on
-      // record, the release actions that open and the edition's own lifecycle word — so the page re-reads
-      // it through the router rather than this surface guessing the new state. Approval is the one answer
-      // that leaves the frozen candidate in place, which is why the route can resolve it again.
-      //
-      // A request for changes and a rejection clear the edition's candidate, so the identity this route
-      // was opened on no longer resolves: re-reading would replace the accepted outcome and its recovery
-      // with the read's own refusal. Those two therefore leave the result in place, on the receipt this
-      // step holds. A refusal or an unconfirmed attempt changed nothing to re-read either.
+      // Every answer that resolved changes what the read states about this candidate — the decision on
+      // record with the principal and instant that gave it, the release actions that open, and the
+      // edition's own lifecycle word — so the page re-reads it through the router rather than this
+      // surface guessing the new state. The read resolves an answered candidate through that
+      // candidate's own review record, so the identity this route was opened on still resolves after a
+      // requested change or a rejection: the answer re-reads as the decision on record, never as a
+      // refusal. A refusal or an unconfirmed attempt changed nothing to re-read.
       const resolved = outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged";
-      if (resolved && input.payload.decision === "approved") {
+      if (resolved) {
         router.refresh();
       }
       return outcome;
@@ -163,6 +169,7 @@ export function UpdateReviewSurface({
       scope={scope}
       expectedRevision={expectedRevision}
       onDecide={decide}
+      headingLevel={headingLevel}
     />
   );
 }
