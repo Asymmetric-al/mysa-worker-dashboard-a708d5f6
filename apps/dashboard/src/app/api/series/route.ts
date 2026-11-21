@@ -86,8 +86,9 @@ const unfinishedWorkSchema = z.enum(UNFINISHED_WORK_VALUES, { error: MESSAGES.un
 const planResolutionSchema = z.enum(PLAN_RESOLUTION_VALUES, { error: MESSAGES.resolutionRequired });
 
 // A series ends on a date, after a count, or — only under the qualified ongoing-personal-series
-// policy — not at all. There is no fourth end, and the choice is judged here so an ambiguous or absent
-// end never reaches a rule the service would have to guess at.
+// policy — not at all. There is no fourth end, and a stated end is judged here so only a well-formed
+// one reaches the service. Whether a create states an end at all is the service's rule: it refuses a
+// body naming neither `end` nor `ongoingPolicy` as `endRequired`.
 const seriesEndSchema = z.discriminatedUnion(
   "kind",
   [

@@ -6,12 +6,13 @@
 import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { isOutcome, mutationInputSchema, mutations, outcomeFromError, toResponse, type MutationOutcome } from "@/modules/data-service";
+/** The store behind the service writes its documents through `node:fs`, so this handler runs on the Node runtime and never on the edge runtime. */
+export const runtime = "nodejs";
 /** The change resolves the development session and reads the scenario instant once per request, so no answer this route produces may be cached. */
 export const dynamic = "force-dynamic";
 // `POST` is the only method this module defines, and that absence is the safeguard: a link preview, a
 // mail scanner or a plain page load cannot consume a cycle, because Next answers every other method
-// with 405 for the route it never exported. The Node.js runtime Next uses by default is what the
-// store's file access needs, so no override is declared here either.
+// with 405 for the route it never exported.
 
 const MESSAGES = {
   referralRequired: "This change is missing the referral it belongs to, so reload the referral and try again.",

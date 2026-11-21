@@ -16,9 +16,9 @@
  * ledger entry, advances no revision, and implies no consent, subscription or delivery. A read of a result is
  * not the acceptance of a row.
  */
+import { ZodError } from "zod";
 import { isNonEmptyString } from "@/lib/guards";
 import { isReadResult, outcomeFromError, reads, toResponse } from "@/modules/data-service";
-import { invalid } from "@/modules/data-service/outcome";
 /** The store behind the service reads session documents through `node:fs`, so this handler never runs on the edge runtime. */
 export const runtime = "nodejs";
 /** Each request re-resolves the session and the scenario instant, so a receipt is never cached across a persona switch, a scenario switch or a reset. */
@@ -48,11 +48,13 @@ export async function GET(_request: Request, context: { params: Promise<ImportOp
       // identifier establishes neither identity nor authority, and the identity is the operation's own. Next's
       // matching makes this branch unreachable from a URL; it exists so a hand-built request is answered rather
       // than thrown.
+      // The refusal is built through the index's one converter, so this file imports nothing below the
+      // service's entry point; the issue is keyed at `operationId`, the field this path reads.
       return toResponse(
-        invalid({
-          operationId: UNIDENTIFIED_OPERATION,
-          fields: { operationId: ["operationId names no import operation: the path carries no usable identity to read a proposal or a receipt by."] },
-        }),
+        outcomeFromError(
+          UNIDENTIFIED_OPERATION,
+          new ZodError([{ code: "custom", path: ["operationId"], message: "operationId names no import operation: the path carries no usable identity to read a proposal or a receipt by." }]),
+        ),
       );
     }
     operationId = named;

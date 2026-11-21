@@ -12,15 +12,9 @@
  * operation identity through `GET /api/import/[operationId]`, so a `GET` here would be a second way to
  * read one receipt rather than a second way to accept.
  */
-import { z } from "zod";
+import { ZodError, z } from "zod";
 import type { SourceReference } from "@/lib/ids";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse, type MutationInput } from "@/modules/data-service";
-/**
- * The `invalid` constructor comes from the module that owns the outcome set rather than through the service
- * barrel, which re-exports the conversion helpers only: a body that never parsed names no member of its
- * own, so its refusal is built here from the shape the constructor declares.
- */
-import { invalid } from "@/modules/data-service/outcome";
 import { IMPORT_DECISION_KINDS, type ImportCellCorrectionInput, type ImportDecisionInput } from "@/modules/import/decide";
 import { IMPORT_MAX_CELL_CODE_POINTS, IMPORT_MAX_DATA_ROWS } from "@/modules/import/parse";
 
@@ -153,8 +147,10 @@ export async function POST(request: Request): Promise<Response> {
     body = await request.json();
   } catch {
     // A body that is not JSON carried no member at all, so the refusal is about the request rather than
-    // about a field somebody could have filled in, and nothing was read and nothing was written.
-    return toResponse(invalid({ operationId: UNIDENTIFIED_ATTEMPT, fields: { payload: [JSON_BODY_REFUSAL] } }));
+    // about a field somebody could have filled in, and nothing was read and nothing was written. It is
+    // built through the index's one converter, so this file imports nothing below the service's entry
+    // point and answers in the same refusal shape as every other invalid outcome there.
+    return toResponse(outcomeFromError(UNIDENTIFIED_ATTEMPT, new ZodError([{ code: "custom", path: ["payload"], message: JSON_BODY_REFUSAL }])));
   }
   const parsed = acceptImportRowsRequestSchema.safeParse(isBodyObject(body) ? body : {});
   if (!parsed.success) {

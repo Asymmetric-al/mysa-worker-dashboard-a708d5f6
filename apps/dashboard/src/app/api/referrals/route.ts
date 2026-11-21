@@ -9,6 +9,8 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse, type MutationOutcome, type ReferralCycleRecord } from "@/modules/data-service";
+/** The store behind the service reads and writes its documents through `node:fs`, so this handler runs on the Node runtime and never on the edge runtime. */
+export const runtime = "nodejs";
 // The read resolves the development-session cookie and evaluates the scenario clock per request, so no response may be cached.
 export const dynamic = "force-dynamic";
 

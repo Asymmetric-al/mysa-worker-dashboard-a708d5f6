@@ -139,9 +139,9 @@ const createVariantBodySchema = mutationInputSchema(z.custom<Routed<CreateVarian
 
 const saveDraftBodySchema = mutationInputSchema(z.custom<Routed<SaveDraftPayload>>());
 
-// A draft save is this family's own write and the only transport that carries it, so it is dispatched
-// here: `api/drafts` does not exist in this application, and leaving `saveDraft` unserved would make
-// the editor's saving unreachable through the real application.
+// The Pages row of the API table names `saveDraft` beside `createVariant`, so this family's transport
+// serves the edition write its own editor makes; the Updates row is served the same named mutation on
+// `api/drafts`, so one mutation has one implementation and both rows the plan names stay reachable.
 const PAGE_OPERATIONS = ["createVariant", "saveDraft"] as const;
 
 const attemptIdentitySchema = z.object({ operationId: z.string() });

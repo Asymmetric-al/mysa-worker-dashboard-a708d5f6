@@ -14,11 +14,12 @@
  */
 import { z } from "zod";
 import { outcomeFromError, reads, toResponse } from "@/modules/data-service";
+/** The store behind the service reads its documents through `node:fs`, so this handler runs on the Node runtime and never on the edge runtime. */
+export const runtime = "nodejs";
 
 /**
  * Every request re-derives the session, the grant and the frozen cutoff, so no answer may survive a
- * revocation or the cutoff instant in a cache. Nothing else is declared: the handler runs on the Node
- * runtime by default, and a `runtime` export would only restate it.
+ * revocation or the cutoff instant in a cache.
  */
 export const dynamic = "force-dynamic";
 
