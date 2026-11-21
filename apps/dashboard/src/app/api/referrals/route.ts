@@ -1,21 +1,14 @@
 /**
  * `GET /api/referrals` — the three referral lists, each cycle with the window the boundary module
- * resolves from its original introduction date — and `POST /api/referrals`, the one write this path
- * performs: recording that original date with the precision it is known to. The single continuation
- * of one expired cycle is a separate command on its own path.
+ * resolves from its original introduction date, or one cycle's own detail when the request names it —
+ * and `POST /api/referrals`, the one write this path performs: recording that original date with the
+ * precision it is known to. The single continuation of one expired cycle is a separate command on its
+ * own path.
  */
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
-import {
-  mutationInputSchema,
-  mutations,
-  outcomeFromError,
-  reads,
-  toResponse,
-  type MutationOutcome,
-  type ReferralCycleRecord,
-} from "@/modules/data-service";
+import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse, type MutationOutcome, type ReferralCycleRecord } from "@/modules/data-service";
 // The read resolves the development-session cookie and evaluates the scenario clock per request, so no response may be cached.
 export const dynamic = "force-dynamic";
 
@@ -102,19 +95,10 @@ const introductionPayloadSchema = z
     partnerId: z.string({ error: MESSAGES.partnerRequired }).trim().min(1, MESSAGES.partnerRequired).max(MAX_REFERENCE_LENGTH, MESSAGES.partnerTooLong),
     originalIntroductionOn: z.union([z.iso.date({ error: MESSAGES.dateInvalid }), z.null()]).optional(),
     datePrecision: z.enum(DATE_PRECISIONS, { error: MESSAGES.precisionRequired }),
-    sourceZone: z
-      .string({ error: MESSAGES.zoneRequired })
-      .trim()
-      .min(1, MESSAGES.zoneRequired)
-      .max(MAX_ZONE_LENGTH, MESSAGES.zoneInvalid)
-      .regex(SOURCE_ZONE_SHAPE, MESSAGES.zoneInvalid),
+    sourceZone: z.string({ error: MESSAGES.zoneRequired }).trim().min(1, MESSAGES.zoneRequired).max(MAX_ZONE_LENGTH, MESSAGES.zoneInvalid).regex(SOURCE_ZONE_SHAPE, MESSAGES.zoneInvalid),
     sourceReference: z.strictObject({
       system: z.string({ error: MESSAGES.sourceSystemRequired }).trim().min(1, MESSAGES.sourceSystemRequired).max(MAX_SYSTEM_LENGTH, MESSAGES.sourceSystemTooLong),
-      reference: z
-        .string({ error: MESSAGES.sourceReferenceRequired })
-        .trim()
-        .min(1, MESSAGES.sourceReferenceRequired)
-        .max(MAX_REFERENCE_LENGTH, MESSAGES.sourceReferenceTooLong),
+      reference: z.string({ error: MESSAGES.sourceReferenceRequired }).trim().min(1, MESSAGES.sourceReferenceRequired).max(MAX_REFERENCE_LENGTH, MESSAGES.sourceReferenceTooLong),
     }),
   })
   .superRefine((payload, context) => {
@@ -159,8 +143,31 @@ function attemptIdOf(body: unknown): string {
   const claimed: unknown = (body as { operationId?: unknown }).operationId;
   return typeof claimed === "string" && claimed.length > 0 ? claimed : UNIDENTIFIED_ATTEMPT;
 }
-/** One page of one referral list — each cycle with its introduction date, its precision and the resolved window, exactly as the read built them — as one envelope, or the read's own `denied`/`unavailable` outcome. */
+// The read side: one cycle, or the lists
+/**
+ * The one parameter a request names a single cycle by. `GET /api/referrals` serves both `readReferrals`
+ * and `readReferral`, so the detail is discriminated by this parameter on the one address this family
+ * has; an absent or blank identifier leaves the request the list read unchanged.
+ */
+const REFERRAL_ID_PARAM = "referralId";
+function referralDetailRequestOf(request: NextRequest): string | null {
+  const referralId = new URL(request.url).searchParams.get(REFERRAL_ID_PARAM);
+  return referralId === null || referralId.trim().length === 0 ? null : referralId;
+}
+/** One page of one referral list — each cycle with its introduction date, its precision and the resolved window, exactly as the read built them — or the one cycle the request named, as one envelope either way, or the read's own `denied`/`unavailable` outcome. */
 export async function GET(request: NextRequest): Promise<Response> {
+  // One route, two reads: a named cycle is read as its detail, and its absence leaves the request to
+  // the list read below, so neither the record nor the lists need a second transport path.
+  const referralId = referralDetailRequestOf(request);
+  if (referralId !== null) {
+    try {
+      return toResponse(await reads.referrals.readReferral(referralId));
+    } catch (error) {
+      // The same mapper answers here as on the list read: the service states its own refusals as
+      // outcomes, so a thrown fault is the only thing left to classify.
+      return toResponse(outcomeFromError(READ_ATTEMPT_ID, error));
+    }
+  }
   const grammar = referralListQuerySchema.safeParse(rawReferralListParams(new URL(request.url).searchParams));
   if (!grammar.success) {
     // No source behind the read failed here, so a value this list does not admit is answered with the
