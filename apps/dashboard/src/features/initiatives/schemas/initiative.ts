@@ -1,0 +1,73 @@
+import { z } from "zod";
+
+/**
+ * ISO `YYYY-MM-DD` civil-date shape; calendar validity is the service's check.
+ */
+export const civilDateSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "Enter the date as YYYY-MM-DD.");
+
+/**
+ * Builds a trimmed text field whose length is bounded in Unicode code points.
+ */
+export function boundedTextSchema(
+  maxCodePoints: number,
+  messages: { readonly required: string; readonly tooLong: string },
+): z.ZodString {
+  return z
+    .string()
+    .trim()
+    .superRefine((value, ctx) => {
+      // `.min`/`.max` count UTF-16 code units and would reject a valid astral-plane value,
+      // so the length is measured in code points here instead.
+      const length = Array.from(value).length;
+      if (length === 0) {
+        ctx.addIssue({ code: "custom", message: messages.required });
+      } else if (length > maxCodePoints) {
+        ctx.addIssue({ code: "custom", message: messages.tooLong });
+      }
+    });
+}
+
+/**
+ * Validates the `createInitiative` payload.
+ */
+export const createInitiativePayloadSchema = z
+  .object({
+    name: boundedTextSchema(200, {
+      required: "Give the initiative a name.",
+      tooLong: "Keep the name to 200 characters or fewer.",
+    }),
+    purpose: boundedTextSchema(2000, {
+      required: "Describe what this initiative is for.",
+      tooLong: "Keep the purpose to 2,000 characters or fewer.",
+    }),
+    // An opaque principal reference inside the acting scope. A name or an email address
+    // never establishes identity, so neither is accepted in its place.
+    responsiblePrincipalId: z
+      .string()
+      .trim()
+      .min(1, "Choose the person responsible for this initiative."),
+    // The acting ministry travels in the mutation's scope, so a body may never name a
+    // context the caller is not admitted to; omit the key rather than sending null.
+    period: z.object({ startOn: civilDateSchema, endOn: civilDateSchema }).strict().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    // ISO civil dates order correctly as strings, which keeps calendar interpretation
+    // in the service's single civil-date implementation.
+    if (value.period !== undefined && value.period.endOn < value.period.startOn) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Choose an end date on or after the start date.",
+        path: ["period", "endOn"],
+      });
+    }
+  });
+
+/** A civil date carried as an ISO `YYYY-MM-DD` string. */
+export type CivilDateString = z.infer<typeof civilDateSchema>;
+
+/** The validated `createInitiative` payload. */
+export type CreateInitiativePayload = z.infer<typeof createInitiativePayloadSchema>;
