@@ -7,7 +7,7 @@
  */
 import type { CoverageState, ValueState } from "@/modules/data-service/envelope";
 import { BASIS_DESCRIPTION, SUPPORT_BASIS, SUPPORT_MEASURE_LABELS, type SupportMeasure } from "@/modules/support/basis";
-import type { RecurringBucket } from "@/modules/support/buckets";
+import type { CommitmentKind, RecurringBucket } from "@/modules/support/buckets";
 // The one basis, and the grain it counts at
 /** The one basis statement every support surface states, built from the module that owns the basis. */
 export const SUPPORT_BASIS_STATEMENT: string =
@@ -80,6 +80,21 @@ export const VALUE_STATE_MEANING: Readonly<Record<ValueState, string>> = {
 // The five measures
 /** The reader-facing name of each of the five measures, taken from the module that declares them. */
 export const MEASURE_LABELS: Readonly<Record<SupportMeasure, string>> = SUPPORT_MEASURE_LABELS;
+// The three commitment kinds
+/** The three kinds of commitment in the words the support module distinguishes them by, keyed so a fourth kind cannot be added without being worded here. */
+export const COMMITMENT_KIND_LABELS: Readonly<Record<CommitmentKind, string>> = {
+  "automatic-recurring": "Automatic recurring gift",
+  "manual-recurring": "Manual recurring gift",
+  "fixed-total": "Fixed total",
+};
+// The four fixed-total figures
+/** The four figures a fixed total states, in the source's order and each its own fact: nothing sums, subtracts or shares them. */
+export const FIXED_TOTAL_FIELDS = [
+  { field: "promised", label: "Promised" },
+  { field: "fulfilled", label: "Fulfilled" },
+  { field: "released", label: "Released" },
+  { field: "remaining", label: "Remaining" },
+] as const;
 // The four reports
 /** The four report identities, exactly as AAP 0.8.1 fixes them: a closed set, with no registration function and no way to add an identity at runtime. */
 export type ReportCopyKey = "received" | "history" | "matrix" | "comparison";

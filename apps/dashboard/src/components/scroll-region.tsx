@@ -41,8 +41,16 @@ export function ScrollRegion({ label, children, stickyOffset = DEFAULT_STICKY_OF
         // vertical gesture. `maxHeight` is the one case that adds the vertical scroll, and
         // `scroll-px-2` keeps a scrolled-to cell off the region's inline edges without
         // introducing any physical margin.
+        //
+        // `relative` is what keeps the region the only thing that scrolls. Overflow clipping
+        // reaches a descendant only when that descendant's containing block sits inside the
+        // clipper, and the visually-hidden text a wide table carries (`sr-only` is absolutely
+        // positioned) would otherwise resolve to some ancestor above the region, take its
+        // static position from a column beyond the viewport and stretch the document itself.
+        // With the region as their containing block, that text is clipped here exactly as the
+        // visible cells are, so the page itself never scrolls sideways at any width.
         className={cn(
-          "overflow-x-auto overscroll-x-contain scroll-px-2",
+          "relative overflow-x-auto overscroll-x-contain scroll-px-2",
           maxHeight === undefined ? null : "overflow-y-auto",
           focusable ? "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]" : null,
           className,

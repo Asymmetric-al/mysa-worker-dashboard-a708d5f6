@@ -25,7 +25,7 @@ import { formatSourceReference } from "@/lib/ids";
 // spelling of the basis beside it.
 import { SUPPORT_BASES, type Scope, type ValueState } from "@/modules/data-service/envelope";
 import { OUTSIDE_PARTITION, type CommitmentKind, type RecurringBucket } from "@/modules/support/buckets";
-import { BUCKET_MEANING, EMPTY_STATES, MEASURE_LABELS } from "../copy";
+import { BUCKET_MEANING, COMMITMENT_KIND_LABELS, EMPTY_STATES, FIXED_TOTAL_FIELDS, MEASURE_LABELS } from "../copy";
 import { parseCommitmentsQuery, toCommitmentsParams, useCommitments, type CommitmentsEnvelope, type CommitmentsQuery } from "../hooks/use-commitments";
 import AmountValue from "./amount-value";
 import SnapshotStatement from "./snapshot-statement";
@@ -51,25 +51,8 @@ export type CommitmentDetailProps = {
   readonly className?: string;
 };
 // The words this surface owns, and no state vocabulary it would duplicate
-/**
- * The three commitment kinds, in the source's own terms. No other file words these, so the map lives
- * here rather than in the family's copy module; a fourth kind fails to compile until it is worded.
- */
-export const COMMITMENT_KIND_LABELS: Readonly<Record<CommitmentKind, string>> = {
-  "automatic-recurring": "Automatic recurring commitment",
-  "manual-recurring": "Manual recurring commitment",
-  "fixed-total": "Fixed-total commitment",
-};
 const UNRECOGNISED_KIND_WORD = "A kind of commitment this read does not name";
 
-const FIXED_TOTAL_FIELDS = ["promised", "fulfilled", "released", "remaining"] as const satisfies readonly FixedTotalField[];
-/** The source's four fixed-total figures, each its own fact: nothing here sums, subtracts or shares them. */
-const FIXED_TOTAL_LABELS: Readonly<Record<FixedTotalField, string>> = {
-  promised: "Promised",
-  fulfilled: "Fulfilled",
-  released: "Released",
-  remaining: "Remaining",
-};
 const LIST_ROUTE = "/support/commitments";
 
 const OVERVIEW_HEADING_ID = "commitment-overview-heading";
@@ -169,7 +152,7 @@ function currenciesOf(row: CommitmentRowFigure): readonly string[] {
   const seen = new Set<string>();
   seen.add(row.perOccurrence.currency);
   if (row.fixedTotal !== null) {
-    for (const field of FIXED_TOTAL_FIELDS) {
+    for (const { field } of FIXED_TOTAL_FIELDS) {
       seen.add(row.fixedTotal[field].currency);
     }
   }
@@ -381,9 +364,9 @@ function FixedTotalCard({ commitmentId, fixedTotal, valueStates, locale }: Fixed
         </CardHeader>
         <CardContent>
           <dl className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-            {FIXED_TOTAL_FIELDS.map((field) => (
+            {FIXED_TOTAL_FIELDS.map(({ field, label }) => (
               <div key={field} className="flex min-w-0 flex-col gap-1">
-                <dt className="text-sm font-medium text-muted-foreground">{FIXED_TOTAL_LABELS[field]}</dt>
+                <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
                 <dd className="min-w-0">
                   <AmountValue money={fixedTotal[field]} valueState={valueStateAt(valueStates, fixedTotalStatePath(commitmentId, field))} locale={locale} />
                 </dd>
