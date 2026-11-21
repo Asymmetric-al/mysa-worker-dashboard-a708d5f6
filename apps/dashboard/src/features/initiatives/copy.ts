@@ -1,26 +1,14 @@
 /**
- * Wording for the initiatives and referrals family: the closed vocabularies this
- * family displays, and the statements that keep each distinction intact.
- *
- * Stage names are deliberately absent. Stages come from the source-approved list
- * carried on the read envelope, so a taxonomy written here would offer a stage the
- * source never admitted. Only stage states, headings and help text belong here.
- *
- * Data only: no JSX, no formatting, no runtime dependencies. Amounts, dates and
- * shares are rendered by the components from the envelope's own values.
+ * Wording for the initiatives and referrals family: the closed vocabularies this family displays, and
+ * the statements that keep each distinction intact.
  */
-
 import type { NoticeKind } from "@/components/state-notice";
-
 /** The three states of an initiative working-list membership. */
 export const MEMBERSHIP_STATES = ["included", "removed", "excluded"] as const;
 
 export type MembershipState = (typeof MEMBERSHIP_STATES)[number];
 
-export const MEMBERSHIP_STATE_COPY: Record<
-  MembershipState,
-  { label: string; description: string; emptyNote: string }
-> = {
+export const MEMBERSHIP_STATE_COPY: Record<MembershipState, { label: string; description: string; emptyNote: string }> = {
   included: {
     label: "On the working list",
     description: "You selected this partner for this initiative's reviewed working list.",
@@ -37,21 +25,15 @@ export const MEMBERSHIP_STATE_COPY: Record<
     emptyNote: "No partners are marked not eligible.",
   },
 };
-
 /** Why inclusion is not Asked, not consent and not audience membership. */
 export const MEMBERSHIP_RULES_COPY = {
   notAsked: "Adding a partner to the working list is not the same as having asked them.",
   notConsent: "Inclusion gives no consent for contact or Updates, and none is recorded here.",
-  notAudienceMembership:
-    "A working-list partner is not an Update audience member, and this list enables no notice.",
-  explicitSelectionOnly:
-    "Only partners you select join the working list; a later filter match never adds anyone.",
-  removalPreservesHistory:
-    "Removing a partner keeps its history and any obligation recorded elsewhere.",
-  returnRestoresEligiblePlanning:
-    "Returning a partner restores eligible planning only and grants no permission.",
+  notAudienceMembership: "A working-list partner is not an Update audience member, and this list enables no notice.",
+  explicitSelectionOnly: "Only partners you select join the working list; a later filter match never adds anyone.",
+  removalPreservesHistory: "Removing a partner keeps its history and any obligation recorded elsewhere.",
+  returnRestoresEligiblePlanning: "Returning a partner restores eligible planning only and grants no permission.",
 } as const;
-
 /** The four ways a stage can appear on this surface. */
 export const STAGE_STATES = ["recorded", "retired", "denied", "unavailable"] as const;
 
@@ -75,49 +57,24 @@ export const STAGE_STATE_COPY: Record<StageState, { label: string; description: 
     description: "The source could not answer, so this is never shown as having no stage.",
   },
 };
-
-/**
- * The stage selector is compact, works by keyboard and single pointer, and has no
- * drag affordance; moving a partner between lists is the explicit Return action.
- */
+/** The stage selector is compact, works by keyboard and single pointer, and has no drag affordance; moving a partner between lists is the explicit Return action. */
 export const STAGE_SELECTOR_COPY = {
   label: "Stage",
   help: "Choose from the list the source admits; a stage is the worker's own assessment.",
   clearLabel: "Clear stage",
   clearHelp: "Clearing removes the recorded assessment and moves no one between lists.",
   sameValueNote: "No change: the stage already holds this value.",
-  movedToListNote:
-    "Moving a partner off the working list is the explicit Return action, never a drag.",
+  movedToListNote: "Moving a partner off the working list is the explicit Return action, never a drag.",
   noTaskCreatedNote: "Changing a stage creates no task and pauses or resumes nothing.",
 } as const;
-
 /** The seven ways a Request can be answered. */
-export const RESPONSE_KINDS = [
-  "agreed",
-  "conditional",
-  "partial",
-  "deferred",
-  "declined",
-  "unanswered",
-  "needs clarification",
-] as const;
+export const RESPONSE_KINDS = ["agreed", "conditional", "partial", "deferred", "declined", "unanswered", "needs clarification"] as const;
 
 export type ResponseKind = (typeof RESPONSE_KINDS)[number];
-
-/**
- * The three kinds that assert agreement — agreed, conditional and partial. They are the only kinds that
- * must state what stands behind the answer; deferred, declined, unanswered and needs clarification
- * record a non-answer, so they never require it. Declared here so a change of display order cannot
- * change the rule.
- */
-export const ASSERTING_RESPONSE_KINDS = [
-  "agreed",
-  "conditional",
-  "partial",
-] as const satisfies readonly ResponseKind[];
+/** The three kinds that assert agreement — agreed, conditional and partial. */
+export const ASSERTING_RESPONSE_KINDS = ["agreed", "conditional", "partial"] as const satisfies readonly ResponseKind[];
 
 export type AssertingResponseKind = (typeof ASSERTING_RESPONSE_KINDS)[number];
-
 /** Deterministic rendering order for results surfaces. */
 export const RESPONSE_KIND_ORDER = RESPONSE_KINDS;
 
@@ -151,19 +108,15 @@ export const RESPONSE_KIND_COPY: Record<ResponseKind, { label: string; descripti
     description: "The respondent asked for clarification before answering.",
   },
 };
-
 /** The boundaries a response must never be read across. */
 export const RESPONSE_AGREEMENT_COPY = {
   namedRespondentOneRequest: "A response is the named respondent's answer to one Request.",
-  bindsToTermsVersion:
-    "A response binds to the terms version it answers, and earlier versions are kept.",
-  agreementCreatesNothing:
-    "Agreement creates no pledge, gift, commitment, subscription, notification or task.",
+  bindsToTermsVersion: "A response binds to the terms version it answers, and earlier versions are kept.",
+  agreementCreatesNothing: "Agreement creates no pledge, gift, commitment, subscription, notification or task.",
   withdrawalIsNotRefusal: "Withdrawing a Request is a staff action, not the supporter's refusal.",
   unansweredIsNotDecline: "An unanswered Request is not a decline.",
   unansweredIsRecordedState: "Unanswered is a recorded state, not an empty cell.",
 } as const;
-
 /** Requested terms are what the worker asked for, never received support. */
 export const REQUESTED_TERMS_COPY = {
   heading: "Requested terms",
@@ -177,40 +130,28 @@ export const REQUESTED_TERMS_COPY = {
   nonFinancialLabel: "No amount requested",
   versionLabel: "Terms version",
 } as const;
-
-/**
- * Renders a source-supplied token readably, so an unseen value never shows blank.
- * Separators become spaces; no cadence, term or disposition set is invented here.
- */
 function readableToken(value: string): string {
   const readable = value.replace(/[_\s-]+/g, " ").trim();
   return readable.length > 0 ? readable : REQUESTED_TERMS_COPY.notStated;
 }
-
 /** Renders a cadence value from the envelope instead of leaving the field blank. */
 export function cadenceValueFallback(value: string): string {
   return readableToken(value);
 }
-
 /** Renders a term value from the envelope instead of leaving the field blank. */
 export function termValueFallback(value: string): string {
   return readableToken(value);
 }
-
 /** Renders a closure disposition from the envelope instead of leaving it blank. */
 export function dispositionFallback(value: string): string {
   return readableToken(value);
 }
-
 /** The four states a Request passes through; each owns its own draft and version. */
 export const REQUEST_LIFECYCLE_STATES = ["draft", "submitted", "presented", "answered"] as const;
 
 export type RequestLifecycleState = (typeof REQUEST_LIFECYCLE_STATES)[number];
 
-export const REQUEST_LIFECYCLE_COPY: Record<
-  RequestLifecycleState,
-  { label: string; description: string }
-> = {
+export const REQUEST_LIFECYCLE_COPY: Record<RequestLifecycleState, { label: string; description: string }> = {
   draft: {
     label: "Draft",
     description: "Prepared but not submitted for review, and not presented to the respondent.",
@@ -228,7 +169,6 @@ export const REQUEST_LIFECYCLE_COPY: Record<
     description: "An answer from the named respondent is recorded against a terms version.",
   },
 };
-
 /** The presentation record; the date itself is rendered from the envelope's value. */
 export const PRESENTATION_COPY = {
   presentedOnLabel: "Presented on",
@@ -236,7 +176,6 @@ export const PRESENTATION_COPY = {
   versionRefLabel: "Terms version presented",
   earlierVersionsNote: "Earlier presented versions are kept.",
 } as const;
-
 /** Results state their denominator; with none supplied, no share is shown. */
 export const RESULTS_COPY = {
   heading: "Results",
@@ -247,12 +186,10 @@ export const RESULTS_COPY = {
   countColumnLabel: "Count",
   shareColumnLabel: "Share of counted responses",
 } as const;
-
 /** Closing fences new solicitation; it resolves no outstanding work by itself. */
 export const CLOSURE_COPY = {
   closeHeading: "Close initiative",
-  closeHelp:
-    "Closing fences new solicitation, and unfinished work that someone owns keeps its owner.",
+  closeHelp: "Closing fences new solicitation, and unfinished work that someone owns keeps its owner.",
   dispositionLabel: "Disposition",
   dispositionRequiredNote: "Choose a disposition or an eligible handover before closing.",
   handoffNote: "Work still owned can be handed to someone eligible rather than resolved here.",
@@ -261,16 +198,12 @@ export const CLOSURE_COPY = {
   reopenHelp: "Reopening allows new solicitation again, and the closure history stays in place.",
   historyPreservedNote: "Reopening keeps the closure history and the exclusions that are current.",
 } as const;
-
 /** The two initiative states. */
 export const INITIATIVE_STATES = ["open", "closed"] as const;
 
 export type InitiativeState = (typeof INITIATIVE_STATES)[number];
 
-export const INITIATIVE_STATE_COPY: Record<
-  InitiativeState,
-  { label: string; description: string }
-> = {
+export const INITIATIVE_STATE_COPY: Record<InitiativeState, { label: string; description: string }> = {
   open: {
     label: "Open",
     description: "Accepting new solicitation and further recorded responses.",
@@ -280,13 +213,11 @@ export const INITIATIVE_STATE_COPY: Record<
     description: "No new solicitation; every recorded response and closure note is kept.",
   },
 };
-
 /** List and header wording for the initiatives surfaces. */
 export const INITIATIVE_COPY = {
   listHeading: "Initiatives",
   listEmptyTitle: "No initiatives yet",
-  listEmptyBody:
-    "Create an initiative to review a working list and record each Request as it is presented.",
+  listEmptyBody: "Create an initiative to review a working list and record each Request as it is presented.",
   createLabel: "Create an initiative",
   nameLabel: "Name",
   purposeLabel: "Purpose",
@@ -297,33 +228,12 @@ export const INITIATIVE_COPY = {
   nextWorkHeading: "Next work",
   historyHeading: "History",
 } as const;
+/** Empty, unavailable, denied and unconfirmed results for this family. */
+export type StateNoticeKind = Exclude<NoticeKind, "loading" | "partial-coverage" | "language-unavailable">;
 
-/**
- * Empty, unavailable, denied and unconfirmed results for this family.
- * Denied wording reveals no count, title or existence; unconfirmed wording offers
- * a result check by operation rather than a repeat.
- *
- * The kinds are not declared here: `StateNoticeKind` is the notice component's own union minus the
- * three kinds this family never reports, so a kind renamed in `components/state-notice.tsx` fails
- * this tuple's check and a kind added there becomes a missing entry in the table below. Neither can
- * leave a second declaration to drift out of step with the one the component renders.
- */
-export type StateNoticeKind = Exclude<
-  NoticeKind,
-  "loading" | "partial-coverage" | "language-unavailable"
->;
+export const STATE_NOTICE_KINDS = ["empty", "unavailable", "denied", "unknown"] as const satisfies readonly StateNoticeKind[];
 
-export const STATE_NOTICE_KINDS = [
-  "empty",
-  "unavailable",
-  "denied",
-  "unknown",
-] as const satisfies readonly StateNoticeKind[];
-
-export const STATE_NOTICE_COPY: Record<
-  StateNoticeKind,
-  { title: string; body: string; actionLabel: string | null }
-> = {
+export const STATE_NOTICE_COPY: Record<StateNoticeKind, { title: string; body: string; actionLabel: string | null }> = {
   empty: {
     title: "Nothing recorded yet",
     body: "Create an initiative to start a reviewed working list.",

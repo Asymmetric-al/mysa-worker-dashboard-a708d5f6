@@ -1,43 +1,22 @@
 "use client";
-
-/* The shadcn 4.23.0 `base-maia` registry source for `combobox`, emitted by
- * `bunx shadcn@4.23.0 add combobox` with the `lucide` icon library. Every class name,
- * element structure and handler is the registry's own. Two things differ:
- *
- * - the `cn` import is rebased from the registry's bare `cn` specifier, which resolves only
- *   inside shadcn's own app, onto this repository's `@/lib/cn`;
- * - the registry's three icon-only controls — the trigger, the clear button and a chip's
- *   remove button — gain an `aria-label` prop, because each renders a decorative icon with
- *   `aria-hidden` and would otherwise be announced as an unnamed button. A caller's own
- *   `aria-label` still wins wherever the part accepts one.
+/**
+ * The shadcn 4.23.0 `base-maia` registry source for `combobox`, emitted by `bunx shadcn@4.23.0 add
+ * combobox` with the `lucide` icon library. Every class name, element structure and handler is the
+ * registry's own. Two things differ:
  */
-
 import * as React from "react";
 import { Combobox as ComboboxPrimitive } from "@base-ui/react";
 import { cn } from "@/lib/cn";
-
 import { Button } from "@/components/ui/button";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-} from "@/components/ui/input-group";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { useDirection } from "@/components/ui/direction";
 import { ChevronDownIcon, XIcon, CheckIcon } from "lucide-react";
-
 const Combobox = ComboboxPrimitive.Root;
 
 function ComboboxValue({ ...props }: ComboboxPrimitive.Value.Props) {
   return <ComboboxPrimitive.Value data-slot="combobox-value" {...props} />;
 }
-
-function ComboboxTrigger({
-  className,
-  children,
-  "aria-label": ariaLabel,
-  ...props
-}: ComboboxPrimitive.Trigger.Props) {
+function ComboboxTrigger({ className, children, "aria-label": ariaLabel, ...props }: ComboboxPrimitive.Trigger.Props) {
   return (
     <ComboboxPrimitive.Trigger
       data-slot="combobox-trigger"
@@ -53,7 +32,6 @@ function ComboboxTrigger({
     </ComboboxPrimitive.Trigger>
   );
 }
-
 function ComboboxClear({ className, ...props }: ComboboxPrimitive.Clear.Props) {
   return (
     <ComboboxPrimitive.Clear
@@ -69,7 +47,6 @@ function ComboboxClear({ className, ...props }: ComboboxPrimitive.Clear.Props) {
     </ComboboxPrimitive.Clear>
   );
 }
-
 function ComboboxInput({
   className,
   children,
@@ -101,7 +78,6 @@ function ComboboxInput({
     </InputGroup>
   );
 }
-
 function ComboboxContent({
   className,
   side = "bottom",
@@ -110,24 +86,13 @@ function ComboboxContent({
   alignOffset = 0,
   anchor,
   ...props
-}: ComboboxPrimitive.Popup.Props &
-  Pick<
-    ComboboxPrimitive.Positioner.Props,
-    "side" | "align" | "sideOffset" | "alignOffset" | "anchor"
-  >) {
+}: ComboboxPrimitive.Popup.Props & Pick<ComboboxPrimitive.Positioner.Props, "side" | "align" | "sideOffset" | "alignOffset" | "anchor">) {
   // The direction provider is React context only, so portalled content would otherwise follow
   // the page rather than the application. Stating it here keeps the combobox in that direction.
   const direction = useDirection();
   return (
     <ComboboxPrimitive.Portal>
-      <ComboboxPrimitive.Positioner
-        side={side}
-        sideOffset={sideOffset}
-        align={align}
-        alignOffset={alignOffset}
-        anchor={anchor}
-        className="isolate z-50"
-      >
+      <ComboboxPrimitive.Positioner side={side} sideOffset={sideOffset} align={align} alignOffset={alignOffset} anchor={anchor} className="isolate z-50">
         <ComboboxPrimitive.Popup
           dir={direction}
           data-slot="combobox-content"
@@ -142,7 +107,6 @@ function ComboboxContent({
     </ComboboxPrimitive.Portal>
   );
 }
-
 function ComboboxList({ className, ...props }: ComboboxPrimitive.List.Props) {
   return (
     <ComboboxPrimitive.List
@@ -155,7 +119,6 @@ function ComboboxList({ className, ...props }: ComboboxPrimitive.List.Props) {
     />
   );
 }
-
 function ComboboxItem({ className, children, ...props }: ComboboxPrimitive.Item.Props) {
   return (
     <ComboboxPrimitive.Item
@@ -167,64 +130,34 @@ function ComboboxItem({ className, children, ...props }: ComboboxPrimitive.Item.
       {...props}
     >
       {children}
-      <ComboboxPrimitive.ItemIndicator
-        render={
-          <span className="pointer-events-none absolute end-2 flex size-4 items-center justify-center" />
-        }
-      >
+      <ComboboxPrimitive.ItemIndicator render={<span className="pointer-events-none absolute end-2 flex size-4 items-center justify-center" />}>
         <CheckIcon className="pointer-events-none" />
       </ComboboxPrimitive.ItemIndicator>
     </ComboboxPrimitive.Item>
   );
 }
-
 function ComboboxGroup({ className, ...props }: ComboboxPrimitive.Group.Props) {
-  return (
-    <ComboboxPrimitive.Group data-slot="combobox-group" className={cn(className)} {...props} />
-  );
+  return <ComboboxPrimitive.Group data-slot="combobox-group" className={cn(className)} {...props} />;
 }
-
 function ComboboxLabel({ className, ...props }: ComboboxPrimitive.GroupLabel.Props) {
-  return (
-    <ComboboxPrimitive.GroupLabel
-      data-slot="combobox-label"
-      className={cn("px-3.5 py-2.5 text-xs text-muted-foreground", className)}
-      {...props}
-    />
-  );
+  return <ComboboxPrimitive.GroupLabel data-slot="combobox-label" className={cn("px-3.5 py-2.5 text-xs text-muted-foreground", className)} {...props} />;
 }
-
 function ComboboxCollection({ ...props }: ComboboxPrimitive.Collection.Props) {
   return <ComboboxPrimitive.Collection data-slot="combobox-collection" {...props} />;
 }
-
 function ComboboxEmpty({ className, ...props }: ComboboxPrimitive.Empty.Props) {
   return (
     <ComboboxPrimitive.Empty
       data-slot="combobox-empty"
-      className={cn(
-        "hidden w-full justify-center py-2 text-center text-sm text-muted-foreground group-data-empty/combobox-content:flex",
-        className,
-      )}
+      className={cn("hidden w-full justify-center py-2 text-center text-sm text-muted-foreground group-data-empty/combobox-content:flex", className)}
       {...props}
     />
   );
 }
-
 function ComboboxSeparator({ className, ...props }: ComboboxPrimitive.Separator.Props) {
-  return (
-    <ComboboxPrimitive.Separator
-      data-slot="combobox-separator"
-      className={cn("-mx-1 my-1 h-px bg-border/50", className)}
-      {...props}
-    />
-  );
+  return <ComboboxPrimitive.Separator data-slot="combobox-separator" className={cn("-mx-1 my-1 h-px bg-border/50", className)} {...props} />;
 }
-
-function ComboboxChips({
-  className,
-  ...props
-}: React.ComponentPropsWithRef<typeof ComboboxPrimitive.Chips> & ComboboxPrimitive.Chips.Props) {
+function ComboboxChips({ className, ...props }: React.ComponentPropsWithRef<typeof ComboboxPrimitive.Chips> & ComboboxPrimitive.Chips.Props) {
   return (
     <ComboboxPrimitive.Chips
       data-slot="combobox-chips"
@@ -236,7 +169,6 @@ function ComboboxChips({
     />
   );
 }
-
 function ComboboxChip({
   className,
   children,
@@ -270,21 +202,12 @@ function ComboboxChip({
     </ComboboxPrimitive.Chip>
   );
 }
-
 function ComboboxChipsInput({ className, ...props }: ComboboxPrimitive.Input.Props) {
-  return (
-    <ComboboxPrimitive.Input
-      data-slot="combobox-chip-input"
-      className={cn("min-w-16 flex-1 outline-none", className)}
-      {...props}
-    />
-  );
+  return <ComboboxPrimitive.Input data-slot="combobox-chip-input" className={cn("min-w-16 flex-1 outline-none", className)} {...props} />;
 }
-
 function useComboboxAnchor() {
   return React.useRef<HTMLDivElement | null>(null);
 }
-
 export {
   Combobox,
   ComboboxInput,

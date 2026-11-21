@@ -1,9 +1,7 @@
 "use client";
-
 import * as React from "react";
 import { Avatar as AvatarPrimitive } from "@base-ui/react/avatar";
 import { cn } from "@/lib/cn";
-
 function Avatar({
   className,
   size = "default",
@@ -23,34 +21,18 @@ function Avatar({
     />
   );
 }
-
 function AvatarImage({ className, ...props }: AvatarPrimitive.Image.Props) {
-  return (
-    <AvatarPrimitive.Image
-      data-slot="avatar-image"
-      className={cn("aspect-square size-full rounded-full object-cover", className)}
-      {...props}
-    />
-  );
+  return <AvatarPrimitive.Image data-slot="avatar-image" className={cn("aspect-square size-full rounded-full object-cover", className)} {...props} />;
 }
-
-/* BLITZY [A11Y]: the initials sit on --muted in --muted-foreground, which measures 7.02:1 in the
- * light theme and so clears the 4.5:1 WCAG AA minimum for text this size. The initials never rely
- * on colour alone: they are text, so the identity is readable with any palette.
- */
 function AvatarFallback({ className, ...props }: AvatarPrimitive.Fallback.Props) {
   return (
     <AvatarPrimitive.Fallback
       data-slot="avatar-fallback"
-      className={cn(
-        "flex size-full items-center justify-center rounded-full bg-muted text-sm text-muted-foreground group-data-[size=sm]/avatar:text-xs",
-        className,
-      )}
+      className={cn("flex size-full items-center justify-center rounded-full bg-muted text-sm text-muted-foreground group-data-[size=sm]/avatar:text-xs", className)}
       {...props}
     />
   );
 }
-
 function AvatarBadge({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
@@ -66,20 +48,9 @@ function AvatarBadge({ className, ...props }: React.ComponentProps<"span">) {
     />
   );
 }
-
 function AvatarGroup({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="avatar-group"
-      className={cn(
-        "group/avatar-group flex -space-x-2 *:data-[slot=avatar]:ring-2 *:data-[slot=avatar]:ring-background",
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <div data-slot="avatar-group" className={cn("group/avatar-group flex -space-x-2 *:data-[slot=avatar]:ring-2 *:data-[slot=avatar]:ring-background", className)} {...props} />;
 }
-
 function AvatarGroupCount({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -92,5 +63,4 @@ function AvatarGroupCount({ className, ...props }: React.ComponentProps<"div">) 
     />
   );
 }
-
 export { Avatar, AvatarImage, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarBadge };

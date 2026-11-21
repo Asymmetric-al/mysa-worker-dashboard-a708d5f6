@@ -1,83 +1,27 @@
 /**
- * Contact import, step two: propose which column of a parsed CSV could supply which contact field,
- * and turn that suggestion into a mapping the worker has confirmed.
- *
- * Scope: AAP 0.6.1 import-module row (`suggestMapping()` in `src/modules/import/*`); 0.9.1 and
- * 0.11.1 (`modules/import/{parse,map,validate,decide,receipt}.ts`); 0.10.1 contact import
- * ("mapping with repeated headers preserved", per-row decisions afterwards, proposed changes
- * beside existing values); 0.3.4 (import parsing and decisions — contact import only); 0.6.2 (the
- * partner record is the only vocabulary this file maps into); 0.8.5 (a `subscribed` flag is not
- * consent, and importing a contact never subscribes anyone).
- *
- * Two rules shape the whole file. A column is identified by its 1-based position, never by its
- * header text: the same header can appear twice, and a structure keyed by the text would collapse
- * two columns into one key and silently lose the second, so no map or record here is keyed by a
- * header. And a header says what a column is called, never who a person is: a name, an email
- * address, a postal address and a source reference are data on a record, never keys that join or
- * merge records, and mapping a column creates no consent, no membership and no money.
- *
- * The module is pure and deterministic. It reads header cells and never a data cell, so it cannot
- * parse a date, a boolean, a phone format or an amount, and it keeps no clock and no randomness:
- * the same parsed file always yields the same mapping.
+ * Contact import, step two: propose which column of a parsed CSV could supply which contact field, and
+ * turn that suggestion into a mapping the worker has confirmed.
  */
-
 import type { ParsedCsvFile } from "./parse";
-
-// ---------------------------------------------------------------------------------------------
 // Phase A: the closed target vocabulary
-// ---------------------------------------------------------------------------------------------
-
-/**
- * The import's whole field vocabulary: the partner-record facts one contact row may supply, and
- * nothing else. There is deliberately no field for consent or subscription, for money or a
- * commitment, for a note body, an interaction, a task, a referral or an initiative membership, or
- * for any identity-joining key — a header naming one of those is reported as ignored rather than
- * bent into whichever field happens to look similar.
- */
-export type ImportFieldId =
-  | "display-name"
-  | "name-given"
-  | "name-family"
-  | "name-organization"
-  | "contact-email"
-  | "contact-phone"
-  | "contact-postal"
-  | "restriction"
-  | "tag"
-  | "source-reference";
-
+/** The import's whole field vocabulary: the partner-record facts one contact row may supply, and nothing else. */
+export type ImportFieldId = "display-name" | "name-given" | "name-family" | "name-organization" | "contact-email" | "contact-phone" | "contact-postal" | "restriction" | "tag" | "source-reference";
 /** The partner-record key a field supplies (AAP 0.6.2). */
-export type ImportFieldTarget =
-  | "displayName"
-  | "nameParts"
-  | "contactMethods"
-  | "restrictions"
-  | "tags"
-  | "source";
-
+export type ImportFieldTarget = "displayName" | "nameParts" | "contactMethods" | "restrictions" | "tags" | "source";
 /** The `contactMethods[].kind` a contact-method field supplies; null for every other field. */
 export type ImportContactKind = "email" | "phone" | "postal";
 
 export interface ImportFieldDescriptor {
   readonly id: ImportFieldId;
-  /** Plain-language name the Map step shows beside a suggested field. */
   readonly label: string;
   readonly target: ImportFieldTarget;
   readonly contactKind: ImportContactKind | null;
-  /** Whether the field holds one value or a list of them. */
   readonly cardinality: "single" | "multi";
-  /** Whether several columns may supply this field; stated beside cardinality, equal to `multi`. */
   readonly repeatableAcrossColumns: boolean;
-  /** Normalised header texts that name this field; see `normaliseHeader`. */
   readonly aliases: readonly string[];
-  /** What the field is for, and what it never means once a column supplies it. */
   readonly note: string;
 }
-
-/**
- * The vocabulary in display order. Alias matching scans this array from the start, so a duplicated
- * alias would still resolve identically on every machine instead of depending on key order.
- */
+/** The vocabulary in display order. */
 export const IMPORT_FIELD_VOCABULARY: readonly ImportFieldDescriptor[] = [
   {
     id: "display-name",
@@ -86,15 +30,7 @@ export const IMPORT_FIELD_VOCABULARY: readonly ImportFieldDescriptor[] = [
     contactKind: null,
     cardinality: "single",
     repeatableAcrossColumns: false,
-    aliases: [
-      "name",
-      "display name",
-      "displayname",
-      "full name",
-      "fullname",
-      "contact name",
-      "preferred name",
-    ],
+    aliases: ["name", "display name", "displayname", "full name", "fullname", "contact name", "preferred name"],
     note: "The name the contact is shown under. It is a label, not an identity: two contacts with the same name stay two contacts.",
   },
   {
@@ -124,17 +60,7 @@ export const IMPORT_FIELD_VOCABULARY: readonly ImportFieldDescriptor[] = [
     contactKind: null,
     cardinality: "single",
     repeatableAcrossColumns: false,
-    aliases: [
-      "organization",
-      "organisation",
-      "organization name",
-      "organisation name",
-      "church",
-      "church name",
-      "company",
-      "company name",
-      "congregation",
-    ],
+    aliases: ["organization", "organisation", "organization name", "organisation name", "church", "church name", "company", "company name", "congregation"],
     note: "The name of an organization or church record, never a person's name part: a church is one partner record and its people are separate records.",
   },
   {
@@ -144,19 +70,7 @@ export const IMPORT_FIELD_VOCABULARY: readonly ImportFieldDescriptor[] = [
     contactKind: "email",
     cardinality: "multi",
     repeatableAcrossColumns: true,
-    aliases: [
-      "email",
-      "e mail",
-      "email address",
-      "e mail address",
-      "primary email",
-      "secondary email",
-      "work email",
-      "home email",
-      "other email",
-      "email 1",
-      "email 2",
-    ],
+    aliases: ["email", "e mail", "email address", "e mail address", "primary email", "secondary email", "work email", "home email", "other email", "email 1", "email 2"],
     note: "A contact method of kind email, held as data on the record. It never joins records, and it is not consent to receive any publication.",
   },
   {
@@ -166,22 +80,7 @@ export const IMPORT_FIELD_VOCABULARY: readonly ImportFieldDescriptor[] = [
     contactKind: "phone",
     cardinality: "multi",
     repeatableAcrossColumns: true,
-    aliases: [
-      "phone",
-      "phone number",
-      "telephone",
-      "telephone number",
-      "tel",
-      "mobile",
-      "mobile phone",
-      "mobile number",
-      "cell",
-      "cell phone",
-      "work phone",
-      "home phone",
-      "phone 1",
-      "phone 2",
-    ],
+    aliases: ["phone", "phone number", "telephone", "telephone number", "tel", "mobile", "mobile phone", "mobile number", "cell", "cell phone", "work phone", "home phone", "phone 1", "phone 2"],
     note: "A contact method of kind phone, held as data exactly as it arrived. The import reads no format and dials nothing.",
   },
   {
@@ -221,17 +120,7 @@ export const IMPORT_FIELD_VOCABULARY: readonly ImportFieldDescriptor[] = [
     contactKind: null,
     cardinality: "multi",
     repeatableAcrossColumns: true,
-    aliases: [
-      "restriction",
-      "restrictions",
-      "contact restriction",
-      "contact restrictions",
-      "do not contact",
-      "do not email",
-      "do not mail",
-      "do not call",
-      "no contact",
-    ],
+    aliases: ["restriction", "restrictions", "contact restriction", "contact restrictions", "do not contact", "do not email", "do not mail", "do not call", "no contact"],
     note: "A negative contact instruction the record carries, kept as text. It is a contactability instruction, not a consent decision for any publisher and purpose.",
   },
   {
@@ -251,27 +140,12 @@ export const IMPORT_FIELD_VOCABULARY: readonly ImportFieldDescriptor[] = [
     contactKind: null,
     cardinality: "single",
     repeatableAcrossColumns: false,
-    aliases: [
-      "source id",
-      "source reference",
-      "source ref",
-      "sourceid",
-      "external id",
-      "external reference",
-      "contact id",
-      "record id",
-      "crm id",
-      "constituent id",
-      "supporter id",
-    ],
+    aliases: ["source id", "source reference", "source ref", "sourceid", "external id", "external reference", "contact id", "record id", "crm id", "constituent id", "supporter id"],
     note: "An opaque reference the source system used for this contact, carried as text exactly as it arrived: never parsed, never a join key, and leading zeros are part of the value.",
   },
 ];
-
 /** Every field id, in vocabulary order, for a caller that renders or reports the whole vocabulary. */
-export const IMPORT_FIELD_IDS: readonly ImportFieldId[] = IMPORT_FIELD_VOCABULARY.map(
-  (field) => field.id,
-);
+export const IMPORT_FIELD_IDS: readonly ImportFieldId[] = IMPORT_FIELD_VOCABULARY.map((field) => field.id);
 
 function vocabularyField(fieldId: ImportFieldId): ImportFieldDescriptor {
   const field = IMPORT_FIELD_VOCABULARY.find((candidate) => candidate.id === fieldId);
@@ -282,38 +156,17 @@ function vocabularyField(fieldId: ImportFieldId): ImportFieldDescriptor {
   }
   return field;
 }
-
-// ---------------------------------------------------------------------------------------------
 // Phase B: reading a header, without ever treating it as an identity
-// ---------------------------------------------------------------------------------------------
-
 const COMBINING_MARKS = /\p{M}+/gu;
 const WORD_BREAKS = /[-_]+/gu;
 const WHITESPACE_RUNS = /\s+/gu;
-
-/**
- * Folds a header into the form the alias table is written in: compatibility-decomposed so that
- * full-width forms (`ＥＭＡＩＬ`) and accented spellings (`Émail`) meet their plain ASCII spelling,
- * with combining marks, `_`/`-` and case removed and whitespace runs collapsed.
- *
- * The decomposition is a compatibility fold, never a transliteration: a header written in another
- * script keeps its own letters and so matches no alias, which is the honest result — guessing that
- * a foreign word means "email" would map a column nobody checked.
- */
+/** Folds a header into the form the alias table is written in: compatibility-decomposed so that full-width forms (`ＥＭＡＩＬ`) and accented spellings (`Émail`) meet their plain ASCII spelling. */
 export function normaliseHeader(header: string): string {
-  return header
-    .normalize("NFKD")
-    .replace(COMBINING_MARKS, "")
-    .replace(WORD_BREAKS, " ")
-    .toLowerCase()
-    .replace(WHITESPACE_RUNS, " ")
-    .trim();
+  return header.normalize("NFKD").replace(COMBINING_MARKS, "").replace(WORD_BREAKS, " ").toLowerCase().replace(WHITESPACE_RUNS, " ").trim();
 }
-
 function headerWords(normalised: string): readonly string[] {
   return normalised.length === 0 ? [] : normalised.split(" ");
 }
-
 function containsWordSequence(words: readonly string[], sequence: readonly string[]): boolean {
   if (sequence.length === 0 || sequence.length > words.length) return false;
   for (let start = 0; start + sequence.length <= words.length; start += 1) {
@@ -328,11 +181,6 @@ function containsWordSequence(words: readonly string[], sequence: readonly strin
   }
   return false;
 }
-
-/**
- * Words that make a column a subscription or consent statement. Matched as whole words, so
- * "Subscribed" and "Email consent" are caught while a word that merely contains one is not.
- */
 const CONSENT_WORDS: readonly string[] = [
   "subscribed",
   "unsubscribed",
@@ -348,8 +196,6 @@ const CONSENT_WORDS: readonly string[] = [
   "optin",
   "optout",
 ];
-
-/** Multi-word consent shapes, matched as consecutive words so "can email" cannot match "cannot". */
 const CONSENT_PHRASES: readonly (readonly string[])[] = [
   ["opt", "in"],
   ["opt", "out"],
@@ -367,12 +213,6 @@ const CONSENT_PHRASES: readonly (readonly string[])[] = [
   ["mail", "permission"],
   ["email", "status"],
 ];
-
-/**
- * Words naming a fact this import never produces: money and commitments, activity records and
- * work, referrals and initiatives, memberships and audiences, and the household grouping that
- * would turn a name or a code into a join between records.
- */
 const EXCLUDED_TOPIC_WORDS: readonly string[] = [
   "gift",
   "gifts",
@@ -415,7 +255,6 @@ const EXCLUDED_TOPIC_WORDS: readonly string[] = [
   "household",
   "households",
 ];
-
 function matchConsent(normalised: string): string | null {
   const words = headerWords(normalised);
   for (const word of words) {
@@ -426,7 +265,6 @@ function matchConsent(normalised: string): string | null {
   }
   return null;
 }
-
 function matchExcludedTopic(normalised: string): string | null {
   const words = headerWords(normalised);
   for (const word of words) {
@@ -434,26 +272,8 @@ function matchExcludedTopic(normalised: string): string | null {
   }
   return null;
 }
-
-/**
- * Why a column is not used. The first four are decided from the header alone; the last two arise
- * once a suggestion is confirmed, where a column that was offered is still reported rather than
- * dropped.
- */
-export type ImportColumnIgnoreReason =
-  /** No header text at all, so nothing is known about what the column holds. */
-  | "blank-header"
-  /** Header text no field claims. */
-  | "unrecognised-header"
-  /** A subscription or consent statement, kept as it arrived and never mapped. */
-  | "consent-preserved-as-data"
-  /** A fact this import never produces, such as money, an activity record or a membership. */
-  | "excluded-topic"
-  /** Offered for a field the worker chose not to import. */
-  | "field-declined"
-  /** Offered for a field the worker supplied from a different column. */
-  | "not-chosen";
-
+/** Why a column is not used. */
+export type ImportColumnIgnoreReason = "blank-header" | "unrecognised-header" | "consent-preserved-as-data" | "excluded-topic" | "field-declined" | "not-chosen";
 /** A column the mapping does not use, kept visible with the factual reason it was left out. */
 export interface ImportIgnoredColumn {
   readonly index: number;
@@ -462,7 +282,6 @@ export interface ImportIgnoredColumn {
   readonly reason: ImportColumnIgnoreReason;
   readonly message: string;
 }
-
 type HeaderReading =
   | { readonly kind: "field"; readonly fieldId: ImportFieldId }
   | {
@@ -470,25 +289,16 @@ type HeaderReading =
       readonly reason: ImportColumnIgnoreReason;
       readonly message: string;
     };
-
-/**
- * Reads one header cell into either the field it names or the reason it is not mapped. Consent and
- * excluded topics are decided before aliases, so a column that states consent, or names a fact this
- * import never produces, cannot be mapped even when part of its header looks like a field name.
- */
 function readHeader(header: string): HeaderReading {
   const text = header.trim();
   if (text.length === 0) {
     return {
       kind: "ignored",
       reason: "blank-header",
-      message:
-        "This column has no header text, so nothing is known about what it holds and it is left out of the mapping. Name the column in the file and choose the file again.",
+      message: "This column has no header text, so nothing is known about what it holds and it is left out of the mapping. Name the column in the file and choose the file again.",
     };
   }
-
   const normalised = normaliseHeader(text);
-
   const consent = matchConsent(normalised);
   if (consent !== null) {
     return {
@@ -497,7 +307,6 @@ function readHeader(header: string): HeaderReading {
       message: `Kept exactly as it arrived and never mapped: "${consent}" is a subscription or consent statement, which this import does not read. A subscription flag is not consent, and importing a contact never subscribes anyone.`,
     };
   }
-
   const topic = matchExcludedTopic(normalised);
   if (topic !== null) {
     return {
@@ -506,85 +315,59 @@ function readHeader(header: string): HeaderReading {
       message: `Left out of the mapping: "${topic}" names a fact this contact import never produces — money or a commitment, an activity record or a task, a referral, an initiative membership or an audience. Its values are not read, and the column keeps its place in the file.`,
     };
   }
-
   for (const field of IMPORT_FIELD_VOCABULARY) {
     if (field.aliases.includes(normalised)) return { kind: "field", fieldId: field.id };
   }
-
   return {
     kind: "ignored",
     reason: "unrecognised-header",
     message: `No contact field matches "${text}", so the column is left out of the mapping. Rename the header in the file, or choose a field for this column deliberately.`,
   };
 }
-
-// ---------------------------------------------------------------------------------------------
 // Phase B: the suggestion — position is identity, a header is not
-// ---------------------------------------------------------------------------------------------
-
 /** One parsed column, addressed by position: `index` and `occurrence`, never by `header`. */
 export interface ImportColumnMapping {
-  /** 1-based position in the file, unchanged from the header row. */
   readonly index: number;
   readonly header: string;
-  /**
-   * 1-based ordinal of this header text among identical headers, so the two "Email" columns of one
-   * file become occurrence 1 and occurrence 2 rather than a single column.
-   */
   readonly occurrence: number;
   readonly normalisedHeader: string;
   readonly suggestedField: ImportFieldId | null;
 }
-
 /** A field with the columns that could supply it, in file order; the first is not a preference. */
 export interface ImportFieldClaim {
   readonly fieldId: ImportFieldId;
   readonly columnIndexes: readonly number[];
 }
-
 /** A single-valued field two or more columns claim, so the worker has to choose one or none. */
 export interface ImportFieldAmbiguity extends ImportFieldClaim {
   readonly message: string;
 }
-
 /** Header texts carried by more than one column, with every position that carries them. */
 export interface ImportRepeatedHeader {
   readonly header: string;
   readonly columnIndexes: readonly number[];
 }
-
-/**
- * What step two proposes: every column of the file with the field it could supply, the ordered
- * columns behind each field, the fields that need a choice, the columns left out and why, and the
- * fields no column supplies. Every item is a suggestion; nothing here is applied.
- */
+/** What step two proposes: every column of the file with the field it could supply, the ordered columns behind each field, the fields that need a choice, the columns left out and why, and the. */
 export interface ImportSuggestedMapping {
   readonly columnCount: number;
   readonly columns: readonly ImportColumnMapping[];
   readonly claims: readonly ImportFieldClaim[];
   readonly ambiguous: readonly ImportFieldAmbiguity[];
   readonly ignored: readonly ImportIgnoredColumn[];
-  /** Fields no column supplies. They are named here so nothing is defaulted or invented. */
   readonly unmapped: readonly ImportFieldId[];
   readonly repeatedHeaders: readonly ImportRepeatedHeader[];
 }
-
-/**
- * Proposes a mapping from a parsed file's headers, keeping every repeated header a separate column
- * and every ignored column visible with its reason.
- */
+/** Proposes a mapping from a parsed file's headers, keeping every repeated header a separate column and every ignored column visible with its reason. */
 export function suggestMapping(file: ParsedCsvFile): ImportSuggestedMapping {
   const columns: ImportColumnMapping[] = [];
   const ignored: ImportIgnoredColumn[] = [];
   // Keyed by field id, which is a closed vocabulary — never by header text.
   const claimedByField = new Map<ImportFieldId, number[]>();
-
   file.headers.forEach((header, offset) => {
     const index = offset + 1;
     const occurrence = occurrenceOf(file.headers, offset, header);
     const reading = readHeader(header);
     const suggestedField = reading.kind === "field" ? reading.fieldId : null;
-
     columns.push({
       index,
       header,
@@ -592,17 +375,14 @@ export function suggestMapping(file: ParsedCsvFile): ImportSuggestedMapping {
       normalisedHeader: normaliseHeader(header),
       suggestedField,
     });
-
     if (reading.kind === "ignored") {
       ignored.push({ index, header, occurrence, reason: reading.reason, message: reading.message });
       return;
     }
-
     const claimed = claimedByField.get(reading.fieldId);
     if (claimed === undefined) claimedByField.set(reading.fieldId, [index]);
     else claimed.push(index);
   });
-
   const claims: ImportFieldClaim[] = [];
   for (const fieldId of IMPORT_FIELD_IDS) {
     const columnIndexes = claimedByField.get(fieldId);
@@ -611,7 +391,6 @@ export function suggestMapping(file: ParsedCsvFile): ImportSuggestedMapping {
       claims.push({ fieldId, columnIndexes: [...columnIndexes] });
     }
   }
-
   const ambiguous: ImportFieldAmbiguity[] = [];
   for (const claim of claims) {
     const field = vocabularyField(claim.fieldId);
@@ -622,9 +401,7 @@ export function suggestMapping(file: ParsedCsvFile): ImportSuggestedMapping {
       message: `Columns ${listPositions(claim.columnIndexes)} all look like "${field.label}", which holds a single value. Choose the column to use, or decline the field.`,
     });
   }
-
   const unmapped = IMPORT_FIELD_IDS.filter((fieldId) => !claimedByField.has(fieldId));
-
   return {
     columnCount: columns.length,
     columns,
@@ -635,11 +412,6 @@ export function suggestMapping(file: ParsedCsvFile): ImportSuggestedMapping {
     repeatedHeaders: repeatedHeadersOf(file.headers),
   };
 }
-
-/**
- * The 1-based ordinal of `header` among the identical headers before it, counted by position so a
- * repeated header is numbered rather than merged.
- */
 function occurrenceOf(headers: readonly string[], offset: number, header: string): number {
   let occurrence = 1;
   for (let earlier = 0; earlier < offset; earlier += 1) {
@@ -647,8 +419,6 @@ function occurrenceOf(headers: readonly string[], offset: number, header: string
   }
   return occurrence;
 }
-
-/** Every header text that appears on more than one column, in first-appearance order. */
 function repeatedHeadersOf(headers: readonly string[]): ImportRepeatedHeader[] {
   const repeated: ImportRepeatedHeader[] = [];
   headers.forEach((header, offset) => {
@@ -662,8 +432,6 @@ function repeatedHeadersOf(headers: readonly string[]): ImportRepeatedHeader[] {
   });
   return repeated;
 }
-
-/** "5", "5 and 7", or "5, 7 and 9" — the positions a refusal names when a worker has to act. */
 function listPositions(columnIndexes: readonly number[]): string {
   const [first] = columnIndexes;
   if (first === undefined) return "none";
@@ -675,16 +443,8 @@ function listPositions(columnIndexes: readonly number[]): string {
   const last = columnIndexes[columnIndexes.length - 1];
   return `${head} and ${String(last)}`;
 }
-
-// ---------------------------------------------------------------------------------------------
 // Phase C: turning the suggestion into a confirmed mapping
-// ---------------------------------------------------------------------------------------------
-
-/**
- * One decision a worker makes about one field: supply it from these columns, or leave it out.
- * `choose` names its columns explicitly, so a field the worker has spoken about is never filled
- * from the suggestion behind their back.
- */
+/** One decision a worker makes about one field: supply it from these columns, or leave it out. */
 export type ImportMappingDecision =
   | {
       readonly kind: "choose";
@@ -692,42 +452,21 @@ export type ImportMappingDecision =
       readonly columnIndexes: readonly number[];
     }
   | { readonly kind: "decline"; readonly fieldId: ImportFieldId };
-
 /** One confirmed pair: this field is supplied by the column at this 1-based position. */
 export interface ImportFieldAssignment {
   readonly fieldId: ImportFieldId;
   readonly columnIndex: number;
 }
-
 /** The mapping a worker confirmed: explicit pairs, plus every unused column and its reason. */
 export interface ImportConfirmedMapping {
   readonly columnCount: number;
   readonly assignments: readonly ImportFieldAssignment[];
-  /** The fields this mapping supplies, in vocabulary order. */
   readonly fields: readonly ImportFieldId[];
-  /** Fields the worker chose not to import. */
   readonly declined: readonly ImportFieldId[];
-  /** Fields no column supplies and the worker did not decline. */
   readonly unmapped: readonly ImportFieldId[];
   readonly ignored: readonly ImportIgnoredColumn[];
 }
-
-export type ImportMappingRefusalCode =
-  /** A single-valued field with two or more candidate columns and no chosen one. */
-  | "field-ambiguous"
-  /** A single-valued field assigned two or more columns. */
-  | "field-not-single"
-  /** One column assigned to two or more fields. */
-  | "column-shared"
-  /** A chosen position the file does not have. */
-  | "column-not-found"
-  /** A chosen column that can never be mapped: blank header, consent, or an excluded fact. */
-  | "column-excluded"
-  /** Two decisions for one field, so which one stands is unknown. */
-  | "decision-duplicated"
-  /** A choice that names no column at all. */
-  | "decision-empty";
-
+export type ImportMappingRefusalCode = "field-ambiguous" | "field-not-single" | "column-shared" | "column-not-found" | "column-excluded" | "decision-duplicated" | "decision-empty";
 /** A reason the mapping cannot be confirmed, naming the field and the exact positions involved. */
 export interface ImportMappingRefusal {
   readonly code: ImportMappingRefusalCode;
@@ -735,35 +474,20 @@ export interface ImportMappingRefusal {
   readonly columnIndexes: readonly number[];
   readonly message: string;
 }
-
-export type ImportConfirmMappingResult =
-  | { readonly ok: true; readonly mapping: ImportConfirmedMapping }
-  | { readonly ok: false; readonly refusals: ImportMappingRefusal[] };
-
-/**
- * Confirms a suggestion, applying the worker's decisions, and returns either the explicit mapping or
- * every problem that stops it. A field the worker has not spoken about keeps the suggestion when the
- * suggestion is already decisive: one candidate column, or every candidate column of a multi-valued
- * field. An ambiguous single-valued field is never guessed.
- */
-export function confirmMapping(
-  suggestion: ImportSuggestedMapping,
-  decisions: readonly ImportMappingDecision[] = [],
-): ImportConfirmMappingResult {
+export type ImportConfirmMappingResult = { readonly ok: true; readonly mapping: ImportConfirmedMapping } | { readonly ok: false; readonly refusals: ImportMappingRefusal[] };
+/** Confirms a suggestion, applying the worker's decisions, and returns either the explicit mapping or every problem that stops it. */
+export function confirmMapping(suggestion: ImportSuggestedMapping, decisions: readonly ImportMappingDecision[] = []): ImportConfirmMappingResult {
   const refusals: ImportMappingRefusal[] = [];
   const decisionByField = decisionsByField(decisions, refusals);
   const assignmentByField = new Map<ImportFieldId, number[]>();
   const declined: ImportFieldId[] = [];
-
   for (const fieldId of IMPORT_FIELD_IDS) {
     const field = vocabularyField(fieldId);
     const decision = decisionByField.get(fieldId);
-
     if (decision?.kind === "decline") {
       declined.push(fieldId);
       continue;
     }
-
     if (decision?.kind === "choose") {
       // A position named twice is one position: the confirmed mapping holds one pair per field and
       // column, and repeating it never widens what the file supplies.
@@ -780,10 +504,8 @@ export function confirmMapping(
       assignmentByField.set(fieldId, chosen);
       continue;
     }
-
     const claim = suggestion.claims.find((candidate) => candidate.fieldId === fieldId);
     if (claim === undefined) continue;
-
     if (field.cardinality === "single" && claim.columnIndexes.length > 1) {
       refusals.push({
         code: "field-ambiguous",
@@ -793,17 +515,13 @@ export function confirmMapping(
       });
       continue;
     }
-
     assignmentByField.set(fieldId, [...claim.columnIndexes]);
   }
-
   const fieldsByColumn = new Map<number, ImportFieldId[]>();
-
   for (const fieldId of IMPORT_FIELD_IDS) {
     const columnIndexes = assignmentByField.get(fieldId);
     if (columnIndexes === undefined) continue;
     const field = vocabularyField(fieldId);
-
     if (field.cardinality === "single" && columnIndexes.length > 1) {
       refusals.push({
         code: "field-not-single",
@@ -812,7 +530,6 @@ export function confirmMapping(
         message: `"${field.label}" holds a single value, but columns ${listPositions(columnIndexes)} are all assigned to it. Keep one column.`,
       });
     }
-
     for (const columnIndex of columnIndexes) {
       const column = suggestion.columns.find((candidate) => candidate.index === columnIndex);
       if (column === undefined) {
@@ -824,7 +541,6 @@ export function confirmMapping(
         });
         continue;
       }
-
       const blocked = blockedColumn(column, suggestion.ignored);
       if (blocked !== null) {
         refusals.push({
@@ -835,13 +551,11 @@ export function confirmMapping(
         });
         continue;
       }
-
       const claimants = fieldsByColumn.get(columnIndex);
       if (claimants === undefined) fieldsByColumn.set(columnIndex, [fieldId]);
       else claimants.push(fieldId);
     }
   }
-
   for (const [columnIndex, fieldIds] of fieldsByColumn) {
     if (fieldIds.length < 2) continue;
     const labels = fieldIds.map((fieldId) => `"${vocabularyField(fieldId).label}"`).join(" and ");
@@ -852,13 +566,10 @@ export function confirmMapping(
       message: `Column ${columnIndex} is claimed by ${labels}; one column supplies one field.`,
     });
   }
-
   if (refusals.length > 0) return { ok: false, refusals };
-
   const assignments: ImportFieldAssignment[] = [];
   const fields: ImportFieldId[] = [];
   const unmapped: ImportFieldId[] = [];
-
   for (const fieldId of IMPORT_FIELD_IDS) {
     const columnIndexes = assignmentByField.get(fieldId);
     if (columnIndexes === undefined) {
@@ -870,7 +581,6 @@ export function confirmMapping(
       assignments.push({ fieldId, columnIndex });
     }
   }
-
   return {
     ok: true,
     mapping: {
@@ -883,11 +593,7 @@ export function confirmMapping(
     },
   };
 }
-
-function decisionsByField(
-  decisions: readonly ImportMappingDecision[],
-  refusals: ImportMappingRefusal[],
-): Map<ImportFieldId, ImportMappingDecision> {
+function decisionsByField(decisions: readonly ImportMappingDecision[], refusals: ImportMappingRefusal[]): Map<ImportFieldId, ImportMappingDecision> {
   const byField = new Map<ImportFieldId, ImportMappingDecision>();
   for (const decision of decisions) {
     if (byField.has(decision.fieldId)) {
@@ -903,7 +609,6 @@ function decisionsByField(
   }
   return byField;
 }
-
 function uniquePositions(columnIndexes: readonly number[]): number[] {
   const unique: number[] = [];
   for (const columnIndex of columnIndexes) {
@@ -911,56 +616,29 @@ function uniquePositions(columnIndexes: readonly number[]): number[] {
   }
   return unique;
 }
-
 function ascending(columnIndexes: readonly number[]): number[] {
   return [...columnIndexes].sort((left, right) => left - right);
 }
-
-/**
- * The reason a column can never be hand-mapped either: a column with no header, a subscription or
- * consent statement, or a fact this import does not produce. A merely unrecognised header may still
- * be mapped deliberately, because the worker may know what the column holds.
- */
-function blockedColumn(
-  column: ImportColumnMapping,
-  ignoredColumns: readonly ImportIgnoredColumn[],
-): ImportIgnoredColumn | null {
+function blockedColumn(column: ImportColumnMapping, ignoredColumns: readonly ImportIgnoredColumn[]): ImportIgnoredColumn | null {
   if (column.suggestedField !== null) return null;
   const recorded = ignoredColumns.find((candidate) => candidate.index === column.index);
   if (recorded === undefined) return null;
-  const blocked =
-    recorded.reason === "blank-header" ||
-    recorded.reason === "consent-preserved-as-data" ||
-    recorded.reason === "excluded-topic";
+  const blocked = recorded.reason === "blank-header" || recorded.reason === "consent-preserved-as-data" || recorded.reason === "excluded-topic";
   return blocked ? recorded : null;
 }
-
-/**
- * Every column the confirmed mapping does not use, in file order: the columns the suggestion already
- * ignored, and the columns it offered that the worker did not take.
- */
-function ignoredColumnsFor(
-  suggestion: ImportSuggestedMapping,
-  assignmentByField: ReadonlyMap<ImportFieldId, readonly number[]>,
-  declined: readonly ImportFieldId[],
-): ImportIgnoredColumn[] {
+function ignoredColumnsFor(suggestion: ImportSuggestedMapping, assignmentByField: ReadonlyMap<ImportFieldId, readonly number[]>, declined: readonly ImportFieldId[]): ImportIgnoredColumn[] {
   const usedColumns: number[] = [];
   for (const columnIndexes of assignmentByField.values()) usedColumns.push(...columnIndexes);
-
   const ignored: ImportIgnoredColumn[] = [];
-
   for (const column of suggestion.columns) {
     if (usedColumns.includes(column.index)) continue;
-
     const recorded = suggestion.ignored.find((candidate) => candidate.index === column.index);
     if (recorded !== undefined) {
       ignored.push(recorded);
       continue;
     }
-
     const fieldId = column.suggestedField;
     if (fieldId === null) continue;
-
     const field = vocabularyField(fieldId);
     if (declined.includes(fieldId)) {
       ignored.push({
@@ -972,12 +650,8 @@ function ignoredColumnsFor(
       });
       continue;
     }
-
     const takenBy = assignmentByField.get(fieldId);
-    const instead =
-      takenBy === undefined || takenBy.length === 0
-        ? ""
-        : ` It is supplied by column ${listPositions(ascending(takenBy))} instead.`;
+    const instead = takenBy === undefined || takenBy.length === 0 ? "" : ` It is supplied by column ${listPositions(ascending(takenBy))} instead.`;
     ignored.push({
       index: column.index,
       header: column.header,
@@ -986,13 +660,9 @@ function ignoredColumnsFor(
       message: `Not used in the confirmed mapping: column ${column.index} could supply "${field.label}" and was not chosen.${instead}`,
     });
   }
-
   return ignored;
 }
-
-// ---------------------------------------------------------------------------------------------
 // Phase D: what this file deliberately does not do
-// ---------------------------------------------------------------------------------------------
 //
 // A mapping describes columns, never people. Nothing here compares two cell values, suggests that a
 // row matches a contact the worker already has, or says a row will "update" one: reuse is a decision

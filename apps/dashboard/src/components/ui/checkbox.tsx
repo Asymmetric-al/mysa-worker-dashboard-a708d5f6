@@ -1,19 +1,7 @@
 "use client";
-
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { cn } from "@/lib/cn";
 import { CheckIcon } from "lucide-react";
-
-/* BLITZY [A11Y]: the design system restyles, rather than removes, the focus indicator — a
- * full-strength `ring-ring` at the declared 3px width, which measures 4.83:1 against the page
- * background in the light theme and so clears SC 1.4.11's 3:1. `outline-none` no longer leaves
- * a focused control without an indicator, because the token layer's forced-colors outline is
- * drawn in a system colour where the ring itself is replaced. The disabled state is drawn from
- * the `data-disabled` attribute Base UI emits on this root span, because the registry's
- * `disabled:` variant cannot match a non-native control: the root is a span beside a visually
- * hidden input, so `:disabled` never matches and a standalone disabled checkbox would otherwise
- * keep its enabled appearance.
- */
 function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
   return (
     <CheckboxPrimitive.Root
@@ -24,14 +12,10 @@ function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
       )}
       {...props}
     >
-      <CheckboxPrimitive.Indicator
-        data-slot="checkbox-indicator"
-        className="grid place-content-center text-current transition-none [&>svg]:size-3.5"
-      >
+      <CheckboxPrimitive.Indicator data-slot="checkbox-indicator" className="grid place-content-center text-current transition-none [&>svg]:size-3.5">
         <CheckIcon />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );
 }
-
 export { Checkbox };

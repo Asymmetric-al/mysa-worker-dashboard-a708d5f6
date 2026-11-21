@@ -1,100 +1,31 @@
 /**
  * The Partners family's single wording source for every state a surface can be in, for the value
  * renderings that must stay distinguishable, and for the four outcomes a saved form reports.
- *
- * Why it exists. Every surface this family renders — the roster, a saved view, the partner detail,
- * the private-preparation list, the interaction list, the open-task section and the authorised
- * support-history section — reaches states that can look alike on screen while meaning entirely
- * different things: a recorded zero, a value the source never supplied, a value withheld from this
- * context, a source that could not be read, a subtotal over partial coverage, a view that matches
- * nothing, and a context that admits nothing at all. Those states must stay apart in cards, in
- * tooltips, in CSV cells and in accessible labels, a denied read must disclose no count, title,
- * existence flag or size, and a failed save must keep what the worker typed. The words that carry
- * those distinctions are declared once, here, and nowhere else in the family.
- *
- * What this module declares, and what it leaves alone. It declares keys and their sentences; it
- * does not declare the notice vocabulary. The notice component in `src/components/state-notice.tsx`
- * owns `NoticeKind`, and the kinds kept here are derived from that type — the import is type-only,
- * so it is erased at build time and this module still carries no runtime dependency on the
- * component — so a kind renamed there fails this module's own tuple check and a kind added there
- * becomes a missing entry in the table below. A partners component passes a matching entry of this
- * module into the notice: `empty`, `unavailable`, `unknown`, `denied` and `partial-coverage` line up
- * with that component's like-named kinds. `withheld` is the one entry here that is deliberately not
- * a notice kind — it is the word the status badge in `src/components/status-badge.tsx` already
- * renders for a withheld value — so the entry here supplies the explanation a surface shows beside
- * that badge.
- * `loading` belongs to the notice component, and `language-unavailable` to the content family; both
- * are deliberately absent from this vocabulary rather than reimplemented.
- *
- * The module is text and types only. No key here may reach a component (`src/components`), the
- * store, another feature, a clock or a locale: a phrase lives here once, is reused from here, and
- * never becomes a second implementation of a component's job.
  */
-
 import type { NoticeKind } from "@/components/state-notice";
 import type { ValueState } from "@/modules/data-service/envelope";
-
 import { FACET_GROUPING_COPY } from "./facets";
 import { SAVED_VIEW_COPY } from "./privacy";
-
-/**
- * A notice kind a Partners surface renders, taken from the notice component's own union so a kind
- * renamed or added there fails to compile here rather than leaving a dead entry in this module.
- */
+/** A notice kind a Partners surface renders, taken from the notice component's own union so a kind renamed or added there fails to compile here rather than leaving a dead entry in this module. */
 export type SurfaceNoticeState = Exclude<NoticeKind, "loading" | "language-unavailable">;
-
-/**
- * The one state that is not a notice kind: the word the status badge in
- * `src/components/status-badge.tsx` renders for a withheld value, whose explanation the entry here
- * supplies.
- */
+/** The one state that is not a notice kind: the word the status badge in `src/components/status-badge.tsx` renders for a withheld value, whose explanation the entry here supplies. */
 export type WithheldSurfaceState = "withheld";
-
 /** One state a Partners surface can be in. */
 export type SurfaceState = SurfaceNoticeState | WithheldSurfaceState;
-
 /** The states one Partners surface can be in, listed once so the set has a runtime form as well as a type. */
-export const SURFACE_STATES = [
-  "empty",
-  "unavailable",
-  "unknown",
-  "withheld",
-  "denied",
-  "partial-coverage",
-] as const satisfies readonly SurfaceState[];
-
+export const SURFACE_STATES = ["empty", "unavailable", "unknown", "withheld", "denied", "partial-coverage"] as const satisfies readonly SurfaceState[];
 /** Every Partners surface that needs its own wording, one member per rendered region. */
-export const PARTNERS_SURFACES = [
-  "roster",
-  "saved-view",
-  "partner-detail",
-  "private-preparation",
-  "interactions",
-  "open-tasks",
-  "support-history",
-] as const;
-
+export const PARTNERS_SURFACES = ["roster", "saved-view", "partner-detail", "private-preparation", "interactions", "open-tasks", "support-history"] as const;
 /** A key identifying one Partners surface. */
 export type PartnersSurface = (typeof PARTNERS_SURFACES)[number];
-
-/**
- * One state's wording: a short title, the sentence that carries the meaning, and at most two
- * actions with the primary first. A state with no honest action carries none — an invented action
- * is worse than an empty one.
- */
+/** One state's wording: a short title, the sentence that carries the meaning, and at most two actions with the primary first. */
 export type StateCopy = {
   readonly title: string;
   readonly body: string;
   readonly actionLabel?: string;
   readonly secondaryActionLabel?: string;
 };
-
-/**
- * The shared action vocabulary every entry here draws on, so one action is spelled one way across
- * the whole family. `clearFilters` and `repairSavedView` are the declarations owned by `./facets`
- * and `./privacy` respectively, referenced rather than retyped: `repairSavedView` is the label the
- * saved-view bar and the drift notice share, whose sentence stays in `SAVED_VIEW_COPY`.
- */
+/** The shared action vocabulary every entry here draws on, so one action is spelled one way across the whole family. */
 export const PARTNER_ACTION_LABELS = {
   addPrivateContact: "Add a private contact",
   logInteraction: "Log an interaction",
@@ -105,20 +36,8 @@ export const PARTNER_ACTION_LABELS = {
   clearFilters: FACET_GROUPING_COPY.clearAll,
   repairSavedView: SAVED_VIEW_COPY.repair.title,
 } as const;
-
-/**
- * The wording for every state of every surface this family renders.
- *
- * Two rules hold across the table. A denied entry names only that the surface is unavailable in the
- * ministry being worked in and offers the context switch, because anything more — a count, a name,
- * a title, a size, a hint that something is behind the door — is exactly the disclosure a denial is
- * meant to prevent. And an entry states the one fact that separates its state from the state most
- * easily mistaken for it: an unread list is not an empty list, a hidden column is not a blank field,
- * an incomplete subtotal is not a smaller total, and a gap in coverage is not a zero.
- */
-export const SURFACE_STATE_COPY: Readonly<
-  Record<PartnersSurface, Readonly<Record<SurfaceState, StateCopy>>>
-> = {
+/** The wording for every state of every surface this family renders. */
+export const SURFACE_STATE_COPY: Readonly<Record<PartnersSurface, Readonly<Record<SurfaceState, StateCopy>>>> = {
   roster: {
     empty: {
       title: "No partner matches the filters in effect",
@@ -331,75 +250,49 @@ export const SURFACE_STATE_COPY: Readonly<
     },
   },
 };
-
-/**
- * How one value-bearing field's state is worded: the short phrase a surface shows, the accessible
- * label a screen reader reads in its place, and the explanation that says what the state means.
- */
+/** How one value-bearing field's state is worded: the short phrase a surface shows, the accessible label a screen reader reads in its place, and the explanation that says what the state means. */
 export type ValueStateCopy = {
   readonly phrase: string;
   readonly accessibleLabel: string;
   readonly explanation?: string;
 };
-
-/**
- * The wording for each of the six value states the envelope declares, keyed by the envelope's own
- * union so a seventh member would fail to compile here rather than reach a screen unworded.
- *
- * No entry formats money, a date or a count: a surface formats the value it already holds and takes
- * from here only the words that say what kind of value it is. `incomplete-subtotal` is the one state
- * a surface never chooses — the envelope derives it from partial coverage — so this entry exists to
- * explain a state the surface was handed, not to let a surface decide a subtotal is partial.
- */
+/** The wording for each of the six value states the envelope declares, keyed by the envelope's own union so a seventh member would fail to compile here rather than reach a screen unworded. */
 export const VALUE_STATE_COPY: Readonly<Record<ValueState, ValueStateCopy>> = {
   // The surface renders the formatted amount itself and uses this entry as accessible-label context
   // only; the phrase never stands in place of the number.
   value: {
     phrase: "Recorded",
     accessibleLabel: "A recorded value, taken from the source as it stands.",
-    explanation:
-      "The figure is a recorded value rather than an estimate, and it carries the coverage stated beside it.",
+    explanation: "The figure is a recorded value rather than an estimate, and it carries the coverage stated beside it.",
   },
   zero: {
     phrase: "Zero recorded",
     accessibleLabel: "A recorded zero, which is a known value and not a missing one.",
-    explanation:
-      "The source established a zero. It is not unknown, not withheld and not unavailable.",
+    explanation: "The source established a zero. It is not unknown, not withheld and not unavailable.",
   },
   unknown: {
     phrase: "Unknown",
     accessibleLabel: "Unknown, because the source did not supply this value.",
-    explanation:
-      "The source did not supply the value, so nothing is assumed and nothing is filled in to stand for it.",
+    explanation: "The source did not supply the value, so nothing is assumed and nothing is filled in to stand for it.",
   },
   withheld: {
     phrase: "Not shown",
     accessibleLabel: "Withheld, because this context does not show the recorded value.",
-    explanation:
-      "A value is recorded and this context does not show it, so it stays out of sight rather than becoming absent.",
+    explanation: "A value is recorded and this context does not show it, so it stays out of sight rather than becoming absent.",
   },
   unavailable: {
     phrase: "Unavailable",
     accessibleLabel: "Unavailable, because the source behind the value could not be read.",
-    explanation:
-      "The source behind this figure is down, so the figure is unavailable; a failed read is neither a missing value nor a zero.",
+    explanation: "The source behind this figure is down, so the figure is unavailable; a failed read is neither a missing value nor a zero.",
   },
   "incomplete-subtotal": {
     phrase: "Incomplete subtotal",
     accessibleLabel: "An incomplete subtotal, because the coverage for the period is partial.",
-    explanation:
-      "Coverage for the period is partial, so this subtotal covers only the part the source holds, and the coverage statement says which part.",
+    explanation: "Coverage for the period is partial, so this subtotal covers only the part the source holds, and the coverage statement says which part.",
   },
 };
-
-/**
- * The four outcomes a saved form or composer reports, worded so a conflict is not a failure, an
- * unchanged save is not a silent success, a failed save keeps what was typed, and an unconfirmed
- * save is never presented as a reason to submit the same work again.
- */
-export const FORM_OUTCOME_COPY: Readonly<
-  Record<"conflict" | "unchanged" | "unavailable" | "unknown", StateCopy>
-> = {
+/** The four outcomes a saved form or composer reports, worded so a conflict is not a failure, an unchanged save is not a silent success, a failed save keeps what was typed, and an unconfirmed. */
+export const FORM_OUTCOME_COPY: Readonly<Record<"conflict" | "unchanged" | "unavailable" | "unknown", StateCopy>> = {
   conflict: {
     title: "This changed while you were editing",
     body: "The current value is shown beside what you entered, and nothing was replaced. Applying your version again is a deliberate choice you make after comparing the two.",

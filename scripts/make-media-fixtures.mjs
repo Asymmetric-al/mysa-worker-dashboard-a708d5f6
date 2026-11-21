@@ -1,45 +1,16 @@
 /**
  * Authors and verifies the six committed media fixtures the video, caption, poster, rejection and
  * seeded-image work depends on (AAP 0.9.1, the root `fixtures:media` script, 0.11.1; assumption A6).
- *
- * This is local authoring of committed fixtures — not production transcoding or production scanning.
- * It writes at most six files, all under `apps/dashboard/public/fixtures/media`, and it never reaches
- * the network: a licensed clip is supplied by the operator (already in place, or named by `--from`), and
- * an encoder runs only when `--encode` asks for it. Nothing in the application reads this script, so no
- * runtime path depends on an encoder being installed.
- *
- * Modes
- *   --check      (default) verify what is present, print every digest and the provenance block, write
- *                nothing.
- *   --write      author whatever is missing; never replace an existing artefact.
- *   --force      with `--write`: replace an artefact this script authors.
- *   --encode     Route 1 of assumption A6: encode both clips with a local encoder; needs
- *                `--write --force`.
- *   --from <dir> Route 2 of assumption A6: copy the two supplied clips out of another directory.
- *
- * Exit codes
- *   0  all six artefacts are present and every assertion holds
- *   1  an artefact is present but fails an assertion, or a derivation could not be performed safely
- *   2  the command line is unusable
- *   3  something is missing: an artefact in `--check`, a clip this script cannot produce, or the image
- *      library needed to author the poster and the EXIF-bearing original
- *
- * Run as `bun scripts/make-media-fixtures.mjs`, or under Node 26 — it imports only `node:` built-ins and
- * the image library, so either runtime behaves identically.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-
-/** Repository root, derived from this file's own location so the script works from any directory. */
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-/** The one directory this script writes into. */
 const DEST = path.join(ROOT, "apps", "dashboard", "public", "fixtures", "media");
 
-/** The application's directory, whose installed packages include the image library it declares. */
 const APPS = path.join(ROOT, "apps");
 
 const MP4 = "sample-h264.mp4";
@@ -49,41 +20,27 @@ const POSTER = "poster.jpg";
 const MKV = "sample-unsupported.mkv";
 const EXIF_ORIGINAL = "IMG_20260814-harbour-youth-group.jpg";
 
-/** The six fixtures in a fixed, sorted order, so two runs print byte-identical output. */
 const FIXTURES = [EXIF_ORIGINAL, POSTER, MP4, MKV, WEBM, VTT];
 
-/** The two clips the operator supplies (Route 2) or the encoder produces (Route 1). */
 const CLIPS = [MP4, WEBM];
 
-/** Assumption A6 keeps each committed clip small so the repository stays light. */
 const MAX_CLIP_BYTES = 2 * 1024 * 1024;
 
 const POSTER_WIDTH = 960;
 const POSTER_HEIGHT = 540;
 const POSTER_QUALITY = 80;
 
-/** Zinc 100 as the surface and Zinc 600 as the single contrasting band — theme tokens, no artwork. */
 const POSTER_SURFACE = { r: 0xf4, g: 0xf4, b: 0xf5 };
 const POSTER_BAND = { r: 0x52, g: 0x52, b: 0x5b };
 const POSTER_BAND_TOP = 216;
 const POSTER_BAND_HEIGHT = 108;
 
-/**
- * The EXIF-bearing original the seeded image asset keeps private: a landscape frame whose EXIF
- * orientation turns it portrait on display, at a size the 2,000 px display cap cannot leave alone.
- *
- * 2400 × 1350 with Orientation 6 orients to 1350 × 2400, and the pipeline scales the longest edge to
- * 2,000 px, so the rendition the seed serves is 1125 × 2000 — a portrait image whose preparation
- * demonstrably applied the orientation and hit the cap rather than passing the source through.
- */
 const EXIF_WIDTH = 2400;
 const EXIF_HEIGHT = 1350;
 const EXIF_QUALITY = 86;
 
-/** The EXIF Orientation the original carries: rotate 90° clockwise on display (1 would be upright). */
 const EXIF_ORIENTATION = 6;
 
-/** The EXIF facts the original carries, each asserted back out of the committed bytes by `--check`. */
 const EXIF_TAGS = {
   make: "Synthetic Camera Co.",
   model: "Harbour Test Body",
@@ -96,45 +53,23 @@ const EXIF_TAGS = {
   gpsLongitudeRef: "W",
   gpsLongitude: "1/1 52/1 5678/100",
 };
-
-/** The display cap the application's image pipeline applies, restated here only to derive the rendition size. */
 const DISPLAY_MAX_EDGE = 2000;
 
-/** Authoring limit for the EXIF-bearing original, so the repository stays light. */
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 
-/**
- * The caption track is also the transcript, so each line describes what the clip shows and the two
- * together read as consecutive sentences once the cues are concatenated.
- */
-const VTT_LINES = [
-  "A single flower opens against a dark background.",
-  "Light shifts across its petals as the bloom widens.",
-];
+const VTT_LINES = ["A single flower opens against a dark background.", "Light shifts across its petals as the bloom widens."];
 
-/**
- * Cue boundaries inside a clip of `limitSeconds`: the midpoint and the last half second that still lies
- * inside the clip. The committed 5.055 s pair therefore reads 00:00:02.500 and 00:00:05.000, while a
- * shorter encoded clip gets boundaries that fit it instead of cues running past its end.
- */
 function captionBoundaries(limitSeconds) {
   const halfSecond = (value) => Math.floor(value * 2) / 2;
   const middle = Math.max(0.5, halfSecond(limitSeconds / 2));
   const last = Math.max(middle + 0.5, halfSecond(limitSeconds));
   return { middle, last };
 }
-
-/** The caption track for a clip of `limitSeconds`, as deterministic UTF-8 text with LF endings. */
 function vttContent(limitSeconds) {
   const { middle, last } = captionBoundaries(limitSeconds);
-  const timings = [
-    `00:00:00.000 --> ${formatCueTime(middle)}`,
-    `${formatCueTime(middle)} --> ${formatCueTime(last)}`,
-  ];
+  const timings = [`00:00:00.000 --> ${formatCueTime(middle)}`, `${formatCueTime(middle)} --> ${formatCueTime(last)}`];
   return `WEBVTT\n\n${timings.map((timing, index) => `${timing}\n${VTT_LINES[index]}`).join("\n\n")}\n`;
 }
-
-/** The shortest duration the present clips report, which is the window the captions must fit inside. */
 function captionLimitFromClips() {
   const durations = [];
   for (const name of CLIPS) {
@@ -143,18 +78,12 @@ function captionLimitFromClips() {
     if (typeof durationS === "number") durations.push(durationS);
   }
   if (durations.length === 0) {
-    throw new FixtureError(
-      EXIT.failed,
-      `neither clip reports a duration in its container header, so ${VTT} cannot be bounded to the clip it captions`,
-    );
+    throw new FixtureError(EXIT.failed, `neither clip reports a duration in its container header, so ${VTT} cannot be bounded to the clip it captions`);
   }
   return Math.min(...durations);
 }
-
-/** ISO base media file format: the box types descended into while looking for `mvhd` and `tkhd`. */
 const MP4_CONTAINER_BOXES = new Set(["moov", "trak", "mdia", "minf", "stbl"]);
 
-/** EBML element ids this script reads. Values are the ids themselves, not offsets into a layout table. */
 const EBML_HEADER = 0x1a45dfa3;
 const EBML_DOC_TYPE = 0x4282;
 const EBML_SEGMENT = 0x18538067;
@@ -170,59 +99,32 @@ const EBML_PIXEL_HEIGHT = 0xba;
 const WEBM_DOC_TYPE = "webm";
 const MATROSKA_DOC_TYPE = "matroska";
 
-/** Default Matroska/WebM timecode scale: one millisecond, so duration ticks × scale / 1e9 is seconds. */
 const DEFAULT_TIMECODE_SCALE = 1000000;
 
 const EXIT = { ok: 0, failed: 1, usage: 2, missing: 3 };
 
-/** The usage message a bad command line earns: the flag set, then the reason this run cannot proceed. */
-const USAGE_HEAD =
-  "usage: bun scripts/make-media-fixtures.mjs [--check | --write [--force] [--from <dir>]] [--encode]";
+const USAGE_HEAD = "usage: bun scripts/make-media-fixtures.mjs [--check | --write [--force] [--from <dir>]] [--encode]";
 
 function usageText(reason) {
   return `${USAGE_HEAD}\n       ${reason}`;
 }
-
-/*
- * The provenance entries this script generates for itself, held once because a `--write` run that has just
- * authored one of these fixtures and the digest table below both report the same record for it.
- */
-
-/** The poster: generated here with the image library, so it carries no third-party content. */
 const GENERATED_POSTER_RECORD = {
-  route:
-    "Generated by this script with sharp: a flat theme surface with one contrasting band, no text, no logo and no illustration",
+  route: "Generated by this script with sharp: a flat theme surface with one contrasting band, no text, no logo and no illustration",
   source: "None — generated, not a licensed work",
   licence: "Not applicable (generated)",
 };
-
-/** The caption track: written here from this script's own text, so it carries no third-party content. */
 const GENERATED_VTT_RECORD = {
   route: "Generated by this script: hand-authored WebVTT, identical bytes on every run",
   source: "None — generated, not a licensed work",
   licence: "Not applicable (generated)",
 };
-
-/**
- * The EXIF-bearing original: drawn and tagged here with the image library, so it carries no third-party
- * content. Its EXIF is this script's own — the camera make and model are invented, the instant is a
- * literal, and the coordinates name no real place — because the fixture exists to be stripped, not to
- * describe a photograph.
- */
 const GENERATED_EXIF_RECORD = {
   route: `Generated by this script with sharp: two theme-token bands drawn at ${EXIF_WIDTH} × ${EXIF_HEIGHT}, encoded at JPEG quality ${EXIF_QUALITY}, then tagged with EXIF Make, Model, Software, ImageDescription, Copyright, DateTimeOriginal, Orientation ${EXIF_ORIENTATION} and a GPS latitude and longitude`,
   source: "None — generated, not a licensed work: every EXIF value is this script's own literal",
   licence: "Not applicable (generated)",
 };
-
-/**
- * The rejection case is the WebM with its DocType rewritten, so its route and source are the derivation and
- * its licence is whatever the source clip's own record states: the derivation adds no third-party content, and
- * it cannot claim a licence for the clip it derives from that the clip itself does not have.
- */
 const DERIVED_MKV = { derivedFrom: WEBM };
 
-/** The derived record for a source clip whose record is `webmRecord`, or `null` when that clip has none. */
 function derivedMkvRecord(webmRecord) {
   if (webmRecord === null) return null;
   return {
@@ -231,27 +133,14 @@ function derivedMkvRecord(webmRecord) {
     licence: `${webmRecord.licence} — inherited from \`${WEBM}\`; the derivation adds no third-party content of its own`,
   };
 }
-
-/**
- * The provenance recorded for each committed fixture, keyed by the SHA-256 of the exact bytes it was
- * established for. A record is a fact about those bytes and nothing else: a fixture replaced by other content
- * lands on a digest no entry holds, and the run reports that openly instead of letting the new bytes inherit a
- * route and a licence they may not have. `docs/architecture.md` is the delivered record; this table is what
- * the provenance block below prints for a digest it recognises.
- */
 const RECORDED_FIXTURE_SOURCES = new Map([
   ["4857025889c3471e37ccf1eeae9199f48d9bce8d1c57d6c8c03dda05c4fa2420", GENERATED_POSTER_RECORD],
-  [
-    "f8a74b36d8307316c9c920d3637d6e308844abff90ce33ad936461047c4fcbb9",
-    GENERATED_EXIF_RECORD,
-  ],
+  ["f8a74b36d8307316c9c920d3637d6e308844abff90ce33ad936461047c4fcbb9", GENERATED_EXIF_RECORD],
   [
     "0cd83d944a6ca7822b4a8306cecc60a36e859b041f6702c6a1ad9ead78924451",
     {
-      route:
-        "Route 2 of assumption A6 — a published clip committed byte-for-byte; no encoder produced it",
-      source:
-        "`https://mdn.github.io/shared-assets/videos/flower.mp4` (MDN shared assets, also published in the MDN `interactive-examples` repository under `live-examples/media/cc0-videos/`)",
+      route: "Route 2 of assumption A6 — a published clip committed byte-for-byte; no encoder produced it",
+      source: "`https://mdn.github.io/shared-assets/videos/flower.mp4` (MDN shared assets, also published in the MDN `interactive-examples` repository under `live-examples/media/cc0-videos/`)",
       licence: "CC0 1.0 public-domain dedication",
     },
   ],
@@ -268,8 +157,6 @@ const RECORDED_FIXTURE_SOURCES = new Map([
   ],
   ["cb14d23eaff181f27211e484e71aca8240b9f3bdb1b8598b2955be9c0611e044", GENERATED_VTT_RECORD],
 ]);
-
-/** A failure with the exit code it must produce, so `main` never invents one at the call site. */
 class FixtureError extends Error {
   constructor(exitCode, message) {
     super(message);
@@ -277,21 +164,16 @@ class FixtureError extends Error {
     this.exitCode = exitCode;
   }
 }
-
 function write(text) {
   process.stdout.write(text);
 }
-
 function writeError(text) {
   process.stderr.write(text);
 }
-
-/** Reads one command-line flag set into the configuration `main` acts on. */
 function parseCommandLine(argv) {
   const config = { mode: "check", force: false, encode: false, from: null };
   let sawCheck = false;
   let sawWrite = false;
-
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === "--check") {
@@ -313,7 +195,6 @@ function parseCommandLine(argv) {
       return { kind: "usage", reason: `unknown argument ${JSON.stringify(flag)}` };
     }
   }
-
   if (sawCheck && sawWrite) {
     return { kind: "usage", reason: "--check and --write cannot be combined" };
   }
@@ -335,12 +216,9 @@ function parseCommandLine(argv) {
   if (config.from !== null && !fs.statSync(config.from).isDirectory()) {
     return { kind: "usage", reason: `--from ${config.from} is not a directory` };
   }
-
   config.mode = sawWrite ? "write" : "check";
   return { kind: "config", config };
 }
-
-/** The one-line banner, naming the mode and the destination so a transcript shows what ran. */
 function bannerLine(config) {
   const extras = [];
   if (config.encode) extras.push("encode=on");
@@ -349,37 +227,27 @@ function bannerLine(config) {
   const suffix = extras.length === 0 ? "" : ` ${extras.join(" ")}`;
   return `make-media-fixtures: mode=${config.mode} destination=${DEST}${suffix}`;
 }
-
 function fixturePath(name) {
   return path.join(DEST, name);
 }
-
 function relativeFixturePath(name) {
   return path.relative(ROOT, fixturePath(name)).split(path.sep).join("/");
 }
-
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
-
 function count(bytes) {
   return bytes.toLocaleString("en-US");
 }
-
 function hex(value, width = 2) {
   return value.toString(16).padStart(width, "0");
 }
-
 function hexDump(bytes) {
   return [...bytes].map((byte) => hex(byte)).join(" ");
 }
-
-/** Seconds with the container's own precision, e.g. `5.055 s`. */
 function seconds(value) {
   return `${value.toFixed(3)} s`;
 }
-
-/** Collects assertion failures so one run reports every problem instead of only the first. */
 function createChecklist() {
   const failures = [];
   return {
@@ -391,12 +259,6 @@ function createChecklist() {
     },
   };
 }
-
-/**
- * Reads one variable-length integer. With `asId` the whole id is the value; otherwise the leading bits
- * are the width marker and the remainder is the size. `null` means the bytes are not a vint this reader
- * accepts, so no caller walks a document it does not understand.
- */
 function readVint(buffer, offset, asId = false) {
   if (offset < 0 || offset >= buffer.length) return null;
   const first = buffer[offset];
@@ -407,7 +269,6 @@ function readVint(buffer, offset, asId = false) {
     width += 1;
   }
   if (width > 8 || offset + width > buffer.length) return null;
-
   let value = asId ? first : first & (mask - 1);
   // A size whose payload bits are all ones means "unknown length" and is never inherited by an element
   // this script writes.
@@ -419,8 +280,6 @@ function readVint(buffer, offset, asId = false) {
   }
   return { width, value, unknown };
 }
-
-/** Encodes a size vint at exactly `width` bytes, or `null` when the value does not fit that width. */
 function encodeVintSize(value, width) {
   const maximum = 2 ** (7 * width) - 2;
   if (!Number.isSafeInteger(value) || value < 0 || value > maximum) return null;
@@ -433,8 +292,6 @@ function encodeVintSize(value, width) {
   bytes[0] |= 0x80 >> (width - 1);
   return bytes;
 }
-
-/** One EBML element header plus where its payload starts and ends. */
 function readElement(buffer, offset) {
   const id = readVint(buffer, offset, true);
   if (id === null) return null;
@@ -454,11 +311,6 @@ function readElement(buffer, offset) {
     end,
   };
 }
-
-/**
- * Visits the children of one EBML element in document order and reports whether the child chain lands
- * exactly on the parent's end, so a truncated or overlapping document is detected rather than accepted.
- */
 function walkEbmlChildren(buffer, start, end, visit) {
   let offset = start;
   while (offset < end) {
@@ -469,34 +321,27 @@ function walkEbmlChildren(buffer, start, end, visit) {
   }
   return offset === end;
 }
-
 function readUnsignedElement(buffer, element) {
   const length = element.end - element.payloadStart;
   if (length < 1 || length > 6) return null;
   return buffer.readUIntBE(element.payloadStart, length);
 }
-
 function readFloatElement(buffer, element) {
   const length = element.end - element.payloadStart;
   if (length === 4) return buffer.readFloatBE(element.payloadStart);
   if (length === 8) return buffer.readDoubleBE(element.payloadStart);
   return null;
 }
-
 function readAsciiElement(buffer, element) {
   return buffer.toString("latin1", element.payloadStart, element.end);
 }
-
-/** Reads the EBML header of a WebM or Matroska document, including every DocType child it holds. */
 function readEbmlHeader(buffer) {
   const header = readElement(buffer, 0);
   if (header === null || header.id !== EBML_HEADER || header.sizeUnknown) return null;
-
   const docTypeElements = [];
   const wellFormed = walkEbmlChildren(buffer, header.payloadStart, header.end, (child) => {
     if (child.id === EBML_DOC_TYPE) docTypeElements.push(child);
   });
-
   return {
     wellFormed,
     docTypeElements,
@@ -507,24 +352,15 @@ function readEbmlHeader(buffer) {
     idEnd: header.payloadStart - header.sizeWidth,
   };
 }
-
-/**
- * Reads the duration and display dimensions out of a WebM or Matroska document's own header. This is a
- * header read for the provenance record and for bounding the caption cues; whether a file belongs to the
- * admitted video profile is decided by `apps/dashboard/src/modules/media/video.ts`, never here.
- */
 function readEbmlMedia(buffer) {
   const header = readEbmlHeader(buffer);
   if (header === null || !header.wellFormed) return null;
-
   const segment = readElement(buffer, header.headerEnd);
   if (segment === null || segment.id !== EBML_SEGMENT) return null;
-
   let timecodeScale = DEFAULT_TIMECODE_SCALE;
   let durationTicks = null;
   let width = null;
   let height = null;
-
   const segmentWellFormed = walkEbmlChildren(buffer, segment.payloadStart, segment.end, (child) => {
     if (child.id === EBML_INFO) {
       walkEbmlChildren(buffer, child.payloadStart, child.end, (info) => {
@@ -544,7 +380,6 @@ function readEbmlMedia(buffer) {
       });
     });
   });
-
   const scale = typeof timecodeScale === "number" ? timecodeScale : DEFAULT_TIMECODE_SCALE;
   return {
     wellFormed: segmentWellFormed,
@@ -553,8 +388,6 @@ function readEbmlMedia(buffer) {
     height,
   };
 }
-
-/** Locates the first box of `type`, descending only through the container boxes that can hold it. */
 function findMp4Box(buffer, type, start = 0, end = buffer.length) {
   let offset = start;
   while (offset + 8 <= end) {
@@ -570,8 +403,7 @@ function findMp4Box(buffer, type, start = 0, end = buffer.length) {
       size = end - offset;
     }
     if (size < headerLength || offset + size > end) return null;
-    if (kind === type)
-      return { start: offset, payloadStart: offset + headerLength, end: offset + size };
+    if (kind === type) return { start: offset, payloadStart: offset + headerLength, end: offset + size };
     if (MP4_CONTAINER_BOXES.has(kind)) {
       const inner = findMp4Box(buffer, type, offset + headerLength, offset + size);
       if (inner !== null) return inner;
@@ -580,24 +412,16 @@ function findMp4Box(buffer, type, start = 0, end = buffer.length) {
   }
   return null;
 }
-
-/** Reads the `ftyp` brand at the head of an ISO base media file, or `null` when it is not one. */
 function readFtypBrand(buffer) {
   if (buffer.length < 12) return null;
   const size = buffer.readUInt32BE(0);
   if (buffer.toString("latin1", 4, 8) !== "ftyp" || size < 8 || size > buffer.length) return null;
   return buffer.toString("latin1", 8, 12);
 }
-
-/**
- * Reads a movie's duration from `mvhd` and its display dimensions from the first `tkhd`. Header reads
- * for the provenance record only — profile acceptance lives in the media module and its tests.
- */
 function readMp4Media(buffer) {
   const mvhd = findMp4Box(buffer, "mvhd");
   const tkhd = findMp4Box(buffer, "tkhd");
   if (mvhd === null || tkhd === null) return { durationS: null, width: null, height: null };
-
   const movieVersion = buffer[mvhd.payloadStart];
   let durationS = null;
   if (movieVersion === 0 && mvhd.payloadStart + 20 <= mvhd.end) {
@@ -609,7 +433,6 @@ function readMp4Media(buffer) {
     const duration = Number(buffer.readBigUInt64BE(mvhd.payloadStart + 24));
     if (timescale > 0) durationS = duration / timescale;
   }
-
   // `tkhd` carries the display size as 16.16 fixed point after the 8-byte reserved run, the four 2-byte
   // fields and the 36-byte transform matrix; the version decides how long the leading fields are.
   const trackVersion = buffer[tkhd.payloadStart];
@@ -620,17 +443,13 @@ function readMp4Media(buffer) {
     width = buffer.readUInt32BE(sizeOffset) / 65536;
     height = buffer.readUInt32BE(sizeOffset + 4) / 65536;
   }
-
   return { durationS, width, height };
 }
-
-/** Everything this script reports about one clip: container, document type, duration and dimensions. */
 function probeClip(bytes) {
   const brand = readFtypBrand(bytes);
   if (brand !== null) {
     return { container: "mp4", brand, docType: null, ...readMp4Media(bytes) };
   }
-
   const header = readEbmlHeader(bytes);
   const docType = header !== null && header.docTypes.length === 1 ? header.docTypes[0] : null;
   const media = header === null ? null : readEbmlMedia(bytes);
@@ -646,88 +465,44 @@ function probeClip(bytes) {
     height: media === null ? null : media.height,
   };
 }
-
-/**
- * Derives the rejection case from the WebM clip: the same bytes with the EBML DocType rewritten from
- * `webm` to `matroska`, and the EBML header's size vint rewritten for the four bytes that payload grows
- * by. Everything else — including the segment, its clusters and their data — stays byte-identical, and
- * the derivation refuses a document whose structure is not the one it can rewrite safely.
- */
 function deriveMatroska(source) {
   const header = readEbmlHeader(source);
   if (header === null) {
-    throw new FixtureError(
-      EXIT.failed,
-      `${WEBM} does not begin with an EBML header, so no Matroska file can be derived from it`,
-    );
+    throw new FixtureError(EXIT.failed, `${WEBM} does not begin with an EBML header, so no Matroska file can be derived from it`);
   }
   if (!header.wellFormed) {
-    throw new FixtureError(
-      EXIT.failed,
-      `${WEBM} has a malformed EBML header, so the DocType cannot be rewritten safely`,
-    );
+    throw new FixtureError(EXIT.failed, `${WEBM} has a malformed EBML header, so the DocType cannot be rewritten safely`);
   }
   if (header.docTypeElements.length !== 1) {
-    throw new FixtureError(
-      EXIT.failed,
-      `${WEBM} holds ${header.docTypeElements.length} DocType elements; this derivation rewrites exactly one`,
-    );
+    throw new FixtureError(EXIT.failed, `${WEBM} holds ${header.docTypeElements.length} DocType elements; this derivation rewrites exactly one`);
   }
-
   const docType = header.docTypeElements[0];
   const observedDocType = header.docTypes[0];
   if (observedDocType !== WEBM_DOC_TYPE) {
-    throw new FixtureError(
-      EXIT.failed,
-      `${WEBM} declares DocType ${JSON.stringify(observedDocType)}, not ${JSON.stringify(WEBM_DOC_TYPE)}`,
-    );
+    throw new FixtureError(EXIT.failed, `${WEBM} declares DocType ${JSON.stringify(observedDocType)}, not ${JSON.stringify(WEBM_DOC_TYPE)}`);
   }
   if (docType.sizeWidth !== 1) {
-    throw new FixtureError(
-      EXIT.failed,
-      `${WEBM} writes the DocType size as a ${docType.sizeWidth}-byte vint; this derivation rewrites a one-byte size only`,
-    );
+    throw new FixtureError(EXIT.failed, `${WEBM} writes the DocType size as a ${docType.sizeWidth}-byte vint; this derivation rewrites a one-byte size only`);
   }
   if (readAsciiElement(source, docType) !== WEBM_DOC_TYPE) {
-    throw new FixtureError(
-      EXIT.failed,
-      `${WEBM} carries a DocType payload this derivation cannot read as ASCII`,
-    );
+    throw new FixtureError(EXIT.failed, `${WEBM} carries a DocType payload this derivation cannot read as ASCII`);
   }
-
   const segment = readElement(source, header.headerEnd);
   if (segment === null || segment.id !== EBML_SEGMENT) {
-    throw new FixtureError(
-      EXIT.failed,
-      `${WEBM} does not begin its Segment element at the end of the EBML header (byte ${header.headerEnd})`,
-    );
+    throw new FixtureError(EXIT.failed, `${WEBM} does not begin its Segment element at the end of the EBML header (byte ${header.headerEnd})`);
   }
-
   const payload = Buffer.from(MATROSKA_DOC_TYPE, "latin1");
   const rewrittenDocTypeSize = encodeVintSize(payload.length, docType.sizeWidth);
   if (rewrittenDocTypeSize === null) {
-    throw new FixtureError(
-      EXIT.failed,
-      `the ${MATROSKA_DOC_TYPE} DocType does not fit the ${docType.sizeWidth}-byte size vint`,
-    );
+    throw new FixtureError(EXIT.failed, `the ${MATROSKA_DOC_TYPE} DocType does not fit the ${docType.sizeWidth}-byte size vint`);
   }
-
-  const rewrittenDocType = Buffer.concat([
-    source.subarray(docType.start, docType.start + docType.idWidth),
-    rewrittenDocTypeSize,
-    payload,
-  ]);
+  const rewrittenDocType = Buffer.concat([source.subarray(docType.start, docType.start + docType.idWidth), rewrittenDocTypeSize, payload]);
   const docTypeLength = docType.end - docType.start;
-  const headerPayloadLength =
-    header.headerEnd - header.payloadStart - docTypeLength + rewrittenDocType.length;
+  const headerPayloadLength = header.headerEnd - header.payloadStart - docTypeLength + rewrittenDocType.length;
   const rewrittenHeaderSize = encodeVintSize(headerPayloadLength, header.sizeWidth);
   if (rewrittenHeaderSize === null) {
-    throw new FixtureError(
-      EXIT.failed,
-      `the rewritten EBML header size ${headerPayloadLength} does not fit its ${header.sizeWidth}-byte vint`,
-    );
+    throw new FixtureError(EXIT.failed, `the rewritten EBML header size ${headerPayloadLength} does not fit its ${header.sizeWidth}-byte vint`);
   }
-
   const derived = Buffer.concat([
     source.subarray(0, header.idEnd),
     rewrittenHeaderSize,
@@ -736,12 +511,10 @@ function deriveMatroska(source) {
     source.subarray(docType.end, header.headerEnd),
     source.subarray(header.headerEnd),
   ]);
-
   // Re-read what this function just assembled before any caller may write it: a derivation that does not
   // produce a Matroska document is a defect here, never a corrupt fixture on disk.
   const derivedHeader = readEbmlHeader(derived);
-  const derivedSegment =
-    derivedHeader === null ? null : readElement(derived, derivedHeader.headerEnd);
+  const derivedSegment = derivedHeader === null ? null : readElement(derived, derivedHeader.headerEnd);
   const grewBy = derived.length - source.length;
   if (
     derivedHeader === null ||
@@ -751,16 +524,10 @@ function deriveMatroska(source) {
     derivedSegment.id !== EBML_SEGMENT ||
     grewBy !== payload.length - (docType.end - docType.payloadStart)
   ) {
-    throw new FixtureError(
-      EXIT.failed,
-      `the derived Matroska document did not re-read as one (${WEBM} grew by ${grewBy} bytes)`,
-    );
+    throw new FixtureError(EXIT.failed, `the derived Matroska document did not re-read as one (${WEBM} grew by ${grewBy} bytes)`);
   }
-
   return { bytes: derived, grewBy, sourceLength: source.length };
 }
-
-/** What an operator has to do when a clip is absent and this run has no way to produce it. */
 function missingClipInstruction(name) {
   return [
     `${name} is missing from ${DEST}.`,
@@ -771,30 +538,17 @@ function missingClipInstruction(name) {
     `record its source URL and licence in \`docs/architecture.md\`.`,
   ].join("\n");
 }
-
-/** Reads a clip the operator supplied, refusing one that is already larger than A6 allows. */
 function readSuppliedClip(name, fromDirectory) {
   const source = path.join(fromDirectory, name);
   if (!fs.existsSync(source)) {
-    throw new FixtureError(
-      EXIT.missing,
-      `${name} is not in ${fromDirectory}, so there is nothing to copy. ${missingClipInstruction(name)}`,
-    );
+    throw new FixtureError(EXIT.missing, `${name} is not in ${fromDirectory}, so there is nothing to copy. ${missingClipInstruction(name)}`);
   }
   const bytes = fs.readFileSync(source);
   if (bytes.length > MAX_CLIP_BYTES) {
-    throw new FixtureError(
-      EXIT.failed,
-      `${name} in ${fromDirectory} is ${count(bytes.length)} bytes, above the ${count(MAX_CLIP_BYTES)}-byte authoring limit`,
-    );
+    throw new FixtureError(EXIT.failed, `${name} in ${fromDirectory} is ${count(bytes.length)} bytes, above the ${count(MAX_CLIP_BYTES)}-byte authoring limit`);
   }
   return bytes;
 }
-
-/**
- * Every place the workspace could have installed the image library: the root `node_modules` of a hoisted
- * install, then each application package's own `node_modules` of a per-package install.
- */
 function sharpPackageRoots() {
   const roots = [path.join(ROOT, "node_modules", "sharp")];
   if (fs.existsSync(APPS)) {
@@ -804,43 +558,22 @@ function sharpPackageRoots() {
   }
   return roots;
 }
-
-/**
- * Loads the image library from the installed package's own entry point. The package is addressed by
- * path rather than by a bare specifier on purpose: a bare specifier lets a runtime that installs missing
- * packages on demand reach the network, and this script never does.
- */
 async function loadSharp() {
-  const root = sharpPackageRoots().find((candidate) =>
-    fs.existsSync(path.join(candidate, "package.json")),
-  );
+  const root = sharpPackageRoots().find((candidate) => fs.existsSync(path.join(candidate, "package.json")));
   if (root === undefined) {
-    throw new FixtureError(
-      EXIT.missing,
-      `the image library sharp is not installed, so ${POSTER} and ${EXIF_ORIGINAL} cannot be authored; run \`bun install\` at the repository root first`,
-    );
+    throw new FixtureError(EXIT.missing, `the image library sharp is not installed, so ${POSTER} and ${EXIF_ORIGINAL} cannot be authored; run \`bun install\` at the repository root first`);
   }
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
     const entry = path.join(root, typeof manifest.main === "string" ? manifest.main : "index.js");
     const imported = await import(pathToFileURL(entry).href);
     const sharp = imported.default ?? imported;
-    if (typeof sharp !== "function")
-      throw new Error("the installed module exports no sharp factory");
+    if (typeof sharp !== "function") throw new Error("the installed module exports no sharp factory");
     return sharp;
   } catch (error) {
-    throw new FixtureError(
-      EXIT.missing,
-      `sharp is installed at ${root} but could not be loaded (${String(error)}), so ${POSTER} and ${EXIF_ORIGINAL} cannot be authored`,
-    );
+    throw new FixtureError(EXIT.missing, `sharp is installed at ${root} but could not be loaded (${String(error)}), so ${POSTER} and ${EXIF_ORIGINAL} cannot be authored`);
   }
 }
-
-/**
- * Draws the poster: one flat theme surface with a single contrasting band, no text, no logo and no
- * illustration. The buffer is encoded as JPEG without any metadata-carrying call, so no EXIF, ICC or
- * comment segment is produced at all.
- */
 async function authorPoster() {
   const sharp = await loadSharp();
   return sharp({
@@ -863,18 +596,6 @@ async function authorPoster() {
     .jpeg({ quality: POSTER_QUALITY })
     .toBuffer();
 }
-
-/**
- * Draws and tags the EXIF-bearing original the seeded image asset keeps private.
- *
- * The picture is the same kind of thing as the poster — theme-token bands, no text, no logo, no
- * illustration — and every character of the EXIF is this script's own literal: a make, a model, the
- * software that wrote it, a description, a timestamp, an Orientation of 6 and a GPS latitude and
- * longitude in the form EXIF stores them (degrees, minutes and seconds as rationals). Every value is plain
- * ASCII, because an EXIF text field does not round-trip a non-ASCII character and `--check` reads each one
- * back. The tags are written through `withExif` and the orientation through `withMetadata`, both of which
- * the installed image library writes into a real APP1 Exif segment.
- */
 async function authorExifOriginal() {
   const sharp = await loadSharp();
   const bandHeight = Math.round(EXIF_HEIGHT / 5);
@@ -917,50 +638,26 @@ async function authorExifOriginal() {
     .withMetadata({ orientation: EXIF_ORIENTATION })
     .toBuffer();
 }
-
-/* ---------------------------------------------------------------------------------------------------
- * Route 1 of assumption A6 — the only section that looks for or runs an encoder.
- *
- * Every reference to an encoder lives in this section, and the section is reachable only through
- * `--encode`, so no other mode of this script can depend on a binary being installed.
- * --------------------------------------------------------------------------------------------------- */
-
-/** Seconds of synthetic pattern encoded for each clip; short, because these fixtures exist to be played. */
 const ENCODE_SECONDS = 2;
 
-/** Locates an encoder on `PATH`, or explains that Route 1 is unavailable. */
 function detectEncoder() {
   const found = spawnSync("which", ["ffmpeg"], { encoding: "utf8" });
   const binary = found.status === 0 ? found.stdout.trim() : "";
   if (binary === "") {
-    throw new FixtureError(
-      EXIT.missing,
-      "--encode needs ffmpeg on PATH and found none; run without --encode to verify the clips the operator supplied",
-    );
+    throw new FixtureError(EXIT.missing, "--encode needs ffmpeg on PATH and found none; run without --encode to verify the clips the operator supplied");
   }
   const versionRun = spawnSync(binary, ["-version"], { encoding: "utf8" });
   const firstLine = versionRun.status === 0 ? versionRun.stdout.split("\n")[0] : "";
   return { binary, name: path.basename(binary), version: (firstLine ?? "").trim() };
 }
-
-/** Runs the encoder once, passing its own diagnostics through when it refuses a job. */
 function runEncoder(encoder, name, argumentsForRun) {
-  const result = spawnSync(
-    encoder.binary,
-    ["-hide_banner", "-loglevel", "error", "-y", ...argumentsForRun],
-    {
-      encoding: "utf8",
-    },
-  );
+  const result = spawnSync(encoder.binary, ["-hide_banner", "-loglevel", "error", "-y", ...argumentsForRun], {
+    encoding: "utf8",
+  });
   if (result.status !== 0) {
-    throw new FixtureError(
-      EXIT.failed,
-      `the encoder could not write ${name}: ${(result.stderr ?? "").trim()}`,
-    );
+    throw new FixtureError(EXIT.failed, `the encoder could not write ${name}: ${(result.stderr ?? "").trim()}`);
   }
 }
-
-/** Encodes the synthetic pattern into a temporary file, checks its size, then moves it into place. */
 function encodeClip(encoder, name, target) {
   const partial = `${target}.partial`;
   const inputs = [
@@ -978,90 +675,38 @@ function encodeClip(encoder, name, target) {
     if (name === MP4) {
       // The muxer is named explicitly because the temporary file's extension is not the container's, and
       // the encoder refuses to guess a container from a partial name.
-      runEncoder(encoder, name, [
-        ...inputs,
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-movflags",
-        "+faststart",
-        "-f",
-        "mp4",
-        partial,
-      ]);
+      runEncoder(encoder, name, [...inputs, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", "-f", "mp4", partial]);
     } else {
       // VP9 with Opus is what the fixture is named for; an encoder built without VP9 still produces an
       // admitted WebM through VP8 with Vorbis, so that pair is written rather than the whole run failing.
       try {
-        runEncoder(encoder, name, [
-          ...inputs,
-          "-c:v",
-          "libvpx-vp9",
-          "-b:v",
-          "0",
-          "-crf",
-          "40",
-          "-c:a",
-          "libopus",
-          "-f",
-          "webm",
-          partial,
-        ]);
+        runEncoder(encoder, name, [...inputs, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "40", "-c:a", "libopus", "-f", "webm", partial]);
       } catch {
-        runEncoder(encoder, name, [
-          ...inputs,
-          "-c:v",
-          "libvpx",
-          "-b:v",
-          "1M",
-          "-c:a",
-          "libvorbis",
-          "-f",
-          "webm",
-          partial,
-        ]);
+        runEncoder(encoder, name, [...inputs, "-c:v", "libvpx", "-b:v", "1M", "-c:a", "libvorbis", "-f", "webm", partial]);
       }
     }
     const bytes = fs.readFileSync(partial);
     if (bytes.length > MAX_CLIP_BYTES) {
-      throw new FixtureError(
-        EXIT.failed,
-        `the encoded ${name} is ${count(bytes.length)} bytes, above the ${count(MAX_CLIP_BYTES)}-byte authoring limit`,
-      );
+      throw new FixtureError(EXIT.failed, `the encoded ${name} is ${count(bytes.length)} bytes, above the ${count(MAX_CLIP_BYTES)}-byte authoring limit`);
     }
     fs.renameSync(partial, target);
   } finally {
     if (fs.existsSync(partial)) fs.unlinkSync(partial);
   }
 }
-
-/**
- * Authors whatever this run may write and reports what it did: the supplied or encoded clips first, because
- * the Matroska rejection case derives from the WebM, then the caption track, that rejection case, the
- * poster and the EXIF-bearing original. It also reports every fixture it wrote, so the provenance block
- * prints the record this run authored for those bytes rather than asking the digest table to account for a
- * re-encode. A clip that is absent and unproducible ends the run before anything is written, so a partial
- * set never stands in for a complete one.
- */
 async function authorAll(config) {
   fs.mkdirSync(DEST, { recursive: true });
   const notes = [];
   const written = new Set();
   let encoder = null;
-
   if (config.encode) {
     encoder = detectEncoder();
     notes.push(`encoder: ${encoder.version}`);
   }
-
   for (const name of CLIPS) {
     const target = fixturePath(name);
     const exists = fs.existsSync(target);
     if (exists && !(config.force && (config.encode || config.from !== null))) continue;
-
     if (config.encode) {
       encodeClip(encoder, name, target);
       written.add(name);
@@ -1076,49 +721,33 @@ async function authorAll(config) {
     }
     if (!exists) throw new FixtureError(EXIT.missing, missingClipInstruction(name));
   }
-
   if (!fs.existsSync(fixturePath(VTT)) || config.force) {
     fs.writeFileSync(fixturePath(VTT), Buffer.from(vttContent(captionLimitFromClips()), "utf8"));
     written.add(VTT);
     notes.push(`wrote ${VTT}`);
   }
-
   if (!fs.existsSync(fixturePath(MKV)) || config.force) {
-    if (!fs.existsSync(fixturePath(WEBM)))
-      throw new FixtureError(EXIT.missing, missingClipInstruction(WEBM));
+    if (!fs.existsSync(fixturePath(WEBM))) throw new FixtureError(EXIT.missing, missingClipInstruction(WEBM));
     const derived = deriveMatroska(fs.readFileSync(fixturePath(WEBM)));
     fs.writeFileSync(fixturePath(MKV), derived.bytes);
     written.add(MKV);
     notes.push(`derived ${MKV} from ${WEBM} (+${derived.grewBy} bytes)`);
   }
-
   if (!fs.existsSync(fixturePath(POSTER)) || config.force) {
     fs.writeFileSync(fixturePath(POSTER), await authorPoster());
     written.add(POSTER);
     notes.push(`wrote ${POSTER} with sharp`);
   }
-
   if (!fs.existsSync(fixturePath(EXIF_ORIGINAL)) || config.force) {
     fs.writeFileSync(fixturePath(EXIF_ORIGINAL), await authorExifOriginal());
     written.add(EXIF_ORIGINAL);
     notes.push(`wrote ${EXIF_ORIGINAL} with sharp, EXIF tags included`);
   }
-
   return { notes, written, encoder };
 }
-
-/** The authoring facts a read-only run has nothing to report for. */
 function noAuthoring() {
   return { notes: [], written: new Set(), encoder: null };
 }
-
-/**
- * Walks a JPEG's marker segments up to the start of scan, where the entropy-coded image data begins.
- *
- * One walk serves every assertion: each segment records its marker and the byte range of its payload, so
- * the frame header, the APP1 Exif segment and the metadata segments a check looks for all come from this
- * list instead of each caller walking the file again.
- */
 function jpegSegments(buffer) {
   const segments = [];
   if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return segments;
@@ -1150,8 +779,6 @@ function jpegSegments(buffer) {
   }
   return segments;
 }
-
-/** A JPEG frame header: the marker, the declared height and the declared width. */
 function readJpegFrame(buffer) {
   for (const segment of jpegSegments(buffer)) {
     const { marker } = segment;
@@ -1166,15 +793,12 @@ function readJpegFrame(buffer) {
   }
   return null;
 }
-
 function jpegKindName(marker) {
   if (marker === 0xc0) return "baseline";
   if (marker === 0xc1) return "extended sequential";
   if (marker === 0xc2) return "progressive";
   return `marker 0x${hex(marker)}`;
 }
-
-/** The size in bytes of one EXIF field type, for every type a fixture tag uses. */
 const EXIF_FIELD_SIZES = new Map([
   [1, 1],
   [2, 1],
@@ -1185,8 +809,6 @@ const EXIF_FIELD_SIZES = new Map([
   [9, 4],
   [10, 8],
 ]);
-
-/** The bytes of the APP1 Exif segment a JPEG carries, or `null` when it carries none. */
 function exifSegmentOf(buffer, segments) {
   for (const segment of segments) {
     if (segment.marker !== 0xe1) continue;
@@ -1201,11 +823,6 @@ function exifSegmentOf(buffer, segments) {
   }
   return null;
 }
-
-/**
- * Reads the EXIF facts this script asserts on out of a TIFF block: the orientation, the descriptive tags and
- * the GPS pair. Only the tags named at the end are read, and a block that is not a TIFF header is `null`.
- */
 function readExif(tiff) {
   const order = tiff.length >= 8 ? tiff.toString("latin1", 0, 2) : "";
   if (order !== "II" && order !== "MM") return null;
@@ -1213,8 +830,6 @@ function readExif(tiff) {
   const u16 = (at) => (little ? tiff.readUInt16LE(at) : tiff.readUInt16BE(at));
   const u32 = (at) => (little ? tiff.readUInt32LE(at) : tiff.readUInt32BE(at));
   if (u16(2) !== 42) return null;
-
-  /** One IFD as a tag map: each entry keeps its type, its field count and the bytes holding its value. */
   const entriesAt = (offset) => {
     const entries = new Map();
     if (offset <= 0 || offset + 2 > tiff.length) return entries;
@@ -1234,7 +849,6 @@ function readExif(tiff) {
     }
     return entries;
   };
-
   const textOf = (entries, tag) => {
     const entry = entries.get(tag);
     return entry === undefined ? null : entry.bytes.toString("latin1").replace(/\0+$/u, "");
@@ -1251,20 +865,16 @@ function readExif(tiff) {
     const parts = [];
     for (let at = 0; at + 8 <= entry.bytes.length; at += 8) {
       const numerator = little ? entry.bytes.readUInt32LE(at) : entry.bytes.readUInt32BE(at);
-      const denominator = little
-        ? entry.bytes.readUInt32LE(at + 4)
-        : entry.bytes.readUInt32BE(at + 4);
+      const denominator = little ? entry.bytes.readUInt32LE(at + 4) : entry.bytes.readUInt32BE(at + 4);
       parts.push(`${numerator}/${denominator}`);
     }
     return parts.join(" ");
   };
-
   const ifd0 = entriesAt(u32(4));
   const exifPointer = numberOf(ifd0, 0x8769);
   const gpsPointer = numberOf(ifd0, 0x8825);
   const exifIfd = exifPointer === null ? new Map() : entriesAt(exifPointer);
   const gpsIfd = gpsPointer === null ? new Map() : entriesAt(gpsPointer);
-
   return {
     byteOrder: little ? "little-endian (II)" : "big-endian (MM)",
     orientation: numberOf(ifd0, 0x0112),
@@ -1280,12 +890,6 @@ function readExif(tiff) {
     gpsLongitude: rationalsOf(gpsIfd, 0x0004),
   };
 }
-
-/**
- * The display rectangle the application's image pipeline produces for a source of these dimensions and this
- * orientation: the orientation is applied first and the longest edge is then scaled to the display cap,
- * without ever enlarging. Restated here so `--check` can assert the rendition size the seed records.
- */
 function orientedDisplaySize(width, height, orientation) {
   const transposed = typeof orientation === "number" && orientation >= 5 && orientation <= 8;
   const orientedWidth = transposed ? height : width;
@@ -1293,41 +897,17 @@ function orientedDisplaySize(width, height, orientation) {
   const scale = Math.min(1, DISPLAY_MAX_EDGE / Math.max(orientedWidth, orientedHeight));
   return { width: Math.round(orientedWidth * scale), height: Math.round(orientedHeight * scale) };
 }
-
-/**
- * Verifies the EXIF-bearing original from its own bytes: a JPEG of the authored size whose APP1 segment
- * really is an Exif segment, whose make, model, timestamp, orientation and GPS are the authored values, and
- * whose display rendition orientates and bounds it exactly as the application will. A fixture that lost its
- * tags would fail every one of these.
- */
 function verifyExifOriginal(bytes, checklist) {
   const name = EXIF_ORIGINAL;
-
-  checklist.require(
-    `${name} is named the way a camera names a photograph`,
-    /^IMG_\d{8}-[a-z0-9-]+\.jpg$/u.test(name),
-    "a revealing `IMG_<date>-<subject>.jpg` file name",
-    name,
-  );
-  checklist.require(
-    `${name} is within the ${count(MAX_IMAGE_BYTES)}-byte authoring limit`,
-    bytes.length <= MAX_IMAGE_BYTES,
-    `at most ${count(MAX_IMAGE_BYTES)} bytes`,
-    `${count(bytes.length)} bytes`,
-  );
-  checklist.require(
-    `${name} begins with a JPEG start-of-image`,
-    bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
-    "FF D8 FF",
-    hexDump(bytes.subarray(0, 3)),
-  );
+  checklist.require(`${name} is named the way a camera names a photograph`, /^IMG_\d{8}-[a-z0-9-]+\.jpg$/u.test(name), "a revealing `IMG_<date>-<subject>.jpg` file name", name);
+  checklist.require(`${name} is within the ${count(MAX_IMAGE_BYTES)}-byte authoring limit`, bytes.length <= MAX_IMAGE_BYTES, `at most ${count(MAX_IMAGE_BYTES)} bytes`, `${count(bytes.length)} bytes`);
+  checklist.require(`${name} begins with a JPEG start-of-image`, bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff, "FF D8 FF", hexDump(bytes.subarray(0, 3)));
   checklist.require(
     `${name} ends with the JPEG end-of-image marker`,
     bytes.length >= 2 && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9,
     "FF D9",
     hexDump(bytes.subarray(Math.max(0, bytes.length - 2))),
   );
-
   const app1 = exifSegmentOf(bytes, jpegSegments(bytes));
   checklist.require(
     `${name} carries an APP1 Exif segment`,
@@ -1335,7 +915,6 @@ function verifyExifOriginal(bytes, checklist) {
     "an APP1 segment identified as `Exif`",
     app1 === null ? "no `Exif` identifier in any APP1 segment" : `${count(app1.bytes)} bytes`,
   );
-
   const exif = app1 === null ? null : readExif(app1.tiff);
   checklist.require(
     `${name} carries a readable TIFF header in its Exif segment`,
@@ -1343,18 +922,11 @@ function verifyExifOriginal(bytes, checklist) {
     "an `II` or `MM` TIFF header with magic 42",
     exif === null ? "no readable TIFF header" : exif.byteOrder,
   );
-
   const frame = readJpegFrame(bytes);
   checklist.require(`${name} declares a frame header`, frame !== null, "an SOF segment", "none");
   if (frame !== null) {
-    checklist.require(
-      `${name} is ${EXIF_WIDTH} × ${EXIF_HEIGHT}`,
-      frame.width === EXIF_WIDTH && frame.height === EXIF_HEIGHT,
-      `${EXIF_WIDTH} × ${EXIF_HEIGHT}`,
-      `${frame.width} × ${frame.height}`,
-    );
+    checklist.require(`${name} is ${EXIF_WIDTH} × ${EXIF_HEIGHT}`, frame.width === EXIF_WIDTH && frame.height === EXIF_HEIGHT, `${EXIF_WIDTH} × ${EXIF_HEIGHT}`, `${frame.width} × ${frame.height}`);
   }
-
   const orientation = exif === null ? null : exif.orientation;
   checklist.require(
     `${name} records EXIF Orientation ${EXIF_ORIENTATION}`,
@@ -1362,7 +934,6 @@ function verifyExifOriginal(bytes, checklist) {
     `Orientation ${EXIF_ORIENTATION}`,
     orientation === null ? "no Orientation tag" : `Orientation ${orientation}`,
   );
-
   const expectedTags = [
     ["Make", EXIF_TAGS.make, exif === null ? null : exif.make],
     ["Model", EXIF_TAGS.model, exif === null ? null : exif.model],
@@ -1376,27 +947,15 @@ function verifyExifOriginal(bytes, checklist) {
     ["GPSLongitude", EXIF_TAGS.gpsLongitude, exif === null ? null : exif.gpsLongitude],
   ];
   for (const [tag, expected, observed] of expectedTags) {
-    checklist.require(
-      `${name} records ${tag} as authored`,
-      observed === expected,
-      JSON.stringify(expected),
-      observed === null ? "no such tag" : JSON.stringify(observed),
-    );
+    checklist.require(`${name} records ${tag} as authored`, observed === expected, JSON.stringify(expected), observed === null ? "no such tag" : JSON.stringify(observed));
   }
-
-  const display = orientedDisplaySize(
-    frame === null ? 0 : frame.width,
-    frame === null ? 0 : frame.height,
-    orientation,
-  );
+  const display = orientedDisplaySize(frame === null ? 0 : frame.width, frame === null ? 0 : frame.height, orientation);
   checklist.require(
     `${name}'s display rendition is ${display.width} × ${display.height}: a portrait frame at the ${DISPLAY_MAX_EDGE} px cap`,
-    Math.max(display.width, display.height) === DISPLAY_MAX_EDGE &&
-      Math.min(display.width, display.height) < DISPLAY_MAX_EDGE,
+    Math.max(display.width, display.height) === DISPLAY_MAX_EDGE && Math.min(display.width, display.height) < DISPLAY_MAX_EDGE,
     `a ${DISPLAY_MAX_EDGE} px longest edge`,
     `${display.width} × ${display.height}`,
   );
-
   return {
     kind: frame === null ? null : jpegKindName(frame.marker),
     width: frame === null ? null : frame.width,
@@ -1407,8 +966,6 @@ function verifyExifOriginal(bytes, checklist) {
     displayHeight: display.height,
   };
 }
-
-/** One `HH:MM:SS.mmm` cue boundary as seconds. */
 const CUE_TIMING = /^(\d{2}):(\d{2}):(\d{2})\.(\d{3}) --> (\d{2}):(\d{2}):(\d{2})\.(\d{3})$/;
 
 function cueSeconds(match, firstGroup) {
@@ -1418,7 +975,6 @@ function cueSeconds(match, firstGroup) {
   const millis = Number(match[firstGroup + 3]);
   return hours * 3600 + minutes * 60 + secs + millis / 1000;
 }
-
 function parseVttCues(text) {
   const cues = [];
   for (const line of text.split("\n")) {
@@ -1428,7 +984,6 @@ function parseVttCues(text) {
   }
   return cues;
 }
-
 function formatCueTime(value) {
   const total = Math.round(value * 1000);
   const millis = total % 1000;
@@ -1437,39 +992,14 @@ function formatCueTime(value) {
   const hours = Math.floor(total / 3600000);
   return `${hex(hours)}:${hex(minutes)}:${hex(secs)}.${millis.toString().padStart(3, "0")}`;
 }
-
-/** Verifies the poster by its own bytes: a sequential JPEG of the authored size with no metadata segment. */
 function verifyPoster(bytes, checklist) {
   const head = hexDump(bytes.subarray(0, 3));
-  checklist.require(
-    `${POSTER} begins with a JPEG start-of-image`,
-    bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
-    "FF D8 FF",
-    head,
-  );
-
+  checklist.require(`${POSTER} begins with a JPEG start-of-image`, bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff, "FF D8 FF", head);
   const asText = bytes.toString("latin1");
-  checklist.require(
-    `${POSTER} carries no EXIF segment`,
-    !asText.includes("Exif"),
-    "no `Exif` marker",
-    asText.includes("Exif") ? "an `Exif` marker" : "none",
-  );
-  checklist.require(
-    `${POSTER} carries no ICC profile`,
-    !asText.includes("ICC_PROFILE"),
-    "no `ICC_PROFILE` marker",
-    asText.includes("ICC_PROFILE") ? "an `ICC_PROFILE` marker" : "none",
-  );
-
+  checklist.require(`${POSTER} carries no EXIF segment`, !asText.includes("Exif"), "no `Exif` marker", asText.includes("Exif") ? "an `Exif` marker" : "none");
+  checklist.require(`${POSTER} carries no ICC profile`, !asText.includes("ICC_PROFILE"), "no `ICC_PROFILE` marker", asText.includes("ICC_PROFILE") ? "an `ICC_PROFILE` marker" : "none");
   const tail = hexDump(bytes.subarray(Math.max(0, bytes.length - 2)));
-  checklist.require(
-    `${POSTER} ends with the JPEG end-of-image marker`,
-    bytes.length >= 2 && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9,
-    "FF D9",
-    tail,
-  );
-
+  checklist.require(`${POSTER} ends with the JPEG end-of-image marker`, bytes.length >= 2 && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9, "FF D9", tail);
   const frame = readJpegFrame(bytes);
   checklist.require(`${POSTER} declares a frame header`, frame !== null, "an SOF segment", "none");
   if (frame !== null) {
@@ -1479,47 +1009,21 @@ function verifyPoster(bytes, checklist) {
       `${POSTER_WIDTH} × ${POSTER_HEIGHT}`,
       `${frame.width} × ${frame.height}`,
     );
-    checklist.require(
-      `${POSTER} is a sequential JPEG`,
-      frame.marker === 0xc0 || frame.marker === 0xc1,
-      "baseline or extended sequential",
-      jpegKindName(frame.marker),
-    );
+    checklist.require(`${POSTER} is a sequential JPEG`, frame.marker === 0xc0 || frame.marker === 0xc1, "baseline or extended sequential", jpegKindName(frame.marker));
   }
-
   return {
     kind: frame === null ? null : jpegKindName(frame.marker),
     width: frame === null ? null : frame.width,
     height: frame === null ? null : frame.height,
   };
 }
-
-/** Verifies the caption track against the clip duration read from the clip itself. */
 function verifyVtt(bytes, checklist, limitSeconds) {
   const asText = bytes.toString("utf8");
-  checklist.require(
-    `${VTT} begins with the WebVTT header`,
-    asText.startsWith("WEBVTT"),
-    "`WEBVTT`",
-    JSON.stringify(asText.slice(0, 8)),
-  );
-
+  checklist.require(`${VTT} begins with the WebVTT header`, asText.startsWith("WEBVTT"), "`WEBVTT`", JSON.stringify(asText.slice(0, 8)));
   const carriageReturn = bytes.includes(0x0d);
-  checklist.require(
-    `${VTT} uses LF line endings`,
-    !carriageReturn,
-    "no CR byte",
-    carriageReturn ? "a CR byte" : "none",
-  );
-
+  checklist.require(`${VTT} uses LF line endings`, !carriageReturn, "no CR byte", carriageReturn ? "a CR byte" : "none");
   const nonAscii = bytes.findIndex((byte) => byte > 0x7f);
-  checklist.require(
-    `${VTT} is plain ASCII`,
-    nonAscii === -1,
-    "every byte below 0x80",
-    nonAscii === -1 ? "none" : `byte 0x${hex(bytes[nonAscii])} at offset ${nonAscii}`,
-  );
-
+  checklist.require(`${VTT} is plain ASCII`, nonAscii === -1, "every byte below 0x80", nonAscii === -1 ? "none" : `byte 0x${hex(bytes[nonAscii])} at offset ${nonAscii}`);
   const timingLines = asText.split("\n").filter((line) => line.includes("-->"));
   checklist.require(
     `${VTT} writes every cue as a plain start and end with no cue settings`,
@@ -1527,88 +1031,37 @@ function verifyVtt(bytes, checklist, limitSeconds) {
     "`HH:MM:SS.mmm --> HH:MM:SS.mmm` on every timing line",
     `${timingLines.length} timing lines, ${timingLines.filter((line) => CUE_TIMING.test(line.trim())).length} plain`,
   );
-
   const cues = parseVttCues(asText);
-  checklist.require(
-    `${VTT} holds at least one cue`,
-    cues.length > 0,
-    "at least one cue",
-    `${cues.length}`,
-  );
-
-  const ordered = cues.every(
-    (cue, index) => cue.endS > cue.startS && (index === 0 || cue.startS >= cues[index - 1].startS),
-  );
-  checklist.require(
-    `${VTT} orders its cues and each cue ends after it starts`,
-    ordered,
-    "ascending cues, each ending after it starts",
-    ordered ? "ascending" : "out of order or empty",
-  );
-
+  checklist.require(`${VTT} holds at least one cue`, cues.length > 0, "at least one cue", `${cues.length}`);
+  const ordered = cues.every((cue, index) => cue.endS > cue.startS && (index === 0 || cue.startS >= cues[index - 1].startS));
+  checklist.require(`${VTT} orders its cues and each cue ends after it starts`, ordered, "ascending cues, each ending after it starts", ordered ? "ascending" : "out of order or empty");
   const lastEndS = cues.length === 0 ? null : Math.max(...cues.map((cue) => cue.endS));
   if (limitSeconds !== null && lastEndS !== null) {
-    checklist.require(
-      `${VTT} ends its last cue inside the clip it captions`,
-      lastEndS <= limitSeconds,
-      `at most ${formatCueTime(limitSeconds)}`,
-      formatCueTime(lastEndS),
-    );
+    checklist.require(`${VTT} ends its last cue inside the clip it captions`, lastEndS <= limitSeconds, `at most ${formatCueTime(limitSeconds)}`, formatCueTime(lastEndS));
   }
-
   return { cues: cues.length, lastEndS, limitSeconds };
 }
-
-/** Verifies one supplied clip by its container magic and the duration its own header reports. */
 function verifyClip(name, bytes, checklist) {
-  checklist.require(
-    `${name} is within the ${count(MAX_CLIP_BYTES)}-byte authoring limit`,
-    bytes.length <= MAX_CLIP_BYTES,
-    `at most ${count(MAX_CLIP_BYTES)} bytes`,
-    `${count(bytes.length)} bytes`,
-  );
-
+  checklist.require(`${name} is within the ${count(MAX_CLIP_BYTES)}-byte authoring limit`, bytes.length <= MAX_CLIP_BYTES, `at most ${count(MAX_CLIP_BYTES)} bytes`, `${count(bytes.length)} bytes`);
   const facts = probeClip(bytes);
   if (name === MP4) {
-    checklist.require(
-      `${MP4} begins with an ISO base media \`ftyp\` box`,
-      facts.brand !== null,
-      "`ftyp` at offset 4",
-      facts.brand === null ? hexDump(bytes.subarray(0, 8)) : `brand ${facts.brand}`,
-    );
+    checklist.require(`${MP4} begins with an ISO base media \`ftyp\` box`, facts.brand !== null, "`ftyp` at offset 4", facts.brand === null ? hexDump(bytes.subarray(0, 8)) : `brand ${facts.brand}`);
   } else {
     checklist.require(
       `${WEBM} declares DocType \`${WEBM_DOC_TYPE}\` in its EBML header`,
       facts.container === "webm",
       `EBML DocType \`${WEBM_DOC_TYPE}\``,
-      facts.docType === null
-        ? hexDump(bytes.subarray(0, 4))
-        : `DocType ${JSON.stringify(facts.docType)}`,
+      facts.docType === null ? hexDump(bytes.subarray(0, 4)) : `DocType ${JSON.stringify(facts.docType)}`,
     );
   }
-
-  checklist.require(
-    `${name} reports a duration in its container header`,
-    facts.durationS !== null,
-    "a duration",
-    facts.durationS === null ? "none" : seconds(facts.durationS),
-  );
-
+  checklist.require(`${name} reports a duration in its container header`, facts.durationS !== null, "a duration", facts.durationS === null ? "none" : seconds(facts.durationS));
   return facts;
 }
-
-/** Verifies the derived Matroska file, including that it is exactly the WebM it came from plus four bytes. */
 function verifyMkv(bytes, checklist, webmBytes) {
   const facts = probeClip(bytes);
   const header = readEbmlHeader(bytes);
   const segment = header === null ? null : readElement(bytes, header.headerEnd);
-
-  checklist.require(
-    `${MKV} begins with the EBML header`,
-    header !== null,
-    "EBML magic `1a 45 df a3`",
-    hexDump(bytes.subarray(0, 4)),
-  );
+  checklist.require(`${MKV} begins with the EBML header`, header !== null, "EBML magic `1a 45 df a3`", hexDump(bytes.subarray(0, 4)));
   checklist.require(
     `${MKV} declares DocType \`${MATROSKA_DOC_TYPE}\``,
     facts.docType === MATROSKA_DOC_TYPE,
@@ -1622,22 +1075,10 @@ function verifyMkv(bytes, checklist, webmBytes) {
     segment === null ? "no element" : `id ${hex(segment.id, 8)}`,
   );
   if (webmBytes !== null) {
-    checklist.require(
-      `${MKV} is exactly ${WEBM} plus four bytes`,
-      bytes.length === webmBytes.length + 4,
-      `${count(webmBytes.length + 4)} bytes`,
-      `${count(bytes.length)} bytes`,
-    );
+    checklist.require(`${MKV} is exactly ${WEBM} plus four bytes`, bytes.length === webmBytes.length + 4, `${count(webmBytes.length + 4)} bytes`, `${count(bytes.length)} bytes`);
   }
-
   return facts;
 }
-
-/**
- * The provenance a run that authored a fixture states for the bytes it has just written, or `null` when it
- * cannot state one: a clip copied out of another directory arrives with no source or licence of its own, so
- * only the record for its digest can speak for it.
- */
 function authoredRecord(name, authored) {
   if (!authored.written.has(name)) return null;
   if (name === POSTER) return GENERATED_POSTER_RECORD;
@@ -1646,51 +1087,31 @@ function authoredRecord(name, authored) {
   if (name === MKV) return DERIVED_MKV;
   if (authored.encoder === null) return null;
   return {
-    route:
-      "Route 1 of assumption A6 — encoded by this script from a deterministic synthetic test pattern",
-    source:
-      "No third-party work: the pattern is generated by the local encoder in the authoring run",
+    route: "Route 1 of assumption A6 — encoded by this script from a deterministic synthetic test pattern",
+    source: "No third-party work: the pattern is generated by the local encoder in the authoring run",
     licence: "Not applicable (generated)",
     encoder: authored.encoder.version,
   };
 }
-
-/**
- * The recorded provenance of one fixture: the record this run authored for it, else the record held for its
- * digest, else `null` — the honest answer for bytes no record accounts for. The derived rejection case is
- * resolved from `webmRecord`, the record the clip it derives from resolved to.
- */
 function fixtureRecord(name, digest, authored, webmRecord) {
   const fromRun = authoredRecord(name, authored);
   const recorded = fromRun ?? RECORDED_FIXTURE_SOURCES.get(digest) ?? null;
   if (recorded === DERIVED_MKV) return derivedMkvRecord(webmRecord);
   return recorded;
 }
-
 function sizeRow(entry) {
   return ["Bytes", count(entry.bytes.length)];
 }
-
 function digestRow(entry) {
   return ["SHA-256", `\`${entry.digest}\``];
 }
-
 function dimensionsText(facts) {
   if (facts.width === null || facts.height === null) return "not read from the container";
   return `${Math.round(facts.width)} × ${Math.round(facts.height)} (container header)`;
 }
-
 function durationText(facts) {
-  return facts.durationS === null
-    ? "not read from the container"
-    : `${seconds(facts.durationS)} (container header)`;
+  return facts.durationS === null ? "not read from the container" : `${seconds(facts.durationS)} (container header)`;
 }
-
-/**
- * The Markdown rows of one fixture's provenance block: the recorded route, source and licence for the
- * fixture's exact bytes, then the facts this run measured. A fixture whose digest no record accounts for gets
- * one honest row saying so, and no row claims a route for it.
- */
 function provenanceRows(name, entry, facts, record) {
   const rows =
     record === null
@@ -1707,49 +1128,28 @@ function provenanceRows(name, entry, facts, record) {
         ];
   if (record !== null && typeof record.encoder === "string") rows.push(["Encoder", record.encoder]);
   rows.push(sizeRow(entry), digestRow(entry));
-
   if (name === MP4 || name === WEBM) {
     rows.push(
-      [
-        "Container",
-        facts.brand === null
-          ? `EBML, DocType \`${facts.docType}\``
-          : `MP4 (ISO base media file format), \`ftyp\` brand \`${facts.brand}\``,
-      ],
+      ["Container", facts.brand === null ? `EBML, DocType \`${facts.docType}\`` : `MP4 (ISO base media file format), \`ftyp\` brand \`${facts.brand}\``],
       ["Duration", durationText(facts)],
       ["Dimensions", dimensionsText(facts)],
-      [
-        "Runtime requirement",
-        "None beyond the browser's own decoder; neither this script nor the application needs an encoder to read it",
-      ],
+      ["Runtime requirement", "None beyond the browser's own decoder; neither this script nor the application needs an encoder to read it"],
     );
     return rows;
   }
-
   if (name === MKV) {
     rows.push(
       ["Container", `EBML, DocType \`${facts.docType}\``],
-      [
-        "Purpose",
-        "The rejection case: a container the video profile has to refuse by content, in the profile test and in the video acceptance journey",
-      ],
+      ["Purpose", "The rejection case: a container the video profile has to refuse by content, in the profile test and in the video acceptance journey"],
     );
     return rows;
   }
-
   if (name === VTT) {
     const lastCue = facts.lastEndS === null ? "no cue" : formatCueTime(facts.lastEndS);
-    const limit =
-      facts.limitSeconds === null
-        ? "no clip duration to compare"
-        : `${seconds(facts.limitSeconds)} clip that carries it`;
-    rows.push(
-      ["Cues", `${facts.cues} cues; the last ends at ${lastCue}, inside the ${limit}`],
-      ["Format", "UTF-8, LF line endings, plain ASCII, no cue settings"],
-    );
+    const limit = facts.limitSeconds === null ? "no clip duration to compare" : `${seconds(facts.limitSeconds)} clip that carries it`;
+    rows.push(["Cues", `${facts.cues} cues; the last ends at ${lastCue}, inside the ${limit}`], ["Format", "UTF-8, LF line endings, plain ASCII, no cue settings"]);
     return rows;
   }
-
   if (name === EXIF_ORIGINAL) {
     rows.push(
       [
@@ -1768,70 +1168,35 @@ function provenanceRows(name, entry, facts, record) {
         "Role",
         "The seeded image asset's private original: committed, never served, and the criterion 9 input. The seed names it as `sourceOriginalRef`, and a reset materialises the display rendition from these bytes with the application's own image pipeline, so the metadata-stripping path runs over real EXIF instead of a synthetic splice",
       ],
-      [
-        "Profile",
-        "Within the admitted image profile: JPEG, at most 10 MiB, at most 8,000 px per side after orientation",
-      ],
+      ["Profile", "Within the admitted image profile: JPEG, at most 10 MiB, at most 8,000 px per side after orientation"],
     );
     return rows;
   }
-
   rows.push(
-    [
-      "Format",
-      `JPEG (${facts.kind ?? "unknown kind"}) ${Math.round(facts.width ?? 0)} × ${Math.round(facts.height ?? 0)}, quality ${POSTER_QUALITY}, no EXIF, no ICC profile, no comment`,
-    ],
-    [
-      "Profile",
-      "Within the admitted image profile: JPEG, at most 10 MiB, at most 8,000 px per side",
-    ],
+    ["Format", `JPEG (${facts.kind ?? "unknown kind"}) ${Math.round(facts.width ?? 0)} × ${Math.round(facts.height ?? 0)}, quality ${POSTER_QUALITY}, no EXIF, no ICC profile, no comment`],
+    ["Profile", "Within the admitted image profile: JPEG, at most 10 MiB, at most 8,000 px per side"],
   );
   return rows;
 }
-
-/**
- * The provenance block, printed and never written to a file: `docs/architecture.md` is the repository's
- * record, and it is the only place this text belongs. Nothing here depends on the current time, so two
- * runs over the same bytes print identical output.
- */
 function provenanceBlock(present, factsByName, records) {
-  const lines = [
-    "provenance (paste into `docs/architecture.md`)",
-    "",
-    "local authoring of committed fixtures — not production transcoding or production scanning",
-    "",
-  ];
-
+  const lines = ["provenance (paste into `docs/architecture.md`)", "", "local authoring of committed fixtures — not production transcoding or production scanning", ""];
   for (const name of FIXTURES) {
     const entry = present.get(name);
-    lines.push(
-      `#### \`${relativeFixturePath(name)}\``,
-      "",
-      "| Property | Value |",
-      "| --- | --- |",
-    );
+    lines.push(`#### \`${relativeFixturePath(name)}\``, "", "| Property | Value |", "| --- | --- |");
     if (entry === undefined) {
       lines.push("| Status | MISSING — run `--write` to author it |", "");
       continue;
     }
-    for (const [property, value] of provenanceRows(
-      name,
-      entry,
-      factsByName.get(name),
-      records.get(name) ?? null,
-    )) {
+    for (const [property, value] of provenanceRows(name, entry, factsByName.get(name), records.get(name) ?? null)) {
       lines.push(`| ${property} | ${value} |`);
     }
     lines.push("");
   }
-
   lines.push(
     "**A7 note.** An MP4 container may retain its creation and modification timestamps through a copy-remux. The runtime pipeline re-reads the served metadata tags of every rendition it serves and rejects one that still carries a descriptive tag, so a surviving timestamp alone never drops an asset and no descriptive metadata reaches a reader.",
   );
   return lines.join("\n");
 }
-
-/** One line summarising what was verified for a fixture, for the transcript. */
 function verifiedSummary(name, entry, facts) {
   if (name === MP4) {
     return `MP4 (\`ftyp\` brand \`${facts.brand}\`) · ${durationText(facts)} · ${dimensionsText(facts)}`;
@@ -1851,13 +1216,10 @@ function verifiedSummary(name, entry, facts) {
   }
   return `JPEG (${facts.kind}) ${facts.width} × ${facts.height} · no EXIF, no ICC profile`;
 }
-
-/** Prints the report, the provenance block and the verdict, and returns the exit code. */
 function report(config, authored) {
   const checklist = createChecklist();
   const present = new Map();
   const missing = [];
-
   for (const name of FIXTURES) {
     const target = fixturePath(name);
     if (!fs.existsSync(target)) {
@@ -1867,33 +1229,22 @@ function report(config, authored) {
     const bytes = fs.readFileSync(target);
     present.set(name, { bytes, digest: sha256(bytes) });
   }
-
   const factsByName = new Map();
   const webmBytes = present.has(WEBM) ? present.get(WEBM).bytes : null;
   if (present.has(MP4)) factsByName.set(MP4, verifyClip(MP4, present.get(MP4).bytes, checklist));
-  if (present.has(WEBM))
-    factsByName.set(WEBM, verifyClip(WEBM, present.get(WEBM).bytes, checklist));
-  if (present.has(MKV))
-    factsByName.set(MKV, verifyMkv(present.get(MKV).bytes, checklist, webmBytes));
-  if (present.has(POSTER))
-    factsByName.set(POSTER, verifyPoster(present.get(POSTER).bytes, checklist));
-  if (present.has(EXIF_ORIGINAL))
-    factsByName.set(EXIF_ORIGINAL, verifyExifOriginal(present.get(EXIF_ORIGINAL).bytes, checklist));
-
+  if (present.has(WEBM)) factsByName.set(WEBM, verifyClip(WEBM, present.get(WEBM).bytes, checklist));
+  if (present.has(MKV)) factsByName.set(MKV, verifyMkv(present.get(MKV).bytes, checklist, webmBytes));
+  if (present.has(POSTER)) factsByName.set(POSTER, verifyPoster(present.get(POSTER).bytes, checklist));
+  if (present.has(EXIF_ORIGINAL)) factsByName.set(EXIF_ORIGINAL, verifyExifOriginal(present.get(EXIF_ORIGINAL).bytes, checklist));
   // The captions sit inside every clip that carries them, so the shortest recorded duration bounds them.
-  const durations = [factsByName.get(MP4)?.durationS, factsByName.get(WEBM)?.durationS].filter(
-    (value) => typeof value === "number",
-  );
+  const durations = [factsByName.get(MP4)?.durationS, factsByName.get(WEBM)?.durationS].filter((value) => typeof value === "number");
   const captionLimit = durations.length === 0 ? null : Math.min(...durations);
-  if (present.has(VTT))
-    factsByName.set(VTT, verifyVtt(present.get(VTT).bytes, checklist, captionLimit));
-
+  if (present.has(VTT)) factsByName.set(VTT, verifyVtt(present.get(VTT).bytes, checklist, captionLimit));
   // A record belongs to the exact bytes it was established for, so a fixture whose digest no record accounts
   // for is an assertion failure: the block below says so openly instead of printing a route it cannot support.
   // The rejection case carries the source clip's licence, so the WebM's record is resolved before the others.
   const webmPresent = present.get(WEBM);
-  const webmRecord =
-    webmPresent === undefined ? null : fixtureRecord(WEBM, webmPresent.digest, authored, null);
+  const webmRecord = webmPresent === undefined ? null : fixtureRecord(WEBM, webmPresent.digest, authored, null);
   const records = new Map();
   for (const name of FIXTURES) {
     const entry = present.get(name);
@@ -1904,17 +1255,13 @@ function report(config, authored) {
       `${name} has a recorded provenance for its exact bytes`,
       record !== null,
       "a route, a source and a licence recorded for this SHA-256 in `docs/architecture.md` and in this script's table",
-      record === null
-        ? `no record for sha256 ${entry.digest}`
-        : `the record for sha256 ${entry.digest}`,
+      record === null ? `no record for sha256 ${entry.digest}` : `the record for sha256 ${entry.digest}`,
     );
   }
-
   if (authored.notes.length > 0) {
     write("\nauthoring\n");
     for (const note of authored.notes) write(`  ${note}\n`);
   }
-
   write("\nfixtures\n");
   for (const name of FIXTURES) {
     const entry = present.get(name);
@@ -1922,11 +1269,8 @@ function report(config, authored) {
       write(`  MISSING  ${name.padEnd(22)}\n`);
       continue;
     }
-    write(
-      `  present  ${name.padEnd(22)}  ${count(entry.bytes.length).padStart(10)} bytes  sha256 ${entry.digest}\n`,
-    );
+    write(`  present  ${name.padEnd(22)}  ${count(entry.bytes.length).padStart(10)} bytes  sha256 ${entry.digest}\n`);
   }
-
   if (present.size > 0) {
     write("\nverified\n");
     for (const name of FIXTURES) {
@@ -1935,47 +1279,31 @@ function report(config, authored) {
       write(`  ${name.padEnd(22)}  ${verifiedSummary(name, entry, factsByName.get(name))}\n`);
     }
   }
-
   if (checklist.failures.length > 0) {
     write("\nfailures\n");
     for (const failure of checklist.failures) {
-      write(
-        `  fail  ${failure.label}: expected ${failure.expected}, observed ${failure.observed}\n`,
-      );
+      write(`  fail  ${failure.label}: expected ${failure.expected}, observed ${failure.observed}\n`);
     }
   }
-
   write(`\n${provenanceBlock(present, factsByName, records)}\n`);
-
-  const code =
-    checklist.failures.length > 0 ? EXIT.failed : missing.length > 0 ? EXIT.missing : EXIT.ok;
-  write(
-    `\nSTATUS ${code === EXIT.ok ? "PASS" : "FAIL"} — ${present.size} of ${FIXTURES.length} fixtures present, ${checklist.failures.length} assertion failures\n`,
-  );
+  const code = checklist.failures.length > 0 ? EXIT.failed : missing.length > 0 ? EXIT.missing : EXIT.ok;
+  write(`\nSTATUS ${code === EXIT.ok ? "PASS" : "FAIL"} — ${present.size} of ${FIXTURES.length} fixtures present, ${checklist.failures.length} assertion failures\n`);
   if (missing.length > 0) {
-    write(
-      `missing: ${missing.join(", ")}; author them with \`bun scripts/make-media-fixtures.mjs --write\`\n`,
-    );
+    write(`missing: ${missing.join(", ")}; author them with \`bun scripts/make-media-fixtures.mjs --write\`\n`);
   }
   if (config.mode === "write" && code === EXIT.ok) {
-    write(
-      "next: commit the authored fixtures, and transcribe the provenance block above into docs/architecture.md\n",
-    );
+    write("next: commit the authored fixtures, and transcribe the provenance block above into docs/architecture.md\n");
   }
-
   return code;
 }
-
 async function main() {
   const parsed = parseCommandLine(process.argv.slice(2));
   if (parsed.kind === "usage") {
     writeError(`${usageText(parsed.reason)}\n`);
     return EXIT.usage;
   }
-
   const { config } = parsed;
   write(`${bannerLine(config)}\n`);
-
   try {
     const authored = config.mode === "write" ? await authorAll(config) : noAuthoring();
     return report(config, authored);
@@ -1987,5 +1315,4 @@ async function main() {
     throw error;
   }
 }
-
 process.exitCode = await main();

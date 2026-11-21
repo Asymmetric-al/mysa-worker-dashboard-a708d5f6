@@ -1,68 +1,28 @@
 /**
  * `bun run reset`: discards every stored session and re-seeds every seeded session from the
  * deterministic seed, so the application starts from the known world every criterion begins at.
- *
- * Implements AAP 0.9.1 (`bun run reset`), 0.9.2's root script line, 0.7.2's reset path, 0.11.1's
- * `scripts/reset.ts` deliverable and 0.12.1 criterion 21.
- *
- * Two decisions keep a failed run from disclosing the host it runs on. The development runtime is
- * imported inside `main` rather than at the top of the file, because that module's chain resolves
- * the store's data root while it loads and can refuse before any statement here runs; an
- * import-time refusal is this command's failure too, so it belongs in this command's report. Every
- * failure message and stack frame is also rewritten before it is printed, so a fault still names
- * the document the store refused without naming where on the host the checkout sits.
  */
 import { basename, dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { ResetSummary } from "../apps/dashboard/src/modules/dev-runtime/reset";
 
-/*
- * The reset itself belongs to the development runtime, never to this file: the Settings control and
- * the Playwright project call the same `resetSeed`, so a second implementation here — listing the
- * stored sessions, clearing the store, building the world again — would let the three callers drift
- * apart. This module reads the command line and reports what that one function did.
- */
-
-/** The one way to run this command, printed on stderr whenever the arguments are refused. */
 const USAGE = "usage: bun scripts/reset.ts [--json]\n";
 
-/** The column every summary value starts at, so the five lines align without a table dependency. */
 const LABEL_WIDTH = 16;
 
-/** A refusal the caller can fix by typing a different command line. */
 class UsageError extends Error {}
 
-/** The arguments this command accepts: whether to print the machine-readable line instead of the block. */
 interface ParsedArguments {
   readonly json: boolean;
 }
 
-/**
- * The directory this script lives in, taken from its own URL: an answer this command needs before
- * any module has loaded, and one that does not depend on where the command was run from.
- */
 const SCRIPT_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 
-/**
- * The checkout this script was loaded from: the parent of `scripts/`.
- *
- * Deliberately not the store's own discovery, which walks up from the working directory and is the
- * first thing that fails when this command runs outside the checkout. A reporter that cannot locate
- * the root cannot remove it from the text it is about to print.
- */
 const REPOSITORY_ROOT = dirname(SCRIPT_DIRECTORY);
 
-/**
- * A path component as this command prints it. A colon is excluded, so the `:line:column` suffix
- * of a stack frame stays outside the path it follows.
- */
 const PATH_COMPONENT = "[A-Za-z0-9._@%+-]+";
 
-/**
- * An absolute path in free text. The leading separator must follow a line start or a delimiter, so
- * the rewrite stays off a relative path, a sentence's punctuation and an identifier.
- */
 const ABSOLUTE_PATH = new RegExp(`(^|[\\s("'\`=:])/(?:${PATH_COMPONENT}/)*${PATH_COMPONENT}`, "g");
 
 /** A `file://` prefix on an absolute path, which a frame built from a module URL carries. */
@@ -118,10 +78,7 @@ function rewriteRoot(text: string, root: string): string {
  */
 function withoutDisclosure(text: string): string {
   const withoutRoots = disclosureRoots().reduce(rewriteRoot, text.replace(FILE_SCHEME, ""));
-  return withoutRoots.replace(
-    ABSOLUTE_PATH,
-    (match: string, lead: string) => `${lead}${basename(match.slice(lead.length))}`,
-  );
+  return withoutRoots.replace(ABSOLUTE_PATH, (match: string, lead: string) => `${lead}${basename(match.slice(lead.length))}`);
 }
 
 /** Writes one line to stderr, so a failure is never reported on the stream a success uses. */
@@ -161,9 +118,7 @@ function parseArguments(argv: readonly string[]): ParsedArguments {
   }
 
   if (refused.length > 0) {
-    throw new UsageError(
-      `reset takes no arguments other than --json, and received: ${refused.join(" ")}`,
-    );
+    throw new UsageError(`reset takes no arguments other than --json, and received: ${refused.join(" ")}`);
   }
 
   return { json };

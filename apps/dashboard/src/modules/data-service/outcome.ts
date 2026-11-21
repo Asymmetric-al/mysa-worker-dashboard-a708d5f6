@@ -1,110 +1,18 @@
 /**
- * The closed set of mutation outcomes, the constructors that produce them, and the two guards
- * that read one back off the wire. The one HTTP response they map to is `response.ts`.
- *
- * Every named mutation in the data service answers with exactly one of the eight outcomes below,
- * and every Route Handler turns that answer into a response through `toResponse` in `response.ts`,
- * the one module in this directory that reaches `next/server`. There is no ninth member and no
- * second ladder: a handler that invented its own status mapping, or a mutation that answered with
- * a boolean, would reintroduce the ambiguity this module exists to remove. The eight members are
- * the contract because each states something genuinely different about what is true after a
- * request:
- *
- * - `accepted` — applied once, with the new revision.
- * - `alreadyAccepted` — the same `operationId` replayed: the stored result, no new effect, no new
- *   revision.
- * - `unchanged` — nothing needed doing, so nothing happened and no history entry was written.
- * - `conflict` — the expected revision or the intent is stale, and the caller's input is preserved
- *   beside the current value for comparison.
- * - `denied` — the caller has no authority, and the answer reveals nothing about what it may not
- *   see.
- * - `invalid` — the payload failed validation: per-field messages and no side effect.
- * - `unavailable` — the source behind the work is down; never an empty list and never a zero.
- * - `unknown` — the effect may have been applied and the acknowledgement was lost. The
- *   `operationId` is the only recovery handle, so the outcome promises neither success nor failure.
- *
- * Publication, provider acceptance, delivery and reading are four separate outcomes that the
- * audience and content modules model for themselves. None of them is a mutation outcome, and none
- * may be folded into one: a `delivered` or `read` member here would let a surface claim that a
- * message was read because a mutation succeeded.
- *
- * `ReadResult` lives here rather than beside the request envelope for one structural reason. A read
- * cannot answer with a bare envelope when it is denied or when its source is unavailable: a denial
- * must carry no count, title, existence flag or size, and an absent source must never be presented
- * as an empty list or a zero. Declaring both contracts in this file keeps `outcome.ts` and
- * `envelope.ts` acyclic — the envelope module may import this one, never the reverse — which is
- * also why nothing here refers to the envelope's shape. Every read in the service answers inside that
- * shape and carries its two failure branches here, so no read is an exception to the contract.
- *
- * The status mapping is fixed and uniform, and it lives in `response.ts` beside `toResponse`.
- * `denied` is always 403, whether or not the record exists, because a 404-for-missing /
- * 403-for-hidden pair is an existence oracle: a caller could enumerate hidden records from the
- * status code alone. `unknown` is 202 in the other direction — the status says the request was
- * understood and its fate is not known, so a client may not read it as success — and
- * `unavailable` is 503 carrying the source identity and retry guidance, so a surface can name
- * which source is down instead of showing a zero.
- *
- * Plan items that put this file in scope: AAP 0.7.1 (the four-field mutation input and this closed
- * outcome set), 0.3.2 (one authorised data path whose outcome the UI renders durably), 0.6.1 and
- * 0.11.1 (`modules/data-service/{index,envelope,outcome,operations,authorize}.ts`), 0.12.5 (the
- * injected failures whose recovery depends on `conflict` and `unknown` staying distinct) and 0.15.1
- * (a thrown exception is a defect, not a presentation: a fault becomes `unavailable` and an
- * unrecognised failure becomes `unknown`).
- *
- * Layering: this module is browser-safe, which is why a Client Component may value-import it. It
- * reaches nothing but the framework-free helpers it reuses and `zod`, and nothing here imports
- * `next/server`: the response mapping, the one part of the contract that needs it, lives in
- * `response.ts`. It imports no store, service, component or feature; it reads no clock, performs
- * no I/O, writes no diagnostic and carries no payload of its own. Nothing here decides whether a
- * caller *may* do something — authorisation happens before an outcome is built — so the only
- * authority this file exercises is over what a denial is allowed to say.
+ * The closed set of mutation outcomes, the constructors that produce them, and the two guards that
+ * read one back off the wire. The one HTTP response they map to is `response.ts`.
  */
 import { ZodError } from "zod";
-
 import { isNonEmptyString, isRecord } from "@/lib/guards";
 import type { SourceReference } from "@/lib/ids";
 import { redactDenial } from "@/lib/redaction";
-
-/**
- * The source system name an `unavailable` outcome carries when the local synthetic store itself
- * could not complete the request. The store is the only writable state this application owns, so
- * this is the one source this module can name without knowing which future owner a read consulted.
- */
+/** The source system name an `unavailable` outcome carries when the local synthetic store itself could not complete the request. */
 export const LOCAL_STORE_SYSTEM = "local-store";
-
-/**
- * A value that survives a JSON round trip unchanged. Constraining a payload to this type is what
- * lets it be written to the operation ledger and read back as the same value on a replay, so a
- * stored result never depends on a class instance, a `Date`, a `Map` or a function surviving.
- */
-export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly JsonValue[]
-  | { readonly [field: string]: JsonValue };
-
-/**
- * The opaque payload a mutation chooses to return: created identifiers, per-item results, a
- * receipt, an import summary. It is deliberately not specified further — the operation that owns
- * the result is the only place that knows its shape — but it is held to `JsonValue` so the ledger
- * can store it and a replay can return it byte for byte.
- */
+/** A value that survives a JSON round trip unchanged. */
+export type JsonValue = string | number | boolean | null | readonly JsonValue[] | { readonly [field: string]: JsonValue };
+/** The opaque payload a mutation chooses to return: created identifiers, per-item results, a receipt, an import summary. */
 export type MutationResult = JsonValue;
-
-/**
- * The result for one row of an operation that acts on several items at once.
- *
- * The state vocabulary belongs to the mutation that owns it and stays closed there, so four
- * different jobs never collapse into one word: bulk task actions use `accepted | unchanged |
- * excluded | failed`, import rows use `accepted | already-accepted | skipped | needs-review |
- * failed`, and a per-variant release uses `released | failed | needs-attention`. Widening the
- * default `State` here would erase that distinction; a mutation narrows it at its own boundary.
- *
- * `reason` is what a person reads; `reasonCode` is what a surface switches on. Neither may carry a
- * private value — a per-item reason says why an item was left alone, never what it contained.
- */
+/** The result for one row of an operation that acts on several items at once. */
 export type PerItemResult<State extends string = string> = {
   readonly targetId: string;
   readonly state: State;
@@ -112,95 +20,42 @@ export type PerItemResult<State extends string = string> = {
   readonly reasonCode?: string;
   readonly reason?: string;
 };
-
-/**
- * The closed set of denial reason codes.
- *
- * Each code describes the caller's relationship to the request, never the thing requested: no code
- * may name a record, a count, a title, a size or an existence flag, because a denial that answered
- * "not found" differently from "not permitted" would let a caller enumerate what it cannot see.
- * `session-expired` and `session-unavailable` are here because a session that cannot be established
- * is answered as a denial: it carries no authority, and retry advice would ask the caller to repeat
- * a request that can never succeed.
- */
-export const DENIAL_REASONS = [
-  "not-admitted",
-  "no-membership",
-  "no-permission",
-  "no-export-permission",
-  "no-protected-grant",
-  "capability-absent",
-  "session-expired",
-  "session-unavailable",
-] as const;
-
+/** The closed set of denial reason codes. */
+export const DENIAL_REASONS = ["not-admitted", "no-membership", "no-permission", "no-export-permission", "no-protected-grant", "capability-absent", "session-expired", "session-unavailable"] as const;
 /** One reason a caller may be denied; a member of the closed list above. */
 export type DenialReason = (typeof DENIAL_REASONS)[number];
-
 /** The two ways a caller's input can be stale: the record moved, or the same id carried new intent. */
 export type ConflictReason = "stale-revision" | "changed-intent";
-
-/**
- * Validation messages keyed by field path, as `invalid` carries them: `fields["name.first"]` holds
- * every message for that path. A form-level issue that names no field is keyed `ROOT_FIELD_KEY`.
- */
+/** Validation messages keyed by field path, as `invalid` carries them: `fields["name.first"]` holds every message for that path. */
 export type FieldMessages = Readonly<Record<string, readonly string[]>>;
-
-/**
- * The key under which an issue with no path is reported. Schema-level problems (a payload that is
- * not an object at all) belong to the form rather than to a field, and the form still has to render
- * them, so they need one stable key that can never collide with a real field path.
- */
+/** The key under which an issue with no path is reported. */
 export const ROOT_FIELD_KEY = "_root";
-
 /** The operation was applied exactly once; `revision` is what the record now stands at. */
 export type AcceptedOutcome = {
   readonly outcome: "accepted";
   readonly operationId: string;
   readonly revision: string;
-  /** Identifiers the operation created, in the order the mutation reports them. */
   readonly created?: readonly string[];
-  /** Identifiers the operation changed. */
   readonly changed?: readonly string[];
-  /** Per-item results for an operation that acts on rows; absent when the operation has one effect. */
   readonly items?: readonly PerItemResult[];
 };
-
-/**
- * The same `operationId` arrived again with the same intent, so the stored result is returned and
- * nothing new happens: no second effect and no new revision, which is what makes a lost
- * acknowledgement recoverable instead of a reason to send the work again.
- *
- * `revision` and the three identifier members are the ones the accepted answer reported, not the
- * caller's request: a client recovering from a lost acknowledgement reads from a replay the same
- * new revision, created identifiers, changed identifiers and per-item results it would have read
- * from the answer it never received.
- */
+/** The same `operationId` arrived again with the same intent, so the stored result is returned and nothing new happens: no second effect and no new revision, which is what makes a lost. */
 export type AlreadyAcceptedOutcome = {
   readonly outcome: "alreadyAccepted";
   readonly operationId: string;
   readonly revision: string;
   readonly result: MutationResult;
-  /** Identifiers the operation created, as the accepted answer stated them. */
   readonly created?: readonly string[];
-  /** Identifiers the operation changed, as the accepted answer stated them. */
   readonly changed?: readonly string[];
-  /** Per-item results, as the accepted answer stated them. */
   readonly items?: readonly PerItemResult[];
 };
-
 /** The payload would produce no change, so no history or activity entry was written. */
 export type UnchangedOutcome = {
   readonly outcome: "unchanged";
   readonly operationId: string;
   readonly revision: string;
 };
-
-/**
- * The caller's expected revision, or the intent behind its `operationId`, no longer matches. Both
- * the current value and the caller's preserved input travel back, because a conflict must never
- * silently replace work someone did: the comparison is the point.
- */
+/** The caller's expected revision, or the intent behind its `operationId`, no longer matches. */
 export type ConflictOutcome = {
   readonly outcome: "conflict";
   readonly operationId: string;
@@ -209,88 +64,39 @@ export type ConflictOutcome = {
   readonly preservedInput: unknown;
   readonly reason: ConflictReason;
 };
-
-/**
- * The caller has no authority for this request. The shape is identical whether or not the record
- * exists, and the reason code describes the relationship rather than the record, so the outcome
- * cannot be used to learn that something exists.
- */
+/** The caller has no authority for this request. */
 export type DeniedOutcome = {
   readonly outcome: "denied";
   readonly operationId: string;
   readonly reasonCode: DenialReason;
 };
-
 /** The payload failed validation; messages are keyed by field path and nothing was changed. */
 export type InvalidOutcome = {
   readonly outcome: "invalid";
   readonly operationId: string;
   readonly fields: FieldMessages;
 };
-
-/**
- * The source behind the work is down. `source` names it and `guidance` says what to do next, so a
- * surface can report the outage instead of presenting the absence of data as an empty list or a
- * zero. An unavailable source is never a successful read of nothing.
- */
+/** The source behind the work is down. */
 export type UnavailableOutcome = {
   readonly outcome: "unavailable";
   readonly operationId: string;
   readonly source: SourceReference;
   readonly guidance: string;
 };
-
-/**
- * The effect may or may not have been applied and the acknowledgement was lost. The `operationId`
- * is the only recovery handle — the caller re-queries or replays the same id — and the outcome
- * makes no claim in either direction, which is why uncertainty never turns into a resend.
- */
+/** The effect may or may not have been applied and the acknowledgement was lost. */
 export type UnknownOutcome = {
   readonly outcome: "unknown";
   readonly operationId: string;
 };
-
-/**
- * Everything a mutation may answer with: exactly eight members, discriminated on `outcome`. Any
- * ninth member would have to name a genuinely different fact; a state that belongs to a domain
- * (accepted by a provider, delivered, read, withdrawn) belongs to that domain's model instead.
- */
-export type MutationOutcome =
-  | AcceptedOutcome
-  | AlreadyAcceptedOutcome
-  | UnchangedOutcome
-  | ConflictOutcome
-  | DeniedOutcome
-  | InvalidOutcome
-  | UnavailableOutcome
-  | UnknownOutcome;
-
-/**
- * What a read answers with: the scoped envelope, or the reason it could not be built.
- *
- * The two failure branches carry no envelope at all rather than an empty one, so a denied read
- * cannot leak a count, a title, an existence flag or a size, and an absent source cannot be
- * rendered as "nothing was found". `T` is the envelope type the caller expects, supplied by
- * `envelope.ts` at the call site; this module never needs to know its shape.
- */
+/** Everything a mutation may answer with: exactly eight members, discriminated on `outcome`. */
+export type MutationOutcome = AcceptedOutcome | AlreadyAcceptedOutcome | UnchangedOutcome | ConflictOutcome | DeniedOutcome | InvalidOutcome | UnavailableOutcome | UnknownOutcome;
+/** What a read answers with: the scoped envelope, or the reason it could not be built. */
 export type ReadResult<T> =
   | { readonly kind: "envelope"; readonly envelope: T }
   | { readonly kind: "denied"; readonly denied: DeniedOutcome }
   | { readonly kind: "unavailable"; readonly unavailable: UnavailableOutcome };
-
-/**
- * Answers that the operation was applied exactly once.
- *
- * The new `revision` is mandatory: a caller that changed a record has to say what the record now
- * stands at, so the next write can present it as its expected revision.
- */
-export function accepted(input: {
-  operationId: string;
-  revision: string;
-  created?: readonly string[];
-  changed?: readonly string[];
-  items?: readonly PerItemResult[];
-}): AcceptedOutcome {
+/** Answers that the operation was applied exactly once. */
+export function accepted(input: { operationId: string; revision: string; created?: readonly string[]; changed?: readonly string[]; items?: readonly PerItemResult[] }): AcceptedOutcome {
   return {
     outcome: "accepted",
     operationId: input.operationId,
@@ -303,14 +109,7 @@ export function accepted(input: {
     ...(input.items === undefined ? {} : { items: input.items }),
   };
 }
-
-/**
- * Answers a replay: the same `operationId` with the same intent returns the stored result, with no
- * new effect and no new revision. The stored result is what the original call answered with, so a
- * caller that lost the first response recovers the same identifiers it would have had — the change's
- * own revision, the identifiers it created or changed and any per-item results, never the revision
- * the caller happened to present with the request.
- */
+/** Answers a replay: the same `operationId` with the same intent returns the stored result, with no new effect and no new revision. */
 export function alreadyAccepted(input: {
   operationId: string;
   revision: string;
@@ -331,28 +130,12 @@ export function alreadyAccepted(input: {
     ...(input.items === undefined ? {} : { items: input.items }),
   };
 }
-
-/**
- * Answers that the payload would change nothing. No history entry and no activity record is
- * written, which is what keeps an idempotent repeat from looking like work someone did.
- */
+/** Answers that the payload would change nothing. */
 export function unchanged(input: { operationId: string; revision: string }): UnchangedOutcome {
   return { outcome: "unchanged", operationId: input.operationId, revision: input.revision };
 }
-
-/**
- * Answers that the caller's input is stale, carrying both the current value and the caller's
- * preserved input so a surface can show them side by side and let someone decide. The input is
- * preserved even for a changed-intent reuse of an `operationId`, because the caller's work is the
- * one thing a conflict must never discard.
- */
-export function conflict(input: {
-  operationId: string;
-  currentRevision: string;
-  current: unknown;
-  preservedInput: unknown;
-  reason: ConflictReason;
-}): ConflictOutcome {
+/** Answers that the caller's input is stale, carrying both the current value and the caller's preserved input so a surface can show them side by side and let someone decide. */
+export function conflict(input: { operationId: string; currentRevision: string; current: unknown; preservedInput: unknown; reason: ConflictReason }): ConflictOutcome {
   return {
     outcome: "conflict",
     operationId: input.operationId,
@@ -362,15 +145,7 @@ export function conflict(input: {
     reason: input.reason,
   };
 }
-
-/**
- * Answers that the caller has no authority for this request.
- *
- * Every denial passes through `redactDenial` on its way out, here and again in `toResponse`. The
- * three fields a denial carries are not on the denial key list, so the pass changes nothing today;
- * it is the mechanical guarantee that a field added to this outcome later cannot carry an
- * existence flag, a count, a title or a size by accident.
- */
+/** Answers that the caller has no authority for this request. */
 export function denied(input: { operationId: string; reasonCode: DenialReason }): DeniedOutcome {
   return redactDenial<DeniedOutcome>({
     outcome: "denied",
@@ -378,22 +153,10 @@ export function denied(input: { operationId: string; reasonCode: DenialReason })
     reasonCode: input.reasonCode,
   });
 }
-
-/**
- * Turns a Zod error into the path-keyed messages `invalid` carries.
- *
- * Zod 4's public accessors are used deliberately: `issues` and each issue's `path`. A path of
- * segments is joined with dots, which is how a form and a field component address the same field,
- * and an issue with no path belongs to the form under `ROOT_FIELD_KEY`. Identical messages for one
- * path are reported once, so a repeated rule does not read as several failures.
- */
 function fieldMessagesFromIssues(error: ZodError): FieldMessages {
   const messages: Record<string, string[]> = {};
   for (const issue of error.issues) {
-    const key =
-      issue.path.length === 0
-        ? ROOT_FIELD_KEY
-        : issue.path.map((segment) => String(segment)).join(".");
+    const key = issue.path.length === 0 ? ROOT_FIELD_KEY : issue.path.map((segment) => String(segment)).join(".");
     const existing = messages[key];
     if (existing === undefined) {
       messages[key] = [issue.message];
@@ -403,32 +166,13 @@ function fieldMessagesFromIssues(error: ZodError): FieldMessages {
   }
   return messages;
 }
-
-/**
- * Answers that the payload failed validation, with per-field messages and no side effect.
- *
- * It takes either a Zod error or a map the caller built itself, so a mutation that has already
- * normalised its messages and one that catches a parse failure both answer through one shape.
- */
-export function invalid(input: {
-  operationId: string;
-  fields: FieldMessages | ZodError;
-}): InvalidOutcome {
-  const fields =
-    input.fields instanceof ZodError ? fieldMessagesFromIssues(input.fields) : input.fields;
+/** Answers that the payload failed validation, with per-field messages and no side effect. */
+export function invalid(input: { operationId: string; fields: FieldMessages | ZodError }): InvalidOutcome {
+  const fields = input.fields instanceof ZodError ? fieldMessagesFromIssues(input.fields) : input.fields;
   return { outcome: "invalid", operationId: input.operationId, fields };
 }
-
-/**
- * Answers that the source behind the work is down. The source identity and the guidance travel
- * with the outcome so a surface reports the outage instead of rendering the missing data as an
- * empty list or a zero.
- */
-export function unavailable(input: {
-  operationId: string;
-  source: SourceReference;
-  guidance: string;
-}): UnavailableOutcome {
+/** Answers that the source behind the work is down. */
+export function unavailable(input: { operationId: string; source: SourceReference; guidance: string }): UnavailableOutcome {
   return {
     outcome: "unavailable",
     operationId: input.operationId,
@@ -436,53 +180,21 @@ export function unavailable(input: {
     guidance: input.guidance,
   };
 }
-
-/**
- * Answers that the effect may have been applied and the acknowledgement was lost. The
- * `operationId` is the recovery handle: the caller re-queries or replays it. This constructor
- * cannot be used to express success or failure, because the outcome states neither.
- */
+/** Answers that the effect may have been applied and the acknowledgement was lost. */
 export function unknown(input: { operationId: string }): UnknownOutcome {
   return { outcome: "unknown", operationId: input.operationId };
 }
-
-/**
- * The store fault raised for a session document that exists but cannot be decoded.
- *
- * Exported because it is the one name {@link outcomeFromError} maps to `unavailable`, and a mutation
- * module that refuses a document it cannot read is stating the same condition one layer up. A caller
- * that restates the literal instead of importing it is how one of them comes to drift and answer
- * `unknown` for a fault the store itself reports honestly.
- */
+/** The store fault raised for a session document that exists but cannot be decoded. */
 export const CORRUPT_DOCUMENT_FAULT = "CorruptJsonError";
 
-/** The store fault raised for a session id that cannot name a document; refused, never repaired. */
 const INVALID_SESSION_FAULT = "InvalidSessionIdError";
 
-/** The store fault raised for a session id that names no stored session; a transaction never creates one. */
 const SESSION_NOT_FOUND_FAULT = "SessionNotFoundError";
 
-/**
- * The filesystem fault codes that describe the store's own medium rather than the caller's input:
- * a missing directory, a full disk, a permission denial, an I/O error. A coding fault carries an
- * `ERR_*` code instead and is deliberately not matched here, because it means a defect rather than
- * an outage and the honest answer to it is `unknown`.
- */
 const FILESYSTEM_FAULT_CODE = /^E[A-Z]{2,}$/;
 
-/**
- * What a caller is told when the store could not complete the request. It names the retry that is
- * safe — the same operation id, which a replay answers with the stored result — instead of inviting
- * a second attempt at the effect.
- */
 const STORE_RETRY_GUIDANCE =
   "The local synthetic store could not complete this request. Retry the same request with the same operation id: a replay returns the original result rather than repeating the effect. If it keeps failing, reset the development data from Settings and reopen the session.";
-
-/**
- * Reads a string-valued property from a caught value without assuming it is a well-behaved
- * `Error`. The read is guarded because this function runs inside a handler's failure path, where a
- * throwing getter or an exotic object must not become a second failure.
- */
 function readStringProperty(value: unknown, key: string): string | undefined {
   if (typeof value !== "object" || value === null) {
     return undefined;
@@ -494,16 +206,6 @@ function readStringProperty(value: unknown, key: string): string | undefined {
     return undefined;
   }
 }
-
-/**
- * Recognises a store or medium fault and answers with the opaque marker that identifies it.
- *
- * The store's own fault classes are matched by name rather than by `instanceof`, because this
- * module may not import the store: the data service is the only layer that reaches it, and a
- * structural check keeps that direction intact. The marker is the fault's name or code — never a
- * path, never a document's contents — so an `unavailable` outcome identifies the source without
- * disclosing what it holds.
- */
 function storeFaultReference(error: unknown): string | undefined {
   const name = readStringProperty(error, "name");
   if (name === CORRUPT_DOCUMENT_FAULT) {
@@ -515,24 +217,8 @@ function storeFaultReference(error: unknown): string | undefined {
   }
   return undefined;
 }
-
-/**
- * Maps a store or medium fault onto the outage it is, or answers `undefined` for any other value.
- *
- * This is the one place such a fault becomes an outcome. `outcomeFromError` uses it so a handler's
- * failure path and the session resolver cannot disagree about what "the store could not answer" looks
- * like, and a caller that has already established the fault — the resolver, which must answer before
- * the request reaches its handler — produces exactly the outcome it would have received there. The
- * reference is the store's own fault name or code (`CorruptJsonError`, `ENOENT`, `EIO` — never a path)
- * beside the retry that is safe, so an outage names its source without disclosing what it holds.
- *
- * `undefined` means the value is not a store fault, and the caller decides what it is instead: an
- * invalid payload, a refusal, or a defect.
- */
-export function unavailableFromStoreFault(
-  operationId: string,
-  error: unknown,
-): UnavailableOutcome | undefined {
+/** Maps a store or medium fault onto the outage it is, or answers `undefined` for any other value. */
+export function unavailableFromStoreFault(operationId: string, error: unknown): UnavailableOutcome | undefined {
   const reference = storeFaultReference(error);
   if (reference === undefined) {
     return undefined;
@@ -543,26 +229,7 @@ export function unavailableFromStoreFault(
     guidance: STORE_RETRY_GUIDANCE,
   });
 }
-
-/**
- * Converts a caught value into the outcome a Route Handler may return.
- *
- * A thrown exception is a defect, not a presentation (AAP 0.15.1), so this function has exactly
- * four honest answers and no fifth:
- *
- * - a validation error that escaped the service is still a validation error, reported as `invalid`
- *   with per-field messages (validation is supposed to return `invalid` without throwing, so this
- *   branch is defensive rather than expected);
- * - a store or medium fault becomes `unavailable`, naming the store and the retry that is safe;
- * - a session that cannot be established becomes `denied`, because it yields no authority and no
- *   retry can change that: a session id that cannot name a document and a session the store does
- *   not hold are answered alike, since neither becomes authoritative by being asked for again;
- * - anything unrecognised becomes `unknown`, carrying the `operationId` and nothing else, because
- *   when the fate of the effect is not known, success and failure are both lies.
- *
- * No payload, note body, email address or amount is ever placed in the outcome, and nothing here
- * logs: the diagnostic belongs to `@/lib/logger`, which redacts on its own terms.
- */
+/** Converts a caught value into the outcome a Route Handler may return. */
 export function outcomeFromError(operationId: string, error: unknown): MutationOutcome {
   if (error instanceof ZodError) {
     return invalid({ operationId, fields: error });
@@ -583,28 +250,15 @@ export function outcomeFromError(operationId: string, error: unknown): MutationO
   }
   return unknown({ operationId });
 }
-
-/** The closed denial vocabulary as a lookup, so a parsed body's reason code is checked rather than trusted. */
 const DENIAL_REASON_SET: ReadonlySet<string> = new Set<string>(DENIAL_REASONS);
 
-/** Narrows an untrusted value to one of the closed denial reason codes. */
 function isDenialReason(value: unknown): value is DenialReason {
   return typeof value === "string" && DENIAL_REASON_SET.has(value);
 }
-
-/** Narrows an untrusted value to a source identity with both of its parts present. */
 function isSourceReference(value: unknown): value is SourceReference {
   return isRecord(value) && isNonEmptyString(value.system) && isNonEmptyString(value.reference);
 }
-
-/**
- * Reports whether a parsed value is a mutation outcome.
- *
- * This is how a client hook and a Route Handler narrow a JSON body without a type assertion. The
- * switch below reads an untrusted string rather than a union, so its final `return false` is the
- * correct closing branch — `assertNever` belongs to the exhaustive switches over `MutationOutcome`
- * in `response.ts`'s `respond`, where a ninth member must fail to compile.
- */
+/** Reports whether a parsed value is a mutation outcome. */
 export function isOutcome(value: unknown): value is MutationOutcome {
   if (!isRecord(value)) {
     return false;
@@ -617,11 +271,7 @@ export function isOutcome(value: unknown): value is MutationOutcome {
     case "accepted":
       return isNonEmptyString(value.operationId) && typeof value.revision === "string";
     case "alreadyAccepted":
-      return (
-        isNonEmptyString(value.operationId) &&
-        typeof value.revision === "string" &&
-        "result" in value
-      );
+      return isNonEmptyString(value.operationId) && typeof value.revision === "string" && "result" in value;
     case "unchanged":
       return isNonEmptyString(value.operationId) && typeof value.revision === "string";
     case "conflict":
@@ -637,24 +287,14 @@ export function isOutcome(value: unknown): value is MutationOutcome {
     case "invalid":
       return isNonEmptyString(value.operationId) && isRecord(value.fields);
     case "unavailable":
-      return (
-        isNonEmptyString(value.operationId) &&
-        isSourceReference(value.source) &&
-        isNonEmptyString(value.guidance)
-      );
+      return isNonEmptyString(value.operationId) && isSourceReference(value.source) && isNonEmptyString(value.guidance);
     case "unknown":
       return isNonEmptyString(value.operationId);
     default:
       return false;
   }
 }
-
-/**
- * Reports whether a parsed value is a read result: an envelope, a denial or an outage.
- *
- * The envelope branch requires the `envelope` key to be present, so a truncated body is rejected
- * rather than read as a read that found nothing — the distinction this whole union exists to keep.
- */
+/** Reports whether a parsed value is a read result: an envelope, a denial or an outage. */
 export function isReadResult(value: unknown): value is ReadResult<unknown> {
   if (!isRecord(value)) {
     return false;

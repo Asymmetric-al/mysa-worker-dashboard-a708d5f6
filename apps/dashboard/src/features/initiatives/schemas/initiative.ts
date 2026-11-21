@@ -1,15 +1,6 @@
 import { z } from "zod";
-
 import { parseCivilDate } from "@/modules/time/civil";
-
-/**
- * A civil date carried as `YYYY-MM-DD` and read by `@/modules/time/civil`.
- *
- * Shape and calendar in one check: `2026-02-31` has the shape of a date yet names no day, so it is
- * refused rather than rolled forward into March. The calendar is read by the one civil-date
- * implementation, so this client schema cannot answer differently from the service for one value,
- * and no time of day, zone or instant is invented for the day the worker chose.
- */
+/** A civil date carried as `YYYY-MM-DD` and read by `@/modules/time/civil`. */
 export const civilDateSchema = z
   .string()
   .trim()
@@ -18,14 +9,8 @@ export const civilDateSchema = z
       ctx.addIssue({ code: "custom", message: "Enter a real calendar date as YYYY-MM-DD." });
     }
   });
-
-/**
- * Builds a trimmed text field whose length is bounded in Unicode code points.
- */
-export function boundedTextSchema(
-  maxCodePoints: number,
-  messages: { readonly required: string; readonly tooLong: string },
-): z.ZodString {
+/** Builds a trimmed text field whose length is bounded in Unicode code points. */
+export function boundedTextSchema(maxCodePoints: number, messages: { readonly required: string; readonly tooLong: string }): z.ZodString {
   return z
     .string()
     .trim()
@@ -40,10 +25,7 @@ export function boundedTextSchema(
       }
     });
 }
-
-/**
- * Validates the `createInitiative` payload.
- */
+/** Validates the `createInitiative` payload. */
 export const createInitiativePayloadSchema = z
   .object({
     name: boundedTextSchema(200, {
@@ -56,10 +38,7 @@ export const createInitiativePayloadSchema = z
     }),
     // An opaque principal reference inside the acting scope. A name or an email address
     // never establishes identity, so neither is accepted in its place.
-    responsiblePrincipalId: z
-      .string()
-      .trim()
-      .min(1, "Choose the person responsible for this initiative."),
+    responsiblePrincipalId: z.string().trim().min(1, "Choose the person responsible for this initiative."),
     // The acting ministry travels in the mutation's scope, so a body may never name a
     // context the caller is not admitted to; omit the key rather than sending null.
     period: z.object({ startOn: civilDateSchema, endOn: civilDateSchema }).strict().optional(),
@@ -71,10 +50,7 @@ export const createInitiativePayloadSchema = z
     // value the calendar refused. Each end is read by the one civil-date implementation, and only
     // then do the ISO strings order them as calendar days without a second date implementation.
     if (value.period === undefined) return;
-    if (
-      parseCivilDate(value.period.startOn).status === "refused" ||
-      parseCivilDate(value.period.endOn).status === "refused"
-    ) {
+    if (parseCivilDate(value.period.startOn).status === "refused" || parseCivilDate(value.period.endOn).status === "refused") {
       return;
     }
     if (value.period.endOn < value.period.startOn) {
@@ -85,9 +61,7 @@ export const createInitiativePayloadSchema = z
       });
     }
   });
-
 /** A civil date carried as an ISO `YYYY-MM-DD` string. */
 export type CivilDateString = z.infer<typeof civilDateSchema>;
-
 /** The validated `createInitiative` payload. */
 export type CreateInitiativePayload = z.infer<typeof createInitiativePayloadSchema>;

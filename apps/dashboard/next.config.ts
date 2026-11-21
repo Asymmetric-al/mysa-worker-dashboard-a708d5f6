@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-
 const nextConfig: NextConfig = {
   // Every image byte reaches a reader through the application's own scope-checked
   // route handler. The framework optimiser would serve the same bytes from
@@ -21,5 +20,4 @@ const nextConfig: NextConfig = {
   // in a production build.
   allowedDevOrigins: ["127.0.0.1", "localhost"],
 };
-
 export default nextConfig;

@@ -1,21 +1,11 @@
 "use client";
-
 import * as React from "react";
 import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
 // Registry `cn` placeholder -> this repository's single class-merge utility; no `cn` package.
 import { cn } from "@/lib/cn";
-
-/* BLITZY [A11Y]: the viewport's focus indicator is `focus-visible:ring-ring` at the shared
- * focus-ring width, which measures 4.83:1 against the page in the light theme and 4.12:1 in dark —
- * above the 3:1 WCAG 2.2 expects of a focus indicator, in both themes. */
-
 function ScrollArea({ className, children, ...props }: ScrollAreaPrimitive.Root.Props) {
   return (
-    <ScrollAreaPrimitive.Root
-      data-slot="scroll-area"
-      className={cn("relative", className)}
-      {...props}
-    >
+    <ScrollAreaPrimitive.Root data-slot="scroll-area" className={cn("relative", className)} {...props}>
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
         className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-1"
@@ -27,12 +17,7 @@ function ScrollArea({ className, children, ...props }: ScrollAreaPrimitive.Root.
     </ScrollAreaPrimitive.Root>
   );
 }
-
-function ScrollBar({
-  className,
-  orientation = "vertical",
-  ...props
-}: ScrollAreaPrimitive.Scrollbar.Props) {
+function ScrollBar({ className, orientation = "vertical", ...props }: ScrollAreaPrimitive.Scrollbar.Props) {
   return (
     <ScrollAreaPrimitive.Scrollbar
       data-slot="scroll-area-scrollbar"
@@ -44,12 +29,8 @@ function ScrollBar({
       )}
       {...props}
     >
-      <ScrollAreaPrimitive.Thumb
-        data-slot="scroll-area-thumb"
-        className="relative flex-1 rounded-full bg-border"
-      />
+      <ScrollAreaPrimitive.Thumb data-slot="scroll-area-thumb" className="relative flex-1 rounded-full bg-border" />
     </ScrollAreaPrimitive.Scrollbar>
   );
 }
-
 export { ScrollArea, ScrollBar };

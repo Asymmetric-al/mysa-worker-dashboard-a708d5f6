@@ -1,23 +1,10 @@
 /**
- * Single wording source for the Partners roster's bounded facet set, its facet-value
- * labels, the grouping rule, single-currency amount-range wording and the three
- * permission facts.
- *
- * Scope: the Partners roster, filters, saved views and detail surfaces described by
- * the Agent Action Plan (AAP 0.9.1, 0.10.1 and 0.11.1).
- *
- * Contract with the data seam: `readFacets` decides which facets and values the
- * current scope admits. The shared query toolbar receives these labels as props and
- * renders only the intersection with that envelope, so a label whose facet was
- * withheld can never introduce the facet into the UI. When the service enumerates a
- * narrower or different value set, these labels reconcile to the service rather than
- * the other way round.
- *
- * This module supplies labels only: no JSX, styling, formatting, state, service call
- * or date handling. It has no dependencies, so it remains a leaf.
+ * Single wording source for the Partners roster's bounded facet set, its facet-value labels, the
+ * grouping rule, single-currency amount-range wording and the three permission facts.
  */
-
-/** The ordered facet keys admitted by the Partners roster's bounded facet set. */
+/**
+ * The ordered facet keys admitted by the Partners roster's bounded facet set.
+ */
 export const FACET_KEYS = [
   "contact-type",
   "preparation-state",
@@ -34,10 +21,8 @@ export const FACET_KEYS = [
   "giving-total",
   "commitment-status",
 ] as const;
-
 /** A key identifying one facet in the Partners roster. */
 export type FacetKey = (typeof FACET_KEYS)[number];
-
 /** Short user-facing label for each facet key. */
 export const FACET_LABELS: Readonly<Record<FacetKey, string>> = {
   "contact-type": "Contact type",
@@ -55,14 +40,11 @@ export const FACET_LABELS: Readonly<Record<FacetKey, string>> = {
   "giving-total": "Giving in the selected period",
   "commitment-status": "Recurring support status",
 };
-
 // The seven open value sets below are deliberate: an open value is rendered exactly
 // as the source supplied it, and no label may be invented for a value the service has
 // not enumerated.
 /** Chip wording for closed facet values, with open value sets left to the source. */
-export const FACET_VALUE_LABELS: Readonly<
-  Record<FacetKey, Readonly<Partial<Record<string, string>>>>
-> = {
+export const FACET_VALUE_LABELS: Readonly<Record<FacetKey, Readonly<Partial<Record<string, string>>>>> = {
   "contact-type": {
     person: "Person",
     household: "Household",
@@ -104,7 +86,6 @@ export const FACET_VALUE_LABELS: Readonly<
   "giving-total": {},
   "commitment-status": {},
 };
-
 /** Wording for how multiple selected facets and values combine. */
 export const FACET_GROUPING_COPY = {
   acrossFacets: "Every selected filter must match.",
@@ -113,35 +94,19 @@ export const FACET_GROUPING_COPY = {
   clearAll: "Clear all filters",
   removeFilter: "Remove this filter",
   clearFacet: "Clear this filter",
-} as const satisfies Record<
-  "acrossFacets" | "withinFacet" | "activeFilters" | "clearAll" | "removeFilter" | "clearFacet",
-  string
->;
-
+} as const satisfies Record<"acrossFacets" | "withinFacet" | "activeFilters" | "clearAll" | "removeFilter" | "clearFacet", string>;
 /** Wording that keeps an amount range inside one selected currency. */
 export const CURRENCY_SCOPE_COPY = {
   chooseCurrencyFirst: "Choose one currency before setting an amount range.",
   rangeAppliesTo: "The amount range applies only to",
   notComparable: "Amounts in different currencies are not compared.",
 } as const satisfies Record<"chooseCurrencyFirst" | "rangeAppliesTo" | "notComparable", string>;
-
 /** The three permission facts that must never be collapsed into one. */
-export const PERMISSION_FACTS = [
-  "contactability",
-  "communicationConsent",
-  "protectedReaderGrant",
-] as const;
-
+export const PERMISSION_FACTS = ["contactability", "communicationConsent", "protectedReaderGrant"] as const;
 /** A key identifying one permission fact. */
 export type PermissionFactKey = (typeof PERMISSION_FACTS)[number];
-
 /** Separate label, explanation and absent-state wording for each permission fact. */
-export const PERMISSION_FACT_COPY: Readonly<
-  Record<
-    PermissionFactKey,
-    { readonly label: string; readonly explanation: string; readonly whenAbsent: string }
-  >
-> = {
+export const PERMISSION_FACT_COPY: Readonly<Record<PermissionFactKey, { readonly label: string; readonly explanation: string; readonly whenAbsent: string }>> = {
   contactability: {
     label: "Contact details you may use",
     explanation: "Contactability is the set of contact methods this record permits you to use.",

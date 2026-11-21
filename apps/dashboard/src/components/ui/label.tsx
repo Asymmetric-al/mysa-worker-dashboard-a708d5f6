@@ -1,12 +1,6 @@
 "use client";
-
 import * as React from "react";
 import { cn } from "@/lib/cn";
-
-/* The consumer supplies `htmlFor`: form-field owns the id, aria-describedby and
- * aria-invalid wiring in one place, so this primitive forwards the prop rather than
- * deriving one from the control it happens to sit beside.
- */
 function Label({ className, htmlFor, ...props }: React.ComponentProps<"label">) {
   return (
     <label
@@ -20,5 +14,4 @@ function Label({ className, htmlFor, ...props }: React.ComponentProps<"label">) 
     />
   );
 }
-
 export { Label };

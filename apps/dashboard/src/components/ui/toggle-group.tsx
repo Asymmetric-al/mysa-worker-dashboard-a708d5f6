@@ -1,17 +1,15 @@
 "use client";
-
 import * as React from "react";
 import { Toggle as TogglePrimitive } from "@base-ui/react/toggle";
 import { ToggleGroup as ToggleGroupPrimitive } from "@base-ui/react/toggle-group";
 import { type VariantProps } from "class-variance-authority";
-/* The registry item ships `import { cn } from "cn"`, an unrelated npm package of that name.
- * Class merging must use the project's single helper so a caller's override wins against the
- * token utilities declared in src/styles/globals.css.
+/**
+ * The registry item ships `import { cn } from "cn"`, an unrelated npm package of that name. Class
+ * merging must use the project's single helper so a caller's override wins against the token utilities
+ * declared in src/styles/globals.css.
  */
 import { cn } from "@/lib/cn";
-
 import { toggleVariants } from "@/components/ui/toggle";
-
 const ToggleGroupContext = React.createContext<
   VariantProps<typeof toggleVariants> & {
     spacing?: number;
@@ -23,7 +21,6 @@ const ToggleGroupContext = React.createContext<
   spacing: 2,
   orientation: "horizontal",
 });
-
 function ToggleGroup({
   className,
   variant,
@@ -51,31 +48,12 @@ function ToggleGroup({
       )}
       {...props}
     >
-      <ToggleGroupContext.Provider value={{ variant, size, spacing, orientation }}>
-        {children}
-      </ToggleGroupContext.Provider>
+      <ToggleGroupContext.Provider value={{ variant, size, spacing, orientation }}>{children}</ToggleGroupContext.Provider>
     </ToggleGroupPrimitive>
   );
 }
-
-/* BLITZY [A11Y]: the pressed fill this group inherits (`aria-pressed:bg-highlight` in
- * toggleVariants) is --highlight, which measures 4.83:1 against the page in the light theme and
- * 7.56:1 in dark, so the pressed state is perceivable on screen rather than only announced through
- * aria-pressed.
- *
- * Base UI's Toggle sets both `aria-pressed` and a `data-pressed` attribute and never a `data-state`,
- * so the registry's `data-[state=on]` classes below are inert and are kept only for fidelity to the
- * registry source.
- */
-function ToggleGroupItem({
-  className,
-  children,
-  variant = "default",
-  size = "default",
-  ...props
-}: TogglePrimitive.Props & VariantProps<typeof toggleVariants>) {
+function ToggleGroupItem({ className, children, variant = "default", size = "default", ...props }: TogglePrimitive.Props & VariantProps<typeof toggleVariants>) {
   const context = React.useContext(ToggleGroupContext);
-
   return (
     <TogglePrimitive
       data-slot="toggle-group-item"
@@ -96,5 +74,4 @@ function ToggleGroupItem({
     </TogglePrimitive>
   );
 }
-
 export { ToggleGroup, ToggleGroupItem };

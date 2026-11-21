@@ -1,42 +1,15 @@
 /**
- * The Partners family's single wording source for what stays private, which records are
- * distinct, what an interaction is, what archiving does and what each saved-view action
- * changes.
- *
- * Two boundaries hold throughout this family. A private preparation record and a private
- * note are a different record class from shared operational facts, so they never leave the
- * worker's own space. And equal-looking names, email addresses or postal addresses
- * establish neither identity nor authority: two records that look alike stay two records.
- *
- * The wording is consumed by the roster, the record body, the note composer, the
- * interaction form, the preparation form, the archive actions and the saved-view bar. The
- * permission-fact labels come from `./facets` rather than being reworded here, and the
- * saved-view repair label declared here is the one the states module imports, so the
- * direction of imports stays one-way. This module declares text only: it formats nothing,
- * computes nothing, holds no state and carries no endpoint, provider or credential of any
- * kind.
+ * The Partners family's single wording source for what stays private, which records are distinct, what
+ * an interaction is, what archiving does and what each saved-view action changes.
  */
-
 import { PERMISSION_FACT_COPY } from "./facets";
-
 /** One piece of guidance as a short heading and the sentence that carries its meaning. */
 export type Copy = {
   readonly title: string;
   readonly body: string;
 };
-
 /** Why a private preparation record and a private note stay out of every shared surface. */
-export const PRIVATE_RECORD_COPY: Readonly<
-  Record<
-    | "preparationIsPrivate"
-    | "noteIsPrivate"
-    | "remainsPrivate"
-    | "linkingIsDeliberate"
-    | "linkingCopiesNothing"
-    | "exportExcludesPrivate",
-    Copy
-  >
-> = {
+export const PRIVATE_RECORD_COPY: Readonly<Record<"preparationIsPrivate" | "noteIsPrivate" | "remainsPrivate" | "linkingIsDeliberate" | "linkingCopiesNothing" | "exportExcludesPrivate", Copy>> = {
   preparationIsPrivate: {
     title: "Your own preparation",
     body: "This record holds preparation you wrote, it may exist without any shared identity, and it is not a contact record for anyone else.",
@@ -62,34 +35,19 @@ export const PRIVATE_RECORD_COPY: Readonly<
     body: "A roster export contains no private text, so the file you download is not a copy of your preparation.",
   },
 };
-
 /** The audience a note shows, with the consequence of that audience made plain. */
-export const AUDIENCE_LABEL_COPY: Readonly<
-  Record<"private" | "shared", { readonly label: string; readonly description: string }>
-> = {
+export const AUDIENCE_LABEL_COPY: Readonly<Record<"private" | "shared", { readonly label: string; readonly description: string }>> = {
   private: {
     label: "Private",
     description: "Only you can read this line; it is not part of the shared record.",
   },
   shared: {
     label: "Shared",
-    description:
-      "Other people who can see this record may read this line, so treat it as shared and not as private.",
+    description: "Other people who can see this record may read this line, so treat it as shared and not as private.",
   },
 };
-
 /** The identity rules: six record kinds, and no identity ever inferred from matching details. */
-export const IDENTITY_COPY: Readonly<
-  Record<
-    | "distinctKinds"
-    | "equalLooking"
-    | "noIdentityFromMatching"
-    | "householdIsNotPerson"
-    | "representativeIsSeparate"
-    | "noJoinKey",
-    Copy
-  >
-> = {
+export const IDENTITY_COPY: Readonly<Record<"distinctKinds" | "equalLooking" | "noIdentityFromMatching" | "householdIsNotPerson" | "representativeIsSeparate" | "noJoinKey", Copy>> = {
   distinctKinds: {
     title: "Six record kinds",
     body: "A person, a household, a church, an organization, an organization's representative and a private preparation record are six distinct record kinds, and each keeps its own identity.",
@@ -115,20 +73,8 @@ export const IDENTITY_COPY: Readonly<
     body: "Records are linked by their own identifiers, never by the details written on them.",
   },
 };
-
 /** What an interaction records, what it is not, and what it never proves. */
-export const INTERACTION_COPY: Readonly<
-  Record<
-    | "whatCounts"
-    | "whatDoesNot"
-    | "precisionDate"
-    | "precisionApproximate"
-    | "precisionUnknown"
-    | "provesNothing"
-    | "recordedOnce",
-    Copy
-  >
-> = {
+export const INTERACTION_COPY: Readonly<Record<"whatCounts" | "whatDoesNot" | "precisionDate" | "precisionApproximate" | "precisionUnknown" | "provesNothing" | "recordedOnce", Copy>> = {
   whatCounts: {
     title: "What an interaction records",
     body: "An interaction records something that actually happened, with its date or an honest precision, an outcome and the people who took part.",
@@ -158,11 +104,8 @@ export const INTERACTION_COPY: Readonly<
     body: "An event a source already recorded appears once, and logging it again would record it twice.",
   },
 };
-
 /** What archiving a private preparation record does, and everything it leaves untouched. */
-export const ARCHIVE_COPY: Readonly<
-  Record<"archiveIsNotDelete" | "restore" | "leavesSharedAlone" | "scope", Copy>
-> = {
+export const ARCHIVE_COPY: Readonly<Record<"archiveIsNotDelete" | "restore" | "leavesSharedAlone" | "scope", Copy>> = {
   archiveIsNotDelete: {
     title: "Archiving hides, it does not delete",
     body: "Archiving takes a private preparation record out of your working lists and deletes nothing, so the record and its text are still there.",
@@ -180,11 +123,8 @@ export const ARCHIVE_COPY: Readonly<
     body: "Archive and restore apply to private preparation records and to nothing else.",
   },
 };
-
 /** What each saved-view action does to the stored view and what it leaves alone. */
-export const SAVED_VIEW_COPY: Readonly<
-  Record<"save" | "update" | "rename" | "delete" | "drift" | "repair" | "leavesRecordsAlone", Copy>
-> = {
+export const SAVED_VIEW_COPY: Readonly<Record<"save" | "update" | "rename" | "delete" | "drift" | "repair" | "leavesRecordsAlone", Copy>> = {
   save: {
     title: "Save this view",
     body: "Stores your current search, filters, sort, columns and page size under a name you choose; the records themselves are untouched.",
