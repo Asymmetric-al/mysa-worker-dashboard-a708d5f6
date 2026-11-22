@@ -1,12 +1,7 @@
-/** The store's session boundary: the development-session cookie, the validator in front of its value, the per-session mutex every write passes through. */
+/** The store's session boundary: the per-session mutex every write passes through, and the listing of the sessions that exist and are readable. */
+import { InvalidSessionIdError, isSafeSessionId } from "@/lib/session-cookie";
 import { CorruptJsonError, readJson } from "./atomic";
-import { InvalidSessionIdError, isSafeSessionId, listSessionIds, sessionPaths } from "./paths";
-export const SESSION_COOKIE = "dashboard_session";
-export function readSessionId(cookieValue: string | undefined | null): string | undefined {
-  if (typeof cookieValue !== "string") return undefined;
-  // `isSafeSessionId` already rejects "" and any value longer than 64 characters, along with everything outside A-Z, a-z, 0-9, underscore and hyphen.
-  return isSafeSessionId(cookieValue) ? cookieValue : undefined;
-}
+import { listSessionIds, sessionPaths } from "./paths";
 const sessionLockTails = new Map<string, Promise<unknown>>();
 /** Runs `fn` under the session's lock, so callbacks for one session run strictly one after another in call order while callbacks for different sessions run concurrently. */
 export function withSessionLock<T>(sessionId: string, fn: () => T | Promise<T>): Promise<T> {

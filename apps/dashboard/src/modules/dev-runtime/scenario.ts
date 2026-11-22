@@ -1,8 +1,8 @@
 /** The development scenario registry, the per-session scenario document, and the one controllable clock offset. */
 import { isRecord } from "@/lib/guards";
 import { err, ok, type Result } from "@/lib/result";
+import { isSafeSessionId } from "@/lib/session-cookie";
 import { admittedMembershipSchema, SESSION_STATES, type AdmittedMembership, type SessionState } from "@/modules/data-service/envelope";
-import { isSafeSessionId } from "@/modules/store/paths";
 import { SessionNotFoundError, transact } from "@/modules/store/repository";
 import { advanceClockOffset, SEED_INSTANT, setClockOffset } from "@/modules/time/clock";
 import { EMPTY_FAILURE_PLAN, parseFailurePlan, type FailurePlanDocument } from "./failures";

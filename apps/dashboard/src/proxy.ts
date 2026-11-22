@@ -2,8 +2,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isCommittedMediaFixturePath } from "@/lib/fixture-path-guard";
 import { isDevelopment } from "@/lib/guards";
+import { SESSION_COOKIE, readSessionId } from "@/lib/session-cookie";
 import { DEFAULT_SESSION_ID } from "@/modules/dev-runtime/seed";
-import { SESSION_COOKIE, readSessionId } from "@/modules/store/sessions";
 const SESSION_COOKIE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
 const SESSION_COOKIE_ATTRIBUTES = { httpOnly: true, sameSite: "lax", path: "/", maxAge: SESSION_COOKIE_MAX_AGE_SECONDS } as const;
 const FRAMEWORK_ASSET_PREFIX = "/_next/";

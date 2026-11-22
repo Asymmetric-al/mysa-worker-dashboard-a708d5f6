@@ -1,8 +1,7 @@
-/** The transport layer's one declaration of the development-session cookie. */
+/** The transport's reader for the request's own session id, over the cookie name src/lib/session-cookie.ts declares. */
 import type { NextRequest } from "next/server";
-/** The cookie name the development session travels under. */
-export const SESSION_COOKIE_NAME = "dashboard_session";
+import { SESSION_COOKIE } from "@/lib/session-cookie";
 /** The session id the request's own cookie carries, or the empty string when it carries none. */
 export function sessionIdOf(request: NextRequest): string {
-  return request.cookies.get(SESSION_COOKIE_NAME)?.value ?? "";
+  return request.cookies.get(SESSION_COOKIE)?.value ?? "";
 }

@@ -3,11 +3,12 @@ import type { CoverageState, GiftAttribution, GiftRowRecord, PartnerKind, Partne
 import { allocateMinor, minorUnitsOf, negateMinor, type Money } from "@/modules/money/amount";
 import { UNKNOWN_CURRENCY } from "@/modules/money/currency";
 import { SUPPORT_BASIS, type SupportBasis } from "@/modules/support/basis";
-import { DATA_ROOT, isSafeSessionId, sessionPaths } from "@/modules/store/paths";
+import { DATA_ROOT, sessionPaths } from "@/modules/store/paths";
 import { readSession, resetSession, StoreAbsentError, transact } from "@/modules/store/repository";
 import { civilDateAt, serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
 import { SEED_INSTANT } from "@/modules/time/clock";
 import type { SourceReference } from "@/lib/ids";
+import { isSafeSessionId } from "@/lib/session-cookie";
 import { DEFAULT_SESSION_ID, isSeededSessionId, seedSessionDocuments } from "./seed";
 /** The volume AAP 0.8.7 fixes: 10,000 partners and 100,000 gift rows. */
 export const WORKLOAD_PARTNER_COUNT = 10_000;

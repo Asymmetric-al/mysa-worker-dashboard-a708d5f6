@@ -70,8 +70,8 @@ test.beforeEach(async ({ request }) => {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * The name of the development-session cookie, mirrored once from `modules/store/sessions.ts`, where the
- * store declares it, and from the runner's own `SESSION_COOKIE`.
+ * The name of the development-session cookie, mirrored once from `src/lib/session-cookie.ts`, where the
+ * transport declares it, and from the runner's own `SESSION_COOKIE`.
  *
  * Mirrored rather than imported because this file is handed the runner's reset and nothing else: a cookie
  * name is a value, not a contract, and stating it here keeps the runner's surface exactly as the file's

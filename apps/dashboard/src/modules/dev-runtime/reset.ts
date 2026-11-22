@@ -1,11 +1,12 @@
 /** The reset operation: every session the store holds is discarded and every seeded session is laid down again from the deterministic seed, leaving the process clock at the seed instant. */
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { isSafeSessionId } from "@/lib/session-cookie";
 import { prepareRendition } from "@/modules/media/asset";
 import { prepareDisplayImage } from "@/modules/media/image";
 import { inspectVideo } from "@/modules/media/video";
 import { removeAllMedia, seededMediaReference, writeMediaBytes } from "@/modules/store/media";
-import { DATA_ROOT, isSafeSessionId, listSessionIds } from "@/modules/store/paths";
+import { DATA_ROOT, listSessionIds } from "@/modules/store/paths";
 import { resetSession } from "@/modules/store/repository";
 import { SEED_INSTANT, setClockOffset } from "@/modules/time/clock";
 import { seed, SEEDED_MEDIA_BYTES, type SeededMediaBytes, type SeededSessionWithDocuments, type SessionStateDocument } from "./seed";

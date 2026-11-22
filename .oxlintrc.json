@@ -7,7 +7,7 @@
   "rules": { "import/no-cycle": "error", "react/style-prop-object": "error", "no-eval": "error", "no-new-func": "error", "no-script-url": "error", "no-loss-of-precision": "error" },
   "overrides": [
     {
-      "files": ["**/src/app/**", "**/src/lib/**"],
+      "files": ["**/src/app/**", "**/src/lib/**", "**/src/proxy.ts"],
       "rules": {
         "no-restricted-imports": [
           "error",

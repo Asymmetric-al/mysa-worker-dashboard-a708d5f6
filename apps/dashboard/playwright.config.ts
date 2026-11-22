@@ -41,7 +41,7 @@ const SEED_TIMEOUT_MS = 120_000;
 /** How much of a response body an error quotes, so a failure is readable without pasting a whole envelope. */
 const DETAIL_LIMIT = 400;
 
-/** The development-session cookie's name, mirrored from `modules/store/sessions.ts`: the cookie is the whole identity a request is authorised as. */
+/** The development-session cookie's name, mirrored from `src/lib/session-cookie.ts`: the cookie is the whole identity a request is authorised as. */
 export const SESSION_COOKIE = "dashboard_session";
 
 /** The kinds of seeded identity the roster holds, as a session's persisted persona record states them. */

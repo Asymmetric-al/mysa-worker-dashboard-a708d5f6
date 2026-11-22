@@ -3,11 +3,11 @@ import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { assertNoFixtureFallback, isDevelopment } from "@/lib/guards";
 import { redactDenial } from "@/lib/redaction";
+import { SESSION_COOKIE, readSessionId } from "@/lib/session-cookie";
 import { isExcludedSourceMembership, type AudiencePurpose, type MembershipRecord } from "@/modules/audience/membership";
 import type { ContentAudience } from "@/modules/audience/resolve";
 import type { SessionDocuments } from "@/modules/store/paths";
 import { readSession } from "@/modules/store/repository";
-import { SESSION_COOKIE, readSessionId } from "@/modules/store/sessions";
 import { admittedMembershipSchema, ministryIdSchema, organizationIdSchema, principalIdSchema, sameScope, sessionStateSchema, supportSubjectIdSchema, type AdmittedMembership, type CoachingGrantRecord, type MinistryId, type PrincipalId, type RecordAudience, type Scope, type SessionState } from "./envelope";
 import { denied, unavailable, unavailableFromStoreFault, type DenialReason, type DeniedOutcome, type ReadResult, type UnavailableOutcome } from "./outcome";
 export interface ResolvedSession {

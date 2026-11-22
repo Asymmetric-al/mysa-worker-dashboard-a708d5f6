@@ -2,7 +2,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, type FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { DATA_ROOT, isSafeSessionId } from "./paths";
+import { isSafeSessionId } from "@/lib/session-cookie";
+import { DATA_ROOT } from "./paths";
 export const MEDIA_ROOT: string = join(DATA_ROOT, "media");
 const FIXTURES_LANE = "fixtures";
 const UPLOADS_LANE = "uploads";
