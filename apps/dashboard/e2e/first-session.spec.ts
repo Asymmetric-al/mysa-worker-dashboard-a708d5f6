@@ -74,12 +74,7 @@ const DRAFT_EDITION = /Public English/u;
 const UNFINISHED_WORK = /^Unfinished work/u;
 
 /** The shell's own navigation, named by the labels it states rather than by an address this spec types. */
-const NAV = {
-  home: "Home",
-  partners: "Partners",
-  work: "Work",
-  communication: "Communication",
-} as const;
+const NAV = { home: "Home", partners: "Partners", work: "Work", communication: "Communication" } as const;
 
 // ---------------------------------------------------------------------------------------------
 // Reaching the application as the new worker

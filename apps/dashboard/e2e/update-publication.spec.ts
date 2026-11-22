@@ -301,10 +301,7 @@ async function readDevState(page: Page, sessionId: string): Promise<DevState> {
  * so a replay of the same attempt is recognised as a replay rather than as a second publication.
  */
 async function postRelease(page: Page, sessionId: string, attempt: { readonly operationId: string; readonly state: DevState; readonly variants: readonly JsonRecord[] }): Promise<unknown> {
-  const answer = await page.request.post(PUBLISH_API, {
-    headers: { cookie: cookieOf(sessionId) },
-    data: { operationId: attempt.operationId, scope: attempt.state.scope, expectedRevision: attempt.state.revision, payload: { documentId: UPDATE_DOCUMENT, variants: attempt.variants } },
-  });
+  const answer = await page.request.post(PUBLISH_API, { headers: { cookie: cookieOf(sessionId) }, data: { operationId: attempt.operationId, scope: attempt.state.scope, expectedRevision: attempt.state.revision, payload: { documentId: UPDATE_DOCUMENT, variants: attempt.variants } } });
   return jsonOf(answer, `POST ${PUBLISH_API} as ${sessionId}`);
 }
 
@@ -470,7 +467,6 @@ async function identityOfFact(page: Page, variantId: string, term: string): Prom
   return text;
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // 1. The whole publication: prose and an image, the exact candidate, one review step, the release,
 //    and a later draft edit that moves nothing a reader is served
@@ -628,11 +624,7 @@ test("an Update is composed with an image, previewed, reviewed once and released
   // The release is the separate act the approval is not, so it is submitted under the contributor's own
   // session against the exact revision the review answered.
   const releaseState = await readDevState(page, CONTRIBUTOR_SESSION);
-  const flipped = await postRelease(page, CONTRIBUTOR_SESSION, {
-    operationId: newAttemptId(),
-    state: releaseState,
-    variants: [{ variantId: PUBLIC_ENGLISH_EDITION, revisionId: revision, mode: "publish-and-notify-now" }],
-  });
+  const flipped = await postRelease(page, CONTRIBUTOR_SESSION, { operationId: newAttemptId(), state: releaseState, variants: [{ variantId: PUBLIC_ENGLISH_EDITION, revisionId: revision, mode: "publish-and-notify-now" }] });
   expect(outcomeOf(flipped), "A release cannot take a mode the submission never asked for").toBe("invalid");
   expect(messagesAt(flipped, "variants.0")).toMatch(/mode the submission did not ask for/u);
 
@@ -758,11 +750,7 @@ test("a frozen candidate is answered by one review step and is not a release, so
   // No decision is given here: the candidate stays frozen and unanswered, which is exactly the state a release
   // must refuse. Approval is not publication, and an unapproved candidate is not a release either.
   const reviewState = await readDevState(page, REVIEWER_SESSION);
-  const unreviewed = await postRelease(page, REVIEWER_SESSION, {
-    operationId: newAttemptId(),
-    state: reviewState,
-    variants: [{ variantId: FROZEN_ARABIC_EDITION, revisionId: FROZEN_ARABIC_CANDIDATE, mode: "publish-only" }],
-  });
+  const unreviewed = await postRelease(page, REVIEWER_SESSION, { operationId: newAttemptId(), state: reviewState, variants: [{ variantId: FROZEN_ARABIC_EDITION, revisionId: FROZEN_ARABIC_CANDIDATE, mode: "publish-only" }] });
   expect(outcomeOf(unreviewed), "An edition awaiting its one review cannot be released").toBe("invalid");
   expect(messagesAt(unreviewed, "variants.0")).toMatch(/awaiting its one review/u);
 

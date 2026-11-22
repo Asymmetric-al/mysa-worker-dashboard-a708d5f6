@@ -249,21 +249,8 @@ export default function TaskActions({ taskId, title, status, revision, scope, ac
   ));
   const receipt =
     current === null ? null : (
-      <div
-        ref={resultRef}
-        tabIndex={-1}
-        data-slot="task-action-result"
-        data-outcome={current.outcome}
-        className={classes("flex min-w-0 flex-col gap-2", presentation === "row" ? "w-64 max-w-full text-start whitespace-normal" : undefined)}
-      >
-        <OperationResult
-          outcome={current}
-          headingLevel={receiptHeadingLevel}
-          onCheckResult={current.outcome === "unknown" ? onCheckResult : undefined}
-          onRetrySameWork={mayReplay(current) ? replaySameWork : undefined}
-          onReapply={current.outcome === "conflict" ? applyAgain : undefined}
-          fieldLabels={FIELD_LABELS}
-        />
+      <div ref={resultRef} tabIndex={-1} data-slot="task-action-result" data-outcome={current.outcome} className={classes("flex min-w-0 flex-col gap-2", presentation === "row" ? "w-64 max-w-full text-start whitespace-normal" : undefined)}>
+        <OperationResult outcome={current} headingLevel={receiptHeadingLevel} onCheckResult={current.outcome === "unknown" ? onCheckResult : undefined} onRetrySameWork={mayReplay(current) ? replaySameWork : undefined} onReapply={current.outcome === "conflict" ? applyAgain : undefined} fieldLabels={FIELD_LABELS} />
         {settled ? (
           <Button type="button" variant="outline" size="sm" onClick={dismiss} className={CONTROL_CLASS}>
             {DISMISS_LABEL}
@@ -280,13 +267,7 @@ export default function TaskActions({ taskId, title, status, revision, scope, ac
       </span>
       {settled ? null : (
         <DropdownMenu>
-          <DropdownMenuTrigger
-            render={<Button type="button" variant="ghost" size="icon-sm" />}
-            aria-label={`${TRIGGER_TITLE} for ${titleText}`}
-            aria-describedby={noteId}
-            disabled={pending}
-            aria-busy={pending ? true : undefined}
-          >
+          <DropdownMenuTrigger render={<Button type="button" variant="ghost" size="icon-sm" />} aria-label={`${TRIGGER_TITLE} for ${titleText}`} aria-describedby={noteId} disabled={pending} aria-busy={pending ? true : undefined}>
             <EllipsisIcon aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72 max-w-[calc(100vw-2rem)]">
@@ -339,11 +320,7 @@ export default function TaskActions({ taskId, title, status, revision, scope, ac
             <span className="text-muted-foreground">{STATUS_LABEL}</span>
             <StatusBadge label={TASK_STATUS_LABELS[status]} tone={TASK_STATUS_TONES[status]} srPrefix={STATUS_SR_PREFIX} />
           </p>
-          {settled ? (
-            <p className="text-sm text-pretty text-muted-foreground">{SETTLED_SENTENCE}</p>
-          ) : (
-            <div className="flex min-w-0 flex-wrap items-center gap-2">{bodyControls}</div>
-          )}
+          {settled ? <p className="text-sm text-pretty text-muted-foreground">{SETTLED_SENTENCE}</p> : <div className="flex min-w-0 flex-wrap items-center gap-2">{bodyControls}</div>}
           {/* The sentence stays beside the actions before and after a result: it is what the record body says about
               the meaning of completing work, and an accepted receipt must not be the only place it was stated. */}
           <p id={noteId} className="text-xs text-pretty text-muted-foreground">
@@ -389,4 +366,3 @@ export default function TaskActions({ taskId, title, status, revision, scope, ac
     </fieldset>
   );
 }
-

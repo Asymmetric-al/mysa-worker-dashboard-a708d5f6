@@ -110,16 +110,11 @@ const CREATE_PREPARATION_ACTION = "createPrivatePreparation";
 /** This route's own wording. Not one word of it is a count, an amount, a record name or a permission. */
 const PAGE_COPY = {
   lede: "Everyone this ministry's records hold: people, households, churches, organizations and your own private preparation, searched and filtered over the whole authorised result rather than the page on screen.",
-  classes: "Two records that look alike stay two records, even where a name, an email address or a postal address is identical, and a tag, a favourite or an open task proves nothing about contact, consent or giving. Private preparation is a record class of its own: it is written and read here, and it is never copied into a shared history or another record's audience.",
+  classes:
+    "Two records that look alike stay two records, even where a name, an email address or a postal address is identical, and a tag, a favourite or an open task proves nothing about contact, consent or giving. Private preparation is a record class of its own: it is written and read here, and it is never copied into a shared history or another record's audience.",
   emptyAction: "Add a private contact",
-  denied: {
-    title: "The partner roster is not available in this context",
-    body: "This session may not read these records in the context it is working in, so no row, count, name or size is stated here — a refusal is not an empty roster. Another context, if this session holds one, can be chosen from the shell.",
-  },
-  unavailable: {
-    title: "The partner roster could not be read",
-    retry: "Try this read again",
-  },
+  denied: { title: "The partner roster is not available in this context", body: "This session may not read these records in the context it is working in, so no row, count, name or size is stated here — a refusal is not an empty roster. Another context, if this session holds one, can be chosen from the shell." },
+  unavailable: { title: "The partner roster could not be read", retry: "Try this read again" },
   refused: {
     title: "This roster's request was refused",
     body: "The address states a view the partner read does not admit, so nothing was read and the source behind the roster did not fail. Every filter, ordering, page and page size this route sends is drawn from the read's own vocabulary, so a refusal says the request was refused rather than that the records are empty.",
@@ -330,11 +325,7 @@ export default async function PartnersRosterPage({ searchParams }: PartnersRoste
         <p className="max-w-prose text-sm text-pretty text-muted-foreground">{PAGE_COPY.lede}</p>
         <p className="max-w-prose text-sm text-pretty text-muted-foreground">{PAGE_COPY.classes}</p>
       </div>
-      {result.kind === "envelope" ? (
-        <RosterBody envelope={result.envelope} />
-      ) : (
-        <RosterNotice result={result} sameView={viewHrefOf(stated)} />
-      )}
+      {result.kind === "envelope" ? <RosterBody envelope={result.envelope} /> : <RosterNotice result={result} sameView={viewHrefOf(stated)} />}
     </div>
   );
 }

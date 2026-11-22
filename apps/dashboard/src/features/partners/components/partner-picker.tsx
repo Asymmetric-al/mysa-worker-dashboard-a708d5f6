@@ -107,10 +107,7 @@ interface PartnerPickerCommonProps {
 
 /** Props of {@link PartnerPicker}: one record, or a list of them, stated as the two modes the combobox itself has. */
 export type PartnerPickerProps = PartnerPickerCommonProps &
-  (
-    | { readonly mode: "single"; readonly value: PartnerSelection | null; readonly onValueChange: (value: PartnerSelection | null) => void }
-    | { readonly mode: "multiple"; readonly value: readonly PartnerSelection[]; readonly onValueChange: (value: readonly PartnerSelection[]) => void }
-  );
+  ({ readonly mode: "single"; readonly value: PartnerSelection | null; readonly onValueChange: (value: PartnerSelection | null) => void } | { readonly mode: "multiple"; readonly value: readonly PartnerSelection[]; readonly onValueChange: (value: readonly PartnerSelection[]) => void });
 
 /** The members this control needs off one roster row: the record's opaque identity, its kind and the name the source gives it. */
 interface RosterPartnerRow {
@@ -238,20 +235,12 @@ function usePartnerPickerPage(scope: Scope, term: string, enabled: boolean) {
   const request = useMemo<RosterRequestParams>(
     // The roster's own grammar resolves a page size to the window its surface serves; this control reads a bounded page
     // of matches instead, so the size the read is asked with is stated here rather than left to that surface's window.
-    () => ({
-      ...rosterRequestParams({ search: term, facets: {}, sort: null, page: PICKER_PAGE, pageSize: PICKER_PAGE_SIZE, columnVisibility: {} }),
-      pageSize: PICKER_PAGE_SIZE,
-    }),
+    () => ({ ...rosterRequestParams({ search: term, facets: {}, sort: null, page: PICKER_PAGE, pageSize: PICKER_PAGE_SIZE, columnVisibility: {} }), pageSize: PICKER_PAGE_SIZE }),
     [term],
   );
   const url = useMemo(() => pickerReadUrl(request), [request]);
   const resolved = scopeIsResolved(scope);
-  return useQuery<PartnerPageReadResult>({
-    queryKey: queryKey(scope, PARTNER_KEY.roster, { job: ROSTER_READ_JOB.roster, search: request.search ?? "", page: request.page, pageSize: request.pageSize }),
-    queryFn: () => readPartnerPage(url),
-    placeholderData: keepPreviousData,
-    enabled: enabled && resolved,
-  });
+  return useQuery<PartnerPageReadResult>({ queryKey: queryKey(scope, PARTNER_KEY.roster, { job: ROSTER_READ_JOB.roster, search: request.search ?? "", page: request.page, pageSize: request.pageSize }), queryFn: () => readPartnerPage(url), placeholderData: keepPreviousData, enabled: enabled && resolved });
 }
 
 /** The name the combobox echoes for a chosen record; the reference, never this, is what identifies it. */
@@ -477,11 +466,7 @@ export default function PartnerPicker(props: PartnerPickerProps): ReactElement {
         const describedBy = replacement === null ? field.describedBy : field.describedBy === undefined ? reasonId : `${field.describedBy} ${reasonId}`;
         return (
           <div className="flex min-w-0 flex-col gap-2">
-            {props.mode === "multiple" ? (
-              <MultiplePartnerCombobox {...comboboxProps} field={{ ...field, describedBy }} />
-            ) : (
-              <SinglePartnerCombobox {...comboboxProps} field={{ ...field, describedBy }} />
-            )}
+            {props.mode === "multiple" ? <MultiplePartnerCombobox {...comboboxProps} field={{ ...field, describedBy }} /> : <SinglePartnerCombobox {...comboboxProps} field={{ ...field, describedBy }} />}
             {replacement === null ? null : <div id={reasonId}>{replacement}</div>}
             {showCount || showExcludeNote ? (
               <div className="flex min-w-0 flex-col gap-1">
@@ -495,4 +480,3 @@ export default function PartnerPicker(props: PartnerPickerProps): ReactElement {
     </FormField>
   );
 }
-

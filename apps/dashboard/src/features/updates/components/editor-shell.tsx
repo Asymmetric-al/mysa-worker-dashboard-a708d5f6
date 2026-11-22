@@ -93,33 +93,17 @@ function onScreenPlacementOf(placement: PlacementView): OnScreenPlacement {
 /** The surface's own name: it states the job and names no record. */
 const SURFACE_TITLE = "Write this Update edition";
 
-const READING = {
-  title: "This edition is being read",
-  description: "The draft, the edition's own lifecycle and the placement it holds are read together, so nothing is shown until the read answers. An unread draft is never presented as an empty one.",
-} as const;
+const READING = { title: "This edition is being read", description: "The draft, the edition's own lifecycle and the placement it holds are read together, so nothing is shown until the read answers. An unread draft is never presented as an empty one." } as const;
 
-const DENIED = {
-  title: "This edition is not available in this session",
-  description: "This session may not write this edition, so no text, revision, placement or release is stated here. A refusal is not an edition with nothing written.",
-} as const;
+const DENIED = { title: "This edition is not available in this session", description: "This session may not write this edition, so no text, revision, placement or release is stated here. A refusal is not an edition with nothing written." } as const;
 
-const UNAVAILABLE = {
-  title: "This edition could not be read",
-  description: "The records behind this edition could not be read, so no editor, revision or placement is shown in their place. Nothing is written until the read succeeds.",
-} as const;
+const UNAVAILABLE = { title: "This edition could not be read", description: "The records behind this edition could not be read, so no editor, revision or placement is shown in their place. Nothing is written until the read succeeds." } as const;
 
-const REFUSED = {
-  title: "This editor's address was refused",
-  description: "The request this editor would make is not one the read admits, so nothing was read and nothing is written. Open the Update from its list and choose the edition again.",
-} as const;
+const REFUSED = { title: "This editor's address was refused", description: "The request this editor would make is not one the read admits, so nothing was read and nothing is written. Open the Update from its list and choose the edition again." } as const;
 
 const EDITION_SWITCHING_NOTE = "Each edition keeps its own draft. Moving to another edition leaves this one's text in this browser until a save is acknowledged, and offers it back when you return.";
 
-const DRAFT_FACTS = {
-  revision: "Draft revision",
-  checksum: "Content checksum",
-  savedAt: "Read at",
-} as const;
+const DRAFT_FACTS = { revision: "Draft revision", checksum: "Content checksum", savedAt: "Read at" } as const;
 
 const REVIEW_TITLE = "Submit this edition for review";
 
@@ -156,17 +140,7 @@ const MEDIA_EMPTY = {
 
 const PLACEMENT_FIELD_LABELS: Readonly<Record<string, string>> = Object.freeze({ mediaPlacements: "Media placements", altText: "Alternative text", caption: "Caption", credit: "Credit", transcript: "Transcript" });
 
-const PLACEMENT_LABELS = {
-  kind: "Kind",
-  purpose: "Placed for",
-  altText: "Alternative text",
-  caption: "Caption",
-  credit: "Credit",
-  poster: "Poster",
-  captions: "Caption track",
-  transcript: "Transcript",
-  state: "State",
-} as const;
+const PLACEMENT_LABELS = { kind: "Kind", purpose: "Placed for", altText: "Alternative text", caption: "Caption", credit: "Credit", poster: "Poster", captions: "Caption track", transcript: "Transcript", state: "State" } as const;
 
 /** The two words a placement's own state can be: the read states `ready` when it can serve the placement's main rendition, and the reason it supplies carries the rest. */
 const PLACEMENT_STATE_WORDS = { ready: "Ready" } as const;
@@ -365,12 +339,7 @@ function PlacementRow({ placement, onManage }: PlacementRowProps): ReactElement 
   const withCredit = placement.credit === null ? facts : [...facts, { label: PLACEMENT_LABELS.credit, value: <bdi>{placement.credit}</bdi> }];
   const rows =
     placement.kind === "video"
-      ? [
-          ...withCredit,
-          { label: PLACEMENT_LABELS.poster, value: purposes.includes("poster") ? PRESENT : ABSENT },
-          { label: PLACEMENT_LABELS.captions, value: placement.captionTracks.length > 0 ? PRESENT : ABSENT },
-          { label: PLACEMENT_LABELS.transcript, value: purposes.includes("transcript") ? PRESENT : ABSENT },
-        ]
+      ? [...withCredit, { label: PLACEMENT_LABELS.poster, value: purposes.includes("poster") ? PRESENT : ABSENT }, { label: PLACEMENT_LABELS.captions, value: placement.captionTracks.length > 0 ? PRESENT : ABSENT }, { label: PLACEMENT_LABELS.transcript, value: purposes.includes("transcript") ? PRESENT : ABSENT }]
       : withCredit;
   return (
     <li data-slot="placement-row" data-kind={placement.kind} data-state={placement.state} className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3">
@@ -572,13 +541,7 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
   };
 
   const mediaPane = (
-    <section
-      ref={mediaPaneRef}
-      tabIndex={-1}
-      aria-label={MEDIA_PANE_TITLE}
-      data-slot="editor-media-pane"
-      className={cn("min-w-0 flex-col gap-4 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]", pane === "media" ? "flex" : "hidden", "md:flex")}
-    >
+    <section ref={mediaPaneRef} tabIndex={-1} aria-label={MEDIA_PANE_TITLE} data-slot="editor-media-pane" className={cn("min-w-0 flex-col gap-4 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]", pane === "media" ? "flex" : "hidden", "md:flex")}>
       <p className="min-w-0 text-sm text-muted-foreground text-pretty wrap-anywhere">{MEDIA_GROUP_DESCRIPTION}</p>
       <FormFieldGroup legend={MEDIA_GROUP_LEGEND} name="add-media" description="The picker states the formats, sizes and lengths it admits before any work begins, requires alternative text, and never keeps the file's own name.">
         {() => (
@@ -663,8 +626,7 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
           : {
               placement: onScreenPlacementOf(managed),
               onRemove: (input: { readonly placementId: string }) => removeMedia(input.placementId),
-              onReplace: (input: { readonly placementId: string } & MediaRegisterInput) =>
-                placeMedia({ kind: input.kind, file: input.file, ...(input.probe === undefined ? {} : { probe: input.probe }), placement: input.placement }, managed.placementId),
+              onReplace: (input: { readonly placementId: string } & MediaRegisterInput) => placeMedia({ kind: input.kind, file: input.file, ...(input.probe === undefined ? {} : { probe: input.probe }), placement: input.placement }, managed.placementId),
             })}
         onRegister={(input: MediaRegisterInput) => placeMedia(input, null)}
         posterAssets={posterChoices}
@@ -787,10 +749,11 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
     comparison = <StateNotice kind="refused" title="This comparison's request was refused" description="The request behind this comparison is not one the read admits, so nothing is compared and nothing is claimed about what is published." headingLevel={headingLevel} />;
   } else {
     const releaseData = releaseResult.envelope.data;
-    const draftSide: ComponentProps<typeof CompareWithRelease>["draft"] =
-      data.status === "draft" ? { status: "revision", revision: data.revision, renderedHtml: data.renderedHtml, asOf: envelope.asOf, author: data.revision.authorPrincipalId } : { status: "none" };
+    const draftSide: ComponentProps<typeof CompareWithRelease>["draft"] = data.status === "draft" ? { status: "revision", revision: data.revision, renderedHtml: data.renderedHtml, asOf: envelope.asOf, author: data.revision.authorPrincipalId } : { status: "none" };
     if (releaseData.status === "released") {
-      comparison = <CompareWithRelease variant={data.variant} draft={draftSide} release={{ status: "revision", revision: releaseData.revision, renderedHtml: releaseData.renderedHtml, asOf: releaseResult.envelope.asOf, author: releaseData.revision.authorPrincipalId, release: releaseData.release }} headingLevel={headingLevel} />;
+      comparison = (
+        <CompareWithRelease variant={data.variant} draft={draftSide} release={{ status: "revision", revision: releaseData.revision, renderedHtml: releaseData.renderedHtml, asOf: releaseResult.envelope.asOf, author: releaseData.revision.authorPrincipalId, release: releaseData.release }} headingLevel={headingLevel} />
+      );
     } else if (releaseData.status === "no-release") {
       comparison = <CompareWithRelease variant={data.variant} draft={draftSide} release={{ status: "none" }} headingLevel={headingLevel} />;
     } else if (releaseData.status === "withdrawn") {
@@ -886,6 +849,3 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
 }
 
 export default EditorShell;
-
-
-

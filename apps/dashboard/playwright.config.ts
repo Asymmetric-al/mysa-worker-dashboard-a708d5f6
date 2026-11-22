@@ -266,8 +266,13 @@ function detailOf(text: string): string {
   return collapsed.length > DETAIL_LIMIT ? `${collapsed.slice(0, DETAIL_LIMIT)}…` : collapsed;
 }
 
-/** The axe-core tag set the accessibility pass audits: WCAG 2.2 level AA, with the level A and 2.1 rules it builds on. */
-const ACCESSIBILITY_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] as const;
+/**
+ * The axe-core tag set the accessibility pass audits: WCAG 2.2 level AA, with the level A and 2.1 rules it builds on.
+ *
+ * Exported because the tag set belongs to the runner rather than to a spec: the audit runs it, a spec records it beside
+ * the findings it attaches, and no second copy of it exists to drift from the rules the pass actually runs.
+ */
+export const ACCESSIBILITY_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] as const;
 
 /** How many offending nodes one violation names in a failure message, so a broken page reports rather than floods. */
 const VIOLATION_NODE_LIMIT = 3;
@@ -294,16 +299,21 @@ export function blockingAccessibilityViolations(audit: AccessibilityAudit): read
   return audit.violations.filter((violation) => violation.impact === "critical" || violation.impact === "serious");
 }
 
-/** Asserts an audit found no serious or critical violation, naming each rule that broke and where. */
-export function expectNoBlockingAccessibilityViolations(audit: AccessibilityAudit): void {
+/**
+ * Asserts an audit found no serious or critical violation, naming each rule that broke and where.
+ *
+ * `subject` names the surface that was audited and the address it was read at, so a failure states which page the
+ * finding belongs to instead of leaving a reader to work it out from the report.
+ */
+export function expectNoBlockingAccessibilityViolations(audit: AccessibilityAudit, subject = "The page"): void {
   const violations = blockingAccessibilityViolations(audit);
-  expect(violations, accessibilityFailureMessage(violations)).toEqual([]);
+  expect(violations, accessibilityFailureMessage(violations, subject)).toEqual([]);
 }
 
-/** The readable account a failed accessibility assertion carries: one line per rule, with its impact, its help link and the nodes it broke on. */
-function accessibilityFailureMessage(violations: readonly AccessibilityViolation[]): string {
+/** The readable account a failed accessibility assertion carries: the audited surface, then one line per rule, with its impact, its help link and the nodes it broke on. */
+function accessibilityFailureMessage(violations: readonly AccessibilityViolation[], subject: string): string {
   if (violations.length === 0) {
-    return "The page holds no serious or critical WCAG 2.2 AA violation.";
+    return `${subject} holds no serious or critical WCAG 2.2 AA violation.`;
   }
   const rules = violations.map((violation) => {
     const nodes = violation.nodes.map((node) => node.target.map((selector) => (Array.isArray(selector) ? selector.join(" ") : selector)).join(" "));
@@ -311,7 +321,7 @@ function accessibilityFailureMessage(violations: readonly AccessibilityViolation
     const rest = nodes.length > VIOLATION_NODE_LIMIT ? ` and ${String(nodes.length - VIOLATION_NODE_LIMIT)} more node(s)` : "";
     return `- ${violation.id} (${violation.impact ?? "unstated impact"}): ${violation.help} at ${shown}${rest} — ${violation.helpUrl}`;
   });
-  return `The page holds ${String(violations.length)} serious or critical WCAG 2.2 AA violation(s):\n${rules.join("\n")}`;
+  return `${subject} holds ${String(violations.length)} serious or critical WCAG 2.2 AA violation(s):\n${rules.join("\n")}`;
 }
 
 /**
@@ -366,8 +376,10 @@ export default defineConfig({
   // A retry turns a determinism defect into a passing run, and every criterion is meant to pass on its
   // first attempt from a reset seed.
   retries: 0,
-  // A focused or skipped test committed to the branch would silently narrow the suite, so CI refuses one.
-  forbidOnly: !!process.env.CI,
+  // A focused test committed to the branch would silently narrow the suite, and the run would then report success over
+  // that subset. The suite is serial from a reset seed, so no local case needs a focused test, and the documented
+  // clean-checkout flow never sets CI — which is why this refuses one rather than deferring to that variable.
+  forbidOnly: true,
   // The list keeps a failing spec readable in the terminal; the HTML report holds the attachments a
   // failure is diagnosed from and is written under a git-ignored directory.
   reporter: [["list"], ["html", { open: "never" }]],

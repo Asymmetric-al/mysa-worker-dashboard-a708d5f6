@@ -102,15 +102,7 @@ const APPROXIMATE_CYCLE = { referralId: "referral-hana-approximate", displayName
  * first instant of 26 November in `Europe/London`, which is `2026-11-26T00:00:00Z` because the source
  * zone is on standard time by then.
  */
-const DATE_ONLY_CYCLE = {
-  referralId: "referral-kenji-active",
-  displayName: "Kenji Nakamura",
-  introducedOn: "2026-11-12",
-  lastIncludedOn: "2026-11-25",
-  nominalWording: "Active through 25 November 2026",
-  endpoint: "2026-11-26T00:00:00Z",
-  zone: "Europe/London",
-} as const;
+const DATE_ONLY_CYCLE = { referralId: "referral-kenji-active", displayName: "Kenji Nakamura", introducedOn: "2026-11-12", lastIncludedOn: "2026-11-25", nominalWording: "Active through 25 November 2026", endpoint: "2026-11-26T00:00:00Z", zone: "Europe/London" } as const;
 
 /** The seeded cycle whose window has already ended and which carries no successor: the one ordinary expiry Continue acts on. */
 const EXPIRED_CYCLE = {
@@ -148,11 +140,7 @@ const CALENDAR_DAY_COUNTERFACTUAL = "2026-11-09T01:00:00Z";
 const CONTINUED_CYCLE_ID = `${EXPIRED_CYCLE.referralId}-continued`;
 
 /** The introduction recorded for the daylight-saving case: one date, one precision, one declared zone. */
-const DST_INTRODUCTION = {
-  date: "2026-08-23",
-  zone: "America/Santiago",
-  sourceReference: { system: "crm", reference: "intro-dst-gap-shift" },
-} as const;
+const DST_INTRODUCTION = { date: "2026-08-23", zone: "America/Santiago", sourceReference: { system: "crm", reference: "intro-dst-gap-shift" } } as const;
 
 /**
  * What the gap at local midnight resolves to. `America/Santiago` starts daylight saving at 00:00 on
@@ -345,15 +333,11 @@ async function readDevState(page: Page): Promise<DevState> {
 /** Operates exactly one named development control and requires it to have been applied. */
 async function operateDevControl(page: Page, action: string, payload: JsonRecord): Promise<unknown> {
   const state = await readDevState(page);
-  const answer = await page.request.post(DEV_CONTROL_PATH, {
-    data: { action, operationId: newAttemptId(), scope: state.scope, expectedRevision: state.revision, payload },
-  });
+  const answer = await page.request.post(DEV_CONTROL_PATH, { data: { action, operationId: newAttemptId(), scope: state.scope, expectedRevision: state.revision, payload } });
   const body = await jsonOf(answer, `POST /api/dev ${action}`);
   const outcome = outcomeOf(body);
   if (outcome !== "accepted" && outcome !== "unchanged") {
-    throw new Error(
-      `The development control ${action} was refused: ${JSON.stringify(body).slice(0, 400)}. A spec that could not move the clock or select the scenario it names would assert against a world it did not choose, so it stops here instead of reporting a failure the application did not cause.`,
-    );
+    throw new Error(`The development control ${action} was refused: ${JSON.stringify(body).slice(0, 400)}. A spec that could not move the clock or select the scenario it names would assert against a world it did not choose, so it stops here instead of reporting a failure the application did not cause.`);
   }
   return body;
 }
@@ -407,9 +391,7 @@ async function submitContinue(page: Page, envelope: JsonRecord, referralId: stri
   if (!isRecord(scope)) {
     throw new Error(`The read of ${referralId} carried no scope, so the change it would authorise has no authority to present: ${JSON.stringify(envelope).slice(0, 400)}`);
   }
-  const answer = await page.request.post(CONTINUE_PATH, {
-    data: { operationId, scope, expectedRevision: stringAt(envelope, ["revision"], "The cycle's revision"), payload: { referralId } },
-  });
+  const answer = await page.request.post(CONTINUE_PATH, { data: { operationId, scope, expectedRevision: stringAt(envelope, ["revision"], "The cycle's revision"), payload: { referralId } } });
   const body = await jsonOf(answer, `POST ${CONTINUE_PATH}`);
   if (!isRecord(body)) {
     throw new Error(`POST ${CONTINUE_PATH} did not answer an object: ${JSON.stringify(body).slice(0, 400)}`);
@@ -431,9 +413,7 @@ async function recordIntroduction(page: Page, payload: JsonRecord): Promise<stri
   if (!isRecord(scope)) {
     throw new Error(`The referral list read carried no scope, so an introduction cannot be recorded under it: ${JSON.stringify(list).slice(0, 400)}`);
   }
-  const answer = await page.request.post(REFERRALS_READ_PATH, {
-    data: { operationId: newAttemptId(), scope, expectedRevision: stringAt(list, ["revision"], "The referral list's revision"), payload },
-  });
+  const answer = await page.request.post(REFERRALS_READ_PATH, { data: { operationId: newAttemptId(), scope, expectedRevision: stringAt(list, ["revision"], "The referral list's revision"), payload } });
   const body = await jsonOf(answer, `POST ${REFERRALS_READ_PATH}`);
   expect(outcomeOf(body), `Recording the introduction ${JSON.stringify(payload)} was refused: ${JSON.stringify(body).slice(0, 400)}`).toBe("accepted");
   return stringAt(body, ["created", "0"], "The cycle the introduction created");
@@ -643,13 +623,7 @@ test("a New window across a daylight-saving transition ends at the first valid i
   await setClock(page, DST_INSIDE_WINDOW);
   // The introduction is recorded through the application's own route: one original date, its precision and
   // the zone it is known in. Everything else the window is counted from is resolved by the service.
-  const referralId = await recordIntroduction(page, {
-    partnerId: "partner-kenji-nakamura",
-    originalIntroductionOn: DST_INTRODUCTION.date,
-    datePrecision: "date",
-    sourceZone: DST_INTRODUCTION.zone,
-    sourceReference: DST_INTRODUCTION.sourceReference,
-  });
+  const referralId = await recordIntroduction(page, { partnerId: "partner-kenji-nakamura", originalIntroductionOn: DST_INTRODUCTION.date, datePrecision: "date", sourceZone: DST_INTRODUCTION.zone, sourceReference: DST_INTRODUCTION.sourceReference });
 
   const detail = await readReferral(page, referralId);
   const deadline = ["data", "referral", "deadline"] as const;
@@ -784,7 +758,6 @@ test("the permitted Expired history carries identity, source reference, status a
   expect(projectedKeys).toContain("sourceReference");
   expect(projectedKeys).toContain("windowEnd");
 });
-
 
 // ---------------------------------------------------------------------------------------------
 // The worker-continuation setting: absent while it is off, offered once it is on
@@ -924,4 +897,3 @@ test("a continued window ends in elapsed seconds, and a racing second Continue y
 
   await setClock(page, SEED_INSTANT);
 });
-

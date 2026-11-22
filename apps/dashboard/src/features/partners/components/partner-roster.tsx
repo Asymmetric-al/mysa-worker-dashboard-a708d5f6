@@ -171,7 +171,6 @@ const ROSTER_COPY = {
   retryFilters: "Try the filters again",
 } as const;
 
-
 // ---------------------------------------------------------------------------------------------
 // Reading the ordering back and forth
 //
@@ -184,12 +183,7 @@ const ROSTER_COPY = {
  * written as the change is decided; an absent member is unchanged, which is what keeps a page-size change from also
  * pinning a page.
  */
-type RosterQueryPatch = {
-  sort?: RosterSort | null;
-  page?: number;
-  pageSize?: number;
-  columnVisibility?: Record<string, boolean>;
-};
+type RosterQueryPatch = { sort?: RosterSort | null; page?: number; pageSize?: number; columnVisibility?: Record<string, boolean> };
 
 /** Whether two orderings are the same one, so a change is dispatched only when it changes something. */
 function sameSort(left: RosterSort | null, right: RosterSort | null): boolean {
@@ -515,13 +509,7 @@ function rosterColumns(admitted: readonly PartnerColumn[], states: RecordedState
     const cell = CELLS[column.key];
     const accessor = ACCESSORS[column.key];
     const sortable = SORT_FIELD_BY_COLUMN[column.key] !== undefined;
-    columns.push({
-      id: column.key,
-      header: column.displayName,
-      enableSorting: sortable,
-      accessorFn: accessor,
-      cell: (context) => cell(context.row.original, context.row.index, states),
-    });
+    columns.push({ id: column.key, header: column.displayName, enableSorting: sortable, accessorFn: accessor, cell: (context) => cell(context.row.original, context.row.index, states) });
   }
   return columns;
 }
@@ -755,4 +743,3 @@ export default function PartnerRoster({ scope, rowActions, emptyAction, dir, cla
     </div>
   );
 }
-

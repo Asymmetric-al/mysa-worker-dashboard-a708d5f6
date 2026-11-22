@@ -242,15 +242,10 @@ async function readDevState(page: Page): Promise<{ readonly scope: JsonRecord; r
 /** Operates exactly one named development control, and refuses an answer that did not apply it. */
 async function operateDevControl(page: Page, action: string, payload: JsonRecord): Promise<void> {
   const state = await readDevState(page);
-  const body = await jsonOf(
-    await page.request.post(DEV_CONTROL_PATH, { data: { action, operationId: crypto.randomUUID(), scope: state.scope, expectedRevision: state.revision, payload } }),
-    `POST ${DEV_CONTROL_PATH} ${action}`,
-  );
+  const body = await jsonOf(await page.request.post(DEV_CONTROL_PATH, { data: { action, operationId: crypto.randomUUID(), scope: state.scope, expectedRevision: state.revision, payload } }), `POST ${DEV_CONTROL_PATH} ${action}`);
   const outcome = fieldAt(body, "outcome");
   if (outcome !== "accepted" && outcome !== "unchanged") {
-    throw new Error(
-      `The development control ${action} was refused: ${JSON.stringify(body).slice(0, 400)}. A test that could not arm the failure it names would assert against a world it did not choose, so it stops here rather than reporting a failure the application did not cause.`,
-    );
+    throw new Error(`The development control ${action} was refused: ${JSON.stringify(body).slice(0, 400)}. A test that could not arm the failure it names would assert against a world it did not choose, so it stops here rather than reporting a failure the application did not cause.`);
   }
 }
 
@@ -481,16 +476,7 @@ test("the example file is mapped, reviewed, decided and accepted, and its receip
   await reachAcceptance(page);
   const division = page.getByRole("region", { name: "How this file's rows divide" });
   await expect(division).toContainText(
-    new RegExp(
-      [
-        `Created as a new private entry\\s*${String(DECISIONS.create)}`,
-        `Attached to a contact you reuse\\s*${String(DECISIONS.reuse)}`,
-        `Skipped\\s*${String(DECISIONS.skip)}`,
-        `Left undecided\\s*${String(UNDECIDED_ROWS)}`,
-        `Data rows in the file\\s*${String(FIXTURE.dataRows)}`,
-      ].join("\\s*"),
-      "u",
-    ),
+    new RegExp([`Created as a new private entry\\s*${String(DECISIONS.create)}`, `Attached to a contact you reuse\\s*${String(DECISIONS.reuse)}`, `Skipped\\s*${String(DECISIONS.skip)}`, `Left undecided\\s*${String(UNDECIDED_ROWS)}`, `Data rows in the file\\s*${String(FIXTURE.dataRows)}`].join("\\s*"), "u"),
   );
   await expect(page.getByText("No one is subscribed", { exact: true })).toBeVisible();
   await expect(page.getByText("A consent-looking column stays as data", { exact: true })).toBeVisible();
@@ -520,8 +506,12 @@ test("the example file is mapped, reviewed, decided and accepted, and its receip
   // out-of-scope: the roster at `/partners` belongs to another lane of this build and is not rendered here,
   // so the contacts this import created are counted and opened where the receipt itself points — each
   // applied row's own destination — rather than through a list this file cannot read.
-  const correctedHref = await resultsRow(page, ROW.invalidValue).getByRole("link", { name: `Open the contact that row ${String(ROW.invalidValue)} became` }).getAttribute("href");
-  const restrictedHref = await resultsRow(page, ROW.restriction).getByRole("link", { name: `Open the contact that row ${String(ROW.restriction)} became` }).getAttribute("href");
+  const correctedHref = await resultsRow(page, ROW.invalidValue)
+    .getByRole("link", { name: `Open the contact that row ${String(ROW.invalidValue)} became` })
+    .getAttribute("href");
+  const restrictedHref = await resultsRow(page, ROW.restriction)
+    .getByRole("link", { name: `Open the contact that row ${String(ROW.restriction)} became` })
+    .getAttribute("href");
   expect(correctedHref, "the corrected row leads to the contact it became").not.toBeNull();
   expect(restrictedHref, "the restricted row leads to the contact it became").not.toBeNull();
   expect(correctedHref).not.toBe(restrictedHref);
@@ -626,7 +616,9 @@ test("stopping an import after it accepted a row leaves that contact and stops o
   await expect(rowsReporting(page, "Skipped")).toHaveCount(FIXTURE.dataRows - 1);
   await expect(resultsRow(page, ROW.restriction)).toContainText("Accepted");
   await expect(resultsTable(page).getByText("Stopped by the cancellation before acceptance").first()).toBeVisible();
-  const keptHref = await resultsRow(page, ROW.restriction).getByRole("link", { name: `Open the contact that row ${String(ROW.restriction)} became` }).getAttribute("href");
+  const keptHref = await resultsRow(page, ROW.restriction)
+    .getByRole("link", { name: `Open the contact that row ${String(ROW.restriction)} became` })
+    .getAttribute("href");
   expect(keptHref, "the accepted row still leads to the contact it became").not.toBeNull();
   if (keptHref === null) {
     throw new Error("The accepted row keeps its destination after the cancellation, so it cannot be absent here.");

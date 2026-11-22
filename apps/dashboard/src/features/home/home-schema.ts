@@ -62,32 +62,6 @@ export const homeItemViewSchema = z.strictObject({
   detail: z.string({ error: "A detail line is text, so read the item again." }).optional(),
 });
 export type HomeItemView = z.infer<typeof homeItemViewSchema>;
-export const HOME_SECTION_STATES = ["available", "unavailable", "denied", "unknown"] as const;
-export type HomeSectionState = (typeof HOME_SECTION_STATES)[number];
-const homeSectionStateSchema = z.enum(HOME_SECTION_STATES, { error: "A section is available, unavailable, denied or unknown." });
-const homeSectionNoticeSchema = z.strictObject({ title: requiredText("A section notice heading is text.", "A section notice needs a heading, so the notice joins the page outline."), body: requiredText("A section notice sentence is text.", "A section notice needs a sentence saying what happened.") });
-const homeSectionSourceSchema = z.strictObject({ system: requiredText("A source reference names its system as text.", "A source reference names the system that issued it."), reference: requiredText("A source reference carries its identifier as text.", "A source reference carries the identifier that system issued.") });
-const UNREADABLE_SECTION_NOTICE = Object.freeze({ title: "This section could not be read", body: "Its contents did not arrive in a form Home can show. Reloading asks for them again, and nothing here was changed." });
-export const homeSectionGroupSchema = z.strictObject({
-  items: z.array(z.unknown(), { error: "A section's items arrive as a list, so read the section again." }).default([]),
-  count: z.number({ error: "A section's count is the number the envelope stated." }).int({ error: "A section's count is a whole number of records." }).min(0, { error: "A section's count cannot be negative." }).optional(),
-  state: homeSectionStateSchema.optional(),
-  notice: homeSectionNoticeSchema.optional(),
-  source: homeSectionSourceSchema.optional(),
-});
-/** A section group as a section renders it: parsed, and with a state always stated. */
-export type HomeSectionGroup = { readonly items: readonly unknown[]; readonly count?: number; readonly state: HomeSectionState; readonly notice?: { readonly title: string; readonly body: string }; readonly source?: { readonly system: string; readonly reference: string } };
-export function parseHomeSectionGroup(candidate: unknown): HomeSectionGroup {
-  if (candidate === undefined || candidate === null) {
-    return { items: [], state: "available" };
-  }
-  const parsed = homeSectionGroupSchema.safeParse(candidate);
-  if (!parsed.success) {
-    return { items: [], state: "unknown", notice: UNREADABLE_SECTION_NOTICE };
-  }
-  const { items, count, state, notice, source } = parsed.data;
-  return { items, state: state ?? "available", ...(count === undefined ? {} : { count }), ...(notice === undefined ? {} : { notice }), ...(source === undefined ? {} : { source }) };
-}
 /** What parsing one item answers: the validated view, or the fact that the item cannot be rendered plus whatever subject and reason text could still be read off it. */
 export type HomeItemParseResult = { readonly ok: true; readonly item: HomeItemView } | { readonly ok: false; readonly title?: string; readonly reason?: string };
 function readableText(candidate: unknown, key: "title" | "reason"): string | undefined {

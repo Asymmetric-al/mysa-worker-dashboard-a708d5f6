@@ -117,7 +117,8 @@ const SURFACE_COPY = {
   intro: DRAFT_VS_RELEASED.draftIsNotWhatReadersSee,
   orderNote: "Editions are listed in the order the read answered with: by Update, then in each Update's own edition order. Nothing on this page re-orders, narrows or adds them together, and the count beside the rows is the whole collection this read returned rather than the page on show.",
   audienceNote: "A public edition is the one readers of this Update's public page are served. An approved-supporter edition is served only to supporters this publisher has approved. The same language can hold one of each, and the two are separate editions with separate releases.",
-  outcomeNote: "This list states what has been written, frozen for review and released. It states nothing about who was notified, whose provider accepted a notice, what was delivered or what was read: publication, notification submission, provider acceptance, delivery and reading are separate outcomes, and none of the last four is shown here.",
+  outcomeNote:
+    "This list states what has been written, frozen for review and released. It states nothing about who was notified, whose provider accepted a notice, what was delivered or what was read: publication, notification submission, provider acceptance, delivery and reading are separate outcomes, and none of the last four is shown here.",
   tableLabel: "Updates and their editions",
   columnLabels: { update: "Update", audience: "Audience", language: "Language", status: "Status", review: "Review", release: "Release" },
   noTitle: "No title yet",
@@ -365,7 +366,6 @@ function LiveEditionStatus({ documentId, edition }: { readonly documentId: strin
   return <StatusBadge label={spec.label} tone={spec.tone} srPrefix={SURFACE_COPY.statusPrefix} />;
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // The reviewed create step: one edition added to one Update
 // ---------------------------------------------------------------------------------------------
@@ -459,10 +459,7 @@ export function CreateEditionDialog({ roster, open, onOpenChange }: CreateEditio
     },
     [onOpenChange, reset],
   );
-  const submit = useCallback(
-    (input: MutationInput<CreateVariantPayload>): Promise<CreateOutcome> => submitCreate({ scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload }),
-    [submitCreate],
-  );
+  const submit = useCallback((input: MutationInput<CreateVariantPayload>): Promise<CreateOutcome> => submitCreate({ scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload }), [submitCreate]);
   // One accepted attempt opens the Update the edition now belongs to, so the next job — writing the draft — starts where the edition lives.
   const handleSettled = useCallback(
     (outcome: CreateOutcome): void => {
@@ -793,4 +790,3 @@ export default function UpdatesList({ roster, headingLevel = 2, className }: Upd
     </section>
   );
 }
-

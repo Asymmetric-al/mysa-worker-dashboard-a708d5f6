@@ -22,15 +22,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
 import type { SourceReference } from "@/lib/ids";
-import {
-  CHECKIN_MAX_ANSWER_SCALARS,
-  CHECKIN_MAX_QUESTION_SCALARS,
-  CHECKIN_MAX_QUESTIONS,
-  CHECKIN_MAX_REQUEST_BYTES,
-  validateCheckInRequest,
-  type CheckInPayload,
-  type CheckInViolation,
-} from "@/modules/coaching/checkin";
+import { CHECKIN_MAX_ANSWER_SCALARS, CHECKIN_MAX_QUESTION_SCALARS, CHECKIN_MAX_QUESTIONS, CHECKIN_MAX_REQUEST_BYTES, validateCheckInRequest, type CheckInPayload, type CheckInViolation } from "@/modules/coaching/checkin";
 import type { Scope } from "@/modules/data-service/envelope";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
 import { CHECK_IN_STATE_COPY, COACHING_COPY, LIMIT_COPY, STOP_EFFECT_COPY } from "../copy";
@@ -66,10 +58,7 @@ export interface CheckInEditorProps {
   /** The questions the surrounding route offers; they seed a fresh check-in and remain addable later, but a change to this list never rewrites a started one. */
   readonly questionBank?: readonly { readonly id: string; readonly wording: string }[];
   /** The private autosave and the shared revision, always two distinct objects: a coach reads the shared one and nothing else. */
-  readonly revisions: {
-    readonly draft: { readonly revisionId: string; readonly body: CheckInBody } | null;
-    readonly shared: { readonly revisionId: string; readonly body: CheckInBody; readonly sharedAt: string; readonly withdrawnAt?: string | null } | null;
-  };
+  readonly revisions: { readonly draft: { readonly revisionId: string; readonly body: CheckInBody } | null; readonly shared: { readonly revisionId: string; readonly body: CheckInBody; readonly sharedAt: string; readonly withdrawnAt?: string | null } | null };
   /** The check-in the three disclosure mutations name; `null` while no check-in has been saved yet, when `saveCheckIn` creates one. */
   readonly checkInId: string | null;
   /** The exact authority the mutations are submitted under; the service re-derives scope from it rather than trusting the records. */
@@ -272,10 +261,7 @@ function sameWordings(left: readonly string[], right: readonly string[]): boolea
  * inside the hooks on submit, so no third rule is written here.
  */
 function requestOf(questions: readonly EditorQuestion[], answers: readonly string[]): CheckInPayload {
-  return {
-    questions: questions.map((question, index) => ({ wording: question.wording, order: index })),
-    answers: questions.map((_, index) => ({ questionOrder: index, text: answers[index] ?? "" })),
-  };
+  return { questions: questions.map((question, index) => ({ wording: question.wording, order: index })), answers: questions.map((_, index) => ({ questionOrder: index, text: answers[index] ?? "" })) };
 }
 
 /** The body the schemas and the payloads take: the questions in order, and one answer per question by position. */
@@ -343,32 +329,10 @@ function QuestionRow({ position, wording, answer, wordingRefusal, answerRefusal,
   return (
     <div data-slot="check-in-question" className="flex min-w-0 flex-col gap-3 rounded-lg border border-border p-3">
       <FormField label={`${QUESTION_LABEL} ${number} wording`} name={`checkin-question-${position}`} description={countSentence(QUESTION_LABEL, number, scalarCount(wording), CHECKIN_MAX_QUESTION_SCALARS)} error={wordingRefusal}>
-        {(field) => (
-          <Input
-            id={field.id}
-            name={`checkin-question-${position}`}
-            value={wording}
-            autoComplete="off"
-            aria-describedby={field.describedBy}
-            aria-invalid={field.invalid || undefined}
-            onChange={(event) => onWording(event.target.value)}
-            onFocus={() => onFocus({ field: "question", position })}
-          />
-        )}
+        {(field) => <Input id={field.id} name={`checkin-question-${position}`} value={wording} autoComplete="off" aria-describedby={field.describedBy} aria-invalid={field.invalid || undefined} onChange={(event) => onWording(event.target.value)} onFocus={() => onFocus({ field: "question", position })} />}
       </FormField>
       <FormField label={asked === "" ? `${ANSWER_LABEL} ${number}` : asked} name={`checkin-answer-${position}`} description={countSentence(ANSWER_LABEL, number, scalarCount(answer), CHECKIN_MAX_ANSWER_SCALARS)} error={answerRefusal}>
-        {(field) => (
-          <Textarea
-            id={field.id}
-            name={`checkin-answer-${position}`}
-            value={answer}
-            rows={4}
-            aria-describedby={field.describedBy}
-            aria-invalid={field.invalid || undefined}
-            onChange={(event) => onAnswer(event.target.value)}
-            onFocus={() => onFocus({ field: "answer", position })}
-          />
-        )}
+        {(field) => <Textarea id={field.id} name={`checkin-answer-${position}`} value={answer} rows={4} aria-describedby={field.describedBy} aria-invalid={field.invalid || undefined} onChange={(event) => onAnswer(event.target.value)} onFocus={() => onFocus({ field: "answer", position })} />}
       </FormField>
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={onRemove}>
@@ -457,14 +421,11 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
     updateText({ questions: questions.map((question, index) => (index === position ? { id: question.id, wording } : question)) });
   };
   const changeAnswer = (position: number, answer: string): void => {
-    updateText({ answers: questions.map((_, index) => (index === position ? answer : answers[index] ?? "")) });
+    updateText({ answers: questions.map((_, index) => (index === position ? answer : (answers[index] ?? ""))) });
   };
   const removeQuestion = (position: number): void => {
     setAddRefusal(null);
-    updateText({
-      questions: questions.filter((_, index) => index !== position),
-      answers: questions.map((_, index) => answers[index] ?? "").filter((_, index) => index !== position),
-    });
+    updateText({ questions: questions.filter((_, index) => index !== position), answers: questions.map((_, index) => answers[index] ?? "").filter((_, index) => index !== position) });
   };
   const addQuestion = (id: string, wording: string): void => {
     if (questions.length >= CHECKIN_MAX_QUESTIONS) {
@@ -503,16 +464,17 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
   };
 
   const savePayload: CheckInSavePayload = { ...(effectiveCheckInId === null ? {} : { checkInId: effectiveCheckInId }), questions: body.questions, answers: body.answers };
-  const sharePayload: CheckInSharePayload | null =
-    readable && shared === null && effectiveCheckInId !== null && savedBody !== null ? { checkInId: effectiveCheckInId, questions: [...savedBody.questions], answers: [...savedBody.answers] } : null;
+  const sharePayload: CheckInSharePayload | null = readable && shared === null && effectiveCheckInId !== null && savedBody !== null ? { checkInId: effectiveCheckInId, questions: [...savedBody.questions], answers: [...savedBody.answers] } : null;
   const sharedWordings = shared?.body.questions ?? [];
-  const questionsMatchShared = shared !== null && sameWordings(questions.map((question) => question.wording), sharedWordings);
+  const questionsMatchShared =
+    shared !== null &&
+    sameWordings(
+      questions.map((question) => question.wording),
+      sharedWordings,
+    );
   const updatePayload: CheckInUpdateSharedPayload | null =
-    readable && shared !== null && !sharedWithdrawn && effectiveCheckInId !== null && questionsMatchShared && violations.length === 0
-      ? { checkInId: effectiveCheckInId, sharedRevisionId: shared.revisionId, questions: [...sharedWordings], answers: questions.map((_, index) => answers[index] ?? "") }
-      : null;
-  const withdrawPayload: CheckInWithdrawPayload | null =
-    readable && shared !== null && !sharedWithdrawn && effectiveCheckInId !== null ? { checkInId: effectiveCheckInId, sharedRevisionId: shared.revisionId } : null;
+    readable && shared !== null && !sharedWithdrawn && effectiveCheckInId !== null && questionsMatchShared && violations.length === 0 ? { checkInId: effectiveCheckInId, sharedRevisionId: shared.revisionId, questions: [...sharedWordings], answers: questions.map((_, index) => answers[index] ?? "") } : null;
+  const withdrawPayload: CheckInWithdrawPayload | null = readable && shared !== null && !sharedWithdrawn && effectiveCheckInId !== null ? { checkInId: effectiveCheckInId, sharedRevisionId: shared.revisionId } : null;
 
   // The private save is this check-in's autosave path: it writes only the private revision and carries the revision
   // the editor read. It runs when the worker saves rather than on a background timer, so nothing is submitted while
@@ -636,9 +598,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
           <div className="flex min-w-0 flex-col gap-3">
             <h4 className="text-sm font-medium">{ADD_HEADING}</h4>
             <FormField label={ADD_FIELD_LABEL} name="checkin-new-question" description={ADD_FIELD_DESCRIPTION}>
-              {(field) => (
-                <Input id={field.id} name="checkin-new-question" value={draftQuestion} autoComplete="off" aria-describedby={field.describedBy} onChange={(event) => setDraftQuestion(event.target.value)} />
-              )}
+              {(field) => <Input id={field.id} name="checkin-new-question" value={draftQuestion} autoComplete="off" aria-describedby={field.describedBy} onChange={(event) => setDraftQuestion(event.target.value)} />}
             </FormField>
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" variant="secondary" onClick={addWrittenQuestion}>
@@ -673,9 +633,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
               </Button>
               <output className="text-sm text-pretty text-muted-foreground wrap-anywhere">{save.isPending ? DRAFT_SAVING_SENTENCE : dirty ? DRAFT_UNSAVED_SENTENCE : DRAFT_SAVED_SENTENCE}</output>
             </div>
-            {save.data === undefined ? null : (
-              <OperationResult outcome={save.data} headingLevel={4} fieldLabels={fieldLabelsOf(questions.length)} {...(saveReplayable ? { onRetrySameWork: submitSave } : {})} />
-            )}
+            {save.data === undefined ? null : <OperationResult outcome={save.data} headingLevel={4} fieldLabels={fieldLabelsOf(questions.length)} {...(saveReplayable ? { onRetrySameWork: submitSave } : {})} />}
           </div>
         </CardContent>
       </Card>
@@ -804,4 +762,3 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
     </section>
   );
 }
-

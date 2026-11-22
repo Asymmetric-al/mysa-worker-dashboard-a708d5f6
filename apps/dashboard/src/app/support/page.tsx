@@ -52,10 +52,7 @@ const SUPPORT_HREF = "/support";
 
 /** The wording this route states when the read answers with something other than an envelope. */
 const PAGE_COPY = {
-  denied: {
-    title: "Support is not available in this context",
-    body: "This session may not read received support in the context it is working in, so no amount, count, period or coverage is stated here — a refusal is not an empty overview. Another context, if this session holds one, can be chosen from the shell.",
-  },
+  denied: { title: "Support is not available in this context", body: "This session may not read received support in the context it is working in, so no amount, count, period or coverage is stated here — a refusal is not an empty overview. Another context, if this session holds one, can be chosen from the shell." },
   unavailable: { title: "The support overview could not be read", retry: "Try this read again" },
   refused: { title: "This overview's request was refused", body: "The overview states no filter of its own, so the request this page makes is the read's own default one; a request the read refuses is answered here rather than thrown, and the source behind it did not fail." },
 } as const;

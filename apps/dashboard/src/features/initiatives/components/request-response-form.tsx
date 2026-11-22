@@ -108,7 +108,14 @@ const RESPONSE_SURFACE_COPY = {
   ministryLabel: "Ministry",
 } as const;
 /** The boundaries stated where the answer is recorded, so none of them is only in Help. */
-const AGREEMENT_STATEMENTS: readonly string[] = [RESPONSE_AGREEMENT_COPY.namedRespondentOneRequest, RESPONSE_AGREEMENT_COPY.bindsToTermsVersion, RESPONSE_AGREEMENT_COPY.unansweredIsNotDecline, RESPONSE_AGREEMENT_COPY.unansweredIsRecordedState, RESPONSE_AGREEMENT_COPY.withdrawalIsNotRefusal, "A recorded presentation is how the ask reached the person, not a send or a delivery, and recording an answer sends nothing."];
+const AGREEMENT_STATEMENTS: readonly string[] = [
+  RESPONSE_AGREEMENT_COPY.namedRespondentOneRequest,
+  RESPONSE_AGREEMENT_COPY.bindsToTermsVersion,
+  RESPONSE_AGREEMENT_COPY.unansweredIsNotDecline,
+  RESPONSE_AGREEMENT_COPY.unansweredIsRecordedState,
+  RESPONSE_AGREEMENT_COPY.withdrawalIsNotRefusal,
+  "A recorded presentation is how the ask reached the person, not a send or a delivery, and recording an answer sends nothing.",
+];
 /** The two steps the recording half of this surface can be in. */
 type ResponseStep = "form" | "review";
 /** The values the form holds; the family's schema decides what may leave it. */
@@ -318,7 +325,25 @@ function AnsweredState({ request, response }: { readonly request: RequestRow; re
   );
 }
 /** The recording half: the answer's fields, the version it is bound to, the review step and its receipt. */
-function ResponseEditor({ initiativeId, request, scope, expectedRevision, responseAction, onRecorded, presentedVersionRef, citesCurrentVersion }: { readonly initiativeId: string; readonly request: RequestRow; readonly scope: Scope; readonly expectedRevision: string; readonly responseAction: ReadAction | undefined; readonly onRecorded: ((outcome: MutationOutcome) => void) | undefined; readonly presentedVersionRef: string; readonly citesCurrentVersion: boolean }): ReactElement {
+function ResponseEditor({
+  initiativeId,
+  request,
+  scope,
+  expectedRevision,
+  responseAction,
+  onRecorded,
+  presentedVersionRef,
+  citesCurrentVersion,
+}: {
+  readonly initiativeId: string;
+  readonly request: RequestRow;
+  readonly scope: Scope;
+  readonly expectedRevision: string;
+  readonly responseAction: ReadAction | undefined;
+  readonly onRecorded: ((outcome: MutationOutcome) => void) | undefined;
+  readonly presentedVersionRef: string;
+  readonly citesCurrentVersion: boolean;
+}): ReactElement {
   // The read withholds this action while a presented Request waits for its first answer, so its reason
   // is stated in place of the form. A Request that already carries an answer never reaches this editor:
   // one Request is one independently answerable invitation, so no second answer is offered over one.
@@ -420,7 +445,10 @@ function ResponseEditor({ initiativeId, request, scope, expectedRevision, respon
   const kindDescription = chosenKindCopy === null ? RESPONSE_SURFACE_COPY.kindDescription : `${RESPONSE_SURFACE_COPY.kindDescription} ${chosenKindCopy.description}`;
   // The references this Request itself supplies. Choosing one writes it into the field the worker can
   // still correct, so the answer is never recorded against a reference nobody selected.
-  const suppliedReferences: readonly { readonly reference: string; readonly action: string }[] = [{ reference: request.recipientPartnerId, action: RESPONSE_SURFACE_COPY.suppliedRecipientAction }, ...(request.representedOrganizationId === null ? [] : [{ reference: request.representedOrganizationId, action: RESPONSE_SURFACE_COPY.suppliedOrganizationAction }])];
+  const suppliedReferences: readonly { readonly reference: string; readonly action: string }[] = [
+    { reference: request.recipientPartnerId, action: RESPONSE_SURFACE_COPY.suppliedRecipientAction },
+    ...(request.representedOrganizationId === null ? [] : [{ reference: request.representedOrganizationId, action: RESPONSE_SURFACE_COPY.suppliedOrganizationAction }]),
+  ];
   return (
     <form noValidate className="flex min-w-0 flex-col gap-4" onSubmit={reviewTheDetails}>
       <div className="flex min-w-0 flex-wrap items-baseline gap-2">
@@ -433,12 +461,19 @@ function ResponseEditor({ initiativeId, request, scope, expectedRevision, respon
         {(group) => (
           <form.Field name={KIND_FIELD}>
             {(field) => (
-              <RadioGroup value={field.state.value} onValueChange={(next) => {
-                if (!isResponseKind(next)) {
-                  return;
-                }
-                field.handleChange(next);
-              }} aria-labelledby={group.legendId} aria-describedby={group.describedBy} aria-invalid={group.invalid ? true : undefined} aria-required={group.required ? true : undefined}>
+              <RadioGroup
+                value={field.state.value}
+                onValueChange={(next) => {
+                  if (!isResponseKind(next)) {
+                    return;
+                  }
+                  field.handleChange(next);
+                }}
+                aria-labelledby={group.legendId}
+                aria-describedby={group.describedBy}
+                aria-invalid={group.invalid ? true : undefined}
+                aria-required={group.required ? true : undefined}
+              >
                 {RESPONSE_KINDS.map((kind, index) => {
                   const wording = copyForKind(kind);
                   const optionId = `${optionIdPrefix}-kind-${String(index)}`;

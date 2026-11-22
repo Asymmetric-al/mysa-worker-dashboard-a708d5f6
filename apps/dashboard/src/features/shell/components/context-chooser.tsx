@@ -192,16 +192,7 @@ function ReadNotice({ read, headingLevel }: ReadNoticeProps): ReactElement {
       // existence hint even in principle.
       return <StateNotice kind="denied" title={READ_DENIED_TITLE} description={READ_DENIED_DESCRIPTION} reasonCode={read.reason} headingLevel={headingLevel} />;
     case "unavailable":
-      return (
-        <StateNotice
-          kind="unavailable"
-          title={READ_UNAVAILABLE_TITLE}
-          description={READ_UNAVAILABLE_DESCRIPTION}
-          {...(read.source === null ? {} : { source: read.source })}
-          retry={{ label: RETRY_READ_LABEL, onClick: read.retry }}
-          headingLevel={headingLevel}
-        />
-      );
+      return <StateNotice kind="unavailable" title={READ_UNAVAILABLE_TITLE} description={READ_UNAVAILABLE_DESCRIPTION} {...(read.source === null ? {} : { source: read.source })} retry={{ label: RETRY_READ_LABEL, onClick: read.retry }} headingLevel={headingLevel} />;
     case "unknown":
       return <StateNotice kind="unknown" title={READ_UNKNOWN_TITLE} description={READ_UNKNOWN_DESCRIPTION} retry={{ label: RETRY_READ_LABEL, onClick: read.retry }} headingLevel={headingLevel} />;
     case "ready":
@@ -306,7 +297,7 @@ export function ContextChooser({ initial, presentation, enabled, open, onOpenCha
 
   // A single admitted ministry opens directly, so a caller whose envelope already says so enables nothing: no
   // request is issued and nothing renders. Everything below is written so that answer costs no fetch.
-  const chooserEnabled = enabled ?? (initial?.data.directEntry !== true);
+  const chooserEnabled = enabled ?? initial?.data.directEntry !== true;
 
   const read = useContextChooser(chooserEnabled, initial);
   const retryRead = read.retry;

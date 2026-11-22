@@ -81,27 +81,9 @@ function OutcomeReceipt({ outcome, onReplay, onReapply }: OutcomeReceiptProps): 
     case "denied":
       return <StateNotice kind="denied" headingLevel={4} title={DENIED_TITLE} description={DENIED_BODY} reasonCode={outcome.reasonCode} />;
     case "unavailable":
-      return (
-        <StateNotice
-          kind="unavailable"
-          headingLevel={4}
-          title={FORM_OUTCOME_COPY.unavailable.title}
-          description={FORM_OUTCOME_COPY.unavailable.body}
-          source={outcome.source}
-          action={{ label: RETRY_LABEL, onClick: onReplay }}
-        />
-      );
+      return <StateNotice kind="unavailable" headingLevel={4} title={FORM_OUTCOME_COPY.unavailable.title} description={FORM_OUTCOME_COPY.unavailable.body} source={outcome.source} action={{ label: RETRY_LABEL, onClick: onReplay }} />;
     case "unknown":
-      return (
-        <StateNotice
-          kind="unknown"
-          headingLevel={4}
-          title={FORM_OUTCOME_COPY.unknown.title}
-          description={FORM_OUTCOME_COPY.unknown.body}
-          operationId={outcome.operationId}
-          action={{ label: CHECK_LABEL, onClick: onReplay }}
-        />
-      );
+      return <StateNotice kind="unknown" headingLevel={4} title={FORM_OUTCOME_COPY.unknown.title} description={FORM_OUTCOME_COPY.unknown.body} operationId={outcome.operationId} action={{ label: CHECK_LABEL, onClick: onReplay }} />;
     default:
       // Exhaustive by construction: the eight outcomes above are the closed set, so a ninth fails to
       // compile at this call rather than reaching a surface with no receipt to show.

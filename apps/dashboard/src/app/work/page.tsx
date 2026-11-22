@@ -89,10 +89,7 @@ const PAGE_COPY = {
   lede: "The five task lists over the one task model this workspace keeps: today, upcoming, overdue, all and undated. Each row states its own status, the day it stands at and the records it is linked to, and completing a task records that the work was closed and says nothing about contact, payment or a message.",
   zone: `Every date on this page is judged in ${DISPLAY_TIME_ZONE}, because a server render cannot know the display time zone this browser chose in Settings; the lists re-read in that same zone, so no date here is judged in two.`,
   agendaLink: "Read the dated agenda",
-  denied: {
-    title: "The Work lists are not available in this context",
-    body: "This session may not read the tasks of the context it is working in, so no row, count or list is stated here — a refusal is not an empty workspace. Another context, if this session holds one, can be chosen from the shell.",
-  },
+  denied: { title: "The Work lists are not available in this context", body: "This session may not read the tasks of the context it is working in, so no row, count or list is stated here — a refusal is not an empty workspace. Another context, if this session holds one, can be chosen from the shell." },
   unavailable: { title: "The Work lists could not be read", retry: "Try this read again" },
   refused: { title: "This view's request was refused", body: "This route states only the list, the display time zone and a page size the read admits, so a request the read refuses is answered here rather than thrown, and the source behind it did not fail." },
 } as const;

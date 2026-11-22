@@ -197,7 +197,6 @@ interface ReportedEdition {
   readonly reason?: string;
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // Wording
 //
@@ -432,7 +431,6 @@ function selectionRefusalOf(payload: PublishVariantsPayload): FieldErrorLookup |
   const checked = publishVariantsSchema.safeParse(payload);
   return checked.success ? null : fieldErrorsFromInvalid({ fields: messagesOfIssues(checked.error) });
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // The heading a block inside the review occupies, and the one way an instant becomes text
@@ -762,7 +760,9 @@ function ReleaseConfirmation({ selections, notifyCount, blockedReason, busy, onC
     onConfirm();
   };
   const editions =
-    selections.length === 1 ? `This releases one edition${notifyCount === 0 ? " and submits no notice." : ", and submits one notice."}` : `This releases ${String(selections.length)} editions${notifyCount === 0 ? " and submits no notice." : `, and submits ${String(notifyCount)} notices, one for each edition that asked for one.`}`;
+    selections.length === 1
+      ? `This releases one edition${notifyCount === 0 ? " and submits no notice." : ", and submits one notice."}`
+      : `This releases ${String(selections.length)} editions${notifyCount === 0 ? " and submits no notice." : `, and submits ${String(notifyCount)} notices, one for each edition that asked for one.`}`;
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -846,10 +846,7 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
   const release = useRelease({ scope, variantId: standingEdition?.variantId ?? "" });
   const share = useSharePresentation({ scope, variantId: noticeEdition?.variantId ?? "" });
 
-  const payload = useMemo<PublishVariantsPayload>(
-    () => ({ documentId, variants: chosen.flatMap((edition) => (edition.candidate === null ? [] : [selectionOf(edition, edition.candidate)])) }),
-    [documentId, chosen],
-  );
+  const payload = useMemo<PublishVariantsPayload>(() => ({ documentId, variants: chosen.flatMap((edition) => (edition.candidate === null ? [] : [selectionOf(edition, edition.candidate)])) }), [documentId, chosen]);
   const releaseKey = payloadKeyOf(scope, payload);
   const refusal = useMemo(() => (payload.variants.length === 0 ? null : selectionRefusalOf(payload)), [payload]);
   const current = report !== null && report.payloadKey === releaseKey ? report : null;
@@ -859,12 +856,7 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
   const reapplyRevision = reappliableRevision(current?.outcome ?? null);
 
   const submittedOf = useCallback(
-    (): readonly SubmittedEdition[] =>
-      chosen.flatMap((edition) =>
-        edition.candidate === null
-          ? []
-          : [{ variantId: edition.variantId, audience: edition.audience, locale: edition.locale, revisionId: edition.candidate.revisionId, contentChecksum: edition.candidate.contentChecksum, mode: fixedModeOf(edition) }],
-      ),
+    (): readonly SubmittedEdition[] => chosen.flatMap((edition) => (edition.candidate === null ? [] : [{ variantId: edition.variantId, audience: edition.audience, locale: edition.locale, revisionId: edition.candidate.revisionId, contentChecksum: edition.candidate.contentChecksum, mode: fixedModeOf(edition) }])),
     [chosen],
   );
 
@@ -1000,20 +992,20 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
     setSelected((previous) => (on ? (previous.includes(variantId) ? previous : [...previous, variantId]) : previous.filter((entry) => entry !== variantId)));
   };
 
-  const blockedReason =
-    editions.length === 0
-      ? null
-      : chosen.length === 0
-        ? SELECTION_REQUIRED
-        : refusal !== null
-          ? REFUSED_BEFORE_SENDING
-          : settled
-            ? SETTLED_BLOCK
-            : null;
+  const blockedReason = editions.length === 0 ? null : chosen.length === 0 ? SELECTION_REQUIRED : refusal !== null ? REFUSED_BEFORE_SENDING : settled ? SETTLED_BLOCK : null;
   const state = pending ? "working" : settled ? "settled" : "review";
 
   return (
-    <section aria-labelledby={titleId} aria-busy={pending ? true : undefined} data-slot="publish-review" data-state={state} data-selected-editions={String(chosen.length)} data-notify-editions={String(notifyEditions.length)} data-ceiling-state={ceiling?.state ?? "absent"} className={cn("flex min-w-0 flex-col gap-4", className)}>
+    <section
+      aria-labelledby={titleId}
+      aria-busy={pending ? true : undefined}
+      data-slot="publish-review"
+      data-state={state}
+      data-selected-editions={String(chosen.length)}
+      data-notify-editions={String(notifyEditions.length)}
+      data-ceiling-state={ceiling?.state ?? "absent"}
+      className={cn("flex min-w-0 flex-col gap-4", className)}
+    >
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
@@ -1089,4 +1081,3 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
 }
 
 export default PublishReview;
-

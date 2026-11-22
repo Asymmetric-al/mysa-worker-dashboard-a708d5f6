@@ -191,15 +191,5 @@ function documentRosterOf(entry: IndexEntry): RosterDocument {
  * records and opaque references, and this file states no opinion about any of them.
  */
 export function rosterOf(envelope: RosterEnvelope): UpdatesRoster {
-  return {
-    documents: envelope.data.documents.map(documentRosterOf),
-    scope: envelope.scope,
-    source: envelope.source,
-    revision: envelope.revision,
-    asOf: envelope.asOf,
-    coverage: envelope.coverage,
-    valueStates: envelope.valueStates,
-    actions: envelope.actions,
-  };
+  return { documents: envelope.data.documents.map(documentRosterOf), scope: envelope.scope, source: envelope.source, revision: envelope.revision, asOf: envelope.asOf, coverage: envelope.coverage, valueStates: envelope.valueStates, actions: envelope.actions };
 }
-

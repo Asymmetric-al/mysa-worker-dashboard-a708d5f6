@@ -279,14 +279,7 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
                     const reason = inadmissibleReason(facts, resolution);
                     return (
                       <label key={resolution} htmlFor={optionId} className={cn("flex min-h-target items-start gap-3 py-1", reason !== undefined && "opacity-70")}>
-                        <RadioGroupItem
-                          id={optionId}
-                          value={resolution}
-                          disabled={reason !== undefined || submitting}
-                          aria-label={MISSED_PLAN_RESOLUTION_LABELS[resolution]}
-                          aria-describedby={reason === undefined ? descriptionId : `${descriptionId} ${reasonId}`}
-                          className="mt-0.5"
-                        />
+                        <RadioGroupItem id={optionId} value={resolution} disabled={reason !== undefined || submitting} aria-label={MISSED_PLAN_RESOLUTION_LABELS[resolution]} aria-describedby={reason === undefined ? descriptionId : `${descriptionId} ${reasonId}`} className="mt-0.5" />
                         <span className="flex min-w-0 flex-col gap-0.5">
                           <span className="text-sm font-medium">{MISSED_PLAN_RESOLUTION_LABELS[resolution]}</span>
                           <span id={descriptionId} className={cn(SENTENCE_CLASS, "block")}>

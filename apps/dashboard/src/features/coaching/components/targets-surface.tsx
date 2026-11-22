@@ -87,15 +87,7 @@ const NO_BOUND_VERSION = "";
  * whatever placed the target on Home, because placement changes only what the worker sees on Home; `no-target` is
  * unreachable for a period of a target that exists, and states no figure rather than borrowing one.
  */
-const CLOSED_PERIOD_STATE: Readonly<Record<WirePeriod["state"], ClosedPeriodState>> = {
-  active: "recorded",
-  unplaced: "recorded",
-  "zero-recorded": "zero-recorded",
-  paused: "paused",
-  ended: "ended",
-  unavailable: "unavailable",
-  "no-target": "unavailable",
-};
+const CLOSED_PERIOD_STATE: Readonly<Record<WirePeriod["state"], ClosedPeriodState>> = { active: "recorded", unplaced: "recorded", "zero-recorded": "zero-recorded", paused: "paused", ended: "ended", unavailable: "unavailable", "no-target": "unavailable" };
 
 // ---------------------------------------------------------------------------------------------
 // The read's stored text, re-hydrated as the calendar day it stands for
@@ -151,13 +143,7 @@ function versionsViewOf(target: WireTarget): TargetHistoryProps["versions"] {
  * current period first, so every period after it has closed.
  */
 function closedPeriodsViewOf(target: WireTarget): TargetHistoryProps["closedPeriods"] {
-  return target.periods.slice(1).map((period) => ({
-    periodStart: civilDateOf(period.start),
-    periodEnd: civilDateOf(period.endInclusive),
-    measuredAgainstRevisionId: period.version === null ? NO_BOUND_VERSION : period.version.revisionId,
-    recorded: period.count ?? 0,
-    state: CLOSED_PERIOD_STATE[period.state],
-  }));
+  return target.periods.slice(1).map((period) => ({ periodStart: civilDateOf(period.start), periodEnd: civilDateOf(period.endInclusive), measuredAgainstRevisionId: period.version === null ? NO_BOUND_VERSION : period.version.revisionId, recorded: period.count ?? 0, state: CLOSED_PERIOD_STATE[period.state] }));
 }
 
 /**
@@ -185,14 +171,7 @@ function recordedPeriodOf(envelope: TargetsEnvelope, targetIndex: number, period
 
 /** The progress the one chart draws: this target's measure, its quantity and every period the read measured. */
 function progressViewOf(envelope: TargetsEnvelope, target: WireTarget, targetIndex: number): ProgressView {
-  return {
-    measure: target.measure,
-    quantity: target.quantity,
-    recorded: target.periods.map((period, periodIndex) => recordedPeriodOf(envelope, targetIndex, period, periodIndex)),
-    coverage: envelope.coverage,
-    asOf: envelope.asOf,
-    state: target.state,
-  };
+  return { measure: target.measure, quantity: target.quantity, recorded: target.periods.map((period, periodIndex) => recordedPeriodOf(envelope, targetIndex, period, periodIndex)), coverage: envelope.coverage, asOf: envelope.asOf, state: target.state };
 }
 
 /**
@@ -242,11 +221,7 @@ function TargetPicker({ targets, selectedIndex }: { readonly targets: readonly W
       <ul className="flex flex-wrap gap-2">
         {targets.map((target, index) => (
           <li key={target.targetId} className="min-w-0">
-            <Link
-              href={`${TARGETS_HREF}?${TARGET_PARAM}=${encodeURIComponent(target.targetId)}`}
-              aria-current={index === selectedIndex ? "page" : undefined}
-              className={cn(buttonVariants({ variant: index === selectedIndex ? "secondary" : "outline", size: "sm" }), PICKER_CLASS)}
-            >
+            <Link href={`${TARGETS_HREF}?${TARGET_PARAM}=${encodeURIComponent(target.targetId)}`} aria-current={index === selectedIndex ? "page" : undefined} className={cn(buttonVariants({ variant: index === selectedIndex ? "secondary" : "outline", size: "sm" }), PICKER_CLASS)}>
               {targetLinkTextOf(target)}
             </Link>
           </li>
@@ -279,15 +254,7 @@ export default function TargetsSurface({ envelope, locale, selectedTargetId, cla
           placement and the four named changes, each with its own reviewed receipt. It is keyed by the target it
           opens, because it holds the entries it was opened with: a different target is a different composer, and
           reusing the first one would show this target's history beside another target's plan. */}
-      <TargetForm
-        key={selected === undefined ? "new-target" : selected.targetId}
-        target={selected === undefined ? null : targetViewOf(selected)}
-        scope={envelope.scope}
-        expectedRevision={selected === undefined ? envelope.revision : selected.revision}
-        locale={locale}
-        onSettled={reread}
-        onCheckResult={reread}
-      />
+      <TargetForm key={selected === undefined ? "new-target" : selected.targetId} target={selected === undefined ? null : targetViewOf(selected)} scope={envelope.scope} expectedRevision={selected === undefined ? envelope.revision : selected.revision} locale={locale} onSettled={reread} onCheckResult={reread} />
       {selected === undefined || selectedIndex === -1 ? null : (
         <>
           {/* Then the plan's own history: every version, and each closed period against the version it was measured

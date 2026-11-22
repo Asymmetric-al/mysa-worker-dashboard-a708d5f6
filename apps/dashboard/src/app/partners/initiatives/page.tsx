@@ -55,18 +55,9 @@ const WHOLE_NUMBER = /^\d{1,9}$/u;
 
 /** This route's own wording for the three answers that are not the list. Not one of them states a count, a name, a working list or a size. */
 const PAGE_COPY = {
-  denied: {
-    title: "Initiatives are not available in this context",
-    body: "This session may not read initiatives in the context it is working in, so no initiative, working list or count is stated here — a refusal is not an empty list. Another context, if this session holds one, can be chosen from the shell.",
-  },
-  unavailable: {
-    title: "The initiative list could not be read",
-    retry: "Try this read again",
-  },
-  refused: {
-    title: "The initiative list's request was refused",
-    body: "The address states a view the initiative read does not admit, so nothing was read and the source behind the list did not fail. State a view it admits and ask again.",
-  },
+  denied: { title: "Initiatives are not available in this context", body: "This session may not read initiatives in the context it is working in, so no initiative, working list or count is stated here — a refusal is not an empty list. Another context, if this session holds one, can be chosen from the shell." },
+  unavailable: { title: "The initiative list could not be read", retry: "Try this read again" },
+  refused: { title: "The initiative list's request was refused", body: "The address states a view the initiative read does not admit, so nothing was read and the source behind the list did not fail. State a view it admits and ask again." },
 } as const;
 
 // ---------------------------------------------------------------------------------------------

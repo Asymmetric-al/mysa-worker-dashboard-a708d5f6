@@ -223,9 +223,7 @@ async function operateDevControl(page: Page, action: string, payload: JsonRecord
   const body = await jsonOf(answer, `POST /api/dev ${action}`);
   const outcome = outcomeOf(body);
   if (outcome !== "accepted" && outcome !== "unchanged") {
-    throw new Error(
-      `The development control ${action} was refused: ${JSON.stringify(body).slice(0, 400)}. A spec that could not move the scenario clock would assert against a world it did not choose, so it stops here instead of reporting a failure the application did not cause.`,
-    );
+    throw new Error(`The development control ${action} was refused: ${JSON.stringify(body).slice(0, 400)}. A spec that could not move the scenario clock would assert against a world it did not choose, so it stops here instead of reporting a failure the application did not cause.`);
   }
 }
 
@@ -328,7 +326,6 @@ function commandReceipt(page: Page, command: string): Locator {
   return page.locator(`[data-slot="occurrence-command"][data-command="${command}"]`).locator('[data-slot="occurrence-command-result"]');
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // The closed rule, the one actionable date, and the month-day resolution the plan discloses
 // ---------------------------------------------------------------------------------------------
@@ -415,7 +412,6 @@ test("a plan states its closed rule, one actionable date among previews, and the
   // The clock this test moved is returned to the seed instant, so the next spec starts where the seed says.
   await setClock(page, SEED_INSTANT);
 });
-
 
 // ---------------------------------------------------------------------------------------------
 // One successor per completion or skip
@@ -652,4 +648,3 @@ test("a paused plan admits no date, a resumed one does, and an action captured b
   await expect(page.locator('[data-slot="series-state-controls"][data-series-state="stopped"]')).toHaveCount(1);
   await expect(page.locator('[data-slot="occurrence-actions"][data-occurrence="absent"]')).toHaveCount(1);
 });
-

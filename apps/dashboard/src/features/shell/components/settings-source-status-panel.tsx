@@ -41,8 +41,7 @@ export interface SettingsSourceStatusPanelProps {
 
 const COPY = {
   title: "Source status",
-  description:
-    "What this session's data came from, how much of the past that source covers, and the instant this page's read was evaluated at. Every fact here is reported by that read: this panel checks nothing live, refreshes nothing in the background and asks the source no second question.",
+  description: "What this session's data came from, how much of the past that source covers, and the instant this page's read was evaluated at. Every fact here is reported by that read: this panel checks nothing live, refreshes nothing in the background and asks the source no second question.",
   sourceHeading: "Source",
   sourceLabel: "Source identity",
   sourceNote:
@@ -52,25 +51,20 @@ const COPY = {
   coverageFromLabel: "First bound the source stated",
   coverageToLabel: "Last bound the source stated",
   coverageBoundAbsent: "The source stated no such bound.",
-  coverageNote:
-    "Both bounds are shown exactly as the source stated them and are neither formatted nor converted, because a civil date and an instant are different facts and this panel cannot tell which one a source meant. It derives no deadline and computes no boundary from either.",
+  coverageNote: "Both bounds are shown exactly as the source stated them and are neither formatted nor converted, because a civil date and an instant are different facts and this panel cannot tell which one a source meant. It derives no deadline and computes no boundary from either.",
   asOfHeading: "Read instant",
   asOfLabel: "Evaluated at",
-  asOfNote:
-    "This is the instant the read behind this page was evaluated at, stated in the zone named beside it. A later page load is a second read with its own instant, so nothing here states that the source is answering now.",
+  asOfNote: "This is the instant the read behind this page was evaluated at, stated in the zone named beside it. A later page load is a second read with its own instant, so nothing here states that the source is answering now.",
   asOfUnreadable: "This panel cannot read that value as an instant, so it is shown exactly as the source stated it rather than replaced or recalculated.",
   zoneFallback: "The requested time zone could not be used here, so the instant is stated in UTC.",
   devHeading: "Development scenario",
   devIdLabel: "Scenario id",
   devLabelLabel: "Scenario",
   devInstantLabel: "Instant this session reads at",
-  devNote:
-    "Both facts are reported by this session's development runtime, which derives the instant from the clock offset it stores. This panel states them as it received them and derives neither, so the instant here is the one this session's boundaries were evaluated against.",
-  denied:
-    "This session may not read the record that holds its own source status, so no source identity, coverage, read instant or development scenario is stated here.",
+  devNote: "Both facts are reported by this session's development runtime, which derives the instant from the clock offset it stores. This panel states them as it received them and derives neither, so the instant here is the one this session's boundaries were evaluated against.",
+  denied: "This session may not read the record that holds its own source status, so no source identity, coverage, read instant or development scenario is stated here.",
   refused: "This page's own request for the source status was refused, so nothing was read and nothing is stated in its place.",
-  unavailableAffected:
-    "Until the source answers, every surface that reads it reports its own outage rather than a zero or an empty list, and the work that does not depend on it stays usable.",
+  unavailableAffected: "Until the source answers, every surface that reads it reports its own outage rather than a zero or an empty list, and the work that does not depend on it stays usable.",
   reloadLabel: "Reload this page",
 } as const;
 
@@ -82,10 +76,7 @@ const COVERAGE_MEANING: Readonly<Record<CoverageState, string>> = {
   unknown: "The source does not state how much of the period its records cover.",
 };
 
-const COVERAGE_NOTICE_TITLE: Readonly<Record<Exclude<CoverageState, "complete">, string>> = {
-  partial: "Coverage is partial",
-  unknown: "Coverage is unknown",
-};
+const COVERAGE_NOTICE_TITLE: Readonly<Record<Exclude<CoverageState, "complete">, string>> = { partial: "Coverage is partial", unknown: "Coverage is unknown" };
 
 /** The zone an as-of instant is stated in when the caller names none: UTC, because a host's own zone would make the reading depend on where the server happens to run. */
 const UTC_ZONE = "UTC";
@@ -279,16 +270,7 @@ export function SettingsSourceStatusPanel({ envelope, devState = null, timeZone 
       return <StateNotice kind="denied" headingLevel={NOTICE_HEADING_LEVEL} title={COPY.title} description={COPY.denied} reasonCode={envelope.denied.reasonCode} />;
     }
     if (envelope.kind === "unavailable") {
-      return (
-        <StateNotice
-          kind="unavailable"
-          headingLevel={NOTICE_HEADING_LEVEL}
-          title={COPY.title}
-          description={`${envelope.unavailable.guidance} ${COPY.unavailableAffected}`}
-          source={envelope.unavailable.source}
-          action={retryHref === undefined ? undefined : { label: COPY.reloadLabel, href: retryHref }}
-        />
-      );
+      return <StateNotice kind="unavailable" headingLevel={NOTICE_HEADING_LEVEL} title={COPY.title} description={`${envelope.unavailable.guidance} ${COPY.unavailableAffected}`} source={envelope.unavailable.source} action={retryHref === undefined ? undefined : { label: COPY.reloadLabel, href: retryHref }} />;
     }
     if (envelope.kind === "refused") {
       return <StateNotice kind="refused" headingLevel={NOTICE_HEADING_LEVEL} title={COPY.title} description={refusalDescription(envelope.refused.fields)} />;
@@ -299,4 +281,3 @@ export function SettingsSourceStatusPanel({ envelope, devState = null, timeZone 
 }
 
 export default SettingsSourceStatusPanel;
-

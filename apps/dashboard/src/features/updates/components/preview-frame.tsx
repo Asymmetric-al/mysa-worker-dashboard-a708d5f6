@@ -98,7 +98,8 @@ const AUDIENCE_TONES: Readonly<Record<keyof typeof AUDIENCE_LABELS, StatusTone>>
 
 const EXACT_REVISION_NOTE = "This is the exact revision this preview acknowledged: the markup below is the one renderer's output for it. A later draft edit cannot change what is shown here, and a preview never follows the edition forward to a newer revision.";
 const LANGUAGE_NOTE = "A preview shows an edition in the language it is written in and never re-renders it in another, so no fallback is disclosed or concealed here.";
-const INERT_STATEMENT = "This preview is inert. It cannot publish the edition, it cannot submit a notification to any recipient, it cannot subscribe a reader, and it cannot start giving. The read that authorised it offers no action of any kind, so nothing on this surface changes the edition, its audience or its giving destination.";
+const INERT_STATEMENT =
+  "This preview is inert. It cannot publish the edition, it cannot submit a notification to any recipient, it cannot subscribe a reader, and it cannot start giving. The read that authorised it offers no action of any kind, so nothing on this surface changes the edition, its audience or its giving destination.";
 const RECHECKED_NOTE = "Every request this preview makes is authorised again when it is made, including each image, video, poster, caption track and transcript. A copied address or a switched language therefore admits nothing the reader could not already open.";
 
 const MEDIA_HEADING = "Media in this preview";
@@ -267,14 +268,7 @@ function MediaNotes({ preview, headingLevel, onRetry }: MediaNotesProps): ReactE
         </div>
       )}
       {unready.map((placement) => (
-        <StateNotice
-          key={placement.placementId}
-          kind="unavailable"
-          title={MEDIA_NOT_READY_TITLE[placement.kind]}
-          description={unreadyDescriptionOf(placement)}
-          retry={retryOf(onRetry, MEDIA_RETRY_LABEL)}
-          headingLevel={nestedHeadingLevel(headingLevel)}
-        />
+        <StateNotice key={placement.placementId} kind="unavailable" title={MEDIA_NOT_READY_TITLE[placement.kind]} description={unreadyDescriptionOf(placement)} retry={retryOf(onRetry, MEDIA_RETRY_LABEL)} headingLevel={nestedHeadingLevel(headingLevel)} />
       ))}
     </section>
   );
@@ -284,44 +278,23 @@ function MediaNotes({ preview, headingLevel, onRetry }: MediaNotesProps): ReactE
 // The answers this surface renders
 // ---------------------------------------------------------------------------------------------
 
-const LOADING = {
-  title: "Reading this preview",
-  description: "A preview is authorised per request, so nothing is shown until the read answers. An empty frame never stands in for one.",
-} as const;
+const LOADING = { title: "Reading this preview", description: "A preview is authorised per request, so nothing is shown until the read answers. An empty frame never stands in for one." } as const;
 
 const DENIED = { title: "This preview cannot be shown" } as const;
 
-const NOT_ACKNOWLEDGED = {
-  title: "This revision is not one this edition serves",
-  description: "The preview was asked for a revision this edition does not stand on, so nothing is rendered in its place and no newer revision is substituted for it.",
-} as const;
+const NOT_ACKNOWLEDGED = { title: "This revision is not one this edition serves", description: "The preview was asked for a revision this edition does not stand on, so nothing is rendered in its place and no newer revision is substituted for it." } as const;
 
-const LANGUAGE_ABSENT = {
-  title: "Language unavailable",
-  description: "The language requested is not the language this edition is written in, so nothing is rendered in its place: a preview never re-renders an edition into another language and never names a sibling edition to fall back to.",
-} as const;
+const LANGUAGE_ABSENT = { title: "Language unavailable", description: "The language requested is not the language this edition is written in, so nothing is rendered in its place: a preview never re-renders an edition into another language and never names a sibling edition to fall back to." } as const;
 
-const UNRELEASED = {
-  title: "This revision is not a readable release of this edition",
-  description: "No readable release of this edition stands on the revision the preview acknowledged, so nothing is rendered in its place. A draft is not a publication, and a preview does not stand in for one.",
-} as const;
+const UNRELEASED = { title: "This revision is not a readable release of this edition", description: "No readable release of this edition stands on the revision the preview acknowledged, so nothing is rendered in its place. A draft is not a publication, and a preview does not stand in for one." } as const;
 
 const WITHDRAWN = { title: "This edition was withdrawn", description: `${WITHDRAWAL_WORDING.whatItDoes} ${WITHDRAWAL_WORDING.whatItDoesNotDo}` } as const;
 
-const UNAVAILABLE = {
-  title: "This preview could not be read",
-  description: "The source behind this preview could not be read, so this surface reports the outage instead of an empty page or a newer revision.",
-} as const;
+const UNAVAILABLE = { title: "This preview could not be read", description: "The source behind this preview could not be read, so this surface reports the outage instead of an empty page or a newer revision." } as const;
 
-const INVALID = {
-  title: "This revision cannot be rendered",
-  description: "The stored revision is not one the content profile can read, so nothing is shown in its place and no substitute is invented for it.",
-} as const;
+const INVALID = { title: "This revision cannot be rendered", description: "The stored revision is not one the content profile can read, so nothing is shown in its place and no substitute is invented for it." } as const;
 
-const EMPTY_BODY = {
-  title: "This revision carries no readable content",
-  description: "The acknowledged revision rendered to nothing, so there is no reading to show. Nothing has been substituted for what the revision does not carry.",
-} as const;
+const EMPTY_BODY = { title: "This revision carries no readable content", description: "The acknowledged revision rendered to nothing, so there is no reading to show. Nothing has been substituted for what the revision does not carry." } as const;
 
 interface AuthorisedPreviewProps {
   readonly preview: PreviewAuthorised;
@@ -339,10 +312,7 @@ function AuthorisedPreview({ preview, requestedLocale, headingLevel, locales, on
   const requested = requestedLocale === undefined ? "" : requestedLocale.trim();
   // A switch is offered only where the surface names editions this reader may open, includes the one on screen and handles the request: a select that could not show the previewed language would be an affordance that admits nothing.
   const canSwitch = locales !== undefined && locales.length > 0 && onRequestLocale !== undefined && locales.some((edition) => sameTag(edition.tag, tag));
-  const switcher =
-    locales === undefined || onRequestLocale === undefined || !canSwitch ? undefined : (
-      <LocaleSwitcher locales={locales} requested={tag} served={tag} onRequest={onRequestLocale} label={LANGUAGE_SWITCHER_LABEL} />
-    );
+  const switcher = locales === undefined || onRequestLocale === undefined || !canSwitch ? undefined : <LocaleSwitcher locales={locales} requested={tag} served={tag} onRequest={onRequestLocale} label={LANGUAGE_SWITCHER_LABEL} />;
   const body =
     preview.renderedHtml.trim().length === 0 ? (
       <StateNotice kind="empty" title={EMPTY_BODY.title} description={EMPTY_BODY.description} headingLevel={headingLevel} />
@@ -499,4 +469,3 @@ export function PreviewFrame({ preview, requestedLocale, locales, onRequestLocal
 }
 
 export default PreviewFrame;
-

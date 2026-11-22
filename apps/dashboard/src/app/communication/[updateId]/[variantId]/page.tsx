@@ -48,38 +48,28 @@ const TITLE_CLASS = "text-2xl font-semibold text-pretty wrap-anywhere";
 
 /** A refusal: the condition, and nothing about what may or may not exist, because the answer is identical either way. */
 const DENIED_TITLE = "This edition is not available in this session";
-const DENIED_DESCRIPTION =
-  "This session may not write this edition in the context it is working in, so no title, revision, placement or release " +
-  "is stated here. A refusal is not an edition with nothing written.";
+const DENIED_DESCRIPTION = "This session may not write this edition in the context it is working in, so no title, revision, placement or release " + "is stated here. A refusal is not an edition with nothing written.";
 
 /** An outage: the source did not answer, which is neither an empty draft nor a hidden one. */
 const UNAVAILABLE_TITLE = "This edition could not be read";
-const UNAVAILABLE_FALLBACK =
-  "The records behind this edition could not be read, so no editor, revision or placement is shown in their place. Retry " +
-  "the same read: an outage is never presented as an empty draft.";
+const UNAVAILABLE_FALLBACK = "The records behind this edition could not be read, so no editor, revision or placement is shown in their place. Retry " + "the same read: an outage is never presented as an empty draft.";
 
 /** A refused request, which this route states rather than throws because it calls the read directly. */
 const REFUSED_TITLE = "This editor's address was refused";
-const REFUSED_REQUEST_DESCRIPTION =
-  "The request this editor would make is not one the read admits, so nothing was read and nothing is written. Open the " +
-  "Update from its list and choose the edition again.";
+const REFUSED_REQUEST_DESCRIPTION = "The request this editor would make is not one the read admits, so nothing was read and nothing is written. Open the " + "Update from its list and choose the edition again.";
 
 /**
  * The address names an edition of a Page. A Page's editions are composed in the Page builder, where their sections, their
  * locale editions and their one give placement are stated, so presenting one under this route's wording would describe an
  * axis the document does not have.
  */
-const NOT_AN_UPDATE_DESCRIPTION =
-  "The edition this address names belongs to a Page rather than an Update, so it is composed from the Page builder, where " +
-  "its sections and its locale editions are stated. Nothing is rendered here in its place.";
+const NOT_AN_UPDATE_DESCRIPTION = "The edition this address names belongs to a Page rather than an Update, so it is composed from the Page builder, where " + "its sections and its locale editions are stated. Nothing is rendered here in its place.";
 
 /**
  * The address pairs an edition with a document that does not hold it: two opaque identities that resolve separately but
  * not together, so this route opens neither in place of the pair.
  */
-const UNPAIRED_ADDRESS_DESCRIPTION =
-  "The edition this address names belongs to a different document, so the pair is not one this route can open. Open the " +
-  "Update from its list and choose the edition from the editions it holds.";
+const UNPAIRED_ADDRESS_DESCRIPTION = "The edition this address names belongs to a different document, so the pair is not one this route can open. Open the " + "Update from its list and choose the edition from the editions it holds.";
 
 // ---------------------------------------------------------------------------------------------
 // The honest answers this route renders in place of the editor
@@ -133,13 +123,7 @@ function EditorSurface({ updateId, envelope }: EditorSurfaceProps): ReactElement
       <h1 id={TITLE_ID} className={TITLE_CLASS}>
         {SURFACE_TITLE}
       </h1>
-      <EditorShell
-        scope={envelope.scope}
-        updateId={updateId}
-        variantId={envelope.data.variant.variantId}
-        initialDraft={{ kind: "envelope", envelope: wireFormOf(envelope) }}
-        headingLevel={EDITOR_HEADING_LEVEL}
-      />
+      <EditorShell scope={envelope.scope} updateId={updateId} variantId={envelope.data.variant.variantId} initialDraft={{ kind: "envelope", envelope: wireFormOf(envelope) }} headingLevel={EDITOR_HEADING_LEVEL} />
     </section>
   );
 }

@@ -279,9 +279,7 @@ async function searchRoster(page: Page, text: string): Promise<void> {
   await expect(field, "The roster states one search field, and it is the one this journey types in.").toBeVisible();
   await field.fill(text);
   await field.press("Enter");
-  await expect
-    .poll(() => [...new URL(page.url()).searchParams.values()].includes(text), { message: `The roster's own address carries the search ${JSON.stringify(text)}, so reading a record and coming back returns to this result rather than to an unfiltered one.` })
-    .toBe(true);
+  await expect.poll(() => [...new URL(page.url()).searchParams.values()].includes(text), { message: `The roster's own address carries the search ${JSON.stringify(text)}, so reading a record and coming back returns to this result rather than to an unfiltered one.` }).toBe(true);
 }
 
 /**
@@ -334,7 +332,10 @@ async function recordAddress(page: Page, name: string): Promise<string> {
 
 /** Opens one record through the roster's own link and answers once its identity heading is on screen. */
 async function openRecord(page: Page, name: string): Promise<void> {
-  await page.getByRole("link", { name: `Open ${name}`, exact: true }).first().click();
+  await page
+    .getByRole("link", { name: `Open ${name}`, exact: true })
+    .first()
+    .click();
   await expect(page.getByRole("heading", { name, level: 1 }), `The record ${JSON.stringify(name)} opens at its own address with its own identity as the page heading.`).toBeVisible();
   await expectDevelopmentData(page);
 }
@@ -360,7 +361,6 @@ async function activityRows(page: Page): Promise<readonly string[]> {
   const rows = await activity.getByRole("listitem").allInnerTexts();
   return rows.map((text) => text.replace(/\s+/gu, " ").trim());
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // The whole-result line a paged list states
@@ -520,9 +520,7 @@ test("a person and a church are found by searching the whole roster and filterin
   // -----------------------------------------------------------------------------------------
 
   await selectFacetValue(page, CONTACT_TYPE_FACET, PERSON_FACET_VALUE);
-  await expect
-    .poll(async () => wholeResultCount(page), { message: "The faceted filter is applied to the whole result rather than to the page on screen, so the size it states falls." })
-    .toBeLessThan(wholeRoster);
+  await expect.poll(async () => wholeResultCount(page), { message: "The faceted filter is applied to the whole result rather than to the page on screen, so the size it states falls." }).toBeLessThan(wholeRoster);
   await expect(roster.getByRole("row", { name: CHURCH }), "A church is not a person, so the filter that admits persons only leaves it out.").toHaveCount(0);
   await expect(roster.getByRole("row", { name: RESTRICTED_PERSON }), "The person this journey reads is still in the result the filter admitted.").toBeVisible();
 
@@ -692,7 +690,10 @@ test("completing a task and creating the next one close work and change nothing 
 
   const before = await activityRows(page);
   const openTasksBefore = await section(page, OPEN_TASKS_SECTION).getByRole("listitem").allInnerTexts();
-  expect(openTasksBefore.some((item) => item.includes(SEEDED_TASK_TITLE)), "The seeded task is open work on this record before the journey completes it.").toBe(true);
+  expect(
+    openTasksBefore.some((item) => item.includes(SEEDED_TASK_TITLE)),
+    "The seeded task is open work on this record before the journey completes it.",
+  ).toBe(true);
 
   // -----------------------------------------------------------------------------------------
   // Complete the seeded task on the work surface

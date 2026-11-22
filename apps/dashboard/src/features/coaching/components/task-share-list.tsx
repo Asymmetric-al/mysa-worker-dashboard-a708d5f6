@@ -63,10 +63,7 @@ export interface TaskShareListProps {
 
 const LIST_HEADING = "Task summaries you share";
 
-const LIST_PURPOSE =
-  "Only the summaries you selected and reviewed are shared: a description you wrote for this purpose, the task's " +
-  "live due date and its live status. A task's own title, notes, links and history are never shared, and stopping " +
-  "a summary leaves the work itself alone.";
+const LIST_PURPOSE = "Only the summaries you selected and reviewed are shared: a description you wrote for this purpose, the task's " + "live due date and its live status. A task's own title, notes, links and history are never shared, and stopping " + "a summary leaves the work itself alone.";
 
 const STATE_SR_PREFIX = "Sharing state";
 
@@ -84,9 +81,7 @@ const NO_SHARED_DATE_WORD = "No share date recorded";
 
 const DESCRIPTION_LABEL = "The description you reviewed";
 
-const DESCRIPTION_MISSING_STATEMENT =
-  "The read states this summary as shared but carries no description for it, so nothing is reproduced here. " +
-  "Review it again to share a description.";
+const DESCRIPTION_MISSING_STATEMENT = "The read states this summary as shared but carries no description for it, so nothing is reproduced here. " + "Review it again to share a description.";
 
 const WITHHELD_LABEL = "Description withheld";
 
@@ -103,16 +98,13 @@ const DONE_LABEL = "Done";
 
 const STOP_REFUSED_TITLE = "This share cannot be stopped from here";
 
-const STOP_REFUSED_FALLBACK =
-  "This row names no share to stop, so nothing was submitted. Reload the shared summaries and choose the share again.";
+const STOP_REFUSED_FALLBACK = "This row names no share to stop, so nothing was submitted. Reload the shared summaries and choose the share again.";
 
 const STOP_REGION_HEADING_LEVEL = 3;
 
 const EMPTY_TITLE = "No task summary is shared yet";
 
-const EMPTY_BODY =
-  "A summary is shared only when you select a task, write a description for this purpose and review it. Until then " +
-  "a coach reads no task title, note, link or history, and nothing here waits to be sent.";
+const EMPTY_BODY = "A summary is shared only when you select a task, write a description for this purpose and review it. Until then " + "a coach reads no task title, note, link or history, and nothing here waits to be sent.";
 
 const EMPTY_ACTION_LABEL = "Choose a task summary to share";
 
@@ -120,9 +112,7 @@ const EMPTY_ACTION_HREF = REVIEW_AGAIN_HREF;
 
 const UNAVAILABLE_TITLE = "Shared task summaries cannot be read right now";
 
-const UNAVAILABLE_BODY =
-  "The source behind these summaries could not be read, so this region reports the outage instead of an empty list. " +
-  "Nothing was removed, no task changed, and the rest of your coaching preparation stays readable.";
+const UNAVAILABLE_BODY = "The source behind these summaries could not be read, so this region reports the outage instead of an empty list. " + "Nothing was removed, no task changed, and the rest of your coaching preparation stays readable.";
 
 const FIELD_LABELS: Readonly<Record<string, string>> = { taskShareId: "Task summary", operation: "Change" };
 
@@ -136,12 +126,7 @@ const TASK_STATUS_WORD: Readonly<Record<TaskStatus, string>> = { open: "Open", c
 const DUE_PRECISION_WORD: Readonly<Record<DatePrecision, string | null>> = { date: null, approximate: "approximate", unknown: "date not confirmed" };
 
 /** Each state as it is named inside the stop review's description, so the sentence reads about the share being stopped rather than about shares in general. */
-const STOP_STATE_PHRASE: Readonly<Record<TaskShareSummaryState, string>> = {
-  shared: "currently shared with your coach",
-  "needs-review": "currently held until you review it again",
-  removed: "already stopped",
-  unavailable: "currently unreadable from its source",
-};
+const STOP_STATE_PHRASE: Readonly<Record<TaskShareSummaryState, string>> = { shared: "currently shared with your coach", "needs-review": "currently held until you review it again", removed: "already stopped", unavailable: "currently unreadable from its source" };
 
 /** Why a held summary is held, in the read's own refusal vocabulary. Every member is stated so a reason the read adds fails to compile here instead of reaching the page as blank text. */
 const WITHHELD_REASON_STATEMENT: Readonly<Record<TaskShareRefusalReason, string>> = {
@@ -155,8 +140,7 @@ const WITHHELD_REASON_STATEMENT: Readonly<Record<TaskShareRefusalReason, string>
   unavailable: "The task behind this share cannot be read at the moment, so nothing is shown in its place.",
 };
 
-const NO_WITHHELD_REASON_STATEMENT =
-  "The read did not state why this summary is held. Nothing is shown until you review it again.";
+const NO_WITHHELD_REASON_STATEMENT = "The read did not state why this summary is held. Nothing is shown until you review it again.";
 
 const CALENDAR_DAY_NOTE = "Dates are calendar days: a due date carries no time of day and no zone.";
 
@@ -348,10 +332,7 @@ export default function TaskShareList({ shares, scope, expectedRevision, locale,
   };
   // The attempt's identity comes from the review step, which mints one per intent and replays it under that same
   // identity, so nothing here mints an operationId and a repeated press can never become a second effect.
-  const submitStop = useCallback(
-    async (input: MutationInput<TaskShareStopPayload>): Promise<MutationOutcome> => stopTaskShare({ scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload, operationId: input.operationId }),
-    [stopTaskShare],
-  );
+  const submitStop = useCallback(async (input: MutationInput<TaskShareStopPayload>): Promise<MutationOutcome> => stopTaskShare({ scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload, operationId: input.operationId }), [stopTaskShare]);
   // An unconfirmed stop is recovered by reading what the share now says, never by sending a fresh attempt: a refresh
   // of this family's task-share read is what tells the worker whether the share had already stopped.
   const checkStopResult = useCallback((): void => {

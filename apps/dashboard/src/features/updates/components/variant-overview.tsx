@@ -25,21 +25,8 @@ import VariantSwitcher, { AUDIENCE_WORDS, type VariantTab } from "@/components/v
 import { cn } from "@/lib/cn";
 import type { ContentVariant, Release, VariantAudience } from "@/modules/content/variant";
 import type { MutationInput, ReadAction, ReadEnvelope, Scope } from "@/modules/data-service/envelope";
-import {
-  LOCALE_DISPLAY_NAMES,
-  AUDIENCE_LABELS,
-  DRAFT_VS_RELEASED,
-  REVIEW_ROUND_NOTE,
-  VARIANT_AXIS_NOTE,
-  WITHDRAWAL_WORDING,
-} from "../copy/updates-copy";
-import {
-  useCandidate,
-  useVariantOverview,
-  type UpdateCandidateData,
-  type VariantOverviewData,
-  type VariantOverviewReadResult,
-} from "../hooks/use-update-queries";
+import { LOCALE_DISPLAY_NAMES, AUDIENCE_LABELS, DRAFT_VS_RELEASED, REVIEW_ROUND_NOTE, VARIANT_AXIS_NOTE, WITHDRAWAL_WORDING } from "../copy/updates-copy";
+import { useCandidate, useVariantOverview, type UpdateCandidateData, type VariantOverviewData, type VariantOverviewReadResult } from "../hooks/use-update-queries";
 import { useRestoreRevisionAsDraft, useSubmitForReview, useWithdrawLocale, useWithdrawUpdate } from "../hooks/use-update-mutations";
 import type { RestoreRevisionAsDraftPayload } from "../schemas/review";
 import type { WithdrawLocalePayload, WithdrawUpdatePayload } from "../schemas/withdraw";
@@ -77,25 +64,14 @@ const INTRO = `${DRAFT_VS_RELEASED.draftIsNotWhatReadersSee} ${DRAFT_VS_RELEASED
  * rolled them up would report a rollback the application never performs.
  */
 const SIBLING_NOTE =
-  "Each edition below states its own published revision, and a release attempt that fails for one edition leaves " +
-  "every other edition's published revision standing. Nothing here is a rollback, no sibling's release is removed, " +
-  "and the editions are never added up into one status for the whole Update.";
+  "Each edition below states its own published revision, and a release attempt that fails for one edition leaves " + "every other edition's published revision standing. Nothing here is a rollback, no sibling's release is removed, " + "and the editions are never added up into one status for the whole Update.";
 
 const SWITCHER_LABEL = "Edition";
 const LOCALE_LABEL = "Language";
 
-const FACT_LABEL = {
-  draft: "Saved draft",
-  candidate: "Submitted for review",
-  release: "Published revision",
-  translation: "Translation",
-} as const;
+const FACT_LABEL = { draft: "Saved draft", candidate: "Submitted for review", release: "Published revision", translation: "Translation" } as const;
 
-const ABSENT = {
-  draft: "No draft is saved for this edition yet, so there is nothing to submit for review.",
-  candidate: "No revision of this edition is frozen for review.",
-  release: "This edition publishes nothing yet, so no reader is served a revision of it.",
-} as const;
+const ABSENT = { draft: "No draft is saved for this edition yet, so there is nothing to submit for review.", candidate: "No revision of this edition is frozen for review.", release: "This edition publishes nothing yet, so no reader is served a revision of it." } as const;
 
 const RELEASE_COPY = {
   revision: "Revision",
@@ -105,8 +81,7 @@ const RELEASE_COPY = {
   noInstant: "No instant was stated",
   withdrawn: "Withdrawn",
   superseded: "Replaced by a later release of this edition",
-  withdrawnNote:
-    "A withdrawn publication is no longer served: its address answers with a short notice that carries no identifying content. The record that it was once published stays.",
+  withdrawnNote: "A withdrawn publication is no longer served: its address answers with a short notice that carries no identifying content. The record that it was once published stays.",
   supersededNote: "A later release of this edition is what a reader is served now; this revision is no longer the head.",
   noindexNote: "No search engine is asked to index this edition.",
 } as const;
@@ -117,11 +92,9 @@ const CANDIDATE_COPY = {
   checksum: "Checksum of the frozen revision",
   reading: "Reading the frozen candidate…",
   deniedTitle: "The frozen candidate cannot be shown here",
-  deniedDescription:
-    "This context may read the edition's pointers but not the frozen revision itself, so nothing about what a reviewer would approve is stated here.",
+  deniedDescription: "This context may read the edition's pointers but not the frozen revision itself, so nothing about what a reviewer would approve is stated here.",
   unavailableTitle: "The frozen candidate could not be read",
-  unavailableDescription:
-    "Its source could not be read, so the frozen revision and checksum are not stated. Retry the same read: an outage is never presented as a candidate that does not exist.",
+  unavailableDescription: "Its source could not be read, so the frozen revision and checksum are not stated. Retry the same read: an outage is never presented as a candidate that does not exist.",
   refusedTitle: "The frozen candidate was refused",
   refusedDescription: "The request for this candidate was refused before anything was read, so no revision is stated here.",
   invalidTitle: "The frozen candidate cannot be read as content",
@@ -130,12 +103,7 @@ const CANDIDATE_COPY = {
 } as const;
 
 /** The one state a translated edition can be in besides current, and the fact that neither of them withdraws anything. */
-const TRANSLATION_COPY = {
-  unresolved:
-    "This edition was written from another edition, and the source revision it names is no longer in the store, so " +
-    "whether it is current cannot be stated. Nothing was withdrawn for it.",
-  direction: { ltr: "written left to right", rtl: "written right to left" },
-} as const;
+const TRANSLATION_COPY = { unresolved: "This edition was written from another edition, and the source revision it names is no longer in the store, so " + "whether it is current cannot be stated. Nothing was withdrawn for it.", direction: { ltr: "written left to right", rtl: "written right to left" } } as const;
 
 const ACTION_COPY = {
   editor: "Open the editor",
@@ -155,53 +123,24 @@ const ACTION_COPY = {
 
 /** The five writes in one place: the label, the heading of its review step and the sentence that says what it does. */
 const REVIEW_COPY = {
-  submit: {
-    title: "Submit this edition for its review",
-    confirm: "Submit for review",
-    what:
-      "This freezes the exact saved revision as the candidate its one review step answers. It publishes nothing and " +
-      "notifies nobody: a release is a separate step, and a notice is a separate outcome again.",
-  },
-  restore: {
-    title: "Restore the published revision as a new draft",
-    confirm: "Restore as a new draft",
-    what:
-      "The revision restored is the one this edition publishes today. It becomes a new draft to edit, with its own " +
-      "identity, and the published revision keeps standing until a later release replaces it.",
-  },
-  withdrawLocale: {
-    title: "Withdraw this language edition",
-    confirm: "Withdraw this edition",
-    consequence: "It stops being served as soon as you confirm it. Every other edition of this Update is left exactly as it is.",
-  },
-  withdrawUpdate: {
-    title: "Withdraw the whole Update",
-    confirm: "Withdraw every edition",
-    consequence: "Every edition of this Update stops being served as soon as you confirm it, in every language and for every audience.",
-  },
+  submit: { title: "Submit this edition for its review", confirm: "Submit for review", what: "This freezes the exact saved revision as the candidate its one review step answers. It publishes nothing and " + "notifies nobody: a release is a separate step, and a notice is a separate outcome again." },
+  restore: { title: "Restore the published revision as a new draft", confirm: "Restore as a new draft", what: "The revision restored is the one this edition publishes today. It becomes a new draft to edit, with its own " + "identity, and the published revision keeps standing until a later release replaces it." },
+  withdrawLocale: { title: "Withdraw this language edition", confirm: "Withdraw this edition", consequence: "It stops being served as soon as you confirm it. Every other edition of this Update is left exactly as it is." },
+  withdrawUpdate: { title: "Withdraw the whole Update", confirm: "Withdraw every edition", consequence: "Every edition of this Update stops being served as soon as you confirm it, in every language and for every audience." },
 } as const;
 
 /** The words one published action name reads as. A name the matrix publishes that is absent from this record is stated as its raw name rather than guessed at. */
-const PUBLISHED_ACTION_LABELS: Readonly<Record<string, string>> = {
-  "create-variant": "Add an edition",
-  "open-draft": "Open a saved draft",
-  "review-candidate": "Review a submitted edition",
-  "publish-variants": "Publish a frozen candidate",
-};
+const PUBLISHED_ACTION_LABELS: Readonly<Record<string, string>> = { "create-variant": "Add an edition", "open-draft": "Open a saved draft", "review-candidate": "Review a submitted edition", "publish-variants": "Publish a frozen candidate" };
 
 const PERMITS_HEADING = "What this Update permits here";
 const PERMITS_INTRO =
-  "These are the actions the read states for this Update, with the read's own reason wherever one is withheld. An " +
-  "action this screen offers below is re-checked by the service when it is submitted, so a screen that has gone " +
-  "stale answers that the change is not permitted rather than making it.";
+  "These are the actions the read states for this Update, with the read's own reason wherever one is withheld. An " + "action this screen offers below is re-checked by the service when it is submitted, so a screen that has gone " + "stale answers that the change is not permitted rather than making it.";
 const PERMITS_AVAILABLE = "offered in this context";
 const PERMITS_WITHHELD = "withheld";
 
 const REVIEW_OFFER = {
   heading: "Editions waiting for a release",
-  intro:
-    "A frozen candidate is answered by one review step and is not a release, so these editions are listed here for " +
-    "their reviewer rather than shown as published.",
+  intro: "A frozen candidate is answered by one review step and is not a release, so these editions are listed here for " + "their reviewer rather than shown as published.",
   none: "No edition of this Update holds a frozen candidate waiting for a release.",
   link: "Open the review",
   countNoun: "editions awaiting a release",
@@ -318,7 +257,16 @@ function FrozenCandidate({ scope, variantId, headingLevel }: FrozenCandidateProp
     case "denied":
       return <StateNotice kind="denied" title={CANDIDATE_COPY.deniedTitle} description={CANDIDATE_COPY.deniedDescription} headingLevel={headingLevel} />;
     case "unavailable":
-      return <StateNotice kind="unavailable" title={CANDIDATE_COPY.unavailableTitle} description={result.unavailable.guidance.trim() === "" ? CANDIDATE_COPY.unavailableDescription : result.unavailable.guidance} source={result.unavailable.source} retry={{ label: "Read it again", onClick: () => candidate.refetch() }} headingLevel={headingLevel} />;
+      return (
+        <StateNotice
+          kind="unavailable"
+          title={CANDIDATE_COPY.unavailableTitle}
+          description={result.unavailable.guidance.trim() === "" ? CANDIDATE_COPY.unavailableDescription : result.unavailable.guidance}
+          source={result.unavailable.source}
+          retry={{ label: "Read it again", onClick: () => candidate.refetch() }}
+          headingLevel={headingLevel}
+        />
+      );
     case "refused":
       return <StateNotice kind="refused" title={CANDIDATE_COPY.refusedTitle} description={CANDIDATE_COPY.refusedDescription} headingLevel={headingLevel} />;
     case "envelope":
@@ -388,22 +336,10 @@ interface ReviewStepProps {
 /** One review step at a time, for the write the worker chose. Each branch is its own component, so choosing another write starts with a review that holds no earlier attempt. */
 function ReviewStep({ scope, intent, submitForReview, restoreRevision, withdrawLocale, withdrawUpdate, checkResult, onClose, headingLevel }: ReviewStepProps): ReactElement | null {
   const stepHeading: 3 | 4 = headingLevel === 2 ? 3 : 4;
-  const submitInput = useMemo<ReviewInput<SubmitReviewPayload> | null>(
-    () => (intent !== null && intent.kind === "submit-for-review" ? { scope, expectedRevision: intent.expectedRevision, payload: { variantId: intent.variantId, revisionId: intent.revisionId } } : null),
-    [scope, intent],
-  );
-  const restoreInput = useMemo<ReviewInput<RestoreRevisionAsDraftPayload> | null>(
-    () => (intent !== null && intent.kind === "restore-revision" ? { scope, expectedRevision: intent.expectedRevision, payload: { revisionId: intent.revisionId } } : null),
-    [scope, intent],
-  );
-  const localeInput = useMemo<ReviewInput<WithdrawLocalePayload> | null>(
-    () => (intent !== null && intent.kind === "withdraw-locale" ? { scope, expectedRevision: intent.expectedRevision, payload: { variantId: intent.variantId, locale: intent.localeTag } } : null),
-    [scope, intent],
-  );
-  const updateInput = useMemo<ReviewInput<WithdrawUpdatePayload> | null>(
-    () => (intent !== null && intent.kind === "withdraw-update" ? { scope, expectedRevision: intent.expectedRevision, payload: { documentId: intent.documentId } } : null),
-    [scope, intent],
-  );
+  const submitInput = useMemo<ReviewInput<SubmitReviewPayload> | null>(() => (intent !== null && intent.kind === "submit-for-review" ? { scope, expectedRevision: intent.expectedRevision, payload: { variantId: intent.variantId, revisionId: intent.revisionId } } : null), [scope, intent]);
+  const restoreInput = useMemo<ReviewInput<RestoreRevisionAsDraftPayload> | null>(() => (intent !== null && intent.kind === "restore-revision" ? { scope, expectedRevision: intent.expectedRevision, payload: { revisionId: intent.revisionId } } : null), [scope, intent]);
+  const localeInput = useMemo<ReviewInput<WithdrawLocalePayload> | null>(() => (intent !== null && intent.kind === "withdraw-locale" ? { scope, expectedRevision: intent.expectedRevision, payload: { variantId: intent.variantId, locale: intent.localeTag } } : null), [scope, intent]);
+  const updateInput = useMemo<ReviewInput<WithdrawUpdatePayload> | null>(() => (intent !== null && intent.kind === "withdraw-update" ? { scope, expectedRevision: intent.expectedRevision, payload: { documentId: intent.documentId } } : null), [scope, intent]);
   if (intent === null) return null;
   switch (intent.kind) {
     case "submit-for-review":
@@ -612,82 +548,80 @@ function EditionCell({ documentId, edition, scope, headingLevel, onChoose }: Edi
     // edition serves. `dir` is the edition's own direction, so an Arabic edition lays itself out right to left.
     <article dir={edition.locale.direction} data-slot="edition-cell" data-variant-id={edition.variantId} data-audience={edition.audience} data-locale={edition.locale.tag} aria-labelledby={titleId} className="min-w-0">
       <Card className="min-w-0">
-      <CardHeader className="flex min-w-0 flex-col gap-2">
-        <CardTitle>
-          <Heading id={titleId} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-base">
-            <StatusBadge label={audience.label} tone={audience.tone} srPrefix="Audience" />
-            <bdi lang={edition.locale.tag} className="min-w-0 wrap-anywhere">
-              {endonym}
+        <CardHeader className="flex min-w-0 flex-col gap-2">
+          <CardTitle>
+            <Heading id={titleId} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-base">
+              <StatusBadge label={audience.label} tone={audience.tone} srPrefix="Audience" />
+              <bdi lang={edition.locale.tag} className="min-w-0 wrap-anywhere">
+                {endonym}
+              </bdi>
+            </Heading>
+          </CardTitle>
+          <p className={NOTE_CLASS}>{AUDIENCE_LABELS[edition.audience].whoReceives}</p>
+          <p className={FACT_VALUE_CLASS}>
+            <bdi className={IDENTIFIER_CLASS} lang={edition.locale.tag}>
+              {edition.locale.tag}
             </bdi>
-          </Heading>
-        </CardTitle>
-        <p className={NOTE_CLASS}>{AUDIENCE_LABELS[edition.audience].whoReceives}</p>
-        <p className={FACT_VALUE_CLASS}>
-          <bdi className={IDENTIFIER_CLASS} lang={edition.locale.tag}>
-            {edition.locale.tag}
-          </bdi>
-          <span className={NOTE_CLASS}>{TRANSLATION_COPY.direction[edition.locale.direction]}</span>
-          {translation.status === "stale" ? <StatusBadge label={staleWords.label} tone={staleWords.tone} srPrefix="Translation" /> : null}
-        </p>
-      </CardHeader>
-      <CardContent className="flex min-w-0 flex-col gap-4">
-        <DraftStatus state={lifecycle} staleSince={staleSince === "" ? undefined : staleSince} />
-        {translation.status === "stale" ? <p className={NOTE_CLASS}>{staleWords.explanation}</p> : null}
-        {unresolved ? <p className={NOTE_CLASS}>{TRANSLATION_COPY.unresolved}</p> : null}
-        <Separator />
-        <dl className={FACT_LIST_CLASS}>
-          <Fact term={FACT_LABEL.draft}>
-            {edition.draftRevisionId === null ? <p className={NOTE_CLASS}>{ABSENT.draft}</p> : <Identifier value={edition.draftRevisionId} />}
-          </Fact>
-          <Fact term={FACT_LABEL.candidate}>
-            {edition.candidateId === null ? (
-              <p className={NOTE_CLASS}>{ABSENT.candidate}</p>
-            ) : (
-              <div className="flex min-w-0 flex-col gap-2">
-                <Identifier value={edition.candidateId} />
-                <FrozenCandidate scope={scope} variantId={edition.variantId} headingLevel={noticeLevel} />
-              </div>
-            )}
-          </Fact>
-          <Fact term={FACT_LABEL.release}>
-            <ReleaseFacts edition={edition} />
-          </Fact>
-        </dl>
-        <Separator />
-        <div className="flex min-w-0 flex-col gap-2">
-          <div className={ACTION_LIST_CLASS}>
-            <Link href={editorHref} className={LINK_CLASS}>
-              {ACTION_COPY.editor}
-            </Link>
-            {canPreview ? (
-              <Link href={`${editorHref}/preview`} className={LINK_CLASS}>
-                {ACTION_COPY.preview}
+            <span className={NOTE_CLASS}>{TRANSLATION_COPY.direction[edition.locale.direction]}</span>
+            {translation.status === "stale" ? <StatusBadge label={staleWords.label} tone={staleWords.tone} srPrefix="Translation" /> : null}
+          </p>
+        </CardHeader>
+        <CardContent className="flex min-w-0 flex-col gap-4">
+          <DraftStatus state={lifecycle} staleSince={staleSince === "" ? undefined : staleSince} />
+          {translation.status === "stale" ? <p className={NOTE_CLASS}>{staleWords.explanation}</p> : null}
+          {unresolved ? <p className={NOTE_CLASS}>{TRANSLATION_COPY.unresolved}</p> : null}
+          <Separator />
+          <dl className={FACT_LIST_CLASS}>
+            <Fact term={FACT_LABEL.draft}>{edition.draftRevisionId === null ? <p className={NOTE_CLASS}>{ABSENT.draft}</p> : <Identifier value={edition.draftRevisionId} />}</Fact>
+            <Fact term={FACT_LABEL.candidate}>
+              {edition.candidateId === null ? (
+                <p className={NOTE_CLASS}>{ABSENT.candidate}</p>
+              ) : (
+                <div className="flex min-w-0 flex-col gap-2">
+                  <Identifier value={edition.candidateId} />
+                  <FrozenCandidate scope={scope} variantId={edition.variantId} headingLevel={noticeLevel} />
+                </div>
+              )}
+            </Fact>
+            <Fact term={FACT_LABEL.release}>
+              <ReleaseFacts edition={edition} />
+            </Fact>
+          </dl>
+          <Separator />
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className={ACTION_LIST_CLASS}>
+              <Link href={editorHref} className={LINK_CLASS}>
+                {ACTION_COPY.editor}
               </Link>
-            ) : (
-              <p className={NOTE_CLASS}>{ACTION_COPY.noPreview}</p>
-            )}
+              {canPreview ? (
+                <Link href={`${editorHref}/preview`} className={LINK_CLASS}>
+                  {ACTION_COPY.preview}
+                </Link>
+              ) : (
+                <p className={NOTE_CLASS}>{ACTION_COPY.noPreview}</p>
+              )}
+            </div>
+            <div className={ACTION_LIST_CLASS}>
+              {draftRevisionId === null ? null : (
+                <Button type="button" variant="secondary" size="sm" className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal" onClick={() => onChoose({ kind: "submit-for-review", revisionId: draftRevisionId, ...base })}>
+                  {ACTION_COPY.submit}
+                </Button>
+              )}
+              {canRestore ? (
+                <Button type="button" variant="outline" size="sm" className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal" onClick={() => onChoose({ kind: "restore-revision", revisionId: releasedRevisionId, ...base })}>
+                  {ACTION_COPY.restore}
+                </Button>
+              ) : null}
+              {canWithdrawLocale ? (
+                <Button type="button" variant="outline" size="sm" className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal" onClick={() => onChoose({ kind: "withdraw-locale", ...base })}>
+                  {ACTION_COPY.withdrawLocale}
+                </Button>
+              ) : null}
+            </div>
+            {canSubmit ? null : <p className={NOTE_CLASS}>{ACTION_COPY.withheldReasons.submit}</p>}
+            {canRestore ? null : <p className={NOTE_CLASS}>{ACTION_COPY.withheldReasons.restore}</p>}
+            {canWithdrawLocale ? null : <p className={NOTE_CLASS}>{ACTION_COPY.withheldReasons.withdrawLocale}</p>}
           </div>
-          <div className={ACTION_LIST_CLASS}>
-            {draftRevisionId === null ? null : (
-              <Button type="button" variant="secondary" size="sm" className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal" onClick={() => onChoose({ kind: "submit-for-review", revisionId: draftRevisionId, ...base })}>
-                {ACTION_COPY.submit}
-              </Button>
-            )}
-            {canRestore ? (
-              <Button type="button" variant="outline" size="sm" className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal" onClick={() => onChoose({ kind: "restore-revision", revisionId: releasedRevisionId, ...base })}>
-                {ACTION_COPY.restore}
-              </Button>
-            ) : null}
-            {canWithdrawLocale ? (
-              <Button type="button" variant="outline" size="sm" className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal" onClick={() => onChoose({ kind: "withdraw-locale", ...base })}>
-                {ACTION_COPY.withdrawLocale}
-              </Button>
-            ) : null}
-          </div>
-          {canSubmit ? null : <p className={NOTE_CLASS}>{ACTION_COPY.withheldReasons.submit}</p>}
-          {canRestore ? null : <p className={NOTE_CLASS}>{ACTION_COPY.withheldReasons.restore}</p>}
-          {canWithdrawLocale ? null : <p className={NOTE_CLASS}>{ACTION_COPY.withheldReasons.withdrawLocale}</p>}
-        </div>
         </CardContent>
       </Card>
     </article>
@@ -817,17 +751,7 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
         ))}
       </ul>
 
-      <ReviewStep
-        scope={envelope.scope}
-        intent={intent}
-        submitForReview={submitForReview.submit}
-        restoreRevision={restoreRevision.submit}
-        withdrawLocale={withdrawLocale.submit}
-        withdrawUpdate={withdrawUpdate.submit}
-        checkResult={checkResult}
-        onClose={() => setIntent(null)}
-        headingLevel={headingLevel}
-      />
+      <ReviewStep scope={envelope.scope} intent={intent} submitForReview={submitForReview.submit} restoreRevision={restoreRevision.submit} withdrawLocale={withdrawLocale.submit} withdrawUpdate={withdrawUpdate.submit} checkResult={checkResult} onClose={() => setIntent(null)} headingLevel={headingLevel} />
 
       <section aria-labelledby={`${headingId}-review`} className="flex min-w-0 flex-col gap-3">
         <SectionHeading id={`${headingId}-review`} className="text-start text-base font-medium text-pretty">
@@ -864,12 +788,7 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
         <p className={NOTE_CLASS}>{WITHDRAWAL_WORDING.whatItDoesNotDo}</p>
         {canWithdrawUpdate ? (
           <div className={ACTION_LIST_CLASS}>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal"
-              onClick={() => setIntent({ kind: "withdraw-update", documentId: data.document.documentId, expectedRevision: data.document.recordRevision })}
-            >
+            <Button type="button" variant="outline" className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal" onClick={() => setIntent({ kind: "withdraw-update", documentId: data.document.documentId, expectedRevision: data.document.recordRevision })}>
               {ACTION_COPY.withdrawUpdate}
             </Button>
           </div>

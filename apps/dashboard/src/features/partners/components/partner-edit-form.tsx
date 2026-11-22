@@ -107,7 +107,8 @@ const ACCEPTED_BODY = "The change was applied once, and this receipt stays on th
 const EDITS_UNAVAILABLE_TITLE = "Contact edits are unavailable here";
 const EDITS_UNAVAILABLE_BODY = "This record does not admit a permitted-field change in the current session and scope, so no field is offered and nothing was changed. A refusal here says nothing about what exists anywhere else.";
 const CONFLICT_CHOICE_TITLE = "What to do with your input";
-const CONFLICT_CHOICE_BODY = "Applying yours sends what this form holds now against the revision the record stands at, so nothing you have typed is lost and nothing of theirs is overwritten without your decision. Discarding yours returns the form to the values this page read; the value the record holds now stays visible above either way.";
+const CONFLICT_CHOICE_BODY =
+  "Applying yours sends what this form holds now against the revision the record stands at, so nothing you have typed is lost and nothing of theirs is overwritten without your decision. Discarding yours returns the form to the values this page read; the value the record holds now stays visible above either way.";
 const CONFLICT_APPLY_LABEL = "Apply my changes";
 const CONFLICT_DISCARD_LABEL = "Discard mine";
 /** The four outcomes an edit clears: the attempt has settled without an effect that keeps describing the values on screen. */
@@ -272,9 +273,7 @@ function AdditionalNameField({ index, row, errors, onChange, onRemove }: Additio
   return (
     <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-border p-4">
       <FormField name={rowPath} label={`${ADDITIONAL_NAME_LABEL} ${String(number)}`} error={errors?.byField[rowPath]}>
-        {(control) => (
-          <Input id={control.id} type="text" value={row.value} autoComplete="off" aria-describedby={control.describedBy} aria-invalid={control.invalid ? true : undefined} onChange={(event) => onChange({ ...row, value: event.currentTarget.value })} className="w-full" />
-        )}
+        {(control) => <Input id={control.id} type="text" value={row.value} autoComplete="off" aria-describedby={control.describedBy} aria-invalid={control.invalid ? true : undefined} onChange={(event) => onChange({ ...row, value: event.currentTarget.value })} className="w-full" />}
       </FormField>
       <div className="flex min-w-0">
         <Button type="button" variant="outline" size="sm" className="min-h-target max-w-full whitespace-normal" onClick={onRemove}>

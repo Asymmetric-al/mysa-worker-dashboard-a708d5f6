@@ -32,15 +32,7 @@ const INVITATION_STATES = ["delivered", "superseded", "already-accepted", "expir
 type InvitationState = (typeof INVITATION_STATES)[number];
 
 /** The invitation exactly as the surrounding read resolved it, with the named recipient and no identifier used as identity. */
-type InvitationSummary = {
-  readonly grantId: string;
-  readonly state: InvitationState;
-  readonly recipientDisplayName: string;
-  readonly organizationName: string;
-  readonly ministryName: string;
-  readonly modules: ReadonlyArray<{ readonly key: ModuleKey }>;
-  readonly durationLabel: string;
-};
+type InvitationSummary = { readonly grantId: string; readonly state: InvitationState; readonly recipientDisplayName: string; readonly organizationName: string; readonly ministryName: string; readonly modules: ReadonlyArray<{ readonly key: ModuleKey }>; readonly durationLabel: string };
 
 /**
  * The props of {@link CoachAcceptance}: the invitation as read, the four outcomes as read, and the context and revision
@@ -64,13 +56,7 @@ type NoticeCopy = { readonly title: string; readonly description: string };
  * The lifecycle word an invitation state carries. The state itself is this step's own vocabulary and the lifecycle
  * word is the coaching family's, so the four statements below are not a second set of state words.
  */
-const LIFECYCLE_OF: Readonly<Record<InvitationState, GrantLifecycleState>> = {
-  delivered: "invited",
-  superseded: "superseded",
-  "already-accepted": "accepted",
-  expired: "expired",
-  revoked: "revoked",
-};
+const LIFECYCLE_OF: Readonly<Record<InvitationState, GrantLifecycleState>> = { delivered: "invited", superseded: "superseded", "already-accepted": "accepted", expired: "expired", revoked: "revoked" };
 
 // ---------------------------------------------------------------------------------------------
 // The four outcomes, each with its own word
@@ -81,35 +67,15 @@ const LIFECYCLE_OF: Readonly<Record<InvitationState, GrantLifecycleState>> = {
 // ---------------------------------------------------------------------------------------------
 
 /** The term each outcome is listed under, in the fixed order delivery, identity verification, acceptance, access. */
-const OUTCOME_TERM: Readonly<Record<SharingOutcomeId, string>> = {
-  delivery: "Invitation",
-  "identity-verification": "Identity",
-  "deliberate-acceptance": "Acceptance",
-  "active-access": "Access",
-};
+const OUTCOME_TERM: Readonly<Record<SharingOutcomeId, string>> = { delivery: "Invitation", "identity-verification": "Identity", "deliberate-acceptance": "Acceptance", "active-access": "Access" };
 
 /** Which member of the outcome set each entry of `SHARING_OUTCOME_COPY` is reported in. */
-const OUTCOME_FIELD: Readonly<Record<SharingOutcomeId, keyof SharingOutcomeSet>> = {
-  delivery: "delivery",
-  "identity-verification": "identityVerification",
-  "deliberate-acceptance": "acceptance",
-  "active-access": "access",
-};
+const OUTCOME_FIELD: Readonly<Record<SharingOutcomeId, keyof SharingOutcomeSet>> = { delivery: "delivery", "identity-verification": "identityVerification", "deliberate-acceptance": "acceptance", "active-access": "access" };
 
 /** How each state of an outcome reads, since the copy's own label describes only the reached one. */
-const OUTCOME_NOT_REACHED_WORD: Readonly<Record<SharingOutcomeId, string>> = {
-  delivery: "No invitation recorded",
-  "identity-verification": "Identity not verified",
-  "deliberate-acceptance": "Not accepted yet",
-  "active-access": "Access not live yet",
-};
+const OUTCOME_NOT_REACHED_WORD: Readonly<Record<SharingOutcomeId, string>> = { delivery: "No invitation recorded", "identity-verification": "Identity not verified", "deliberate-acceptance": "Not accepted yet", "active-access": "Access not live yet" };
 
-const OUTCOME_UNKNOWN_WORD: Readonly<Record<SharingOutcomeId, string>> = {
-  delivery: "Recording uncertain",
-  "identity-verification": "Verification unknown",
-  "deliberate-acceptance": "Acceptance unknown",
-  "active-access": "Access unknown",
-};
+const OUTCOME_UNKNOWN_WORD: Readonly<Record<SharingOutcomeId, string>> = { delivery: "Recording uncertain", "identity-verification": "Verification unknown", "deliberate-acceptance": "Acceptance unknown", "active-access": "Access unknown" };
 
 const OUTCOME_TONE: Readonly<Record<SharingOutcome, StatusTone>> = { reached: "positive", "not-reached": "muted", unknown: "caution" };
 
@@ -120,21 +86,13 @@ const OUTCOME_STATE_SENTENCE: Readonly<Record<SharingOutcomeId, Readonly<Record<
     "not-reached": "No invitation is recorded, so there is nothing here for you to accept.",
     unknown: "Whether the invitation was recorded cannot be confirmed from here, so this page claims neither.",
   },
-  "identity-verification": {
-    reached: "The account you are acting in was verified as the named recipient's.",
-    "not-reached": "The account you are acting in has not been verified as the named recipient's, so accepting would open nothing.",
-    unknown: "Whether this account was verified cannot be confirmed from here.",
-  },
+  "identity-verification": { reached: "The account you are acting in was verified as the named recipient's.", "not-reached": "The account you are acting in has not been verified as the named recipient's, so accepting would open nothing.", unknown: "Whether this account was verified cannot be confirmed from here." },
   "deliberate-acceptance": {
     reached: "Your decision is recorded. Nothing is readable to you until access is live.",
     "not-reached": "No acceptance is recorded: opening this page, or following the link that brought you here, accepts nothing.",
     unknown: "An acceptance may or may not have been recorded, and this page does not say which.",
   },
-  "active-access": {
-    reached: "You can read the modules the worker switched on, inside the dates the invitation names.",
-    "not-reached": "Nothing is readable yet, and accepting on its own switches no module on.",
-    unknown: "Whether access is live cannot be confirmed from here.",
-  },
+  "active-access": { reached: "You can read the modules the worker switched on, inside the dates the invitation names.", "not-reached": "Nothing is readable yet, and accepting on its own switches no module on.", unknown: "Whether access is live cannot be confirmed from here." },
 };
 
 const OUTCOMES_HEADING = "Where this invitation stands";
@@ -146,22 +104,14 @@ const OUTCOMES_NOTE = "These are four separate outcomes rather than four steps o
 
 const SURFACE_COPY = {
   heading: "Your coaching invitation",
-  purpose:
-    "This invitation names you, the organization, the ministry, the modules and the duration. Reading it, or following " +
-    "the link that brought you here, shares nothing: where the invitation actually stands is stated below, one outcome " +
-    "at a time.",
+  purpose: "This invitation names you, the organization, the ministry, the modules and the duration. Reading it, or following " + "the link that brought you here, shares nothing: where the invitation actually stands is stated below, one outcome " + "at a time.",
   factTerms: { recipient: "Named recipient", organization: "Organization", ministry: "Ministry", duration: "Duration", grant: "Invitation" },
   notAcceptedSentence: "You have not accepted yet. Your own decision is what moves this invitation on, and it shares nothing by itself.",
   modulesHeading: "Modules this invitation names",
   noModulesSentence: "This invitation names no module, so nothing would be readable even after you accept it.",
-  modulesNote:
-    "Modules start switched off. Acceptance on its own makes nothing readable: only the modules the worker switches on " +
-    "can be read, and only inside the dates named.",
+  modulesNote: "Modules start switched off. Acceptance on its own makes nothing readable: only the modules the worker switches on " + "can be read, and only inside the dates named.",
   deliberateTitle: "Accepting is your own decision",
-  deliberateBody:
-    "Accepting belongs to the named recipient and is a deliberate act, not a side effect of opening this page. No " +
-    "permission follows from an email address that matches, from a link that opens, from an existing relationship or " +
-    "from a job title.",
+  deliberateBody: "Accepting belongs to the named recipient and is a deliberate act, not a side effect of opening this page. No " + "permission follows from an email address that matches, from a link that opens, from an existing relationship or " + "from a job title.",
   readOnlySentence: "Your access is read-only: nothing on this page changes the worker's own work.",
   acceptTitle: "Accept this coaching invitation",
   acceptDescription: "Accepting records your decision as the named recipient. It shares nothing on its own, and it sends no message.",
@@ -178,37 +128,14 @@ const SURFACE_COPY = {
  * itself is the family's label, so one state keeps one name.
  */
 const NOTICE_COPY: Readonly<Record<Exclude<InvitationState, "delivered">, NoticeCopy>> = {
-  "already-accepted": {
-    title: "You have already accepted this invitation",
-    description:
-      "Your decision is recorded, so there is nothing left to accept here. Access begins only when the grant is " +
-      "active, and only for the modules the worker switches on; opening this page again accepts nothing further.",
-  },
-  superseded: {
-    title: "A newer invitation replaced this one",
-    description:
-      "It was replaced before it was accepted, so it cannot be accepted now and nothing was shared under it. Open the " +
-      "newest invitation the worker sent you, because nothing here can bring this one back.",
-  },
-  expired: {
-    title: "This invitation reached its agreed end",
-    description:
-      "The dates this invitation named have passed, so it can no longer be accepted and nothing is readable under it. " +
-      "A new invitation from the worker is what begins a relationship.",
-  },
-  revoked: {
-    title: "This invitation was revoked",
-    description:
-      "The worker revoked this grant, so it can no longer be accepted and no further read is allowed under it. Revoking " +
-      "stops access; it does not take back what was read before, and only a new invitation begins again.",
-  },
+  "already-accepted": { title: "You have already accepted this invitation", description: "Your decision is recorded, so there is nothing left to accept here. Access begins only when the grant is " + "active, and only for the modules the worker switches on; opening this page again accepts nothing further." },
+  superseded: { title: "A newer invitation replaced this one", description: "It was replaced before it was accepted, so it cannot be accepted now and nothing was shared under it. Open the " + "newest invitation the worker sent you, because nothing here can bring this one back." },
+  expired: { title: "This invitation reached its agreed end", description: "The dates this invitation named have passed, so it can no longer be accepted and nothing is readable under it. " + "A new invitation from the worker is what begins a relationship." },
+  revoked: { title: "This invitation was revoked", description: "The worker revoked this grant, so it can no longer be accepted and no further read is allowed under it. Revoking " + "stops access; it does not take back what was read before, and only a new invitation begins again." },
 };
 
 /** What a coach with no invitation at all is told, in the portfolio copy's own words plus the one fact about this page. */
-const NO_INVITATION_COPY: NoticeCopy = {
-  title: "No coaching invitation for this account",
-  description: `${COACHING_COPY.coachPortfolio.empty} Nothing on this page can create one, and a matching email address grants nothing either.`,
-};
+const NO_INVITATION_COPY: NoticeCopy = { title: "No coaching invitation for this account", description: `${COACHING_COPY.coachPortfolio.empty} Nothing on this page can create one, and a matching email address grants nothing either.` };
 
 const MUTED_TEXT_CLASS = "text-sm text-pretty text-muted-foreground";
 const MODULE_CHIP_CLASS = "h-auto max-w-full whitespace-normal";
@@ -388,11 +315,7 @@ export default function CoachAcceptance({ invitation, outcomes, scope, expectedR
   // Stated from the receipt — an answer the service gave — and never from a decision this page assumed: the outcome
   // list above it moves only when the read it was handed moves.
   const acceptedJustNow = settled !== null && (settled.outcome === "accepted" || settled.outcome === "alreadyAccepted");
-  const liveInput: AcceptInput = {
-    scope,
-    expectedRevision,
-    payload: { grantId: invitation.grantId, invitationRevision: revisionOrdinal(expectedRevision) },
-  };
+  const liveInput: AcceptInput = { scope, expectedRevision, payload: { grantId: invitation.grantId, invitationRevision: revisionOrdinal(expectedRevision) } };
   // The review step shows its receipt only while the input it is handed matches the intent it reviewed, and a
   // refreshed read advances the revision the invitation stands at. Holding the input that was submitted keeps the
   // record of the acceptance on screen across that read; nothing here reports a decision the service has not stated.
@@ -441,4 +364,3 @@ export default function CoachAcceptance({ invitation, outcomes, scope, expectedR
     </div>
   );
 }
-

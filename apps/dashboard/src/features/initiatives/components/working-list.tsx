@@ -93,13 +93,7 @@ const WORKING_LIST_COPY = {
 } as const;
 
 /** The table's column headings, named once so the header row and the narrow card list state the same facts. */
-const COLUMN_COPY = {
-  partner: "Partner",
-  state: "Membership state",
-  stage: STAGE_SELECTOR_COPY.label,
-  added: WORKING_LIST_COPY.addedTerm,
-  returned: WORKING_LIST_COPY.returnedTerm,
-} as const;
+const COLUMN_COPY = { partner: "Partner", state: "Membership state", stage: STAGE_SELECTOR_COPY.label, added: WORKING_LIST_COPY.addedTerm, returned: WORKING_LIST_COPY.returnedTerm } as const;
 
 const REMOVE_COPY = {
   trigger: "Remove from the working list",
@@ -373,19 +367,7 @@ function StageCell({ initiativeId, member, scope, valueStates, admittedStages, s
   if (member.state !== "included") {
     return <StageValue member={member} stageState={STAGE_STATE_OF_READ[member.stageState]} valueState={stageStateOf(valueStates, member)} />;
   }
-  return (
-    <StageSelector
-      initiativeId={initiativeId}
-      member={member}
-      admittedStages={admittedStages}
-      scope={scope}
-      expectedRevision={memberRevisionOf(member, expectedRevision)}
-      stageAction={stageAction}
-      onOutcome={onOutcome}
-      onCheckResult={onCheckResult}
-      className="min-w-0"
-    />
-  );
+  return <StageSelector initiativeId={initiativeId} member={member} admittedStages={admittedStages} scope={scope} expectedRevision={memberRevisionOf(member, expectedRevision)} stageAction={stageAction} onOutcome={onOutcome} onCheckResult={onCheckResult} className="min-w-0" />;
 }
 
 /** When the read recorded this partner's return to the list, or the explicit statement that they have not returned. */
@@ -435,18 +417,8 @@ function memberColumns({ initiativeId, scope, valueStates, admittedStages, stage
       enableSorting: false,
       cell: ({ row }) => <StageCell initiativeId={initiativeId} member={row.original} scope={scope} valueStates={valueStates} admittedStages={admittedStages} stageAction={stageAction} expectedRevision={expectedRevision} onOutcome={onOutcome} onCheckResult={onCheckResult} />,
     },
-    {
-      id: "added",
-      header: COLUMN_COPY.added,
-      enableSorting: false,
-      cell: ({ row }) => (row.original.addedAt.trim() === "" ? <span className="text-muted-foreground">{REQUESTED_TERMS_COPY.notStated}</span> : <StatedInstant value={row.original.addedAt} />),
-    },
-    {
-      id: "returned",
-      header: COLUMN_COPY.returned,
-      enableSorting: false,
-      cell: ({ row }) => <ReturnedFigure member={row.original} valueState={returnedStateOf(valueStates, row.original)} />,
-    },
+    { id: "added", header: COLUMN_COPY.added, enableSorting: false, cell: ({ row }) => (row.original.addedAt.trim() === "" ? <span className="text-muted-foreground">{REQUESTED_TERMS_COPY.notStated}</span> : <StatedInstant value={row.original.addedAt} />) },
+    { id: "returned", header: COLUMN_COPY.returned, enableSorting: false, cell: ({ row }) => <ReturnedFigure member={row.original} valueState={returnedStateOf(valueStates, row.original)} /> },
   ];
 }
 
@@ -479,9 +451,7 @@ function MemberCardList({ rows, label, className, initiativeId, scope, valueStat
               <MemberFact term={COLUMN_COPY.stage}>
                 <StageCell initiativeId={initiativeId} member={member} scope={scope} valueStates={valueStates} admittedStages={admittedStages} stageAction={stageAction} expectedRevision={expectedRevision} onOutcome={onOutcome} onCheckResult={onCheckResult} />
               </MemberFact>
-              <MemberFact term={COLUMN_COPY.added}>
-                {member.addedAt.trim() === "" ? <span className="text-muted-foreground">{REQUESTED_TERMS_COPY.notStated}</span> : <StatedInstant value={member.addedAt} />}
-              </MemberFact>
+              <MemberFact term={COLUMN_COPY.added}>{member.addedAt.trim() === "" ? <span className="text-muted-foreground">{REQUESTED_TERMS_COPY.notStated}</span> : <StatedInstant value={member.addedAt} />}</MemberFact>
               <MemberFact term={COLUMN_COPY.returned}>
                 <ReturnedFigure member={member} valueState={returnedStateOf(valueStates, member)} />
               </MemberFact>
@@ -923,7 +893,18 @@ function WorkingListBody({ initiativeId, envelope, candidates, onChanged, onChec
             read measured and offers only the page size the read used.
           */}
           <div className="hidden min-w-0 md:block">
-            <RecordList label={listLabel} columns={columns} rows={rows} rowCount={total} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={memberRowId} rowActions={(row) => <RowActions member={row} expectedRevision={revision} removeAction={removeAction} returnAction={returnAction} onReview={setReview} />} itemNoun={WORKING_LIST_COPY.memberNoun} pageSizeOptions={[data.workingList.pageSize]} />
+            <RecordList
+              label={listLabel}
+              columns={columns}
+              rows={rows}
+              rowCount={total}
+              queryState={listQueryState}
+              onQueryStateChange={handleQueryStateChange}
+              getRowId={memberRowId}
+              rowActions={(row) => <RowActions member={row} expectedRevision={revision} removeAction={removeAction} returnAction={returnAction} onReview={setReview} />}
+              itemNoun={WORKING_LIST_COPY.memberNoun}
+              pageSizeOptions={[data.workingList.pageSize]}
+            />
           </div>
           <MemberCardList {...surface} rows={rows} label={listLabel} className="md:hidden" />
           {rows.length < total ? <p className="text-xs text-pretty text-muted-foreground">{WORKING_LIST_COPY.partialPage(rows.length, total)}</p> : null}

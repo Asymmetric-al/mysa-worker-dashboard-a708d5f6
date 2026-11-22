@@ -103,7 +103,8 @@ const CANCEL_LABEL = "Cancel";
 const OCCURRENCE_GROUP_LEGEND = "This date";
 const SERIES_GROUP_LEGEND = "The series";
 const PREVIEW_GROUP_LEGEND = "The rule and its next dates";
-const PREVIEW_GROUP_NOTE = "These dates are what this plan's rule produces next, judged in the plan's own planning timezone rather than in the one this browser displays. Only the date marked actionable can be answered on this page: the others are previews, and nothing happens on them until they become the next date. Where the rule asked for a day a month does not have, the date shown is that month's final day and the resolution is stated beside it.";
+const PREVIEW_GROUP_NOTE =
+  "These dates are what this plan's rule produces next, judged in the plan's own planning timezone rather than in the one this browser displays. Only the date marked actionable can be answered on this page: the others are previews, and nothing happens on them until they become the next date. Where the rule asked for a day a month does not have, the date shown is that month's final day and the resolution is stated beside it.";
 const OCCURRENCE_ABSENT_HEADING = "No date on this series is waiting for an answer";
 const OCCURRENCE_ABSENT_BODY = "Only one date is actionable at a time, and this series has none right now. A preview date is not a date to complete or skip, so nothing is offered here for it.";
 const COMPOSER_ACTION_LABEL = "Add this work as a one-off task";
@@ -978,13 +979,7 @@ export default function OccurrenceActions({ envelope, displayLocale, effectiveFr
   // The next date the read reports its rule produces, in the stored form the read used: this body names the date the
   // review's "Move the next date forward" refers to without computing or formatting one of its own.
   const nextNominalDate = series.preview.status === "preview" ? series.preview.dates.at(0) : undefined;
-  const planReviewFacts: PlanNeedsReviewFacts = {
-    state: series.state,
-    revision: envelope.revision,
-    planNeedsReview: needsReview,
-    missedDateCount: planReview.missedDateCount,
-    nextNominalDate: nextNominalDate === undefined ? null : { iso: nextNominalDate, display: nextNominalDate },
-  };
+  const planReviewFacts: PlanNeedsReviewFacts = { state: series.state, revision: envelope.revision, planNeedsReview: needsReview, missedDateCount: planReview.missedDateCount, nextNominalDate: nextNominalDate === undefined ? null : { iso: nextNominalDate, display: nextNominalDate } };
   return (
     <RecordDetail
       layout="page"

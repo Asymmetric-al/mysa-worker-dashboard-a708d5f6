@@ -60,15 +60,9 @@ export const AUTOSAVE_STATES = ["idle", "unsaved", "saving", "saved", "failed-lo
 export type AutosaveState = (typeof AUTOSAVE_STATES)[number];
 
 /** Which states mean the browser copy holds text the service has not acknowledged. Reading it is the only way a caller learns that, so `keptBody` and the recovery offer derive from this one table rather than from a flag kept beside the state. */
-const MIRROR_DISPOSITION = {
-  idle: "empty",
-  unsaved: "holds-unacknowledged-text",
-  saving: "holds-unacknowledged-text",
-  saved: "empty",
-  "failed-local-kept": "holds-unacknowledged-text",
-  conflict: "holds-unacknowledged-text",
-  unknown: "holds-unacknowledged-text",
-} as const satisfies Readonly<Record<AutosaveState, "empty" | "holds-unacknowledged-text">>;
+const MIRROR_DISPOSITION = { idle: "empty", unsaved: "holds-unacknowledged-text", saving: "holds-unacknowledged-text", saved: "empty", "failed-local-kept": "holds-unacknowledged-text", conflict: "holds-unacknowledged-text", unknown: "holds-unacknowledged-text" } as const satisfies Readonly<
+  Record<AutosaveState, "empty" | "holds-unacknowledged-text">
+>;
 
 /** Whether the text on screen is text the service has not acknowledged, in which case it is kept and shown. */
 function keepsUnacknowledgedText(state: AutosaveState): boolean {
@@ -316,13 +310,7 @@ function settlementOf(outcome: MutationOutcome): Settlement {
 type SaveContext = RecoveryContext & { readonly scope: Scope; readonly initialRevision: Revision; readonly placements: readonly DraftPlacementRef[] | undefined; readonly debounceMs: number };
 
 /** Everything this hook reports, held as one value so a status, its answer, the kept text and the browser copy always change together. */
-type Snapshot = {
-  readonly state: AutosaveState;
-  readonly outcome: MutationOutcome | null;
-  readonly acknowledgedRevision: Revision | null;
-  readonly heldBody: ContentDocument | null;
-  readonly mirrorBody: ContentDocument | null;
-};
+type Snapshot = { readonly state: AutosaveState; readonly outcome: MutationOutcome | null; readonly acknowledgedRevision: Revision | null; readonly heldBody: ContentDocument | null; readonly mirrorBody: ContentDocument | null };
 
 /**
  * Debounces `saveDraft` for one edition of an Update, carries the last acknowledged revision on every attempt, and keeps

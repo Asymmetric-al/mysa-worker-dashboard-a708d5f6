@@ -148,15 +148,7 @@ type InitiativeResponseKind = Extract<InitiativeHistoryRow, { readonly kind: "re
  * readers with a space, so the stored word is joined to the family's own name for it before any wording is
  * read — one exhaustive map rather than a second copy of the seven names.
  */
-const COPY_KIND_OF_RECORDED_KIND: Readonly<Record<InitiativeResponseKind, ResponseKind>> = {
-  agreed: "agreed",
-  conditional: "conditional",
-  partial: "partial",
-  deferred: "deferred",
-  declined: "declined",
-  unanswered: "unanswered",
-  "needs-clarification": "needs clarification",
-};
+const COPY_KIND_OF_RECORDED_KIND: Readonly<Record<InitiativeResponseKind, ResponseKind>> = { agreed: "agreed", conditional: "conditional", partial: "partial", deferred: "deferred", declined: "declined", unanswered: "unanswered", "needs-clarification": "needs clarification" };
 
 /**
  * The candidate set this surface shows when the composing page supplied none. The eligible-partner read
@@ -344,13 +336,7 @@ function RequestsPanel({ initiativeId, envelope, onChanged }: RequestsPanelProps
       )}
       <Separator />
       {requests.length === 0 ? (
-        <StateNotice
-          kind="empty"
-          headingLevel={3}
-          title={REQUESTS_EMPTY_TITLE}
-          description={REQUESTS_EMPTY_BODY}
-          action={draftAdmitted ? { label: DRAFT_REQUEST_LABEL, onClick: openComposer } : { label: INITIATIVE_COPY.listHeading, href: INITIATIVES_ROUTE }}
-        />
+        <StateNotice kind="empty" headingLevel={3} title={REQUESTS_EMPTY_TITLE} description={REQUESTS_EMPTY_BODY} action={draftAdmitted ? { label: DRAFT_REQUEST_LABEL, onClick: openComposer } : { label: INITIATIVE_COPY.listHeading, href: INITIATIVES_ROUTE }} />
       ) : (
         <ul className="flex min-w-0 flex-col gap-4">
           {requests.map((request) => (
@@ -378,11 +364,7 @@ function ResultsPanel({ initiativeId, resultsEnvelope }: ResultsPanelProps): Rea
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <h2 className="font-heading text-base font-medium text-pretty">{RESULTS_SECTION_TITLE}</h2>
-      {resultsEnvelope === undefined ? (
-        <StateNotice kind="unavailable" headingLevel={3} title={STATE_NOTICE_COPY.unavailable.title} description={RESULTS_NOT_READ_BODY} />
-      ) : (
-        <InitiativeResults initiativeId={initiativeId} initialEnvelope={resultsEnvelope} />
-      )}
+      {resultsEnvelope === undefined ? <StateNotice kind="unavailable" headingLevel={3} title={STATE_NOTICE_COPY.unavailable.title} description={RESULTS_NOT_READ_BODY} /> : <InitiativeResults initiativeId={initiativeId} initialEnvelope={resultsEnvelope} />}
     </div>
   );
 }
@@ -472,27 +454,9 @@ function HistoryPanel({ envelope }: { readonly envelope: InitiativeEnvelope }): 
 function RefusalNotice({ refusal, onRetry }: { readonly refusal: ReadRefusal; readonly onRetry: () => void }): ReactElement {
   switch (refusal.kind) {
     case "denied":
-      return (
-        <StateNotice
-          kind="denied"
-          headingLevel={1}
-          title={STATE_NOTICE_COPY.denied.title}
-          description={STATE_NOTICE_COPY.denied.body}
-          reasonCode={refusal.denied.reasonCode}
-          action={{ label: INITIATIVE_COPY.listHeading, href: INITIATIVES_ROUTE }}
-        />
-      );
+      return <StateNotice kind="denied" headingLevel={1} title={STATE_NOTICE_COPY.denied.title} description={STATE_NOTICE_COPY.denied.body} reasonCode={refusal.denied.reasonCode} action={{ label: INITIATIVE_COPY.listHeading, href: INITIATIVES_ROUTE }} />;
     case "unavailable":
-      return (
-        <StateNotice
-          kind="unavailable"
-          headingLevel={1}
-          title={STATE_NOTICE_COPY.unavailable.title}
-          description={refusal.unavailable.guidance}
-          source={refusal.unavailable.source}
-          retry={{ label: RETRY_LABEL, onClick: onRetry }}
-        />
-      );
+      return <StateNotice kind="unavailable" headingLevel={1} title={STATE_NOTICE_COPY.unavailable.title} description={refusal.unavailable.guidance} source={refusal.unavailable.source} retry={{ label: RETRY_LABEL, onClick: onRetry }} />;
     case "refused":
       return <StateNotice kind="refused" headingLevel={1} title={STATE_NOTICE_COPY.refused.title} description={refusalSummary(refusal.refused.fields)} />;
   }
@@ -609,4 +573,3 @@ export default function InitiativeDetail({ envelope, candidates, resultsEnvelope
     </div>
   );
 }
-

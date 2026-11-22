@@ -50,10 +50,7 @@ const PAGE_TITLE = "Update";
  * keeps, and the fact that a release and a notice are two different outcomes. No lifecycle word is introduced
  * here that the matrix does not also state.
  */
-const PAGE_LEDE =
-  "Every edition of this Update, each with its own saved draft, its frozen candidate and its published revision. " +
-  "A release is what a reader is served; a notice is a separate outcome again, and no edition is ever summarised " +
-  "into one status for the whole Update.";
+const PAGE_LEDE = "Every edition of this Update, each with its own saved draft, its frozen candidate and its published revision. " + "A release is what a reader is served; a notice is a separate outcome again, and no edition is ever summarised " + "into one status for the whole Update.";
 
 /** The level of the matrix's own heading: it nests under this page's single `h1` and opens its own sections below that. */
 const SURFACE_HEADING_LEVEL = 2;
@@ -63,21 +60,15 @@ const NOTICE_HEADING_LEVEL = 1;
 
 /** A refusal: the condition and nothing about what may or may not exist here, because the answer is identical either way. */
 const DENIED_TITLE = "These editions are not available in this session";
-const DENIED_DESCRIPTION =
-  "This session may not read this Update's editions in the context it is working in, so no edition, revision, " +
-  "candidate, language or count is stated here. A refusal is not an Update with no editions.";
+const DENIED_DESCRIPTION = "This session may not read this Update's editions in the context it is working in, so no edition, revision, " + "candidate, language or count is stated here. A refusal is not an Update with no editions.";
 
 /** An outage: the source did not answer, which is neither an empty Update nor a hidden one. */
 const UNAVAILABLE_TITLE = "The editions could not be read";
-const UNAVAILABLE_FALLBACK =
-  "The source holding this Update could not be read, so nothing is stated in place of its editions. Retry the same " +
-  "read: an outage is never presented as an Update with no editions.";
+const UNAVAILABLE_FALLBACK = "The source holding this Update could not be read, so nothing is stated in place of its editions. Retry the same " + "read: an outage is never presented as an Update with no editions.";
 
 /** A refused request: this route calls the read directly, so the arm is stated rather than thrown, and the source did not fail. */
 const REFUSED_TITLE = "This overview's request was refused";
-const REFUSED_DESCRIPTION =
-  "The address this page asked the read to resolve is not one the read admits, so nothing was read and nothing is " +
-  "shown in its place. Opening an Update from the Updates list states the address the read does admit.";
+const REFUSED_DESCRIPTION = "The address this page asked the read to resolve is not one the read admits, so nothing was read and nothing is " + "shown in its place. Opening an Update from the Updates list states the address the read does admit.";
 
 /**
  * A document of another family. The matrix states an Update's audience axis — public and approved-supporter
@@ -85,10 +76,7 @@ const REFUSED_DESCRIPTION =
  * their own, so presenting one under this route's wording would state an axis the document does not have.
  */
 const NOT_AN_UPDATE_TITLE = "This address does not name an Update";
-const NOT_AN_UPDATE_DESCRIPTION =
-  "The document this address names is a Page rather than an Update, so it is not shown here under Update wording. " +
-  "A Page is composed, previewed and released from its own route, where its locale editions and its give " +
-  "placement are stated.";
+const NOT_AN_UPDATE_DESCRIPTION = "The document this address names is a Page rather than an Update, so it is not shown here under Update wording. " + "A Page is composed, previewed and released from its own route, where its locale editions and its give " + "placement are stated.";
 
 const ROOT_CLASS = "flex min-w-0 flex-col gap-6 text-start";
 
@@ -129,12 +117,7 @@ function OverviewSurface({ envelope }: OverviewSurfaceProps): ReactElement {
         <h1 className={TITLE_CLASS}>{PAGE_TITLE}</h1>
         <p className={LEDE_CLASS}>{PAGE_LEDE}</p>
       </div>
-      <VariantOverview
-        scope={envelope.scope}
-        documentId={envelope.data.document.documentId}
-        initialResult={{ kind: "envelope", envelope: wireFormOf(envelope) }}
-        headingLevel={SURFACE_HEADING_LEVEL}
-      />
+      <VariantOverview scope={envelope.scope} documentId={envelope.data.document.documentId} initialResult={{ kind: "envelope", envelope: wireFormOf(envelope) }} headingLevel={SURFACE_HEADING_LEVEL} />
     </div>
   );
 }

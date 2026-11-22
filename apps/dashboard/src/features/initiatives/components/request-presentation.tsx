@@ -58,12 +58,7 @@ const MANNER_FIELD = "manner";
 const MANNER_LIMIT = 200;
 const FIELD_ORDER = [PRESENTED_ON_FIELD, MANNER_FIELD] as const;
 /** The field paths this change's payload carries, as the one field-error presentation reads them. */
-const FIELD_LABELS: Readonly<Record<string, string>> = {
-  initiativeId: "Initiative",
-  requestId: "Request",
-  [PRESENTED_ON_FIELD]: PRESENTATION_COPY.presentedOnLabel,
-  [MANNER_FIELD]: PRESENTATION_COPY.mannerLabel,
-};
+const FIELD_LABELS: Readonly<Record<string, string>> = { initiativeId: "Initiative", requestId: "Request", [PRESENTED_ON_FIELD]: PRESENTATION_COPY.presentedOnLabel, [MANNER_FIELD]: PRESENTATION_COPY.mannerLabel };
 /** Wording this surface alone states; the closed vocabularies it displays come from the family's copy. */
 const SURFACE_COPY = {
   heading: "Presentation",
@@ -355,7 +350,23 @@ function ReviewSummary({ payload, request, scope, valueStates }: { readonly payl
   );
 }
 /** The recording of a presentation: one explicit control, a reviewed form of the two civil facts, and the read's own reason in place of the form when it does not admit the action. */
-function PresentAction({ initiativeId, request, scope, valueStates, presentAction, onRecorded, onCheckResult }: { readonly initiativeId: string; readonly request: RequestRow; readonly scope: Scope; readonly valueStates: Readonly<Record<string, ValueState>>; readonly presentAction: ReadAction | undefined; readonly onRecorded: ((outcome: MutationOutcome) => void) | undefined; readonly onCheckResult: (() => void) | undefined }): ReactElement | null {
+function PresentAction({
+  initiativeId,
+  request,
+  scope,
+  valueStates,
+  presentAction,
+  onRecorded,
+  onCheckResult,
+}: {
+  readonly initiativeId: string;
+  readonly request: RequestRow;
+  readonly scope: Scope;
+  readonly valueStates: Readonly<Record<string, ValueState>>;
+  readonly presentAction: ReadAction | undefined;
+  readonly onRecorded: ((outcome: MutationOutcome) => void) | undefined;
+  readonly onCheckResult: (() => void) | undefined;
+}): ReactElement | null {
   const formId = useId();
   const form = useForm({ defaultValues: { ...EMPTY_PRESENT_VALUES } });
   const present = usePresentRequest(scope);
@@ -483,22 +494,11 @@ function PresentAction({ initiativeId, request, scope, valueStates, presentActio
         <p className="text-xs text-pretty text-muted-foreground">{SURFACE_COPY.presentHelp}</p>
       </div>
       {open ? (
-        <form
-          id={formId}
-          noValidate
-          className="flex min-w-0 flex-col gap-4"
-          onSubmit={reviewTheDetails}
-        >
+        <form id={formId} noValidate className="flex min-w-0 flex-col gap-4" onSubmit={reviewTheDetails}>
           {errors === null || errors.count === 0 ? null : <FormErrorSummary errors={errors} labels={FIELD_LABELS} order={FIELD_ORDER} headingLevel={NESTED_HEADING_LEVEL} />}
           <form.Field name={PRESENTED_ON_FIELD}>
             {(field) => (
-              <FormField
-                name={PRESENTED_ON_FIELD}
-                label={PRESENTATION_COPY.presentedOnLabel}
-                description={SURFACE_COPY.presentedOnDescription}
-                error={errors?.byField[PRESENTED_ON_FIELD]}
-                required
-              >
+              <FormField name={PRESENTED_ON_FIELD} label={PRESENTATION_COPY.presentedOnLabel} description={SURFACE_COPY.presentedOnDescription} error={errors?.byField[PRESENTED_ON_FIELD]} required>
                 {(control) => (
                   <Input
                     id={control.id}
@@ -519,13 +519,7 @@ function PresentAction({ initiativeId, request, scope, valueStates, presentActio
           </form.Field>
           <form.Field name={MANNER_FIELD}>
             {(field) => (
-              <FormField
-                name={MANNER_FIELD}
-                label={PRESENTATION_COPY.mannerLabel}
-                description={SURFACE_COPY.mannerDescription}
-                error={errors?.byField[MANNER_FIELD]}
-                required
-              >
+              <FormField name={MANNER_FIELD} label={PRESENTATION_COPY.mannerLabel} description={SURFACE_COPY.mannerDescription} error={errors?.byField[MANNER_FIELD]} required>
                 {(control) => (
                   <Textarea
                     id={control.id}
@@ -602,16 +596,7 @@ export default function RequestPresentation({ initiativeId, request, envelope, o
       )}
       <RequestedTerms request={request} valueStates={envelope.valueStates} locale={locale} />
       <PresentAction initiativeId={initiativeId} request={request} scope={envelope.scope} valueStates={envelope.valueStates} presentAction={actionOf(envelope.actions, PRESENT_ACTION)} onRecorded={onRecorded} onCheckResult={onCheckResult} />
-      <RequestResponseForm
-        initiativeId={initiativeId}
-        request={request}
-        scope={envelope.scope}
-        expectedRevision={request.revision}
-        responseAction={actionOf(envelope.actions, RESPOND_ACTION)}
-        onRecorded={onRecorded}
-        headingLevel={NESTED_HEADING_LEVEL}
-      />
+      <RequestResponseForm initiativeId={initiativeId} request={request} scope={envelope.scope} expectedRevision={request.revision} responseAction={actionOf(envelope.actions, RESPOND_ACTION)} onRecorded={onRecorded} headingLevel={NESTED_HEADING_LEVEL} />
     </section>
   );
 }
-

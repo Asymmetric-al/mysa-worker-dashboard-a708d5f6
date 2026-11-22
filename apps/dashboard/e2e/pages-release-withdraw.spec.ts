@@ -82,11 +82,7 @@ const ADMITTED_SECTION_TYPES = ["Introduction", "Story", "Prayer", "Milestone", 
  * index. `link-public` says *Shared by link: public*, which is the form that states reach in words rather
  * than by colour or by an icon.
  */
-const REACH = {
-  notPublic: "Not public",
-  linkPublic: "Shared by link: public",
-  listed: "Listed publicly",
-} as const;
+const REACH = { notPublic: "Not public", linkPublic: "Shared by link: public", listed: "Listed publicly" } as const;
 
 /** The word the shared receipt states for an accepted attempt; every other outcome is read from the receipt's own `data-outcome`. */
 const RECEIPT_SAVED = "Saved";
@@ -194,9 +190,7 @@ async function operateDevControl(page: Page, action: string, payload: Record<str
   const body = await jsonOf(answer, `POST /api/dev ${action}`);
   const outcome = fieldAt(body, "outcome");
   if (outcome !== "accepted" && outcome !== "unchanged" && outcome !== "alreadyAccepted") {
-    throw new Error(
-      `The development control ${action} was refused: ${JSON.stringify(body).slice(0, 400)}. A spec that could not arm the failure it names would assert against a world it did not choose, so it stops here instead of reporting a failure the application did not cause.`,
-    );
+    throw new Error(`The development control ${action} was refused: ${JSON.stringify(body).slice(0, 400)}. A spec that could not arm the failure it names would assert against a world it did not choose, so it stops here instead of reporting a failure the application did not cause.`);
   }
 }
 
@@ -379,7 +373,6 @@ async function actAs(context: BrowserContext, origin: string, sessionId: string)
 async function originOf(page: Page): Promise<string> {
   return new URL((await page.request.get("/api/session")).url()).origin;
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // 1. Both catalogues are admitted, and a Page is composed and reordered from the keyboard alone
@@ -791,10 +784,7 @@ test("a public edition serves what it published while its draft stays shut, and 
     throw new Error(`The Page read answered without the scope it ran under, so no attempt could be replayed: ${JSON.stringify(publishedPage).slice(0, 400)}`);
   }
   const pageRevision = stringAt(publishedPage, ["revision"], "The Page record's revision");
-  const replay = await jsonOf(
-    await page.request.post("/api/pages/release", { data: { operationId, scope, expectedRevision: pageRevision, payload: { operation: "publishVariants", documentId: PAGE_DOCUMENT, candidateIds: [candidateId] } } }),
-    "POST /api/pages/release replaying the lost acknowledgement",
-  );
+  const replay = await jsonOf(await page.request.post("/api/pages/release", { data: { operationId, scope, expectedRevision: pageRevision, payload: { operation: "publishVariants", documentId: PAGE_DOCUMENT, candidateIds: [candidateId] } } }), "POST /api/pages/release replaying the lost acknowledgement");
   expect(fieldAt(replay, "outcome")).toBe("alreadyAccepted");
   const items = fieldAt(replay, "items");
   if (!Array.isArray(items)) {

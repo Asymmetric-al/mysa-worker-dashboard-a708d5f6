@@ -323,9 +323,7 @@ function ensureWorkload(): void {
 // ---------------------------------------------------------------------------------------------
 
 /** One line of the ledger's whole-result summary: a stated amount with its gift count, or a state that is not a number. */
-type WholeResultLine =
-  | { readonly kind: "amount"; readonly currency: string; readonly amount: StatedAmount; readonly giftCount: number; readonly statement: string }
-  | { readonly kind: "state"; readonly currency: string; readonly word: string; readonly statement: string };
+type WholeResultLine = { readonly kind: "amount"; readonly currency: string; readonly amount: StatedAmount; readonly giftCount: number; readonly statement: string } | { readonly kind: "state"; readonly currency: string; readonly word: string; readonly statement: string };
 
 /**
  * The whole-result figures the surface states, one per currency.
@@ -588,7 +586,6 @@ async function asPrinted<T>(page: Page, read: (printed: Locator) => Promise<T>):
   }
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // The journey
 // ---------------------------------------------------------------------------------------------
@@ -718,16 +715,13 @@ test("the whole query agrees between the screen, the CSV and the printed page, b
   // --- the print artifact -------------------------------------------------------------------------
   const printed = await asPrinted(page, async (region) => {
     const facts = await snapshotFactsOf(page, "print");
-    const summaryLine = region.locator("li").filter({ hasText: `Received support (${CURRENCY})` }).first();
+    const summaryLine = region
+      .locator("li")
+      .filter({ hasText: `Received support (${CURRENCY})` })
+      .first();
     await expect(summaryLine, "The printed page states its per-currency summary line.").toBeVisible();
     const about = (await region.innerText()).replace(/\s+/gu, " ");
-    return {
-      facts,
-      summaryAmount: statedAmountOf(await summaryLine.innerText(), "The printed page's summary line"),
-      rowsStated: countOf(ROWS_IN_RESULT.exec(about)?.[1] ?? "", "The row total the printed page states"),
-      rows: await region.locator("table tbody tr").count(),
-      about,
-    };
+    return { facts, summaryAmount: statedAmountOf(await summaryLine.innerText(), "The printed page's summary line"), rowsStated: countOf(ROWS_IN_RESULT.exec(about)?.[1] ?? "", "The row total the printed page states"), rows: await region.locator("table tbody tr").count(), about };
   });
   expect(printed.facts.Basis, "The printed page states the one named basis.").toContain("effective_cash_allocation");
   expect(printed.facts.Grain, "The printed page states the grain.").toContain("One row is one authorised allocation");
@@ -744,7 +738,12 @@ test("the whole query agrees between the screen, the CSV and the printed page, b
   expect(printed.about, "The printed page states its partial coverage in text.").toContain(PARTIAL_COVERAGE_OPENING);
 
   // The evidence the criterion asks to be reported, recorded on the run itself.
-  test.info().annotations.push({ type: "criterion-1 filtered Gifts query", description: `period=this-year currency=${CURRENCY}: ${String(wholeRows)} rows, ${String(ledgerFigure.amount.minorUnits)} ${CURRENCY} minor units, ${String(ledgerFigure.giftCount)} gifts; agreed by the ledger summary, the report screen, the CSV (${String(csv.rows.length)} records) and the printed page (${String(printed.rows)} rows of ${String(printed.rowsStated)}).` });
+  test
+    .info()
+    .annotations.push({
+      type: "criterion-1 filtered Gifts query",
+      description: `period=this-year currency=${CURRENCY}: ${String(wholeRows)} rows, ${String(ledgerFigure.amount.minorUnits)} ${CURRENCY} minor units, ${String(ledgerFigure.giftCount)} gifts; agreed by the ledger summary, the report screen, the CSV (${String(csv.rows.length)} records) and the printed page (${String(printed.rows)} rows of ${String(printed.rowsStated)}).`,
+    });
 });
 
 test("the whole-query values do not move when the order and the page do", async ({ page }) => {
@@ -754,7 +753,10 @@ test("the whole-query values do not move when the order and the page do", async 
   await expect(page.getByRole("heading", { name: "Received gifts", level: 1 })).toBeVisible();
   const before = wholeResultAmountOf(await readWholeResult(page), CURRENCY);
   const rowsBefore = await readListTotal(page, "gifts");
-  const firstGiftBefore = await page.getByRole("link", { name: /^Open gift /u }).first().getAttribute("aria-label");
+  const firstGiftBefore = await page
+    .getByRole("link", { name: /^Open gift /u })
+    .first()
+    .getAttribute("aria-label");
 
   // One export at the order the surface opens in.
   const unsorted = await exportedQueryOf(page, `${RECEIVED_REPORT_HREF}?period=this-year&currency=${CURRENCY}`);
@@ -764,12 +766,18 @@ test("the whole-query values do not move when the order and the page do", async 
   // the page in the browser, so the order that comes back is the whole result's.
   await page.goto(ledgerHref);
   await expect(page.getByRole("heading", { name: "Received gifts", level: 1 })).toBeVisible();
-  const firstGiftUnsorted = await page.getByRole("link", { name: /^Open gift /u }).first().getAttribute("aria-label");
+  const firstGiftUnsorted = await page
+    .getByRole("link", { name: /^Open gift /u })
+    .first()
+    .getAttribute("aria-label");
   const firstRowBeforeSort = (await page.getByRole("table", { name: "Received gifts" }).locator("tbody tr").first().innerText()).replace(/\s+/gu, " ").trim();
   await page.getByRole("button", { name: "Amount", exact: true }).click();
   await expect(page, "The amount heading dispatches the order to the service, where the whole result is ordered.").toHaveURL(/sortField=amountMinor/u);
   await expect.poll(async () => (await page.getByRole("table", { name: "Received gifts" }).locator("tbody tr").first().innerText()).replace(/\s+/gu, " ").trim(), { message: "The order the service applied replaces the rows on screen before the figures below are read." }).not.toBe(firstRowBeforeSort);
-  const firstGiftSorted = await page.getByRole("link", { name: /^Open gift /u }).first().getAttribute("aria-label");
+  const firstGiftSorted = await page
+    .getByRole("link", { name: /^Open gift /u })
+    .first()
+    .getAttribute("aria-label");
   expect(firstGiftSorted, "The order changed the rows, which is what makes the invariance below a claim about the figures rather than about nothing having happened.").not.toBe(firstGiftUnsorted);
   expect(firstGiftBefore, "The ledger's first row is the same before and after a re-read at the same order.").toBe(firstGiftUnsorted);
 
@@ -802,9 +810,13 @@ test("the whole-query values do not move when the order and the page do", async 
   expect(await readListTotal(page, "gifts"), "Returning the page size to its default changes no row count.").toBe(rowsBefore);
   expectSameAmount(wholeResultAmountOf(await readWholeResult(page), CURRENCY).amount, before.amount, "Returning the page size to its default changes no amount.");
 
-  test.info().annotations.push({ type: "criterion-1 invariance", description: `period=this-year currency=${CURRENCY}: ${String(rowsBefore)} rows and ${String(before.amount.minorUnits)} ${CURRENCY} minor units in the unsorted, the amount-ordered and the second-page-of-200 readings; two exports of ${String(unsorted.rows.length)} records each agree in sum and in gift identity while their first records differ.` });
+  test
+    .info()
+    .annotations.push({
+      type: "criterion-1 invariance",
+      description: `period=this-year currency=${CURRENCY}: ${String(rowsBefore)} rows and ${String(before.amount.minorUnits)} ${CURRENCY} minor units in the unsorted, the amount-ordered and the second-page-of-200 readings; two exports of ${String(unsorted.rows.length)} records each agree in sum and in gift identity while their first records differ.`,
+    });
 });
-
 
 test("an amount range is offered only inside one currency, and the currencies stay apart", async ({ page }) => {
   await page.goto(`${GIFTS_HREF}?period=this-year`);
@@ -877,7 +889,12 @@ test("an amount range is offered only inside one currency, and the currencies st
   expect(afterClearing.length, "With every currency selected the summary states each currency apart again.").toBeGreaterThan(1);
   expect(wholeResultAmountOf(afterClearing, CURRENCY).amount, "Clearing the range and the currency restores the figure the query stated before either was applied.").toEqual(unfilteredAmount.amount);
 
-  test.info().annotations.push({ type: "criterion-1 single-currency rule", description: `The range facet is unavailable while ${String(currencyNames.length)} currencies are selected and available once ${CURRENCY} alone is; the band Under 100 ${CURRENCY} narrowed the whole result to ${String(rangedRows)} rows summing to ${String(rangedAmount.amount.minorUnits)} ${CURRENCY} minor units, and clearing the currency dropped the range.` });
+  test
+    .info()
+    .annotations.push({
+      type: "criterion-1 single-currency rule",
+      description: `The range facet is unavailable while ${String(currencyNames.length)} currencies are selected and available once ${CURRENCY} alone is; the band Under 100 ${CURRENCY} narrowed the whole result to ${String(rangedRows)} rows summing to ${String(rangedAmount.amount.minorUnits)} ${CURRENCY} minor units, and clearing the currency dropped the range.`,
+    });
 });
 
 test("the chart's monthly series sums to the figure the screen, the CSV and the printed page state", async ({ page }) => {
@@ -912,10 +929,16 @@ test("the chart's monthly series sums to the figure the screen, the CSV and the 
     }
     plottedAmounts.push(statedAmountOf(cell, `The chart's point for ${month}`));
   }
-  expect(gapMonths.map((month) => month.slice(0, ABSENT_MONTH.length)), "The one month the source records nothing in is stated as a gap, and no other month is.").toEqual([ABSENT_MONTH]);
+  expect(
+    gapMonths.map((month) => month.slice(0, ABSENT_MONTH.length)),
+    "The one month the source records nothing in is stated as a gap, and no other month is.",
+  ).toEqual([ABSENT_MONTH]);
   expect(gapMonths, "The gap states the civil day its month begins on, so the month cannot be mistaken for another.").toEqual([`${ABSENT_MONTH}-01`]);
   expect([...new Set(plottedAmounts.map((amount) => amount.currency))], "Every point of the series is in the one currency the query selected.").toEqual([CURRENCY]);
-  const seriesSum = sumOf(plottedAmounts.map((amount) => amount.minorUnits), "The chart's twelve monthly points");
+  const seriesSum = sumOf(
+    plottedAmounts.map((amount) => amount.minorUnits),
+    "The chart's twelve monthly points",
+  );
 
   // --- the screen artifact: the same query stated as one figure ------------------------------------
   await page.goto(`${RECEIVED_REPORT_HREF}?from=${yearFrom}&to=${yearTo}&currency=${CURRENCY}`);
@@ -930,20 +953,28 @@ test("the chart's monthly series sums to the figure the screen, the CSV and the 
   expect(metadataOf(csv, CSV_FIELD.page, "The year's export"), "The file is the whole query rather than a page of it.").toBe("whole-query");
   expect({ from: metadataOf(csv, CSV_FIELD.periodFrom, "The year's export"), to: metadataOf(csv, CSV_FIELD.periodTo, "The year's export") }, "The file states the year the chart and the screen state.").toEqual({ from: yearFrom, to: yearTo });
   expect(countOf(metadataOf(csv, CSV_FIELD.rowTotal, "The year's export"), "The year's export row total"), "The file's records are the whole query's rows.").toBe(csv.rows.length);
-  const csvSum = sumOf(csv.rows.map((row, index) => rowMinorUnitsOf(csv, row, index)), "The year's exported rows");
+  const csvSum = sumOf(
+    csv.rows.map((row, index) => rowMinorUnitsOf(csv, row, index)),
+    "The year's exported rows",
+  );
   expect(csvSum, "The file's rows sum to the same minor units the chart's points and the screen's figure state.").toBe(seriesSum);
 
   // --- the print artifact -------------------------------------------------------------------------
   const printed = await asPrinted(page, async (region) => {
     const printFacts = await snapshotFactsOf(page, "print");
-    const summaryLine = region.locator("li").filter({ hasText: `Received support (${CURRENCY})` }).first();
+    const summaryLine = region
+      .locator("li")
+      .filter({ hasText: `Received support (${CURRENCY})` })
+      .first();
     await expect(summaryLine, "The printed page states the year's received support.").toBeVisible();
     return { facts: printFacts, summaryAmount: statedAmountOf(await summaryLine.innerText(), "The printed page's summary line") };
   });
   expect(periodOfFacts(printed.facts), "The printed page states the year the chart, the screen and the file state.").toEqual({ from: yearFrom, to: yearTo });
   expectSameAmount(printed.summaryAmount, { currency: CURRENCY, minorUnits: seriesSum }, "The printed page's summary states the same figure the chart's points sum to.");
 
-  test.info().annotations.push({ type: "criterion-1 chart agreement", description: `${String(HISTORY_YEAR)} ${CURRENCY}: eleven stated months plus the gap at ${ABSENT_MONTH} sum to ${String(seriesSum)} minor units, which the report screen, the export (${String(csv.rows.length)} records) and the printed summary all state.` });
+  test
+    .info()
+    .annotations.push({ type: "criterion-1 chart agreement", description: `${String(HISTORY_YEAR)} ${CURRENCY}: eleven stated months plus the gap at ${ABSENT_MONTH} sum to ${String(seriesSum)} minor units, which the report screen, the export (${String(csv.rows.length)} records) and the printed summary all state.` });
 });
 
 test("one figure at three grains: the matrix cell, the rows it narrows to and the report it belongs to", async ({ page }) => {
@@ -999,10 +1030,19 @@ test("one figure at three grains: the matrix cell, the rows it narrows to and th
   for (const [index, row] of csv.rows.entries()) {
     expect(row["partner_id"], `Row ${String(index)} of the drilled export belongs to the partner the cell names.`).toBe(DRILLDOWN_PARTNER);
   }
-  expect(sumOf(csv.rows.map((row, index) => rowMinorUnitsOf(csv, row, index)), "The drilled export's rows"), "The drilled export's rows sum to the cell's figure.").toBe(cellAmount.minorUnits);
+  expect(
+    sumOf(
+      csv.rows.map((row, index) => rowMinorUnitsOf(csv, row, index)),
+      "The drilled export's rows",
+    ),
+    "The drilled export's rows sum to the cell's figure.",
+  ).toBe(cellAmount.minorUnits);
   const printed = await asPrinted(page, async (region) => {
     const printFacts = await snapshotFactsOf(page, "print");
-    const summaryLine = region.locator("li").filter({ hasText: `Received support (${CURRENCY})` }).first();
+    const summaryLine = region
+      .locator("li")
+      .filter({ hasText: `Received support (${CURRENCY})` })
+      .first();
     await expect(summaryLine, "The printed page of the drilled query states its summary line.").toBeVisible();
     const about = (await region.innerText()).replace(/\s+/gu, " ");
     return {
@@ -1022,9 +1062,13 @@ test("one figure at three grains: the matrix cell, the rows it narrows to and th
   expect(sumOf(printed.rowAmounts, "The printed page's rows"), "The printed page's rows sum to the cell's figure, in exact minor units: the sheet and the screen are one result.").toBe(cellAmount.minorUnits);
   expect(printed.about, "The printed page says it holds every authorised row of the query rather than a window of it.").toContain("every authorised row of the query");
 
-  test.info().annotations.push({ type: "criterion-1 matrix drilldown", description: `Matrix cell ${DRILLDOWN_PARTNER} ${DRILLDOWN_MONTH_FROM}: ${String(cellAmount.minorUnits)} ${CURRENCY} minor units agreed by the cell, the ${String(drilledRows)} rows it narrowed to (from ${String(parentRows)} in the parent query), the drilled report's screen, its export (${String(csv.rows.length)} records) and its printed page (${String(printed.rows)} rows).` });
+  test
+    .info()
+    .annotations.push({
+      type: "criterion-1 matrix drilldown",
+      description: `Matrix cell ${DRILLDOWN_PARTNER} ${DRILLDOWN_MONTH_FROM}: ${String(cellAmount.minorUnits)} ${CURRENCY} minor units agreed by the cell, the ${String(drilledRows)} rows it narrowed to (from ${String(parentRows)} in the parent query), the drilled report's screen, its export (${String(csv.rows.length)} records) and its printed page (${String(printed.rows)} rows).`,
+    });
 });
-
 
 test("a record visit returns to the same filtered view, at the same place in it", async ({ page }) => {
   ensureWorkload();
@@ -1040,10 +1084,16 @@ test("a record visit returns to the same filtered view, at the same place in it"
   expect(await page.evaluate(() => window.scrollY), "The filtered ledger is longer than the viewport, which is what makes the place in it something to return to.").toBeGreaterThan(0);
   const chipsBefore = (await page.getByRole("list", { name: "Selected filters" }).innerText()).replace(/\s+/gu, " ").trim();
   const pagerBefore = (await page.locator('[data-slot="pagination-bar"] output').first().innerText()).replace(/\s+/gu, " ").trim();
-  const firstGiftBefore = await page.getByRole("link", { name: /^Open gift /u }).first().getAttribute("aria-label");
+  const firstGiftBefore = await page
+    .getByRole("link", { name: /^Open gift /u })
+    .first()
+    .getAttribute("aria-label");
 
   // The visit: the row's own link is the only route to the record, and it names the gift it opens.
-  await page.getByRole("link", { name: /^Open gift /u }).first().click();
+  await page
+    .getByRole("link", { name: /^Open gift /u })
+    .first()
+    .click();
   await expect(page.getByRole("heading", { name: "Gift record", level: 1 })).toBeVisible();
   await expect(page, "The record is a destination of its own, so the visit is a navigation rather than a panel over the list.").toHaveURL(new RegExp(`${GIFTS_HREF}/gift-[^?]+`, "u"));
 
@@ -1054,7 +1104,13 @@ test("a record visit returns to the same filtered view, at the same place in it"
   expect((await page.getByRole("list", { name: "Selected filters" }).innerText()).replace(/\s+/gu, " ").trim(), "The applied filters come back exactly as they were.").toBe(chipsBefore);
   expect((await page.locator('[data-slot="pagination-bar"] output').first().innerText()).replace(/\s+/gu, " ").trim(), "The page window comes back exactly as it was.").toBe(pagerBefore);
   await expect(table.locator("tbody tr").first()).toBeVisible();
-  expect(await page.getByRole("link", { name: /^Open gift /u }).first().getAttribute("aria-label"), "The same rows are in the same order after the return.").toBe(firstGiftBefore);
+  expect(
+    await page
+      .getByRole("link", { name: /^Open gift /u })
+      .first()
+      .getAttribute("aria-label"),
+    "The same rows are in the same order after the return.",
+  ).toBe(firstGiftBefore);
   await expect.poll(async () => await page.evaluate(() => window.scrollY), { message: "The return restores the reader's place rather than dropping them at the top of the list." }).toBeGreaterThan(0);
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first(), "The returned view is still labelled as development data, so no surface of this application can be mistaken for production.").toBeVisible();
 

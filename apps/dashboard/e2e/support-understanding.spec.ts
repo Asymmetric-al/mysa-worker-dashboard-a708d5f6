@@ -379,13 +379,7 @@ async function readGoal(request: APIRequestContext, sessionId: string): Promise<
   const goal = data["goal"];
   const figure = goal === null ? null : recordOf(goal, "The goal the read states");
   const amount = figure === null ? null : amountOfGoal(figure);
-  return {
-    envelopeRevision: textOf(envelope["revision"], "The goal read's revision"),
-    scope: scopeOf(envelope["scope"]),
-    goalRevision: figure === null ? null : textOf(figure["revision"], "The goal's revision"),
-    minorUnits: amount === null ? null : amount.minorUnits,
-    canEditGoal: data["canEditGoal"] === true,
-  };
+  return { envelopeRevision: textOf(envelope["revision"], "The goal read's revision"), scope: scopeOf(envelope["scope"]), goalRevision: figure === null ? null : textOf(figure["revision"], "The goal's revision"), minorUnits: amount === null ? null : amount.minorUnits, canEditGoal: data["canEditGoal"] === true };
 }
 
 /** The amount a stored goal record states. */
@@ -441,10 +435,7 @@ async function developmentState(request: APIRequestContext, sessionId: string): 
  */
 async function operateDevelopmentControl(request: APIRequestContext, sessionId: string, action: string, payload: Readonly<Record<string, unknown>>): Promise<void> {
   const state = await developmentState(request, sessionId);
-  const response = await request.post(DEV_CONTROL_PATH, {
-    headers: { ...authorisationHeader(sessionId), "content-type": "application/json" },
-    data: { action, operationId: crypto.randomUUID(), scope: state.scope, expectedRevision: state.revision, payload },
-  });
+  const response = await request.post(DEV_CONTROL_PATH, { headers: { ...authorisationHeader(sessionId), "content-type": "application/json" }, data: { action, operationId: crypto.randomUUID(), scope: state.scope, expectedRevision: state.revision, payload } });
   const body: unknown = await response.json().catch(() => undefined);
   const outcome = recordOf(body, `The ${action} control's answer`)["outcome"];
   if (!response.ok() || (outcome !== "accepted" && outcome !== "alreadyAccepted" && outcome !== "unchanged")) {
@@ -619,7 +610,10 @@ test("every currency is stated on its own and the unidentified amount is never s
   const figures = await readWholeResult(page);
   // One partition per currency the source reports, and one for the currency it never identified. The
   // order is the summary's own, so the partitions can be compared as a whole rather than searched.
-  expect(figures.map((figure) => figure.currency), "Each currency is its own partition, and the amount whose currency the source never identified is its own partition too.").toEqual(["EUR", "JPY", "KWD", "UNKNOWN", "USD"]);
+  expect(
+    figures.map((figure) => figure.currency),
+    "Each currency is its own partition, and the amount whose currency the source never identified is its own partition too.",
+  ).toEqual(["EUR", "JPY", "KWD", "UNKNOWN", "USD"]);
 
   // The three-decimal amount is read at three decimals and the zero-decimal amount at none: the
   // exponent comes from the currency the source stated, and is never assumed to be two.
@@ -676,7 +670,10 @@ test("a split gift counts once at its own grain and a refund is explained rather
   const refund = rows.find((row) => row.giftId === REFUND_GIFT_ID);
   expect(refund?.text, "The refund row names the row it corrects.").toContain(`A refund of ${CORRECTED_GIFT_ROW_ID}`);
   expect(refund?.amount?.minorUnits, "The refund is stated as the negative amount the source recorded.").toBeLessThan(0);
-  expect(rows.some((row) => row.text.includes(CORRECTED_GIFT_ROW_ID)), "The row the refund corrects is still in the result, so the correction did not erase it.").toBe(true);
+  expect(
+    rows.some((row) => row.text.includes(CORRECTED_GIFT_ROW_ID)),
+    "The row the refund corrects is still in the result, so the correction did not erase it.",
+  ).toBe(true);
 
   // The split gift's own record states its grain, its provenance and the coverage it was read at.
   await page.getByRole("link", { name: `Open gift ${SPLIT_GIFT_ID}` }).click();
@@ -789,12 +786,7 @@ test("an accepted goal save replays to its stored result and advances no second 
   expect(saved.minorUnits, "The accepted save stored the amount the caller stated.").toBe(HARBOUR_GOAL_INPUT_MINOR);
 
   // The same attempt, replayed: the stored result comes back and no second effect or revision exists.
-  const replayed = await postGoalSave(request, SESSION.sessionId, {
-    operationId: operationId ?? "",
-    scope: before.scope,
-    expectedRevision: before.envelopeRevision,
-    payload: { currency: "USD", amount: { currency: "USD", minorUnits: HARBOUR_GOAL_INPUT_MINOR }, measure: "received-gifts", effectiveFrom: "2026-01-01" },
-  });
+  const replayed = await postGoalSave(request, SESSION.sessionId, { operationId: operationId ?? "", scope: before.scope, expectedRevision: before.envelopeRevision, payload: { currency: "USD", amount: { currency: "USD", minorUnits: HARBOUR_GOAL_INPUT_MINOR }, measure: "received-gifts", effectiveFrom: "2026-01-01" } });
   expect(replayed.outcome, "A replayed acceptance is answered as an acceptance that already happened.").toBe("alreadyAccepted");
   expect(replayed.revision, "The replay reports the revision the accepted save produced.").toBe(saved.goalRevision);
   const afterReplay = await readGoal(request, SESSION.sessionId);

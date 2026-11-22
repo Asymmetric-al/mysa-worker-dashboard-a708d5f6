@@ -431,7 +431,9 @@ async function openEditor(page: Page): Promise<void> {
 
 /** Opens the picker for one kind of media from the editor's own add action, and waits for its first step. */
 async function openPicker(page: Page, kind: "image" | "video"): Promise<Locator> {
-  await mediaPaneOf(page).getByRole("button", { name: kind === "video" ? "Add a video" : "Add an image", exact: true }).click();
+  await mediaPaneOf(page)
+    .getByRole("button", { name: kind === "video" ? "Add a video" : "Add an image", exact: true })
+    .click();
   const picker = pickerOf(page, kind);
   await expect(picker).toBeVisible();
   await expect(picker).toHaveAttribute("data-phase", "choosing");
@@ -560,7 +562,6 @@ async function submitNotice(page: Page, releaseId: string): Promise<unknown> {
 async function readInbox(page: Page): Promise<unknown> {
   return jsonOf(await page.request.get("/api/inbox"), "GET /api/inbox");
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // One placement's stated facts, read off the row that states them
@@ -807,7 +808,6 @@ test("a released edition plays its MP4 with a poster and a WebVTT caption track,
   await expect(page.getByText("simulated publication; reach is demonstrated in the receiving preview", { exact: true }).first()).toBeVisible();
 });
 
-
 // ---------------------------------------------------------------------------------------------
 // 3. Every rendition address is the application's own scoped route, and a byte range is partial
 // ---------------------------------------------------------------------------------------------
@@ -990,7 +990,6 @@ async function expectDenied(page: Page, addresses: readonly string[], who: strin
   return first;
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // 5. The protected notice carries no protected prose or media, and its link re-checks access
 // ---------------------------------------------------------------------------------------------
@@ -1112,4 +1111,3 @@ test("a protected notice carries no protected prose or media, and the link it ca
   await expect(page.getByText(PROTECTED_PROSE), "the refusal discloses no protected prose").toHaveCount(0);
   await expect(page.locator("video"), "and no protected media").toHaveCount(0);
 });
-

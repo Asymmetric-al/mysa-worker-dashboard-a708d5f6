@@ -70,16 +70,7 @@ const SEEDED_INITIATIVE = { initiativeId: "initiative-autumn-appeal", name: "Aut
 const NEW_INITIATIVE = { name: "Spring partner conversations", purpose: "Invite the partners we already know to a spring conversation." } as const;
 
 /** The seeded Request: presented at version 1, carrying version 2 now, answered against the version that was presented. */
-const SEEDED_REQUEST = {
-  presentedVersion: "terms-v1",
-  currentVersion: "terms-v2",
-  amount: "50.00 USD",
-  currency: "USD",
-  cadence: "Monthly",
-  term: "12 months",
-  respondent: "partner-grace-adeyemi",
-  recordedAt: "2026-11-06T16:20:00Z",
-} as const;
+const SEEDED_REQUEST = { presentedVersion: "terms-v1", currentVersion: "terms-v2", amount: "50.00 USD", currency: "USD", cadence: "Monthly", term: "12 months", respondent: "partner-grace-adeyemi", recordedAt: "2026-11-06T16:20:00Z" } as const;
 
 /** The three membership states, in the words the working list prints for them. */
 const MEMBERSHIP_LABEL = { included: "On the working list", removed: "Removed", excluded: "Not eligible" } as const;
@@ -128,12 +119,7 @@ interface Counts {
 
 /** The four whole-result counts a recorded answer must leave exactly as it found them. */
 async function countsOf(page: Page): Promise<Counts> {
-  return {
-    gifts: await pagerTotal(page, "/support/gifts", "gifts"),
-    commitments: await pagerTotal(page, "/support/commitments", "commitments"),
-    tasks: await pagerTotal(page, "/work", "tasks"),
-    messages: await inboxMessageCount(page),
-  };
+  return { gifts: await pagerTotal(page, "/support/gifts", "gifts"), commitments: await pagerTotal(page, "/support/commitments", "commitments"), tasks: await pagerTotal(page, "/work", "tasks"), messages: await inboxMessageCount(page) };
 }
 
 /**
@@ -396,7 +382,10 @@ test("records a stage from the approved list, treats the same choice as no chang
 
   // The compact selector offers exactly the stages the source admits, and no free-text field and no drag
   // affordance stands beside it: a stage is one choice from one approved list.
-  const graceStage = page.locator('[data-slot="stage-selector"]').filter({ has: page.getByRole("combobox", { name: "Stage for Grace Adeyemi" }) }).first();
+  const graceStage = page
+    .locator('[data-slot="stage-selector"]')
+    .filter({ has: page.getByRole("combobox", { name: "Stage for Grace Adeyemi" }) })
+    .first();
   const stageSelect = page.getByRole("combobox", { name: "Stage for Grace Adeyemi" });
   await expect(stageSelect).toBeVisible();
   const offered = await stageSelect.locator("option").allTextContents();

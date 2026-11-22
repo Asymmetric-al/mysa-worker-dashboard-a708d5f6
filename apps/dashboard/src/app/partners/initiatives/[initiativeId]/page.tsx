@@ -97,12 +97,7 @@ async function eligibleCandidatesOf(initiative: InitiativeEnvelope): Promise<Can
     return CANDIDATES_UNCOMPOSED;
   }
   const membership = membershipByPartner(initiative.data.workingList.items);
-  return {
-    state: "available",
-    partners: rows
-      .filter((row) => row.partner.audience === "shared")
-      .map((row) => ({ partnerId: row.partner.partnerId, displayName: row.partner.displayName, membership: membership.get(row.partner.partnerId) ?? null })),
-  };
+  return { state: "available", partners: rows.filter((row) => row.partner.audience === "shared").map((row) => ({ partnerId: row.partner.partnerId, displayName: row.partner.displayName, membership: membership.get(row.partner.partnerId) ?? null })) };
 }
 
 // ---------------------------------------------------------------------------------------------

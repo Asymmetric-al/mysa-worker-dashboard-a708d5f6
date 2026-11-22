@@ -53,7 +53,8 @@ const EXPIRED_CUTOFF_TAIL = ", which has passed: no new read is admitted from th
 const NOT_SENT_TITLE = "This module change was not sent";
 const NOT_SENT_FALLBACK = "The change stated no coaching relationship it belongs to, so it was not sent.";
 const SET_INCOMPLETE_TITLE = "These five modules could not be stated";
-const SET_INCOMPLETE_DESCRIPTION = "This surface states exactly the five modules a grant can share, and it was handed a different set. No switch is offered, because a missing module would read as switched off when nothing said it was, and a sixth would be a module no grant shares. Nothing was changed and nothing is hidden: the set itself is what does not match.";
+const SET_INCOMPLETE_DESCRIPTION =
+  "This surface states exactly the five modules a grant can share, and it was handed a different set. No switch is offered, because a missing module would read as switched off when nothing said it was, and a sixth would be a module no grant shares. Nothing was changed and nothing is hidden: the set itself is what does not match.";
 /** The payload field names a refusal may name, in the words a worker reads. */
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { grantId: "Coaching relationship", moduleKey: "Module", enabled: "Sharing of this module" };
 const CARD_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
@@ -328,14 +329,7 @@ function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowH
   const receipt = direct.outcome ?? settledStop;
 
   return (
-    <div
-      data-slot="module-toggle-row"
-      data-module-key={entry.key}
-      data-enabled={entry.enabled ? "true" : "false"}
-      data-read-state={entry.readState ?? "not-stated"}
-      aria-busy={direct.pending ? true : undefined}
-      className="flex min-w-0 flex-col gap-2"
-    >
+    <div data-slot="module-toggle-row" data-module-key={entry.key} data-enabled={entry.enabled ? "true" : "false"} data-read-state={entry.readState ?? "not-stated"} aria-busy={direct.pending ? true : undefined} className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <p className="flex min-w-0 flex-wrap items-baseline gap-2">
           <span id={nameId} className="min-w-0 text-sm font-medium wrap-anywhere">

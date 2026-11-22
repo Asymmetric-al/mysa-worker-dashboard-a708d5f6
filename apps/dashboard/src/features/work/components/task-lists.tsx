@@ -66,12 +66,7 @@ type TaskSortField = (typeof TASK_SORT_FIELDS)[number];
 type SortInstruction = { readonly field: TaskSortField; readonly direction: "asc" | "desc" };
 
 /** The list, ordering and page window this surface is showing: the query, and nothing derived from the rows. */
-type ListQueryState = {
-  readonly list: TaskListKey;
-  readonly sort: readonly SortInstruction[];
-  readonly page: number;
-  readonly pageSize: number;
-};
+type ListQueryState = { readonly list: TaskListKey; readonly sort: readonly SortInstruction[]; readonly page: number; readonly pageSize: number };
 
 /** The search parameters this surface reads and writes, named once. Every other key in the address belongs to another surface. */
 const PARAM = { list: "list", sort: "sort", page: "page", pageSize: "pageSize" } as const;
@@ -205,12 +200,7 @@ function pageSizeOf(stated: string | null): number {
 
 /** The whole query state an address carries. */
 function queryStateOf(parameters: SearchParameters): ListQueryState {
-  return {
-    list: listNameOf(parameters.get(PARAM.list)),
-    sort: sortInstructionsOf(parameters.getAll(PARAM.sort)),
-    page: wholeNumberOf(parameters.get(PARAM.page)) ?? FIRST_PAGE,
-    pageSize: pageSizeOf(parameters.get(PARAM.pageSize)),
-  };
+  return { list: listNameOf(parameters.get(PARAM.list)), sort: sortInstructionsOf(parameters.getAll(PARAM.sort)), page: wholeNumberOf(parameters.get(PARAM.page)) ?? FIRST_PAGE, pageSize: pageSizeOf(parameters.get(PARAM.pageSize)) };
 }
 
 /** The address a query state is written as: every member stated, so a copied address names the same view. */
@@ -247,13 +237,7 @@ function sortKeyOf(sort: TaskListsQuery["sort"]): string {
 
 /** Whether two queries ask the read for the same answer. */
 function sameQuery(left: TaskListsQuery, right: TaskListsQuery): boolean {
-  return (
-    left.list === right.list &&
-    left.displayTimeZone === right.displayTimeZone &&
-    (left.page ?? FIRST_PAGE) === (right.page ?? FIRST_PAGE) &&
-    (left.pageSize ?? PAGE_SIZE_DEFAULT) === (right.pageSize ?? PAGE_SIZE_DEFAULT) &&
-    sortKeyOf(left.sort) === sortKeyOf(right.sort)
-  );
+  return left.list === right.list && left.displayTimeZone === right.displayTimeZone && (left.page ?? FIRST_PAGE) === (right.page ?? FIRST_PAGE) && (left.pageSize ?? PAGE_SIZE_DEFAULT) === (right.pageSize ?? PAGE_SIZE_DEFAULT) && sortKeyOf(left.sort) === sortKeyOf(right.sort);
 }
 
 /**
@@ -352,12 +336,7 @@ export function taskListColumns({ partnerLabels }: TaskListColumnOptions): Reado
         return title.trim() === "" ? <bdi className={IDENTIFIER_CLASS}>{taskId}</bdi> : <bdi className={TITLE_CELL_CLASS}>{title}</bdi>;
       },
     },
-    {
-      id: "status",
-      header: STATUS_COLUMN_LABEL,
-      accessorFn: (row) => row.status,
-      cell: (context) => <StatusBadge label={TASK_STATUS_LABELS[context.row.original.status]} tone={TASK_STATUS_TONES[context.row.original.status]} srPrefix={STATUS_SR_PREFIX} />,
-    },
+    { id: "status", header: STATUS_COLUMN_LABEL, accessorFn: (row) => row.status, cell: (context) => <StatusBadge label={TASK_STATUS_LABELS[context.row.original.status]} tone={TASK_STATUS_TONES[context.row.original.status]} srPrefix={STATUS_SR_PREFIX} /> },
     {
       id: "dueOn",
       header: DUE_DATE_LABEL,
@@ -399,12 +378,7 @@ export function taskListColumns({ partnerLabels }: TaskListColumnOptions): Reado
         );
       },
     },
-    {
-      id: "linked",
-      header: LINKED_COLUMN_LABEL,
-      enableSorting: false,
-      cell: (context) => linkedRecordOf(context.row.original, partnerLabels),
-    },
+    { id: "linked", header: LINKED_COLUMN_LABEL, enableSorting: false, cell: (context) => linkedRecordOf(context.row.original, partnerLabels) },
   ];
 }
 
@@ -495,13 +469,7 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
     all: useTaskLists(scope, listQueries.all, seeds.all),
     undated: useTaskLists(scope, listQueries.undated, seeds.undated),
   };
-  const readings: Readonly<Record<TaskListKey, TaskListsResult | undefined>> = {
-    today: reads.today.data ?? seeds.today,
-    upcoming: reads.upcoming.data ?? seeds.upcoming,
-    overdue: reads.overdue.data ?? seeds.overdue,
-    all: reads.all.data ?? seeds.all,
-    undated: reads.undated.data ?? seeds.undated,
-  };
+  const readings: Readonly<Record<TaskListKey, TaskListsResult | undefined>> = { today: reads.today.data ?? seeds.today, upcoming: reads.upcoming.data ?? seeds.upcoming, overdue: reads.overdue.data ?? seeds.overdue, all: reads.all.data ?? seeds.all, undated: reads.undated.data ?? seeds.undated };
   const active = reads[query.list];
   const reading = readings[query.list];
   // One task appears in several lists at once, so the selection is resolved once per task: the same identifier
@@ -523,12 +491,7 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
   });
   const hasPlannedTime = rowsOf(reading).some((row) => row.plannedTime !== null);
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<TaskListRow>>>(() => taskListColumns({ partnerLabels }), [partnerLabels]);
-  const listState: RecordListQueryState = {
-    sort: query.sort.map((instruction) => ({ id: instruction.field, desc: instruction.direction === "desc" })),
-    page: query.page,
-    pageSize: query.pageSize,
-    columnVisibility,
-  };
+  const listState: RecordListQueryState = { sort: query.sort.map((instruction) => ({ id: instruction.field, desc: instruction.direction === "desc" })), page: query.page, pageSize: query.pageSize, columnVisibility };
   /** Re-reads every list: an attempt whose acknowledgement was lost may have touched any of them, so recovery reads them all rather than guessing which one holds the change. */
   const refreshAll = (): void => {
     for (const list of TASK_LIST_KEYS) void reads[list].refetch();
@@ -736,9 +699,7 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
       ) : (
         <TaskComposer mode="edit" record={editor.record} scope={scope} expectedRevision={editor.record.revision} timeZoneChoices={timeZoneChoices} defaultTimeZone={displayTimeZone} linkChoices={linkChoices} headingLevel={2} onCancel={closeEditor} onDismiss={closeEditor} />
       )}
-      {selectedTasks.length === 0 ? null : (
-        <BulkActionBar scope={scope} expectedRevision={expectedRevision} selectedTasks={selectedTasks} onClearSelection={clearSelection} onCheckResult={refreshAll} />
-      )}
+      {selectedTasks.length === 0 ? null : <BulkActionBar scope={scope} expectedRevision={expectedRevision} selectedTasks={selectedTasks} onClearSelection={clearSelection} onCheckResult={refreshAll} />}
       <div className={SECTION_CLASS}>
         <div className="flex min-w-0 flex-col gap-2">
           <h2 className={HEADING_CLASS}>{LIST_REGION_HEADING}</h2>
@@ -750,4 +711,3 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
     </div>
   );
 }
-

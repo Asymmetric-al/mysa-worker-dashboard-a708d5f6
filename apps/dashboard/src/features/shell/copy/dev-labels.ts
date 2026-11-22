@@ -45,8 +45,7 @@ export const PERSONA_SWITCH_COPY = {
   label: "Preview persona",
   explanation: "This development control selects the seeded persona or session state this session carries, so a preview shows what that identity is given.",
   grantsNothingNote: "It grants nothing: every read that follows is authorised again, so a persona that may not read a surface receives the honest denial notice instead of a hidden destination.",
-  switchUnavailableNote:
-    "The build this session runs advertises no call that changes the identity it acts as, so none is offered here. The identity is chosen by the seeded session this browser carries, which is laid down when the sessions are seeded, and a deterministic reset restores every one of them.",
+  switchUnavailableNote: "The build this session runs advertises no call that changes the identity it acts as, so none is offered here. The identity is chosen by the seeded session this browser carries, which is laid down when the sessions are seeded, and a deterministic reset restores every one of them.",
   carriesLabel: "This session carries",
   rosterLabel: "Identities the runtime lists",
   sessionStateLabel: "Session state",

@@ -1,8 +1,8 @@
 /**
  * Criterion 20 — usability and recovery: the retained jobs complete at 320 CSS pixels with the keyboard alone, at
- * 200 % zoom and with motion suppressed, no page scrolls sideways except a table's own labelled scroll region, the
- * WCAG 2.2 AA audit carries no serious or critical violation on any of the five surfaces it names, and a save that is
- * refused keeps every word the worker typed.
+ * 200 % zoom — emulated as the halved CSS viewport a browser's own zoom produces — and with motion suppressed, no page
+ * scrolls sideways except a table's own labelled scroll region, the WCAG 2.2 AA audit carries no serious or critical
+ * violation on any of the five surfaces it names, and a save that is refused keeps every word the worker typed.
  *
  * **The scenario, from the deterministic seed.** Two seeded identities carry the three representative jobs the
  * criterion names. The **new worker** holds criterion 2's jobs — a private contact created from a name alone and a
@@ -31,22 +31,31 @@
  * The partner-by-month matrix is read at that width as well, where it must switch to its period-first, labelled
  * presentation instead of asking a reader to drag a wide table sideways.
  *
- * **What the audit reports.** The five surfaces are audited with the WCAG 2.2 AA tag set the runner states, serious
- * and critical violations fail the test, and every moderate or minor finding is attached to the report with its rule,
- * its impact and the nodes it broke on, so a finding is either fixed or recorded rather than silently dropped. No rule
- * is disabled, no page is audited twice in place of another, and the count of audited surfaces is asserted so a
- * surface that quietly stopped running cannot pass.
+ * **How the 200 % zoom is emulated.** A browser's own zoom halves the CSS viewport and doubles the device pixel ratio,
+ * so the zoom pass runs on a 640×400 viewport at twice the device pixel ratio — a 1280×800 desktop window at 200 % —
+ * rather than scaling the root element, which would leave the media queries reading the unzoomed width and nothing
+ * behind a breakpoint ever switching. The pass therefore reads the composition a zoomed reader meets: below 768 px the
+ * shell composes the design system's mobile Sidebar behind its own trigger instead of the expanded navigation, and the
+ * editor offers its two panes as pressed buttons. The obligations are the same at that width — no page scrolls sideways,
+ * no text is clipped, the roster toolbar meets the target-size floor, the tab sweep meets the roster's own controls with
+ * every stop visible and unobscured, an overlay still traps focus and returns it, and the search is operable.
+ *
+ * **What the audit reports.** The five surfaces are audited with the WCAG 2.2 AA tag set the runner states and judged by
+ * the runner's own rule, so the tag list and the verdict exist once for the whole suite; serious and critical violations
+ * fail the test, and every moderate or minor finding is attached to the report with its rule, its impact and the nodes it
+ * broke on, so a finding is either fixed or recorded rather than silently dropped. No rule is disabled, no page is
+ * audited twice in place of another, and the count of audited surfaces is asserted so a surface that quietly stopped
+ * running cannot pass.
  */
 import { fileURLToPath } from "node:url";
 
 // The runner is imported for its `test` and `expect`, not the bare framework: its `test` carries the seeded persona and
-// the automatic reset every journey below starts from, and `blockingAccessibilityViolations` is the one rule that
-// decides what a failed audit is — so this file states the WCAG 2.2 AA tag set once and reuses that judgement rather
-// than keeping a second copy of it. The types come from `@playwright/test`, which is what the runner is built on.
-import { AxeBuilder } from "@axe-core/playwright";
+// the automatic reset every journey below starts from, and it supplies the WCAG 2.2 AA tag set together with the one
+// judgement that decides what a failed audit is — so this file reads the rules and the verdict from the runner rather
+// than keeping a second copy of either. The types come from `@playwright/test`, which is what the runner is built on.
 import type { APIRequestContext, Locator, Page, TestInfo } from "@playwright/test";
 
-import { SEEDED_PERSONAS, SESSION_COOKIE, blockingAccessibilityViolations, expect, resetSeed, test, type AccessibilityAudit, type AccessibilityViolation, type PersonaName } from "../playwright.config";
+import { ACCESSIBILITY_TAGS, SEEDED_PERSONAS, SESSION_COOKIE, auditAccessibility, blockingAccessibilityViolations, expect, expectNoBlockingAccessibilityViolations, resetSeed, test, type AccessibilityAudit, type AccessibilityViolation, type PersonaName } from "../playwright.config";
 
 // ---------------------------------------------------------------------------------------------
 // The seeded world this file acts in
@@ -115,12 +124,23 @@ const ROUTES = {
   interactionForm: `/partners/${SEEDED_PARTNER_ID}/interactions/new`,
 } as const;
 
-/** The two viewports the criterion names: the narrowest retained width, and the desktop width the zoom pass is taken at. */
+/** The narrowest retained width the reflow pass is taken at. */
 const NARROW_VIEWPORT = { width: 320, height: 800 } as const;
-const ZOOM_VIEWPORT = { width: 1280, height: 800 } as const;
 
-/** The zoom factor the browser-zoom pass emulates, applied to the root element so the whole layout reflows at half the width. */
-const ZOOM_FACTOR = 2;
+/**
+ * The 200 % zoom pass's viewport: half the CSS width of a 1280×800 desktop window.
+ *
+ * A browser's zoom halves the CSS viewport and doubles the device pixel ratio, so this is the width the media queries
+ * and the layout both resolve against on that pass — which is what makes the layout's own breakpoints switch there as
+ * they do under real zoom, rather than the root element being scaled behind queries that still see the full width.
+ */
+const ZOOM_VIEWPORT = { width: 640, height: 400 } as const;
+
+/** The device pixel ratio the 200 % zoom pass runs at: two device pixels per CSS pixel, as a browser zoomed to 200 % reports. */
+const ZOOM_DEVICE_SCALE_FACTOR = 2;
+
+/** The desktop viewport the audit and the refused-save passes are read at: the width a reader who has not zoomed has. */
+const DESKTOP_VIEWPORT = { width: 1280, height: 800 } as const;
 
 /** The label the shell renders on every surface, so no screen of this application can be mistaken for production. */
 const DEVELOPMENT_DATA_LABEL = "Development data";
@@ -156,14 +176,18 @@ const SETTLE_ATTEMPT_LIMIT = 12;
 /** How many settled readings a focus check takes before it reports the control as obscured. */
 const FOCUS_READ_ATTEMPTS = 3;
 
-/** The shorter sweep the zoomed layout takes: the expanded navigation is ahead of the surface, so a smaller window of stops is read there. */
-const ZOOM_TAB_SWEEP_STEPS = 20;
+/**
+ * The sweep the zoomed layout takes, sized to reach the pager.
+ *
+ * At 200 % zoom the shell is below its 768 px breakpoint, so its navigation is composed into the mobile Sidebar behind
+ * one trigger instead of standing ahead of the surface as fifteen stops, and the window is spent on the roster instead:
+ * the search field, the facet toggles, the sortable column headers, the records' own actions and, last of them at this
+ * seed, the pager. A shorter window would leave the end of the list reachable only by a pointer.
+ */
+const ZOOM_TAB_SWEEP_STEPS = 64;
 
 /** The text the zoomed roster is searched with, so the list is proved operable rather than merely reachable at that zoom. */
 const ROSTER_SEARCH_TEXT = "mbeki";
-
-/** The axe-core tag set the audit runs: WCAG 2.2 level AA, with the level A and 2.1 rules it builds on. */
-const WCAG_22_AA_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] as const;
 
 /** How many offending nodes one attached finding names, so the report is readable rather than exhaustive. */
 const ATTACHED_NODE_LIMIT = 5;
@@ -594,18 +618,18 @@ function violationSummary(violations: readonly AccessibilityViolation[]): string
  * attaches everything it found.
  *
  * The audit is of the surface as the test has driven it into being — a form that has been filled, a dialog that is open
- * — rather than of a page loaded and left alone. Nothing is excluded and no rule is disabled: a rule that produced a
- * finding is fixed or, where a limitation is genuine, recorded in the report with its impact.
+ * — rather than of a page loaded and left alone. The tag set and the verdict are both the runner's, so a surface fails
+ * on exactly the impacts every other audit in the suite fails on. Nothing is excluded and no rule is disabled: a rule
+ * that produced a finding is fixed or, where a limitation is genuine, recorded in the report with its impact.
  */
 async function auditSurface(page: Page, testInfo: TestInfo, surface: string): Promise<void> {
-  const audit: AccessibilityAudit = await new AxeBuilder({ page }).withTags([...WCAG_22_AA_TAGS]).analyze();
+  const audit: AccessibilityAudit = await auditAccessibility(page);
   const url = page.url();
   const blocking = blockingAccessibilityViolations(audit);
-  await testInfo.attach(`axe — ${surface}`, { body: JSON.stringify({ surface, url, tags: [...WCAG_22_AA_TAGS], blocking: violationSummary(blocking), all: violationSummary(audit.violations), passes: audit.passes.length }, null, 2), contentType: "application/json" });
-  expect(
-    blocking.map((violation) => `${violation.id} (${violation.impact ?? "unstated"}) at ${String(violation.nodes.length)} node(s) — ${violation.help}`),
-    `${surface} (${url}) must hold no serious or critical WCAG 2.2 AA violation. Findings of any impact were attached to this report.`,
-  ).toEqual([]);
+  await testInfo.attach(`axe — ${surface}`, { body: JSON.stringify({ surface, url, tags: [...ACCESSIBILITY_TAGS], blocking: violationSummary(blocking), all: violationSummary(audit.violations), passes: audit.passes.length }, null, 2), contentType: "application/json" });
+  // The subject names the surface and the address it was read at, so a failing audit states which page it read rather
+  // than only which rules broke; the findings of any impact were attached above, so a moderate one is recorded.
+  expectNoBlockingAccessibilityViolations(audit, `${surface.charAt(0).toUpperCase()}${surface.slice(1)} (${url})`);
   auditedSurfaces.push(surface);
   // The audit's outcome is recorded on the test as well as attached, so the report states which surface was read, how many
   // rules passed and what was found at any impact — a run that audited nothing cannot be mistaken for a clean one.
@@ -966,18 +990,8 @@ test.describe("at 320 CSS pixels, with motion suppressed", () => {
 });
 
 // ---------------------------------------------------------------------------------------------
-// 200 % zoom: the same obligations at half the CSS width
+// 200 % zoom: the same obligations at half the CSS width, with the layout's breakpoints switched
 // ---------------------------------------------------------------------------------------------
-
-/** Applies the browser-zoom equivalent the criterion names: the root is scaled, so the layout reflows into half the width. */
-async function applyBrowserZoom(page: Page): Promise<void> {
-  await page.evaluate((factor: number) => {
-    document.documentElement.style.zoom = String(factor);
-  }, ZOOM_FACTOR);
-  // The zoom is a layout change, so it is read back before anything is measured through it: a reading taken before the
-  // browser had applied it would describe the unzoomed page.
-  await expect.poll(async () => page.evaluate(() => window.getComputedStyle(document.documentElement).zoom), "The root zoom the criterion states is applied before anything is measured through it.").toBe(String(ZOOM_FACTOR));
-}
 
 /** Asserts a text element renders all of its own content, rather than clipping it to a fixed box. */
 async function expectTextNotClipped(scope: Locator, surface: string): Promise<void> {
@@ -1010,7 +1024,7 @@ async function expectTextNotClipped(scope: Locator, surface: string): Promise<vo
 }
 
 test.describe("at 200 % zoom", () => {
-  test.use({ viewport: ZOOM_VIEWPORT, persona: ESTABLISHED_WORKER });
+  test.use({ viewport: ZOOM_VIEWPORT, deviceScaleFactor: ZOOM_DEVICE_SCALE_FACTOR, persona: ESTABLISHED_WORKER });
 
   test("a list, a form and the editor stay readable and operable, and an overlay still traps and returns focus", async ({ page }, testInfo) => {
     // -----------------------------------------------------------------------------------------
@@ -1019,15 +1033,34 @@ test.describe("at 200 % zoom", () => {
     await page.goto(ROUTES.partners);
     const roster = page.getByRole("region", { name: "Partner roster, scrollable" });
     await expect(roster).toBeVisible();
-    await applyBrowserZoom(page);
+    // The pass has to be a real browser zoom rather than a scaled root: what a zoomed reader meets is the layout's own
+    // breakpoints switched, so the query the shell's responsive composition declares must resolve true here, against the
+    // halved CSS width every media query reads on this pass.
+    const zoomed = await page.evaluate(() => ({ narrowQueryMatches: window.matchMedia("(max-width: 767px)").matches, innerWidth: window.innerWidth }));
+    expect(
+      zoomed.narrowQueryMatches,
+      "At 200 % zoom the layout's own breakpoints must switch as they do in a browser: below 768 px the shell composes its mobile navigation instead of the expanded one, so the (max-width: 767px) query the responsive composition declares resolves true on this pass rather than against the full width of an unzoomed window.",
+    ).toBe(true);
+    expect(zoomed.innerWidth, "At 200 % zoom the CSS viewport is half the 1280 px width of the desktop window the reader is looking at, and window.innerWidth is the width every media query and the layout itself resolve against.").toBe(ZOOM_VIEWPORT.width);
     await expectNoHorizontalPageScroll(page, "The partner roster at 200 % zoom");
     await expectTextNotClipped(page.locator('[data-slot="query-toolbar"]'), "The roster toolbar at 200 % zoom");
     await expectTargetSizeFloor(page, page.locator('[data-slot="query-toolbar"]'), "The roster toolbar at 200 % zoom", testInfo);
-    // The zoomed layout renders the expanded navigation ahead of the surface, so the sweep is read as a count of named
-    // stops — each of them visible and unobscured — rather than as one particular stop, and the surface's own
-    // operability is proved below by typing into its search field.
+    // At this zoom the shell is below its 768 px breakpoint, so the sweep's stops are the surface's own controls: each is
+    // proved visible and unobscured by the sweep itself, and the families of control the job needs are named here, so a
+    // control that stopped being reachable cannot be covered by another stop.
     const stops = await sweepTabOrder(page, "The partner roster at 200 % zoom", ZOOM_TAB_SWEEP_STEPS);
-    expect(stops.filter((name) => name !== "").length, `Tab walks the surface's own controls at 200 % zoom with every stop visible and unobscured, and the sweep met ${JSON.stringify(stops.slice(0, 12))}.`).toBeGreaterThanOrEqual(12);
+    await testInfo.attach("tab order — partner roster at 200 % zoom", { body: JSON.stringify({ stops }, null, 2), contentType: "application/json" });
+    const stopIndex = (name: string): number => stops.indexOf(name);
+    const searchStop = stopIndex("Search");
+    expect(searchStop, `Tab reaches the roster's search field at 200 % zoom: below 768 px the shell's navigation sits behind its own trigger, so the sweep's stops are the surface's and they begin ${JSON.stringify(stops.slice(0, 4))}.`).toBeGreaterThanOrEqual(0);
+    const facetStop = stopIndex("Contact type");
+    expect(facetStop, "Tab reaches a facet toggle at 200 % zoom, so the roster's filters are operable from the keyboard at this width rather than only from a pointer.").toBeGreaterThan(searchStop);
+    const sortStop = stopIndex("Name");
+    expect(sortStop, `Tab reaches the sortable column headers at 200 % zoom, so ordering the list is a keyboard control there too (the sweep met ${JSON.stringify(stops.slice(sortStop, sortStop + 4))}).`).toBeGreaterThan(facetStop);
+    const rowStop = stopIndex(`Open ${SEEDED_PARTNER_NAME}`);
+    expect(rowStop, "Tab reaches a record's own action at 200 % zoom, so a record opens from the keyboard at this width.").toBeGreaterThan(sortStop);
+    const pagerStop = stopIndex("Rows per page");
+    expect(pagerStop, `Tab reaches the pager at 200 % zoom, so the end of the list is operable from the keyboard rather than only from a pointer (the sweep read ${String(stops.length)} stop(s)).`).toBeGreaterThan(rowStop);
     // The search field is operated from the keyboard at this zoom, so the list is not merely reachable: it works.
     await typeFromKeyboard(page, page.getByRole("searchbox", { name: "Search" }), ROSTER_SEARCH_TEXT, "The roster search at 200 % zoom");
     await expectNoHorizontalPageScroll(page, "The roster with a search typed at 200 % zoom");
@@ -1039,7 +1072,6 @@ test.describe("at 200 % zoom", () => {
     await page.goto(ROUTES.partnerEdit);
     const form = page.locator('[data-slot="partner-edit-form"]');
     await expect(form).toBeVisible();
-    await applyBrowserZoom(page);
     await expectNoHorizontalPageScroll(page, "The contact edit form at 200 % zoom");
     await expectTextNotClipped(form, "The contact edit form at 200 % zoom");
     await typeFromKeyboard(page, form.getByRole("textbox", { name: /^Display name/u }), EDITED_DISPLAY_NAME, "The display name at 200 % zoom");
@@ -1050,10 +1082,12 @@ test.describe("at 200 % zoom", () => {
     // -----------------------------------------------------------------------------------------
     await page.goto(ROUTES.editor);
     await expect(page.getByRole("heading", { name: "Update edition", level: 1 })).toBeVisible();
-    await applyBrowserZoom(page);
     await expectNoHorizontalPageScroll(page, "The Update editor at 200 % zoom");
     await expectTextNotClipped(page.getByRole("region", { name: "Write this Update edition" }), "The Update editor at 200 % zoom");
 
+    // Below the 768 px breakpoint the editor offers its two panes as pressed buttons, so the media pane is reached from
+    // the keyboard the way the 320 px pass reaches it rather than standing beside the writing pane.
+    await pressFromKeyboard(page, page.getByRole("button", { name: "Media", exact: true }), "Switching to the media pane at 200 % zoom", " ");
     const mediaPane = page.getByRole("region", { name: "Media in this draft" });
     const opener = mediaPane.getByRole("button", { name: "Add an image" });
     await pressFromKeyboard(page, opener, "Opening the image picker at 200 % zoom");
@@ -1079,7 +1113,7 @@ test.describe("at 200 % zoom", () => {
 // ---------------------------------------------------------------------------------------------
 
 test.describe("the WCAG 2.2 AA audit", () => {
-  test.use({ viewport: ZOOM_VIEWPORT, persona: ESTABLISHED_WORKER });
+  test.use({ viewport: DESKTOP_VIEWPORT, persona: ESTABLISHED_WORKER });
 
   test("the shell, a form, an open dialog, the partners table and the prose editor carry no serious or critical violation", async ({ page }, testInfo) => {
     auditedSurfaces.length = 0;
@@ -1126,7 +1160,7 @@ test.describe("the WCAG 2.2 AA audit", () => {
 // ---------------------------------------------------------------------------------------------
 
 test.describe("a save that is refused", () => {
-  test.use({ viewport: ZOOM_VIEWPORT, persona: ESTABLISHED_WORKER });
+  test.use({ viewport: DESKTOP_VIEWPORT, persona: ESTABLISHED_WORKER });
 
   test("a refusal the service produces is stated in the field's own error slot, and the corrected save is accepted", async ({ page }) => {
     await page.goto(ROUTES.partnerEdit);

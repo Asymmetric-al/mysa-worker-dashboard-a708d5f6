@@ -27,14 +27,10 @@ const UNAVAILABLE_TITLE = "This preview could not be read";
 const REFUSED_TITLE = "This preview's address was refused";
 /** The title of an edition that holds no revision at all yet: nothing saved and nothing released is neither a refusal nor an outage. */
 const EMPTY_TITLE = "This edition has no revision to preview";
-const EMPTY_DESCRIPTION =
-  "Nothing is saved and nothing is released for this edition yet, so there is no exact revision to render. A preview shows a revision that exists rather than an empty frame, and it never renders a sibling edition or a newer draft in its place.";
-const NOT_AN_EDITION_DESCRIPTION =
-  "The address names an edition this Update does not hold, so nothing is rendered and no other edition is shown in its place.";
-const NOT_AN_UPDATE_DESCRIPTION =
-  "The address names a document that is not an Update, so this surface has nothing to show for it. A Page edition is previewed from its own route, where its own audience and give placement are stated.";
-const REFUSED_REQUEST_DESCRIPTION =
-  "The request this preview would authorise was refused, so nothing is rendered and no other edition or revision is shown in its place. Opening the same address again is the only way to ask for this revision.";
+const EMPTY_DESCRIPTION = "Nothing is saved and nothing is released for this edition yet, so there is no exact revision to render. A preview shows a revision that exists rather than an empty frame, and it never renders a sibling edition or a newer draft in its place.";
+const NOT_AN_EDITION_DESCRIPTION = "The address names an edition this Update does not hold, so nothing is rendered and no other edition is shown in its place.";
+const NOT_AN_UPDATE_DESCRIPTION = "The address names a document that is not an Update, so this surface has nothing to show for it. A Page edition is previewed from its own route, where its own audience and give placement are stated.";
+const REFUSED_REQUEST_DESCRIPTION = "The request this preview would authorise was refused, so nothing is rendered and no other edition or revision is shown in its place. Opening the same address again is the only way to ask for this revision.";
 const PREVIEW_GUIDANCE_FALLBACK = "The records behind this edition could not be read, so nothing is shown in their place. An outage is not an edition with nothing to preview.";
 
 // ---------------------------------------------------------------------------------------------

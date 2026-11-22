@@ -206,10 +206,7 @@ export function MembershipTable({ envelope, scope, className }: MembershipTableP
     columnVisibility: NO_COLUMNS_HIDDEN,
   }));
   const publisherId = initial.kind === "envelope" ? initial.envelope.data.publisherId : null;
-  const audienceQuery = useMemo<{ readonly page: number; readonly pageSize: number; readonly publisherId?: string }>(
-    () => ({ page: queryState.page, pageSize: queryState.pageSize, ...(publisherId === null ? {} : { publisherId }) }),
-    [publisherId, queryState.page, queryState.pageSize],
-  );
+  const audienceQuery = useMemo<{ readonly page: number; readonly pageSize: number; readonly publisherId?: string }>(() => ({ page: queryState.page, pageSize: queryState.pageSize, ...(publisherId === null ? {} : { publisherId }) }), [publisherId, queryState.page, queryState.pageSize]);
   const audience = useAudience({ scope, query: audienceQuery });
   // The server's answer stands in while the browser read has no answer of its own, and only for the
   // window it describes: a page change must never be presented under the previous page's rows, so the
@@ -227,12 +224,7 @@ export function MembershipTable({ envelope, scope, className }: MembershipTableP
       // sort and no order is ever stated here. Visibility is presentation only: hiding a column narrows
       // what is shown of a row, never which rows the read returned.
       const requestedPage = Math.max(FIRST_PAGE, Math.trunc(next.page));
-      setQueryState({
-        sort: [],
-        page: lastStatedPage === undefined ? requestedPage : Math.min(requestedPage, lastStatedPage),
-        pageSize: next.pageSize,
-        columnVisibility: next.columnVisibility,
-      });
+      setQueryState({ sort: [], page: lastStatedPage === undefined ? requestedPage : Math.min(requestedPage, lastStatedPage), pageSize: next.pageSize, columnVisibility: next.columnVisibility });
     },
     [lastStatedPage],
   );
@@ -262,12 +254,7 @@ export function MembershipTable({ envelope, scope, className }: MembershipTableP
         // that absence rather than repeating a value the projection does not carry.
         cell: () => <span className="text-muted-foreground text-pretty">{ADDRESS_NOT_IN_PROJECTION}</span>,
       },
-      {
-        id: "state",
-        header: MEMBERSHIP_COLUMN_HEADINGS.state,
-        enableSorting: false,
-        cell: (context) => <StatusBadge {...statusBadgeProps(MEMBERSHIP_STATUS, context.row.original.state)} />,
-      },
+      { id: "state", header: MEMBERSHIP_COLUMN_HEADINGS.state, enableSorting: false, cell: (context) => <StatusBadge {...statusBadgeProps(MEMBERSHIP_STATUS, context.row.original.state)} /> },
       {
         id: "languagePreference",
         header: MEMBERSHIP_COLUMN_HEADINGS.languagePreference,
@@ -276,12 +263,7 @@ export function MembershipTable({ envelope, scope, className }: MembershipTableP
         // address and confirms nothing, so it is never merged into the state or the purpose beside it.
         cell: (context) => <StatedValue value={context.row.original.languagePreference} />,
       },
-      {
-        id: "purpose",
-        header: MEMBERSHIP_COLUMN_HEADINGS.purpose,
-        enableSorting: false,
-        cell: () => (purpose === null ? null : PURPOSE_LABEL[purpose]),
-      },
+      { id: "purpose", header: MEMBERSHIP_COLUMN_HEADINGS.purpose, enableSorting: false, cell: () => (purpose === null ? null : PURPOSE_LABEL[purpose]) },
       {
         id: "since",
         header: MEMBERSHIP_COLUMN_HEADINGS.since,
@@ -352,16 +334,7 @@ export function MembershipTable({ envelope, scope, className }: MembershipTableP
           // is stated as the empty collection it is rather than as an outage or an unknown.
           <StateNotice kind="empty" title={SURFACE_COPY.emptyTitle} description={SURFACE_COPY.emptyBody} headingLevel={2} />
         ) : (
-          <RecordList<MembershipMember>
-            label={MEMBERSHIP_COLUMN_HEADINGS.caption}
-            columns={columns}
-            rows={view.members}
-            rowCount={view.page.total}
-            queryState={queryState}
-            onQueryStateChange={handleQueryStateChange}
-            getRowId={(row) => row.membershipId}
-            itemNoun={ITEM_NOUN}
-          />
+          <RecordList<MembershipMember> label={MEMBERSHIP_COLUMN_HEADINGS.caption} columns={columns} rows={view.members} rowCount={view.page.total} queryState={queryState} onQueryStateChange={handleQueryStateChange} getRowId={(row) => row.membershipId} itemNoun={ITEM_NOUN} />
         )}
       </div>
     );
@@ -373,4 +346,3 @@ export function MembershipTable({ envelope, scope, className }: MembershipTableP
   );
 }
 export default MembershipTable;
-

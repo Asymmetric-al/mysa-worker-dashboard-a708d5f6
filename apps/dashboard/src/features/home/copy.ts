@@ -74,8 +74,9 @@ export type NoticeCopy = { title: string; body: string };
 export const NOTICE_COPY = {
   unavailable: { title: "This section is unavailable right now", body: "Its source could not be read, so there is nothing to show here. The rest of Home still works, and reloading asks the source again." },
   denied: { title: "This section is not available to you", body: "Your current access does not include this section, so nothing from it is shown here." },
+  refused: { title: "This section could not be asked for", body: "Nothing was read for this section, so no item, count or reason is stated here — not an empty section and not a quiet day. The rest of Home still works." },
   loadingUnsupported: { title: "There is nothing to wait for", body: "Home is rendered on the server, so a section arrives already read or says why it could not be. No separate loading state is shown." },
-} satisfies Record<"unavailable" | "denied" | "loadingUnsupported", NoticeCopy>;
+} satisfies Record<"unavailable" | "denied" | "refused" | "loadingUnsupported", NoticeCopy>;
 
 /** What a row shows when an item fails validation: the item stays listed so it is not lost, and the row says why it has no destination. */
 export const INCOMPLETE_ITEM_COPY: NoticeCopy = { title: "This item cannot be opened right now", body: "It is still listed so it is not lost, but the details it needs did not arrive, so it has no destination yet." };

@@ -55,12 +55,7 @@ test.beforeEach(async ({ request }) => {
 const UPDATE = "doc-update-autumn";
 
 /** The four editions of it, by the opaque identity each is listed under. */
-const EDITION = {
-  enPublic: "variant-update-autumn-en-public",
-  enSupporters: "variant-update-autumn-en-approved-supporter",
-  frPublic: "variant-update-autumn-fr-public",
-  arPublic: "variant-update-autumn-ar-public",
-} as const;
+const EDITION = { enPublic: "variant-update-autumn-en-public", enSupporters: "variant-update-autumn-en-approved-supporter", frPublic: "variant-update-autumn-fr-public", arPublic: "variant-update-autumn-ar-public" } as const;
 
 /** The three content languages the Update carries, and the direction two of them are read in. */
 const LOCALES = ["en", "fr", "ar"] as const;
@@ -88,10 +83,7 @@ const SEEDED = {
 } as const;
 
 /** The approved-supporter edition's own words, which no public reader may be shown in its place. */
-const PROTECTED_COPY = {
-  title: "Autumn at Harbour Youth — for supporters",
-  sentence: "the monthly costs rose in September",
-} as const;
+const PROTECTED_COPY = { title: "Autumn at Harbour Youth — for supporters", sentence: "the monthly costs rose in September" } as const;
 
 /** The Arabic prose the seed holds, used to tell one revision of that edition from another. */
 const ARABIC_COPY = {
@@ -312,7 +304,11 @@ function editionCell(page: Page, variantId: string): Locator {
 
 /** The value of one fact in a definition list, matched by the label the cell states for it. */
 function factValueOf(scope: Locator, label: string): Locator {
-  return scope.locator("dt").filter({ hasText: new RegExp(`^${escaped(label)}$`, "u") }).first().locator("xpath=following-sibling::dd[1]");
+  return scope
+    .locator("dt")
+    .filter({ hasText: new RegExp(`^${escaped(label)}$`, "u") })
+    .first()
+    .locator("xpath=following-sibling::dd[1]");
 }
 
 /** The lifecycle word an edition's own status line states, as the state the shared vocabulary names. */
@@ -335,7 +331,6 @@ async function publishedRevisionOf(cell: Locator): Promise<string> {
   }
   return revision[1];
 }
-
 
 // ---------------------------------------------------------------------------------------------
 // 1. Each audience in each content language is its own working variant
@@ -738,7 +733,6 @@ test("a requested language is answered with the language actually served, or wit
   await expect(publicPost).not.toContainText(PROTECTED_COPY.sentence);
 });
 
-
 // ---------------------------------------------------------------------------------------------
 // 7. One notice yields one row per recipient, one pinned copy, and no second copy in another language
 // ---------------------------------------------------------------------------------------------
@@ -771,7 +765,15 @@ test("one recorded notice gives every recipient one row and one pinned copy, and
     // The copy this recipient was pinned to is stated once and is a rendition, so it cannot drift with a later
     // change of audience or language.
     await expect(row).toContainText("rendition-");
-    recipients.push((await identity.locator("dt").filter({ hasText: /^Recipient$/u }).locator("xpath=following-sibling::dd[1]").innerText()).trim());
+    recipients.push(
+      (
+        await identity
+          .locator("dt")
+          .filter({ hasText: /^Recipient$/u })
+          .locator("xpath=following-sibling::dd[1]")
+          .innerText()
+      ).trim(),
+    );
   }
   // Four recipients, four rows: no person holds two rows, which is what one notice per recipient means here.
   expect(new Set(recipients).size).toBe(4);
@@ -788,7 +790,14 @@ test("one recorded notice gives every recipient one row and one pinned copy, and
   await expect(summary).toContainText(COPY.servedLabel);
 
   // The one recipient whose earlier submission definitely failed is the only one this notice could not reach.
-  const failedRecipient = (await rows.filter({ has: page.getByText("Failed", { exact: true }) }).locator('[data-slot="delivery-dedupe-identity"] dt').filter({ hasText: /^Recipient$/u }).locator("xpath=following-sibling::dd[1]").innerText()).trim();
+  const failedRecipient = (
+    await rows
+      .filter({ has: page.getByText("Failed", { exact: true }) })
+      .locator('[data-slot="delivery-dedupe-identity"] dt')
+      .filter({ hasText: /^Recipient$/u })
+      .locator("xpath=following-sibling::dd[1]")
+      .innerText()
+  ).trim();
   expect(recipients).toContain(failedRecipient);
 
   // A deliberate notice for the French edition of the same Update. Nobody already covered may receive a second
@@ -799,7 +808,14 @@ test("one recorded notice gives every recipient one row and one pinned copy, and
   const frenchRows = frenchTable.locator("tbody tr");
   await expect(frenchRows).toHaveCount(1);
   await expect(frenchRows.first().locator('[data-slot="delivery-dedupe-identity"]')).toContainText(frenchIntent);
-  const servedAgain = (await frenchRows.first().locator('[data-slot="delivery-dedupe-identity"] dt').filter({ hasText: /^Recipient$/u }).locator("xpath=following-sibling::dd[1]").innerText()).trim();
+  const servedAgain = (
+    await frenchRows
+      .first()
+      .locator('[data-slot="delivery-dedupe-identity"] dt')
+      .filter({ hasText: /^Recipient$/u })
+      .locator("xpath=following-sibling::dd[1]")
+      .innerText()
+  ).trim();
   expect(servedAgain).toBe(failedRecipient);
   // Everyone else is recorded as already holding a copy of this Update's notice, so a second language produced no
   // second message for them: the row count above is how many copies were made, not how many were eligible.
@@ -917,4 +933,3 @@ test("withdrawing the French edition stops that edition being served and leaves 
   await expect(page.locator('[data-slot="receiving-post"]')).toContainText("Autumn at Harbour Youth");
   await expect(page.locator('[data-slot="receiving-post"]')).toContainText(COPY.publicationSimulation);
 });
-

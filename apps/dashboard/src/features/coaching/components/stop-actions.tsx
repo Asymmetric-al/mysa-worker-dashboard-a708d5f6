@@ -36,14 +36,7 @@ export type StopRole = "worker" | "coach";
  * neither is derived from the other, so the route supplies both rather than this surface reading one out of the other.
  * `episodeState` is the lifecycle the read resolved, which decides whether any effect is offered at all.
  */
-export type StopTarget = {
-  readonly grantId: string;
-  readonly moduleKey?: ModuleKey;
-  readonly checkInId?: string;
-  readonly checkInRevisionId?: string;
-  readonly taskShareId?: string;
-  readonly episodeState: GrantLifecycleState;
-};
+export type StopTarget = { readonly grantId: string; readonly moduleKey?: ModuleKey; readonly checkInId?: string; readonly checkInRevisionId?: string; readonly taskShareId?: string; readonly episodeState: GrantLifecycleState };
 
 export interface StopActionsProps {
   /**
@@ -86,26 +79,13 @@ const IDENTIFIER_CLASS = "mono-identifier min-w-0 wrap-anywhere";
 const STATEMENTS_CLASS = "flex min-w-0 flex-col gap-3";
 const STATEMENT_HEADING_CLASS = "text-sm font-medium";
 
-const SOURCE_WORK_KEPT =
-  "The source work is not deleted: the task, the check-in draft, the target history and your private preparation " +
-  "all stay yours, and they keep working exactly as they do now.";
-const NOTHING_RECALLED =
-  "Nothing a coach has already read can be recalled, and no message is taken back: this stops what can be read " +
-  "from now on, and it cannot undo what has already been seen.";
-const MISSING_IDENTITY_SENTENCE =
-  "This effect names an identity the surface was not given, so nothing is sent. Reopen the relationship from its " +
-  "own page, choose the module, check-in or task summary there, and act on that record instead of this one.";
-const ENDED_EFFECT_SENTENCE =
-  "This effect can no longer be applied: the episode has ended, so there is nothing left here to stop and no " +
-  "control is shown.";
-const NEW_INVITATION_SENTENCE =
-  "Beginning again takes a new invitation from the worker, naming the modules and the duration; no later action " +
-  "here can reopen the episode.";
+const SOURCE_WORK_KEPT = "The source work is not deleted: the task, the check-in draft, the target history and your private preparation " + "all stay yours, and they keep working exactly as they do now.";
+const NOTHING_RECALLED = "Nothing a coach has already read can be recalled, and no message is taken back: this stops what can be read " + "from now on, and it cannot undo what has already been seen.";
+const MISSING_IDENTITY_SENTENCE = "This effect names an identity the surface was not given, so nothing is sent. Reopen the relationship from its " + "own page, choose the module, check-in or task summary there, and act on that record instead of this one.";
+const ENDED_EFFECT_SENTENCE = "This effect can no longer be applied: the episode has ended, so there is nothing left here to stop and no " + "control is shown.";
+const NEW_INVITATION_SENTENCE = "Beginning again takes a new invitation from the worker, naming the modules and the duration; no later action " + "here can reopen the episode.";
 const NO_EFFECT_SENTENCE = "No stop-type effect applies to this relationship right now. What is shared stays readable exactly as the invitation named it.";
-const OTHER_ROLE_NOTE: Readonly<Record<StopRole, string>> = {
-  worker: "Leaving belongs to the coach, so no control for it is offered here.",
-  coach: "Only the worker can take this step, so no control for it is offered here.",
-};
+const OTHER_ROLE_NOTE: Readonly<Record<StopRole, string>> = { worker: "Leaving belongs to the coach, so no control for it is offered here.", coach: "Only the worker can take this step, so no control for it is offered here." };
 
 /** Fails the build if a stop effect is added without a place on this surface. */
 function assertUnreachable(effect: never): never {
@@ -401,18 +381,7 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
         if (payload === null || messages.length > 0) {
           return <EffectRefused effect="stop-module" messages={messages} />;
         }
-        return (
-          <EffectReview
-            effect="stop-module"
-            targetIdentity={identityOf("stop-module", target) ?? "this relationship"}
-            input={{ scope, expectedRevision: reviewRevision, payload }}
-            submit={submitModule}
-            headingLevel={reviewLevel}
-            onCheckResult={onCheckResult}
-            onCancel={keep}
-            onSettled={settle}
-          />
-        );
+        return <EffectReview effect="stop-module" targetIdentity={identityOf("stop-module", target) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitModule} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
       }
       case "withdraw-check-in": {
         const { checkInId, checkInRevisionId } = target;
@@ -421,18 +390,7 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
         if (payload === null || messages.length > 0) {
           return <EffectRefused effect="withdraw-check-in" messages={messages} />;
         }
-        return (
-          <EffectReview
-            effect="withdraw-check-in"
-            targetIdentity={identityOf("withdraw-check-in", target) ?? "this relationship"}
-            input={{ scope, expectedRevision: reviewRevision, payload }}
-            submit={submitWithdrawal}
-            headingLevel={reviewLevel}
-            onCheckResult={onCheckResult}
-            onCancel={keep}
-            onSettled={settle}
-          />
-        );
+        return <EffectReview effect="withdraw-check-in" targetIdentity={identityOf("withdraw-check-in", target) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitWithdrawal} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
       }
       case "remove-task-share": {
         const { taskShareId } = target;
@@ -442,16 +400,7 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
           return <EffectRefused effect="remove-task-share" messages={messages} />;
         }
         return (
-          <EffectReview
-            effect="remove-task-share"
-            targetIdentity={identityOf("remove-task-share", target) ?? "this relationship"}
-            input={{ scope, expectedRevision: reviewRevision, payload }}
-            submit={submitTaskShareStop}
-            headingLevel={reviewLevel}
-            onCheckResult={onCheckResult}
-            onCancel={keep}
-            onSettled={settle}
-          />
+          <EffectReview effect="remove-task-share" targetIdentity={identityOf("remove-task-share", target) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitTaskShareStop} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />
         );
       }
       case "end-relationship": {
@@ -460,18 +409,7 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
         if (messages.length > 0) {
           return <EffectRefused effect="end-relationship" messages={messages} />;
         }
-        return (
-          <EffectReview
-            effect="end-relationship"
-            targetIdentity={identityOf("end-relationship", target) ?? "this relationship"}
-            input={{ scope, expectedRevision: reviewRevision, payload }}
-            submit={submitEnd}
-            headingLevel={reviewLevel}
-            onCheckResult={onCheckResult}
-            onCancel={keep}
-            onSettled={settle}
-          />
-        );
+        return <EffectReview effect="end-relationship" targetIdentity={identityOf("end-relationship", target) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitEnd} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
       }
       case "coach-leave": {
         const payload = { grantId: target.grantId };
@@ -479,18 +417,7 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
         if (messages.length > 0) {
           return <EffectRefused effect="coach-leave" messages={messages} />;
         }
-        return (
-          <EffectReview
-            effect="coach-leave"
-            targetIdentity={identityOf("coach-leave", target) ?? "this relationship"}
-            input={{ scope, expectedRevision: reviewRevision, payload }}
-            submit={submitLeave}
-            headingLevel={reviewLevel}
-            onCheckResult={onCheckResult}
-            onCancel={keep}
-            onSettled={settle}
-          />
-        );
+        return <EffectReview effect="coach-leave" targetIdentity={identityOf("coach-leave", target) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitLeave} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
       }
       case "revoke": {
         const payload = { grantId: target.grantId };
@@ -498,18 +425,7 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
         if (messages.length > 0) {
           return <EffectRefused effect="revoke" messages={messages} />;
         }
-        return (
-          <EffectReview
-            effect="revoke"
-            targetIdentity={identityOf("revoke", target) ?? "this relationship"}
-            input={{ scope, expectedRevision: reviewRevision, payload }}
-            submit={submitRevoke}
-            headingLevel={reviewLevel}
-            onCheckResult={onCheckResult}
-            onCancel={keep}
-            onSettled={settle}
-          />
-        );
+        return <EffectReview effect="revoke" targetIdentity={identityOf("revoke", target) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitRevoke} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
       }
       default:
         return assertUnreachable(effect);

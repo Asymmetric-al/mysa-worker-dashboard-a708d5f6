@@ -30,22 +30,7 @@ import { updateQueryKey, type UpdatesReadJob } from "./use-update-queries";
 // ---------------------------------------------------------------------------------------------
 
 /** The fourteen named mutations this family's screens can ask for, listed once so the closed set has a runtime form beside its type. A fifteenth is a component defect rather than a hook to add: a new effect needs a new named mutation behind the service first. */
-export const UPDATES_MUTATION_NAMES = [
-  "createVariant",
-  "saveDraft",
-  "submitForReview",
-  "approveCandidate",
-  "requestChanges",
-  "rejectCandidate",
-  "publishVariants",
-  "requestNotification",
-  "withdrawUpdate",
-  "withdrawLocale",
-  "restoreRevisionAsDraft",
-  "registerMediaAsset",
-  "replacePlacement",
-  "removePlacement",
-] as const;
+export const UPDATES_MUTATION_NAMES = ["createVariant", "saveDraft", "submitForReview", "approveCandidate", "requestChanges", "rejectCandidate", "publishVariants", "requestNotification", "withdrawUpdate", "withdrawLocale", "restoreRevisionAsDraft", "registerMediaAsset", "replacePlacement", "removePlacement"] as const;
 
 /** One named write of the Ministry Updates family. */
 export type UpdatesMutationName = (typeof UPDATES_MUTATION_NAMES)[number];
@@ -229,13 +214,7 @@ async function runUpdatesMutation<P>(queryClient: QueryClient, config: UpdatesMu
   }
   let answer: Response;
   try {
-    answer = await fetch(endpoint, {
-      method: "POST",
-      credentials: "same-origin",
-      cache: "no-store",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: body }),
-    });
+    answer = await fetch(endpoint, { method: "POST", credentials: "same-origin", cache: "no-store", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: body }) });
   } catch {
     return unavailable({ operationId: input.operationId, source: sourceOf(endpoint, name), guidance: TRANSPORT_GUIDANCE });
   }
@@ -369,73 +348,37 @@ function publishInvalidations(payload: PublishVariantsPayload): readonly Updates
 
 /** `createVariant` — creates one family-permitted edition of an Update in one exact content locale, with no draft, candidate or release yet; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useCreateVariant(): UseReviewedMutationResult<CreateVariantPayload> {
-  const config: UpdatesMutationConfig<CreateVariantPayload> = {
-    name: "createVariant",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.createVariant,
-    schema: createVariantSchema,
-    invalidates: UPDATES_MUTATION_INVALIDATIONS.createVariant,
-    request: asGiven,
-  };
+  const config: UpdatesMutationConfig<CreateVariantPayload> = { name: "createVariant", endpoint: UPDATES_MUTATION_ENDPOINTS.createVariant, schema: createVariantSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.createVariant, request: asGiven };
   return useUpdatesMutation(config);
 }
 
 /** `saveDraft` — saves one edition's working document against the revision its editor holds, moving the draft pointer and nothing else; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useSaveDraft(): UseReviewedMutationResult<SaveDraftPayload> {
-  const config: UpdatesMutationConfig<SaveDraftPayload> = {
-    name: "saveDraft",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.saveDraft,
-    schema: saveDraftSchema,
-    invalidates: UPDATES_MUTATION_INVALIDATIONS.saveDraft,
-    request: saveDraftBody,
-  };
+  const config: UpdatesMutationConfig<SaveDraftPayload> = { name: "saveDraft", endpoint: UPDATES_MUTATION_ENDPOINTS.saveDraft, schema: saveDraftSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.saveDraft, request: saveDraftBody };
   return useUpdatesMutation(config);
 }
 
 /** `submitForReview` — freezes one exact revision of one edition as the candidate a single review step answers; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useSubmitForReview(): UseReviewedMutationResult<SubmitForReviewPayload> {
-  const config: UpdatesMutationConfig<SubmitForReviewPayload> = {
-    name: "submitForReview",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.submitForReview,
-    schema: submitForReviewSchema,
-    invalidates: UPDATES_MUTATION_INVALIDATIONS.submitForReview,
-    request: submitForReviewBody,
-  };
+  const config: UpdatesMutationConfig<SubmitForReviewPayload> = { name: "submitForReview", endpoint: UPDATES_MUTATION_ENDPOINTS.submitForReview, schema: submitForReviewSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.submitForReview, request: submitForReviewBody };
   return useUpdatesMutation(config);
 }
 
 /** `approveCandidate` — approves one frozen candidate in the single review step, keeping the release mode it was submitted under and approving no sibling edition; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useApproveCandidate(): UseReviewedMutationResult<ApproveCandidatePayload> {
-  const config: UpdatesMutationConfig<ApproveCandidatePayload> = {
-    name: "approveCandidate",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.approveCandidate,
-    schema: approveCandidateSchema,
-    invalidates: UPDATES_MUTATION_INVALIDATIONS.approveCandidate,
-    request: approveCandidateBody,
-  };
+  const config: UpdatesMutationConfig<ApproveCandidatePayload> = { name: "approveCandidate", endpoint: UPDATES_MUTATION_ENDPOINTS.approveCandidate, schema: approveCandidateSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.approveCandidate, request: approveCandidateBody };
   return useUpdatesMutation(config);
 }
 
 /** `requestChanges` — returns one frozen candidate with a note, so a second round is a new submission rather than a silent re-review; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useRequestChanges(): UseReviewedMutationResult<RequestChangesPayload> {
-  const config: UpdatesMutationConfig<RequestChangesPayload> = {
-    name: "requestChanges",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.requestChanges,
-    schema: requestChangesSchema,
-    invalidates: UPDATES_MUTATION_INVALIDATIONS.requestChanges,
-    request: requestChangesBody,
-  };
+  const config: UpdatesMutationConfig<RequestChangesPayload> = { name: "requestChanges", endpoint: UPDATES_MUTATION_ENDPOINTS.requestChanges, schema: requestChangesSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.requestChanges, request: requestChangesBody };
   return useUpdatesMutation(config);
 }
 
 /** `rejectCandidate` — ends one frozen candidate under the same single-review rule as a request for changes; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useRejectCandidate(): UseReviewedMutationResult<RejectCandidatePayload> {
-  const config: UpdatesMutationConfig<RejectCandidatePayload> = {
-    name: "rejectCandidate",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.rejectCandidate,
-    schema: rejectCandidateSchema,
-    invalidates: UPDATES_MUTATION_INVALIDATIONS.rejectCandidate,
-    request: rejectCandidateBody,
-  };
+  const config: UpdatesMutationConfig<RejectCandidatePayload> = { name: "rejectCandidate", endpoint: UPDATES_MUTATION_ENDPOINTS.rejectCandidate, schema: rejectCandidateSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.rejectCandidate, request: rejectCandidateBody };
   return useUpdatesMutation(config);
 }
 
@@ -450,13 +393,7 @@ export function useRejectCandidate(): UseReviewedMutationResult<RejectCandidateP
  * without that policy, and nothing here widens it.
  */
 export function usePublishVariants(): UseReviewedMutationResult<PublishVariantsPayload> {
-  const config: UpdatesMutationConfig<PublishVariantsPayload> = {
-    name: "publishVariants",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.publishVariants,
-    schema: publishVariantsSchema,
-    invalidates: publishInvalidations,
-    request: asGiven,
-  };
+  const config: UpdatesMutationConfig<PublishVariantsPayload> = { name: "publishVariants", endpoint: UPDATES_MUTATION_ENDPOINTS.publishVariants, schema: publishVariantsSchema, invalidates: publishInvalidations, request: asGiven };
   return useUpdatesMutation(config);
 }
 
@@ -470,49 +407,25 @@ export function usePublishVariants(): UseReviewedMutationResult<PublishVariantsP
  * all decided by the service at command time. No instant, recipient list or dedupe key is computed here.
  */
 export function useRequestNotification(): UseReviewedMutationResult<RequestNotificationPayload> {
-  const config: UpdatesMutationConfig<RequestNotificationPayload> = {
-    name: "requestNotification",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.requestNotification,
-    schema: requestNotificationSchema,
-    invalidates: UPDATES_MUTATION_INVALIDATIONS.requestNotification,
-    request: asGiven,
-  };
+  const config: UpdatesMutationConfig<RequestNotificationPayload> = { name: "requestNotification", endpoint: UPDATES_MUTATION_ENDPOINTS.requestNotification, schema: requestNotificationSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.requestNotification, request: asGiven };
   return useUpdatesMutation(config);
 }
 
 /** `withdrawUpdate` — withdraws every released edition of one Update, stating the identity withdrawn rather than a subset a caller assembled; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useWithdrawUpdate(): UseReviewedMutationResult<WithdrawUpdatePayload> {
-  const config: UpdatesMutationConfig<WithdrawUpdatePayload> = {
-    name: "withdrawUpdate",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.withdrawUpdate,
-    schema: withdrawUpdateSchema,
-    invalidates: UPDATES_MUTATION_INVALIDATIONS.withdrawUpdate,
-    request: withdrawUpdateBody,
-  };
+  const config: UpdatesMutationConfig<WithdrawUpdatePayload> = { name: "withdrawUpdate", endpoint: UPDATES_MUTATION_ENDPOINTS.withdrawUpdate, schema: withdrawUpdateSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.withdrawUpdate, request: withdrawUpdateBody };
   return useUpdatesMutation(config);
 }
 
 /** `withdrawLocale` — withdraws exactly one language edition, leaving its siblings released; a `conflict` means the release moved and the withdrawal has to be reviewed again rather than retried blindly; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useWithdrawLocale(): UseReviewedMutationResult<WithdrawLocalePayload> {
-  const config: UpdatesMutationConfig<WithdrawLocalePayload> = {
-    name: "withdrawLocale",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.withdrawLocale,
-    schema: withdrawLocaleSchema,
-    invalidates: UPDATES_MUTATION_INVALIDATIONS.withdrawLocale,
-    request: withdrawLocaleBody,
-  };
+  const config: UpdatesMutationConfig<WithdrawLocalePayload> = { name: "withdrawLocale", endpoint: UPDATES_MUTATION_ENDPOINTS.withdrawLocale, schema: withdrawLocaleSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.withdrawLocale, request: withdrawLocaleBody };
   return useUpdatesMutation(config);
 }
 
 /** `restoreRevisionAsDraft` — copies one earlier revision into a new draft, because a restore never rewrites history; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useRestoreRevisionAsDraft(): UseReviewedMutationResult<RestoreRevisionAsDraftPayload> {
-  const config: UpdatesMutationConfig<RestoreRevisionAsDraftPayload> = {
-    name: "restoreRevisionAsDraft",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.restoreRevisionAsDraft,
-    schema: restoreRevisionAsDraftSchema,
-    invalidates: UPDATES_MUTATION_INVALIDATIONS.restoreRevisionAsDraft,
-    request: restoreRevisionAsDraftBody,
-  };
+  const config: UpdatesMutationConfig<RestoreRevisionAsDraftPayload> = { name: "restoreRevisionAsDraft", endpoint: UPDATES_MUTATION_ENDPOINTS.restoreRevisionAsDraft, schema: restoreRevisionAsDraftSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.restoreRevisionAsDraft, request: restoreRevisionAsDraftBody };
   return useUpdatesMutation(config);
 }
 
@@ -527,37 +440,18 @@ export function useRestoreRevisionAsDraft(): UseReviewedMutationResult<RestoreRe
  * around that by minting an identity of its own.
  */
 export function useRegisterMediaAsset(): UseReviewedMutationResult<RegisterMediaAssetPayload> {
-  const config: UpdatesMutationConfig<RegisterMediaAssetPayload> = {
-    name: "registerMediaAsset",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.registerMediaAsset,
-    schema: registerMediaAssetSchema,
-    invalidates: UPDATES_MUTATION_INVALIDATIONS.registerMediaAsset,
-    request: registerMediaAssetBody,
-  };
+  const config: UpdatesMutationConfig<RegisterMediaAssetPayload> = { name: "registerMediaAsset", endpoint: UPDATES_MUTATION_ENDPOINTS.registerMediaAsset, schema: registerMediaAssetSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.registerMediaAsset, request: registerMediaAssetBody };
   return useUpdatesMutation(config);
 }
 
 /** `replacePlacement` — fills one placement of a draft edition with another prepared asset, or restates the description of the asset it already shows, without moving the media when no asset is named; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useReplacePlacement(): UseReviewedMutationResult<ReplacePlacementPayload> {
-  const config: UpdatesMutationConfig<ReplacePlacementPayload> = {
-    name: "replacePlacement",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.replacePlacement,
-    schema: replacePlacementSchema,
-    invalidates: UPDATES_MUTATION_INVALIDATIONS.replacePlacement,
-    request: replacePlacementBody,
-  };
+  const config: UpdatesMutationConfig<ReplacePlacementPayload> = { name: "replacePlacement", endpoint: UPDATES_MUTATION_ENDPOINTS.replacePlacement, schema: replacePlacementSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.replacePlacement, request: replacePlacementBody };
   return useUpdatesMutation(config);
 }
 
 /** `removePlacement` — detaches one placement from a draft edition, leaving the asset, the draft's other placements and every release untouched; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useRemovePlacement(): UseReviewedMutationResult<RemovePlacementPayload> {
-  const config: UpdatesMutationConfig<RemovePlacementPayload> = {
-    name: "removePlacement",
-    endpoint: UPDATES_MUTATION_ENDPOINTS.removePlacement,
-    schema: removePlacementSchema,
-    invalidates: UPDATES_MUTATION_INVALIDATIONS.removePlacement,
-    request: removePlacementBody,
-  };
+  const config: UpdatesMutationConfig<RemovePlacementPayload> = { name: "removePlacement", endpoint: UPDATES_MUTATION_ENDPOINTS.removePlacement, schema: removePlacementSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.removePlacement, request: removePlacementBody };
   return useUpdatesMutation(config);
 }
-

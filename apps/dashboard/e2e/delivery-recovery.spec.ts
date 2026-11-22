@@ -53,12 +53,7 @@ test.beforeEach(async ({ request }) => {
 const UPDATE_DOCUMENT = "doc-update-autumn";
 
 /** The notice the seed already recorded: the edition it was submitted for, its intent, the instant it was meant for and the instant it stops being useful. */
-const SEEDED_NOTICE = {
-  intentId: "intent-update-autumn-en",
-  releaseId: "release-update-en-1",
-  intendedAt: "2026-11-10T09:05:00Z",
-  deadline: "2026-11-11T09:05:00Z",
-} as const;
+const SEEDED_NOTICE = { intentId: "intent-update-autumn-en", releaseId: "release-update-en-1", intendedAt: "2026-11-10T09:05:00Z", deadline: "2026-11-11T09:05:00Z" } as const;
 
 /**
  * A released edition of the same Update that carries no notice yet, so a notice submitted for it is a
@@ -211,15 +206,11 @@ async function readDevState(page: Page): Promise<DevState> {
 /** Operates exactly one named development control and returns the one outcome it answered with. */
 async function operateDevControl(page: Page, action: string, payload: JsonRecord): Promise<unknown> {
   const state = await readDevState(page);
-  const answer = await page.request.post("/api/dev", {
-    data: { action, operationId: newAttemptId(), scope: state.scope, expectedRevision: state.revision, payload },
-  });
+  const answer = await page.request.post("/api/dev", { data: { action, operationId: newAttemptId(), scope: state.scope, expectedRevision: state.revision, payload } });
   const body = await jsonOf(answer, `POST /api/dev ${action}`);
   const outcome = outcomeOf(body);
   if (outcome !== "accepted" && outcome !== "unchanged") {
-    throw new Error(
-      `The development control ${action} was refused: ${JSON.stringify(body).slice(0, 400)}. A spec that could not move the clock or arm the failure it names would assert against a world it did not choose, so it stops here instead of reporting a failure the application did not cause.`,
-    );
+    throw new Error(`The development control ${action} was refused: ${JSON.stringify(body).slice(0, 400)}. A spec that could not move the clock or arm the failure it names would assert against a world it did not choose, so it stops here instead of reporting a failure the application did not cause.`);
   }
   return body;
 }
@@ -322,9 +313,7 @@ async function signUpForPurpose(page: Page, authority: ContentAuthority): Promis
 
 /** Confirms that membership inside its 168-hour window, which is what makes it eligible rather than merely requested. */
 async function confirmMembership(page: Page, authority: ContentAuthority, membershipId: string, revision: string): Promise<unknown> {
-  const answer = await page.request.post("/api/confirm", {
-    data: { operationId: newAttemptId(), scope: authority.scope, expectedRevision: revision, payload: { membershipId } },
-  });
+  const answer = await page.request.post("/api/confirm", { data: { operationId: newAttemptId(), scope: authority.scope, expectedRevision: revision, payload: { membershipId } } });
   return jsonOf(answer, "POST /api/confirm");
 }
 
@@ -338,14 +327,7 @@ async function confirmMembership(page: Page, authority: ContentAuthority, member
  */
 async function submitNotice(page: Page, input: { readonly authority: ContentAuthority; readonly releaseId: string; readonly intendedAt?: string; readonly operationId?: string }): Promise<NoticeSubmission> {
   const operationId = input.operationId ?? newAttemptId();
-  const answer = await page.request.post("/api/notify", {
-    data: {
-      operationId,
-      scope: input.authority.scope,
-      expectedRevision: input.authority.revision,
-      payload: { documentId: UPDATE_DOCUMENT, releaseId: input.releaseId, ...(input.intendedAt === undefined ? {} : { intendedAt: input.intendedAt }) },
-    },
-  });
+  const answer = await page.request.post("/api/notify", { data: { operationId, scope: input.authority.scope, expectedRevision: input.authority.revision, payload: { documentId: UPDATE_DOCUMENT, releaseId: input.releaseId, ...(input.intendedAt === undefined ? {} : { intendedAt: input.intendedAt }) } } });
   return { operationId, body: await jsonOf(answer, "POST /api/notify") };
 }
 

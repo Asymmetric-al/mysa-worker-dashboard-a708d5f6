@@ -39,19 +39,8 @@ const RETRY_LABEL = "Try again";
 const countFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const EMPTY_MESSAGES: readonly InboxMessage[] = [];
 // The surface's own words
-const SURFACE_INTRO =
-  "Every message this membership's notification purpose has produced, at the copy the recipient was pinned to: " +
-  "the sender, the subject, the body as HTML and as plain text, and the outcome this application recorded for it.";
-const COLUMNS = {
-  sender: "Sender",
-  subject: "Subject",
-  audience: "Audience",
-  language: "Language",
-  noticeBody: "Notice body",
-  intendedAt: "Intended at",
-  recordedAt: "Recorded at",
-  sendState: "Send outcome",
-} as const;
+const SURFACE_INTRO = "Every message this membership's notification purpose has produced, at the copy the recipient was pinned to: " + "the sender, the subject, the body as HTML and as plain text, and the outcome this application recorded for it.";
+const COLUMNS = { sender: "Sender", subject: "Subject", audience: "Audience", language: "Language", noticeBody: "Notice body", intendedAt: "Intended at", recordedAt: "Recorded at", sendState: "Send outcome" } as const;
 const OPEN_LABEL = "Open";
 const CLOSE_LABEL = "Close";
 const READER_HEADING = "The message as it was produced for this recipient";
@@ -61,23 +50,11 @@ const HONESTY_NOTE =
   "message and not a read one. An outcome recorded as unknown says the acknowledgement never arrived rather " +
   "than that the submission failed: it is checked against the same operation, which returns the result already " +
   "recorded, and no control on this page repeats a submission under a new one.";
-const ORDER_NOTE =
-  "Messages are ordered by the instant the notice was intended, newest first, and then by message identity. " +
-  "This read takes no ordering parameter, so no column is sortable and the order above the list is the order " +
-  "the read applied.";
+const ORDER_NOTE = "Messages are ordered by the instant the notice was intended, newest first, and then by message identity. " + "This read takes no ordering parameter, so no column is sortable and the order above the list is the order " + "the read applied.";
 const AS_OF_NOTE = "Read at";
 const AS_OF_EXPLANATION = "the scenario instant this inbox was evaluated at, so a message recorded after it does not appear here.";
-const STATE_HEADINGS = {
-  loading: "Reading this inbox",
-  unavailable: "The inbox could not be read",
-  denied: "This inbox is not permitted here",
-  refused: "The inbox request was not admitted",
-  partialCoverage: "The source covers only part of the period this inbox records",
-} as const;
-const BEYOND_LAST_PAGE = {
-  title: "This page of the inbox holds no message",
-  action: "Go to the last page",
-} as const;
+const STATE_HEADINGS = { loading: "Reading this inbox", unavailable: "The inbox could not be read", denied: "This inbox is not permitted here", refused: "The inbox request was not admitted", partialCoverage: "The source covers only part of the period this inbox records" } as const;
+const BEYOND_LAST_PAGE = { title: "This page of the inbox holds no message", action: "Go to the last page" } as const;
 /** The statement for a page the result no longer reaches, told with the read's own page count so no number here is computed. */
 function beyondLastPageStatement(pageCount: number, page: number): string {
   return `The result now holds ${countFormat.format(pageCount)} ${pageCount === 1 ? "page" : "pages"} of messages, so page ${countFormat.format(page)} holds none; no message was dropped, and the pager states where they are.`;
@@ -86,25 +63,13 @@ const DUPLICATE_DEFECT = {
   title: "Two messages share one recipient and one notification intent",
   lead: "One intent must produce one message for one recipient, so this is a defect in the recorded send results rather than a second message to read. No copy here has been dropped, merged or hidden: both are shown as recorded, and the fix belongs where the results were recorded.",
 } as const;
-const UNRESOLVED_NOTE = {
-  title: "Some intents produced no readable message",
-  lead: "They are recorded for this recipient and could not be resolved into a message, so this inbox is incomplete rather than empty, and nothing is reconstructed in their place.",
-} as const;
-const READING_UNAVAILABLE = {
-  title: "The edition this message points at cannot be rendered now",
-  lead: "The message itself is shown as it was recorded. The edition it links to is not readable at this instant, so nothing of it is reproduced here and no cached copy stands in its place.",
-} as const;
+const UNRESOLVED_NOTE = { title: "Some intents produced no readable message", lead: "They are recorded for this recipient and could not be resolved into a message, so this inbox is incomplete rather than empty, and nothing is reconstructed in their place." } as const;
+const READING_UNAVAILABLE = { title: "The edition this message points at cannot be rendered now", lead: "The message itself is shown as it was recorded. The edition it links to is not readable at this instant, so nothing of it is reproduced here and no cached copy stands in its place." } as const;
 // The vocabularies this surface shows. Each key is the read's own union member, so a value the read adds fails to compile here instead of rendering blank.
 /** The two audiences a pinned copy carries. The tone says how to read the label, and the label is the word shown. */
-const AUDIENCE_DISPLAY: Readonly<Record<PinnedAudience, { readonly label: string; readonly tone: StatusTone }>> = {
-  public: { label: "Public", tone: "neutral" },
-  "approved-supporter": { label: "Approved supporters", tone: "info" },
-};
+const AUDIENCE_DISPLAY: Readonly<Record<PinnedAudience, { readonly label: string; readonly tone: StatusTone }>> = { public: { label: "Public", tone: "neutral" }, "approved-supporter": { label: "Approved supporters", tone: "info" } };
 /** Whether the body is the link-only protected notice or the notice a public edition produces. */
-const NOTICE_BODY_DISPLAY: Readonly<Record<"protected" | "public", { readonly label: string; readonly tone: StatusTone }>> = {
-  protected: { label: "Protected notice", tone: "caution" },
-  public: { label: "Public notice", tone: "neutral" },
-};
+const NOTICE_BODY_DISPLAY: Readonly<Record<"protected" | "public", { readonly label: string; readonly tone: StatusTone }>> = { protected: { label: "Protected notice", tone: "caution" }, public: { label: "Public notice", tone: "neutral" } };
 /** The three send outcomes, in the order the specification names them, so the summary always reads accepted, failed, unknown. */
 const SEND_STATE_ORDER: readonly SendStatus[] = ["accepted", "failed", "unknown"];
 /** The shared word for a value the read did not state, taken from the one value-state vocabulary rather than written again here. */
@@ -221,28 +186,9 @@ export function InboxList({ scope, initialEnvelope, className }: InboxListProps)
           return <StatusBadge {...body} srPrefix={COLUMNS.noticeBody} />;
         },
       },
-      {
-        id: "intendedAt",
-        header: COLUMNS.intendedAt,
-        enableSorting: false,
-        cell: (context) => (
-          <bdi className="tabular-figures whitespace-nowrap">{context.row.original.intendedAt}</bdi>
-        ),
-      },
-      {
-        id: "recordedAt",
-        header: COLUMNS.recordedAt,
-        enableSorting: false,
-        cell: (context) => (
-          <bdi className="tabular-figures whitespace-nowrap">{context.row.original.recordedAt}</bdi>
-        ),
-      },
-      {
-        id: "sendState",
-        header: COLUMNS.sendState,
-        enableSorting: false,
-        cell: (context) => <StatusBadge {...statusBadgeProps(SEND_STATUS, context.row.original.state)} srPrefix={COLUMNS.sendState} />,
-      },
+      { id: "intendedAt", header: COLUMNS.intendedAt, enableSorting: false, cell: (context) => <bdi className="tabular-figures whitespace-nowrap">{context.row.original.intendedAt}</bdi> },
+      { id: "recordedAt", header: COLUMNS.recordedAt, enableSorting: false, cell: (context) => <bdi className="tabular-figures whitespace-nowrap">{context.row.original.recordedAt}</bdi> },
+      { id: "sendState", header: COLUMNS.sendState, enableSorting: false, cell: (context) => <StatusBadge {...statusBadgeProps(SEND_STATUS, context.row.original.state)} srPrefix={COLUMNS.sendState} /> },
     ],
     [],
   );
@@ -250,16 +196,7 @@ export function InboxList({ scope, initialEnvelope, className }: InboxListProps)
     (message: InboxMessage): ReactElement => {
       const isOpen = message.messageId === selectedMessageId;
       return (
-        <Button
-          type="button"
-          variant={isOpen ? "secondary" : "ghost"}
-          size="sm"
-          aria-expanded={isOpen}
-          aria-controls={isOpen ? readerRegionId : undefined}
-          ref={isOpen ? openTriggerRef : undefined}
-          onClick={() => setSelectedMessageId(isOpen ? null : message.messageId)}
-          className="max-w-full whitespace-normal"
-        >
+        <Button type="button" variant={isOpen ? "secondary" : "ghost"} size="sm" aria-expanded={isOpen} aria-controls={isOpen ? readerRegionId : undefined} ref={isOpen ? openTriggerRef : undefined} onClick={() => setSelectedMessageId(isOpen ? null : message.messageId)} className="max-w-full whitespace-normal">
           {isOpen ? CLOSE_LABEL : OPEN_LABEL}
           <span className="sr-only">{` the message “${message.subject}” from ${message.sender}`}</span>
         </Button>
@@ -334,13 +271,7 @@ export function InboxList({ scope, initialEnvelope, className }: InboxListProps)
         <StateNotice kind="empty" title={INBOX_EMPTY_COPY.title} description={INBOX_EMPTY_COPY.description} headingLevel={3} />
       ) : data.messages.length === 0 ? (
         // The page asked for is past the last one this result holds — a result that shrank while it was open. Nothing re-reads behind the worker's back: the notice states the window and offers the move.
-        <StateNotice
-          kind="empty"
-          title={BEYOND_LAST_PAGE.title}
-          description={beyondLastPageStatement(data.page.pageCount, data.page.page)}
-          action={{ label: BEYOND_LAST_PAGE.action, onClick: () => setPaging((current) => ({ ...current, page: Math.max(FIRST_PAGE, data.page.pageCount) })) }}
-          headingLevel={3}
-        />
+        <StateNotice kind="empty" title={BEYOND_LAST_PAGE.title} description={beyondLastPageStatement(data.page.pageCount, data.page.page)} action={{ label: BEYOND_LAST_PAGE.action, onClick: () => setPaging((current) => ({ ...current, page: Math.max(FIRST_PAGE, data.page.pageCount) })) }} headingLevel={3} />
       ) : (
         <>
           <RecordList
@@ -429,4 +360,3 @@ export function InboxList({ scope, initialEnvelope, className }: InboxListProps)
   );
 }
 export default InboxList;
-

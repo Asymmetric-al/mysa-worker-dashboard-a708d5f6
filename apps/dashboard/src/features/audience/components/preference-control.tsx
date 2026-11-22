@@ -88,11 +88,7 @@ export default function PreferenceControl({ scope, membershipId, publisherId, pu
   const setPreference = useSetPreference();
   const mutatePreference = setPreference.mutateAsync;
   // The four fields travel unchanged: this file neither mints the operation id nor rewrites the scope, the revision or the payload on their way out.
-  const submitPreference = useCallback(
-    async (input: MutationInput<SetPreferencePayload>): Promise<MutationOutcome> =>
-      mutatePreference({ operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload }),
-    [mutatePreference],
-  );
+  const submitPreference = useCallback(async (input: MutationInput<SetPreferencePayload>): Promise<MutationOutcome> => mutatePreference({ operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload }), [mutatePreference]);
   const { operationId, submit, retry, reapply, pending, outcome } = useReviewedMutation<SetPreferencePayload>(submitPreference);
   // The choice the person asked for, held apart from the choice the read published: the switch shows the request while it is in flight, and the receipt — not this state — states what the record holds.
   const [requested, setRequested] = useState<PreferenceChoice | null>(null);
