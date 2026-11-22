@@ -1,4 +1,4 @@
-/** The printable page of a Support report: one `ReportResult`, read through the `printModel` the export read returns, laid out so the browser's own print produces a sheet whose figures, period, coverage and as-of instant are the ones the screen showed (AAP 0.8.8; AAP 0.10.1 family 8; criterion 1). */
+/** The printable page of a Support report: one `ReportResult`, laid out as the `printModel` the report frame builds from it, so the browser's own print produces a sheet whose figures, period, coverage and as-of instant are the ones the screen showed (AAP 0.8.8; AAP 0.10.1 family 8; criterion 1). */
 import type { ReactElement } from "react";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/cn";

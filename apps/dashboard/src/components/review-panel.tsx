@@ -10,6 +10,7 @@ import VariantSwitcher, { AUDIENCE_WORDS, type VariantTab } from "@/components/v
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DirectionProvider } from "@/components/ui/direction";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
@@ -338,9 +339,11 @@ function CandidatePreview({ candidate, level }: { readonly candidate: CandidateV
       {candidate.renderedHtml.trim() === "" ? (
         <p className="text-sm text-muted-foreground text-pretty">{COPY.noRenderedBodyNotice}</p>
       ) : (
-        <div dir={candidate.locale.direction} className="min-w-0 overflow-hidden rounded-lg border border-border">
-          <iframe title={frameTitle} srcDoc={frameDocument} sandbox="allow-same-origin" referrerPolicy="no-referrer" data-slot="review-candidate-frame" className="block h-96 max-h-[70svh] min-h-64 w-full border-0 bg-background" />
-        </div>
+        <DirectionProvider direction={candidate.locale.direction}>
+          <div dir={candidate.locale.direction} className="min-w-0 overflow-hidden rounded-lg border border-border">
+            <iframe title={frameTitle} srcDoc={frameDocument} sandbox="allow-same-origin" referrerPolicy="no-referrer" data-slot="review-candidate-frame" className="block h-96 max-h-[70svh] min-h-64 w-full border-0 bg-background" />
+          </div>
+        </DirectionProvider>
       )}
       <p className="text-sm text-muted-foreground text-pretty">{COPY.previewExplanation}</p>
       {candidate.mediaRenditions.length === 0 ? null : (

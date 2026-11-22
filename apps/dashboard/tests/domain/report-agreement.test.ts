@@ -9,7 +9,7 @@ import { UNKNOWN_CURRENCY, exponentOf } from "@/modules/money/currency";
 import { formatMinor } from "@/modules/money/format";
 import { SUPPORT_BASIS, type GiftRow, type SupportProjection } from "@/modules/support/basis";
 import { GOAL_MEASURE } from "@/modules/support/goal";
-import { PAGE_SIZE_CAP, PAGE_SIZE_DEFAULT, REPORT_IDS, buildReportQuery, runReport, validateReportQuery, type CurrencySummary, type ReportQuery, type ReportResult, type SeriesPoint } from "@/modules/support/report";
+import { PAGE_SIZE_CAP, PAGE_SIZE_DEFAULT, REPORT_IDS, buildReportQuery, matrixDrilldownQuery, runReport, validateReportQuery, type CurrencySummary, type MatrixCell, type MatrixRow, type ReportQuery, type ReportResult, type SeriesPoint } from "@/modules/support/report";
 const PERIOD_FROM = "2026-01-01";
 const PERIOD_TO = "2026-11-20";
 let established: Promise<SessionStateDocument> | undefined;
@@ -109,6 +109,10 @@ function seriesPointsOf(result: ReportResult, currency: string): readonly Series
 function seriesAmountsOf(result: ReportResult, currency: string): readonly Money[] {
   return seriesPointsOf(result, currency).flatMap((point) => (point.gap || point.value.minorUnits === null ? [] : [amount(currency, point.value.minorUnits)]));
 }
+/** The query one matrix cell stands for, derived exactly the way the matrix's own link derives it. */
+function drilldownOf(result: ReportResult, row: MatrixRow, cell: MatrixCell): ReportQuery {
+  return matrixDrilldownQuery(result.snapshot.query, row.attribution, cell.currency, cell.bucketStart, cell.bucketEnd);
+}
 function printedAmountsOf(model: PrintModel): readonly Money[] {
   const currencyColumn = printedColumnIndex(model, "currency");
   const minorUnitsColumn = printedColumnIndex(model, "amount_minor_units");
@@ -193,6 +197,19 @@ const BULK_TOTAL_MINOR_UNITS = minorTotalOf(
 );
 function bulkProjectionOf(document: SessionStateDocument): SupportProjection {
   return projectionOf(document, { coverage: { from: PERIOD_FROM, to: PERIOD_TO, state: "complete" }, gifts: bulkGiftRows() });
+}
+const MATRIX_PARTNER_COUNT = 120;
+function matrixGiftRows(count: number): readonly GiftRow[] {
+  const origin = day(BULK_FIRST_DAY);
+  return Array.from({ length: count }, (_unused, index) => {
+    const giftId = `gift-matrix-${String(index).padStart(4, "0")}`;
+    const giftedOn = origin.add({ days: index });
+    return { giftRowId: `${giftId}-row`, giftId, amount: amount("USD", 100), originalGiftOn: giftedOn, datePrecision: "date", attribution: { kind: "partner", partnerId: `partner-matrix-${String(index).padStart(4, "0")}` }, provenance: { system: "finance", reference: giftId }, entryOn: giftedOn } satisfies GiftRow;
+  });
+}
+/** One page of the matrix needs more attributions than a page holds, so this result states one per partner. */
+function matrixProjectionOf(document: SessionStateDocument): SupportProjection {
+  return projectionOf(document, { coverage: { from: PERIOD_FROM, to: PERIOD_TO, state: "complete" }, gifts: matrixGiftRows(MATRIX_PARTNER_COUNT) });
 }
 let document: SessionStateDocument;
 beforeEach(async () => {
@@ -729,13 +746,14 @@ describe("the partner-by-month matrix reconciles to the same totals", () => {
       for (const cell of row.cells) {
         // The drilldown is the same authority and the same filters, narrowed to this cell's month and
         // attribution with no page window, so it opens the records behind the figure.
-        expect(cell.drilldown.scope).toEqual(result.snapshot.scope);
-        expect(cell.drilldown.partner).toEqual(row.attribution);
-        expect(cell.drilldown.currency).toEqual({ kind: "one", currency: cell.currency });
-        expect(cell.drilldown.page).toBeUndefined();
-        if (cell.drilldown.period.kind !== "explicit") throw new Error("A matrix cell's drilldown states no explicit period, so it cannot name the month it sums.");
-        expect(cell.drilldown.period.from.toString()).toBe(cell.bucketStart.toString());
-        expect(cell.drilldown.period.to.toString()).toBe(cell.bucketEnd.toString());
+        const drilldown = drilldownOf(result, row, cell);
+        expect(drilldown.scope).toEqual(result.snapshot.scope);
+        expect(drilldown.partner).toEqual(row.attribution);
+        expect(drilldown.currency).toEqual({ kind: "one", currency: cell.currency });
+        expect(drilldown.page).toBeUndefined();
+        if (drilldown.period.kind !== "explicit") throw new Error("A matrix cell's drilldown states no explicit period, so it cannot name the month it sums.");
+        expect(drilldown.period.from.toString()).toBe(cell.bucketStart.toString());
+        expect(drilldown.period.to.toString()).toBe(cell.bucketEnd.toString());
       }
     }
   });
@@ -803,7 +821,7 @@ describe("the partner-by-month matrix reconciles to the same totals", () => {
     );
     expect(cell.gap).toBe(false);
     expect(cell.value.minorUnits).toBe(4000);
-    const drilldown = run(cell.drilldown, projection);
+    const drilldown = run(drilldownOf(result, partnerRow, cell), projection);
     const parentRowIds = new Set(result.rows.map((row) => row.giftRowId));
     expect(drilldown.rows.length).toBeGreaterThan(0);
     for (const row of drilldown.rows) {
@@ -828,7 +846,7 @@ describe("the partner-by-month matrix reconciles to the same totals", () => {
     expect(january.gap).toBe(true);
     expect(january.value.minorUnits).not.toBe(0);
     expect(january.value.minorUnits).toBeNull();
-    const empty = run(january.drilldown, projection);
+    const empty = run(drilldownOf(result, partnerRow, january), projection);
     expect(empty.total).toBe(0);
     expect(empty.rows).toEqual([]);
     const november = need(
@@ -854,8 +872,34 @@ describe("the partner-by-month matrix reconciles to the same totals", () => {
       unknownCells.find((candidate) => candidate.bucketStart.toString() === "2026-08-01"),
       "the August cell of the unattributed row",
     );
-    const drilldown = run(cell.drilldown, projection);
+    const drilldown = run(drilldownOf(result, unresolved, cell), projection);
     expect(drilldown.total).toBe(1);
     expect(need(drilldown.rows[0], "the unattributed drilldown's single row").amount.currency).toBe(UNKNOWN_CURRENCY);
+  });
+  // The paging contract every list and report shares: the matrix serves 50 partner rows by default, caps a
+  // stated size at 200, states the whole result's row total, and clamps a stale page into the pages the whole
+  // result has, so an address from before a filter changed still states a page rather than an empty matrix.
+  const pageCases: readonly { readonly stated: { readonly index: number; readonly size?: number }; readonly served: { readonly index: number; readonly size: number; readonly totalPages: number }; readonly rows: number; readonly first: string }[] = [
+    { stated: { index: 0 }, served: { index: 0, size: PAGE_SIZE_DEFAULT, totalPages: 3 }, rows: 50, first: "partner-matrix-0000" },
+    { stated: { index: 1 }, served: { index: 1, size: PAGE_SIZE_DEFAULT, totalPages: 3 }, rows: 50, first: "partner-matrix-0050" },
+    { stated: { index: 2 }, served: { index: 2, size: PAGE_SIZE_DEFAULT, totalPages: 3 }, rows: 20, first: "partner-matrix-0100" },
+    { stated: { index: 0, size: PAGE_SIZE_CAP * 2 }, served: { index: 0, size: PAGE_SIZE_CAP, totalPages: 1 }, rows: 120, first: "partner-matrix-0000" },
+    { stated: { index: 9 }, served: { index: 2, size: PAGE_SIZE_DEFAULT, totalPages: 3 }, rows: 20, first: "partner-matrix-0100" },
+  ];
+  it.each(pageCases)("serves the page of $stated.index at $served.size rows and states the whole result's total", async ({ stated, served, rows, first }) => {
+    const projection = matrixProjectionOf(document);
+    const result = run(queryOf(document, { reportId: "partner-month-matrix", page: stated }), projection);
+    const matrix = need(result.matrix, "the partner-by-month matrix");
+    expect(matrix.total).toBe(MATRIX_PARTNER_COUNT);
+    expect(matrix.page).toEqual(served);
+    expect(matrix.rows).toHaveLength(rows);
+    expect(need(matrix.rows[0], "the matrix's first served row").partnerId).toBe(first);
+    for (const row of matrix.rows) {
+      expect(row.cells).toHaveLength(matrix.currencies.length * matrix.months.length);
+      // A cell states its own figure and nothing else: the query behind it is derived from the result's own
+      // query when the cell is opened, so a page of the payload carries no copy of it per cell.
+      expect(Object.keys(need(row.cells[0], "a served row's first cell"))).toEqual(["bucketStart", "bucketEnd", "currency", "value", "gap"]);
+    }
+    expect(JSON.stringify(matrix)).not.toContain('"drilldown"');
   });
 });

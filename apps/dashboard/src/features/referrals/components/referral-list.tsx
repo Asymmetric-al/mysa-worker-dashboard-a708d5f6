@@ -33,12 +33,22 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import type { Scope } from "@/modules/data-service";
 import { LIST_COPY, listCountCaption, NO_DEADLINE_NOTICE, PRECISION_COPY, STATUS_COPY } from "../copy";
-import { useReferrals, type ReferralListPage } from "../hooks/use-referrals";
+import { useReferrals, type ReferralListPage, type ReferralListReadResult } from "../hooks/use-referrals";
 import { DEFAULT_REFERRAL_PAGE_SIZE, DEFAULT_REFERRAL_VIEW, LIST_QUERY_MESSAGES, parseReferralListQuery, REFERRAL_PAGE_SIZES, REFERRAL_VIEWS, type ReferralListQuery, type ReferralView } from "../schemas";
 import ExpiredReferralHistory from "./expired-referral-history";
+import { INTRODUCTION_COMPOSER_ANCHOR } from "./referral-introduction-composer";
 export type ReferralListProps = {
   /** The exact authority these lists are read under; the service re-derives scope from it on every read. */
   readonly scope: Scope;
+  /**
+   * The answer a server render already read for this same scope and query, when the composing route has
+   * one — its own `readReferrals` result, handed back unchanged. It seeds the list, so the first paint
+   * states the rows and the whole-result count the server read rather than a loading notice, and the
+   * mount issues no identical request. An answer that is not an envelope, or that describes a list, page
+   * or page size this surface is not asking for, is ignored and the read is made as it would be without
+   * one, so a denial, an outage or a refused request always keeps its own arm.
+   */
+  readonly initialResult?: ReferralListReadResult;
   /** The direction the surrounding document is read in, supplied by the route that composes this surface. */
   readonly dir?: "ltr" | "rtl";
   readonly className?: string;
@@ -146,7 +156,7 @@ function ViewSwitcher({ current, hrefOf }: { readonly current: ReferralView; rea
   );
 }
 /** One referral list in the presentation its address names: the switcher across the three lists, the heading and explanation the copy gives that view, the search over the whole result, the count of that whole result, the order the read applies, and the rows of one page. */
-export function ReferralList({ scope, dir, className }: ReferralListProps): ReactElement {
+export function ReferralList({ scope, initialResult, dir, className }: ReferralListProps): ReactElement {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -156,7 +166,7 @@ export function ReferralList({ scope, dir, className }: ReferralListProps): Reac
   // default query, so a hand-edited address never becomes a view this surface invented.
   const parsed = useMemo(() => parseReferralListQuery(addressOf(searchParams)), [searchParams]);
   const query: ReferralListQuery = parsed.ok ? parsed.query : DEFAULT_LIST_QUERY;
-  const referrals = useReferrals({ scope, query });
+  const referrals = useReferrals({ scope, query, initialResult });
   const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>({});
   // The latest query this surface dispatched, so two changes raised in one event — the pager asking
   // for a new size and then for the page that keeps the first visible row in view — compose into one
@@ -329,13 +339,14 @@ export function ReferralList({ scope, dir, className }: ReferralListProps): Reac
           </>
         );
     } else if (list.total === 0) {
+      const empty = LIST_COPY.views[query.list].empty;
       body =
         query.search === "" ? (
-          // The genuine empty list. An introduction is recorded against the partner it refers to —
-          // the form needs that partner's identity, its revision and its source — so this list has no
-          // partner to attach one to, and the view's declared action is left off here rather than
-          // rendered as a control that would lead nowhere.
-          <StateNotice kind="empty" title={LIST_COPY.views[query.list].empty.title} description={LIST_COPY.views[query.list].empty.body} headingLevel={3} />
+          // The genuine empty list. Recording an introduction is the action that fills it, and the composer this
+          // route renders below the list is where that record is made — the partner, the revision and the source
+          // provenance it needs are supplied there, not here. So the view's declared action lands on that
+          // composer's own section, and a view that declares no action offers none.
+          <StateNotice kind="empty" title={empty.title} description={empty.body} action={empty.actionLabel === null ? undefined : { label: empty.actionLabel, href: INTRODUCTION_COMPOSER_ANCHOR }} headingLevel={3} />
         ) : (
           // An empty result under a search is a different fact from an empty list, and its remedy is
           // the search itself.

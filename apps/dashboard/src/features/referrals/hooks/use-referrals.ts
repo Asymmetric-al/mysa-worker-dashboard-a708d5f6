@@ -1,5 +1,6 @@
 /** The Referrals family's list read, and the one GET transport this folder's reads share. */
 import { keepPreviousData, useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { useState } from "react";
 import { scopeKey } from "@/components/context-switch-guard";
 import { isNonEmptyString, isRecord } from "@/lib/guards";
 // The two guards read a body back off the wire and are needed as values, so they come from
@@ -126,14 +127,52 @@ function referralsListPath(query: ReferralListQuery): string {
   // no ordering parameter at all, so none travels here.
   return `${REFERRALS_ENDPOINT}?${params.toString()}`;
 }
+// The answer a server render already read
+/** Whether two list queries ask the read for the same answer: the list, the search and the page window, compared one by one. */
+function sameQuery(left: ReferralListQuery, right: ReferralListQuery): boolean {
+  return left.list === right.list && left.search === right.search && left.page === right.page && left.pageSize === right.pageSize;
+}
+/** Whether two scopes are the same authority: the four identifiers the read runs under, compared one by one. */
+function sameScope(left: Scope, right: Scope): boolean {
+  return left.organizationId === right.organizationId && left.ministryId === right.ministryId && left.supportSubjectId === right.supportSubjectId && left.principalId === right.principalId;
+}
+/**
+ * The list read a server render already answered, when it is the answer this surface is about to ask for, and nothing
+ * otherwise.
+ *
+ * A seed makes the first paint state the rows and the whole-result count the route read instead of a loading notice, and
+ * lets the mount issue no identical request. It is used only where three things agree: the surface still asks the query
+ * the server answered (`asked` — the query this surface first rendered with, because the address moves on as the worker
+ * switches list, searches and pages and a seed must never follow it), the list, page and page size the payload echoes
+ * are the ones being asked for, and the envelope ran under the authority this surface reads in. The payload echoes no
+ * search, so the echoed window alone cannot tell one search of a page from another, and no refusal is ever seeded: a
+ * denial, an outage or a refused request keeps its own arm rather than becoming a list or a row.
+ */
+function seedOf(initialResult: ReferralListReadResult | undefined, asked: ReferralListQuery | null, query: ReferralListQuery, scope: Scope): ReferralListReadResult | undefined {
+  if (initialResult === undefined || initialResult.kind !== "envelope" || asked === null) {
+    return undefined;
+  }
+  const { envelope } = initialResult;
+  const { list, page, pageSize } = envelope.data;
+  const agrees = sameQuery(asked, query) && sameScope(envelope.scope, scope) && list === query.list && page === query.page && pageSize === query.pageSize;
+  return agrees ? initialResult : undefined;
+}
 // The read
-/** What a caller supplies to read one referral list. */
+/** What a caller supplies to read one referral list, and the answer a server render may already have read for it. */
 export interface UseReferralsOptions {
   readonly scope: Scope;
   readonly query: ReferralListQuery;
+  /** The route's own `readReferrals` result for this same scope and query: it seeds the first paint, so the rows and the count the server read stand on the mount and no identical request repeats that read. */
+  readonly initialResult?: ReferralListReadResult;
 }
-/** Reads one page of one referral list under `scope`, keyed by the scope segments and the whole query, and answers the read union unchanged — `envelope | denied | unavailable`. */
-export function useReferrals({ scope, query }: UseReferralsOptions): UseQueryResult<ReferralListReadResult, Error> {
+/** Reads one page of one referral list under `scope`, keyed by the scope segments and the whole query, and answers the read union unchanged — `envelope | denied | unavailable`; a `initialResult` for this same query seeds the read, so the first paint states it and the mount issues no identical request. */
+export function useReferrals({ scope, query, initialResult }: UseReferralsOptions): UseQueryResult<ReferralListReadResult, Error> {
+  // The query this list was first asked for, which is the one a seed answers: the address moves on as the worker
+  // switches list, searches and pages, and the payload echoes no search, so the window it states cannot on its own tell
+  // two views of one page apart. Held for the surface's lifetime, so a seed only ever stands for the query the server
+  // read it with.
+  const [asked] = useState<ReferralListQuery | null>(() => (initialResult === undefined ? null : query));
+  const seed = seedOf(initialResult, asked, query, scope);
   return useQuery<ReferralListReadResult, Error>({
     // The scope leads every key, so the context switch's fence clears this entry with the rest of the
     // previous context and no envelope can be served from another context's cache. The query state is
@@ -143,8 +182,12 @@ export function useReferrals({ scope, query }: UseReferralsOptions): UseQueryRes
     // The previous page stays visible while the next one lands, so a pending read never renders as an
     // empty list. The loading signal is therefore `isFetching`/`isPlaceholderData`, not absent data.
     placeholderData: keepPreviousData,
-    // One query change issues exactly one request, and a source that is down reaches the honest
-    // `unavailable` answer instead of being retried into repeated loads.
+    // The route's own answer for this exact list stands on the first paint, and the mount repeats no
+    // identical read for it; a view no seed answers is read on mount exactly as before. One query change
+    // issues exactly one request, and a source that is down reaches the honest `unavailable` answer
+    // instead of being retried into repeated loads.
+    initialData: seed,
+    refetchOnMount: seed === undefined,
     retry: false,
   });
 }

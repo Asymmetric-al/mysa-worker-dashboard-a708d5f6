@@ -1,4 +1,4 @@
-/** `POST /api/export` — the whole query as a CSV file, plus the print model of the same result. */
+/** `POST /api/export` — the whole query as a CSV file: its text, its file name, its row count, and the snapshot facts and instant it was written at. */
 import type { NextRequest } from "next/server";
 import { outcomeFromError, reads, refusedRead, toResponse } from "@/modules/data-service";
 import { exportRequestSchema, supportQueryOf } from "../support/query";

@@ -38,6 +38,9 @@ export type StopRole = "worker" | "coach";
  */
 export type StopTarget = { readonly grantId: string; readonly moduleKey?: ModuleKey; readonly checkInId?: string; readonly checkInRevisionId?: string; readonly taskShareId?: string; readonly episodeState: GrantLifecycleState };
 
+/** The facts one submitted attempt presented: the revision it read and the target it named. */
+type SubmittedAttempt = { readonly expectedRevision: string; readonly target: StopTarget };
+
 export interface StopActionsProps {
   /**
    * The effects the grant's own envelope published as available. This surface renders only these: an effect the
@@ -111,9 +114,11 @@ export function stopReviewSentences(effect: StopEffect): readonly string[] {
 /**
  * Whether a settled attempt keeps its receipt once the route re-reads the relationship.
  *
- * An accepted, replayed or uncertain attempt refreshes the reads, which advances the revision this surface is handed;
- * holding the revision that was submitted keeps the receipt readable instead of collapsing back to a fresh review. A
- * definite refusal changed nothing, so the live revision is the honest one there.
+ * An accepted, replayed or uncertain attempt refreshes the reads, which advances the revision this surface is handed —
+ * and, where the change closes one relationship and leaves another live, replaces the grant the surface manages.
+ * Holding the facts that were submitted therefore keeps the receipt readable instead of collapsing back to a fresh
+ * review of whichever record the route now names. A definite refusal changed nothing, so the live facts are the honest
+ * ones there.
  */
 function holdsReceipt(outcome: MutationOutcome | null): boolean {
   if (outcome === null) {
@@ -295,12 +300,26 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
 
   const [chosen, setChosen] = useState<StopEffect | null>(null);
   const [settled, setSettled] = useState<MutationOutcome | null>(null);
-  const [submittedRevision, setSubmittedRevision] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState<SubmittedAttempt | null>(null);
   const headingId = useId();
 
   const terminal = isTerminalEpisode(target.episodeState);
   const kept = holdsReceipt(settled);
-  const reviewRevision = kept && submittedRevision !== null ? submittedRevision : expectedRevision;
+  // What the review presents: the facts the attempt itself submitted while its receipt is on screen, and the live ones
+  // otherwise. The route re-read after an applied change advances the revision — and, when the grant it named is the
+  // one it stopped, hands this surface the relationship that survives — so the receipt has to keep describing the change
+  // that was made rather than collapse into a fresh review of another record. The summary above states the re-read
+  // state; the settled row states what was done.
+  const reviewAttempt = kept ? submitted : null;
+  const reviewTarget = reviewAttempt?.target ?? target;
+  const reviewRevision = reviewAttempt?.expectedRevision ?? expectedRevision;
+  // Whether an attempt for the chosen effect is in hand: submitted, settling, or settled with its receipt. The attempt
+  // and the re-read it causes are two separate arrivals, and the refreshed envelope can reach this surface before the
+  // outcome does — so an episode the re-read reports as an ended one must not displace the review mid-attempt. With an
+  // attempt in hand the review keeps its own element, and with it the identity and the outcome `useReviewedMutation`
+  // holds; only an effect nobody has submitted is replaced by the statements.
+  const attemptInHand = chosen !== null && (submitted !== null || kept);
+  const ended = terminal && !attemptInHand;
   const offered = effectsForRole(role).filter((effect) => available.includes(effect));
   const surface = COACHING_COPY[role === "coach" ? "coachSubject" : "sharing"];
   const standing = GRANT_STATE_COPY[target.episodeState];
@@ -309,123 +328,139 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
   const showRow = chosen === null || kept;
 
   // The review step mints the attempt's identity and reuses it for a replay of the same work, so this surface records
-  // the revision an attempt presented and never mints an identity of its own.
-  const holdRevision = useCallback((revision: string): void => {
-    setSubmittedRevision(revision);
-  }, []);
+  // the facts an attempt presented and never mints an identity of its own.
+  const holdAttempt = useCallback(
+    (submittedRevision: string): void => {
+      setSubmitted({ expectedRevision: submittedRevision, target });
+    },
+    [target],
+  );
   const settle = useCallback((outcome: MutationOutcome): void => {
     setSettled(outcome);
   }, []);
   const choose = useCallback((effect: StopEffect): void => {
     setChosen(effect);
     setSettled(null);
-    setSubmittedRevision(null);
+    setSubmitted(null);
   }, []);
   const keep = useCallback((): void => {
     setChosen(null);
   }, []);
 
   const submitModule = useCallback(
-    (attempt: Parameters<typeof setModule>[0]): Promise<MutationOutcome> => {
-      holdRevision(attempt.expectedRevision);
-      return setModule(attempt);
+    (submission: Parameters<typeof setModule>[0]): Promise<MutationOutcome> => {
+      holdAttempt(submission.expectedRevision);
+      return setModule(submission);
     },
-    [holdRevision, setModule],
+    [holdAttempt, setModule],
   );
   const submitWithdrawal = useCallback(
-    (attempt: Parameters<typeof withdrawCheckIn>[0]): Promise<MutationOutcome> => {
-      holdRevision(attempt.expectedRevision);
-      return withdrawCheckIn(attempt);
+    (submission: Parameters<typeof withdrawCheckIn>[0]): Promise<MutationOutcome> => {
+      holdAttempt(submission.expectedRevision);
+      return withdrawCheckIn(submission);
     },
-    [holdRevision, withdrawCheckIn],
+    [holdAttempt, withdrawCheckIn],
   );
   const submitTaskShareStop = useCallback(
-    (attempt: Parameters<typeof stopTaskShare>[0]): Promise<MutationOutcome> => {
-      holdRevision(attempt.expectedRevision);
-      return stopTaskShare(attempt);
+    (submission: Parameters<typeof stopTaskShare>[0]): Promise<MutationOutcome> => {
+      holdAttempt(submission.expectedRevision);
+      return stopTaskShare(submission);
     },
-    [holdRevision, stopTaskShare],
+    [holdAttempt, stopTaskShare],
   );
   const submitEnd = useCallback(
-    (attempt: Parameters<typeof endCoaching>[0]): Promise<MutationOutcome> => {
-      holdRevision(attempt.expectedRevision);
-      return endCoaching(attempt);
+    (submission: Parameters<typeof endCoaching>[0]): Promise<MutationOutcome> => {
+      holdAttempt(submission.expectedRevision);
+      return endCoaching(submission);
     },
-    [holdRevision, endCoaching],
+    [holdAttempt, endCoaching],
   );
   const submitLeave = useCallback(
-    (attempt: Parameters<typeof leaveCoaching>[0]): Promise<MutationOutcome> => {
-      holdRevision(attempt.expectedRevision);
-      return leaveCoaching(attempt);
+    (submission: Parameters<typeof leaveCoaching>[0]): Promise<MutationOutcome> => {
+      holdAttempt(submission.expectedRevision);
+      return leaveCoaching(submission);
     },
-    [holdRevision, leaveCoaching],
+    [holdAttempt, leaveCoaching],
   );
   const submitRevoke = useCallback(
-    (attempt: Parameters<typeof revokeGrant>[0]): Promise<MutationOutcome> => {
-      holdRevision(attempt.expectedRevision);
-      return revokeGrant(attempt);
+    (submission: Parameters<typeof revokeGrant>[0]): Promise<MutationOutcome> => {
+      holdAttempt(submission.expectedRevision);
+      return revokeGrant(submission);
     },
-    [holdRevision, revokeGrant],
+    [holdAttempt, revokeGrant],
   );
 
   /*
    * The one place an effect becomes a submission: this switch builds the payload the mapping table's own schema admits
    * and names the single hook that sends it, so no effect can reach two mutations and a seventh effect fails to compile.
-   * A payload the schema refuses renders its messages and sends nothing.
+   * A payload the schema refuses renders its messages and sends nothing. Each case reads the facts the review presents
+   * — the attempt's own while its receipt is on screen, the live ones otherwise — so a settled row keeps naming what it
+   * changed while the surface around it shows the relationship that survived.
    */
   const reviewFor = (effect: StopEffect): ReactElement => {
     switch (effect) {
       case "stop-module": {
-        const payload = target.moduleKey === undefined ? null : { grantId: target.grantId, moduleKey: target.moduleKey, enabled: false };
+        const payload = reviewTarget.moduleKey === undefined ? null : { grantId: reviewTarget.grantId, moduleKey: reviewTarget.moduleKey, enabled: false };
         const messages = payload === null ? [] : refusalMessages("stop-module", payload);
         if (payload === null || messages.length > 0) {
           return <EffectRefused effect="stop-module" messages={messages} />;
         }
-        return <EffectReview effect="stop-module" targetIdentity={identityOf("stop-module", target) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitModule} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
+        return <EffectReview effect="stop-module" targetIdentity={identityOf("stop-module", reviewTarget) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitModule} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
       }
       case "withdraw-check-in": {
-        const { checkInId, checkInRevisionId } = target;
+        const { checkInId, checkInRevisionId } = reviewTarget;
         const payload = checkInId === undefined || checkInRevisionId === undefined ? null : { checkInId, sharedRevisionId: checkInRevisionId };
         const messages = payload === null ? [] : refusalMessages("withdraw-check-in", payload);
         if (payload === null || messages.length > 0) {
           return <EffectRefused effect="withdraw-check-in" messages={messages} />;
         }
-        return <EffectReview effect="withdraw-check-in" targetIdentity={identityOf("withdraw-check-in", target) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitWithdrawal} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
+        return (
+          <EffectReview effect="withdraw-check-in" targetIdentity={identityOf("withdraw-check-in", reviewTarget) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitWithdrawal} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />
+        );
       }
       case "remove-task-share": {
-        const { taskShareId } = target;
+        const { taskShareId } = reviewTarget;
         const payload = taskShareId === undefined ? null : { taskShareId };
         const messages = payload === null ? [] : refusalMessages("remove-task-share", payload);
         if (payload === null || messages.length > 0) {
           return <EffectRefused effect="remove-task-share" messages={messages} />;
         }
         return (
-          <EffectReview effect="remove-task-share" targetIdentity={identityOf("remove-task-share", target) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitTaskShareStop} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />
+          <EffectReview
+            effect="remove-task-share"
+            targetIdentity={identityOf("remove-task-share", reviewTarget) ?? "this relationship"}
+            input={{ scope, expectedRevision: reviewRevision, payload }}
+            submit={submitTaskShareStop}
+            headingLevel={reviewLevel}
+            onCheckResult={onCheckResult}
+            onCancel={keep}
+            onSettled={settle}
+          />
         );
       }
       case "end-relationship": {
-        const payload = { grantId: target.grantId };
+        const payload = { grantId: reviewTarget.grantId };
         const messages = refusalMessages("end-relationship", payload);
         if (messages.length > 0) {
           return <EffectRefused effect="end-relationship" messages={messages} />;
         }
-        return <EffectReview effect="end-relationship" targetIdentity={identityOf("end-relationship", target) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitEnd} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
+        return <EffectReview effect="end-relationship" targetIdentity={identityOf("end-relationship", reviewTarget) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitEnd} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
       }
       case "coach-leave": {
-        const payload = { grantId: target.grantId };
+        const payload = { grantId: reviewTarget.grantId };
         const messages = refusalMessages("coach-leave", payload);
         if (messages.length > 0) {
           return <EffectRefused effect="coach-leave" messages={messages} />;
         }
-        return <EffectReview effect="coach-leave" targetIdentity={identityOf("coach-leave", target) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitLeave} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
+        return <EffectReview effect="coach-leave" targetIdentity={identityOf("coach-leave", reviewTarget) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitLeave} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
       }
       case "revoke": {
-        const payload = { grantId: target.grantId };
+        const payload = { grantId: reviewTarget.grantId };
         const messages = refusalMessages("revoke", payload);
         if (messages.length > 0) {
           return <EffectRefused effect="revoke" messages={messages} />;
         }
-        return <EffectReview effect="revoke" targetIdentity={identityOf("revoke", target) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitRevoke} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
+        return <EffectReview effect="revoke" targetIdentity={identityOf("revoke", reviewTarget) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitRevoke} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
       }
       default:
         return assertUnreachable(effect);
@@ -443,11 +478,16 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
         </p>
       </header>
       <Separator />
-      {terminal ? (
+      {/*
+        An ended episode is a statement rather than a set of controls — unless an attempt is in hand, when the review
+        that made the change stands on its own. The header above already states the state the read reports, so the
+        settled record reads as what was done next to the state it produced, and no control is offered here.
+      */}
+      {ended ? (
         <EndedStatements state={target.episodeState} role={role} level={reviewLevel} />
       ) : (
         <>
-          {showRow ? (
+          {!terminal && showRow ? (
             <div className={PANEL_CLASS}>
               {offered.length === 0 ? (
                 <p className={SENTENCE_CLASS}>{NO_EFFECT_SENTENCE}</p>

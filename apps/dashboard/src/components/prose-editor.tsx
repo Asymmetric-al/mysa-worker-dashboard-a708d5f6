@@ -8,6 +8,7 @@ import { Bold, CircleAlert, Code, Heading2, Heading3, Heading4, ImagePlus, Itali
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DirectionProvider } from "@/components/ui/direction";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -574,101 +575,103 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
   }
   const statusText = saveState.status === "saving" ? "Saving…" : saveState.status === "saved" ? "Saved" : saveState.status === "failed" ? "Not saved — the text in this editor is the only copy." : "";
   return (
-    <section dir={direction} aria-labelledby={labelId} className="flex w-full min-w-0 flex-col gap-2">
-      <span id={labelId} className="sr-only">
-        {label}
-      </span>
-      {readOnly || editor === null ? null : (
-        <TooltipProvider>
-          <EditorToolbar editor={editor} onOpenLink={openLinkDialog} onRequestMedia={onRequestMedia} />
-        </TooltipProvider>
-      )}
-      <div className={cn("min-h-40 min-w-0 rounded-lg border border-input bg-input/30 motion-safe:transition-colors", "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring", readOnly && "border-transparent bg-transparent")}>
-        <EditorContent editor={editor} />
-      </div>
-      {/* `output` carries the status role natively, so the save state is announced once as it changes and is never proved by a notification that disappears. It stays mounted while idle, so the region exists before its text does. */}
-      {readOnly ? null : (
-        <output aria-live="polite" className="block min-h-4 text-xs text-muted-foreground">
-          {statusText}
-        </output>
-      )}
-      {contentIssue === null ? null : (
-        <Alert variant="destructive">
-          <CircleAlert aria-hidden="true" />
-          <AlertTitle>Some content could not be read</AlertTitle>
-          <AlertDescription>
-            <p>{contentIssue}</p>
-            <p>The rest of the text is here and can still be edited.</p>
-          </AlertDescription>
-          <AlertAction>
-            <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss the content message" onClick={() => setContentIssue(null)}>
-              <X aria-hidden="true" />
-            </Button>
-          </AlertAction>
-        </Alert>
-      )}
-      {saveState.status === "failed" ? (
-        <Alert variant={saveState.tone}>
-          <CircleAlert aria-hidden="true" />
-          <AlertTitle>Not saved</AlertTitle>
-          <AlertDescription>
-            <p>{saveState.message}</p>
-            <ul className="list-disc ps-5">
-              {saveState.details.map((detail) => (
-                <li key={detail}>{detail}</li>
-              ))}
-            </ul>
-            {saveState.operationId === null ? null : (
-              <p>
-                Attempt <bdi className="mono-identifier break-all">{saveState.operationId}</bdi>
-              </p>
-            )}
-          </AlertDescription>
-          {saveState.retry === null ? null : (
+    <DirectionProvider direction={direction}>
+      <section dir={direction} aria-labelledby={labelId} className="flex w-full min-w-0 flex-col gap-2">
+        <span id={labelId} className="sr-only">
+          {label}
+        </span>
+        {readOnly || editor === null ? null : (
+          <TooltipProvider>
+            <EditorToolbar editor={editor} onOpenLink={openLinkDialog} onRequestMedia={onRequestMedia} />
+          </TooltipProvider>
+        )}
+        <div className={cn("min-h-40 min-w-0 rounded-lg border border-input bg-input/30 motion-safe:transition-colors", "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring", readOnly && "border-transparent bg-transparent")}>
+          <EditorContent editor={editor} />
+        </div>
+        {/* `output` carries the status role natively, so the save state is announced once as it changes and is never proved by a notification that disappears. It stays mounted while idle, so the region exists before its text does. */}
+        {readOnly ? null : (
+          <output aria-live="polite" className="block min-h-4 text-xs text-muted-foreground">
+            {statusText}
+          </output>
+        )}
+        {contentIssue === null ? null : (
+          <Alert variant="destructive">
+            <CircleAlert aria-hidden="true" />
+            <AlertTitle>Some content could not be read</AlertTitle>
+            <AlertDescription>
+              <p>{contentIssue}</p>
+              <p>The rest of the text is here and can still be edited.</p>
+            </AlertDescription>
             <AlertAction>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (saveState.retry === "check-result") {
-                    void checkResult();
-                    return;
-                  }
-                  void saveAgain();
-                }}
-              >
-                {saveState.retry === "check-result" ? "Check the result" : "Save again"}
+              <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss the content message" onClick={() => setContentIssue(null)}>
+                <X aria-hidden="true" />
               </Button>
             </AlertAction>
-          )}
-        </Alert>
-      ) : null}
-      {mediaPasteNotice ? (
-        <Alert>
-          <AlertTitle>A file was pasted</AlertTitle>
-          <AlertDescription>Images and video are added with the toolbar buttons, so they are prepared, placed and saved with the content. Nothing was inserted here.</AlertDescription>
-          <AlertAction>
-            <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss the paste message" onClick={() => setMediaPasteNotice(false)}>
-              <X aria-hidden="true" />
-            </Button>
-          </AlertAction>
-        </Alert>
-      ) : null}
-      <PasteDecisionDialog pending={pendingPaste} onChoose={applyPendingPaste} />
-      <LinkDestinationDialog
-        open={linkDraft.open}
-        href={linkDraft.href}
-        error={linkDraft.error}
-        onHrefChange={(href) => {
-          setLinkDraft((draft) => ({ ...draft, href, error: null }));
-        }}
-        onApply={applyLink}
-        onCancel={() => {
-          setLinkDraft({ open: false, href: "", error: null });
-        }}
-      />
-    </section>
+          </Alert>
+        )}
+        {saveState.status === "failed" ? (
+          <Alert variant={saveState.tone}>
+            <CircleAlert aria-hidden="true" />
+            <AlertTitle>Not saved</AlertTitle>
+            <AlertDescription>
+              <p>{saveState.message}</p>
+              <ul className="list-disc ps-5">
+                {saveState.details.map((detail) => (
+                  <li key={detail}>{detail}</li>
+                ))}
+              </ul>
+              {saveState.operationId === null ? null : (
+                <p>
+                  Attempt <bdi className="mono-identifier break-all">{saveState.operationId}</bdi>
+                </p>
+              )}
+            </AlertDescription>
+            {saveState.retry === null ? null : (
+              <AlertAction>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (saveState.retry === "check-result") {
+                      void checkResult();
+                      return;
+                    }
+                    void saveAgain();
+                  }}
+                >
+                  {saveState.retry === "check-result" ? "Check the result" : "Save again"}
+                </Button>
+              </AlertAction>
+            )}
+          </Alert>
+        ) : null}
+        {mediaPasteNotice ? (
+          <Alert>
+            <AlertTitle>A file was pasted</AlertTitle>
+            <AlertDescription>Images and video are added with the toolbar buttons, so they are prepared, placed and saved with the content. Nothing was inserted here.</AlertDescription>
+            <AlertAction>
+              <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss the paste message" onClick={() => setMediaPasteNotice(false)}>
+                <X aria-hidden="true" />
+              </Button>
+            </AlertAction>
+          </Alert>
+        ) : null}
+        <PasteDecisionDialog pending={pendingPaste} onChoose={applyPendingPaste} />
+        <LinkDestinationDialog
+          open={linkDraft.open}
+          href={linkDraft.href}
+          error={linkDraft.error}
+          onHrefChange={(href) => {
+            setLinkDraft((draft) => ({ ...draft, href, error: null }));
+          }}
+          onApply={applyLink}
+          onCancel={() => {
+            setLinkDraft({ open: false, href: "", error: null });
+          }}
+        />
+      </section>
+    </DirectionProvider>
   );
 }
 export default ProseEditor;

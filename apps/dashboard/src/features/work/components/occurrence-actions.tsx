@@ -8,8 +8,17 @@
  * durable `OperationResult` in its own place — results are never aggregated into a single "done". The
  * series body is the shared `RecordDetail` in its page layout, so this file composes no second detail
  * body, header or section order.
+ *
+ * An attempt that applied re-reads the route's own read, so the state badge, `data-series-state`, the
+ * next-dates preview, the plan review and the controls each command is admitted by are the service's
+ * current answer rather than what the page was first rendered with: the series mutations do it in
+ * `use-series-mutations`, and completing the date does it here, where this body is the one caller that
+ * sends it. A refused, unchanged or unconfirmed attempt re-reads nothing — `unknown` in particular must
+ * not be shown as settled — and the refresh replaces the server payload without remounting this body, so
+ * the receipt of the attempt that made the change stays on screen beside the state it produced.
  */
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from "react";
 import { mayReplay, useReviewedMutation, type MutationSubmit } from "@/components/action-review";
 import { fieldErrorsFromInvalid, FormErrorSummary, FormField, type FieldErrorLookup, type FormFieldControl } from "@/components/form-field";
 import OperationResult from "@/components/operation-result";
@@ -22,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
@@ -38,8 +48,10 @@ import {
   END_CONDITION_LABELS,
   END_COUNT_LABEL,
   END_DATE_LABEL,
+  FIRST_DUE_DATE_LABEL,
   INTERVAL_LABEL,
   MISSING_MONTHLY_DAY_DISCLOSURE,
+  ONGOING_POLICY_END_STATEMENT,
   PLANNING_TIME_ZONE_LABEL,
   PLANNING_TIME_ZONE_NOTE,
   REPEAT_PROFILE_DESCRIPTIONS,
@@ -54,6 +66,8 @@ import { editThisAndFutureSchema, pauseSeriesSchema, resumeSeriesSchema, stopSer
 import { completeTaskSchema, type CompleteTaskPayload } from "../schemas/task";
 import { useSeriesMutations } from "../hooks/use-series-mutations";
 import { useTaskMutations } from "../hooks/use-task-mutations";
+// The one derivation of the boundary a prospective revision takes effect from, shared with the route.
+import { prospectiveRevisionBoundary } from "../series-revision-boundary";
 // The one plan-review surface, mounted by this body: its resolutions are applied to the single date the read names.
 import PlanNeedsReviewPanel, { type PlanNeedsReviewFacts } from "./plan-needs-review-panel";
 // The one next-dates preview, mounted by this body: it states the next three dates the rule produces and the
@@ -102,6 +116,7 @@ const STOP_LABEL = "Stop";
 const CANCEL_LABEL = "Cancel";
 const OCCURRENCE_GROUP_LEGEND = "This date";
 const SERIES_GROUP_LEGEND = "The series";
+const PLAN_RULE_HEADING = "The plan's first due date and its end";
 const PREVIEW_GROUP_LEGEND = "The rule and its next dates";
 const PREVIEW_GROUP_NOTE =
   "These dates are what this plan's rule produces next, judged in the plan's own planning timezone rather than in the one this browser displays. Only the date marked actionable can be answered on this page: the others are previews, and nothing happens on them until they become the next date. Where the rule asked for a day a month does not have, the date shown is that month's final day and the resolution is stated beside it.";
@@ -210,6 +225,42 @@ function CivilDateText({ value }: { readonly value: string }): ReactElement {
   );
 }
 
+/** One fact of the plan's rule, labelled and stated as the read supplied it: the component never derives a date the read already decided. */
+function RuleFact({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-sm wrap-anywhere">{children}</dd>
+    </div>
+  );
+}
+
+/**
+ * The end the read resolved, in the shape it resolved to. The three are different answers and are never stated in
+ * one another's words: a date, a number of occurrences, or the qualified ongoing-personal-series policy, which has
+ * neither and says so rather than reading as a plan whose end was left blank.
+ */
+function SeriesEndFacts({ end }: { readonly end: SeriesView["rule"]["end"] }): ReactElement {
+  switch (end.kind) {
+    case "on-date":
+      return (
+        <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          <span className="text-muted-foreground">{`${END_DATE_LABEL}:`}</span>
+          <CivilDateText value={end.on} />
+        </span>
+      );
+    case "after-count":
+      return (
+        <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          <span className="text-muted-foreground">{`${END_COUNT_LABEL}:`}</span>
+          <bdi className="tabular-figures">{String(end.count)}</bdi>
+        </span>
+      );
+    case "ongoing-personal-policy":
+      return <span>{ONGOING_POLICY_END_STATEMENT}</span>;
+  }
+}
+
 /** The value a date-and-time input shows for a stored planned time: a clock-only time is shown on the date the occurrence is due on, and nothing is invented when either part is missing. */
 function plannedTimeFieldValue(occurrence: SeriesOccurrence): string {
   if (occurrence.plannedTime === null) return "";
@@ -270,7 +321,7 @@ function CommandReceipt({ outcome, heading, onCheckResult, onRetrySameWork, onRe
     frameRef.current?.focus();
   }, [outcome]);
   return (
-    <div ref={frameRef} tabIndex={-1} data-slot="occurrence-command-result" data-outcome={outcome.outcome} className="flex min-w-0 flex-col gap-2 outline-none">
+    <div ref={frameRef} tabIndex={-1} data-slot="occurrence-command-result" data-outcome={outcome.outcome} className="flex min-w-0 flex-col gap-2">
       <OperationResult outcome={outcome} heading={heading} headingLevel={4} onCheckResult={outcome.outcome === "unknown" ? onCheckResult : undefined} onRetrySameWork={onRetrySameWork} onReapply={onReapply} fieldLabels={fieldLabels} />
     </div>
   );
@@ -634,13 +685,22 @@ function FutureRevisionForm({ scope, series, revision, effectiveFrom, onClose, o
           </FormField>
           <FormField label="Repeat" name="profile" required error={fieldErrorOf(shown, "profile")}>
             {(field) => (
-              <NativeSelect {...controlAria(field)} value={draft.profile} onChange={(event) => update({ profile: profileOf(event.target.value) })}>
-                {REPEAT_PROFILE_ORDER.map((profile) => (
-                  <NativeSelectOption key={profile} value={profile}>
-                    {REPEAT_PROFILE_LABELS[profile]}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
+              // A longer closed choice with typeahead, so this is the styled Select rather than a native one: the
+              // items it is given are what let the trigger state the chosen profile's own label. The field's marker
+              // stays a marker, because a required Select renders a hidden input the browser cannot focus if it ever
+              // blocked submission, and editThisAndFutureSchema already refuses a profile it does not admit.
+              <Select items={REPEAT_PROFILE_LABELS} value={draft.profile} onValueChange={(next) => update({ profile: profileOf(String(next)) })} name="profile">
+                <SelectTrigger {...controlAria(field)}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REPEAT_PROFILE_ORDER.map((profile) => (
+                    <SelectItem key={profile} value={profile}>
+                      {REPEAT_PROFILE_LABELS[profile]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
           </FormField>
           <p className="text-sm text-pretty text-muted-foreground">{REPEAT_PROFILE_DESCRIPTIONS[draft.profile]}</p>
@@ -721,6 +781,7 @@ interface OccurrenceCommandsProps {
 function OccurrenceCommands({ scope, series, revision, actions, effectiveFrom, onCheckResult, onOpenComposer }: OccurrenceCommandsProps): ReactElement {
   const headingId = useId();
   const formId = useId();
+  const router = useRouter();
   const { completeTask } = useTaskMutations(scope);
   const { skipOccurrence } = useSeriesMutations(scope);
   const [editing, setEditing] = useState<"none" | "occurrence" | "future">("none");
@@ -770,6 +831,20 @@ function OccurrenceCommands({ scope, series, revision, actions, effectiveFrom, o
   }
   const completeInput: Omit<MutationInput<CompleteTaskPayload>, "operationId"> = { scope, expectedRevision: actionable.revision, payload: completeTaskSchema.parse({ taskId: actionable.taskId }) };
   const skipInput: Omit<MutationInput<SkipOccurrencePayload>, "operationId"> = { scope, expectedRevision: actionable.revision, payload: skipOccurrenceSchema.parse({ occurrenceId: actionable.taskId }) };
+  // Completing the date is the one command on this body that is not a series mutation, so it does not settle through
+  // the series hook's own re-read — and the task transport cannot carry one, because the Work lists mount real task
+  // queries and a completion there must not cost a server render. The re-read is therefore asked for here, at the one
+  // place this body sends the completion, and only when the attempt applied: `unchanged`, `conflict`, `denied`,
+  // `invalid` and `unavailable` left every read as it stands, and an `unknown` attempt must never be shown as settled
+  // by a fresh read. The body keeps its own state across the refresh, so this attempt's receipt stays on screen beside
+  // the state the completion produced.
+  const submitComplete = async (input: MutationInput<CompleteTaskPayload>): Promise<MutationOutcome> => {
+    const outcome = await completeTask.mutateAsync({ operationId: input.operationId, expectedRevision: input.expectedRevision, payload: input.payload });
+    if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted") {
+      router.refresh();
+    }
+    return outcome;
+  };
   return (
     <section aria-labelledby={headingId} data-slot="occurrence-actions" data-occurrence="actionable" className="flex min-w-0 flex-col gap-3">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -788,7 +863,7 @@ function OccurrenceCommands({ scope, series, revision, actions, effectiveFrom, o
         receiptHeading={COMPLETE_RECEIPT_HEADING}
         narration={COMPLETE_NARRATION}
         input={completeInput}
-        submit={async (input) => completeTask.mutateAsync({ operationId: input.operationId, expectedRevision: input.expectedRevision, payload: input.payload })}
+        submit={submitComplete}
         withheldReason={withheldReasonFor(actionable.actions, "completeTask")}
         onCheckResult={onCheckResult}
         fieldLabels={OCCURRENCE_FIELD_LABELS}
@@ -958,7 +1033,11 @@ export interface OccurrenceActionsProps {
    * the preview's dates only: it never decides which date a rule produces, and it is never the plan's own zone.
    */
   readonly displayLocale: string;
-  /** The explicit boundary a prospective revision takes effect from. Defaults to the read's own planning-zone today, never a date computed here. */
+  /**
+   * The explicit boundary a prospective revision takes effect from. Defaults to the plan's own prospective
+   * boundary — the later of the read's planning-zone today and the latest rule boundary it carries — and is
+   * never a date computed here.
+   */
   readonly effectiveFrom?: string | null;
   readonly onCheckResult?: (() => void) | undefined;
   /** Where the worker goes when this series has no date to answer and the work still exists as ordinary work. */
@@ -969,10 +1048,27 @@ export interface OccurrenceActionsProps {
 /** The series detail body: the shared record body, the plan's own preview, the plan review, the occurrence group and the series-state group, in that order. */
 export default function OccurrenceActions({ envelope, displayLocale, effectiveFrom = null, onCheckResult, onOpenComposer, className }: OccurrenceActionsProps): ReactElement {
   const series = envelope.data;
-  const boundary = effectiveFrom ?? series.today;
+  // The revision this body offers is prospective, so the boundary it presents is the plan's own: the later of the
+  // plan's today and the latest rule boundary it carries. Presenting today alone would hand a plan whose rule begins
+  // in the future a boundary its own engine refuses, and a change the worker genuinely made would settle as nothing.
+  const boundary = effectiveFrom ?? prospectiveRevisionBoundary(series);
   const planReview = series.planReview;
   const needsReview = planReview.state === "needs-review";
+  // The plan's review opens on the date this read names as awaiting a decision, and holds that date after its own
+  // resolution settles: applying a resolution re-reads the plan, so without holding it the panel would unmount and
+  // take the receipt of what was applied with it. The date is released when the worker dismisses that receipt,
+  // which is the only act that closes it.
+  const reviewOccurrenceId = needsReview ? series.actionableOccurrenceId : null;
+  const [heldReviewOccurrenceId, setHeldReviewOccurrenceId] = useState<string | null>(null);
+  const reviewPanelOccurrenceId = reviewOccurrenceId ?? heldReviewOccurrenceId;
+  const holdReviewReceipt = useCallback((): void => {
+    setHeldReviewOccurrenceId(reviewPanelOccurrenceId);
+  }, [reviewPanelOccurrenceId]);
+  const releaseReviewReceipt = useCallback((): void => {
+    setHeldReviewOccurrenceId(null);
+  }, []);
   const missedId = useId();
+  const ruleHeadingId = useId();
   const previewHeadingId = useId();
   // The dates the rule produces next, from the read's own walk. A plan that admits no date previews nothing, so the section is absent rather than empty.
   const previewReading = previewReadingOf(series);
@@ -980,6 +1076,12 @@ export default function OccurrenceActions({ envelope, displayLocale, effectiveFr
   // review's "Move the next date forward" refers to without computing or formatting one of its own.
   const nextNominalDate = series.preview.status === "preview" ? series.preview.dates.at(0) : undefined;
   const planReviewFacts: PlanNeedsReviewFacts = { state: series.state, revision: envelope.revision, planNeedsReview: needsReview, missedDateCount: planReview.missedDateCount, nextNominalDate: nextNominalDate === undefined ? null : { iso: nextNominalDate, display: nextNominalDate } };
+  // The plan's own review is the one surface that applies a resolution, and it applies it to the single date the
+  // read names as awaiting an answer, so it is composed here where that date and this body's authority are both in
+  // hand. Once a resolution settles the plan is re-read, so the panel is kept mounted on the date it was opened for
+  // and states the settled review together with the receipt of what was applied; the worker dismisses that receipt,
+  // and only then is the date released.
+  const reviewPanel = reviewPanelOccurrenceId === null ? null : <PlanNeedsReviewPanel scope={envelope.scope} occurrenceId={reviewPanelOccurrenceId} facts={planReviewFacts} seriesTitle={series.title} headingLevel={3} onResolved={holdReviewReceipt} onDismiss={needsReview ? undefined : releaseReviewReceipt} />;
   return (
     <RecordDetail
       layout="page"
@@ -990,6 +1092,22 @@ export default function OccurrenceActions({ envelope, displayLocale, effectiveFr
       sections={{
         openTasks: (
           <div className="flex min-w-0 flex-col gap-4">
+            {/* The plan's own rule facts, stated from the read's envelope before the dates that rule produces: a
+                reader sees what the plan is before what it produces next. The section holds for every plan state,
+                because the rule in force is a fact whether the plan is active, paused or stopped. */}
+            <section aria-labelledby={ruleHeadingId} data-slot="series-plan-rule" className="flex min-w-0 flex-col gap-2">
+              <h3 id={ruleHeadingId} className="font-heading text-base font-medium">
+                {PLAN_RULE_HEADING}
+              </h3>
+              <dl className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+                <RuleFact label={FIRST_DUE_DATE_LABEL}>
+                  <CivilDateText value={series.rule.firstDueOn} />
+                </RuleFact>
+                <RuleFact label={END_OF_SERIES_LABEL}>
+                  <SeriesEndFacts end={series.rule.end} />
+                </RuleFact>
+              </dl>
+            </section>
             {previewReading === null ? null : (
               // The plan's own rule and the dates it produces next, stated before any action is offered: a preview
               // date is not a date to answer, and the read has already decided which one is.
@@ -1001,12 +1119,7 @@ export default function OccurrenceActions({ envelope, displayLocale, effectiveFr
                 <p className="text-sm text-pretty text-muted-foreground">{PREVIEW_GROUP_NOTE}</p>
               </section>
             )}
-            {needsReview && series.actionableOccurrenceId !== null ? (
-              // The plan's own review is the one surface that applies a resolution, and it applies it to the single date
-              // the read names as awaiting an answer — so it is mounted here, where that date and this body's authority
-              // are both in hand, rather than restated as a second review beside it.
-              <PlanNeedsReviewPanel scope={envelope.scope} occurrenceId={series.actionableOccurrenceId} facts={planReviewFacts} seriesTitle={series.title} headingLevel={3} />
-            ) : null}
+            {reviewPanel}
             {needsReview && series.actionableOccurrenceId === null ? (
               // No date is awaiting an answer, so there is nothing a resolution could be applied to: the plan is
               // described and no control is offered over a record this read did not name.

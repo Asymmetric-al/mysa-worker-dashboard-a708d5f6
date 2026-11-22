@@ -16,6 +16,7 @@ import { REPORT_CATALOG, REPORT_ORDER, isReportId, reportHref, reportTitle, type
 import { assertNever } from "@/lib/result";
 import { reads, type ReadEnvelope } from "@/modules/data-service";
 import type { ReportQuery } from "@/modules/support/report";
+import { AMOUNT_RANGE_CURRENCY_MESSAGE } from "../../../api/support/query";
 
 /** What `readReport` answers with: an envelope, a denial, an outage, or a refusal of the request itself. */
 type ReportReadResult = Awaited<ReturnType<typeof reads.support.readReport>>;
@@ -47,8 +48,28 @@ const SUPPORT_HREF = "/support";
 /** The id the valid-report list is labelled by, stated once so the heading and the list agree. */
 const REPORT_LIST_ID = "support-report-choices";
 
-/** The search parameters this route reads, named once. Any other name in the address is not part of a report's query. */
-const PARAM = { period: "period", from: "from", to: "to", year: "year", currency: "currency", designation: "designation", search: "search", recipient: "recipient", partnerId: "partnerId", sortField: "sortField", sortDirection: "sortDirection" } as const;
+/**
+ * The search parameters this route reads, named once. Any other name in the address is not part of a report's
+ * query. The filter set is the one the gifts ledger states, in the same names, so the query a worker
+ * investigated on that ledger can be opened, exported and printed here without being restated.
+ */
+const PARAM = {
+  period: "period",
+  from: "from",
+  to: "to",
+  year: "year",
+  currency: "currency",
+  amountMin: "amountMin",
+  amountMax: "amountMax",
+  designation: "designation",
+  search: "search",
+  recipient: "recipient",
+  partnerId: "partnerId",
+  sortField: "sortField",
+  sortDirection: "sortDirection",
+  page: "page",
+  pageSize: "pageSize",
+} as const;
 
 /** The three attributions a report may be narrowed to; a partner attribution additionally names its record. */
 const RECIPIENT_PARTNER = "partner";
@@ -57,6 +78,12 @@ const RECIPIENT_UNRESOLVED = "unresolved";
 
 /** A calendar year as an address states it: digits only, so no sign, fraction or exponent reaches the read. */
 const WHOLE_YEAR = /^[0-9]{1,4}$/u;
+
+/** A page index or a page size as an address states it: a whole count of pages or rows, never a sign and never a fraction. */
+const WHOLE_COUNT = /^[0-9]{1,9}$/u;
+
+/** An amount bound as an address states it: a whole count of minor units, which may be a correction and so may be negative. */
+const AMOUNT_BOUND = /^-?[0-9]{1,16}$/u;
 
 /** This route's own wording for the states that are not a report. */
 const PAGE_COPY = {
@@ -69,7 +96,17 @@ const PAGE_COPY = {
   unknownBody: "This application reports received support in four fixed ways, and this address names none of " + "them. No other report is computed and none is substituted for it, because a report that looks " + "like the one you asked for is worse than a report you know is different.",
   unknownAction: "Open the support overview",
   listHeading: "The four reports",
+  amountRangeNeedsBoth: "State both bounds of an amount range: one bound on its own states no range, and no report is computed from half of one.",
+  amountBound: "State an amount bound as a whole number of the selected currency's minor units. A bound that is not one is refused rather than rounded, because rounding would change which rows match.",
+  pageIndex: "State the page as a whole number of pages from 0, the first page.",
+  pageSize: "State the page size as a whole number of rows.",
 } as const;
+
+/** One problem an address states that stops this route reading a report it could state honestly: the field the reader corrects, and what to correct. */
+interface AddressProblem {
+  readonly field: string;
+  readonly message: string;
+}
 
 /** One value of a repeated search key: the same key may arrive more than once, and a list is never read as a series of filter decisions. */
 function firstValue(value: string | string[] | undefined): string | undefined {
@@ -129,19 +166,93 @@ function sortOf(search: SearchParams): ReportFilters["sort"] {
   return { field, direction };
 }
 
+/** A whole count of minor units as the address states one, or nothing when it states a value that is not one: no bound is repaired into a number it never was. */
+function statedAmount(stated: string): number | undefined {
+  if (!AMOUNT_BOUND.test(stated)) {
+    return undefined;
+  }
+  const value = Number(stated);
+  return Number.isSafeInteger(value) ? value : undefined;
+}
+
 /**
- * The filter set the read is asked for, built from the address and from nothing else. No page window is
- * stated: the four fixed reports carry no paging control, so the read serves the document's default of
- * 50 rows and its 200-row cap rather than a window this route invented.
+ * The amount range the address states, in the minor units of the one currency it selects. The facet compares one
+ * currency's amounts (AAP 0.8.1), so a range stated with no currency, half a range, or a bound that is not a whole
+ * number of minor units is stated as the problem to correct: the report is not read, because neither the screen nor
+ * the file it exports may present an unfiltered result as the filtered query the address states.
  */
-function filtersOf(search: SearchParams): ReportFilters {
+function amountRangeOf(search: SearchParams, problems: AddressProblem[]): ReportFilters["amountRange"] | undefined {
+  const min = statedText(search, PARAM.amountMin);
+  const max = statedText(search, PARAM.amountMax);
+  if (min === undefined && max === undefined) {
+    return undefined;
+  }
+  if (min === undefined || max === undefined) {
+    problems.push({ field: min === undefined ? PARAM.amountMax : PARAM.amountMin, message: PAGE_COPY.amountRangeNeedsBoth });
+    return undefined;
+  }
+  const minMinor = statedAmount(min);
+  const maxMinor = statedAmount(max);
+  if (minMinor === undefined || maxMinor === undefined) {
+    const field = minMinor === undefined ? PARAM.amountMin : PARAM.amountMax;
+    problems.push({ field, message: PAGE_COPY.amountBound });
+    return undefined;
+  }
+  const currency = statedText(search, PARAM.currency);
+  if (currency === undefined || currency.trim() === "") {
+    problems.push({ field: PARAM.amountMin, message: AMOUNT_RANGE_CURRENCY_MESSAGE });
+    return undefined;
+  }
+  return { minMinor, maxMinor };
+}
+
+/** The page window the address states: a whole page index counted from zero, and the row count it holds, which travels with it because a size with no page states no window. */
+function pageWindowOf(search: SearchParams, problems: AddressProblem[]): ReportFilters["page"] {
+  const stated = statedText(search, PARAM.page);
+  if (stated === undefined) {
+    return undefined;
+  }
+  if (!WHOLE_COUNT.test(stated)) {
+    problems.push({ field: PARAM.page, message: PAGE_COPY.pageIndex });
+    return undefined;
+  }
+  const index = Number(stated);
+  const statedSize = statedText(search, PARAM.pageSize);
+  if (statedSize === undefined) {
+    return { index };
+  }
+  if (!WHOLE_COUNT.test(statedSize)) {
+    problems.push({ field: PARAM.pageSize, message: PAGE_COPY.pageSize });
+    return undefined;
+  }
+  return { index, size: Number(statedSize) };
+}
+
+/**
+ * The filter set the read is asked for, built from the address and from nothing else. The bounded filter set is the
+ * one the gifts ledger states — period, currency, amount range within that currency, attribution, designation,
+ * search, sort and the page window — so the query a worker investigated there is the query this route reads, states
+ * and exports. Nothing an address states and this route cannot apply is dropped silently: it is stated as a problem.
+ */
+function filtersOf(search: SearchParams, problems: AddressProblem[]): ReportFilters {
   const period = periodOf(search);
   const partner = partnerOf(search);
   const sort = sortOf(search);
   const currency = statedText(search, PARAM.currency);
+  const amountRange = amountRangeOf(search, problems);
+  const page = pageWindowOf(search, problems);
   const designation = statedText(search, PARAM.designation);
   const searchText = statedText(search, PARAM.search);
-  return { ...(period === undefined ? {} : { period }), ...(currency === undefined ? {} : { currency }), ...(designation === undefined ? {} : { designation }), ...(partner === undefined ? {} : { partner }), ...(searchText === undefined ? {} : { search: searchText }), ...(sort === undefined ? {} : { sort }) };
+  return {
+    ...(period === undefined ? {} : { period }),
+    ...(currency === undefined ? {} : { currency }),
+    ...(amountRange === undefined ? {} : { amountRange }),
+    ...(designation === undefined ? {} : { designation }),
+    ...(partner === undefined ? {} : { partner }),
+    ...(searchText === undefined ? {} : { search: searchText }),
+    ...(sort === undefined ? {} : { sort }),
+    ...(page === undefined ? {} : { page }),
+  };
 }
 
 /** This same report with the query the address states, so a retry re-reads the view the reader was in rather than dropping the filters they set. */
@@ -199,7 +310,14 @@ function UnknownReportNotice(): ReactElement {
   );
 }
 
-/** One of the four fixed reports, read once and rendered by the frame the family shares. */
+/** The problems an address states, in the wording this route gives them, so a reader is told which search parameter to correct and why. */
+function addressProblemsDescription(problems: readonly AddressProblem[]): string {
+  return problems.map((problem) => `${problem.field}: ${problem.message}`).join(" ");
+}
+
+/**
+ * One of the four fixed reports, read once and rendered by the frame the family shares.
+ */
 export default async function SupportReportPage({ params, searchParams }: SupportReportPageProps): Promise<ReactElement> {
   const { reportId } = await params;
   const stated = await searchParams;
@@ -208,7 +326,19 @@ export default async function SupportReportPage({ params, searchParams }: Suppor
     // report is substituted, and nothing is recorded in place of the one that was asked for.
     return <UnknownReportNotice />;
   }
-  const result = await reads.support.readReport(REPORT_CATALOG[reportId].queryId, filtersOf(stated));
+  // A filter the address states and this route cannot apply is stated before any read: a report computed
+  // without it would be presented — on the screen, in the CSV and on the printed page — as the filtered
+  // result the address asked for, which is the one thing a financial surface must never do.
+  const problems: AddressProblem[] = [];
+  const filters = filtersOf(stated, problems);
+  if (problems.length > 0) {
+    return (
+      <div className="flex min-w-0 flex-col gap-4 text-start">
+        <StateNotice kind="refused" headingLevel={1} title={PAGE_COPY.refusedTitle} description={addressProblemsDescription(problems)} action={{ label: PAGE_COPY.unknownAction, href: SUPPORT_HREF }} />
+      </div>
+    );
+  }
+  const result = await reads.support.readReport(REPORT_CATALOG[reportId].queryId, filters);
   switch (result.kind) {
     case "envelope": {
       const { envelope } = result;

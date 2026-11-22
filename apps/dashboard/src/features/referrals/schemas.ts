@@ -83,7 +83,7 @@ export const sourceReferenceSchema = z.strictObject({
 });
 const ZONE_SHAPE = /^(?:[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*|[+-]\d{2}:\d{2})$/u;
 
-const sourceZoneSchema = z.string({ error: INTRODUCTION_MESSAGES.zoneRequired }).trim().min(1, INTRODUCTION_MESSAGES.zoneRequired).max(MAX_ZONE_LENGTH, INTRODUCTION_MESSAGES.zoneInvalid).regex(ZONE_SHAPE, INTRODUCTION_MESSAGES.zoneInvalid);
+export const sourceZoneSchema = z.string({ error: INTRODUCTION_MESSAGES.zoneRequired }).trim().min(1, INTRODUCTION_MESSAGES.zoneRequired).max(MAX_ZONE_LENGTH, INTRODUCTION_MESSAGES.zoneInvalid).regex(ZONE_SHAPE, INTRODUCTION_MESSAGES.zoneInvalid);
 // recordIntroduction: the original introduction date, with the precision it is known to
 /** Validates the `recordIntroduction` payload: the partner, the original introduction date, the precision that date is known to, the zone it is known in, and the source that issued it. */
 export const introductionPayloadSchema = z

@@ -13,7 +13,6 @@ import { BUCKET_LABELS, COMMITMENT_KINDS, OUTSIDE_PARTITION, PARTITION_BUCKETS, 
 import type { GiftRow, SupportProjection } from "@/modules/support/basis";
 import { GOAL_CAPABILITY, GOAL_MEASURE, formatPercentageBasisPoints, goalProgress, type GoalProgress } from "@/modules/support/goal";
 import { CSV_ALL_CURRENCIES, snapshotMetadata, toCsv, type SnapshotFact } from "@/modules/export/csv";
-import { printModel, type PrintModel } from "@/modules/export/print";
 import {
   PERIOD_PRESETS,
   REPORT_IDS,
@@ -163,7 +162,7 @@ export type SupportGoalFigure = { readonly amount: Money; readonly measure: Supp
 /** The goal read: the target, its progress, and the four states that must stay distinguishable. */
 export type GoalData = { readonly goal: SupportGoalFigure | null; readonly progress: GoalProgress; readonly percentage: string | null; readonly report: ReportResult; readonly period: SupportPeriod; readonly measure: typeof GOAL_MEASURE; readonly canEditGoal: boolean };
 /** One whole-query export: the file, its name, and the snapshot identity every surface of that query states. */
-export type SupportExportData = { readonly csv: string; readonly filename: string; readonly rowCount: number; readonly metadata: readonly SnapshotFact[]; readonly print: PrintModel; readonly snapshot: Snapshot };
+export type SupportExportData = { readonly csv: string; readonly filename: string; readonly rowCount: number; readonly metadata: readonly SnapshotFact[]; readonly snapshot: Snapshot };
 // The session documents these reads parse
 const supportStateDocumentSchema = z.object({ supportProjection: supportProjectionRecordSchema.nullable(), gifts: z.array(giftRowRecordSchema), commitments: z.array(commitmentRowRecordSchema) });
 const workloadDocumentSchema = z.object({ header: z.object({ coverage: coverageSchema, currencies: z.array(z.string().min(1)) }).optional(), gifts: z.array(giftRowRecordSchema) });
@@ -771,7 +770,7 @@ export async function readReport(reportId: ReportId, query: SupportQuery = {}, s
     envelope: envelopeOf({ data: result, context, coverage: financialCoverageOf(context.projection, result.snapshot.query), revision: context.revision, valueStates: recordedStatesOf(result), actions: [...refusalActions(built.refused), exportAction(canExport(context.session, context.scope))] }),
   };
 }
-/** Takes the whole query out of the application: the same report in CSV form, with the print model. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
+/** Takes the whole query out of the application: the same report in CSV form, with the snapshot identity it states. The printed page is not an artifact of this read: the print view renders its model from the same result the browser already holds. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readExport(query: SupportQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<SupportExportData, FinancialCoverage>>> {
   const outcome = await readContext(JOB_EXPORT, source, canExport);
   if (!outcome.ok) return refusalOf(outcome.refusal);
@@ -783,7 +782,7 @@ export async function readExport(query: SupportQuery = {}, source?: SessionSourc
   const valueStates = recordedStatesOf(result);
   valueStates["export.rowCount"] = countState(result.total);
   const envelope = envelopeOf({
-    data: { csv: toCsv(result), filename: exportFilenameOf(result), rowCount: result.total, metadata: snapshotMetadata(result), print: printModel(result), snapshot: result.snapshot },
+    data: { csv: toCsv(result), filename: exportFilenameOf(result), rowCount: result.total, metadata: snapshotMetadata(result), snapshot: result.snapshot },
     context,
     coverage: financialCoverageOf(context.projection, result.snapshot.query),
     revision: context.revision,

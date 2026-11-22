@@ -233,12 +233,15 @@ describe("whole-query export agreement (criterion 1)", () => {
     expect(parsed.rows.length).toBeGreaterThan(PAGE_SIZE_DEFAULT);
     expect(paged.data.rows.length).toBe(PAGE_SIZE_DEFAULT);
     expect(paged.data.rows.length).toBeLessThan(paged.data.total);
-    expect(exported.data.print.rowTotal).toBe(exported.data.rowCount);
-    expect(exported.data.print.completeness).toBe("whole-query");
+    // The export envelope carries no print model: the print view builds one from the report result it renders, so the
+    // printed page is taken from that same query's read. It states the whole result's total and says it holds one page
+    // of it, while the file holds every row — and the page's rows are the file's first rows, in the file's own order.
     const printedPage = printModel(paged.data);
+    expect(printedPage.rowTotal).toBe(exported.data.rowCount);
+    expect(printedPage.rowTotal).toBe(parsed.rows.length);
     expect(printedPage.completeness).toBe("page-only");
     expect(printedPage.notes.some((note) => note.includes("export the CSV for the complete result"))).toBe(true);
-    expect(parsed.rows.map((row) => cell(row, "gift_row_id"))).toEqual(exported.data.print.rows.map((row) => row[0]?.text ?? ""));
+    expect(printedPage.rows.map((row) => row[0]?.text ?? "")).toEqual(parsed.rows.slice(0, printedPage.rows.length).map((row) => cell(row, "gift_row_id")));
   });
   it("totals each currency exactly, and refuses to state a combined total across currencies", async () => {
     const exported = await exportEnvelope({ period: CLOSED_PERIOD, timeZone: TIME_ZONE });
@@ -278,7 +281,9 @@ describe("whole-query export agreement (criterion 1)", () => {
     expect(parsed.meta.get("row_total")).toBe(String(exported.data.rowCount));
     expect(parsed.meta.get("currency")).toBe(UNKNOWN_CURRENCY);
     expect(parsed.header).toEqual(CSV_COLUMN_HEADERS);
-    expect(exported.data.print.columns.map((column) => column.header)).toEqual(CSV_COLUMN_HEADERS);
+    // The printed table's columns are the file's columns: one column list, rendered by two writers from one result.
+    const printed = printModel((await reportEnvelope(EXPORT_REPORT_ID, { period: CLOSED_PERIOD, timeZone: TIME_ZONE })).data);
+    expect(printed.columns.map((column) => column.header)).toEqual(CSV_COLUMN_HEADERS);
     const kwdRow = rowById(parsed.rows, KWD_ROW_ID);
     const jpyRow = rowById(parsed.rows, JPY_ROW_ID);
     if (kwdRow === undefined || jpyRow === undefined) throw new Error("The seeded three-decimal and zero-decimal gifts are not in the exported period.");
@@ -310,8 +315,13 @@ describe("whole-query export agreement (criterion 1)", () => {
     const usd = paged.data.summary.find((entry) => entry.currency === "USD");
     if (usd === undefined) throw new Error("The seeded world holds no USD support in this period, so the anonymous case has nothing to compare with.");
     expect(usd.donorCount.count).toBeLessThan(usd.giftCount.count);
-    const partnerColumn = exported.data.print.columns.map((column) => column.header).indexOf("partner_id");
-    const printedAnonymous = exported.data.print.rows.find((row) => row[0]?.text === ANONYMOUS_ROW_ID);
+    // The printed page states the same thing as the file. Its model comes from the report result the print view
+    // renders rather than from the export envelope, so the report is narrowed to the anonymous attribution, which puts
+    // the row on the page that the print view would be given.
+    const anonymousPrint = printModel((await reportEnvelope(EXPORT_REPORT_ID, { period: CLOSED_PERIOD, timeZone: TIME_ZONE, partner: { kind: "anonymous" } })).data);
+    const partnerColumn = anonymousPrint.columns.map((column) => column.header).indexOf("partner_id");
+    const printedAnonymous = anonymousPrint.rows.find((row) => row[0]?.text === ANONYMOUS_ROW_ID);
+    expect(printedAnonymous).toBeDefined();
     expect(printedAnonymous?.[partnerColumn]?.text).toBe(VALUE_STATE_TEXT.unknown);
     expect(printedAnonymous?.[partnerColumn]?.accessibleLabel ?? "").toContain("Partner");
     const splitRows = parsed.rows.filter((row) => cell(row, "gift_id") === SPLIT_GIFT_ID);
@@ -412,8 +422,12 @@ describe("whole-query export agreement (criterion 1)", () => {
     expect(snapshotIdentityOf(exported.data.snapshot)).toEqual(snapshotIdentityOf(paged.data.snapshot));
     const parsed = parseExport(exported.data.csv);
     expect([...parsed.meta.entries()]).toEqual(exported.data.metadata.map((fact) => [fact.field, fact.value]));
-    expect(exported.data.print.facts).toEqual(exported.data.metadata);
+    // One writer states the same facts on screen, in the file and on the printed page. The export envelope carries no
+    // print model, so the printed page's facts are taken from the report read of the same query; the two facts that
+    // state a page window are left out, because that read's window is one page where the file is the whole query.
     const pageDependent = new Set(["snapshot_query", "page"]);
+    const printedFacts = printModel(paged.data).facts;
+    expect(printedFacts.filter((fact) => !pageDependent.has(fact.field))).toEqual(exported.data.metadata.filter((fact) => !pageDependent.has(fact.field)));
     expect(exported.data.metadata.filter((fact) => !pageDependent.has(fact.field))).toEqual(snapshotMetadata(paged.data).filter((fact) => !pageDependent.has(fact.field)));
     const headerRecord = parsed.records.find((record) => record[0] !== CSV_META_FIELD);
     const unknownRecord = parsed.records.find((record) => record[0] === UNKNOWN_CURRENCY_ROW_ID);

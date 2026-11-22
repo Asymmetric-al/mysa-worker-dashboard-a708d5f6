@@ -10,9 +10,9 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import { assertNever } from "@/lib/result";
-import { sameScope, type Coverage, type CoverageState, type ReadEnvelope, type Scope } from "@/modules/data-service/envelope";
+import { sameScope, type Coverage, type CoverageState, type GiftAttribution, type ReadEnvelope, type Scope } from "@/modules/data-service/envelope";
 import { printModel } from "@/modules/export/print";
-import type { MatrixCell, ReportQuery, ReportResult } from "@/modules/support/report";
+import { matrixDrilldownQuery, type MatrixCell, type ReportQuery, type ReportResult } from "@/modules/support/report";
 import { COVERAGE_TEMPLATES, REPORT_NOT_FOUND, fillTemplate } from "../copy";
 import { reportSnapshotId, useReport, type ReportEnvelope, type ReportRequestQuery } from "../hooks/use-report";
 import { REPORT_CATALOG, isReportId, reportTitle, type ReportId } from "../report-catalog";
@@ -55,6 +55,9 @@ const GIFTS_PARAM = { from: "from", to: "to", currency: "currency", recipient: "
 /** The export action the read states, and the query parameter the history year travels in. */
 const EXPORT_ACTION = "exportQuery";
 const YEAR_PARAM = "year";
+/** The page window the address states, in the read's own vocabulary: a page index counted from zero, and the rows it holds, which travel together because a row count without a page states no window. */
+const PAGE_PARAM = "page";
+const PAGE_SIZE_PARAM = "pageSize";
 const NO_YEARS: readonly number[] = [];
 // Reading what arrived, without trusting it
 function isJsonObject(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -67,6 +70,7 @@ function isReportResult(value: unknown): value is ReportResult {
     isJsonObject(snapshot) &&
     typeof snapshot["basis"] === "string" &&
     Array.isArray(snapshot["currencies"]) &&
+    isJsonObject(snapshot["query"]) &&
     isJsonObject(snapshot["period"]) &&
     isJsonObject(snapshot["coverage"]) &&
     typeof snapshot["asOf"] === "string" &&
@@ -120,20 +124,17 @@ function coverageNoteOf(coverage: Coverage): { readonly title: string; readonly 
   return { title, body: fillTemplate(COVERAGE_TEMPLATES[coverage.state], { from: coverage.from ?? UNSTATED_BOUNDARY, to: coverage.to ?? UNSTATED_BOUNDARY }) };
 }
 // The drill-down
-function cellDrilldownHref(cell: MatrixCell): string {
-  const { drilldown } = cell;
-  const period = drilldown.period;
-  const from = period.kind === "explicit" ? period.from : cell.bucketStart;
-  const to = period.kind === "explicit" ? period.to : cell.bucketEnd;
+/** The gifts address one matrix cell opens: the query that cell stands for, stated in the ledger's own filter set. */
+function cellDrilldownHref(query: ReportQuery, attribution: GiftAttribution, cell: MatrixCell): string {
+  // The narrowing is derived from the query this matrix was computed from, the row's own attribution and the
+  // cell's month, so no cell carries a copy of the query behind it.
+  const drilldown = matrixDrilldownQuery(query, attribution, cell.currency, cell.bucketStart, cell.bucketEnd);
   const params = new URLSearchParams();
-  params.set(GIFTS_PARAM.from, String(from));
-  params.set(GIFTS_PARAM.to, String(to));
-  params.set(GIFTS_PARAM.currency, drilldown.currency.kind === "one" ? drilldown.currency.currency : cell.currency);
-  const partner = drilldown.partner;
-  if (partner !== undefined) {
-    params.set(GIFTS_PARAM.recipient, partner.kind);
-    if (partner.kind === "partner") params.set(GIFTS_PARAM.partnerId, partner.partnerId);
-  }
+  params.set(GIFTS_PARAM.from, String(cell.bucketStart));
+  params.set(GIFTS_PARAM.to, String(cell.bucketEnd));
+  params.set(GIFTS_PARAM.currency, cell.currency);
+  params.set(GIFTS_PARAM.recipient, attribution.kind);
+  if (attribution.kind === "partner") params.set(GIFTS_PARAM.partnerId, attribution.partnerId);
   const range = drilldown.amountRange;
   if (range !== undefined) {
     params.set(GIFTS_PARAM.amountMin, String(range.minMinor));
@@ -170,9 +171,10 @@ interface ReportLayoutProps {
   readonly year: number;
   readonly years: readonly number[];
   readonly onSelectYear: (year: number) => void;
+  readonly onSelectPage: (page: number, pageSize: number) => void;
 }
 /** Renders exactly one of the four fixed layouts, chosen by the catalogue rather than by the URL. */
-function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear }: ReportLayoutProps): ReactElement {
+function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear, onSelectPage }: ReportLayoutProps): ReactElement {
   const { layout } = REPORT_CATALOG[reportId];
   switch (layout) {
     case "received":
@@ -180,7 +182,7 @@ function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear
     case "history":
       return <ReportHistory result={result} locale={locale} dir={dir} year={year} years={years} onSelectYear={onSelectYear} />;
     case "matrix":
-      return <ReportMatrix result={result} locale={locale} dir={dir} drilldownHref={cellDrilldownHref} />;
+      return <ReportMatrix result={result} locale={locale} dir={dir} drilldownHref={cellDrilldownHref} onSelectPage={onSelectPage} />;
     case "comparison":
       return <ReportComparison result={result} locale={locale} dir={dir} />;
     default:
@@ -235,6 +237,18 @@ export function ReportFrame({ scope, reportId, query, initialEnvelope, locale, d
     },
     [onSelectYear, pathname, router],
   );
+  // A page change re-runs the same query through the route's own query state, exactly as a year change does: the
+  // address carries the window the pager asked for, the route reads it back into the query, and the read answers
+  // with the page it served. No page is held here, so the pager can never describe a window the read did not serve.
+  const selectPage = useCallback(
+    (page: number, pageSize: number): void => {
+      const params = new URLSearchParams(window.location.search);
+      params.set(PAGE_PARAM, String(page));
+      params.set(PAGE_SIZE_PARAM, String(pageSize));
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [pathname, router],
+  );
   if (!recognised) {
     // An address that names no report of the four gets the catalogue's own notice and nothing else: no
     // report is substituted, and no fabricated result stands in for one that does not exist.
@@ -284,7 +298,7 @@ export function ReportFrame({ scope, reportId, query, initialEnvelope, locale, d
             <AlertDescription>{note.body}</AlertDescription>
           </Alert>
         )}
-        <ReportLayout reportId={reportId} result={result} locale={locale} dir={dir} year={reportYearOf(query, result)} years={yearChoices ?? NO_YEARS} onSelectYear={selectYear} />
+        <ReportLayout reportId={reportId} result={result} locale={locale} dir={dir} year={reportYearOf(query, result)} years={yearChoices ?? NO_YEARS} onSelectYear={selectYear} onSelectPage={selectPage} />
         <Separator />
         {/* The controls of the artifact that leaves the application: the same query, the same snapshot
             identity and the same facts the screen shows, with the envelope's own advisory capability. */}

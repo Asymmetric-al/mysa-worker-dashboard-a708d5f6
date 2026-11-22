@@ -28,6 +28,7 @@ import { useId, useMemo, useState, type ReactElement, type ReactNode } from "rea
 import RecordList, { type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge from "@/components/status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -109,9 +110,13 @@ const STATUS_COLUMN_LABEL = "Status";
 
 const KIND_COLUMN_LABEL = "Kind";
 
+const TAG_COLUMN_LABEL = "Private tags";
+
 const LINKED_COLUMN_LABEL = "Linked record";
 
 const NO_LINKED_RECORD = "No linked record";
+
+const NO_PRIVATE_TAG_LABEL = "No private tag";
 
 const NOTHING_LINKED = "—";
 
@@ -121,9 +126,19 @@ const PARTNER_ROUTE_PREFIX = "/partners";
 
 const SERIES_ROUTE_PREFIX = "/work/series";
 
+const INITIATIVE_ROUTE_PREFIX = "/partners/initiatives";
+
 const MUTED_TEXT_CLASS = "text-muted-foreground";
 
 const IDENTIFIER_CLASS = "mono-identifier";
+
+/** One row's private tags as chips: the roster's own tag treatment, wrapped so a long tag never widens the column. */
+const TAG_CHIP_GROUP_CLASS = "flex min-w-0 flex-wrap items-center gap-1";
+
+const TAG_CHIP_TEXT_CLASS = "min-w-0 wrap-anywhere";
+
+/** A row's link, sized so its target is at least 24 CSS px tall (WCAG 2.5.8) and underlined so its affordance is never carried by colour alone; the underline thickens on hover and the focus ring uses the ring token. */
+const ROW_LINK_CLASS = "inline-flex min-h-6 max-w-full items-center break-words underline underline-offset-3 hover:decoration-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
 const SECTION_CLASS = "flex min-w-0 flex-col gap-3";
 
@@ -274,25 +289,25 @@ function linkedRecordOf(row: TaskListRow, partnerLabels: Readonly<Record<string,
     const partnerId = row.partnerId;
     const label = partnerLabels[partnerId];
     records.push(
-      <Link key="partner" href={`${PARTNER_ROUTE_PREFIX}/${encodeURIComponent(partnerId)}`}>
+      <Link key="partner" href={`${PARTNER_ROUTE_PREFIX}/${encodeURIComponent(partnerId)}`} className={ROW_LINK_CLASS}>
         <bdi>{label === undefined || label.trim() === "" ? partnerId : label}</bdi>
       </Link>,
     );
   }
   if (row.seriesId !== null) {
     records.push(
-      <Link key="series" href={`${SERIES_ROUTE_PREFIX}/${encodeURIComponent(row.seriesId)}`}>
+      <Link key="series" href={`${SERIES_ROUTE_PREFIX}/${encodeURIComponent(row.seriesId)}`} className={ROW_LINK_CLASS}>
         {SERIES_LINK_LABEL}
       </Link>,
     );
   }
   if (row.initiativeId !== null) {
-    // An initiative is named by its opaque reference: this application serves no surface for one yet, so no
-    // link is offered to a destination that does not exist.
+    // The initiative is named by its opaque reference, shown isolated because its form carries no meaning, and
+    // linked to the initiative detail this application already serves at that address.
     records.push(
-      <bdi key="initiative" className={IDENTIFIER_CLASS}>
-        {row.initiativeId}
-      </bdi>,
+      <Link key="initiative" href={`${INITIATIVE_ROUTE_PREFIX}/${encodeURIComponent(row.initiativeId)}`} className={ROW_LINK_CLASS}>
+        <bdi className={IDENTIFIER_CLASS}>{row.initiativeId}</bdi>
+      </Link>,
     );
   }
   if (records.length === 0) {
@@ -359,6 +374,28 @@ export function taskListColumns({ partnerLabels }: TaskListColumnOptions): Reado
       },
     },
     {
+      id: "tags",
+      header: TAG_COLUMN_LABEL,
+      // The read orders by a task's own fields, so this column states the labels a row carries and offers no order.
+      enableSorting: false,
+      cell: (context) => {
+        const { tags } = context.row.original;
+        // A private tag is stated only to the principal who applied it, and the read has already kept the ones
+        // this session may see. No tag is a fact of its own, so it is never left as an empty cell.
+        return tags.length === 0 ? (
+          <span className={MUTED_TEXT_CLASS}>{NO_PRIVATE_TAG_LABEL}</span>
+        ) : (
+          <span className={TAG_CHIP_GROUP_CLASS}>
+            {tags.map((tag) => (
+              <Badge key={tag} variant="outline">
+                <bdi className={TAG_CHIP_TEXT_CLASS}>{tag}</bdi>
+              </Badge>
+            ))}
+          </span>
+        );
+      },
+    },
+    {
       id: "kind",
       header: KIND_COLUMN_LABEL,
       enableSorting: false,
@@ -420,8 +457,8 @@ interface TaskListsProps {
   readonly className?: string;
 }
 
-/** The composer's state: closed, open on a new task, or open on the one record the worker chose to edit. */
-type EditorState = { readonly mode: "create" } | { readonly mode: "edit"; readonly record: TaskRecord };
+/** The composer's state: closed, open on a new task, or open on the one record the worker chose to edit together with the private tags that row was read with. */
+type EditorState = { readonly mode: "create" } | { readonly mode: "edit"; readonly record: TaskRecord; readonly tags: readonly string[] };
 
 /** A selection, and the context and list it was made in: a selection made elsewhere is not this list's selection. */
 type SelectionState = { readonly signature: string; readonly ids: readonly string[] };
@@ -525,7 +562,7 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
     // The read offers Edit only where it reported the row selectable, so a row that states otherwise opens no
     // form: this session may not change that task, and the service would refuse the write it could not make.
     const record = editableTaskRecord(row, scope);
-    if (record !== null) setEditor({ mode: "edit", record });
+    if (record !== null) setEditor({ mode: "edit", record, tags: row.tags });
   };
   const closeEditor = (): void => {
     setEditor(null);
@@ -697,7 +734,7 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
         // decides where it is mounted and what it opens with.
         <TaskComposer mode="create" scope={scope} expectedRevision={expectedRevision} initialValues={initialValues} timeZoneChoices={timeZoneChoices} defaultTimeZone={displayTimeZone} linkChoices={linkChoices} headingLevel={2} onCancel={closeEditor} onDismiss={closeEditor} />
       ) : (
-        <TaskComposer mode="edit" record={editor.record} scope={scope} expectedRevision={editor.record.revision} timeZoneChoices={timeZoneChoices} defaultTimeZone={displayTimeZone} linkChoices={linkChoices} headingLevel={2} onCancel={closeEditor} onDismiss={closeEditor} />
+        <TaskComposer mode="edit" record={editor.record} tags={editor.tags} scope={scope} expectedRevision={editor.record.revision} timeZoneChoices={timeZoneChoices} defaultTimeZone={displayTimeZone} linkChoices={linkChoices} headingLevel={2} onCancel={closeEditor} onDismiss={closeEditor} />
       )}
       {selectedTasks.length === 0 ? null : <BulkActionBar scope={scope} expectedRevision={expectedRevision} selectedTasks={selectedTasks} onClearSelection={clearSelection} onCheckResult={refreshAll} />}
       <div className={SECTION_CLASS}>

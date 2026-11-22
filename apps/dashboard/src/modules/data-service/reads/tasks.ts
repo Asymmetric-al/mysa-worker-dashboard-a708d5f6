@@ -9,7 +9,25 @@ import { instantAt } from "@/modules/time/clock";
 import { parseCivilDate, serialiseCivilDate, todayInZone, type CivilDate } from "@/modules/time/civil";
 import { missedPlan, nextOccurrences, type DisclosedMonthDayResolution, type PlanResolutions, type RepeatProfile, type SeriesEnd, type SeriesOccurrence, type SeriesRule, type SeriesState } from "@/modules/time/recurrence";
 import { assertScope, canEdit, canView, readResultOfRefusal, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
-import { buildEnvelope, project, taskRecordSchema, taskSeriesRecordSchema, type Coverage, type ReadAction, type ReadEnvelope, type Scope, type SeriesEndRecord, type SeriesRuleRecord, type SeriesRuleRevisionRecord, type TaskKind, type TaskRecord, type TaskRecordStatus, type TaskSeriesRecord } from "../envelope";
+import {
+  buildEnvelope,
+  principalIdSchema,
+  project,
+  taskRecordSchema,
+  taskSeriesRecordSchema,
+  type Coverage,
+  type PrincipalId,
+  type ReadAction,
+  type ReadEnvelope,
+  type Scope,
+  type SeriesEndRecord,
+  type SeriesRuleRecord,
+  type SeriesRuleRevisionRecord,
+  type TaskKind,
+  type TaskRecord,
+  type TaskRecordStatus,
+  type TaskSeriesRecord,
+} from "../envelope";
 import { LOCAL_STORE_SYSTEM, denied, unavailable, type DenialReason, type DeniedOutcome, type ReadResult } from "../outcome";
 export type TaskListName = "today" | "upcoming" | "overdue" | "all" | "undated";
 export type TaskSortField = "dueOn" | "title" | "category" | "status";
@@ -47,8 +65,16 @@ async function openRead(source?: SessionSource): Promise<ReadOpening> {
   if (!admitted.ok) return refused({ kind: "denied", denied: admitted.denial });
   return { status: "ready", session, scope, instant: instantAt(session.clockOffsetMs) };
 }
-const storedTasksSchema = z.object({ tasks: z.array(taskRecordSchema) });
-const storedWorkSchema = z.object({ tasks: z.array(taskRecordSchema), series: z.array(taskSeriesRecordSchema) });
+/**
+ * One private tag as the write path stores it: a label one principal applied to one task, which only that
+ * principal sees. The read decodes the family in its own schema so a list can state the tags its projection
+ * carries, and a stored document predating the family decodes as a task with no tag rather than as unreadable.
+ */
+type TaskTagRecord = { readonly taskId: string; readonly tag: string; readonly ownerPrincipalId: PrincipalId };
+const taskTagRecordSchema: z.ZodType<TaskTagRecord> = z.object({ taskId: z.string().min(1), tag: z.string().min(1), ownerPrincipalId: principalIdSchema });
+const storedTaskTagsSchema = z.array(taskTagRecordSchema).default([]);
+const storedTasksSchema = z.object({ tasks: z.array(taskRecordSchema), taskTags: storedTaskTagsSchema });
+const storedWorkSchema = z.object({ tasks: z.array(taskRecordSchema), series: z.array(taskSeriesRecordSchema), taskTags: storedTaskTagsSchema });
 type DecodedRead<T> = { readonly status: "decoded"; readonly value: T } | { readonly status: "unavailable"; readonly result: ReadResult<never> };
 async function readWork<T>(options: { readonly session: ResolvedSession; readonly job: string; readonly schema: z.ZodType<T> }): Promise<DecodedRead<T>> {
   const source: SourceReference = { system: LOCAL_STORE_SYSTEM, reference: WORK_REFERENCE };
@@ -143,20 +169,43 @@ function normaliseListName(list: TaskListName): TaskListName {
 }
 /** Where a task's due date stands relative to "today" in the display zone the read was evaluated in. */
 export type TaskDateRelation = "today" | "future" | "past" | "undated";
+/**
+ * One task as a list states it. `tags` are the private labels this session's principal applied to the task, and
+ * only those: another principal's tag on the same task is dropped while the row is built, so the projection
+ * never carries a field the caller may not see.
+ */
 export type TaskListRow = { readonly taskId: string; readonly revision: string; readonly title: string; readonly category: string | null; readonly dueOn: string | null } & { readonly dateRelation: TaskDateRelation; readonly plannedTime: string | null; readonly timeZone: string | null; readonly kind: TaskKind } & {
   readonly status: TaskRecordStatus;
   readonly partnerId: string | null;
   readonly initiativeId: string | null;
   readonly seriesId: string | null;
-} & { readonly note: string | null; readonly actions: readonly ReadAction[]; readonly selectable: boolean; readonly selectionReason?: string };
+} & { readonly tags: readonly string[]; readonly note: string | null; readonly actions: readonly ReadAction[]; readonly selectable: boolean; readonly selectionReason?: string };
 const TASK_ROW_FIELDS = ["taskId", "revision", "title", "category", "dueOn", "plannedTime", "timeZone", "kind", "status", "partnerId", "initiativeId", "seriesId", "note"] as const;
 const OWNERSHIP_REASON = "This task belongs to another principal's work, so your session may read it but not change it.";
+/**
+ * The private tags each task carries for one principal, keyed by task.
+ *
+ * A tag belongs to the principal who applied it, so it leaves the store only for that principal: the family is
+ * filtered here, before the envelope exists, rather than in a component that would then hold what it may not
+ * show. Labels are ordered by the shared code-unit comparator, so one stored set reads in one order on every
+ * surface and in every render.
+ */
+function privateTagsByTask(tags: readonly TaskTagRecord[], principalId: PrincipalId): ReadonlyMap<string, readonly string[]> {
+  const held = new Map<string, string[]>();
+  for (const record of tags) {
+    if (record.ownerPrincipalId !== principalId) continue;
+    const existing = held.get(record.taskId);
+    if (existing === undefined) held.set(record.taskId, [record.tag]);
+    else existing.push(record.tag);
+  }
+  return new Map([...held.entries()].map(([taskId, labels]) => [taskId, labels.toSorted(compareCodeUnits)]));
+}
 function dateRelationOf(dueOn: string | null, today: string): TaskDateRelation {
   if (dueOn === null) return "undated";
   if (dueOn === today) return "today";
   return dueOn < today ? "past" : "future";
 }
-function taskRow(options: { readonly task: TaskRecord; readonly session: ResolvedSession; readonly scope: Scope; readonly today: string }): TaskListRow {
+function taskRow(options: { readonly task: TaskRecord; readonly session: ResolvedSession; readonly scope: Scope; readonly today: string; readonly privateTags: ReadonlyMap<string, readonly string[]> }): TaskListRow {
   const { task, session, scope, today } = options;
   const mayEdit = canEdit(session, { kind: "task", scope, ownerPrincipalId: task.ownerPrincipalId }).allowed;
   const awaiting = isAwaitingAction(task.status);
@@ -164,6 +213,7 @@ function taskRow(options: { readonly task: TaskRecord; readonly session: Resolve
   const row: TaskListRow = {
     ...fields,
     dateRelation: dateRelationOf(task.dueOn, today),
+    tags: options.privateTags.get(task.taskId) ?? [],
     actions: [
       action("editTask", mayEdit, OWNERSHIP_REASON),
       action("completeTask", mayEdit && awaiting, mayEdit ? (task.status === "cancelled" ? "This task is cancelled, so completing it is not available; create a new task for the work instead." : "This task is already completed, so it is reopened before it can be completed again.") : OWNERSHIP_REASON),
@@ -206,10 +256,11 @@ export async function listTasks(query: TaskListQuery, source?: SessionSource): P
   if (stored.status === "unavailable") return stored.result;
   const list = normaliseListName(query.list);
   const sort = normaliseSort(query.sort);
+  const privateTags = privateTagsByTask(stored.value.taskTags, opening.session.principalId);
   const readable = stored.value.tasks.filter((task) => canView(opening.session, { kind: "task", scope: opening.scope, ownerPrincipalId: task.ownerPrincipalId }).allowed);
   const listed = readable.filter((task) => inList(task, list, today.text)).toSorted((left, right) => orderTasks(left, right, sort));
   const window = pageWindow(listed.length, query.page, query.pageSize);
-  const rows = listed.slice(window.start, window.end).map((task) => taskRow({ task, session: opening.session, scope: opening.scope, today: today.text }));
+  const rows = listed.slice(window.start, window.end).map((task) => taskRow({ task, session: opening.session, scope: opening.scope, today: today.text, privateTags }));
   const envelope = buildEnvelope<TaskListData>({
     data: { list, displayTimeZone: query.displayTimeZone, today: today.text, tasks: rows, total: listed.length, page: window.page, pageSize: window.pageSize, pageCount: window.pageCount },
     scope: opening.scope,
@@ -253,10 +304,11 @@ export async function readAgenda(query: AgendaQuery, source?: SessionSource): Pr
   if (today.status === "unavailable") return today.result;
   const stored = await readWork({ session: opening.session, job: "readAgenda", schema: storedTasksSchema });
   if (stored.status === "unavailable") return stored.result;
+  const privateTags = privateTagsByTask(stored.value.taskTags, opening.session.principalId);
   const readable = stored.value.tasks.filter((task) => canView(opening.session, { kind: "task", scope: opening.scope, ownerPrincipalId: task.ownerPrincipalId }).allowed);
   const dated = readable.filter((task) => task.dueOn !== null && isAwaitingAction(task.status)).toSorted(orderAgendaItems);
   const window = pageWindow(dated.length, query.page, query.pageSize);
-  const rows = dated.slice(window.start, window.end).map((task) => taskRow({ task, session: opening.session, scope: opening.scope, today: today.text }));
+  const rows = dated.slice(window.start, window.end).map((task) => taskRow({ task, session: opening.session, scope: opening.scope, today: today.text, privateTags }));
   const days = groupByDay(rows);
   const envelope = buildEnvelope<AgendaData>({
     data: { displayTimeZone: query.displayTimeZone, today: today.text, days, dayCount: days.length, total: dated.length, page: window.page, pageSize: window.pageSize, pageCount: window.pageCount },
@@ -376,6 +428,7 @@ export async function readSeries(query: SeriesReadQuery, source?: SessionSource)
   if (opening.status === "refused") return opening.result;
   const stored = await readWork({ session: opening.session, job: "readSeries", schema: storedWorkSchema });
   if (stored.status === "unavailable") return stored.result;
+  const privateTags = privateTagsByTask(stored.value.taskTags, opening.session.principalId);
   const seriesId = query.seriesId.trim();
   const series = stored.value.series.find((candidate) => candidate.seriesId === seriesId);
   if (series === undefined) return { kind: "denied", denied: readDenial("no-permission") };
@@ -390,7 +443,7 @@ export async function readSeries(query: SeriesReadQuery, source?: SessionSource)
   const occurrences = stored.value.tasks.filter((task) => task.seriesId === series.seriesId && canView(opening.session, { kind: "task", scope: opening.scope, ownerPrincipalId: task.ownerPrincipalId }).allowed);
   const named = series.currentOccurrenceId === null ? undefined : occurrences.find((task) => task.taskId === series.currentOccurrenceId);
   const stopped = series.state === "stopped";
-  const currentOccurrence = stopped || named === undefined ? null : taskRow({ task: named, session: opening.session, scope: opening.scope, today: today.text });
+  const currentOccurrence = stopped || named === undefined ? null : taskRow({ task: named, session: opening.session, scope: opening.scope, today: today.text, privateTags });
   const actionableOccurrenceId = series.state === "active" && currentOccurrence !== null && isAwaitingAction(currentOccurrence.status) ? currentOccurrence.taskId : null;
   const planReview = planReviewOf({ series, rule, occurrences, today: today.date, instant: opening.instant });
   const preview = previewOf({ series, rule, today: today.date });
@@ -398,7 +451,7 @@ export async function readSeries(query: SeriesReadQuery, source?: SessionSource)
     ? occurrences
         .filter((task) => isAwaitingAction(task.status))
         .toSorted(orderAgendaItems)
-        .map((task) => taskRow({ task, session: opening.session, scope: opening.scope, today: today.text }))
+        .map((task) => taskRow({ task, session: opening.session, scope: opening.scope, today: today.text, privateTags }))
     : [];
   const mayChangeSeries = canEdit(opening.session, { kind: "series", scope: opening.scope, ownerPrincipalId: series.ownerPrincipalId }).allowed;
   const mayChangeOccurrence = named === undefined ? false : canEdit(opening.session, { kind: "task", scope: opening.scope, ownerPrincipalId: named.ownerPrincipalId }).allowed;

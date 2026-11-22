@@ -35,7 +35,7 @@
  */
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
 
-import { expect, resetSeed, SEEDED_PERSONAS, SESSION_COOKIE, test, type PersonaName } from "../playwright.config";
+import { expect, expectRestoredScrollPlace, resetSeed, SCROLL_TOLERANCE_PX, scrollPlaceOfRow, SEEDED_PERSONAS, SESSION_COOKIE, test, type PersonaName } from "../playwright.config";
 
 // ---------------------------------------------------------------------------------------------
 // The seeded scenario this file acts in
@@ -141,6 +141,9 @@ const SAVED_HEADING = "Saved";
 const NOTHING_TO_CHANGE_HEADING = "Nothing to change";
 const PER_ITEM_HEADING = "Result for each row";
 const PER_ITEM_ACCEPTED = "Accepted";
+const PER_ITEM_EXCLUDED = "Excluded";
+/** The reason the receipt states for a row of a batch that changed nothing, read from the surface rather than assumed. */
+const UNCHANGED_APPLIED_TAG_REASON = "This row already carried this tag when the action ran, so nothing was applied to it.";
 
 /** The composer's labels and its two commit controls, exactly as the one task form states them. */
 const NEW_TASK_LABEL = "New task";
@@ -661,8 +664,12 @@ test("a record visit returns to the same filtered view, its same ordering and th
   const workScrollBefore = await page.evaluate(() => window.scrollY);
   expect(workScrollBefore, "The filtered list is longer than the window, which is what makes the reader's place in it something to return to.").toBeGreaterThan(0);
 
-  // The visit: the row's own link is the only route to the partner, so the record is a destination.
-  await upcoming.getByRole("link", { name: "Jo Mbeki" }).click();
+  // The visit: the row's own link is the only route to the partner, so the record is a destination. The
+  // link is brought into view before the place is read, because the click scrolls it into view itself and
+  // the place the reader leaves at is where the page stands once the link is there — not the list's end.
+  const workRecordLink = upcoming.getByRole("link", { name: "Jo Mbeki" });
+  const workPlaceBefore = await scrollPlaceOfRow(page, workRecordLink, "The Work list");
+  await workRecordLink.click();
   await expect(page.getByRole("navigation", { name: "breadcrumb" }), "The record states the list it belongs to, so the visit is a navigation rather than a panel over the list.").toBeVisible();
   await expect(page).toHaveURL(new RegExp(`${PARTNER_ROUTE_PREFIX}/${LINKED_PARTNER}`, "u"));
 
@@ -676,11 +683,17 @@ test("a record visit returns to the same filtered view, its same ordering and th
   expect((await readPager(page)).text, "The page window comes back exactly as it was.").toBe(workPagerBefore);
   await expect(upcoming.getByRole("row").nth(1)).toBeVisible();
   expect((await upcoming.getByRole("row").nth(1).innerText()).replace(/\s+/gu, " ").trim(), "The same rows are in the same order after the return.").toBe(workFirstRowBefore);
-  // The place the reader left is a non-zero one, which is what makes the return a return rather than a
-  // fresh arrival at the top of the list. The application restores a place rather than the same offset:
-  // the returned view re-reads its own query, so the document is briefly shorter than the place recorded
-  // and the restored offset is bounded by that height. The measurement is stated, not assumed.
-  await expect.poll(async () => await page.evaluate(() => window.scrollY), { message: `The return leaves the reader inside the list they left (${String(workScrollBefore)} CSS px down before the visit) rather than dropping them at its top.` }).toBeGreaterThan(0);
+  // The place the reader left comes back as the same place. This application restores the offset the
+  // reader was actually at, and it does so exactly: measured at 1280x480 from the reset seed, this list
+  // returned to 385 CSS px of the 385 px it was left at, and the dated agenda below to 631 px of 631. The
+  // earlier "3,800 px before, 385 px after" was not a limitation of the application: it read the offset at
+  // the list's end, before the row's link was scrolled into view. So the place is read where the reader
+  // actually leaves it — with the link in view — and only once the document's height has settled, because
+  // a place read on a half-rendered document is not the place the reader returns to. Height equality is
+  // not required and is not a property this holds: the shell's development panels keep growing the
+  // document across a visit, so the return is held to the offset within `SCROLL_TOLERANCE_PX`, on a
+  // document at least as tall as the one the reader left.
+  await expectRestoredScrollPlace(page, workPlaceBefore, "The Work list's return");
   const workScrollAfter = await page.evaluate(() => window.scrollY);
   await expectDevelopmentData(page);
 
@@ -697,7 +710,11 @@ test("a record visit returns to the same filtered view, its same ordering and th
   const agendaScrollBefore = await page.evaluate(() => window.scrollY);
   expect(agendaScrollBefore, "The agenda is longer than the window, so its place is something to return to as well.").toBeGreaterThan(0);
 
-  await agenda.getByRole("link", { name: "Grace Adeyemi" }).click();
+  // The same rule on the second list surface: the row's link is brought into view before the place is
+  // read, so the place recorded is the one the reader leaves at rather than the agenda's end.
+  const agendaRecordLink = agenda.getByRole("link", { name: "Grace Adeyemi" });
+  const agendaPlaceBefore = await scrollPlaceOfRow(page, agendaRecordLink, "The dated agenda");
+  await agendaRecordLink.click();
   await expect(page.getByRole("navigation", { name: "breadcrumb" })).toBeVisible();
   await expect(page).toHaveURL(/\/partners\/[^?/]+/u);
 
@@ -707,7 +724,7 @@ test("a record visit returns to the same filtered view, its same ordering and th
   expect((await readPager(page)).text, "The agenda's page window comes back exactly as it was.").toBe(agendaPagerBefore);
   await expect(agenda.getByRole("row").nth(1)).toBeVisible();
   expect((await agenda.getByRole("row").nth(1).innerText()).replace(/\s+/gu, " ").trim(), "The same days and rows come back in the same order.").toBe(agendaFirstRowBefore);
-  await expect.poll(async () => await page.evaluate(() => window.scrollY), { message: `The return leaves the reader inside the agenda they left (${String(agendaScrollBefore)} CSS px down before the visit) rather than at its top.` }).toBeGreaterThan(0);
+  await expectRestoredScrollPlace(page, agendaPlaceBefore, "The agenda's return");
   const agendaScrollAfter = await page.evaluate(() => window.scrollY);
   await expectDevelopmentData(page);
 
@@ -715,7 +732,7 @@ test("a record visit returns to the same filtered view, its same ordering and th
     .info()
     .annotations.push({
       type: "criterion-5 continuity",
-      description: `A partner-record visit and return restored the Work list's filter (upcoming), its ordering (title ascending), its page window (${workPagerBefore}) and a place ${String(workScrollAfter)} px down a list it left ${String(workScrollBefore)} px down, and the agenda's window (${agendaPagerBefore}) and a place ${String(agendaScrollAfter)} px down an agenda it left ${String(agendaScrollBefore)} px down. The return restores a non-zero place rather than the same offset, because the returned view re-reads its own query before the document reaches the height the reader left at.`,
+      description: `A partner-record visit and return restored the Work list's filter (upcoming), its ordering (title ascending), its page window (${workPagerBefore}) and the place it was left at — ${String(workScrollAfter)} px down against the ${String(workPlaceBefore.offset)} px it was left at on a ${String(workPlaceBefore.height)} px document — and the agenda's window (${agendaPagerBefore}) and the place it was left at — ${String(agendaScrollAfter)} px down against the ${String(agendaPlaceBefore.offset)} px it was left at on a ${String(agendaPlaceBefore.height)} px document. Each return restores the offset the reader left at exactly, within the runner's ${String(SCROLL_TOLERANCE_PX)} px scroll tolerance, because a scroll offset is a whole-pixel value; the returned document has to be at least as tall as the one left rather than the same height, since the shell's development panels keep growing it across a visit.`,
     });
 });
 
@@ -790,6 +807,15 @@ test("the three bulk actions review the selection first and report each row's ow
   await page.getByRole("button", { name: REVIEW_CONFIRM_LABEL }).click();
   const repeated = page.locator('[data-slot="action-review-result"][data-outcome="unchanged"]');
   await expect(repeated.getByRole("heading", { name: NOTHING_TO_CHANGE_HEADING }), "Re-applying the same private tag changes nothing, which is how the tag's presence is read back from the application rather than assumed.").toBeVisible();
+  // A batch that changed nothing still names the rows it was sent and why each was left alone, so the receipt is
+  // never only the heading: both selected rows are stated, in the per-item vocabulary, under the reason this
+  // intent supports.
+  const unchangedRows = page.getByRole("region", { name: APPLY_TAG_LABEL }).locator("table tbody tr");
+  await expect(unchangedRows, "A batch that changed nothing states one row per submitted task rather than a single outcome for the selection.").toHaveCount(2);
+  const unchangedText = (await unchangedRows.allInnerTexts()).join(" | ");
+  expect(unchangedText, "Each row of an unchanged batch names the task it was sent for.").toContain(linked.taskId);
+  expect(unchangedText).toContain(thankYou.taskId);
+  expect(unchangedText, "Each row of an unchanged batch states the reason it was left as it was.").toContain(UNCHANGED_APPLIED_TAG_REASON);
   await clearBulkState(page);
 
   // -------------------------------------------------------------------------------------------
@@ -846,11 +872,18 @@ test("the three bulk actions review the selection first and report each row's ow
   // review step has nothing left to review and the durable result stands on its own beneath it.
   const completedReceipt = page.locator('[data-slot="operation-result"][data-outcome="accepted"]');
   const completedRows = completedReceipt.locator("table tbody tr");
-  await expect(completedRows, "The result holds one row per task the action acted on, not one row per selection.").toHaveCount(1);
+  await expect(completedRows, "The result holds one row per selected task: the one the action acted on and the one it left out.").toHaveCount(2);
   await expect(completedRows.first(), "The row the action could act on was accepted.").toContainText(PER_ITEM_ACCEPTED);
   const completedText = await completedRows.first().innerText();
   expect(completedText, "The row reported is the open task the action acted on.").toContain(thankYou.taskId);
   expect(completedText, "The closed row is not reported as a completed one.").not.toContain(completed.taskId);
+  // The row the action could not act on is named in the same table rather than only counted before the step: its
+  // identifier, its own state and the reason it was left out are all stated, so no row of the selection is
+  // reported by a count alone.
+  await expect(completedRows.nth(1), "The row the action could not act on states its own state rather than an accepted one.").toContainText(PER_ITEM_EXCLUDED);
+  const excludedText = await completedRows.nth(1).innerText();
+  expect(excludedText, "The excluded row is named in the per-item result rather than left out of it.").toContain(completed.taskId);
+  expect(excludedText, "The excluded row states why it was left out, in the words the action offered before the step.").toContain(CLOSED_ROW_REASON);
   await expect(page.locator(`[data-slot="task-actions"][data-task-id="${completed.taskId}"]`), "A row this action could not act on keeps the status it had.").toHaveAttribute("data-status", "completed");
   await expect(page.locator(`[data-slot="task-actions"][data-task-id="${thankYou.taskId}"]`), "The row it did act on states the status the change produced.").toHaveAttribute("data-status", "completed");
 
@@ -870,6 +903,6 @@ test("the three bulk actions review the selection first and report each row's ow
     .info()
     .annotations.push({
       type: "criterion-5 bulk actions",
-      description: `Three bulk intents over explicitly selected rows: the private tag ${JSON.stringify(BULK_TAG)} applied twice (accepted, then unchanged) and removed, ${String(2)} follow-up tasks created from ${String(2)} rows, and completion run over a selection holding one closed row — reported as 1 row acted on and 1 excluded before the step, with the closed row left completed. The partner's tags and the audience were unchanged by the selection.`,
+      description: `Three bulk intents over explicitly selected rows: the private tag ${JSON.stringify(BULK_TAG)} applied twice (accepted, then unchanged with both rows named and their reason stated) and removed, ${String(2)} follow-up tasks created from ${String(2)} rows, and completion run over a selection holding one closed row — reported in one per-item table as 1 row acted on and 1 row excluded by name with the reason it was left out, with the closed row left completed. The partner's tags and the audience were unchanged by the selection.`,
     });
 });

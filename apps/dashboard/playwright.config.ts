@@ -3,7 +3,8 @@
  * `bun run dev` script the workspace runs, serial, and from the deterministic seed before every spec.
  *
  * This file also owns everything a spec needs before it reads — the seeded personas it can act as, the
- * reset that restores their world, and the accessibility audit criterion 20 runs — because the suite is
+ * reset that restores their world, the accessibility audit criterion 20 runs, and the place a reader leaves
+ * a list at, which criterion 5 holds the return to — because the suite is
  * exactly the specs under `e2e/` and what they share is part of the runner rather than a twenty-first
  * spec or a committed session file. The one thing that belongs before the suite rather than before each
  * spec is `e2e/route-warmup.ts`, wired below as `globalSetup`: the development compiler has to have seen
@@ -14,7 +15,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { AxeBuilder } from "@axe-core/playwright";
-import { defineConfig, devices, expect, test as base, type APIRequestContext, type Page } from "@playwright/test";
+import { defineConfig, devices, expect, test as base, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 const DEFAULT_PORT = 3000;
 
@@ -322,6 +323,134 @@ function accessibilityFailureMessage(violations: readonly AccessibilityViolation
     return `- ${violation.id} (${violation.impact ?? "unstated impact"}): ${violation.help} at ${shown}${rest} — ${violation.helpUrl}`;
   });
   return `${subject} holds ${String(violations.length)} serious or critical WCAG 2.2 AA violation(s):\n${rules.join("\n")}`;
+}
+
+/** The one-pixel tolerance a restored scroll offset is allowed: a viewport scroll offset is a whole-pixel value, so the same place is the same integer, and the single pixel covers a fractional document height being floored by `scrollHeight`. */
+export const SCROLL_TOLERANCE_PX = 1;
+
+/** How long either scroll helper waits before it reports the page as not there yet: the runner's own assertion timeout, so a scroll outcome is judged on the same budget as every other assertion. */
+const SCROLL_DEADLINE_MS = 15_000;
+
+/** The pause between two readings of a page, long enough for a surface that re-reads its query or renders its development panels to have moved on. */
+const SCROLL_SAMPLE_MS = 250;
+
+/** How many consecutive readings must state one document height before the document is taken as settled. */
+const SCROLL_SETTLED_SAMPLES = 3;
+
+/**
+ * The place a reader leaves a list at, once the document has stopped growing: the viewport scroll offset
+ * and the document height it was reached on.
+ *
+ * The height is part of the place, because a place on a document that is still rendering is not a place:
+ * a surface re-reads its own query after a visit and the shell's development panels keep growing the
+ * document across one, so the offset is judged against the document it comes back on rather than against
+ * a height assumed here.
+ */
+export interface ScrollPlace {
+  /** The viewport's `window.scrollY`: how far down the document the reader stands. */
+  readonly offset: number;
+  /** The height of the document's scrollable root at that moment: the bound the offset moves within. */
+  readonly height: number;
+}
+
+/**
+ * Reads the place the reader is at, once the document has stopped growing.
+ *
+ * The height is sampled until it is unchanged across three consecutive readings before the place is read,
+ * because a surface fills after its first paint — the agenda measured 1,516 px at first paint and 4,517 px
+ * by 250 ms — and a place taken on a half-rendered document is not the place the reader leaves at. The
+ * sampling is bounded by `SCROLL_DEADLINE_MS`, so a page that never settles fails as a page that never
+ * settled rather than hanging the journey. The offset and the height are then read in one evaluate, so
+ * the two describe the same moment.
+ */
+async function scrollPlaceOf(page: Page): Promise<ScrollPlace> {
+  const deadline = Date.now() + SCROLL_DEADLINE_MS;
+  let height = await documentHeightOf(page);
+  let unchanged = 1;
+  while (unchanged < SCROLL_SETTLED_SAMPLES) {
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `The document height was still changing after ${String(SCROLL_DEADLINE_MS)} ms of sampling every ${String(SCROLL_SAMPLE_MS)} ms, last reading ${String(height)} CSS px, so the place the reader leaves at on this page cannot be stated. A page whose height grows without settling has no place to return to, and this one is reported as that rather than waited on.`,
+      );
+    }
+    await delay(SCROLL_SAMPLE_MS);
+    const settled = await documentHeightOf(page);
+    unchanged = settled === height ? unchanged + 1 : 1;
+    height = settled;
+  }
+  return scrollPlaceAt(page);
+}
+
+/**
+ * Reads the place a reader leaves a list at, with the row's own link brought into view exactly as the click
+ * requires, and with `subject` naming the surface in every message.
+ *
+ * A click scrolls its link into view itself, so the offset the reader actually leaves at is the offset the
+ * page stands at once the link is there; reading it before that records a place the reader only passes
+ * through. The link is brought into view through a retried action because these lists replace their rows
+ * when a read answers, which detaches the row element a single attempt may be holding: a single
+ * `scrollIntoViewIfNeeded` then reports "element is not attached to the DOM" instead of a place. The place
+ * itself is then read once the document has settled.
+ */
+export async function scrollPlaceOfRow(page: Page, link: Locator, subject: string): Promise<ScrollPlace> {
+  await expect(async () => {
+    await link.scrollIntoViewIfNeeded();
+  }, `${subject} states the row's own link and can bring it into view, which is what makes the place the reader stands at one they can leave from.`).toPass({ timeout: SCROLL_DEADLINE_MS });
+  return scrollPlaceOf(page);
+}
+
+/**
+ * Asserts the reader is back at the place they left, naming `subject` in every message.
+ *
+ * The offset must come back within `SCROLL_TOLERANCE_PX` of the one the reader left at, on a document at
+ * least as tall as the one it was taken on, and not at the top of the list — a place this assertion does
+ * not accept is a place the criterion has not proven. Both conditions are polled to `SCROLL_DEADLINE_MS`
+ * rather than read once, because the return re-reads its own query and reaches the reader's place a
+ * moment after the list comes back.
+ *
+ * Document-height equality is deliberately not asserted. The shell's development panels keep growing the
+ * document across a visit (a returned gifts ledger measured 6,533 px where it stood at 3,532 px before),
+ * so the height grows rather than matches, while a returned document at least as tall as the one the
+ * reader left is what lets the reader stand where they stood.
+ */
+export async function expectRestoredScrollPlace(page: Page, place: ScrollPlace, subject: string): Promise<void> {
+  const deadline = Date.now() + SCROLL_DEADLINE_MS;
+  let read = await scrollPlaceAt(page);
+  while (!isScrollPlaceRestored(read, place)) {
+    if (Date.now() >= deadline) {
+      break;
+    }
+    await delay(SCROLL_SAMPLE_MS);
+    read = await scrollPlaceAt(page);
+  }
+  expect(
+    Math.abs(read.offset - place.offset),
+    `${subject} comes back at the place the reader left it at: ${String(place.offset)} CSS px down a ${String(place.height)} px document, within ${String(SCROLL_TOLERANCE_PX)} px of it. The return reads ${String(read.offset)} CSS px down a ${String(read.height)} px document.`,
+  ).toBeLessThanOrEqual(SCROLL_TOLERANCE_PX);
+  expect(read.height, `${subject} comes back on a document at least as tall as the one the reader left (${String(place.height)} px), which is what makes the place they left one they can stand at again. The return reads a ${String(read.height)} px document.`).toBeGreaterThanOrEqual(place.height);
+  expect(read.offset, `${subject} leaves the reader inside the list rather than at its top, which is what makes the restored place a place: it read ${String(read.offset)} CSS px down a ${String(read.height)} px document, against ${String(place.offset)} px left.`).toBeGreaterThan(0);
+}
+
+/** True when the page stands at the reader's place: an offset within tolerance, on a document at least as tall as the one it was taken on. */
+function isScrollPlaceRestored(read: ScrollPlace, place: ScrollPlace): boolean {
+  return read.height >= place.height && Math.abs(read.offset - place.offset) <= SCROLL_TOLERANCE_PX;
+}
+
+/** The reader's place as the page states it at this instant, read in one evaluate so the offset and the height describe the same moment. */
+function scrollPlaceAt(page: Page): Promise<ScrollPlace> {
+  return page.evaluate(() => ({ offset: window.scrollY, height: document.documentElement.scrollHeight }));
+}
+
+/** The height of the document's scrollable root: the bound the viewport's scroll offset moves within. */
+function documentHeightOf(page: Page): Promise<number> {
+  return page.evaluate(() => document.documentElement.scrollHeight);
+}
+
+/** Pauses for the stated time, so two readings of a page are spaced rather than spun. */
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }
 
 /**

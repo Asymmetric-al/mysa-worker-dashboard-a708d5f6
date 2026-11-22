@@ -51,6 +51,9 @@ type RosterRead = Awaited<ReturnType<typeof reads.partners.findPartners>>;
 /** The envelope an admitted roster read answers with: the rows of one page, the whole-result count and the authority they were read under. */
 type RosterEnvelope = Extract<RosterRead, { readonly kind: "envelope" }>["envelope"];
 
+/** The admitted roster read: the answer this route composes the family's roster surface for, and the one it seeds that surface with. */
+type RosterEnvelopeRead = { readonly kind: "envelope"; readonly envelope: RosterEnvelope };
+
 /** The three answers that are not that envelope: a denial, an outage behind the records, or a refused request. */
 type RosterRefusal = Exclude<RosterRead, { readonly kind: "envelope" }>;
 
@@ -325,20 +328,23 @@ export default async function PartnersRosterPage({ searchParams }: PartnersRoste
         <p className="max-w-prose text-sm text-pretty text-muted-foreground">{PAGE_COPY.lede}</p>
         <p className="max-w-prose text-sm text-pretty text-muted-foreground">{PAGE_COPY.classes}</p>
       </div>
-      {result.kind === "envelope" ? <RosterBody envelope={result.envelope} /> : <RosterNotice result={result} sameView={viewHrefOf(stated)} />}
+      {result.kind === "envelope" ? <RosterBody result={result} /> : <RosterNotice result={result} sameView={viewHrefOf(stated)} />}
     </div>
   );
 }
 
-/** What the route renders for an admitted read: the family's roster surface, and the private-contact block beside it. */
-function RosterBody({ envelope }: { readonly envelope: RosterEnvelope }): ReactElement {
+/** What the route renders for an admitted read: the family's roster surface, seeded with this read's own answer, and the private-contact block beside it. */
+function RosterBody({ result }: { readonly result: RosterEnvelopeRead }): ReactElement {
+  const { envelope } = result;
   const mayPrepare = admits(envelope.actions, CREATE_PREPARATION_ACTION);
   return (
     <>
       {/* One composition of the list pattern, and only one: the family's roster surface owns the toolbar, the table preset,
-          the pager and the scroll region, and asks the service for the same view this read answered. The surface's own row
-          action is the way into each record, so this route adds none and cannot offer a second one. */}
-      <PartnerRoster scope={envelope.scope} emptyAction={mayPrepare ? <AddContactLink /> : undefined} />
+          the pager and the scroll region, and asks the service for the same view this read answered. It is handed this
+          read's answer as its seed, so the first paint states these rows and this whole-result count rather than a
+          loading notice and the mount issues no second read of the same view. The surface's own row action is the way
+          into each record, so this route adds none and cannot offer a second one. */}
+      <PartnerRoster scope={envelope.scope} initialResult={result} emptyAction={mayPrepare ? <AddContactLink /> : undefined} />
       {mayPrepare ? (
         // The form is mounted once, and the empty roster's first action points here rather than mounting a second copy: a
         // worker who already holds records must still be able to add a private contact. Its heading is the form's own, so

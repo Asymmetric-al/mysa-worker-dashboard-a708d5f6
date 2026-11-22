@@ -7,6 +7,7 @@ import { StateNotice } from "@/components/state-notice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { DirectionProvider } from "@/components/ui/direction";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/cn";
 import type { MediaPreparationState } from "@/modules/media/asset";
@@ -184,13 +185,15 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
     );
   }
   return (
-    <Card dir={direction} data-slot="video-player" data-state={state} className={cn("w-full", className)}>
-      <CardContent className="flex flex-col gap-3">
-        {renderSurface()}
-        {renderMeta()}
-        {renderTranscript()}
-      </CardContent>
-    </Card>
+    <DirectionProvider direction={direction}>
+      <Card dir={direction} data-slot="video-player" data-state={state} className={cn("w-full", className)}>
+        <CardContent className="flex flex-col gap-3">
+          {renderSurface()}
+          {renderMeta()}
+          {renderTranscript()}
+        </CardContent>
+      </Card>
+    </DirectionProvider>
   );
 }
 export default VideoPlayer;

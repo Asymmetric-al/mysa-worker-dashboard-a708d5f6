@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DirectionProvider } from "@/components/ui/direction";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -82,14 +83,16 @@ export function MessageReader({ sender, subject, asOfLabel, audienceLabel, audie
                 <TabsTrigger value="plain">{INBOX_TAB_LABELS.plain}</TabsTrigger>
               </TabsList>
               <ScrollArea className="h-96">
-                <div className="pe-3" dir={direction} lang={languageTag}>
-                  <TabsContent value="html" className="rounded-lg focus-visible:ring-[3px] focus-visible:ring-ring">
-                    <ServerHtml html={html} direction={direction} lang={languageTag} />
-                  </TabsContent>
-                  <TabsContent value="plain" className="rounded-lg focus-visible:ring-[3px] focus-visible:ring-ring">
-                    <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed">{plainText}</pre>
-                  </TabsContent>
-                </div>
+                <DirectionProvider direction={direction}>
+                  <div className="pe-3" dir={direction} lang={languageTag}>
+                    <TabsContent value="html" className="rounded-lg focus-visible:ring-[3px] focus-visible:ring-ring">
+                      <ServerHtml html={html} direction={direction} lang={languageTag} />
+                    </TabsContent>
+                    <TabsContent value="plain" className="rounded-lg focus-visible:ring-[3px] focus-visible:ring-ring">
+                      <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed">{plainText}</pre>
+                    </TabsContent>
+                  </div>
+                </DirectionProvider>
               </ScrollArea>
             </Tabs>
           )}

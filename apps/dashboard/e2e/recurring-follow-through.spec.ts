@@ -31,9 +31,11 @@
  *
  * **What is asserted through which surface.** The closed repeat rule — the five profiles, the required planning
  * zone and the explicit end — is asserted through the one editor form that composes it, the this-and-future
- * revision, which reads the same closed sets and the same schema the create path uses. Creation has no route of its
- * own in this release, so nothing here depends on one: every assertion below is satisfied by the seeded plans and
- * by the mutations the plan's own surface offers.
+ * revision, which reads the same closed sets and the same schema the create path uses. A plan is created through
+ * the one create surface the application has, the "Plan work that repeats" section of `/work`, and one case below
+ * depends on it: a plan whose first due date is still ahead of the scenario's today is the only way to hold a rule
+ * boundary after today, and the boundary a prospective revision is presented with has to survive that. Every other
+ * assertion is satisfied by the seeded plans and by the mutations the plan's own surface offers.
  */
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
@@ -100,6 +102,23 @@ const PLAN_REVIEW_HEADING = "Plan needs review";
 
 /** The five repeat profiles the closed rule admits, in the order the editor offers them. */
 const CLOSED_PROFILES = ["Does not repeat", "Weekly", "Every N weeks", "Monthly on day N", "Every N months on day N"];
+
+/** The section and the two controls the Work surface creates a plan with, named as the surface names them. */
+const CREATE_SECTION_HEADING = "Plan work that repeats";
+const NEW_PLAN_LABEL = "New repeating plan";
+const CREATE_PLAN_LABEL = "Create plan";
+
+/**
+ * The plan this file creates through that section: a monthly rule whose first due date is still ahead of the
+ * scenario's today, which is the case a prospective revision has to be presented a boundary for.
+ */
+const FUTURE_PLAN_TITLE = "QA smoke repeated plan";
+const FUTURE_FIRST_DUE = "2027-01-31";
+const FUTURE_END_ON = "2027-06-30";
+
+/** The profile that plan's rule begins with, and the one the revision changes it to. */
+const CREATED_PROFILE = "Monthly on day N";
+const REVISED_PROFILE = "Every N months on day N";
 
 /** The statuses that mean a date is still waiting for an answer. */
 const AWAITING_ACTION: ReadonlySet<string> = new Set<string>(["open", "reopened"]);
@@ -192,6 +211,30 @@ function outcomeOf(body: unknown): string {
 function newAttemptId(): string {
   return crypto.randomUUID();
 }
+
+// ---------------------------------------------------------------------------------------------
+// The plan a test creates itself, and the value that tells a re-read from a reload
+// ---------------------------------------------------------------------------------------------
+
+/** The identifier in a plan's own address, taken from the address the browser is on rather than typed here. */
+function seriesIdOf(url: string): string {
+  const last = new URL(url).pathname
+    .split("/")
+    .filter((segment) => segment !== "")
+    .at(-1);
+  if (last === undefined) {
+    throw new Error(`The browser is on ${url}, which names no plan, so nothing this test asserts could describe the plan it created.`);
+  }
+  return decodeURIComponent(last);
+}
+
+/** What this file leaves in the document before a change: a page load hands back a document holding none of it. */
+interface RevisionMarkerHost {
+  revisionBoundaryMarker?: string;
+}
+
+/** The value the marker holds while the document that was set it is still the one on screen. */
+const REVISION_MARKER_VALUE = "kept";
 
 // ---------------------------------------------------------------------------------------------
 // The development control: the one way this file moves the scenario clock
@@ -357,8 +400,16 @@ test("a plan states its closed rule, one actionable date among previews, and the
   const revisionForm = page.locator('[data-slot="series-revision-form"]');
   await expect(revisionForm).toBeVisible();
   const profiles = revisionForm.getByRole("combobox", { name: "Repeat", exact: true });
-  await expect(profiles.locator("option")).toHaveText([...CLOSED_PROFILES]);
-  await expect(profiles).toHaveValue("monthlyOnDay");
+  // A longer closed choice, so the profile is the styled Select: a combobox whose trigger states the chosen profile's
+  // own label, and a listbox holding exactly the five profiles in the order the closed rule offers them.
+  const chosenProfile = profiles.locator('[data-slot="select-value"]');
+  await expect(chosenProfile).toHaveText("Monthly on day N");
+  await profiles.click();
+  await expect(page.getByRole("listbox").getByRole("option")).toHaveText([...CLOSED_PROFILES]);
+  // Dismissed without choosing, the profile in force is the one the plan already states.
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-slot="select-content"]')).toBeHidden();
+  await expect(chosenProfile).toHaveText("Monthly on day N");
   // A day a month does not have uses that month's final day, and the editor says so where the day is chosen.
   await expect(revisionForm.getByText("For missing monthly dates, use and disclose the final day of that month.")).toBeVisible();
   // The change states the boundary it applies from before it is applied.
@@ -505,7 +556,12 @@ test("several missed dates open the plan's own review, and its resolution restor
   await expect(review).toContainText(`This review covers ${String(missed)} dates that passed without an action.`);
   await expect(review).toContainText("It changes this series only, and it records no contact and no completion on your behalf.");
   await review.getByRole("button", { name: "Apply this resolution", exact: true }).click();
-  await expect(panel.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted");
+  // The plan is re-read once its resolution settles, so the review states that it is settled and keeps the receipt
+  // of what was applied beside it, rather than unmounting the review that produced that receipt.
+  const settledPanel = page.locator('[data-slot="plan-needs-review-panel"]');
+  await expect(settledPanel.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted");
+  await expect(page.locator('[data-slot="plan-needs-review-panel"][data-plan-state="settled"]'), "The review states that it is settled once its resolution has been applied and the plan re-read.").toHaveCount(1);
+  await expect(settledPanel.getByRole("heading", { name: "This plan's review is settled" })).toBeVisible();
 
   // Read again, the plan admits one date and is no longer awaiting a decision.
   await openPlan(page, MISSED_PLAN_SERIES, MISSED_PLAN_TITLE);
@@ -579,6 +635,98 @@ test("one date changes on its own, and a change from a boundary revises the rule
 });
 
 // ---------------------------------------------------------------------------------------------
+// A plan whose own rule begins in the future, created here and then revised from that boundary
+// ---------------------------------------------------------------------------------------------
+
+test("a plan created with a future first due date is revised from its own boundary rather than from today", async ({ page }) => {
+  // The plan is created only because the Work surface can create one: creation is what puts a rule boundary after
+  // the scenario's today, which is the case a prospective revision has to be presented a boundary for.
+  await page.goto("/work");
+  await expect(page.getByRole("heading", { name: CREATE_SECTION_HEADING, level: 2 })).toBeVisible();
+  await page.getByRole("button", { name: NEW_PLAN_LABEL, exact: true }).click();
+  const createForm = page.locator('[data-slot="series-editor"][data-mode="create"]');
+  await expect(createForm).toBeVisible();
+  await createForm.getByRole("textbox", { name: "Title", exact: true }).fill(FUTURE_PLAN_TITLE);
+  await createForm.getByRole("textbox", { name: "First due date", exact: true }).fill(FUTURE_FIRST_DUE);
+  await createForm.getByRole("combobox", { name: "Planning timezone", exact: true }).selectOption(PLANNING_ZONE);
+  await createForm.getByRole("radio", { name: CREATED_PROFILE, exact: true }).click();
+  await createForm.getByRole("spinbutton", { name: "Day of the month", exact: true }).fill("31");
+  await expect(createForm.getByRole("radio", { name: "End on a date", exact: true })).toBeChecked();
+  await createForm.getByRole("textbox", { name: "End date", exact: true }).fill(FUTURE_END_ON);
+  await createForm.getByRole("button", { name: CREATE_PLAN_LABEL, exact: true }).click();
+  // The creation opens the plan it made: the addressed plan is the one the outcome named, not one derived here.
+  await page.waitForURL(/\/work\/series\/[^/]+$/u);
+  await expect(page.getByRole("heading", { level: 1, name: FUTURE_PLAN_TITLE })).toBeVisible();
+  const createdUrl = page.url();
+  const seriesId = seriesIdOf(createdUrl);
+
+  // The plan the read states: one rule revision, whose boundary is the plan's own first due date and still ahead of
+  // the plan's today. That ordering is the whole precondition of this test, so it is asserted rather than assumed.
+  const created = await readPlan(page, seriesId);
+  const createdRule = recordAt(created.data, ["rule"], "The rule in force");
+  expect(stringAt(createdRule, ["profile"], "The rule's repeat profile")).toBe("monthlyOnDay");
+  expect(stringAt(createdRule, ["firstDueOn"], "The plan's first due date")).toBe(FUTURE_FIRST_DUE);
+  const planToday = stringAt(created.data, ["today"], "The plan's own today");
+  expect(FUTURE_FIRST_DUE > planToday, "The plan's rule begins after its own today, which is the case a prospective boundary has to survive").toBe(true);
+  const createdRevisions = recordsAt(created.data, ["effectiveRevisions"], "The rule revisions");
+  expect(createdRevisions, "A new plan holds the one revision its rule began with").toHaveLength(1);
+  expect(stringAt(createdRevisions[0], ["effectiveFrom"], "The boundary the plan's rule began at"), "The plan's only boundary is its first due date").toBe(FUTURE_FIRST_DUE);
+
+  // A change is about to be applied, and the document it is applied on holds a value a page load would erase: that
+  // is what lets the assertions below tell the surface re-reading itself from the browser loading the page again.
+  await page.evaluate((marker: string) => {
+    (globalThis as unknown as RevisionMarkerHost).revisionBoundaryMarker = marker;
+  }, REVISION_MARKER_VALUE);
+  const navigationsBefore = await page.evaluate(() => performance.getEntriesByType("navigation").length);
+
+  // The revision states the boundary it will submit, and that boundary is the plan's own: the first due date its rule
+  // began at. Today would be a boundary the plan's rule has already moved past, so the change could not apply from it.
+  await page.getByRole("button", { name: "Edit this and future", exact: true }).click();
+  const revisionForm = page.locator('[data-slot="series-revision-form"]');
+  await expect(revisionForm).toBeVisible();
+  await expect(revisionForm.getByText("Takes effect from").first()).toBeVisible();
+  await expect(revisionForm.locator(`time[datetime="${FUTURE_FIRST_DUE}"]`), "The boundary stated is the plan's first due date").toBeVisible();
+  await expect(revisionForm.locator(`time[datetime="${planToday}"]`), "The boundary stated is not the plan's today, which this plan's rule could not be revised from").toHaveCount(0);
+
+  // The rule is revised through the one closed set of profiles, chosen from the styled Select, and the members the
+  // new profile reads are stated with it.
+  const profileChoice = revisionForm.getByRole("combobox", { name: "Repeat", exact: true });
+  await expect(profileChoice.locator('[data-slot="select-value"]')).toHaveText(CREATED_PROFILE);
+  await profileChoice.click();
+  await page.getByRole("listbox").getByRole("option", { name: REVISED_PROFILE, exact: true }).click();
+  await revisionForm.getByRole("spinbutton", { name: "Repeat every", exact: true }).fill("2");
+  await revisionForm.getByRole("spinbutton", { name: "Day of the month", exact: true }).fill("15");
+  await revisionForm.getByRole("button", { name: "Apply this revision", exact: true }).click();
+  const revisionReceipt = revisionForm.locator('[data-slot="occurrence-command-result"]');
+  await expect(revisionReceipt, "The change applies: the boundary the form stated is one this plan's rule can be revised from").toHaveAttribute("data-outcome", "accepted");
+
+  // The plan re-reads in place, so the rule it states is the revised one and the dates it previews are the ones that
+  // rule produces — with the document, its marker and its navigation count untouched.
+  await expect(previewSection(page).getByText(REVISED_PROFILE, { exact: true })).toBeVisible();
+  await expect(previewSection(page).getByText(CREATED_PROFILE, { exact: true }), "The rule on screen is the one the change applied").toHaveCount(0);
+  await expect(nextDates(page).locator('time[datetime="2027-03-15"]'), "The dates stated are the ones the revised rule produces").toBeVisible();
+  expect(await page.evaluate(() => (globalThis as unknown as RevisionMarkerHost).revisionBoundaryMarker ?? null), "The revised rule arrives by re-reading this page, not by loading it again").toBe(REVISION_MARKER_VALUE);
+  expect(await page.evaluate(() => performance.getEntriesByType("navigation").length), "No document was loaded to show the revised rule").toBe(navigationsBefore);
+  expect(page.url(), "The plan is revised on its own page").toBe(createdUrl);
+
+  // And the plan the service now holds is that revision: a second rule revision at the boundary the form stated, the
+  // new rule in force, the first due date and the one date awaiting an answer untouched.
+  const revised = await readPlan(page, seriesId);
+  const revisedRule = recordAt(revised.data, ["rule"], "The rule in force after the revision");
+  expect(stringAt(revisedRule, ["profile"], "The repeat profile in force")).toBe("everyNMonths");
+  expect(numberOf(revisedRule, ["interval"], "The interval in force")).toBe(2);
+  expect(numberOf(revisedRule, ["dayOfMonth"], "The day of the month in force")).toBe(15);
+  expect(stringAt(revisedRule, ["firstDueOn"], "The first due date after the revision"), "A prospective revision keeps the plan's first due date").toBe(FUTURE_FIRST_DUE);
+  const revisedRevisions = recordsAt(revised.data, ["effectiveRevisions"], "The rule revisions after the change");
+  expect(revisedRevisions, "The revision is a new rule, not a replacement of the first").toHaveLength(2);
+  expect(stringAt(revisedRevisions[0], ["effectiveFrom"], "The boundary the first revision applies from")).toBe(FUTURE_FIRST_DUE);
+  expect(stringAt(revisedRevisions[1], ["effectiveFrom"], "The boundary the change takes effect from"), "The boundary recorded is the one the form stated").toBe(FUTURE_FIRST_DUE);
+  expect(stringAt(revisedRevisions[1], ["rule", "profile"], "The profile the new revision states")).toBe("everyNMonths");
+  expect(stringAt(revised.data, ["currentOccurrence", "dueOn"], "The date the plan answers for")).toBe(FUTURE_FIRST_DUE);
+  expect(stringAt(revised.data, ["currentOccurrence", "status"], "The state of the date the plan answers for"), "Revising the plan answers nothing on its behalf").toBe("open");
+});
+
+// ---------------------------------------------------------------------------------------------
 // Pause, resume, stop, and an action captured before the stop
 // ---------------------------------------------------------------------------------------------
 
@@ -590,6 +738,12 @@ test("a paused plan admits no date, a resumed one does, and an action captured b
   // Pausing holds the plan without closing it: no date is admitted while it is on hold.
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await expect(commandReceipt(page, "Pause")).toHaveAttribute("data-outcome", "accepted");
+  // The accepted pause re-reads this route itself, so the state section and the control set are the service's current
+  // answer before this spec navigates anywhere: the attribute the surface is driven by flips, the preview of dates to
+  // answer is withdrawn, and Resume becomes the offered command — with no reload of the document.
+  await expect(page.locator('[data-slot="series-state-controls"][data-series-state="paused"]')).toHaveCount(1);
+  await expect(page.locator('[data-slot="series-plan-preview"]')).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeEnabled();
   await openPlan(page, MONTH_END_SERIES, MONTH_END_TITLE);
   const paused = await readPlan(page, MONTH_END_SERIES);
   expect(stringAt(paused.data, ["state"], "The plan's state")).toBe("paused");
@@ -606,6 +760,9 @@ test("a paused plan admits no date, a resumed one does, and an action captured b
   // Resuming admits the next date again.
   await page.getByRole("button", { name: "Resume", exact: true }).click();
   await expect(commandReceipt(page, "Resume")).toHaveAttribute("data-outcome", "accepted");
+  // The accepted resume re-reads this route as well, so the state section is already the active one: no reload and no
+  // navigation stand between the receipt and the state it produced.
+  await expect(page.locator('[data-slot="series-state-controls"][data-series-state="active"]')).toHaveCount(1);
   await openPlan(page, MONTH_END_SERIES, MONTH_END_TITLE);
   await expect(page.locator('[data-slot="series-state-controls"][data-series-state="active"]')).toHaveCount(1);
   await expect(page.locator('[data-slot="occurrence-actions"][data-occurrence="actionable"]')).toHaveCount(1);

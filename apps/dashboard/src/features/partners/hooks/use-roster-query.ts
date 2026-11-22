@@ -14,7 +14,7 @@
  */
 import { keepPreviousData, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { scopeKey } from "@/components/context-switch-guard";
 import type { ReadEnvelope, Scope, ValueState } from "@/modules/data-service/envelope";
 import type { ReadResult } from "@/modules/data-service/outcome";
@@ -478,6 +478,42 @@ function scopeIsResolved(scope: Scope): boolean {
   return [scope.organizationId, scope.ministryId, scope.supportSubjectId, scope.principalId].every((identifier) => typeof identifier === "string" && identifier !== "");
 }
 
+// The answer a server render already read
+/** Whether two requests ask the read for the same answer: every member compared, so the search, a selected value, the ordering and the page window are the same question rather than two. */
+function sameRequest(left: RosterRequestParams, right: RosterRequestParams): boolean {
+  const leftFacets = left.facet ?? [];
+  const rightFacets = right.facet ?? [];
+  const sameFacets = leftFacets.length === rightFacets.length && leftFacets.every((expression, index) => expression === rightFacets[index]);
+  return sameFacets && left.page === right.page && left.pageSize === right.pageSize && (left.search ?? "") === (right.search ?? "") && (left.sort ?? "") === (right.sort ?? "") && (left.direction ?? "") === (right.direction ?? "");
+}
+
+/** Whether two scopes are the same authority: the four identifiers the read runs under, compared one by one. */
+function sameScope(left: Scope, right: Scope): boolean {
+  return left.organizationId === right.organizationId && left.ministryId === right.ministryId && left.supportSubjectId === right.supportSubjectId && left.principalId === right.principalId;
+}
+
+/**
+ * The roster read a server render already answered, when it is the answer this surface is about to ask for, and
+ * nothing otherwise.
+ *
+ * A seed makes the first paint state the rows and the whole-result count the route read instead of a loading notice,
+ * and lets the mount issue no identical request. It is used only where three things agree: the surface still asks the
+ * question the server answered (`asked` — the request this surface first rendered with, because the address moves on as
+ * the worker searches and pages and a seed must never follow it), the window the payload itself echoes is the window
+ * being asked for, and the envelope ran under the authority this surface reads in. The roster payload echoes no search,
+ * selection or ordering, so the window alone cannot tell one view of a first page from another; a seed that described a
+ * different question would paint one view's rows and count under another view's heading, and a refusal is never seeded
+ * at all, so a denial or an outage keeps its own arm.
+ */
+function seedOf<TRow>(initialResult: ReadResult<RosterEnvelope<TRow>> | undefined, asked: RosterRequestParams | null, request: RosterRequestParams, scope: Scope): ReadResult<RosterEnvelope<TRow>> | undefined {
+  if (initialResult === undefined || initialResult.kind !== "envelope" || asked === null) {
+    return undefined;
+  }
+  const { envelope } = initialResult;
+  const agrees = sameRequest(asked, request) && sameScope(envelope.scope, scope) && envelope.data.page.index === request.page && envelope.data.page.size === request.pageSize;
+  return agrees ? initialResult : undefined;
+}
+
 // The change
 /**
  * The state one change produces: the members the patch states are replaced, and the page returns to the first one when
@@ -504,8 +540,14 @@ function mergeRosterQuery(current: RosterQueryState, patch: Partial<RosterQueryS
  * back, so opening a record and returning re-issues the identical query and the browser restores the list as it was.
  * Each read answers its own result unchanged — `envelope`, `denied`, `unavailable` or `refused` — so a refusal never
  * degrades into an empty list and a value state is read where the envelope states it.
+ *
+ * `initialResult` is the answer a server render already read for this same scope and view, when the composing route has
+ * one: it seeds the roster read, so the first paint states exactly the rows and the whole-result count the server
+ * painted and no identical request repeats that read on mount. An answer that does not describe the view being asked
+ * for is dropped and the read is made instead, so a later page, search, selection or sort still reads and still shows
+ * the previous page while the next one lands.
  */
-export function useRosterQuery<TRow = unknown>(scope: Scope, options: RosterQueryOptions = {}): RosterQueryResult<TRow> {
+export function useRosterQuery<TRow = unknown>(scope: Scope, options: RosterQueryOptions = {}, initialResult?: ReadResult<RosterEnvelope<TRow>>): RosterQueryResult<TRow> {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -515,6 +557,12 @@ export function useRosterQuery<TRow = unknown>(scope: Scope, options: RosterQuer
   const query = useMemo(() => parseRosterQuery(searchParams, admittedColumnKeys), [searchParams, admittedColumnKeys]);
   const signature = useMemo(() => rosterQuerySignature(query), [query]);
   const request = useMemo(() => rosterRequestParams(query), [query]);
+  // The request this surface was first asked for, which is the one a seed answers: the address moves on as the worker
+  // searches, filters, sorts and pages, and the roster payload echoes no search, selection or ordering, so the window it
+  // states cannot on its own tell two views of one page apart. Held for the surface's lifetime, so a seed only ever
+  // stands for the question the server read it with.
+  const [asked] = useState<RosterRequestParams | null>(() => (initialResult === undefined ? null : request));
+  const seed = seedOf(initialResult, asked, request, scope);
   const commit = useCallback(
     (next: RosterQueryState) => {
       const search = rosterQuerySearch(next);
@@ -559,6 +607,10 @@ export function useRosterQuery<TRow = unknown>(scope: Scope, options: RosterQuer
     // The page on screen stays while the next one lands, so a pending read is a busy list and never an empty one. The
     // busy signal is therefore `isFetching`/`isPlaceholderData`, not absent data.
     placeholderData: keepPreviousData,
+    // The route's own answer for this exact view stands on the first paint, and the mount repeats no identical read for
+    // it; a view no seed answers is read on mount exactly as before.
+    initialData: seed,
+    refetchOnMount: seed === undefined,
     enabled,
   });
   const facets = useQuery<ReadResult<RosterFacetsEnvelope>>({

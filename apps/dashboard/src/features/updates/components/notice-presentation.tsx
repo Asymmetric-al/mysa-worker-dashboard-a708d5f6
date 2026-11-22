@@ -5,6 +5,7 @@ import StatusBadge, { type StatusTone } from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DirectionProvider } from "@/components/ui/direction";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
@@ -111,22 +112,26 @@ function MessageBodies({ bodies, direction, lang }: MessageBodiesProps): ReactEl
           <TabsTrigger value="html">{NOTICE_TAB_LABELS.html}</TabsTrigger>
           <TabsTrigger value="plain">{NOTICE_TAB_LABELS.plain}</TabsTrigger>
         </TabsList>
-        <div className="min-w-0" dir={direction} lang={lang}>
-          <TabsContent value="html" className={PANEL_CLASS}>
-            {htmlRendering}
-          </TabsContent>
-          <TabsContent value="plain" className={PANEL_CLASS}>
-            {textRendering}
-          </TabsContent>
-        </div>
+        <DirectionProvider direction={direction}>
+          <div className="min-w-0" dir={direction} lang={lang}>
+            <TabsContent value="html" className={PANEL_CLASS}>
+              {htmlRendering}
+            </TabsContent>
+            <TabsContent value="plain" className={PANEL_CLASS}>
+              {textRendering}
+            </TabsContent>
+          </div>
+        </DirectionProvider>
       </Tabs>
     );
   }
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <div className="min-w-0" dir={direction} lang={lang}>
-        {hasHtml ? htmlRendering : textRendering}
-      </div>
+      <DirectionProvider direction={direction}>
+        <div className="min-w-0" dir={direction} lang={lang}>
+          {hasHtml ? htmlRendering : textRendering}
+        </div>
+      </DirectionProvider>
       <MissingRendering which={hasHtml ? "plain" : "html"} />
     </div>
   );

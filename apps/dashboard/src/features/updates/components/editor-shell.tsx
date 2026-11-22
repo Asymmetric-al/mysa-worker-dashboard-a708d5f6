@@ -42,6 +42,7 @@ import VariantSwitcher, { type VariantTab } from "@/components/variant-switcher"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DirectionProvider } from "@/components/ui/direction";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
 import { CONTENT_PROFILE_VERSION } from "@/modules/content/document";
@@ -510,22 +511,24 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
         </Alert>
       )}
       {/* Direction is a property of the content, applied to the editing block and never to the interface around it. */}
-      <div dir={direction} lang={localeTag} className="min-w-0">
-        {/* The editor's numeric counter shapes only its own local "not saved" wording: the revision every save states is
-            the opaque one the recovery hook carries, and an opaque reference has no number to take from it. */}
-        <ProseEditor
-          key={`draft-${String(editorInstance)}`}
-          initialDocument={adoptedBody ?? initialBody}
-          expectedRevision={0}
-          direction={direction}
-          label={EDITOR_LABEL}
-          onSave={saveText}
-          onRequestMedia={() => {
-            setPane("media");
-            setMediaRequests((count) => count + 1);
-          }}
-        />
-      </div>
+      <DirectionProvider direction={direction}>
+        <div dir={direction} lang={localeTag} className="min-w-0">
+          {/* The editor's numeric counter shapes only its own local "not saved" wording: the revision every save states is
+              the opaque one the recovery hook carries, and an opaque reference has no number to take from it. */}
+          <ProseEditor
+            key={`draft-${String(editorInstance)}`}
+            initialDocument={adoptedBody ?? initialBody}
+            expectedRevision={0}
+            direction={direction}
+            label={EDITOR_LABEL}
+            onSave={saveText}
+            onRequestMedia={() => {
+              setPane("media");
+              setMediaRequests((count) => count + 1);
+            }}
+          />
+        </div>
+      </DirectionProvider>
       <AutosaveStatus recovery={recovery} acknowledgedAsOf={asOf} />
     </div>
   );

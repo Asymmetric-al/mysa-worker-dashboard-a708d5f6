@@ -14,6 +14,7 @@ import { SimulationLabel } from "@/components/simulation-label";
 import { StateNotice, type NoticeHeadingLevel, type StateNoticeProps } from "@/components/state-notice";
 import StatusBadge, { type StatusBadgeSpec } from "@/components/status-badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { DirectionProvider } from "@/components/ui/direction";
 import VideoPlayer from "@/components/video-player";
 import { PREFERENCES_ENTRY_COPY } from "@/features/audience/copy/preferences";
 import { RECEIVING_POST_COPY, RECEIVING_SIMULATION_EFFECT } from "@/features/audience/copy/receiving";
@@ -213,62 +214,64 @@ function RenderedPost({ data, asOf, persona, headingLevel, onRefresh }: Rendered
   const unplayableVideos = groupRenditions(data.renditions).filter((group) => group.playback === undefined && (group.poster !== undefined || group.captions.length > 0));
   const Heading = HEADING_TAGS[headingLevel];
   return (
-    <article data-slot="receiving-post" data-fallback={fallback ? "true" : "false"} aria-labelledby={titleId} className="flex min-w-0 flex-col gap-4 text-start">
-      <header className="flex min-w-0 flex-col gap-2">
-        <Heading id={titleId} dir={direction} className="font-heading text-xl font-medium break-words text-balance">
-          {titleWordsOf(data)}
-        </Heading>
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {audience === undefined ? null : <StatusBadge label={audience.label} tone={audience.tone} srPrefix={LABELS.audience} />}
-          {servedTag.length === 0 ? null : <StatusBadge label={servedTag} srPrefix={LABELS.servedLanguage} />}
-          {fallback ? <StatusBadge label={requested} tone="muted" srPrefix={LABELS.requestedLanguage} /> : null}
-        </div>
-        <dl className={META_CLASS}>
-          <div className={META_PAIR_CLASS}>
-            <dt>{LABELS.readingAs}</dt>
-            <dd>
-              <bdi>{persona}</bdi>
-            </dd>
+    <DirectionProvider direction={direction}>
+      <article data-slot="receiving-post" data-fallback={fallback ? "true" : "false"} aria-labelledby={titleId} className="flex min-w-0 flex-col gap-4 text-start">
+        <header className="flex min-w-0 flex-col gap-2">
+          <Heading id={titleId} dir={direction} className="font-heading text-xl font-medium break-words text-balance">
+            {titleWordsOf(data)}
+          </Heading>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {audience === undefined ? null : <StatusBadge label={audience.label} tone={audience.tone} srPrefix={LABELS.audience} />}
+            {servedTag.length === 0 ? null : <StatusBadge label={servedTag} srPrefix={LABELS.servedLanguage} />}
+            {fallback ? <StatusBadge label={requested} tone="muted" srPrefix={LABELS.requestedLanguage} /> : null}
           </div>
-          {publishedAt.length === 0 ? null : (
+          <dl className={META_CLASS}>
             <div className={META_PAIR_CLASS}>
-              <dt>{LABELS.released}</dt>
+              <dt>{LABELS.readingAs}</dt>
               <dd>
-                <bdi>{publishedAt}</bdi>
+                <bdi>{persona}</bdi>
               </dd>
             </div>
-          )}
-          <div className={META_PAIR_CLASS}>
-            <dt>{LABELS.asOf}</dt>
-            <dd>
-              <bdi>{asOf}</bdi>
-            </dd>
-          </div>
-        </dl>
-      </header>
-      <Card className="min-w-0">
-        <CardContent>
-          <ServerHtml html={data.html ?? ""} direction={direction} lang={servedTag.length === 0 ? undefined : servedTag} />
-        </CardContent>
-      </Card>
-      {unplayableVideos.map((group) => (
-        <VideoPlayer
-          key={group.assetId}
-          title={LABELS.videoTitle}
-          poster={group.poster?.path}
-          captions={group.captions.map((track) => ({ src: track.path, srcLang: servedTag.length === 0 ? LABELS.undeterminedLanguage : servedTag, label: LABELS.captions }))}
-          state="unavailable"
-          direction={direction}
-          onRetry={onRefresh}
-        />
-      ))}
-      <footer className="flex min-w-0 flex-col gap-2">
-        {fallback ? <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.languageFallbackStatement(requested, servedTag)}</p> : null}
-        <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.recheckStatement}</p>
-        <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.inertStatement}</p>
-        <SimulationLabel effect={RECEIVING_SIMULATION_EFFECT} context="block" />
-      </footer>
-    </article>
+            {publishedAt.length === 0 ? null : (
+              <div className={META_PAIR_CLASS}>
+                <dt>{LABELS.released}</dt>
+                <dd>
+                  <bdi>{publishedAt}</bdi>
+                </dd>
+              </div>
+            )}
+            <div className={META_PAIR_CLASS}>
+              <dt>{LABELS.asOf}</dt>
+              <dd>
+                <bdi>{asOf}</bdi>
+              </dd>
+            </div>
+          </dl>
+        </header>
+        <Card className="min-w-0">
+          <CardContent>
+            <ServerHtml html={data.html ?? ""} direction={direction} lang={servedTag.length === 0 ? undefined : servedTag} />
+          </CardContent>
+        </Card>
+        {unplayableVideos.map((group) => (
+          <VideoPlayer
+            key={group.assetId}
+            title={LABELS.videoTitle}
+            poster={group.poster?.path}
+            captions={group.captions.map((track) => ({ src: track.path, srcLang: servedTag.length === 0 ? LABELS.undeterminedLanguage : servedTag, label: LABELS.captions }))}
+            state="unavailable"
+            direction={direction}
+            onRetry={onRefresh}
+          />
+        ))}
+        <footer className="flex min-w-0 flex-col gap-2">
+          {fallback ? <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.languageFallbackStatement(requested, servedTag)}</p> : null}
+          <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.recheckStatement}</p>
+          <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.inertStatement}</p>
+          <SimulationLabel effect={RECEIVING_SIMULATION_EFFECT} context="block" />
+        </footer>
+      </article>
+    </DirectionProvider>
   );
 }
 

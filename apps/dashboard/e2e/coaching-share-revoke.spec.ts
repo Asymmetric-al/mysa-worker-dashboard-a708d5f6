@@ -650,6 +650,12 @@ test("stops a grant through its own review while an unrelated draft is invalid, 
   await confirmation.getByRole("button", { name: "Revoke the grant" }).click();
   await expect(page.getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
 
+  // The accepted revoke re-reads this route itself, so the surface stops naming the grant it just revoked before
+  // anything navigates: the controls name the surviving relationship while the accepted record stays on screen.
+  await expect(page.getByRole("button", { name: `Revoke the grant for ${FINANCIAL_GRANT}`, exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Revoke the grant for ${PRIMARY_GRANT}`, exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
+
   // The read the surface composes is where the revoked record's state is stated, and the relationship it
   // manages is now the other live one: a revoked grant is not left standing as the record in use.
   const afterRevoke = await readOverview(page);
@@ -669,6 +675,39 @@ test("stops a grant through its own review while an unrelated draft is invalid, 
   await page.goto(`/coaching/coach/${ENDED_GRANT}`);
   await expect(page.locator("main").getByText(/Reason no-permission/u)).toBeVisible();
   await expect(page.getByRole("tab")).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The last live relationship closed: the state the effect produced, and the record it left behind
+// ---------------------------------------------------------------------------------------------
+
+test("closes the last live relationship and keeps the accepted record beside the state the revoke produced", async ({ context, page }) => {
+  const origin = await originOf(page);
+  await actAs(context, origin, WORKER_SESSION);
+  await page.goto("/coaching/sharing");
+
+  // Both live relationships are closed; the second is the last one live, so the surface is left managing a record with
+  // no access and no effect to offer.
+  for (const grantId of [PRIMARY_GRANT, FINANCIAL_GRANT]) {
+    await page.getByRole("button", { name: `Revoke the grant for ${grantId}`, exact: true }).click();
+    const review = page.getByRole("region", { name: "Revoke the grant" });
+    await review.getByRole("button", { name: "Revoke the grant", exact: true }).click();
+    const confirmation = page.locator('[role="alertdialog"]');
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole("button", { name: "Revoke the grant", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
+  }
+
+  // The route re-reads itself and reports the relationship it manages as revoked: the surface states the state the
+  // revoke produced, not an earlier episode the worker never acted on in this session.
+  await expect(page.getByText("Revoked by the worker", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Ended by the worker", { exact: true })).toHaveCount(0);
+  await expect(page.locator("main")).not.toContainText(ENDED_GRANT);
+  // And the accepted record is still what stands beside that state: the re-read that reported the closed relationship
+  // may not displace the record the change itself left. Nothing is offered for a relationship with no access left.
+  await expect(page.getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Revoke the grant for /u })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^End the coaching relationship for /u })).toHaveCount(0);
 });
 
 // ---------------------------------------------------------------------------------------------

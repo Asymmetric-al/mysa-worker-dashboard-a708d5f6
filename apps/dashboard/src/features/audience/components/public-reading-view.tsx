@@ -8,6 +8,7 @@ import StatusBadge, { REACH_STATUS, statusBadgeProps } from "@/components/status
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DirectionProvider } from "@/components/ui/direction";
 import { Separator } from "@/components/ui/separator";
 import { VideoPlayer, type VideoPlayerCaption } from "@/components/video-player";
 import { cn } from "@/lib/cn";
@@ -253,9 +254,11 @@ function ServedEdition({ data, served }: ServedEditionProps): ReactElement {
           </p>
         ) : null}
         {/* The release body through the folder's one raw-markup site, read in the direction the served language states. */}
-        <div dir={served.direction} lang={lang} data-slot="public-reading-view-content" className="min-w-0">
-          <ServerHtml html={html} direction={served.direction} lang={lang} />
-        </div>
+        <DirectionProvider direction={served.direction}>
+          <div dir={served.direction} lang={lang} data-slot="public-reading-view-content" className="min-w-0">
+            <ServerHtml html={html} direction={served.direction} lang={lang} />
+          </div>
+        </DirectionProvider>
         <EditionMedia renditions={data.renditions} html={html} title={title} direction={served.direction} languageTag={languageTag} />
         {data.giving === null ? null : <GivePlacement giving={data.giving} />}
         {/* Where the effect and the recheck are stated: publication reach is simulated, and access is decided on every open. */}

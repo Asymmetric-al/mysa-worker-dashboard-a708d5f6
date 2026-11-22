@@ -19,12 +19,14 @@
  * payload schemas admit only their own fields.
  *
  * The outcome is returned as the handler produced it. `accepted` and `alreadyAccepted` are the only two that mean an
- * effect exists, and so the only two that refresh a read. `conflict` stays with the caller's preserved input so a surface
- * can show it beside the current value; `denied` reveals nothing about a record the caller may not see; `unavailable` is
- * never rendered as zero or as an empty list; and `unknown` is never treated as success, never turned into a toast and
- * never re-sent under a fresh identity — the attempt's `operationId` is the way back to whatever the first attempt
- * produced. A transport fault is answered as `unknown` for that same reason: an effect that may have happened is neither
- * a success nor a refusal, and inventing either would break what `components/operation-result.tsx` is allowed to say.
+ * effect exists, and so the only two that refresh anything: the family's queries, and — because the sharing, check-in
+ * and target surfaces are handed a server-read envelope rather than mounting a query of their own — the route's own read
+ * as well. `conflict` stays with the caller's preserved input so a surface can show it beside the current value; `denied`
+ * reveals nothing about a record the caller may not see; `unavailable` is never rendered as zero or as an empty list; and
+ * `unknown` is never treated as success, never turned into a toast and never re-sent under a fresh identity — the
+ * attempt's `operationId` is the way back to whatever the first attempt produced. A transport fault is answered as
+ * `unknown` for that same reason: an effect that may have happened is neither a success nor a refusal, and inventing
+ * either would break what `components/operation-result.tsx` is allowed to say.
  *
  * One intent, one identity. An `operationId` is minted when an intent begins, the same id answers every retry of that
  * intent, and a changed intent is a new attempt — reusing an id with changed intent is a `conflict` by contract.
@@ -35,6 +37,7 @@
  * hook here names a worker-side job, and none of them edits, comments on, assigns, reminds about, completes, reopens,
  * exports or impersonates anything: a coach's access is read-only (AAP 0.8.4).
  */
+import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient, type UseMutationResult } from "@tanstack/react-query";
 import { useRef } from "react";
 import { scopeKey } from "@/components/context-switch-guard";
@@ -146,9 +149,19 @@ function useOperationIdentity(): (name: string, scope: Scope, expectedRevision: 
  * for checking what the attempt did — recovery is the same `operationId`, and a client that quietly refetched would be
  * telling the worker the outcome had settled. Awaiting the refreshes keeps the mutation pending until the reads settle,
  * so a caller that awaits `mutateAsync` can read the new state immediately afterwards.
+ *
+ * The job keys alone cannot reach most of what a coaching change alters. `/coaching/sharing`, `/coaching/check-ins` and
+ * `/coaching/targets` server-read their envelopes and hand them down, so the sharing summary, the five module toggles,
+ * the stop controls and the grant they name, and the check-in editor's state are props rather than cached reads — no
+ * key here matches a query those surfaces mount, and a revoked grant, a stopped module or a withdrawn check-in would
+ * stay on screen as the state it replaced while the receipt beside it said the change was applied. Asking the route for
+ * its own read again is what makes those the service's current answer; it replaces the server payload without
+ * remounting these components, so the attempt's receipt — the one durable proof of what happened — stays on screen
+ * beside the state it produced.
  */
 function useCoachingInvalidation(): (outcome: MutationOutcome, scope: Scope, jobs: readonly string[]) => Promise<void> {
   const queryClient = useQueryClient();
+  const router = useRouter();
   return async (outcome, scope, jobs) => {
     switch (outcome.outcome) {
       case "accepted":
@@ -157,6 +170,7 @@ function useCoachingInvalidation(): (outcome: MutationOutcome, scope: Scope, job
         // in this scope refreshes together.
         const context = scopeKey(scope);
         await Promise.all(jobs.map((job) => queryClient.invalidateQueries({ queryKey: [...context, job] })));
+        router.refresh();
         return;
       }
       case "unchanged":

@@ -37,9 +37,10 @@ import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import type { ContactMethodKind, PartnerKind, ReadEnvelope, RecordAudience, Scope, ValueState } from "@/modules/data-service/envelope";
+import type { ReadResult } from "@/modules/data-service/outcome";
 import { FACET_VALUE_LABELS } from "../copy/facets";
 import { PARTNER_ACTION_LABELS, SURFACE_STATE_COPY, VALUE_STATE_COPY } from "../copy/states";
-import { ROSTER_PAGE_SIZE_CAP, ROSTER_PAGE_SIZE_DEFAULT, useRosterQuery, type RosterSort } from "../hooks/use-roster-query";
+import { ROSTER_PAGE_SIZE_CAP, ROSTER_PAGE_SIZE_DEFAULT, useRosterQuery, type RosterEnvelope, type RosterSort } from "../hooks/use-roster-query";
 import ColumnChooser, { PARTNER_COLUMN_KEYS, admittedPartnerColumns, type PartnerColumn, type PartnerColumnKey } from "./column-chooser";
 import { PartnerFacets } from "./partner-facets";
 import SavedViewBar from "./saved-view-bar";
@@ -95,6 +96,14 @@ export interface PartnerRosterRow {
 export interface PartnerRosterProps {
   /** The exact authority the roster is read under. It is handed to the service unchanged, and the service re-derives scope from the session on every read. */
   readonly scope: Scope;
+  /**
+   * The answer a server render already read for this same scope and view, when the composing route has one — the
+   * route's own `findPartners` result, handed back unchanged. It seeds the roster read, so the first paint states the
+   * rows and the whole-result count the server read rather than a loading notice, and the mount issues no identical
+   * request. An answer that is not an envelope, or that describes a view this surface is not asking for, is ignored and
+   * the read is made as it would be without one, so a denial or an outage always keeps its own arm.
+   */
+  readonly initialResult?: ReadResult<RosterEnvelope<PartnerRosterRow>>;
   /**
    * The row-level controls the composing route supplies — the family's tag and favourite actions, mounted once per
    * row. When it is absent the roster offers its own navigation-only row action, so a row is never without a way in.
@@ -581,12 +590,14 @@ function RosterNotes({ envelope }: { readonly envelope: ReadEnvelope<unknown> })
  * The render has exactly one arm per answer the roster read can give. An envelope the service returned is the list; a
  * denial states its closed reason and nothing else — no row, no count, no name and no hint of what the roster holds; an
  * outage states its source and offers the read again; a refusal states that the request was refused rather than that the
- * source failed. A read that has not answered is a loading state, never an empty roster.
+ * source failed. A read that has not answered is a loading state, never an empty roster — unless the composing route
+ * hands this surface its own read (`initialResult`), in which case the first paint opens in the envelope arm on that
+ * answer, which is the read of the view this surface asks for.
  */
-export default function PartnerRoster({ scope, rowActions, emptyAction, dir, className }: PartnerRosterProps): ReactElement {
+export default function PartnerRoster({ scope, initialResult, rowActions, emptyAction, dir, className }: PartnerRosterProps): ReactElement {
   // The columns this surface offers, named once at module scope: the same closed set is given to the one URL parser and
   // to the saved-view bar, so a stale address or a stored view cannot carry a column this surface does not have.
-  const roster = useRosterQuery<PartnerRosterRow>(scope, { admittedColumnKeys: PARTNER_COLUMN_KEYS });
+  const roster = useRosterQuery<PartnerRosterRow>(scope, { admittedColumnKeys: PARTNER_COLUMN_KEYS }, initialResult);
   const result = roster.roster.data;
   const envelope = result !== undefined && result.kind === "envelope" ? result.envelope : null;
   const states = envelope === null ? null : envelope.valueStates;
@@ -733,7 +744,7 @@ export default function PartnerRoster({ scope, rowActions, emptyAction, dir, cla
             why, while the preset's own menu is the table's native affordance over the same controlled state. Neither
             keeps a copy, so both always describe the columns actually shown. */}
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <SavedViewBar scope={scope} admittedColumnKeys={PARTNER_COLUMN_KEYS} />
+          <SavedViewBar scope={scope} admittedColumnKeys={PARTNER_COLUMN_KEYS} initialResult={initialResult} />
           <ColumnChooser value={roster.query.columnVisibility} onValueChange={changeColumns} envelope={envelope} />
         </div>
         {filtersNotice()}

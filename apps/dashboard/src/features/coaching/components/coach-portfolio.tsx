@@ -6,7 +6,7 @@
  */
 import Link from "next/link";
 import { useCallback, useId, useMemo, useState, type ReactElement } from "react";
-import RecordList, { type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
+import RecordList, { useRecordListWindow, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import StateNotice from "@/components/state-notice";
 import StatusBadge, { COACHING_STATUS, statusBadgeProps } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +23,7 @@ import { useCoachPortfolio } from "../hooks/use-coaching-reads";
 type PortfolioPayload = Extract<NonNullable<ReturnType<typeof useCoachPortfolio>["data"]>, { readonly kind: "envelope" }>["envelope"]["data"];
 /** One relationship as the read reports it: an opaque grant, the worker it names, the ministry it covers, the frozen duration and the modules switched on. */
 type PortfolioSubject = PortfolioPayload["subjects"][number];
-/** The controlled list state this surface starts from: the page, the row size and the visible columns. */
+/** The window the surrounding route starts this surface from — the one the address states — and the visible columns it starts with. The address owns the window from then on; the columns are the surface's own. */
 interface CoachPortfolioProps {
   readonly initialQuery: RecordListQueryState;
   /** The exact authority this read runs under; the service re-derives the session's scope on every read. */
@@ -151,11 +151,23 @@ export default function CoachPortfolio({ initialQuery, scope, locale, onOpen }: 
   const heading = COACHING_COPY.coachPortfolio.heading;
   // The family's read: the hook owns the cache key, the transport and the refusal branches, so this component never builds a query of its own.
   const portfolio = useCoachPortfolio(scope);
-  const [queryState, setQueryState] = useState<RecordListQueryState>(() => ({ sort: [], page: initialQuery.page, pageSize: familyPageSize(initialQuery.pageSize), columnVisibility: initialQuery.columnVisibility }));
-  const handleQueryStateChange = useCallback((next: RecordListQueryState) => {
-    // The page, the row size and the visible columns are kept; an ordering is never kept, because this read applies its own and takes no ordering parameter.
-    setQueryState({ sort: [], page: Math.max(FIRST_PAGE, next.page), pageSize: familyPageSize(next.pageSize), columnVisibility: next.columnVisibility });
-  }, []);
+  const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(initialQuery.columnVisibility);
+  // The address owns the page window, so a coach who opens a relationship and comes back reads the page they left
+  // rather than the first one. No ordering is held, because this read applies its own and takes no ordering
+  // parameter, and the visible columns stay in this component because hiding one never changes which relationships
+  // the read authorised.
+  const listWindow = useRecordListWindow({ page: initialQuery.page, pageSize: familyPageSize(initialQuery.pageSize) });
+  const setWindow = listWindow.setWindow;
+  const queryState: RecordListQueryState = { sort: [], page: listWindow.page, pageSize: familyPageSize(listWindow.pageSize), columnVisibility };
+  const handleQueryStateChange = useCallback(
+    (next: RecordListQueryState) => {
+      // The page and the row size are written to the address, and the visible columns are kept here; an ordering is
+      // never kept, because this read applies its own and takes no ordering parameter.
+      setColumnVisibility(next.columnVisibility);
+      setWindow({ page: next.page, pageSize: familyPageSize(next.pageSize) });
+    },
+    [setWindow],
+  );
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<PortfolioSubject>>>(
     () => [
       { id: "worker", header: COLUMN_LABELS.worker, enableSorting: false, enableHiding: false, cell: (context) => <SubjectCell subject={context.row.original} onOpen={onOpen} /> },

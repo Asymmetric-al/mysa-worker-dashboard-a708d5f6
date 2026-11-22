@@ -34,9 +34,14 @@ import {
   BULK_REVIEW_HEADING,
   BULK_SELECTION_COUNT_TEMPLATE,
   BULK_SELECTION_SCOPE_NOTE,
+  BULK_SESSION_ROW_EXCLUSION_REASON,
   BULK_TAG_DIRECTION_LABELS,
   BULK_TAG_DIRECTIONS,
+  BULK_UNCHANGED_BATCH_NOTE,
+  BULK_UNCHANGED_ROW_REASONS,
+  BULK_UNNAMED_ROW_REASON,
   type BulkIntent,
+  type BulkOperation,
   type BulkTagDirection,
 } from "../copy/bulk-actions";
 import { useBulkTaskMutations, type BulkIntent as BulkMutationIntent } from "../hooks/use-bulk-task-mutations";
@@ -208,9 +213,97 @@ function itemsOf(outcome: MutationOutcome): readonly PerItemResult[] {
   return outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" ? (outcome.items ?? []) : [];
 }
 
-/** Turns one of the four browser transports into the submit function the review step calls, so the operation id, scope and revision reach the transport exactly as the review stated them. */
-function submitWith<P>(transport: UseMutationResult<MutationOutcome, Error, BulkMutationIntent<P>>): MutationSubmit<P> {
-  return (input: MutationInput<P>) => transport.mutateAsync({ operationId: input.operationId, expectedRevision: input.expectedRevision, payload: input.payload });
+/** The reason codes this surface states for a row it answers on its own authority rather than from a service answer. */
+const SURFACE_REASON_CODES = { excludedBeforeSubmit: "excluded-before-submit", batchUnchanged: "batch-unchanged", unnamed: "result-not-stated" } as const;
+
+/**
+ * Why this surface left one selected row out before submitting. The read's own words are used wherever it gave
+ * a reason; otherwise the two eligibility rules this bar already applies decide the sentence: a row it may not
+ * change is left out by the session, and a selectable row is left out only by the completion intent, which acts
+ * on open and reopened rows alone.
+ */
+function surfaceExclusionReason(row: BulkSelectionRow): string {
+  const stated = row.selectionReason?.trim();
+  if (stated !== undefined && stated !== "") {
+    return stated;
+  }
+  return row.selectable ? CLOSED_ROW_REASON : BULK_SESSION_ROW_EXCLUSION_REASON;
+}
+
+/** One selected row this surface withheld from the submission, reported in the vocabulary the service answers in. */
+function excludedRowOf(row: BulkSelectionRow): PerItemResult {
+  return { targetId: row.taskId, state: "excluded", reasonCode: SURFACE_REASON_CODES.excludedBeforeSubmit, reason: surfaceExclusionReason(row) };
+}
+
+/** One submitted row the service answered only as part of a whole-batch `unchanged`, so the intent that was sent states its reason. */
+function unchangedRowOf(taskId: string, operation: BulkOperation): PerItemResult {
+  return { targetId: taskId, state: "unchanged", reasonCode: SURFACE_REASON_CODES.batchUnchanged, reason: BULK_UNCHANGED_ROW_REASONS[operation] };
+}
+
+/**
+ * The rows a settled receipt states: one row per selected task, built from what the service answered and what
+ * this surface decided before submitting. The service names a result for every row it was sent, and a row this
+ * bar withheld never reached it, so that row's state and reason are this surface's own. A whole-batch
+ * `unchanged` answer carries no rows at all, so every submitted row is stated in that state under the reason its
+ * intent supports; the rows the service answered come first, in the order they were submitted, and the rows this
+ * surface left out follow. An outcome that reported no effect states no rows.
+ */
+function receiptRowsOf(outcome: MutationOutcome, operation: BulkOperation, submittedIds: readonly string[], selected: readonly BulkSelectionRow[]): readonly PerItemResult[] {
+  const submitted = new Set(submittedIds);
+  const rows: PerItemResult[] = [];
+  if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted") {
+    const answered = new Map(itemsOf(outcome).map((item) => [item.targetId, item]));
+    for (const taskId of submittedIds) {
+      // A submitted row the answer never named states no outcome of its own: it is reported as failed with the
+      // reason that says so, rather than dropped from a receipt that claims to hold one row for every row sent.
+      rows.push(answered.get(taskId) ?? { targetId: taskId, state: "failed", reasonCode: SURFACE_REASON_CODES.unnamed, reason: BULK_UNNAMED_ROW_REASON });
+    }
+  } else if (outcome.outcome === "unchanged") {
+    for (const taskId of submittedIds) {
+      rows.push(unchangedRowOf(taskId, operation));
+    }
+  } else {
+    return [];
+  }
+  for (const row of selected) {
+    if (!submitted.has(row.taskId)) {
+      rows.push(excludedRowOf(row));
+    }
+  }
+  return rows;
+}
+
+/**
+ * The outcome the receipt shows, carrying the rows this surface states. The service's own list stands for the
+ * submitted rows alone, so it is replaced by the same answers plus the rows the service never saw: one row per
+ * selected task. An outcome that reported no effect keeps its own shape and gains no rows.
+ */
+function withReceiptRows(outcome: MutationOutcome, rows: readonly PerItemResult[]): MutationOutcome {
+  if (rows.length === 0) {
+    return outcome;
+  }
+  switch (outcome.outcome) {
+    case "accepted":
+    case "alreadyAccepted":
+      return { ...outcome, items: rows };
+    default:
+      return outcome;
+  }
+}
+
+/**
+ * Turns one of the four browser transports into the submit function the review step calls: the operation id,
+ * scope and revision reach the transport exactly as the review stated them, and the rows this surface states for
+ * the answer are handed back at the moment the answer arrives, so the receipt keeps stating them after the lists
+ * behind it re-read.
+ */
+function submitFor<P extends { readonly taskIds: readonly string[] }>(transport: UseMutationResult<MutationOutcome, Error, BulkMutationIntent<P>>, operation: BulkOperation, selected: readonly BulkSelectionRow[], hold: (rows: readonly PerItemResult[]) => void): MutationSubmit<P> {
+  return async (input: MutationInput<P>): Promise<MutationOutcome> => {
+    const outcome = await transport.mutateAsync({ operationId: input.operationId, expectedRevision: input.expectedRevision, payload: input.payload });
+    const rows = receiptRowsOf(outcome, operation, input.payload.taskIds, selected);
+    hold(rows);
+    return withReceiptRows(outcome, rows);
+  };
 }
 
 const retainedSelectionNote = (count: number): string => `${String(count)} ${count === 1 ? ROW_NOUN.one : ROW_NOUN.many} kept the selection because the result was ${BULK_ITEM_RESULT_LABELS.excluded} or ${BULK_ITEM_RESULT_LABELS.failed}.`;
@@ -343,17 +436,21 @@ function FollowUpFacts({ template }: { readonly template: FollowUpTaskTemplate }
 
 /**
  * A replay answers with the stored per-item results, which the receipt states as its stored value rather than as
- * rows; the same rows are read here so a lost acknowledgement is answered with exactly what the first submission
- * produced, under the copy module's replay sentence.
+ * rows, and a batch that changed nothing carries no rows at all; both are stated here from the rows this surface
+ * holds, so a lost acknowledgement is answered with exactly what the first submission produced and a batch that
+ * left every row alone still names each row it was sent.
  */
-function ReplayResults({ outcome }: { readonly outcome: MutationOutcome | null }): ReactElement | null {
-  if (outcome === null || outcome.outcome !== "alreadyAccepted") {
+function SettledRows({ outcome, rows }: { readonly outcome: MutationOutcome | null; readonly rows: readonly PerItemResult[] }): ReactElement | null {
+  if (outcome === null || rows.length === 0) {
+    return null;
+  }
+  if (outcome.outcome !== "alreadyAccepted" && outcome.outcome !== "unchanged") {
     return null;
   }
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <p className={NOTE_CLASS}>{BULK_REPLAY_NOTE}</p>
-      <PerItemResults items={outcome.items ?? []} heading={BULK_RESULT_HEADING} />
+      <p className={NOTE_CLASS}>{outcome.outcome === "alreadyAccepted" ? BULK_REPLAY_NOTE : BULK_UNCHANGED_BATCH_NOTE}</p>
+      <PerItemResults items={rows} heading={BULK_RESULT_HEADING} />
     </div>
   );
 }
@@ -373,6 +470,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
   const [touched, setTouched] = useState(false);
   const [reviewRevision, setReviewRevision] = useState(expectedRevision);
   const [settledOutcome, setSettledOutcome] = useState<MutationOutcome | null>(null);
+  const [settledRows, setSettledRows] = useState<readonly PerItemResult[]>([]);
   const pending = transports.bulkApplyTag.isPending || transports.bulkRemoveTag.isPending || transports.bulkCreateTasks.isPending || transports.bulkCompleteTasks.isPending;
   const selectableIds = useMemo(() => selectedTasks.filter((row) => row.selectable).map((row) => row.taskId), [selectedTasks]);
   const completableIds = useMemo(() => selectedTasks.filter((row) => row.selectable && COMPLETABLE_STATUSES.includes(row.status)).map((row) => row.taskId), [selectedTasks]);
@@ -418,6 +516,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
     setDraft((current) => ({ ...current, direction }));
     setTouched(false);
     setSettledOutcome(null);
+    setSettledRows([]);
     setReviewRevision(expectedRevision);
   };
   const closePanel = (): void => {
@@ -433,6 +532,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
   };
   const dismissResult = (): void => {
     setSettledOutcome(null);
+    setSettledRows([]);
     closePanel();
   };
   const handleSettled = (outcome: MutationOutcome): void => {
@@ -463,7 +563,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
               </ReviewFacts>
             }
             input={{ scope, expectedRevision: target.revision, payload: target.prepared.payload }}
-            submit={submitWith(transports.bulkApplyTag)}
+            submit={submitFor(transports.bulkApplyTag, "bulkApplyTag", selectedTasks, setSettledRows)}
           />
         );
       case "bulkRemoveTag":
@@ -479,7 +579,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
               </ReviewFacts>
             }
             input={{ scope, expectedRevision: target.revision, payload: target.prepared.payload }}
-            submit={submitWith(transports.bulkRemoveTag)}
+            submit={submitFor(transports.bulkRemoveTag, "bulkRemoveTag", selectedTasks, setSettledRows)}
           />
         );
       case "bulkCreateTasks":
@@ -495,7 +595,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
               </ReviewFacts>
             }
             input={{ scope, expectedRevision: target.revision, payload: target.prepared.payload }}
-            submit={submitWith(transports.bulkCreateTasks)}
+            submit={submitFor(transports.bulkCreateTasks, "bulkCreateTasks", selectedTasks, setSettledRows)}
           />
         );
       case "bulkCompleteTasks":
@@ -510,7 +610,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
               </ReviewFacts>
             }
             input={{ scope, expectedRevision: target.revision, payload: target.prepared.payload }}
-            submit={submitWith(transports.bulkCompleteTasks)}
+            submit={submitFor(transports.bulkCompleteTasks, "bulkCompleteTasks", selectedTasks, setSettledRows)}
           />
         );
     }
@@ -693,7 +793,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
           ) : (
             <>
               {reviewOf(reviewTarget)}
-              <ReplayResults outcome={settledOutcome} />
+              <SettledRows outcome={settledOutcome} rows={settledRows} />
             </>
           )}
         </section>
@@ -701,7 +801,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
       {settledOutcome !== null && (reviewTarget === null || !panelOpen) ? (
         <div ref={receiptRef} tabIndex={-1} className="flex min-w-0 flex-col gap-3">
           <OperationResult outcome={settledOutcome} headingLevel={3} onCheckResult={settledOutcome.outcome === "unknown" ? onCheckResult : undefined} />
-          <ReplayResults outcome={settledOutcome} />
+          <SettledRows outcome={settledOutcome} rows={settledRows} />
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Button type="button" variant="outline" size="sm" className={SMALL_CONTROL_CLASS} onClick={dismissResult}>
               {DISMISS_RESULT_LABEL}

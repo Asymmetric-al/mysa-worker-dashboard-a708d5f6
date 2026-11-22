@@ -18,19 +18,27 @@
  * rows), a refund, an anonymous gift, an approximate date and a row whose currency is unidentified inside
  * the same period the agreement is read over, so the figures compared are the awkward ones.
  *
- * Why five tests rather than one. Each one isolates one agreement, so a failure names the artifact that
- * broke rather than a page that could not be read:
- *   1. the whole query beyond the loaded page — screen summary, the report's own figures, the CSV file
+ * Why seven tests rather than one. The first is the decisive comparison AAP 0.12.2 describes, and it is
+ * the one that would fail if any two of the six artifacts disagreed on the same screen; the rest each
+ * isolate one agreement, so a failure names the artifact that broke rather than a page that could not be
+ * read:
+ *   1. one query, one snapshot — the ledger's whole-result figure with the rows it rendered, the report's
+ *      own screen, the CSV file, the printed page, the chart's data table and a matrix cell with the rows
+ *      it drills to, all read over one civil year of one currency and compared on the period, coverage,
+ *      as-of instant, basis, grain and currency they state in common;
+ *   2. the whole query beyond the loaded page — screen summary, the report's own figures, the CSV file
  *      and the printed page, on the generated workload where the query holds 9,619 rows and a page
  *      holds 50;
- *   2. invariance — the whole-query values do not move when the order or the page does, proven by two
+ *   3. invariance — the whole-query values do not move when the order or the page does, proven by two
  *      exports whose sums and gift identities agree while their first rows differ;
- *   3. the single-currency rule — an amount range is offered only inside one selected currency and is
+ *   4. the single-currency rule — an amount range is offered only inside one selected currency and is
  *      dropped when the selection stops naming exactly one, and the currencies are stated apart;
- *   4. the chart — the monthly series' accessible data table sums to the same figure the screen, the CSV
+ *   5. the chart — the monthly series' accessible data table sums to the same figure the screen, the CSV
  *      and the printed page state, with the one month the source records nothing in left as a gap;
- *   5. one figure at three grains — a matrix cell, the rows its drill-down narrows to and the report it
- *      belongs to, with the CSV and the print of that same narrow query.
+ *   6. one figure at three grains — a matrix cell, the rows its drill-down narrows to and the report it
+ *      belongs to, with the CSV and the print of that same narrow query;
+ *   7. the record visit — the filtered view, the page window, the rows and the reader's place in them
+ *      restored after a gift-record visit.
  *
  * Money is never read as a float and never compared as formatted text. Every displayed amount is turned
  * back into an exact count of minor units by string manipulation, using the exponent its own decimal
@@ -44,11 +52,20 @@
  *     seed holds no such row. The value that is genuinely not a number here is the row whose currency
  *     the source never identified, and the month the source records nothing in; both are asserted as
  *     themselves rather than dressed as a withheld case this fixture cannot produce.
- *   - An export of an amount-range query. The four fixed reports' address vocabulary carries a period,
- *     a currency, a designation, a partner, a search and a sort, and no amount range; the export action
- *     of a report therefore cannot carry one. Asserting it would mean inventing a second path or
- *     changing another surface's route, so the range is asserted where it exists (the ledger) and the
- *     whole-query artifacts are compared on the period-and-currency queries the export does carry.
+ *   - An export of an amount-range query, as a test of its own. The range is asserted where the
+ *     facet is offered: on the ledger, in the single-currency test below, where it is unavailable
+ *     while every currency is selected, offered once the selection names exactly one, narrowing the
+ *     whole result to the rows inside the band and dropped when the currency is cleared — and where
+ *     the band's own whole result fits one page whose rows sum to the figure that screen states. The
+ *     report route now reads `amountMin`/`amountMax` beside the period, currency, designation,
+ *     partner, search, sort and page it already read, the report and export reads apply the range,
+ *     and the ledger hands the query it investigated to the report through one link, so the export
+ *     path carries the band rather than restating filters: a `0..9999` minor-unit band on the seeded
+ *     session states `amount=0..9999` in its CSV metadata, 4 rows and 19,500 minor units, and its
+ *     printed page states 4 rows. Those figures are an observation recorded with this file rather
+ *     than an assertion of it: what this file compares is the six artifacts of one query, and the
+ *     range's rule is decided at the facet, so the ranged query's agreement is asserted at the
+ *     ledger grain rather than exported and compared a second time.
  *   - A performance gate. The p95 and export-duration measurements are reported separately (AAP
  *     0.12.3); nothing here times anything.
  *   - A retry, a skip or a timeout of its own. Every criterion is meant to pass on the first attempt
@@ -61,7 +78,7 @@ import { dirname, join } from "node:path";
 import type { Download, Locator, Page } from "@playwright/test";
 import { parse } from "csv-parse/sync";
 
-import { expect, resetSeed, test, type PersonaName } from "../playwright.config";
+import { expect, expectRestoredScrollPlace, resetSeed, SCROLL_TOLERANCE_PX, scrollPlaceOfRow, test, type PersonaName } from "../playwright.config";
 
 // ---------------------------------------------------------------------------------------------
 // The seeded scenario this file acts in
@@ -95,6 +112,20 @@ const CURRENCY = "USD";
 const HISTORY_YEAR = 2024;
 const ABSENT_MONTH = "2024-02";
 
+/**
+ * The one civil year the single-snapshot journey below reads: the calendar year of the scenario instant,
+ * which every surface of that journey states as `As of 2026-11-20T00:00:00Z`.
+ *
+ * The ledger's own Period fact is asserted to be this year's two civil days (see {@link SNAPSHOT_FROM} and
+ * {@link SNAPSHOT_TO}), so a seed that moved its support into another period fails loudly at that assertion
+ * instead of silently measuring a period this journey never named.
+ */
+const SNAPSHOT_YEAR = 2026;
+
+/** The two civil days the one snapshot's query names, derived from {@link SNAPSHOT_YEAR} so the address and the assertion cannot drift apart. */
+const SNAPSHOT_FROM = `${String(SNAPSHOT_YEAR)}-01-01`;
+const SNAPSHOT_TO = `${String(SNAPSHOT_YEAR)}-12-31`;
+
 /** The page sizes the list preset offers (AAP 0.8.7): 50 rows, or the 200 cap when the reader asks for it. */
 const PAGE_SIZE_DEFAULT = 50;
 const PAGE_SIZE_CAP = 200;
@@ -112,6 +143,9 @@ const INCOMPLETE_MARKER = /\(incomplete\)/u;
 
 /** The whole-result figure the ledger states with its gift count, in the ledger's own wording. */
 const GIFT_COUNT_IN_FIGURE = /\band\s+([\d,]+)\s+gifts?\b/u;
+
+/** The accessible name a ledger row's link carries, naming the one gift it opens; the journey below reads each row's gift identity out of it. */
+const GIFT_LINK_LABEL = /^Open gift (\S+)$/u;
 
 /** The paged list's own count line: `Showing 1–50 of 9,619 gifts`. The dash is an en dash. */
 const SHOWING_LINE = /^Showing\s+[\d,]+\s*\u2013\s*[\d,]+\s+of\s+([\d,]+)\s+(\S+)$/u;
@@ -182,6 +216,18 @@ interface CsvFile {
 /** What the snapshot statement states, keyed by the label it states it under. */
 type SnapshotFacts = Readonly<Record<SnapshotFactLabel, string>>;
 
+/** One month of a chart's accessible data table: the civil day the month begins on, and its point in minor units, or `undefined` where the source records nothing. */
+interface ChartMonth {
+  readonly start: string;
+  readonly amount: number | undefined;
+}
+
+/** One stated cell of the partner-by-month matrix: the drill-down address the application wrote into it, and the amount it states. */
+interface MatrixStatedCell {
+  readonly href: string;
+  readonly amount: StatedAmount;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Reading an amount, a count or a state exactly
 // ---------------------------------------------------------------------------------------------
@@ -196,8 +242,11 @@ type SnapshotFacts = Readonly<Record<SnapshotFactLabel, string>>;
  */
 const AMOUNT_IN_TEXT = /(-?\d[\d,]*)(?:[.,](\d+))?\s+([A-Z]{2,})\b/u;
 
+/** The words a chart's data table states a month the source records nothing in with: a gap, and never a zero. */
+const NO_RECORDED_VALUE = "No recorded value";
+
 /** The words a surface uses where a value is not a number. They are states, and never read as a zero. */
-const AMOUNT_STATE_WORDS: readonly string[] = ["Unknown amount", "Withheld", "Source unavailable", "No recorded value"];
+const AMOUNT_STATE_WORDS: readonly string[] = ["Unknown amount", "Withheld", "Source unavailable", NO_RECORDED_VALUE];
 
 /**
  * The exact minor units a displayed amount states.
@@ -389,6 +438,82 @@ async function readRenderedRows(page: Page, tableLabel: string): Promise<number>
   const rows = page.getByRole("table", { name: tableLabel }).locator("tbody tr");
   await expect(rows.first()).toBeVisible();
   return rows.count();
+}
+
+/** The origin a drill-down's relative address is resolved against, so the query the application wrote into a link can be read without a browser. */
+const ADDRESS_ORIGIN = "http://localhost";
+
+/**
+ * The two calendar days a matrix cell's own drill-down address narrows to, read from the query the
+ * application wrote into its link.
+ *
+ * This is the narrowing the cell states rather than one this file assumes: the month a cell belongs to, the
+ * period the ledger it opens covers and the attribution it carries all come from the same address, so a link
+ * that stopped narrowing the parent's result fails here instead of being compared as if it had.
+ */
+function drilldownPeriodOf(href: string, subject: string): { readonly from: string; readonly to: string } {
+  const stated = new URL(href, ADDRESS_ORIGIN).searchParams;
+  const from = stated.get("from");
+  const to = stated.get("to");
+  if (from === null || to === null) {
+    throw new Error(`${subject} states the drill-down address ${JSON.stringify(href)}, which names no period, so the narrowing it opens cannot be compared with the cell it belongs to.`);
+  }
+  return { from, to };
+}
+
+/**
+ * A chart's monthly series as its accessible data table states it: one entry per month of the year, in the
+ * civil order the table renders, each with the day the month begins on and its point or `undefined`.
+ *
+ * The table is read rather than the picture, because a drawing is not a figure a comparison can take: these
+ * cells are the values the series was drawn from, and a month the source records nothing in states that in
+ * words here rather than a zero the file could total.
+ */
+async function chartMonthsOf(page: Page): Promise<readonly ChartMonth[]> {
+  const dataTable = page.getByRole("region", { name: /: data table$/u }).first();
+  await expect(dataTable, "The chart carries the same figures as a real table beside it.").toBeVisible();
+  const rows = dataTable.locator("table tbody tr");
+  const stated = await rows.count();
+  expect(stated, "The series states one row per month of the year, so a month the source records nothing in is a stated gap rather than a missing row.").toBe(12);
+  const months: ChartMonth[] = [];
+  for (let index = 0; index < stated; index += 1) {
+    const cells = await rows.nth(index).locator("td").allInnerTexts();
+    const start = (cells[0] ?? "").replace(/\s+/gu, " ").trim();
+    const cell = (cells[1] ?? "").replace(/\s+/gu, " ").trim();
+    if (cell.includes(NO_RECORDED_VALUE)) {
+      expect(cell, "A month the source records nothing in states that in words and never as a zero or a blank.").not.toMatch(/\d/u);
+      months.push({ start, amount: undefined });
+      continue;
+    }
+    const point = statedAmountOf(cell, `The chart's point for ${start}`);
+    expect(point.currency, `The chart's point for ${start} is stated in the one currency the query selected.`).toBe(CURRENCY);
+    months.push({ start, amount: point.minorUnits });
+  }
+  return months;
+}
+
+/**
+ * The partner-by-month matrix's stated cells, read once each from the wide table.
+ *
+ * The matrix presents the same cells twice — a row-per-partner table and a period-first list for a narrow
+ * screen — so the read is scoped to the table's own links, which is the one presentation that states every
+ * cell exactly once. A cell's link is the drilldown the criterion names, so each cell carries the address it
+ * would open beside the amount it states.
+ */
+async function matrixCellsOf(page: Page): Promise<readonly MatrixStatedCell[]> {
+  const cells = page.locator('[data-slot="report-matrix"] table a');
+  const stated = await cells.count();
+  expect(stated, "The matrix states at least one amount as a cell that drills down to the rows behind it.").toBeGreaterThan(0);
+  const read: MatrixStatedCell[] = [];
+  for (let index = 0; index < stated; index += 1) {
+    const cell = cells.nth(index);
+    const href = await cell.getAttribute("href");
+    if (href === null) {
+      throw new Error(`Matrix cell ${String(index)} states no drill-down address, so the records behind it cannot be reached and the cell is not the drilldown the criterion names.`);
+    }
+    read.push({ href, amount: statedAmountOf(await cell.innerText(), `Matrix cell ${String(index)}`) });
+  }
+  return read;
 }
 
 /** One labelled fact a surface states, read from the definition list that states it. */
@@ -619,6 +744,202 @@ function fingerprintOf(file: CsvFile): { readonly minorUnits: number; readonly g
   const giftIds = file.rows.map((row) => row["gift_id"] ?? "").sort();
   return { minorUnits: sumOf(amounts, "The export's rows"), giftIds };
 }
+
+test("one query, one snapshot: the screen, the chart, the table, a matrix drilldown, the CSV and the print all state the same figures", async ({ page }) => {
+  const snapshotQuery = `from=${SNAPSHOT_FROM}&to=${SNAPSHOT_TO}&currency=${CURRENCY}`;
+
+  // --- the screen artifact: the ledger's whole result, and the rows it rendered for it --------------
+  await page.goto(`${GIFTS_HREF}?${snapshotQuery}`);
+  await expect(page.getByRole("heading", { name: "Received gifts", level: 1 })).toBeVisible();
+  const ledgerFacts = await snapshotFactsOf(page, "screen");
+  // The snapshot identity every artifact below is compared on, stated once here and then read off each
+  // artifact rather than assumed of it.
+  expect(ledgerFacts.Basis, "The screen states the one named received-support basis.").toContain("effective_cash_allocation");
+  expect(ledgerFacts.Grain, "The screen states the grain a row is counted at.").toContain("One row is one authorised allocation");
+  expect(ledgerFacts.Currencies, "The screen states the one currency partition the query was read in.").toBe(CURRENCY);
+  // The period the query names is the one the ledger states as its own, so a seed that moved its support
+  // into another period fails here instead of measuring a period this journey never named.
+  expect(periodOfFacts(ledgerFacts), "The ledger states the civil year the query names as its own period.").toEqual({ from: SNAPSHOT_FROM, to: SNAPSHOT_TO });
+  expect(coverageStateOfFacts(ledgerFacts), "The source's coverage of this period is partial, and the screen states it as partial.").toBe("partial");
+  const ledgerFigure = wholeResultAmountOf(await readWholeResult(page), CURRENCY);
+  expect(ledgerFigure.statement, "A figure read under partial coverage is labelled an incomplete subtotal, in text rather than by colour.").toMatch(INCOMPLETE_MARKER);
+  const wholeRows = await readListTotal(page, "gifts");
+  const rowsOnPage = await readRenderedRows(page, "Received gifts");
+  // The whole result fits one page for this query, which is what lets the page's own rows be compared with
+  // the file's records and with the printed rows one for one rather than by count alone.
+  expect(rowsOnPage, "The whole result fits one page for this query, so the rows on screen are the whole result.").toBe(wholeRows);
+  const ledgerTable = page.getByRole("table", { name: "Received gifts" });
+  const rowAmounts: number[] = [];
+  const rowGiftIds: string[] = [];
+  for (let index = 0; index < rowsOnPage; index += 1) {
+    const row = ledgerTable.locator("tbody tr").nth(index);
+    const rowAmount = statedAmountOf(await row.innerText(), `Row ${String(index)} of the ledger`);
+    expect(rowAmount.currency, `Row ${String(index)} of the ledger states its amount in the one currency the query selected.`).toBe(CURRENCY);
+    rowAmounts.push(rowAmount.minorUnits);
+    const label = await row.getByRole("link", { name: /^Open gift /u }).getAttribute("aria-label");
+    const gift = GIFT_LINK_LABEL.exec(label ?? "");
+    if (gift === null) {
+      throw new Error(`Row ${String(index)} of the ledger names the gift it opens as ${JSON.stringify(label)}, which is not the identity this file reads. The row and the file's records would then be compared without knowing they are the same records.`);
+    }
+    rowGiftIds.push(gift[1] ?? "");
+  }
+  expect(sumOf(rowAmounts, "The ledger's rendered rows"), "The rows on the page sum to the whole-result figure the same screen states, because for this query they are the whole result.").toBe(ledgerFigure.amount.minorUnits);
+
+  // --- the report screen: the same figure, from the same query, on the same snapshot ------------------
+  await page.goto(`${RECEIVED_REPORT_HREF}?${snapshotQuery}`);
+  await expect(page.getByRole("heading", { name: "Received support", level: 1 })).toBeVisible();
+  const reportFacts = await snapshotFactsOf(page, "screen");
+  expectSameAmount(statedAmountOf(await factOf(page.locator('[data-slot="report-screen"]'), "Received in the period"), "The report's received-support figure"), ledgerFigure.amount, "The report states the same received support the ledger's whole-result figure states, in exact minor units.");
+  // Two screens, one snapshot: the same period, the same coverage state and the same instant.
+  expect(periodOfFacts(reportFacts), "The report and the ledger state the same period.").toEqual(periodOfFacts(ledgerFacts));
+  expect(coverageStateOfFacts(reportFacts), "The report and the ledger state the same coverage state.").toBe(coverageStateOfFacts(ledgerFacts));
+  expect(asOfOfFacts(reportFacts), "The report and the ledger state the same as-of instant.").toBe(asOfOfFacts(ledgerFacts));
+
+  // --- the CSV artifact: the whole query, on the same snapshot ----------------------------------------
+  const csv = await downloadCsv(page);
+  const exportSubject = "The one-snapshot export";
+  expect(metadataOf(csv, CSV_FIELD.grain, exportSubject), "The file states the grain of the rows it holds.").toBe("gift-allocation");
+  expect(metadataOf(csv, CSV_FIELD.basis, exportSubject), "The file states the one named basis its figures are measured on.").toContain("effective_cash_allocation");
+  expect(metadataOf(csv, CSV_FIELD.currency, exportSubject), "The file states the currency partition of the query.").toBe(CURRENCY);
+  const csvPeriod = { from: metadataOf(csv, CSV_FIELD.periodFrom, exportSubject), to: metadataOf(csv, CSV_FIELD.periodTo, exportSubject) };
+  expect(csvPeriod, "The file states the period the two screens state.").toEqual(periodOfFacts(reportFacts));
+  expect(metadataOf(csv, CSV_FIELD.coverageState, exportSubject), "The file states the coverage state the screens state.").toBe(coverageStateOfFacts(reportFacts));
+  expect(metadataOf(csv, CSV_FIELD.snapshotAsOf, exportSubject), "The file states the snapshot instant the screens state.").toBe(asOfOfFacts(reportFacts));
+  expect(metadataOf(csv, CSV_FIELD.amountUnit, exportSubject), "The file states that its amounts are exact minor units, so no reader has to guess an exponent.").toBe("minor-units");
+  expect(metadataOf(csv, CSV_FIELD.page, exportSubject), "The file is the whole query rather than one page of it.").toBe("whole-query");
+  const csvTotal = countOf(metadataOf(csv, CSV_FIELD.rowTotal, exportSubject), "The row total the file states");
+  expect(csvTotal, "The file's own row total is the whole-result count the ledger's pager states.").toBe(wholeRows);
+  expect(csv.rows.length, "Every authorised row of the query is in the file, so its records match its row total.").toBe(csvTotal);
+  expect(
+    sumOf(
+      csv.rows.map((row, index) => rowMinorUnitsOf(csv, row, index)),
+      "The file's rows",
+    ),
+    "The file's rows sum to the same minor units the screen's whole-result figure states.",
+  ).toBe(ledgerFigure.amount.minorUnits);
+  const fileGiftIds = [...new Set(csv.rows.map((row) => row["gift_id"] ?? ""))].sort();
+  expect(fileGiftIds, "The file's gifts are exactly the gifts the ledger's own rows name, so the table and the file are the same records.").toEqual([...new Set(rowGiftIds)].sort());
+
+  // --- the print artifact: the same report, printed from the same navigation --------------------------
+  const printed = await asPrinted(page, async (region) => {
+    const printFacts = await snapshotFactsOf(page, "print");
+    const summaryLine = region
+      .locator("li")
+      .filter({ hasText: `Received support (${CURRENCY})` })
+      .first();
+    await expect(summaryLine, "The printed page states its per-currency summary line.").toBeVisible();
+    const about = (await region.innerText()).replace(/\s+/gu, " ");
+    return {
+      facts: printFacts,
+      summaryAmount: statedAmountOf(await summaryLine.innerText(), "The printed page's summary line"),
+      rowsStated: countOf(ROWS_IN_RESULT.exec(about)?.[1] ?? "", "The row total the printed page states"),
+      rows: await region.locator("table tbody tr").count(),
+      rowAmounts: await printedColumnAmounts(region, "amount"),
+      about,
+    };
+  });
+  expect(periodOfFacts(printed.facts), "The printed page states the period the screens and the file state.").toEqual(periodOfFacts(reportFacts));
+  expect(coverageStateOfFacts(printed.facts), "The printed page states the coverage state the screens and the file state.").toBe(coverageStateOfFacts(reportFacts));
+  expect(asOfOfFacts(printed.facts), "The printed page states the snapshot instant the screens and the file state.").toBe(asOfOfFacts(reportFacts));
+  expectSameAmount(printed.summaryAmount, ledgerFigure.amount, "The printed page's summary states the same received support the screen's whole-result figure states.");
+  expect(printed.rowsStated, "The printed page states the whole query's row count beside the rows it printed.").toBe(wholeRows);
+  expect(printed.rows, "The printed page holds every row of the query, because the whole result fits one page.").toBe(wholeRows);
+  expect(printed.rowAmounts.length, "Every printed row states its amount, so the sheet's own rows can be summed.").toBe(wholeRows);
+  expect(sumOf(printed.rowAmounts, "The printed page's rows"), "The printed page's rows sum to the same minor units the screen, the file and the chart state.").toBe(ledgerFigure.amount.minorUnits);
+  expect(printed.about, "The printed page says it holds every authorised row of the query rather than a window of it.").toContain("every authorised row of the query");
+
+  // --- the chart artifact: the year's monthly series, read from its data table ------------------------
+  await page.goto(`${HISTORY_REPORT_HREF}?year=${String(SNAPSHOT_YEAR)}&currency=${CURRENCY}`);
+  await expect(page.getByRole("heading", { name: "Monthly history", level: 1 })).toBeVisible();
+  const chartFacts = await snapshotFactsOf(page, "screen");
+  expect(periodOfFacts(chartFacts), "The chart's report covers the period the screens, the file and the sheet state.").toEqual(periodOfFacts(reportFacts));
+  expect(coverageStateOfFacts(chartFacts), "The chart states the coverage state every other artifact states.").toBe(coverageStateOfFacts(reportFacts));
+  expect(asOfOfFacts(chartFacts), "The chart states the snapshot instant every other artifact states.").toBe(asOfOfFacts(reportFacts));
+  const chartMonths = await chartMonthsOf(page);
+  const statedMonths = chartMonths.filter((month) => month.amount !== undefined);
+  expect(statedMonths.length, "Some month of the year records a value, so the series is a figure and not only gaps.").toBeGreaterThan(0);
+  expect(
+    sumOf(
+      statedMonths.map((month) => month.amount ?? 0),
+      "The chart's stated months",
+    ),
+    "The chart's stated months sum to the same amount the screen, the file and the sheet state: the series and the ledger are one result.",
+  ).toBe(ledgerFigure.amount.minorUnits);
+
+  // --- the matrix artifact: the same query at a second grain -------------------------------------------
+  await page.goto(`${MATRIX_REPORT_HREF}?${snapshotQuery}`);
+  await expect(page.getByRole("heading", { name: "Partners by month", level: 1 })).toBeVisible();
+  const matrixFacts = await snapshotFactsOf(page, "screen");
+  expect(periodOfFacts(matrixFacts), "The matrix covers the period the screens, the file, the sheet and the chart state.").toEqual(periodOfFacts(reportFacts));
+  expect(coverageStateOfFacts(matrixFacts), "The matrix states the coverage state every other artifact states.").toBe(coverageStateOfFacts(reportFacts));
+  expect(asOfOfFacts(matrixFacts), "The matrix states the snapshot instant every other artifact states.").toBe(asOfOfFacts(reportFacts));
+  const matrixCells = await matrixCellsOf(page);
+  const chartStarts = new Set(chartMonths.map((month) => month.start));
+  for (const [index, cell] of matrixCells.entries()) {
+    expect(cell.amount.currency, `Matrix cell ${String(index)} states its amount in the one currency the query selected.`).toBe(CURRENCY);
+    expect(chartStarts.has(drilldownPeriodOf(cell.href, `Matrix cell ${String(index)}`).from), `Matrix cell ${String(index)} belongs to a month the chart states, so the two grains cover the same months.`).toBe(true);
+  }
+  // Every month the chart states a point for is exactly the sum of the cells that name it, and a month the
+  // chart states as a gap has no cell at all: the comparison that needs both artifacts read together.
+  for (const month of chartMonths) {
+    const cells = matrixCells.filter((cell) => drilldownPeriodOf(cell.href, `The cell naming ${month.start}`).from === month.start);
+    if (month.amount === undefined) {
+      expect(cells.length, `The chart states no recorded value for ${month.start}, and the matrix states no cell for it either: a gap is a gap at both grains.`).toBe(0);
+      continue;
+    }
+    expect(cells.length, `The chart states a point for ${month.start}, so the matrix states at least one cell for it.`).toBeGreaterThan(0);
+    expect(
+      sumOf(
+        cells.map((cell) => cell.amount.minorUnits),
+        `The matrix's cells for ${month.start}`,
+      ),
+      `The matrix's cells that name ${month.start} sum exactly to the chart's point for that month.`,
+    ).toBe(month.amount);
+  }
+  expect(
+    sumOf(
+      matrixCells.map((cell) => cell.amount.minorUnits),
+      "The matrix's stated cells",
+    ),
+    "Every stated cell together sums to the same amount the screen, the file, the sheet and the chart state.",
+  ).toBe(ledgerFigure.amount.minorUnits);
+
+  // --- the drilldown: one cell's own link, narrowing the same snapshot ---------------------------------
+  const drilldown = matrixCells[0];
+  if (drilldown === undefined) {
+    throw new Error("The matrix stated no cell to drill into, so no drilldown was compared and the sixth artifact of the criterion is unproven here.");
+  }
+  const drilldownPeriod = drilldownPeriodOf(drilldown.href, "The matrix cell this journey drills");
+  await page.locator('[data-slot="report-matrix"] table a').first().click();
+  await expect(page.getByRole("heading", { name: "Received gifts", level: 1 })).toBeVisible();
+  const drilledFacts = await snapshotFactsOf(page, "screen");
+  const drilledFigure = wholeResultAmountOf(await readWholeResult(page), CURRENCY);
+  expectSameAmount(drilledFigure.amount, drilldown.amount, "The drilled query's whole-result figure is the cell's own amount, in exact minor units.");
+  const drilledRows = await readListTotal(page, "gifts");
+  const drilledOnPage = await readRenderedRows(page, "Received gifts");
+  expect(drilledOnPage, "The drilled query's whole result fits one page, so the rows on screen are the rows behind the cell.").toBe(drilledRows);
+  const drilledTable = page.getByRole("table", { name: "Received gifts" });
+  const drilledAmounts: number[] = [];
+  for (let index = 0; index < drilledOnPage; index += 1) {
+    drilledAmounts.push(statedAmountOf(await drilledTable.locator("tbody tr").nth(index).innerText(), `Row ${String(index)} of the drilled ledger`).minorUnits);
+  }
+  expect(sumOf(drilledAmounts, "The drilled ledger's rows"), "The drilled rows themselves sum to the cell's figure, which is the whole-result figure of the drilled query.").toBe(drilldown.amount.minorUnits);
+  // A drilldown narrows the snapshot it came from and never opens a different one: only the period and the
+  // attribution are narrower, so the basis, the grain, the coverage state and the instant are the parent's.
+  expect(periodOfFacts(drilledFacts), "The drilled query states the cell's month as two civil days.").toEqual(drilldownPeriod);
+  expect(drilledFacts.Basis, "The drilled query is measured on the same named basis as the matrix.").toBe(matrixFacts.Basis);
+  expect(drilledFacts.Grain, "The drilled query is counted at the same grain as the matrix.").toBe(matrixFacts.Grain);
+  expect(coverageStateOfFacts(drilledFacts), "The drilled query carries the same coverage state as the matrix.").toBe(coverageStateOfFacts(matrixFacts));
+  expect(asOfOfFacts(drilledFacts), "The drilled query carries the same as-of instant as the matrix.").toBe(asOfOfFacts(matrixFacts));
+
+  // The evidence the criterion asks to be reported, recorded on the run itself.
+  test
+    .info()
+    .annotations.push({
+      type: "criterion-1 one snapshot",
+      description: `${snapshotQuery}: ${String(wholeRows)} rows and ${String(ledgerFigure.amount.minorUnits)} ${CURRENCY} minor units as of ${asOfOfFacts(ledgerFacts)}, agreed by the ledger's whole-result figure and its ${String(rowsOnPage)} rows, the report screen, the CSV (${String(csv.rows.length)} records), the printed page (${String(printed.rows)} rows), the chart's ${String(statedMonths.length)} stated months and ${String(chartMonths.length - statedMonths.length)} gaps, the matrix's ${String(matrixCells.length)} cells, and the drilled ledger of the first cell (${String(drilledRows)} rows of ${String(drilldown.amount.minorUnits)}).`,
+    });
+});
 
 test("the whole query agrees between the screen, the CSV and the printed page, beyond the loaded page", async ({ page }) => {
   ensureWorkload();
@@ -1089,11 +1410,14 @@ test("a record visit returns to the same filtered view, at the same place in it"
     .first()
     .getAttribute("aria-label");
 
+  // The place the reader leaves at is read with the row's link in view, because the click scrolls the
+  // link into view itself: the offset the wheel above reached is one the reader only passes through, not
+  // the place they return to.
+  const giftRecordLink = page.getByRole("link", { name: /^Open gift /u }).first();
+  const placeBefore = await scrollPlaceOfRow(page, giftRecordLink, "The gifts ledger");
+
   // The visit: the row's own link is the only route to the record, and it names the gift it opens.
-  await page
-    .getByRole("link", { name: /^Open gift /u })
-    .first()
-    .click();
+  await giftRecordLink.click();
   await expect(page.getByRole("heading", { name: "Gift record", level: 1 })).toBeVisible();
   await expect(page, "The record is a destination of its own, so the visit is a navigation rather than a panel over the list.").toHaveURL(new RegExp(`${GIFTS_HREF}/gift-[^?]+`, "u"));
 
@@ -1111,8 +1435,19 @@ test("a record visit returns to the same filtered view, at the same place in it"
       .getAttribute("aria-label"),
     "The same rows are in the same order after the return.",
   ).toBe(firstGiftBefore);
-  await expect.poll(async () => await page.evaluate(() => window.scrollY), { message: "The return restores the reader's place rather than dropping them at the top of the list." }).toBeGreaterThan(0);
+  // The return restores the offset the reader actually left at rather than bounding it by a document that
+  // is still filling: measured here at 1280x480, this ledger returned to 1,058 CSS px of the 1,058 px it
+  // was left at, and a deep place of 3,052 px came back exactly even though the returned document had
+  // grown to 6,533 px — the shell's development panels grow the document across a visit, so the return is
+  // held to the offset within the runner's tolerance on a document at least as tall as the one left.
+  await expectRestoredScrollPlace(page, placeBefore, "The gifts ledger's return");
+  const restoredOffset = await page.evaluate(() => window.scrollY);
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first(), "The returned view is still labelled as development data, so no surface of this application can be mistaken for production.").toBeVisible();
 
-  test.info().annotations.push({ type: "criterion-1 continuity", description: `A gift-record visit and return restored the applied filters (${chipsBefore}), the page window (${pagerBefore}), the first row (${firstGiftBefore ?? "none"}) and a non-zero scroll position.` });
+  test
+    .info()
+    .annotations.push({
+      type: "criterion-1 continuity",
+      description: `A gift-record visit and return restored the applied filters (${chipsBefore}), the page window (${pagerBefore}), the first row (${firstGiftBefore ?? "none"}) and the reader's place in it — ${String(restoredOffset)} px down the returned document against the ${String(placeBefore.offset)} px it was left at on a ${String(placeBefore.height)} px document, which the return restores within the runner's ${String(SCROLL_TOLERANCE_PX)} px scroll tolerance.`,
+    });
 });

@@ -1,7 +1,7 @@
 "use client";
 /** The synthetic inbox: every message this reader's purpose has produced, one per recipient and notification intent, each shown at the copy the recipient was pinned to. */
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from "react";
-import RecordList, { type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
+import RecordList, { useRecordListWindow, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import SimulationLabel from "@/components/simulation-label";
 import StateNotice from "@/components/state-notice";
 import StatusBadge, { SEND_STATUS, statusBadgeProps, VALUE_STATE_WORDS, type SendStatus, type StatusTone } from "@/components/status-badge";
@@ -17,7 +17,7 @@ import MessageReader, { type MessageDirection } from "./message-reader";
 type InboxMessage = InboxEnvelope["data"]["messages"][number];
 /** The audience a pinned rendition can carry, named from the read's own union. */
 type PinnedAudience = NonNullable<InboxMessage["audience"]>;
-/** The page window this surface asks the read for. The read answers with the window it executed, and the pager states that one. */
+/** The page window this surface asks the read for. The read answers with the window it executed, and the pager states that one; the address owns the window, so opening a message, reloading or returning from another screen reopens the same page. */
 interface InboxPaging {
   readonly page: number;
   readonly pageSize: number;
@@ -74,6 +74,16 @@ const NOTICE_BODY_DISPLAY: Readonly<Record<"protected" | "public", { readonly la
 const SEND_STATE_ORDER: readonly SendStatus[] = ["accepted", "failed", "unknown"];
 /** The shared word for a value the read did not state, taken from the one value-state vocabulary rather than written again here. */
 const NOT_RECORDED = statusBadgeProps(VALUE_STATE_WORDS, "unknown");
+/** The largest offered row size at or below a stated one, so the window this surface asks the read for is a window its own pager can also state. */
+function offeredPageSize(requested: number): number {
+  if (!Number.isFinite(requested)) return DEFAULT_PAGE_SIZE;
+  const stated = Math.trunc(requested);
+  let offered = DEFAULT_PAGE_SIZE;
+  for (const size of INBOX_PAGE_SIZES) {
+    if (size <= stated) offered = size;
+  }
+  return offered;
+}
 /** The server's answer, usable only while it is the answer to the request this surface is making. An envelope read in another authority says nothing about this one, and one that states a different page window describes records this page does not hold. */
 function usableSeed(seed: ReadResult<InboxEnvelope> | undefined, scope: Scope, paging: InboxPaging): ReadResult<InboxEnvelope> | undefined {
   if (seed === undefined) return undefined;
@@ -97,7 +107,15 @@ export function InboxList({ scope, initialEnvelope, className }: InboxListProps)
   const readerRegionId = useId();
   const readerRef = useRef<HTMLElement | null>(null);
   const openTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const [paging, setPaging] = useState<InboxPaging>({ page: FIRST_PAGE, pageSize: DEFAULT_PAGE_SIZE });
+  // The window the route's read answered with is the window this surface opens on, so the first paint states the
+  // rows that answer holds and asks the read for nothing it has not already been asked; the default stands in only
+  // when that answer carries no window. The address owns the window from then on, so a reader who opens a message,
+  // reloads or returns from another screen reopens the page they left rather than the first one.
+  const seededWindow = initialEnvelope !== undefined && initialEnvelope.kind === "envelope" ? initialEnvelope.envelope.data.page : undefined;
+  const listWindow = useRecordListWindow({ page: seededWindow?.page ?? FIRST_PAGE, pageSize: offeredPageSize(seededWindow?.pageSize ?? DEFAULT_PAGE_SIZE) });
+  const paging = useMemo<InboxPaging>(() => ({ page: listWindow.page, pageSize: offeredPageSize(listWindow.pageSize) }), [listWindow.page, listWindow.pageSize]);
+  const setWindow = listWindow.setWindow;
+  // The columns a worker shows are presentation only, so they stay in this component rather than in the address.
   const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>({});
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const inbox = useInbox({ scope, query: { page: paging.page, pageSize: paging.pageSize } });
@@ -118,15 +136,16 @@ export function InboxList({ scope, initialEnvelope, className }: InboxListProps)
     setSelectedMessageId(null);
     trigger?.focus();
   }, []);
-  const handleQueryStateChange = useCallback((next: RecordListQueryState): void => {
-    // The columns a worker shows change what this page displays, not which records the read answers with, so they stay out of the query.
-    setColumnVisibility(next.columnVisibility);
-    // No column is sortable, so the ordering the preset reports is always empty; only the page window travels to the read.
-    setPaging((current) => {
-      const page = Math.max(FIRST_PAGE, next.page);
-      return current.page === page && current.pageSize === next.pageSize ? current : { page, pageSize: next.pageSize };
-    });
-  }, []);
+  const handleQueryStateChange = useCallback(
+    (next: RecordListQueryState): void => {
+      // The columns a worker shows change what this page displays, not which records the read answers with, so they stay out of the query.
+      setColumnVisibility(next.columnVisibility);
+      // No column is sortable, so the ordering the preset reports is always empty; only the page window travels, and
+      // it travels in the address the read is driven from.
+      setWindow({ page: Math.max(FIRST_PAGE, next.page), pageSize: offeredPageSize(next.pageSize) });
+    },
+    [setWindow],
+  );
   const getRowId = useCallback((message: InboxMessage): string => message.messageId, []);
   // A duplicate recipient-and-intent pair is checked, never repaired: within one reader's inbox the recipient is fixed, so the intent identifies the pair. The read already keeps one message per intent over the whole inbox, which makes a duplicate here a defect that escaped it rather than a second message to read.
   const duplicatedIntents = useMemo<readonly { readonly intentId: string; readonly copies: number }[]>(() => {
@@ -271,7 +290,7 @@ export function InboxList({ scope, initialEnvelope, className }: InboxListProps)
         <StateNotice kind="empty" title={INBOX_EMPTY_COPY.title} description={INBOX_EMPTY_COPY.description} headingLevel={3} />
       ) : data.messages.length === 0 ? (
         // The page asked for is past the last one this result holds — a result that shrank while it was open. Nothing re-reads behind the worker's back: the notice states the window and offers the move.
-        <StateNotice kind="empty" title={BEYOND_LAST_PAGE.title} description={beyondLastPageStatement(data.page.pageCount, data.page.page)} action={{ label: BEYOND_LAST_PAGE.action, onClick: () => setPaging((current) => ({ ...current, page: Math.max(FIRST_PAGE, data.page.pageCount) })) }} headingLevel={3} />
+        <StateNotice kind="empty" title={BEYOND_LAST_PAGE.title} description={beyondLastPageStatement(data.page.pageCount, data.page.page)} action={{ label: BEYOND_LAST_PAGE.action, onClick: () => setWindow({ page: Math.max(FIRST_PAGE, data.page.pageCount), pageSize: paging.pageSize }) }} headingLevel={3} />
       ) : (
         <>
           <RecordList

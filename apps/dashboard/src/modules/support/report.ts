@@ -227,9 +227,10 @@ export interface ReportRow {
   readonly provenance: SourceReference;
   readonly entryOn: CivilDate;
 }
-export type MatrixCell = { readonly bucketStart: CivilDate; readonly bucketEnd: CivilDate; readonly currency: string; readonly value: StatedValue; readonly gap: boolean; readonly drilldown: ReportQuery };
+export type MatrixCell = { readonly bucketStart: CivilDate; readonly bucketEnd: CivilDate; readonly currency: string; readonly value: StatedValue; readonly gap: boolean };
 export type MatrixRow = { readonly partnerId?: string; readonly attribution: GiftAttribution; readonly label: string; readonly cells: readonly MatrixCell[] };
-export type Matrix = { readonly currencies: readonly string[]; readonly months: readonly { readonly start: CivilDate; readonly end: CivilDate }[]; readonly rows: readonly MatrixRow[] };
+/** One partner-by-month matrix: the whole-result row total, the window of rows this read serves, and the cells of exactly those rows. */
+export type Matrix = { readonly currencies: readonly string[]; readonly months: readonly { readonly start: CivilDate; readonly end: CivilDate }[]; readonly rows: readonly MatrixRow[]; readonly total: number; readonly page: PageWindow };
 export type ContributorDelta = { readonly partnerId?: string; readonly attribution?: GiftAttribution; readonly currency: string; readonly minorUnits: MinorUnits };
 export interface ReportComparison {
   readonly current: { readonly from: CivilDate; readonly to: CivilDate };
@@ -250,13 +251,15 @@ export interface Snapshot {
   readonly lastSourceUpdate: string;
   readonly source: SourceReference;
 }
+/** The window a paged collection serves: the page the read answered with, the row count served, and how many pages the whole result fills. */
+export type PageWindow = { readonly index: number; readonly size: number; readonly totalPages: number };
 export interface ReportResult {
   readonly snapshot: Snapshot;
   readonly summary: readonly CurrencySummary[];
   readonly series: readonly SeriesPoint[];
   readonly rows: readonly ReportRow[];
   readonly total: number;
-  readonly page?: { readonly index: number; readonly size: number; readonly totalPages: number };
+  readonly page?: PageWindow;
   readonly comparison?: ReportComparison;
   readonly matrix?: Matrix;
   readonly goal?: GoalProgress;
@@ -265,7 +268,9 @@ export interface ReportResult {
 type PeriodRange = { readonly from: CivilDate; readonly to: CivilDate };
 type ResolvedPeriod = PeriodRange & { readonly state: PeriodState };
 type MonthBucket = { readonly start: CivilDate; readonly end: CivilDate };
-type WindowedRows = { readonly rows: readonly ReportRow[]; readonly page?: { readonly index: number; readonly size: number; readonly totalPages: number } };
+type Windowed<T> = { readonly items: readonly T[]; readonly page?: PageWindow };
+/** How many pages a whole-result count fills at a stated row count; a result that matched nothing fills none. */
+const totalPagesOf = (total: number, size: number): number => (total === 0 ? 0 : Math.ceil(total / size));
 export function runReport(query: ReportQuery, projection: SupportProjection): ReportResult {
   assertQueryGate(query);
   assertSingleBasis(projection);
@@ -288,10 +293,11 @@ export function runReport(query: ReportQuery, projection: SupportProjection): Re
   const summary = summarise(current, currencies, projection.coverage);
   const buckets = monthBuckets(period.from, period.to);
   const series = buildSeries(current, buckets, currencies, projection.coverage);
-  const windowed = windowRows(
-    current.map((row) => toReportRow(row.row)),
-    query.page,
-  );
+  // The page window is taken over the matched rows before anything is projected, so a page costs the rows it
+  // serves rather than every row the query matched. The whole-result count comes from the same set the window
+  // was taken over, so the page and the total can never describe different results.
+  const windowed = windowRows(current, query.page);
+  const rows = windowed.items.map((prepared) => toReportRow(prepared.row));
   const comparison = baseline === undefined ? undefined : buildComparison({ period, baseline, coverage: projection.coverage, current, baselineRows });
   const matrix = query.reportId === "partner-month-matrix" ? buildMatrix({ query, buckets, currencies, rows: current, coverage: projection.coverage }) : undefined;
   const goal = projection.goal === undefined ? undefined : buildGoal(projection.goal, summary, query.currency, projection.coverage);
@@ -299,13 +305,13 @@ export function runReport(query: ReportQuery, projection: SupportProjection): Re
     snapshot: { query, scope: query.scope, basis, currencies, period: { from: period.from, to: period.to, state: period.state }, coverage: projection.coverage, asOf: projection.asOf, lastSourceUpdate: projection.lastSourceUpdate, source: projection.source },
     summary,
     series,
-    rows: windowed.rows,
+    rows,
     total: current.length,
     ...(windowed.page === undefined ? {} : { page: windowed.page }),
     ...(comparison === undefined ? {} : { comparison }),
     ...(matrix === undefined ? {} : { matrix }),
     ...(goal === undefined ? {} : { goal }),
-    valueStates: collectValueStates({ summary, series, rows: windowed.rows, ...(comparison === undefined ? {} : { comparison }), ...(matrix === undefined ? {} : { matrix }) }),
+    valueStates: collectValueStates({ summary, series, rows, ...(comparison === undefined ? {} : { comparison }) }),
   };
 }
 function assertQueryGate(query: ReportQuery): void {
@@ -535,12 +541,12 @@ function buildSeries(rows: readonly PreparedRow[], buckets: readonly MonthBucket
   }
   return points;
 }
-function windowRows(rows: readonly ReportRow[], page: ReportQuery["page"]): WindowedRows {
-  if (page === undefined) return { rows };
+/** The items a stated page window covers, taken from the whole collection: no page states the whole collection, and a stated page serves only its own rows. */
+function windowRows<T>(items: readonly T[], page: ReportQuery["page"]): Windowed<T> {
+  if (page === undefined) return { items };
   const size = clampPageSize(page.size);
-  const totalPages = rows.length === 0 ? 0 : Math.ceil(rows.length / size);
   const start = page.index * size;
-  return { rows: rows.slice(start, start + size), page: { index: page.index, size, totalPages } };
+  return { items: items.slice(start, start + size), page: { index: page.index, size, totalPages: totalPagesOf(items.length, size) } };
 }
 function toReportRow(row: GiftRow): ReportRow {
   return {
@@ -674,10 +680,23 @@ function buildMatrix(input: MatrixInput): Matrix {
     const running = totals[index];
     totals[index] = running === undefined ? row.amount : addMinor(running, row.amount);
   }
-  const rows = [...accumulators.values()]
-    .map((accumulator) => ({ ...(accumulator.attribution.kind === "partner" ? { partnerId: accumulator.attribution.partnerId } : {}), attribution: accumulator.attribution, label: labelOf(accumulator.attribution), cells: buildMatrixCells(accumulator, input) }))
-    .sort(compareMatrixRows);
-  return { currencies: input.currencies, months: input.buckets.map((bucket) => ({ start: bucket.start, end: bucket.end })), rows };
+  // The rows are ordered over the whole result before the page window is taken, so the total is the whole
+  // result's row count and the served rows sit at the position the whole result holds them at. Only the rows
+  // the window serves become cells, so a matrix read costs its page rather than every attribution in the result.
+  const ordered = [...accumulators.values()].sort((left, right) => compareAttributions(left.attribution, right.attribution));
+  const served = matrixWindowOf(ordered.length, input.query.page);
+  const rows = ordered.slice(served.start, served.start + served.size).map((accumulator) => matrixRowOf(accumulator, input));
+  return { currencies: input.currencies, months: input.buckets.map((bucket) => ({ start: bucket.start, end: bucket.end })), rows, total: ordered.length, page: served.page };
+}
+/** The row window a matrix serves: the page grammar every list serves, with a stated index clamped into the pages the whole result has, so a stale address states a page rather than an empty matrix. */
+function matrixWindowOf(total: number, page: ReportQuery["page"]): { readonly start: number; readonly size: number; readonly page: PageWindow } {
+  const size = clampPageSize(page?.size);
+  const totalPages = totalPagesOf(total, size);
+  const index = totalPages === 0 ? 0 : Math.min(Math.max(0, page?.index ?? 0), totalPages - 1);
+  return { start: index * size, size, page: { index, size, totalPages } };
+}
+function matrixRowOf(accumulator: MatrixAccumulator, input: MatrixInput): MatrixRow {
+  return { ...(accumulator.attribution.kind === "partner" ? { partnerId: accumulator.attribution.partnerId } : {}), attribution: accumulator.attribution, label: labelOf(accumulator.attribution), cells: buildMatrixCells(accumulator, input) };
 }
 function matrixAccumulatorFor(accumulators: Map<string, MatrixAccumulator>, attribution: GiftAttribution): MatrixAccumulator {
   const key = attributionKey(attribution);
@@ -710,17 +729,19 @@ function buildMatrixCells(accumulator: MatrixAccumulator, input: MatrixInput): r
       const count = counts?.[index] ?? 0;
       const total = totals?.[index];
       const recorded = count > 0 && total !== undefined;
-      cells.push({
-        bucketStart: bucket.start,
-        bucketEnd: bucket.end,
-        currency,
-        value: recorded ? statedValue(total.minorUnits, input.coverage) : { minorUnits: null, valueState: "unknown" },
-        gap: !recorded,
-        drilldown: { ...input.query, period: { kind: "explicit", from: bucket.start, to: bucket.end }, partner: accumulator.attribution, currency: { kind: "one", currency }, page: undefined },
-      });
+      cells.push({ bucketStart: bucket.start, bucketEnd: bucket.end, currency, value: recorded ? statedValue(total.minorUnits, input.coverage) : { minorUnits: null, valueState: "unknown" }, gap: !recorded });
     }
   }
   return cells;
+}
+/**
+ * The query a matrix cell stands for: the result's own query narrowed to that cell's month, attribution and
+ * currency, carrying no page window, so the rows it reads are a subset of the result's rows and their sums add
+ * to the cell. It is derived where a cell is opened rather than carried in every cell, because a matrix of
+ * 10,000 partners would otherwise ship 10,000 copies of the query it was computed from.
+ */
+export function matrixDrilldownQuery(query: ReportQuery, attribution: GiftAttribution, currency: string, bucketStart: CivilDate, bucketEnd: CivilDate): ReportQuery {
+  return { ...query, period: { kind: "explicit", from: bucketStart, to: bucketEnd }, partner: attribution, currency: { kind: "one", currency }, page: undefined };
 }
 const attributionKey = (attribution: GiftAttribution): string => (attribution.kind === "partner" ? `partner:${attribution.partnerId}` : attribution.kind);
 function labelOf(attribution: GiftAttribution): string {
@@ -733,10 +754,11 @@ function labelOf(attribution: GiftAttribution): string {
       return UNRESOLVED_LABEL;
   }
 }
-function compareMatrixRows(left: MatrixRow, right: MatrixRow): number {
-  const byKind = ATTRIBUTION_ORDER.indexOf(left.attribution.kind) - ATTRIBUTION_ORDER.indexOf(right.attribution.kind);
+/** The matrix's one order — partners by their own reference, then the two unnamed attributions — taken over the whole result so a served page is a slice of that one ordering. */
+function compareAttributions(left: GiftAttribution, right: GiftAttribution): number {
+  const byKind = ATTRIBUTION_ORDER.indexOf(left.kind) - ATTRIBUTION_ORDER.indexOf(right.kind);
   if (byKind !== 0) return byKind;
-  return compareIdentifiers(left.partnerId ?? "", right.partnerId ?? "");
+  return compareIdentifiers(left.kind === "partner" ? left.partnerId : "", right.kind === "partner" ? right.partnerId : "");
 }
 function buildGoal(goal: SupportGoalRecord, summary: readonly CurrencySummary[], selection: CurrencySelection, coverage: Coverage): GoalProgress {
   const record = goalRecordOf(goal);
@@ -760,7 +782,7 @@ function goalRecordOf(goal: SupportGoalRecord): GoalRecord {
   if (!Number.isSafeInteger(revision) || revision < 1) throw new TypeError(`Support goal revision "${goal.revision}" is not a positive whole revision, so no goal is presented against a revision nobody read.`);
   return { minorUnits: goal.amount.minorUnits, currency: goal.amount.currency, measure: GOAL_MEASURE, effectiveFrom: effectiveFrom.date, revision };
 }
-type ValueStateInput = { readonly summary: readonly CurrencySummary[]; readonly series: readonly SeriesPoint[]; readonly rows: readonly ReportRow[]; readonly comparison?: ReportComparison; readonly matrix?: Matrix };
+type ValueStateInput = { readonly summary: readonly CurrencySummary[]; readonly series: readonly SeriesPoint[]; readonly rows: readonly ReportRow[]; readonly comparison?: ReportComparison };
 function collectValueStates(input: ValueStateInput): Readonly<Record<string, ValueState>> {
   const states: Record<string, ValueState> = {};
   for (const entry of input.summary) {
@@ -779,13 +801,6 @@ function collectValueStates(input: ValueStateInput): Readonly<Record<string, Val
       states[`comparison.${entry.currency}.current`] = entry.valueState;
       states[`comparison.${entry.currency}.baseline`] = entry.valueState;
       states[`comparison.${entry.currency}.difference`] = entry.valueState;
-    }
-  }
-  const matrix = input.matrix;
-  if (matrix !== undefined) {
-    for (const row of matrix.rows) {
-      const key = row.partnerId ?? row.attribution.kind;
-      for (const cell of row.cells) states[`matrix.${key}.${cell.currency}.${serialiseCivilDate(cell.bucketStart)}`] = cell.value.valueState;
     }
   }
   return states;

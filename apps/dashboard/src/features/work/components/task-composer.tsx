@@ -22,6 +22,7 @@ import type { MutationInput, Scope, TaskRecord } from "@/modules/data-service/en
 import { invalid, UNIDENTIFIED_ATTEMPT, type MutationOutcome, type UnavailableOutcome } from "@/modules/data-service/outcome";
 import { parseCivilDate, serialiseCivilDate } from "@/modules/time/civil";
 import { initiativeLinkValue, linkMembers, partnerLinkValue } from "../copy/task-links";
+import { BULK_INTENT_LABELS } from "../copy/bulk-actions";
 import { CATEGORY_HINT, CATEGORY_LABEL, DUE_DATE_LABEL, PLANNED_MEETING_LABEL, PLANNED_TIME_LABEL, PLANNED_TIME_ZONE_LABEL, PLANNED_VERSUS_HELD_NOTE, TASK_KIND_LABELS, type TaskKind } from "../copy/task-status";
 import { useTaskMutations } from "../hooks/use-task-mutations";
 import { createTaskSchema, editTaskSchema, TASK_CATEGORY_MAX_LENGTH, TASK_NOTE_MAX_LENGTH, TASK_TITLE_MAX_LENGTH, type CreateTaskPayload, type EditTaskPayload } from "../schemas/task";
@@ -69,11 +70,15 @@ interface TaskComposerCommonProps {
   readonly className?: string;
 }
 
-/** The composer's contract: a new task needs the collection's revision, an edit needs the record it changes. */
-export type TaskComposerProps = (TaskComposerCommonProps & { readonly mode: "create"; readonly record?: null | undefined }) | (TaskComposerCommonProps & { readonly mode: "edit"; readonly record: TaskRecord });
+/** The composer's contract: a new task needs the collection's revision, an edit needs the record it changes and the private tags that record carries. */
+export type TaskComposerProps = (TaskComposerCommonProps & { readonly mode: "create"; readonly record?: null | undefined }) | (TaskComposerCommonProps & { readonly mode: "edit"; readonly record: TaskRecord; readonly tags: readonly string[] });
 
 const CREATE_HEADING = "New task";
 const EDIT_HEADING = "Edit this task";
+const TAGS_LABEL = "Private tags";
+const NO_PRIVATE_TAG_LABEL = "No private tag";
+const TAGS_SOURCE_NOTE = `A private tag is set only by the ${BULK_INTENT_LABELS["private-tag"]} bulk action on the Work list, and only you see it. Saving this task changes no tag.`;
+const NO_TAGS: readonly string[] = [];
 const FORM_HELP = "A task needs only a title. Everything else is optional, and saving it changes this task alone.";
 const TITLE_LABEL = "Title";
 const TITLE_DESCRIPTION = `What the work is, in a few words — ${String(TASK_TITLE_MAX_LENGTH)} characters at most.`;
@@ -232,12 +237,41 @@ function PlanDisclosure({ value, timeZone }: { readonly value: string; readonly 
   );
 }
 
+/**
+ * The private tags this task already carries, stated read-only.
+ *
+ * The composer is not where a tag is set: exactly three bulk actions exist and the private-tag one is the only
+ * writer, so this block names that action and says the tag is visible only to the worker who applied it. A task
+ * with no tag says so, because "no tag" is a fact of its own rather than a gap in the record.
+ */
+function PrivateTagsDisclosure({ tags }: { readonly tags: readonly string[] }): ReactElement {
+  return (
+    <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-muted/40 p-3">
+      <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+        <span className="font-medium">{TAGS_LABEL}</span>
+        {tags.length === 0 ? (
+          <span className="text-muted-foreground">{NO_PRIVATE_TAG_LABEL}</span>
+        ) : (
+          tags.map((tag) => (
+            <Badge key={tag} variant="outline">
+              <bdi className="min-w-0 wrap-anywhere">{tag}</bdi>
+            </Badge>
+          ))
+        )}
+      </p>
+      <p className="text-sm text-pretty text-muted-foreground">{TAGS_SOURCE_NOTE}</p>
+    </div>
+  );
+}
+
 /** The create and edit surface of the one task model. */
 export default function TaskComposer(props: TaskComposerProps): ReactElement {
   const { scope, expectedRevision, initialValues, timeZoneChoices, defaultTimeZone, linkChoices, headingLevel = 3, onSaved, onCheckResult, onCancel, onDismiss, dir, className } = props;
   const record = props.mode === "edit" ? props.record : null;
   const taskId = record === null ? null : record.taskId;
   const editing = taskId !== null;
+  // A new task carries no tag, so only an edit states the ones the record was read with.
+  const tags = props.mode === "edit" ? props.tags : NO_TAGS;
   const headingId = useId();
   const optionIdPrefix = useId();
   const Heading = HEADING_TAG[headingLevel];
@@ -340,6 +374,7 @@ export default function TaskComposer(props: TaskComposerProps): ReactElement {
         </Heading>
         <p className="text-sm text-pretty text-muted-foreground">{FORM_HELP}</p>
       </div>
+      {editing ? <PrivateTagsDisclosure tags={tags} /> : null}
       {linkUnavailable === null ? null : <StateNotice kind="unavailable" title={LINK_UNAVAILABLE_TITLE} description={linkUnavailable.guidance} source={linkUnavailable.source} headingLevel={4} />}
       <form noValidate onSubmit={onSubmit} className="flex min-w-0 flex-col gap-5">
         {refusal === null || refusal.count === 0 ? null : <FormErrorSummary errors={refusal} labels={FIELD_LABELS} order={FIELD_ORDER} headingLevel={receiptHeadingLevel} />}

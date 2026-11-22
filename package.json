@@ -13,6 +13,7 @@
     "format": "oxfmt .",
     "lines": "turbo run lines",
     "lint": "turbo run lint && oxlint --config .oxlintrc.json scripts",
+    "measure:workload": "bun scripts/measure-workload.ts",
     "reset": "bun scripts/reset.ts",
     "seed:workload": "bun scripts/generate-workload.ts",
     "test": "turbo run test",

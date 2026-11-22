@@ -100,8 +100,16 @@ async function getSeriesRead(seriesId: string, signal: AbortSignal): Promise<Ser
 // The hook
 // ---------------------------------------------------------------------------------------------
 
-/** Reads one recurring series in the given scope: */
-export function useSeries(scope: Scope, seriesId: string): UseQueryResult<SeriesResult, Error> {
+/**
+ * Reads one recurring series in the given scope.
+ *
+ * `initialResult` is the answer a server render already read for this same scope and plan, when the caller has
+ * one: it seeds the cache, so the first browser paint states exactly what the server painted and no second
+ * request repeats that read on mount. A plan the service has since changed re-reads regardless, because every
+ * accepted series mutation invalidates the `series` key this read is cached under — which is what keeps the rule,
+ * the state and the dates on screen the ones the plan holds now rather than the ones it held when it was read.
+ */
+export function useSeries(scope: Scope, seriesId: string, initialResult?: SeriesResult): UseQueryResult<SeriesResult, Error> {
   return useQuery<SeriesResult, Error>({
     // The id is its own key segment beside the scope segments and the job, so two series never share one
     // entry, while the context fence's `clear()` and the task mutations' `series` invalidation both still
@@ -111,6 +119,8 @@ export function useSeries(scope: Scope, seriesId: string): UseQueryResult<Series
     // The signal is forwarded, which is what lets the context fence's `cancelQueries()` abort a read that
     // was issued under the context the worker has just left.
     queryFn: ({ signal }) => getSeriesRead(seriesId, signal),
+    initialData: initialResult,
+    refetchOnMount: initialResult === undefined,
     // An absent id fabricates nothing: no request is issued and no envelope is invented for it.
     enabled: seriesId.length > 0,
   });

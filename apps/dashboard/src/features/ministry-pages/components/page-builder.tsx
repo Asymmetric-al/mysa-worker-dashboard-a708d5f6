@@ -27,6 +27,7 @@ import { StateNotice } from "@/components/state-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DirectionProvider } from "@/components/ui/direction";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import type { Reach } from "@/modules/content/reach";
@@ -538,108 +539,110 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
           <div className={SECTION_CLASS}>{givingView === undefined ? givingAnswerNotice(givingProblem, () => void rereadGiving()) : <GivingDesignation binding={givingView.data} layout="panel" />}</div>
         </section>
       </div>
-      <div className={PANES_REGION_CLASS} dir={direction}>
-        <fieldset className={cn(SWITCHER_CLASS, "min-w-0 border-0 p-0 lg:hidden")}>
-          <legend className="sr-only">{PANE_SWITCHER_LABEL}</legend>
-          {PANES.map((pane) => (
-            <Button
-              key={pane}
-              type="button"
-              size="sm"
-              variant={selection.pane === pane ? "secondary" : "outline"}
-              aria-pressed={selection.pane === pane}
-              className={TOGGLED_CLASS}
-              onClick={() => {
-                setSelection((current) => ({ ...current, pane }));
-              }}
-            >
-              {PANE_LABEL[pane]}
-            </Button>
-          ))}
-        </fieldset>
-        <div className={PANE_GRID_CLASS}>
-          <section data-pane="outline" aria-labelledby={outlineHeadingId} className={paneClass("outline", selection.pane)}>
-            <h2 id={outlineHeadingId} className={HEADING_CLASS}>
-              {copy.builder.outline}
-            </h2>
-            {editionList.length === 0 ? (
-              <StateNotice kind="empty" headingLevel={3} title={NO_EDITION_TITLE} description={copy.states.emptyEditions} />
-            ) : composingDraft ? (
-              <>
-                <SectionOutline
-                  sections={sections}
-                  selectedSectionId={chosenSectionId}
-                  onSelect={(sectionId) => {
-                    setSelection((current) => ({ ...current, sectionId }));
-                  }}
-                  variantId={draftVariantId}
-                  expectedRevision={draftExpectedRevision}
+      <DirectionProvider direction={direction}>
+        <div className={PANES_REGION_CLASS} dir={direction}>
+          <fieldset className={cn(SWITCHER_CLASS, "min-w-0 border-0 p-0 lg:hidden")}>
+            <legend className="sr-only">{PANE_SWITCHER_LABEL}</legend>
+            {PANES.map((pane) => (
+              <Button
+                key={pane}
+                type="button"
+                size="sm"
+                variant={selection.pane === pane ? "secondary" : "outline"}
+                aria-pressed={selection.pane === pane}
+                className={TOGGLED_CLASS}
+                onClick={() => {
+                  setSelection((current) => ({ ...current, pane }));
+                }}
+              >
+                {PANE_LABEL[pane]}
+              </Button>
+            ))}
+          </fieldset>
+          <div className={PANE_GRID_CLASS}>
+            <section data-pane="outline" aria-labelledby={outlineHeadingId} className={paneClass("outline", selection.pane)}>
+              <h2 id={outlineHeadingId} className={HEADING_CLASS}>
+                {copy.builder.outline}
+              </h2>
+              {editionList.length === 0 ? (
+                <StateNotice kind="empty" headingLevel={3} title={NO_EDITION_TITLE} description={copy.states.emptyEditions} />
+              ) : composingDraft ? (
+                <>
+                  <SectionOutline
+                    sections={sections}
+                    selectedSectionId={chosenSectionId}
+                    onSelect={(sectionId) => {
+                      setSelection((current) => ({ ...current, sectionId }));
+                    }}
+                    variantId={draftVariantId}
+                    expectedRevision={draftExpectedRevision}
+                  />
+                  {outsideSections === 0 ? null : <p className={NOTE_CLASS}>{copy.catalogue.outsideCatalogue}</p>}
+                </>
+              ) : builder.draft === null ? (
+                <StateNotice kind="empty" headingLevel={3} title={NO_DRAFT_TITLE} description={NO_DRAFT_DESCRIPTION} />
+              ) : (
+                <StateNotice
+                  kind="empty"
+                  headingLevel={3}
+                  title={OTHER_EDITION_TITLE}
+                  description={otherEditionNote}
+                  action={
+                    composedLocale === ""
+                      ? undefined
+                      : {
+                          label: openComposedDraftLabel(composedLocale),
+                          onClick: () => {
+                            setSelection((current) => ({ ...current, locale: composedLocale }));
+                          },
+                        }
+                  }
                 />
-                {outsideSections === 0 ? null : <p className={NOTE_CLASS}>{copy.catalogue.outsideCatalogue}</p>}
-              </>
-            ) : builder.draft === null ? (
-              <StateNotice kind="empty" headingLevel={3} title={NO_DRAFT_TITLE} description={NO_DRAFT_DESCRIPTION} />
-            ) : (
-              <StateNotice
-                kind="empty"
-                headingLevel={3}
-                title={OTHER_EDITION_TITLE}
-                description={otherEditionNote}
-                action={
-                  composedLocale === ""
-                    ? undefined
-                    : {
-                        label: openComposedDraftLabel(composedLocale),
-                        onClick: () => {
-                          setSelection((current) => ({ ...current, locale: composedLocale }));
-                        },
-                      }
-                }
-              />
-            )}
-            {/* The catalogue composes into the edition the read named as its draft. With no draft it offers the action
-                that starts one, because a Page with nothing saved yet still has to be startable from here. */}
-            {catalogue === undefined ? (
-              catalogueAnswerNotice(cataloguesRead.data, () => void rereadCatalogues())
-            ) : composingDraft ? (
-              <FamilyCatalogue family={family} catalogue={catalogue} scope={scope} document={catalogueDocument} target={{ variantId: draftVariantId, expectedRevision: draftExpectedRevision, sectionCount: sections.length }} />
-            ) : builder.draft === null ? (
-              <FamilyCatalogue family={family} catalogue={catalogue} scope={scope} document={catalogueDocument} />
-            ) : null}
-            {composingDraft && builder.draft !== null ? <PresetChooser family={family} presets={builder.presets} baseVariantId={draftVariantId} locale={composedLocale} expectedRevision={draftExpectedRevision} scope={scope} documentId={documentId} /> : null}
-          </section>
-          <section data-pane="fields" aria-labelledby={fieldsHeadingId} className={paneClass("fields", selection.pane)}>
-            <h2 id={fieldsHeadingId} className={HEADING_CLASS}>
-              {copy.builder.fields}
-            </h2>
-            {staleTranslation ? (
-              <Alert>
-                <AlertDescription>{copy.editions.translationSourceNote}</AlertDescription>
-              </Alert>
-            ) : null}
-            {!composingDraft ? (
-              <p className={NOTE_CLASS}>{builder.draft === null ? NO_DRAFT_DESCRIPTION : otherEditionNote}</p>
-            ) : selectedSection === undefined ? (
-              <p className={NOTE_CLASS}>{copy.builder.selectSection}</p>
-            ) : (
-              // Keyed by the section and by what the record now holds, so a change another action made to this very
-              // section opens its own values, while work typed here survives a pane or edition switch unchanged.
-              <SectionFields key={`${selectedSection.sectionId}:${signatureOf(selectedSection)}`} section={selectedSection} variantId={draftVariantId} expectedRevision={draftExpectedRevision} direction={direction} scope={scope} documentId={documentId} />
-            )}
-          </section>
-          <section data-pane="preview" className={paneClass("preview", selection.pane)}>
-            {activeLocale === "" ? null : (
-              <div className="flex min-w-0 flex-col gap-1">
-                <Link href={editionPreviewPathOf(documentId, activeLocale)} className={PREVIEW_LINK_CLASS}>
-                  {copy.builder.openEditionPreview}
-                </Link>
-                <p className={NOTE_CLASS}>{copy.builder.openEditionPreviewNote}</p>
-              </div>
-            )}
-            {previewView === undefined ? <StateNotice kind="loading" headingLevel={2} title={PREVIEW_LOADING_TITLE} description={PREVIEW_LOADING_DESCRIPTION} /> : <PagePreviewFrame layout="builder" preview={previewView} givingBinding={givingView?.data} />}
-          </section>
+              )}
+              {/* The catalogue composes into the edition the read named as its draft. With no draft it offers the action
+                  that starts one, because a Page with nothing saved yet still has to be startable from here. */}
+              {catalogue === undefined ? (
+                catalogueAnswerNotice(cataloguesRead.data, () => void rereadCatalogues())
+              ) : composingDraft ? (
+                <FamilyCatalogue family={family} catalogue={catalogue} scope={scope} document={catalogueDocument} target={{ variantId: draftVariantId, expectedRevision: draftExpectedRevision, sectionCount: sections.length }} />
+              ) : builder.draft === null ? (
+                <FamilyCatalogue family={family} catalogue={catalogue} scope={scope} document={catalogueDocument} />
+              ) : null}
+              {composingDraft && builder.draft !== null ? <PresetChooser family={family} presets={builder.presets} baseVariantId={draftVariantId} locale={composedLocale} expectedRevision={draftExpectedRevision} scope={scope} documentId={documentId} /> : null}
+            </section>
+            <section data-pane="fields" aria-labelledby={fieldsHeadingId} className={paneClass("fields", selection.pane)}>
+              <h2 id={fieldsHeadingId} className={HEADING_CLASS}>
+                {copy.builder.fields}
+              </h2>
+              {staleTranslation ? (
+                <Alert>
+                  <AlertDescription>{copy.editions.translationSourceNote}</AlertDescription>
+                </Alert>
+              ) : null}
+              {!composingDraft ? (
+                <p className={NOTE_CLASS}>{builder.draft === null ? NO_DRAFT_DESCRIPTION : otherEditionNote}</p>
+              ) : selectedSection === undefined ? (
+                <p className={NOTE_CLASS}>{copy.builder.selectSection}</p>
+              ) : (
+                // Keyed by the section and by what the record now holds, so a change another action made to this very
+                // section opens its own values, while work typed here survives a pane or edition switch unchanged.
+                <SectionFields key={`${selectedSection.sectionId}:${signatureOf(selectedSection)}`} section={selectedSection} variantId={draftVariantId} expectedRevision={draftExpectedRevision} direction={direction} scope={scope} documentId={documentId} />
+              )}
+            </section>
+            <section data-pane="preview" className={paneClass("preview", selection.pane)}>
+              {activeLocale === "" ? null : (
+                <div className="flex min-w-0 flex-col gap-1">
+                  <Link href={editionPreviewPathOf(documentId, activeLocale)} className={PREVIEW_LINK_CLASS}>
+                    {copy.builder.openEditionPreview}
+                  </Link>
+                  <p className={NOTE_CLASS}>{copy.builder.openEditionPreviewNote}</p>
+                </div>
+              )}
+              {previewView === undefined ? <StateNotice kind="loading" headingLevel={2} title={PREVIEW_LOADING_TITLE} description={PREVIEW_LOADING_DESCRIPTION} /> : <PagePreviewFrame layout="builder" preview={previewView} givingBinding={givingView?.data} />}
+            </section>
+          </div>
         </div>
-      </div>
+      </DirectionProvider>
     </div>
   );
 }

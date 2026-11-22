@@ -12,6 +12,7 @@ import type { ReadEnvelope, Scope, ValueState } from "@/modules/data-service/env
 import { minorUnitsOf, type MinorUnits, type Money } from "@/modules/money/amount";
 import type { CivilDate } from "@/modules/time/civil";
 import { EMPTY_STATES, VALUE_STATE_MEANING } from "../copy";
+import { reportHref } from "../report-catalog";
 import { GIFTS_PAGE_SIZE_CAP, GIFTS_PAGE_SIZE_DEFAULT, parseGiftsQuery, toGiftsParams, useGifts, type GiftCurrencyQuery, type GiftPeriodQuery, type GiftRecipientQuery, type GiftsEnvelope, type GiftsQuery } from "../hooks/use-gifts";
 import AmountValue from "./amount-value";
 import SnapshotStatement from "./snapshot-statement";
@@ -137,6 +138,8 @@ const LEDGER_COPY = {
   unavailableBody: "The source behind these gifts answered nothing this surface can state, so the outage is reported rather than an empty ledger or a zero. Nothing was changed; try again in a moment.",
   refusedTitle: "This ledger's request was refused",
   retry: "Try again",
+  exportBody: "The received-support report states this same filter set with the CSV download and the printed page, so opening it carries the query you investigated rather than the page on screen.",
+  exportLink: "Open the received-support report for this query",
   anonymous: "Anonymous support",
   unattributed: "Unattributed source support",
   partnerReference: "Partner reference",
@@ -561,6 +564,12 @@ function facetsOf(query: GiftsQuery, envelope: GiftsEnvelope | undefined, locale
 }
 // The cells
 const ROW_LINK_CLASS = "rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+/** The one report that carries this ledger's query out of the application as a CSV file and a printed page. */
+const EXPORT_REPORT_HREF = reportHref("received");
+/** The parameters that state a window over a result rather than the query itself: the export is the whole query, so they are not carried. */
+const PAGE_PARAMS = ["page", "pageSize"] as const;
+/** The giving-method facet is this ledger's own vocabulary, and the financial source carries no such field, so the report would refuse a query that named it. */
+const METHOD_PARAM = "method";
 
 const MUTED_TEXT_CLASS = "text-muted-foreground";
 /** The gift's own date, with the word that keeps an approximate or unstated date from reading as an exact one. */
@@ -694,6 +703,17 @@ export function GiftsLedger({ scope, locale, dir, initialEnvelope, initialQuery,
   );
   const read = gifts.data;
   const envelope = read !== undefined && read.kind === "envelope" ? read.envelope : undefined;
+  // The report this ledger's query is exported from: the same filter set in the same names, with the page window
+  // left behind, because an export is the whole query rather than the rows on this page.
+  const exportHref = useMemo<string>(() => {
+    const params = toGiftsParams(query);
+    for (const name of PAGE_PARAMS) {
+      params.delete(name);
+    }
+    params.delete(METHOD_PARAM);
+    const stated = params.toString();
+    return stated === "" ? EXPORT_REPORT_HREF : `${EXPORT_REPORT_HREF}?${stated}`;
+  }, [query]);
   const report = envelope?.data.report;
   const facets = useMemo<readonly FacetSpec[]>(() => facetsOf(query, envelope, locale), [envelope, locale, query]);
   const applied = useMemo<Readonly<Record<string, readonly string[]>>>(() => appliedOf(query), [query]);
@@ -855,6 +875,15 @@ export function GiftsLedger({ scope, locale, dir, initialEnvelope, initialQuery,
         amountRange={{ facetId: AMOUNT_RANGE_FACET, currencyFacetId: CURRENCY_FACET }}
         pending={gifts.isFetching}
       />
+      {/* Where the whole query leaves the application: the report surface states this same filter set, its CSV
+          download and its printed page, so the query a worker investigated here is the query those artifacts
+          carry rather than the page on screen. */}
+      <p data-slot="gifts-export-href" className={cn("max-w-prose text-sm text-balance text-muted-foreground md:text-pretty")}>
+        {LEDGER_COPY.exportBody}{" "}
+        <Link href={exportHref} className={ROW_LINK_CLASS}>
+          {LEDGER_COPY.exportLink}
+        </Link>
+      </p>
       {content}
     </div>
   );

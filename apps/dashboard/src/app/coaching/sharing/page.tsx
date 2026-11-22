@@ -10,6 +10,7 @@
  */
 import type { Metadata } from "next";
 import type { ReactElement } from "react";
+import { Temporal } from "temporal-polyfill";
 import StateNotice from "@/components/state-notice";
 import FinancialRangeReview from "@/features/coaching/components/financial-range-review";
 import InvitationForm, { type InvitationFormProps } from "@/features/coaching/components/invitation-form";
@@ -17,6 +18,7 @@ import ModuleToggles, { type ModuleToggleEntry } from "@/features/coaching/compo
 import SharingSummary, { type CoachingGrantView, type GrantDurationView, type ModuleRead, type SharingOutcome } from "@/features/coaching/components/sharing-summary";
 import StopActions from "@/features/coaching/components/stop-actions";
 import { COACHING_COPY, type StopEffect } from "@/features/coaching/copy";
+import { compareCodeUnits } from "@/lib/ordering";
 import { reads } from "@/modules/data-service";
 
 /** The read's own members, taken from the service so a change to the envelope fails to compile here rather than drifting. */
@@ -45,10 +47,27 @@ const ACTING_ROLE = "worker";
 
 export const metadata: Metadata = { title: COACHING_COPY.sharing.heading };
 
-/** The relationship this surface manages: the live episode when there is one, otherwise the first recorded. */
+/**
+ * Orders two relationships newest invitation first: the later stated instant wins, and two invitations issued at the
+ * same instant are resolved on the greater `grantId`, so the order is the same on every render. The read refuses a
+ * record whose invitation instants cannot be parsed, so every relationship here states an instant this can compare.
+ */
+function byMostRecentlyInvited(one: SharingRelationship, two: SharingRelationship): number {
+  const order = Temporal.Instant.compare(Temporal.Instant.from(two.invitation.issuedAt), Temporal.Instant.from(one.invitation.issuedAt));
+  return order !== 0 ? order : compareCodeUnits(two.grantId, one.grantId);
+}
+
+/**
+ * The relationship this surface manages: the live episode when there is one, and otherwise the one the worker most
+ * recently began. The surface manages the relationship in use, so once none is live it manages the last one the
+ * worker started rather than whichever record the read happens to sort first — an unrelated earlier episode is not
+ * the relationship these controls are about. The read states when each relationship began in its own invitation, so
+ * that instant decides and `null` is answered only when the read holds no relationship at all.
+ */
 function currentRelationshipOf(overview: SharingOverview): SharingRelationship | null {
   const live = overview.relationships.find((relationship) => relationship.grantId === overview.activeGrantId);
-  return live ?? overview.relationships[0] ?? null;
+  if (live !== undefined) return live;
+  return overview.relationships.toSorted(byMostRecentlyInvited)[0] ?? null;
 }
 
 /** Four outcomes never collapse into one: a recorded invitation is not delivery, verification, acceptance or live access. */

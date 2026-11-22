@@ -162,16 +162,28 @@ function lifecycleOf(initiative: InitiativeRecord): InitiativeLifecycle {
   // A stored disposition beside an open initiative is what a reopen preserves, so it is the one evidence that this initiative was closed before.
   return initiative.closureDisposition === null ? "open" : "reopened";
 }
-function memberStatesOf(initiativeId: string, members: readonly InitiativeMemberRecord[], partners: ReadonlyMap<string, PartnerRecord>): InitiativeMembershipCounts {
+/** The counts a row states when none of its working list survives the readable-partner filter. */
+const NO_MEMBER_STATES: InitiativeMembershipCounts = { included: 0, removed: 0, excluded: 0 };
+function memberStatesOf(members: readonly InitiativeMemberRecord[], partners: ReadonlyMap<string, PartnerRecord>): InitiativeMembershipCounts {
   const counts = { included: 0, removed: 0, excluded: 0 };
   for (const member of members) {
-    if (member.initiativeId !== initiativeId) continue;
     if (partners.get(member.partnerId) === undefined) continue;
     counts[member.state] += 1;
   }
   return counts;
 }
-function initiativeRowOf(initiative: InitiativeRecord, members: readonly InitiativeMemberRecord[], partners: ReadonlyMap<string, PartnerRecord>): InitiativeRow {
+/** Every initiative's working-list counts, grouped in one pass: a list read counts each membership once rather than rescanning the whole collection for every row it presents. */
+function memberStatesByInitiative(members: readonly InitiativeMemberRecord[], partners: ReadonlyMap<string, PartnerRecord>): ReadonlyMap<string, InitiativeMembershipCounts> {
+  const grouped = new Map<string, { included: number; removed: number; excluded: number }>();
+  for (const member of members) {
+    if (partners.get(member.partnerId) === undefined) continue;
+    const counts = grouped.get(member.initiativeId) ?? { included: 0, removed: 0, excluded: 0 };
+    counts[member.state] += 1;
+    grouped.set(member.initiativeId, counts);
+  }
+  return grouped;
+}
+function initiativeRowOf(initiative: InitiativeRecord, memberStates: InitiativeMembershipCounts): InitiativeRow {
   return {
     initiativeId: initiative.initiativeId,
     name: initiative.name,
@@ -181,7 +193,7 @@ function initiativeRowOf(initiative: InitiativeRecord, members: readonly Initiat
     state: initiative.state,
     lifecycle: lifecycleOf(initiative),
     closureDisposition: initiative.closureDisposition,
-    memberStates: memberStatesOf(initiative.initiativeId, members, partners),
+    memberStates,
     revision: initiative.revision,
   };
 }
@@ -234,11 +246,12 @@ export async function readInitiatives(query: InitiativesQuery = {}, source?: Ses
   if (!opening.ok) return opening.refusal;
   const { session, scope, now, documents } = opening;
   const partners = readablePartners(session, scope, documents);
+  const memberStates = memberStatesByInitiative(documents.initiativeMembers, partners);
   const readable: InitiativeRow[] = [];
   for (const initiative of documents.initiatives) {
     const decision = canView(session, { kind: "initiative", scope, ministryId: initiative.ministryContextId, responsiblePrincipalId: initiative.responsiblePrincipalId });
     if (!decision.allowed) continue;
-    readable.push(initiativeRowOf(initiative, documents.initiativeMembers, partners));
+    readable.push(initiativeRowOf(initiative, memberStates.get(initiative.initiativeId) ?? NO_MEMBER_STATES));
   }
   const needle = (query.search ?? "").trim().toLowerCase();
   const stateFilter = query.state;
@@ -480,7 +493,7 @@ export async function readInitiative(initiativeId: string, query: InitiativeDeta
     markOptional(states, `${task.taskId}.plannedTime`, task.plannedTime !== null);
   }
   const data: InitiativeDetail = {
-    initiative: initiativeRowOf(initiative, members, partners),
+    initiative: initiativeRowOf(initiative, memberStatesOf(members, partners)),
     stages: stageOptionsOf(members),
     workingList: { items, total: workingList.length, page, pageSize },
     requests: { items: requestRows, total: requestRows.length },
@@ -516,6 +529,8 @@ function measuredCount(count: number, denominator: number, denominatorMeaning: s
   if (denominator <= 0) return base;
   return { ...base, percentage: Math.round((count * 1000) / denominator) / 10 };
 }
+/** How one terms version accumulated across the results read's single pass: the Requests naming it, the responses bound to it, and whether any Request states it as its current terms. */
+type TermsVersionTally = { referencing: number; bound: number; current: boolean };
 /** Reads one initiative's results: every count as a numerator over a stated base. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readInitiativeResults(initiativeId: string, source?: SessionSource): Promise<ReadResult<ReadEnvelope<InitiativeResults>>> {
   const opening = await openOutreach("readInitiativeResults", source);
@@ -532,21 +547,39 @@ export async function readInitiativeResults(initiativeId: string, source?: Sessi
   const included = members.filter((member) => member.state === "included").length;
   const removed = members.filter((member) => member.state === "removed").length;
   const excluded = members.filter((member) => member.state === "excluded").length;
-  const presented = requests.filter((request) => request.presentation !== null).length;
-  const answered = requests.filter((request) => request.response !== null).length;
-  const unanswered = requests.filter((request) => request.response === null).length;
-  const responseKinds: ResponseKindResult[] = REQUEST_RESPONSE_KINDS.map((kind) => ({ kind, ...measuredCount(kind === "unanswered" ? unanswered : requests.filter((request) => request.response?.kind === kind).length, requests.length, REQUEST_BASE) }));
-  const versionSet = new Set<string>();
+  // One pass over the Requests answers every count below, and the whole version table with it, so the read never re-filters the set once per response kind and once per terms version.
+  let presented = 0;
+  let answered = 0;
+  let unanswered = 0;
+  const responsesByKind = new Map<RequestResponseKind, number>();
+  const versions = new Map<string, TermsVersionTally>();
   for (const request of requests) {
-    versionSet.add(request.terms.version);
-    if (request.presentation !== null) versionSet.add(request.presentation.versionRef);
-    if (request.response !== null) versionSet.add(request.response.termsVersionRef);
+    if (request.presentation !== null) presented += 1;
+    if (request.response === null) {
+      unanswered += 1;
+    } else {
+      answered += 1;
+      responsesByKind.set(request.response.kind, (responsesByKind.get(request.response.kind) ?? 0) + 1);
+    }
+    // A request counts once for a version however many of its own fields name that version: the version's base is a count of Requests, never a count of fields.
+    const statedVersions = new Set([request.terms.version]);
+    if (request.presentation !== null) statedVersions.add(request.presentation.versionRef);
+    if (request.response !== null) statedVersions.add(request.response.termsVersionRef);
+    for (const termsVersion of statedVersions) {
+      const tally = versions.get(termsVersion) ?? { referencing: 0, bound: 0, current: false };
+      tally.referencing += 1;
+      if (termsVersion === request.terms.version) tally.current = true;
+      versions.set(termsVersion, tally);
+    }
+    if (request.response !== null) {
+      const boundTo = versions.get(request.response.termsVersionRef);
+      if (boundTo !== undefined) boundTo.bound += 1;
+    }
   }
-  const termsVersions: TermsVersionResult[] = [...versionSet].sort().map((termsVersion) => {
-    const referencing = requests.filter((request) => request.terms.version === termsVersion || request.presentation?.versionRef === termsVersion || request.response?.termsVersionRef === termsVersion).length;
-    const bound = requests.filter((request) => request.response?.termsVersionRef === termsVersion).length;
-    return { termsVersion, state: requests.some((request) => request.terms.version === termsVersion) ? "current" : "superseded", requestsReferencing: referencing, responses: measuredCount(bound, referencing, "Requests that stated or answered this terms version") };
-  });
+  const responseKinds: ResponseKindResult[] = REQUEST_RESPONSE_KINDS.map((kind) => ({ kind, ...measuredCount(kind === "unanswered" ? unanswered : (responsesByKind.get(kind) ?? 0), requests.length, REQUEST_BASE) }));
+  const termsVersions: TermsVersionResult[] = [...versions.entries()]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([termsVersion, tally]) => ({ termsVersion, state: tally.current ? "current" : "superseded", requestsReferencing: tally.referencing, responses: measuredCount(tally.bound, tally.referencing, "Requests that stated or answered this terms version") }));
   const data: InitiativeResults = {
     initiative: { initiativeId: initiative.initiativeId, name: initiative.name, state: initiative.state, lifecycle: lifecycleOf(initiative), revision: initiative.revision },
     workingList: { included: measuredCount(included, rosterTotal, WORKING_LIST_BASE), removed: measuredCount(removed, rosterTotal, WORKING_LIST_BASE), excluded: measuredCount(excluded, rosterTotal, WORKING_LIST_BASE) },

@@ -6,6 +6,7 @@ import { logger } from "@/lib/logger";
 import { failureFor, failurePlanOfDocument } from "@/modules/dev-runtime/failures";
 import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
 import { minorUnitsOf } from "@/modules/money/amount";
+import { exponentOf } from "@/modules/money/currency";
 import { readSession } from "@/modules/store/repository";
 import { SUPPORT_BASIS, type GiftRow, type SupportProjection } from "@/modules/support/basis";
 import { clampPageSize, runReport, type CurrencySummary, type PeriodState, type ReportPeriod, type ReportScope } from "@/modules/support/report";
@@ -15,6 +16,7 @@ import { assertScope, canView, outcomeOfRefusal, resolveSession, type Authorizat
 import {
   buildEnvelope,
   commitmentRowRecordSchema,
+  coverageSchema,
   giftRowRecordSchema,
   initiativeMemberRecordSchema,
   initiativeRecordSchema,
@@ -188,11 +190,26 @@ const partnerStateDocumentSchema = z.object({
   savedViews: z.array(storedSavedViewSchema).default([]),
 });
 type PartnerStateDocument = z.infer<typeof partnerStateDocumentSchema>;
+// The generated workload document, decoded by the schemas the seeded document is already read with: its header states the coverage and the currencies its gift rows were generated over, and its partner half is the published 10,000-partner roster this read admits under the same scope rules as the seed's own records. A session that holds no workload document states nothing here and every read answers exactly what it answered before the workload existed.
+const workloadDocumentSchema = z.object({ header: z.object({ coverage: coverageSchema, currencies: z.array(z.string().min(1)) }).optional(), partners: z.array(storedPartnerRecordSchema), gifts: z.array(giftRowRecordSchema) });
+type WorkloadDocument = z.infer<typeof workloadDocumentSchema>;
+// One validation per document object, so a read that asks for the workload's partners and its gifts decodes neither twice on the same bytes.
+const validatedWorkloads = new WeakMap<object, ReturnType<typeof workloadDocumentSchema.safeParse>>();
+function validatedWorkload(value: unknown): ReturnType<typeof workloadDocumentSchema.safeParse> {
+  if (typeof value !== "object" || value === null) return workloadDocumentSchema.safeParse(value);
+  const remembered = validatedWorkloads.get(value);
+  if (remembered !== undefined) return remembered;
+  const parsed = workloadDocumentSchema.safeParse(value);
+  validatedWorkloads.set(value, parsed);
+  return parsed;
+}
 // Resolving the caller, the scope and the document
 interface PartnerReadContext {
   readonly session: ResolvedSession;
   readonly scope: Scope;
   readonly document: PartnerStateDocument;
+  /** The session's generated workload, or nothing where this session holds none: decoded here once, then read by every partner read of the same request. */
+  readonly workload: WorkloadDocument | undefined;
 }
 type ContextOutcome = { readonly ok: true; readonly context: PartnerReadContext } | { readonly ok: false; readonly refusal: DeniedOutcome | UnavailableOutcome };
 function storeSource(): SourceReference {
@@ -225,11 +242,13 @@ async function readContext(job: string, source?: SessionSource): Promise<Context
   const scopeDecision = assertScope(session, scope);
   if (!scopeDecision.ok) return { ok: false, refusal: scopeDecision.denial };
   let state: unknown;
+  let workloadValue: unknown;
   let meta: unknown;
   try {
     const documents = await readSession(session.sessionId);
     if (documents === undefined) return { ok: false, refusal: sourceUnavailable(job) };
     state = documents.state;
+    workloadValue = documents.workload;
     meta = documents.meta;
   } catch {
     return { ok: false, refusal: sourceUnavailable(job) };
@@ -239,7 +258,10 @@ async function readContext(job: string, source?: SessionSource): Promise<Context
   if (failureFor(failurePlanOfDocument(meta), "read", job) === "denied") return { ok: false, refusal: refused("no-permission") };
   const parsed = partnerStateDocumentSchema.safeParse(state);
   if (!parsed.success) return { ok: false, refusal: sourceUnavailable(job) };
-  return { ok: true, context: { session, scope, document: parsed.data } };
+  // A workload document this session holds but cannot decode refuses the read outright: the partner half of the roster would otherwise be answered as the whole of it, and the total, the facet counts and the giving figures that followed would be indistinguishable from a complete answer.
+  const workload = validatedWorkload(workloadValue);
+  if (workloadValue !== undefined && !workload.success) return { ok: false, refusal: sourceUnavailable(job) };
+  return { ok: true, context: { session, scope, document: parsed.data, workload: workload.success ? workload.data : undefined } };
 }
 function mayReadPartner(context: PartnerReadContext, record: PartnerRecord): boolean {
   const target: AuthorizationTarget = {
@@ -250,6 +272,18 @@ function mayReadPartner(context: PartnerReadContext, record: PartnerRecord): boo
     authorPrincipalId: record.audience === "private" ? context.document.context.principalId : null,
   };
   return canView(context.session, target).allowed;
+}
+/** Every record this module enumerates: the seeded document's own records, then the generated workload's partners it does not already state, each still to be admitted by the scope check. */
+function partnerRecordsOf(context: PartnerReadContext): readonly StoredPartnerRecord[] {
+  const workload = context.workload?.partners ?? [];
+  if (workload.length === 0) return context.document.partners;
+  const stated = new Set(context.document.partners.map((record) => record.partnerId));
+  return [...context.document.partners, ...workload.filter((record) => !stated.has(record.partnerId))];
+}
+/** One record by its identifier: the seeded document answers first for the ids it states, and the generated workload answers for the rest, so a recorded interaction, an activity filter and a private preparation all resolve a workload partner exactly as they resolve a seeded one. */
+function partnerRecordOf(context: PartnerReadContext, partnerId: string): StoredPartnerRecord | undefined {
+  const stated = context.document.partners.find((candidate) => candidate.partnerId === partnerId);
+  return stated ?? context.workload?.partners.find((candidate) => candidate.partnerId === partnerId);
 }
 function mayReadGiving(context: PartnerReadContext): boolean {
   const target: AuthorizationTarget = { kind: "support-subject", scope: context.scope, capabilities: NO_STATED_CAPABILITIES };
@@ -263,7 +297,7 @@ function zoneOf(timeZone: string | undefined): string {
   return stated === "" ? ROSTER_DEFAULT_TIME_ZONE : stated;
 }
 // The giving facts, which only the report engine computes
-type GivingFacts = { readonly record: SupportProjectionRecord; readonly rows: readonly GiftRow[]; readonly records: readonly GiftRowRecord[] } & { readonly commitments: SupportProjection["commitments"] };
+type GivingFacts = { readonly record: SupportProjectionRecord; readonly commitments: SupportProjection["commitments"] };
 function civilDateOf(value: string): CivilDate | undefined {
   const parsed = parseCivilDate(value);
   return parsed.status === "parsed" ? parsed.date : undefined;
@@ -295,11 +329,30 @@ class DateUnreadableError extends Error {
     this.name = "DateUnreadableError";
   }
 }
-function givingFactsOf(document: PartnerStateDocument, context: PartnerReadContext): GivingFacts | undefined {
+/** Every gift row the session holds: the seeded document's own rows, then the generated workload's rows it does not already state, so a workload partner's support history is reported over the same rows the giving ledger reports. */
+function giftRecordsOf(context: PartnerReadContext): readonly GiftRowRecord[] {
+  const workload = context.workload?.gifts ?? [];
+  if (workload.length === 0) return context.document.gifts;
+  const stated = new Set(context.document.gifts.map((row) => row.giftRowId));
+  return [...context.document.gifts, ...workload.filter((row) => !stated.has(row.giftRowId))];
+}
+function givingFactsOf(context: PartnerReadContext): GivingFacts | undefined {
+  const { document } = context;
   const record = document.supportProjection;
   if (record === null) return undefined;
+  let commitments: SupportProjection["commitments"];
+  try {
+    commitments = commitmentRowsOf(document.commitments, context);
+  } catch (error) {
+    if (error instanceof DateUnreadableError) return undefined;
+    throw error;
+  }
+  return { record, commitments };
+}
+/** The stored rows as the report engine reads them, or nothing when a stored date is not a calendar day: a row whose day cannot be placed on the calendar states no period, so no figure is derived from a substituted one. */
+function giftRowsOf(records: readonly GiftRowRecord[]): readonly GiftRow[] | undefined {
   const rows: GiftRow[] = [];
-  for (const stored of document.gifts) {
+  for (const stored of records) {
     const entryOn = civilDateOf(stored.entryOn);
     const originalGiftOn = stored.originalGiftOn === null ? undefined : civilDateOf(stored.originalGiftOn);
     if (entryOn === undefined || (stored.originalGiftOn !== null && originalGiftOn === undefined)) return undefined;
@@ -317,43 +370,92 @@ function givingFactsOf(document: PartnerStateDocument, context: PartnerReadConte
       entryOn,
     });
   }
-  let commitments: SupportProjection["commitments"];
-  try {
-    commitments = commitmentRowsOf(document.commitments, context);
-  } catch (error) {
-    if (error instanceof DateUnreadableError) return undefined;
-    throw error;
-  }
-  return { record, rows, records: document.gifts, commitments };
+  return rows;
 }
-type GivingSnapshot = { readonly facts: GivingFacts; readonly projection: SupportProjection } & { readonly period: { readonly from: CivilDate; readonly to: CivilDate; readonly state: PeriodState }; readonly periodLabel: string } & { readonly coverage: Coverage; readonly currencies: readonly string[] };
+function knownExponentsOf(codes: readonly string[]): Record<string, number> {
+  const exponents: Record<string, number> = {};
+  for (const code of codes) {
+    const exponent = exponentOf(code);
+    if (exponent !== undefined) exponents[code] = exponent;
+  }
+  return exponents;
+}
+function earlierBoundary(left: string | null, right: string | null): string | null {
+  if (left === null) return right;
+  if (right === null) return left;
+  return left <= right ? left : right;
+}
+function mergedCoverage(base: Coverage, workload: Coverage): Coverage {
+  if (base.state === "unknown" || workload.state === "unknown") return { from: null, to: null, state: "unknown" };
+  return { from: earlierBoundary(base.from, workload.from), to: earlierBoundary(base.to, workload.to), state: base.state === "complete" && workload.state === "complete" ? "complete" : "partial" };
+}
+type MergedGiving = { readonly records: readonly GiftRowRecord[]; readonly rows: readonly GiftRow[]; readonly projection: SupportProjection };
+const mergedGiving = new WeakMap<object, Map<string, MergedGiving>>();
+/** The stored records, their conversion and the one projection these reads state figures from: the seeded record's own projection, with the workload header's coverage and currency exponents merged over it as `reads/support.ts` merges them, so a figure read over the generated history states the coverage it was read over rather than the seed's alone. */
+function statedGiving(facts: GivingFacts, records: readonly GiftRowRecord[], rows: readonly GiftRow[], workload: WorkloadDocument | undefined): MergedGiving {
+  const header = workload?.header;
+  return {
+    records,
+    rows,
+    projection: {
+      supportSubjectId: facts.record.supportSubjectId,
+      basis: facts.record.basis,
+      currencyExponents: header === undefined ? facts.record.currencyExponents : { ...facts.record.currencyExponents, ...knownExponentsOf(header.currencies) },
+      coverage: header === undefined ? facts.record.coverage : mergedCoverage(facts.record.coverage, header.coverage),
+      asOf: facts.record.asOf,
+      lastSourceUpdate: facts.record.lastSourceUpdate,
+      source: facts.record.source,
+      // The goal is deliberately not carried here: these reads state received support for a record or a currency partition and never goal progress, which belongs to the support surface that owns the goal and its capability. Handing the engine a goal this read does not present would compute a figure nothing here shows.
+      gifts: rows,
+      commitments: facts.commitments,
+    },
+  };
+}
+function mergedGivingOf(facts: GivingFacts, context: PartnerReadContext, asOf: string): MergedGiving | undefined {
+  const workload = context.workload;
+  if (workload === undefined) {
+    const records = context.document.gifts;
+    const rows = giftRowsOf(records);
+    return rows === undefined ? undefined : statedGiving(facts, records, rows, undefined);
+  }
+  // One merge and one conversion per workload document version, keyed by the support record's revision and the read's as-of instant, so the 100,000 generated rows are gathered and converted once for every read that shares these bytes — the id set included — and the report aggregation stays per read, as it is in reads/support.ts.
+  let remembered = mergedGiving.get(workload);
+  if (remembered === undefined) {
+    remembered = new Map<string, MergedGiving>();
+    mergedGiving.set(workload, remembered);
+  }
+  const key = `${facts.record.supportSubjectId}|${facts.record.revision}|${asOf}`;
+  const cached = remembered.get(key);
+  if (cached !== undefined) return cached;
+  const records = giftRecordsOf(context);
+  const rows = giftRowsOf(records);
+  if (rows === undefined) return undefined;
+  const built = statedGiving(facts, records, rows, workload);
+  remembered.set(key, built);
+  return built;
+}
+type GivingSnapshot = { readonly facts: GivingFacts; readonly records: readonly GiftRowRecord[]; readonly projection: SupportProjection } & { readonly period: { readonly from: CivilDate; readonly to: CivilDate; readonly state: PeriodState }; readonly periodLabel: string } & {
+  readonly coverage: Coverage;
+  readonly currencies: readonly string[];
+};
 /** The giving facts and the period they were read over, or why no figure can be stated. */
 type GivingOutcome = { readonly kind: "ready"; readonly snapshot: GivingSnapshot } | { readonly kind: "unavailable"; readonly reason: string; readonly outage?: SourceReference };
 const GIVING_REPORT_ID = "received-period-and-year-to-date";
 function reportScopeOf(scope: Scope): ReportScope {
   return { organizationId: scope.organizationId, ministryId: scope.ministryId, supportSubjectId: scope.supportSubjectId, principalId: scope.principalId };
 }
-function givingSnapshotOf(document: PartnerStateDocument, context: PartnerReadContext, selection: PartnerGivingSelection): GivingOutcome {
-  const facts = givingFactsOf(document, context);
+function givingSnapshotOf(context: PartnerReadContext, selection: PartnerGivingSelection): GivingOutcome {
+  const facts = givingFactsOf(context);
   if (facts === undefined) return { kind: "unavailable", reason: NO_SUPPORT_PROJECTION };
+  const merged = mergedGivingOf(facts, context, sessionInstant(context.session).toString());
+  if (merged === undefined) return { kind: "unavailable", reason: NO_SUPPORT_PROJECTION };
   // The scenario registry is the single owner of the scenario vocabulary, and the flag its row sets is what every financial read of this session consults: a source the development panel reports down is not silently projected elsewhere. This one giving computation is what the roster's giving facts and the record body's
   // support history both go through, so the condition is asked here once, in the same form `reads/support.ts` asks it — a scenario id this build does not define cannot establish that the source is up, so it answers the same way. The projection's own source identity travels with the outage, because an answer that hides
   // which source is down cannot be acted on.
   if (!isScenarioId(context.session.scenarioId) || scenarioFlagsFor(context.session.scenarioId).financialSource === "unavailable") return { kind: "unavailable", reason: FINANCIAL_SOURCE_UNAVAILABLE, outage: facts.record.source };
   const period = reportPeriodOf(selection.period);
   if (period === undefined) return { kind: "unavailable", reason: "The stated period is not two calendar days, so no period is substituted for it and no figure is stated." };
-  const projection: SupportProjection = {
-    supportSubjectId: facts.record.supportSubjectId,
-    basis: facts.record.basis,
-    currencyExponents: facts.record.currencyExponents,
-    coverage: facts.record.coverage,
-    asOf: facts.record.asOf,
-    lastSourceUpdate: facts.record.lastSourceUpdate,
-    source: facts.record.source,
-    // The goal is deliberately not carried here: these reads state received support for a record or a currency partition and never goal progress, which belongs to the support surface that owns the goal and its capability. Handing the engine a goal this read does not present would compute a figure nothing here shows.
-    gifts: facts.rows,
-    commitments: facts.commitments,
-  };
+  const projection = merged.projection;
   const zone = zoneOf(selection.timeZone);
   let whole: ReturnType<typeof runReport>;
   try {
@@ -366,6 +468,7 @@ function givingSnapshotOf(document: PartnerStateDocument, context: PartnerReadCo
     kind: "ready",
     snapshot: {
       facts,
+      records: merged.records,
       projection,
       period: { from: whole.snapshot.period.from, to: whole.snapshot.period.to, state: whole.snapshot.period.state },
       periodLabel: `${serialiseCivilDate(whole.snapshot.period.from)} to ${serialiseCivilDate(whole.snapshot.period.to)}${whole.snapshot.period.state === "in-progress" ? " (in progress)" : ""}`,
@@ -461,7 +564,7 @@ function rosterFactsOf(job: string, context: PartnerReadContext, selection: Part
   const at = sessionInstant(context.session);
   const resolvedToday = todayIn(job, zoneOf(selection.timeZone), at);
   if (resolvedToday.status === "unavailable") return { kind: "unavailable", refusal: resolvedToday.refusal };
-  const partners = document.partners.filter((record) => mayReadPartner(context, record));
+  const partners = partnerRecordsOf(context).filter((record) => mayReadPartner(context, record));
   const lastActivity = new Map<string, string>();
   for (const interaction of document.interactions) {
     if (interaction.occurredOn === null) continue;
@@ -485,7 +588,7 @@ function rosterFactsOf(job: string, context: PartnerReadContext, selection: Part
   const includedMembers = new Map<string, string[]>();
   for (const member of document.initiativeMembers) if (member.state === "included") appendTo(includedMembers, member.partnerId, member.initiativeId);
   const givingPermitted = mayReadGiving(context);
-  const giving: GivingOutcome = givingPermitted ? givingSnapshotOf(document, context, selection) : { kind: "unavailable", reason: GIVING_UNAVAILABLE_WITHOUT_PERMISSION };
+  const giving: GivingOutcome = givingPermitted ? givingSnapshotOf(context, selection) : { kind: "unavailable", reason: GIVING_UNAVAILABLE_WITHOUT_PERMISSION };
   // The partition is stated once here, so the list's currencies, every row's currencies and the giving-total facet's options all read the request's stated currency from one decision rather than each deciding which currencies its figures may be stated in.
   const givingPartition: readonly string[] = giving.kind === "ready" ? givingPartitionOf(giving.snapshot, selection.currency) : [];
   const openCurrencies = new Map<string, string[]>();
@@ -969,7 +1072,7 @@ export async function readPartner(partnerId: string, query: PartnerGivingSelecti
   const outcome = await readContext("readPartner", source);
   if (!outcome.ok) return refusalOf(outcome.refusal);
   const { context } = outcome;
-  const record = context.document.partners.find((candidate) => candidate.partnerId === partnerId);
+  const record = partnerRecordOf(context, partnerId);
   if (record === undefined || !mayReadPartner(context, record)) return refusalOf(refused("no-permission"));
   const openTasks = context.document.tasks.filter((task) => task.partnerId === record.partnerId && (task.status === "open" || task.status === "reopened")).sort(compareTasks);
   // The record's own recorded relationship label, rendered verbatim. Nothing is derived from a name, a household, a church or an organisation: those are other records with their own identifiers.
@@ -978,7 +1081,7 @@ export async function readPartner(partnerId: string, query: PartnerGivingSelecti
   let coverage: Coverage = RECORD_SET_COVERAGE;
   let supportHistory: PartnerSupportHistory | undefined;
   if (mayReadGiving(context)) {
-    const giving = givingSnapshotOf(context.document, context, query);
+    const giving = givingSnapshotOf(context, query);
     if (giving.kind === "ready") {
       const { snapshot } = giving;
       const figures: PartnerSupportFigure[] = [];
@@ -995,7 +1098,7 @@ export async function readPartner(partnerId: string, query: PartnerGivingSelecti
         });
       }
       const gifts: PartnerSupportGift[] = [];
-      for (const stored of snapshot.facts.records) {
+      for (const stored of snapshot.records) {
         if (stored.attribution.kind !== "partner" || stored.attribution.partnerId !== record.partnerId || !storedRowWithin(stored, snapshot.period)) continue;
         const amountPath = `supportHistory.gifts.${gifts.length}.amount`;
         valueStates[amountPath] = stored.amount.minorUnits === 0 ? "zero" : "value";
@@ -1043,7 +1146,7 @@ export async function readPrivatePreparation(input: PartnerPrivateQuery, source?
   const outcome = await readContext("readPrivatePreparation", source);
   if (!outcome.ok) return refusalOf(outcome.refusal);
   const { context } = outcome;
-  const record = context.document.partners.find((candidate) => candidate.partnerId === input.partnerId);
+  const record = partnerRecordOf(context, input.partnerId);
   if (record === undefined || !mayReadPartner(context, record)) return refusalOf(refused("no-permission"));
   const notes: PrivateNoteRecord[] = [];
   for (const note of context.document.privateNotes) {
@@ -1084,7 +1187,7 @@ export async function readInteractions(query: PartnerInteractionsQuery = {}, sou
   if (!canView(context.session, { kind: "interaction", scope: context.scope }).allowed) return refusalOf(refused("no-permission"));
   let partnerId: string | undefined;
   if (query.partnerId !== undefined) {
-    const record = context.document.partners.find((candidate) => candidate.partnerId === query.partnerId);
+    const record = partnerRecordOf(context, query.partnerId);
     if (record === undefined || !mayReadPartner(context, record)) return refusalOf(refused("no-permission"));
     partnerId = record.partnerId;
   }

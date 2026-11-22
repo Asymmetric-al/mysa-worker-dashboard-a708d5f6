@@ -2,7 +2,7 @@
 /** The worker's check-in history: the family's one list and pager pattern over the named `readCheckIns` read, paged 25 rows by default and 100 at most, keeping the private draft and the shared revision distinguishable in the same row without reproducing either one's text. */
 import { useCallback, useMemo, useState, type ReactElement } from "react";
 import type { RecordDetailProps } from "@/components/record-detail";
-import RecordList, { type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
+import RecordList, { useRecordListWindow, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import SidePanel from "@/components/side-panel";
 import StateNotice from "@/components/state-notice";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
@@ -35,7 +35,7 @@ type CheckInPage = CheckInsEnvelope["data"]["page"];
 
 /** Props of {@link CheckInList}. */
 export interface CheckInListProps {
-  /** The query state the surrounding route starts this list from; the list owns it from then on. */
+  /** The query state the surrounding route starts this list from — the window the address states — which the address owns from then on. */
   readonly initialQuery: RecordListQueryState;
   /** The exact authority these check-ins are read under; the service re-derives scope from it on every read. */
   readonly scope: Scope;
@@ -237,11 +237,15 @@ function SharedCell({ row }: { readonly row: CheckInRow }): ReactElement {
 /** The worker's check-in history, composed from the one list, pager and record-detail patterns: 25 rows a page by default and 100 at most, with each row's private draft and shared revision told apart and no writing reproduced. */
 export default function CheckInList({ initialQuery, scope, locale, onOpen }: CheckInListProps): ReactElement {
   const isMobile = useIsMobile();
-  // The list owns the query after the route seeds it. No sort is held, because the read applies its own
-  // order and takes no ordering parameter: a sort stated here would describe rows this surface never
-  // reordered. The page size is kept to one the pager also offers, so the window asked for and the
-  // window displayed are the same window.
-  const [queryState, setQueryState] = useState<RecordListQueryState>(() => ({ sort: [], page: offeredPage(initialQuery.page), pageSize: offeredPageSize(initialQuery.pageSize), columnVisibility: initialQuery.columnVisibility }));
+  // The address owns the window after the route seeds it, so a reader who opens a check-in and returns reopens the
+  // page they left rather than the first one. No sort is held, because the read applies its own order and takes no
+  // ordering parameter: a sort stated here would describe rows this surface never reordered. The page size is kept
+  // to one the pager also offers, so the window asked for and the window displayed are the same window, and the
+  // visible columns stay in this component because hiding a column never changes which records the read returned.
+  const listWindow = useRecordListWindow({ page: offeredPage(initialQuery.page), pageSize: offeredPageSize(initialQuery.pageSize) });
+  const setWindow = listWindow.setWindow;
+  const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(initialQuery.columnVisibility);
+  const queryState: RecordListQueryState = { sort: [], page: offeredPage(listWindow.page), pageSize: offeredPageSize(listWindow.pageSize), columnVisibility };
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // The read counts its window from zero while the transport's page grammar admits a whole number of one
   // or more, so the first page states no page at all — the same window the read defaults to — and every
@@ -268,9 +272,13 @@ export default function CheckInList({ initialQuery, scope, locale, onOpen }: Che
   const handleOpenChange = useCallback((open: boolean) => {
     if (!open) setSelectedId(null);
   }, []);
-  const handleQueryStateChange = useCallback((next: RecordListQueryState) => {
-    setQueryState({ sort: [], page: offeredPage(next.page), pageSize: offeredPageSize(next.pageSize), columnVisibility: next.columnVisibility });
-  }, []);
+  const handleQueryStateChange = useCallback(
+    (next: RecordListQueryState) => {
+      setColumnVisibility(next.columnVisibility);
+      setWindow({ page: offeredPage(next.page), pageSize: offeredPageSize(next.pageSize) });
+    },
+    [setWindow],
+  );
   const getRowId = useCallback((row: CheckInRow): string => row.checkInId, []);
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<CheckInRow>>>(
     () => [

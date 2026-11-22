@@ -27,6 +27,7 @@ import { MediaPicker, type MediaPickerKind, type MediaPickerOutcome, type MediaR
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DirectionProvider } from "@/components/ui/direction";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -789,60 +790,45 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
     );
   }
   return (
-    <section dir={direction} data-slot="section-fields" data-section-id={section.sectionId} aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
-      <div className="flex min-w-0 flex-col gap-1">
-        <h3 id={headingId} className="font-heading text-base font-medium wrap-anywhere">
-          <bdi>{copy.catalogue.sections[section.sectionType].label}</bdi>
-          {` — ${FIELDS_COPY.heading}`}
-        </h3>
-        <p className="text-sm text-pretty text-muted-foreground">{FIELDS_COPY.enterNote}</p>
-        {saveReason === null ? null : (
-          <p id={saveReasonId} className="text-sm text-pretty text-muted-foreground">
-            {saveReason}
-          </p>
-        )}
-      </div>
-      <FormErrorSummary errors={errors} labels={admittedLabels} order={summaryOrder} headingLevel={4} />
-      <form
-        className="flex min-w-0 flex-col gap-6"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit();
-        }}
-      >
-        {fieldKeys.length === 0 ? null : <div className="flex min-w-0 flex-col gap-5">{fieldKeys.map((key) => renderField(key))}</div>}
-        <Separator />
-        <div className="flex min-w-0 flex-col gap-5">
-          <FormFieldGroup legend="Treatment" name="treatment" error={errors?.byField["treatment"]}>
-            {(group) => renderChoice(TREATMENT_OPTIONS, "treatment", group, isTreatment)}
-          </FormFieldGroup>
-          <FormFieldGroup legend="Layout" name="layout" error={errors?.byField["layout"]}>
-            {(group) => renderChoice(LAYOUT_OPTIONS, "layout", group, isLayout)}
-          </FormFieldGroup>
-          <p className="text-sm text-pretty text-muted-foreground">{copy.presentation.boundedNote}</p>
-          <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-start">
-            <FormField label="Alignment" name="alignment" error={errors?.byField["alignment"]}>
-              {(control) => (
-                <form.Field name="alignment">
-                  {(field) =>
-                    renderSelectControl(control.id, field.state.value, control.describedBy, control.invalid, ALIGNMENT_OPTIONS, (next) => {
-                      if (!isAlignment(next)) {
-                        return;
-                      }
-                      field.handleChange(next);
-                      clearSettlement();
-                    })
-                  }
-                </form.Field>
-              )}
-            </FormField>
-            {withMedia ? (
-              <FormField label="Image fit" name="imageFit" error={errors?.byField["imageFit"]}>
+    <DirectionProvider direction={direction}>
+      <section dir={direction} data-slot="section-fields" data-section-id={section.sectionId} aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
+        <div className="flex min-w-0 flex-col gap-1">
+          <h3 id={headingId} className="font-heading text-base font-medium wrap-anywhere">
+            <bdi>{copy.catalogue.sections[section.sectionType].label}</bdi>
+            {` — ${FIELDS_COPY.heading}`}
+          </h3>
+          <p className="text-sm text-pretty text-muted-foreground">{FIELDS_COPY.enterNote}</p>
+          {saveReason === null ? null : (
+            <p id={saveReasonId} className="text-sm text-pretty text-muted-foreground">
+              {saveReason}
+            </p>
+          )}
+        </div>
+        <FormErrorSummary errors={errors} labels={admittedLabels} order={summaryOrder} headingLevel={4} />
+        <form
+          className="flex min-w-0 flex-col gap-6"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          {fieldKeys.length === 0 ? null : <div className="flex min-w-0 flex-col gap-5">{fieldKeys.map((key) => renderField(key))}</div>}
+          <Separator />
+          <div className="flex min-w-0 flex-col gap-5">
+            <FormFieldGroup legend="Treatment" name="treatment" error={errors?.byField["treatment"]}>
+              {(group) => renderChoice(TREATMENT_OPTIONS, "treatment", group, isTreatment)}
+            </FormFieldGroup>
+            <FormFieldGroup legend="Layout" name="layout" error={errors?.byField["layout"]}>
+              {(group) => renderChoice(LAYOUT_OPTIONS, "layout", group, isLayout)}
+            </FormFieldGroup>
+            <p className="text-sm text-pretty text-muted-foreground">{copy.presentation.boundedNote}</p>
+            <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-start">
+              <FormField label="Alignment" name="alignment" error={errors?.byField["alignment"]}>
                 {(control) => (
-                  <form.Field name="imageFit">
+                  <form.Field name="alignment">
                     {(field) =>
-                      renderSelectControl(control.id, field.state.value, control.describedBy, control.invalid, IMAGE_FIT_OPTIONS, (next) => {
-                        if (!isImageFit(next)) {
+                      renderSelectControl(control.id, field.state.value, control.describedBy, control.invalid, ALIGNMENT_OPTIONS, (next) => {
+                        if (!isAlignment(next)) {
                           return;
                         }
                         field.handleChange(next);
@@ -852,21 +838,38 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
                   </form.Field>
                 )}
               </FormField>
-            ) : null}
+              {withMedia ? (
+                <FormField label="Image fit" name="imageFit" error={errors?.byField["imageFit"]}>
+                  {(control) => (
+                    <form.Field name="imageFit">
+                      {(field) =>
+                        renderSelectControl(control.id, field.state.value, control.describedBy, control.invalid, IMAGE_FIT_OPTIONS, (next) => {
+                          if (!isImageFit(next)) {
+                            return;
+                          }
+                          field.handleChange(next);
+                          clearSettlement();
+                        })
+                      }
+                    </form.Field>
+                  )}
+                </FormField>
+              ) : null}
+            </div>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" disabled={saveDisabled} aria-describedby={saveReason === null ? undefined : saveReasonId}>
-            {saving ? "Saving…" : FIELDS_COPY.save}
-          </Button>
-          <output data-slot="section-fields-status" className="text-sm text-pretty text-muted-foreground">
-            {statusTextOf(saving, settlement)}
-          </output>
-        </div>
-      </form>
-      {renderSettlement()}
-      {renderMedia()}
-    </section>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" disabled={saveDisabled} aria-describedby={saveReason === null ? undefined : saveReasonId}>
+              {saving ? "Saving…" : FIELDS_COPY.save}
+            </Button>
+            <output data-slot="section-fields-status" className="text-sm text-pretty text-muted-foreground">
+              {statusTextOf(saving, settlement)}
+            </output>
+          </div>
+        </form>
+        {renderSettlement()}
+        {renderMedia()}
+      </section>
+    </DirectionProvider>
   );
 }
 

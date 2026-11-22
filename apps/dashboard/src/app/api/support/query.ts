@@ -53,6 +53,9 @@ const RECIPIENT_ANONYMOUS = "anonymous";
 const RECIPIENT_UNRESOLVED = "unresolved";
 const RECIPIENT_ANONYMOUS_OR_UNRESOLVED = "anonymous-or-unresolved";
 
+/** The rule an amount range obeys wherever one is read or offered: a range compares one currency's minor units, so it applies only while a single currency is selected, and no range is ever compared across currencies. Exported so this grammar and the surface that offers the range state it in one wording rather than a second copy of the rule. */
+export const AMOUNT_RANGE_CURRENCY_MESSAGE = "An amount range compares one currency's minor units, so a single currency must be selected with it: choose one currency to use the range, or remove the range, because no range is applied across currencies.";
+
 const MESSAGES = {
   pageNumber: "State the page as a whole number of pages from 0, the first page.",
   pageSize: "State the page size as a whole number of rows.",
@@ -117,6 +120,19 @@ const supportSearchSchema = z
     }
     if ((params.amountMin === undefined) !== (params.amountMax === undefined)) {
       context.addIssue({ code: "custom", path: ["amountMin"], message: MESSAGES.amountRangeNeedsBoth });
+    }
+    // A range is scoped to the one currency it compares, so a range stated with no currency is refused at the bound the
+    // caller stated instead of reaching a read that could only drop it: the read applies a range only while a single
+    // currency is selected, and answering the unfiltered whole result would present a filter that was never applied.
+    const rangeStated = params.amountMin !== undefined || params.amountMax !== undefined;
+    const currencyBlank = params.currency === undefined || params.currency.trim() === "";
+    if (rangeStated && currencyBlank) {
+      if (params.amountMin !== undefined) {
+        context.addIssue({ code: "custom", path: ["amountMin"], message: AMOUNT_RANGE_CURRENCY_MESSAGE });
+      }
+      if (params.amountMax !== undefined) {
+        context.addIssue({ code: "custom", path: ["amountMax"], message: AMOUNT_RANGE_CURRENCY_MESSAGE });
+      }
     }
     if ((params.sortField === undefined) !== (params.sortDirection === undefined)) {
       context.addIssue({ code: "custom", path: ["sortField"], message: MESSAGES.sortNeedsBoth });
@@ -281,12 +297,29 @@ const POSTED_FILTER_FIELDS = {
   timeZone: z.string().min(1, BODY_MESSAGES.timeZone).optional(),
 };
 const postedScopeField = z.unknown().optional();
+/** The two members of a posted query the amount-range rule relates: the selection amounts are stated in, and the range stated over them. */
+type PostedCurrencyAndRange = { readonly currency?: z.output<typeof currencyBodySchema>; readonly amountRange?: z.output<typeof amountRangeBodySchema> };
+
+/** Whether a posted query names exactly one currency: the code stated as the selection itself, or the single-currency form of the report query's own selection. */
+function postsOneCurrency(currency: PostedCurrencyAndRange["currency"]): boolean {
+  if (currency === undefined) {
+    return false;
+  }
+  return typeof currency === "string" ? currency.trim() !== "" : currency.kind === "one";
+}
+/** Refuses an amount range posted with no single currency selected, at the range's own path: a range compares one currency's minor units, so a read given an unpaired one would drop it rather than carry it into the report or the file. */
+function refineAmountRangeCurrency(query: PostedCurrencyAndRange, context: z.RefinementCtx): void {
+  if (query.amountRange === undefined || postsOneCurrency(query.currency)) {
+    return;
+  }
+  context.addIssue({ code: "custom", path: ["amountRange"], message: AMOUNT_RANGE_CURRENCY_MESSAGE });
+}
 
 const snapshotIdSchema = z.string().min(1, BODY_MESSAGES.snapshotId).optional();
 /** The body `POST /api/report` reads: which of the four reports, the filters it is computed under, and the caller's own request identity. */
-export const reportRequestSchema = z.strictObject({ query: z.strictObject({ reportId: reportIdentitySchema, scope: postedScopeField, ...POSTED_FILTER_FIELDS }), snapshotId: snapshotIdSchema });
-/** The body `POST /api/export` reads: the same shape, whose query needs no report identity. */
-export const exportRequestSchema = z.strictObject({ query: z.strictObject({ reportId: reportIdentitySchema.optional(), scope: postedScopeField, ...POSTED_FILTER_FIELDS }), snapshotId: snapshotIdSchema });
+export const reportRequestSchema = z.strictObject({ query: z.strictObject({ reportId: reportIdentitySchema, scope: postedScopeField, ...POSTED_FILTER_FIELDS }).superRefine(refineAmountRangeCurrency), snapshotId: snapshotIdSchema });
+/** The body `POST /api/export` reads: the same shape, whose query needs no report identity, under the same amount-range rule so the two artifacts of a query are built from the same reading of it. */
+export const exportRequestSchema = z.strictObject({ query: z.strictObject({ reportId: reportIdentitySchema.optional(), scope: postedScopeField, ...POSTED_FILTER_FIELDS }).superRefine(refineAmountRangeCurrency), snapshotId: snapshotIdSchema });
 /** A posted query as the broader of the two bodies reads it. */
 export type PostedQuery = z.output<typeof exportRequestSchema>["query"];
 

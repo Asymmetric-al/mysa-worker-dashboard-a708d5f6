@@ -29,7 +29,7 @@ import { FACET_LABELS, FACET_VALUE_LABELS, type FacetKey } from "../copy/facets"
 import { SAVED_VIEW_COPY } from "../copy/privacy";
 import { PARTNER_ACTION_LABELS, SURFACE_STATE_COPY } from "../copy/states";
 import { useDeleteView, useRenameView, useSaveView } from "../hooks/use-partner-mutations";
-import { useRosterQuery, type RosterQueryState } from "../hooks/use-roster-query";
+import { useRosterQuery, type RosterEnvelope, type RosterQueryState } from "../hooks/use-roster-query";
 import { PARTNER_LIST_PAGE_SIZE_OPTIONS, checkSavedViewDrift, type DeleteViewPayload, type RenameViewPayload, type SaveViewPayload } from "../schemas/saved-view";
 import { partnerColumnCatalogue, type PartnerColumn } from "./column-chooser";
 import { buildPartnerFacetDescriptors, type PartnerFacetDescriptor } from "./partner-facets";
@@ -537,6 +537,13 @@ export interface SavedViewBarProps {
   readonly scope: Scope;
   /** The columns the roster itself admits. The same keys are given to the one URL parser, so this bar and the roster read one query state rather than two. */
   readonly admittedColumnKeys?: readonly string[];
+  /**
+   * The answer the composing route already read for this same scope and view, handed on exactly as the roster receives
+   * it. This bar composes the same roster query for the query state and the views it stores, so it is a second observer
+   * of that one cache entry: without the seed its own mount would turn the route's answer back into the identical read
+   * the seed exists to avoid, and with it the entry stands as the server read it.
+   */
+  readonly initialResult?: ReadResult<RosterEnvelope>;
   readonly className?: string;
 }
 
@@ -560,8 +567,8 @@ function envelopeOf<T>(result: ReadResult<ReadEnvelope<T>> | undefined): ReadEnv
  * carries the revision the view was read at, and one attempt identity per intent: a retry of the same rename or delete
  * replays it, while a changed intent, a repair included, is a new operation.
  */
-export default function SavedViewBar({ scope, admittedColumnKeys, className }: SavedViewBarProps): ReactElement {
-  const roster = useRosterQuery(scope, admittedColumnKeys === undefined ? {} : { admittedColumnKeys });
+export default function SavedViewBar({ scope, admittedColumnKeys, initialResult, className }: SavedViewBarProps): ReactElement {
+  const roster = useRosterQuery(scope, admittedColumnKeys === undefined ? {} : { admittedColumnKeys }, initialResult);
   const saveView = useSaveView(SAVED_VIEW_ROUTE_SEGMENT);
   const renameView = useRenameView(SAVED_VIEW_ROUTE_SEGMENT);
   const deleteView = useDeleteView(SAVED_VIEW_ROUTE_SEGMENT);

@@ -417,7 +417,7 @@ function Receipt({
     frameRef.current?.focus();
   }, [outcome]);
   return (
-    <div ref={frameRef} tabIndex={-1} data-slot="series-editor-result" data-outcome={outcome.outcome} className="flex min-w-0 flex-col gap-2 outline-none">
+    <div ref={frameRef} tabIndex={-1} data-slot="series-editor-result" data-outcome={outcome.outcome} className="flex min-w-0 flex-col gap-2">
       <OperationResult outcome={outcome} heading={heading} headingLevel={headingLevel} onCheckResult={onCheckResult} onRetrySameWork={onRetrySameWork} onReapply={onReapply} fieldLabels={FIELD_LABELS} />
     </div>
   );

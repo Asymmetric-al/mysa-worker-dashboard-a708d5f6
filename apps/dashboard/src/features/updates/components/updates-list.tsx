@@ -10,7 +10,9 @@
  * (`@/components/draft-status`), the audience and reach vocabularies (`../copy`, `@/components/status-badge`),
  * the attempt's identity and its receipt (`@/components/action-review`), or any count, order or page
  * position the service decided. The read returns the whole authorised collection in one answer and takes
- * no search, order or page, so this surface windows it locally and never narrows or re-orders it.
+ * no search, order or page, so this surface windows it locally and never narrows or re-orders it — and the
+ * page it opens on travels in the address, so an Update opened from this list returns the reader to the
+ * same page rather than to the first one.
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -18,7 +20,7 @@ import { useCallback, useId, useMemo, useState, type FormEvent, type ReactElemen
 import ActionReview from "@/components/action-review";
 import { DraftStatus, LIFECYCLE_STATUS } from "@/components/draft-status";
 import { fieldErrorsFromInvalid, FormErrorSummary, FormField, FormFieldGroup, refusalSummary, type FieldErrorLookup } from "@/components/form-field";
-import RecordList, { type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
+import RecordList, { useRecordListWindow, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import StateNotice, { type NoticeHeadingLevel } from "@/components/state-notice";
 import StatusBadge, { REACH_STATUS } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -699,12 +701,24 @@ const HEADING_TAG = { 1: "h1", 2: "h2" } as const;
 /** The Ministry Updates roster: every Update and every edition the admitted scope holds, with the one reviewed way to add an edition. */
 export default function UpdatesList({ roster, headingLevel = 2, className }: UpdatesListProps): ReactElement {
   const headingId = useId();
-  const [queryState, setQueryState] = useState<RecordListQueryState>(() => ({ sort: NO_ORDER, page: FIRST_PAGE, pageSize: PAGE_SIZE_DEFAULT, columnVisibility: NO_COLUMNS_HIDDEN }));
   const [dialogOpen, setDialogOpen] = useState(false);
-  const handleQueryStateChange = useCallback((next: RecordListQueryState): void => {
-    // The page, the row size and the visible columns are kept; an ordering is never kept, because this read applies its own order and takes no ordering parameter.
-    setQueryState({ sort: NO_ORDER, page: Math.max(FIRST_PAGE, Math.trunc(next.page)), pageSize: pageSizeOf(next.pageSize), columnVisibility: next.columnVisibility });
-  }, []);
+  // The columns a worker shows are presentation and stay in this component; the page window lives in the address,
+  // so a reader who opens an Update and returns reads the page they left rather than the first one.
+  const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(NO_COLUMNS_HIDDEN);
+  const listWindow = useRecordListWindow({ page: FIRST_PAGE, pageSize: PAGE_SIZE_DEFAULT });
+  const page = listWindow.page;
+  const pageSize = pageSizeOf(listWindow.pageSize);
+  const setWindow = listWindow.setWindow;
+  const handleQueryStateChange = useCallback(
+    (next: RecordListQueryState): void => {
+      // The page, the row size and the visible columns are kept; an ordering is never kept, because this read
+      // applies its own order and takes no ordering parameter. The window is written to the address and the
+      // columns to this component, so neither is held twice.
+      setColumnVisibility(next.columnVisibility);
+      setWindow({ page: next.page, pageSize: pageSizeOf(next.pageSize) });
+    },
+    [setWindow],
+  );
   const rows = useMemo(() => rowsOf(roster), [roster]);
   // The read's own statement that reviewing is one of the things it admits here, so a candidate is linked to its review only where that step is really available.
   const reviewAvailable = roster.actions.some((action) => action.name === REVIEW_CANDIDATE_ACTION && action.available);
@@ -741,7 +755,7 @@ export default function UpdatesList({ roster, headingLevel = 2, className }: Upd
     // An empty collection offers a real destination rather than a control that could only fail: this build creates an Update's canonical identity elsewhere.
     content = <StateNotice kind="empty" headingLevel={noticeLevel} title={SURFACE_COPY.emptyTitle} description={SURFACE_COPY.emptyBody} action={{ label: SURFACE_COPY.emptyAction, href: HELP_HREF }} />;
   } else {
-    const shown = windowOf(rows, queryState.page, queryState.pageSize);
+    const shown = windowOf(rows, page, pageSize);
     content = (
       <RecordList
         label={SURFACE_COPY.tableLabel}
@@ -749,7 +763,7 @@ export default function UpdatesList({ roster, headingLevel = 2, className }: Upd
         rows={shown.items}
         // The whole collection the read returned, never the size of the window on show.
         rowCount={rows.length}
-        queryState={{ sort: NO_ORDER, page: shown.page, pageSize: queryState.pageSize, columnVisibility: queryState.columnVisibility }}
+        queryState={{ sort: NO_ORDER, page: shown.page, pageSize, columnVisibility }}
         onQueryStateChange={handleQueryStateChange}
         getRowId={(row) => row.key}
         itemNoun={ITEM_NOUN}

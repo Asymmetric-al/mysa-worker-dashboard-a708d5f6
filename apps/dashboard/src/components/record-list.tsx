@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useId, useMemo, useRef, type ReactElement, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, type ReactElement, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, Columns3Icon } from "lucide-react";
 import {
   columnVisibilityFeature,
@@ -36,6 +37,8 @@ export type RecordListColumnDef<TRow extends RowData> = ColumnDef<RecordListFeat
 export type SortDescriptor = ColumnSort;
 /** The list state the owner controls, passed straight through to the service query. */
 export type RecordListQueryState = { sort: SortDescriptor[]; page: number; pageSize: number; columnVisibility: ColumnVisibilityState };
+/** The page window alone, in the pager's own one-based numbering: the part of the list state that belongs in the address. */
+export type RecordListWindow = { readonly page: number; readonly pageSize: number };
 export type RecordListProps<TRow extends RowData> = {
   label: string;
   columns: ReadonlyArray<RecordListColumnDef<TRow>>;
@@ -131,6 +134,69 @@ function normalisePageSize(pageSize: number): number {
   if (!Number.isFinite(pageSize)) return FALLBACK_PAGE_SIZE;
   const whole = Math.trunc(pageSize);
   return whole >= 1 ? whole : FALLBACK_PAGE_SIZE;
+}
+/** The first page of a list's window, in the pager's own one-based numbering. */
+const FIRST_PAGE = 1;
+/** The two address parameters a list's window travels in, named once because every family that already keeps its window in the address writes these two. */
+const WINDOW_PARAM = { page: "page", pageSize: "pageSize" } as const;
+/** A stated page or row size as a whole number at or above one, or the number the window already states when it is neither. */
+function wholeWindowNumber(stated: number, current: number): number {
+  if (!Number.isFinite(stated)) return current;
+  const whole = Math.trunc(stated);
+  return whole >= FIRST_PAGE ? whole : current;
+}
+/** One address parameter's own number, or `undefined` when it states none a window can use: a repeated parameter is read once, and text that is not a whole number at or above the first page is not a window. */
+function statedWindowNumber(search: ReadonlyURLSearchParams, name: string): number | undefined {
+  const stated = search.get(name);
+  if (stated === null) return undefined;
+  const parsed = Number(stated);
+  return Number.isSafeInteger(parsed) && parsed >= FIRST_PAGE ? parsed : undefined;
+}
+/**
+ * The page window of a list a reader returns to, kept in the address rather than in the component.
+ *
+ * A list that holds its window in component state forgets it as soon as the reader opens a record: the return
+ * renders a fresh component, so the reader lands on page one of a result they had already paged through. The
+ * address survives that visit, a reload, a shared link and the browser's Back button, so it is the only owner of
+ * `page` and `pageSize` here; the surface reads them back on every render and states no second copy.
+ *
+ * Both numbers are read at once: an address that states a page without a row size does not describe a window, so
+ * the surface keeps the window it opens on rather than pairing a stated page with a row size nothing stated.
+ *
+ * `setWindow` writes both numbers and leaves every other parameter the page carries alone, because the window is
+ * one fact about a page the address already describes; a column set is not part of it, since hiding a column
+ * changes what is shown of a row and never which records the read returned.
+ *
+ * @param opening The window this surface opens on when the address states no window of its own — the window the
+ *   server that composed the page read, so the first paint and the address agree.
+ * @returns The window the address states, and the one way to change it.
+ */
+export function useRecordListWindow(opening: RecordListWindow): RecordListWindow & { readonly setWindow: (next: RecordListWindow) => void } {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const stated = useMemo<RecordListWindow | undefined>(() => {
+    const page = statedWindowNumber(searchParams, WINDOW_PARAM.page);
+    const pageSize = statedWindowNumber(searchParams, WINDOW_PARAM.pageSize);
+    return page === undefined || pageSize === undefined ? undefined : { page, pageSize };
+  }, [searchParams]);
+  const page = stated === undefined ? wholeWindowNumber(opening.page, FIRST_PAGE) : stated.page;
+  const pageSize = stated === undefined ? wholeWindowNumber(opening.pageSize, FALLBACK_PAGE_SIZE) : stated.pageSize;
+  const setWindow = useCallback(
+    (next: RecordListWindow): void => {
+      const nextPage = wholeWindowNumber(next.page, page);
+      const nextPageSize = wholeWindowNumber(next.pageSize, pageSize);
+      // A window that states what the address already states is no change, so nothing is rewritten and no
+      // history entry is made for a reader who clicked the page they were already on.
+      if (nextPage === page && nextPageSize === pageSize) return;
+      const params = new URLSearchParams(searchParams.toString());
+      params.set(WINDOW_PARAM.page, String(nextPage));
+      params.set(WINDOW_PARAM.pageSize, String(nextPageSize));
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    },
+    [page, pageSize, pathname, router, searchParams],
+  );
+  return { page, pageSize, setWindow };
 }
 /** The one table preset: a processed page of rows, rendered with selection, sorting, column visibility and an honest pager, inside the application's only horizontal scroll region. */
 export function RecordList<TRow extends RowData>({

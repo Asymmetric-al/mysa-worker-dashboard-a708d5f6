@@ -1,4 +1,5 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient, type QueryClient, type UseMutationResult } from "@tanstack/react-query";
 import { scopeKey } from "@/components/context-switch-guard";
 import type { MutationInput, Scope } from "@/modules/data-service/envelope";
@@ -48,7 +49,25 @@ function withScope<P extends object>(scope: Scope, intent: SeriesIntent<P>): Mut
   return { operationId: intent.operationId, scope, expectedRevision: intent.expectedRevision, payload: intent.payload };
 }
 
-async function refreshSeriesJobs(outcome: MutationOutcome, queryClient: QueryClient, scope: Scope): Promise<void> {
+/**
+ * Applies a settled attempt to every read the series surfaces compose, and asks this route for its own read again
+ * when the attempt applied.
+ *
+ * Only `accepted` and `alreadyAccepted` refresh anything, because those are the two outcomes that testify an effect
+ * exists: `unchanged` answers from the state already on screen, `conflict`, `denied`, `invalid` and `unavailable`
+ * changed nothing this family reads, and `unknown` refreshes nothing at all — a fresh read is not a substitute for
+ * checking what the attempt did, and showing one would tell the worker the outcome had settled.
+ *
+ * The invalidations reach the series read the plan body mounts — `useSeries`, cached under the `series` key beside the
+ * scope segments and the plan id, so the state badge, `data-series-state`, the next-dates preview, the plan review
+ * and every command's admitted and expectedRevision re-read with it — and the Work lists and the agenda, which mount
+ * their own queries. Asking this route for its own read again renews the envelope the body is seeded with, so the
+ * server payload and the cached read state the same plan. Without the re-read below the body keeps the state the
+ * mutation just replaced while the receipt beside it says the change was applied, and the next command it offers
+ * presents the revision that has already been superseded. The re-read replaces the server payload without remounting
+ * the body, so the attempt's receipt and the input it was reviewed with stay on screen beside the state they produced.
+ */
+async function refreshSeriesJobs(outcome: MutationOutcome, queryClient: QueryClient, scope: Scope, router: ReturnType<typeof useRouter>): Promise<void> {
   if (outcome.outcome !== "accepted" && outcome.outcome !== "alreadyAccepted") {
     return;
   }
@@ -56,27 +75,39 @@ async function refreshSeriesJobs(outcome: MutationOutcome, queryClient: QueryCli
   for (const job of SERIES_JOB_KEYS) {
     await queryClient.invalidateQueries({ queryKey: [...prefix, job] });
   }
+  router.refresh();
 }
 
-/** Builds the eight series mutations — `createSeries`, `editOccurrence`, `editThisAndFuture`, `skipOccurrence`, `pauseSeries`, `resumeSeries`, `stopSeries` and `resolveMissedPlan` — as the browser … */
+/**
+ * Builds the eight series mutations — `createSeries`, `editOccurrence`, `editThisAndFuture`, `skipOccurrence`,
+ * `pauseSeries`, `resumeSeries`, `stopSeries` and `resolveMissedPlan` — as the browser transports the series body and
+ * the series editor submit, each handing its handler's outcome back untouched.
+ *
+ * Every one of them settles through the same `refreshSeriesJobs`, so a surface that sends one of the eight re-reads
+ * the series once the attempt applied rather than each control remembering to: pause, resume and stop in the state
+ * group, the occurrence edit, the this-and-future revision, skip and the plan review's resolutions all end the same
+ * way. The outcome itself is never re-read, re-shaped or inferred from here: the caller renders it exactly as the
+ * handler produced it.
+ */
 export function useSeriesMutations(scope: Scope): SeriesMutationTransports {
   const queryClient = useQueryClient();
+  const router = useRouter();
 
-  const createSeries = useMutation<MutationOutcome, Error, SeriesIntent<CreateSeriesPayload>>({ mutationFn: (intent) => postSeriesMutation("createSeries", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope), retry: false });
+  const createSeries = useMutation<MutationOutcome, Error, SeriesIntent<CreateSeriesPayload>>({ mutationFn: (intent) => postSeriesMutation("createSeries", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope, router), retry: false });
 
-  const editOccurrence = useMutation<MutationOutcome, Error, SeriesIntent<EditOccurrencePayload>>({ mutationFn: (intent) => postSeriesMutation("editOccurrence", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope), retry: false });
+  const editOccurrence = useMutation<MutationOutcome, Error, SeriesIntent<EditOccurrencePayload>>({ mutationFn: (intent) => postSeriesMutation("editOccurrence", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope, router), retry: false });
 
-  const editThisAndFuture = useMutation<MutationOutcome, Error, SeriesIntent<EditThisAndFuturePayload>>({ mutationFn: (intent) => postSeriesMutation("editThisAndFuture", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope), retry: false });
+  const editThisAndFuture = useMutation<MutationOutcome, Error, SeriesIntent<EditThisAndFuturePayload>>({ mutationFn: (intent) => postSeriesMutation("editThisAndFuture", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope, router), retry: false });
 
-  const skipOccurrence = useMutation<MutationOutcome, Error, SeriesIntent<SkipOccurrencePayload>>({ mutationFn: (intent) => postSeriesMutation("skipOccurrence", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope), retry: false });
+  const skipOccurrence = useMutation<MutationOutcome, Error, SeriesIntent<SkipOccurrencePayload>>({ mutationFn: (intent) => postSeriesMutation("skipOccurrence", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope, router), retry: false });
 
-  const pauseSeries = useMutation<MutationOutcome, Error, SeriesIntent<PauseSeriesPayload>>({ mutationFn: (intent) => postSeriesMutation("pauseSeries", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope), retry: false });
+  const pauseSeries = useMutation<MutationOutcome, Error, SeriesIntent<PauseSeriesPayload>>({ mutationFn: (intent) => postSeriesMutation("pauseSeries", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope, router), retry: false });
 
-  const resumeSeries = useMutation<MutationOutcome, Error, SeriesIntent<ResumeSeriesPayload>>({ mutationFn: (intent) => postSeriesMutation("resumeSeries", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope), retry: false });
+  const resumeSeries = useMutation<MutationOutcome, Error, SeriesIntent<ResumeSeriesPayload>>({ mutationFn: (intent) => postSeriesMutation("resumeSeries", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope, router), retry: false });
 
-  const stopSeries = useMutation<MutationOutcome, Error, SeriesIntent<StopSeriesPayload>>({ mutationFn: (intent) => postSeriesMutation("stopSeries", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope), retry: false });
+  const stopSeries = useMutation<MutationOutcome, Error, SeriesIntent<StopSeriesPayload>>({ mutationFn: (intent) => postSeriesMutation("stopSeries", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope, router), retry: false });
 
-  const resolveMissedPlan = useMutation<MutationOutcome, Error, SeriesIntent<ResolveMissedPlanPayload>>({ mutationFn: (intent) => postSeriesMutation("resolveMissedPlan", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope), retry: false });
+  const resolveMissedPlan = useMutation<MutationOutcome, Error, SeriesIntent<ResolveMissedPlanPayload>>({ mutationFn: (intent) => postSeriesMutation("resolveMissedPlan", withScope(scope, intent)), onSuccess: (outcome) => refreshSeriesJobs(outcome, queryClient, scope, router), retry: false });
 
   return { createSeries, editOccurrence, editThisAndFuture, skipOccurrence, pauseSeries, resumeSeries, stopSeries, resolveMissedPlan };
 }

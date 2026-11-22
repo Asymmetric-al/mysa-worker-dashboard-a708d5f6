@@ -8,10 +8,11 @@
  * result and the one page it returned, and it narrows nothing: `readAudience` accepts a publisher, a
  * page and a page size and answers the whole purpose audience, so a filter offered here could only be
  * applied to the loaded page while the pager kept stating the whole-result window — a claim this
- * surface would have no way to keep. Filtering, ordering, paging and counting stay the service's.
+ * surface would have no way to keep. Filtering, ordering, paging and counting stay the service's. The
+ * page window travels in the address, so opening a member and returning reopens the page the reader left.
  */
 import { useCallback, useMemo, useState, type ReactElement } from "react";
-import RecordList, { type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
+import RecordList, { useRecordListWindow, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import StateNotice from "@/components/state-notice";
 import StatusBadge, { MEMBERSHIP_STATUS, statusBadgeProps, VALUE_STATE_WORDS } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,9 @@ const MEMBERSHIP_STATE_ORDER = Object.keys(MEMBERSHIP_STATE_DESCRIPTIONS) as rea
 const ITEM_NOUN = "members";
 const FIRST_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 200;
+/** The row sizes this surface offers: the application's 50-row default and its 200-row cap, which are the sizes the preset's pager states. */
+const PAGE_SIZES: readonly number[] = [DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE];
 const NO_COLUMNS_HIDDEN: RecordListQueryState["columnVisibility"] = {};
 /** The counts are whole-result figures, so they are grouped the way every other figure on the application is. */
 const countFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -63,6 +67,16 @@ const SURFACE_COPY = {
 /** The state the read recorded for one field path, and `unknown` for a path it stated nothing about: a number the read did not state is never printed as one. */
 function statedState(valueStates: Readonly<Record<string, ValueState>>, path: string): ValueState {
   return valueStates[path] ?? "unknown";
+}
+/** The largest offered row size at or below a stated one, so the window this surface asks the read for is a window its own pager can also state. */
+function offeredPageSize(requested: number): number {
+  if (!Number.isFinite(requested)) return DEFAULT_PAGE_SIZE;
+  const stated = Math.trunc(requested);
+  let offered = DEFAULT_PAGE_SIZE;
+  for (const size of PAGE_SIZES) {
+    if (size <= stated) offered = size;
+  }
+  return offered;
 }
 /** A record value rendered as the record states it, or as the fact that it states nothing — never as a blank cell a reader could take for a rendering fault. */
 function StatedValue({ value, mono = false }: { readonly value: string; readonly mono?: boolean }): ReactElement {
@@ -195,23 +209,28 @@ function asReadResult(value: MembershipSource): ReadResult<AudienceEnvelope> {
 export function MembershipTable({ envelope, scope, className }: MembershipTableProps): ReactElement {
   const initial = useMemo(() => asReadResult(envelope), [envelope]);
   const initialWindow = initial.kind === "envelope" ? initial.envelope.data.page : undefined;
+  // The last page the server's answer states, when it states any: a page the address names beyond it is
+  // corrected to it, so the query, the rows, the caption and the pager always describe one window. The bound
+  // is the read's own page count, never a count taken here.
+  const openingLastPage = initialWindow === undefined || initialWindow.total === 0 ? undefined : Math.max(FIRST_PAGE, initialWindow.pageCount);
+  // The window the read states is the window this surface opens on, inside the pages that exist; the address owns
+  // it from then on, so opening a member and returning reopens the page the reader left rather than the first one.
+  const listWindow = useRecordListWindow({ page: openingLastPage === undefined ? FIRST_PAGE : Math.min(Math.max(FIRST_PAGE, initialWindow?.page ?? FIRST_PAGE), openingLastPage), pageSize: initialWindow?.pageSize ?? DEFAULT_PAGE_SIZE });
+  const page = openingLastPage === undefined ? listWindow.page : Math.min(listWindow.page, openingLastPage);
+  const pageSize = offeredPageSize(listWindow.pageSize);
+  const setWindow = listWindow.setWindow;
+  // The columns a worker shows are presentation only, so they stay in this component rather than the address.
+  const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(NO_COLUMNS_HIDDEN);
   // The query this surface controls is exactly the query the read declares — a page and its size — plus
   // the publisher the server resolved, so the browser read answers for the same audience. No order is
   // held here because the read states its own and offers no sort parameter.
-  const [queryState, setQueryState] = useState<RecordListQueryState>(() => ({
-    sort: [],
-    // The window the read states is the window this surface opens on, inside the pages that exist.
-    page: initialWindow === undefined ? FIRST_PAGE : Math.min(Math.max(FIRST_PAGE, initialWindow.page), Math.max(FIRST_PAGE, initialWindow.pageCount)),
-    pageSize: initialWindow?.pageSize ?? DEFAULT_PAGE_SIZE,
-    columnVisibility: NO_COLUMNS_HIDDEN,
-  }));
   const publisherId = initial.kind === "envelope" ? initial.envelope.data.publisherId : null;
-  const audienceQuery = useMemo<{ readonly page: number; readonly pageSize: number; readonly publisherId?: string }>(() => ({ page: queryState.page, pageSize: queryState.pageSize, ...(publisherId === null ? {} : { publisherId }) }), [publisherId, queryState.page, queryState.pageSize]);
+  const audienceQuery = useMemo<{ readonly page: number; readonly pageSize: number; readonly publisherId?: string }>(() => ({ page, pageSize, ...(publisherId === null ? {} : { publisherId }) }), [publisherId, page, pageSize]);
   const audience = useAudience({ scope, query: audienceQuery });
   // The server's answer stands in while the browser read has no answer of its own, and only for the
   // window it describes: a page change must never be presented under the previous page's rows, so the
   // fallback stops the moment the asked-for window differs from the envelope's own.
-  const initialDescribesAskedWindow = initial.kind !== "envelope" || (initial.envelope.data.page.page === queryState.page && initial.envelope.data.page.pageSize === queryState.pageSize);
+  const initialDescribesAskedWindow = initial.kind !== "envelope" || (initial.envelope.data.page.page === page && initial.envelope.data.page.pageSize === pageSize);
   const read: ReadResult<AudienceEnvelope> | undefined = audience.data ?? (initialDescribesAskedWindow ? initial : undefined);
   const statedPage = read !== undefined && read.kind === "envelope" ? read.envelope.data.page : undefined;
   // The last page the read states, when it states any: a request for a page beyond it is answered with
@@ -222,11 +241,13 @@ export function MembershipTable({ envelope, scope, className }: MembershipTableP
     (next: RecordListQueryState) => {
       // The read answers members in its own order and declares no sort parameter, so no column offers a
       // sort and no order is ever stated here. Visibility is presentation only: hiding a column narrows
-      // what is shown of a row, never which rows the read returned.
+      // what is shown of a row, never which rows the read returned, so it stays in this component while the
+      // window is written to the address.
       const requestedPage = Math.max(FIRST_PAGE, Math.trunc(next.page));
-      setQueryState({ sort: [], page: lastStatedPage === undefined ? requestedPage : Math.min(requestedPage, lastStatedPage), pageSize: next.pageSize, columnVisibility: next.columnVisibility });
+      setColumnVisibility(next.columnVisibility);
+      setWindow({ page: lastStatedPage === undefined ? requestedPage : Math.min(requestedPage, lastStatedPage), pageSize: offeredPageSize(next.pageSize) });
     },
-    [lastStatedPage],
+    [lastStatedPage, setWindow],
   );
   const purpose = read !== undefined && read.kind === "envelope" ? read.envelope.data.purpose : null;
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<MembershipMember>>>(
@@ -334,7 +355,7 @@ export function MembershipTable({ envelope, scope, className }: MembershipTableP
           // is stated as the empty collection it is rather than as an outage or an unknown.
           <StateNotice kind="empty" title={SURFACE_COPY.emptyTitle} description={SURFACE_COPY.emptyBody} headingLevel={2} />
         ) : (
-          <RecordList<MembershipMember> label={MEMBERSHIP_COLUMN_HEADINGS.caption} columns={columns} rows={view.members} rowCount={view.page.total} queryState={queryState} onQueryStateChange={handleQueryStateChange} getRowId={(row) => row.membershipId} itemNoun={ITEM_NOUN} />
+          <RecordList<MembershipMember> label={MEMBERSHIP_COLUMN_HEADINGS.caption} columns={columns} rows={view.members} rowCount={view.page.total} queryState={{ sort: [], page, pageSize, columnVisibility }} onQueryStateChange={handleQueryStateChange} getRowId={(row) => row.membershipId} itemNoun={ITEM_NOUN} />
         )}
       </div>
     );

@@ -6,6 +6,11 @@
  * records a new task may link to, and hands those answers to the family's own surface, which owns every row,
  * action, form and word. No task is filtered, counted, sorted or authorised here.
  *
+ * **Why a repeating plan is created here.** A plan that repeats is created from this list surface rather than
+ * from an address of its own: AAP 0.9.1 fixes the Work routes, and a `/work/series/new` address would be read as
+ * a plan whose identifier is "new". The create section is composed beside the lists, under the same envelope, so
+ * the plan's rule is stated once by the family's editor and the plan it creates opens on its own page.
+ *
  * **Why the display zone is stated rather than inferred.** A date in these lists is judged against "today", and
  * today depends on a zone. The browser's chosen display zone lives in the browser (`ViewerPreferencesProvider`),
  * so a server render cannot know it, and naming one it guessed would judge dates in a zone nobody chose — the
@@ -22,6 +27,7 @@ import Link from "next/link";
 import type { ReactElement } from "react";
 
 import { StateNotice } from "@/components/state-notice";
+import SeriesComposer from "@/features/work/components/series-composer";
 import type { TaskComposerInitialValues, TaskLinkChoice, TaskLinkChoices } from "@/features/work/components/task-composer";
 import TaskLists from "@/features/work/components/task-lists";
 import { partnerLabelsOf } from "@/features/work/copy/partner-labels";
@@ -63,6 +69,12 @@ export const metadata: Metadata = { title: PAGE_TITLE };
 const WORK_HREF = "/work";
 
 const AGENDA_HREF = "/work/agenda";
+
+/**
+ * The agenda link's treatment: the same shape a task row gives its own link, so one link style serves this surface —
+ * at least 24 CSS px tall (WCAG 2.5.8) and underlined, so the affordance is never carried by colour alone.
+ */
+const AGENDA_LINK_CLASS = "inline-flex min-h-6 max-w-full items-center break-words underline underline-offset-3 hover:decoration-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
 /** The zone every date on this page is judged in, stated on the page rather than assumed silently. */
 const DISPLAY_TIME_ZONE = REPORT_DEFAULT_TIME_ZONE;
@@ -186,20 +198,27 @@ export default async function WorkPage({ searchParams }: WorkPageProps): Promise
         <p className="max-w-prose text-sm text-pretty text-muted-foreground">{PAGE_COPY.lede}</p>
         <p className="max-w-prose text-sm text-pretty text-muted-foreground">{PAGE_COPY.zone}</p>
         <p className="text-sm">
-          <Link href={AGENDA_HREF}>{PAGE_COPY.agendaLink}</Link>
+          <Link href={AGENDA_HREF} className={AGENDA_LINK_CLASS}>
+            {PAGE_COPY.agendaLink}
+          </Link>
         </p>
       </div>
       {primary.kind === "envelope" ? (
-        <TaskLists
-          scope={primary.envelope.scope}
-          expectedRevision={primary.envelope.revision}
-          lists={lists}
-          displayTimeZone={DISPLAY_TIME_ZONE}
-          partnerLabels={partnerLabels}
-          linkChoices={linkChoices}
-          timeZoneChoices={PLANNING_TIME_ZONE_CHOICES}
-          initialValues={initialValuesOf(paramOf(stated, PARTNER_PARAM), linkChoices)}
-        />
+        <>
+          <TaskLists
+            scope={primary.envelope.scope}
+            expectedRevision={primary.envelope.revision}
+            lists={lists}
+            displayTimeZone={DISPLAY_TIME_ZONE}
+            partnerLabels={partnerLabels}
+            linkChoices={linkChoices}
+            timeZoneChoices={PLANNING_TIME_ZONE_CHOICES}
+            initialValues={initialValuesOf(paramOf(stated, PARTNER_PARAM), linkChoices)}
+          />
+          {/* The plan's create section is handed the same envelope the lists were read from, so a creation acts in
+              the context this page states and presents the revision it read rather than one it derived. */}
+          <SeriesComposer scope={primary.envelope.scope} expectedRevision={primary.envelope.revision} planningTimeZoneChoices={PLANNING_TIME_ZONE_CHOICES} />
+        </>
       ) : (
         <ListNotice result={primary} />
       )}
