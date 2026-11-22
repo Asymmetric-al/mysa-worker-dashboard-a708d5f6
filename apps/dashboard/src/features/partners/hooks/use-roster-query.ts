@@ -202,20 +202,24 @@ function usablePage(page: number): number {
   return Number.isSafeInteger(page) && page >= FIRST_PAGE ? page : FIRST_PAGE;
 }
 
-/** A page size the read serves: a whole number within the stated cap, and the default for a size that is not one. */
+/**
+ * A page size this surface serves, resolved to its two sizes (AAP 0.8.7): the 50-row default for a size at or below it,
+ * the 200-row ceiling for a larger one, and the default for a size that is not a whole number. The roster component
+ * offers the pager exactly these two sizes, so the read, the address and the pager state one window rather than three.
+ */
 function usablePageSize(pageSize: number): number {
-  if (!Number.isSafeInteger(pageSize)) {
+  if (!Number.isSafeInteger(pageSize) || pageSize <= ROSTER_PAGE_SIZE_DEFAULT) {
     return ROSTER_PAGE_SIZE_DEFAULT;
   }
-  return Math.min(ROSTER_PAGE_SIZE_CAP, Math.max(1, pageSize));
+  return ROSTER_PAGE_SIZE_CAP;
 }
 
 /**
  * Normalises a query state into the one form the read is asked with and the URL states: the search as typed or empty,
  * facet keys and their values in one order with duplicates and blanks removed, an ordering that is either complete or
- * absent, a page counted from one, a page size within the cap, and the columns in one order. This is the visible
- * behaviour behind the URL, not a guard that quietly reinterprets what a caller asked for: every change it makes is
- * one the read would otherwise refuse or answer differently on each request.
+ * absent, a page counted from one, a page size resolved to the two sizes this surface serves, and the columns in one
+ * order. This is the visible behaviour behind the URL, not a guard that quietly reinterprets what a caller asked for:
+ * every change it makes is one the read would otherwise refuse or answer differently on each request.
  */
 export function clampRosterQuery(state: RosterQueryState): RosterQueryState {
   const facets: Record<string, readonly string[]> = {};

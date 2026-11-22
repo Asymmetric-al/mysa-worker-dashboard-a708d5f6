@@ -236,7 +236,12 @@ function useSettledTerm(value: string, delayMs: number): string {
  */
 function usePartnerPickerPage(scope: Scope, term: string, enabled: boolean) {
   const request = useMemo<RosterRequestParams>(
-    () => rosterRequestParams({ search: term, facets: {}, sort: null, page: PICKER_PAGE, pageSize: PICKER_PAGE_SIZE, columnVisibility: {} }),
+    // The roster's own grammar resolves a page size to the window its surface serves; this control reads a bounded page
+    // of matches instead, so the size the read is asked with is stated here rather than left to that surface's window.
+    () => ({
+      ...rosterRequestParams({ search: term, facets: {}, sort: null, page: PICKER_PAGE, pageSize: PICKER_PAGE_SIZE, columnVisibility: {} }),
+      pageSize: PICKER_PAGE_SIZE,
+    }),
     [term],
   );
   const url = useMemo(() => pickerReadUrl(request), [request]);
