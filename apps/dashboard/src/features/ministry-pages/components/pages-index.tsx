@@ -2,8 +2,9 @@
 /**
  * The admitted Pages index: every Page this scope holds, one row each, with the family it belongs to, the
  * language editions it carries, each edition's lifecycle, the reach word a released edition reaches, and the
- * entry to its builder. Below the rows, both guided family catalogues state what a Worker Page and a Project
- * Page admit, so a worker who holds no Page yet meets the two families rather than an apology.
+ * entry to its builder — plus, for an edition the read states a frozen candidate for, the entry to that
+ * candidate's one review step. Below the rows, both guided family catalogues state what a Worker Page and a
+ * Project Page admit, so a worker who holds no Page yet meets the two families rather than an apology.
  *
  * The rows arrive as props. The service has no Pages enumeration read — `readPage` reads one Page and
  * `readPageCatalogues` reads the catalogues — so this surface renders the envelope the route hands it and
@@ -23,8 +24,18 @@ import type { ReadEnvelope } from "@/modules/data-service/envelope";
 import type { ReadResult } from "@/modules/data-service/outcome";
 import { copy, type PageFamily } from "../copy";
 import FamilyCatalogue, { type FamilyCatalogueView } from "./family-catalogue";
-/** One language edition of one Page as the index states it: the language it is read in, the lifecycle it is in, and — once it is released — the reach that release carries. */
-export type PageIndexEdition = { readonly locale: string; readonly lifecycle: ContentLifecycleState; readonly reach?: Reach };
+/** One language edition of one Page as the index states it: the language it is read in, the lifecycle it is in, — once it is released — the reach that release carries, and — while it holds one — the frozen candidate a reviewer answers. */
+export type PageIndexEdition = {
+  readonly locale: string;
+  readonly lifecycle: ContentLifecycleState;
+  readonly reach?: Reach;
+  /**
+   * The frozen candidate this edition holds, exactly as the listing read states it. It is carried because the
+   * candidate's identity is the only address its one review step has, and nothing on this surface may derive one.
+   * Absent when the edition holds no candidate, which is a fact the read states rather than a gap to fill in.
+   */
+  readonly candidateId?: string;
+};
 /** One Page as the index lists it: its identity, its family and its editions, exactly as the reads state them. No count, title or lifecycle is derived here. */
 export type PageIndexRow = { readonly documentId: string; readonly family: PageFamily; readonly title: string; readonly editions: readonly PageIndexEdition[] };
 /**
@@ -47,6 +58,8 @@ export interface PagesIndexProps {
 }
 /** Where one Page's builder lives. The route is composed by `src/app/pages/[pageId]`, which owns the address. */
 const BUILDER_PATH_PREFIX = "/pages/";
+/** Where one frozen candidate's single review step lives. The route is composed by `src/app/pages/review/[candidateId]`, which owns the address. */
+const REVIEW_PATH_PREFIX = "/pages/review/";
 /** The in-page address of the two family catalogues, so an empty index leads to where a Page is started. */
 const FAMILIES_ANCHOR = "pages-index-families";
 /** The one simulated effect this surface discloses: a released edition's reach is simulated publication state, and a Page never notifies. */
@@ -72,6 +85,7 @@ const EDITION_LIST_CLASS = "flex min-w-0 flex-col gap-3";
 const EDITION_ITEM_CLASS = "flex min-w-0 flex-col gap-1";
 const IDENTITY_ROW_CLASS = "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1";
 const BUILDER_LINK_CLASS = "inline-flex min-h-6 max-w-full min-w-0 items-center text-start font-medium underline-offset-4 text-pretty wrap-anywhere hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+const REVIEW_LINK_CLASS = "inline-flex min-h-6 max-w-full min-w-0 items-center text-start underline-offset-4 text-pretty wrap-anywhere hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const FAMILY_CLASS = "text-sm text-muted-foreground wrap-anywhere";
 const LOCALE_CLASS = "text-sm text-muted-foreground wrap-anywhere";
 const NOTE_CLASS = "text-sm text-muted-foreground text-pretty wrap-anywhere";
@@ -91,6 +105,18 @@ function refusalOf<T>(answer: PagesIndexAnswer<T>): ReadRefusal | undefined {
 /** The address of one Page's builder, with its identity encoded rather than pasted into the path. */
 function builderPathOf(documentId: string): string {
   return `${BUILDER_PATH_PREFIX}${encodeURIComponent(documentId)}`;
+}
+/**
+ * The address of one frozen candidate's review, or nothing when the edition states no candidate to review.
+ *
+ * The listing read states a candidate identity for an edition that holds one and states none for an edition that
+ * does not, so this surface renders a review link only where an address really exists. An edition with no frozen
+ * candidate is therefore given no link rather than a destination that could only refuse, and no identity is
+ * invented for one.
+ */
+function reviewHrefOf(edition: PageIndexEdition): string | undefined {
+  const stated = edition.candidateId ?? "";
+  return stated.trim() === "" ? undefined : `${REVIEW_PATH_PREFIX}${encodeURIComponent(stated)}`;
 }
 /** What a row's builder link also names, so two Pages that share a title still answer with distinct accessible names. */
 function builderLinkHintOf(family: PageFamily): string {
@@ -112,7 +138,7 @@ function RefusalNotice({ answer, headingLevel, unavailableTitle }: { readonly an
       return <StateNotice kind="refused" headingLevel={headingLevel} title={REFUSED_TITLE} description={REFUSED_DESCRIPTION} />;
   }
 }
-/** One Page's row: its title as the entry to the builder, its family in this family's own words, and one entry per language edition. */
+/** One Page's row: its title as the entry to the builder, its family in this family's own words, one entry per language edition, and — where an edition states a frozen candidate — the entry to that candidate's review. */
 function PageRow({ row }: { readonly row: PageIndexRow }): ReactElement {
   return (
     <li data-slot="pages-index-row" data-family={row.family} data-document-id={row.documentId} className={ROW_CLASS}>
@@ -129,23 +155,38 @@ function PageRow({ row }: { readonly row: PageIndexRow }): ReactElement {
         <p className={NOTE_CLASS}>{copy.states.emptyEditions}</p>
       ) : (
         <ul aria-label={EDITIONS_LABEL} className={EDITION_LIST_CLASS}>
-          {row.editions.map((edition, position) => (
-            <li key={`${edition.locale}:${String(position)}`} data-slot="pages-index-edition" data-locale={edition.locale} data-lifecycle={edition.lifecycle} className={EDITION_ITEM_CLASS}>
-              <div className={IDENTITY_ROW_CLASS}>
-                <span className={LOCALE_CLASS}>
-                  {EDITION_LOCALE_LABEL}
-                  {": "}
-                  <bdi>{edition.locale}</bdi>
-                </span>
-                {/*
-                  A reach word belongs to a released edition only, so an edition that has not been released
-                  states its lifecycle below and no reach here — never a default or invented reach value.
-                */}
-                {edition.reach === undefined ? null : <StatusBadge label={copy.reach[edition.reach].label} tone={statusBadgeProps(REACH_STATUS, edition.reach).tone} srPrefix={REACH_PREFIX} />}
-              </div>
-              <DraftStatus state={edition.lifecycle} />
-            </li>
-          ))}
+          {row.editions.map((edition, position) => {
+            const reviewHref = reviewHrefOf(edition);
+            return (
+              <li key={`${edition.locale}:${String(position)}`} data-slot="pages-index-edition" data-locale={edition.locale} data-lifecycle={edition.lifecycle} className={EDITION_ITEM_CLASS}>
+                <div className={IDENTITY_ROW_CLASS}>
+                  <span className={LOCALE_CLASS}>
+                    {EDITION_LOCALE_LABEL}
+                    {": "}
+                    <bdi>{edition.locale}</bdi>
+                  </span>
+                  {/*
+                    A reach word belongs to a released edition only, so an edition that has not been released
+                    states its lifecycle below and no reach here — never a default or invented reach value.
+                  */}
+                  {edition.reach === undefined ? null : <StatusBadge label={copy.reach[edition.reach].label} tone={statusBadgeProps(REACH_STATUS, edition.reach).tone} srPrefix={REACH_PREFIX} />}
+                  {/*
+                    A review link belongs to a frozen candidate only. The listing read states a candidate identity
+                    for an edition that holds one and states none otherwise, so this link appears exactly where a
+                    review exists to take and nowhere else: an edition holding no candidate is given no address,
+                    because one would name a candidate that does not exist.
+                  */}
+                  {reviewHref === undefined ? null : (
+                    <Link href={reviewHref} data-slot="pages-index-review" className={REVIEW_LINK_CLASS}>
+                      {copy.review.openCandidate}
+                      <span className="sr-only">{`, ${copy.review.openCandidateHint(edition.locale)}`}</span>
+                    </Link>
+                  )}
+                </div>
+                <DraftStatus state={edition.lifecycle} />
+              </li>
+            );
+          })}
         </ul>
       )}
     </li>

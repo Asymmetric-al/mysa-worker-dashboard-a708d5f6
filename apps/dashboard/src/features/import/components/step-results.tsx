@@ -11,6 +11,15 @@
  * for the rows nothing has been applied to yet, which is the shared review step over the cancellation
  * transport.
  *
+ * **What a row's route is.** The service states where each row leads, and every descriptor it states becomes
+ * a control here: a row that became or extended a contact opens that contact, and a row it did not apply
+ * returns to the review step at that row, because the service keeps inviting the worker to decide or correct
+ * it. The correction is a button rather than a link for a reason: the review step's window, the mapping and
+ * every decision recorded so far live in the journey, so leaving the journey by navigation would lose the
+ * work this route is meant to take the worker back to. A page that was reloaded holds no journey at all —
+ * the chosen file is not kept across a reload — so it states that instead of offering a control it could
+ * not honour.
+ *
  * **Where the counts come from.** The per-decision counts and the count of rows left alone are the read's
  * own summary; the per-state counts are stated only when the read states them, and a read that states none
  * shows none rather than a table of zeros.
@@ -20,7 +29,7 @@
  * cancellation — is the shared operation receipt rather than a message this family wrote.
  */
 import Link from "next/link";
-import { type ReactElement } from "react";
+import { useEffect, useRef, type ReactElement } from "react";
 import { PaginationBar } from "@/components/pagination-bar";
 import { ScrollRegion } from "@/components/scroll-region";
 import SimulationLabel from "@/components/simulation-label";
@@ -30,7 +39,7 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import type { ImportRowState } from "@/modules/data-service/envelope";
 import type { ImportProposalRowRoute, ImportRowWindow } from "@/modules/data-service/reads/import";
 import type { RowResultCopyEntry } from "../copy";
-import { IMPORT_SIMULATION_EFFECT, JOURNEY_COPY, RESULTS_COPY, RESULT_STATE_HEADINGS, ROW_RESULT_COPY, TABLE_LABELS, chosenFileSize, resultCorrectionStatement, resultPartnerLinkLabel, resultStoppableRowSentence, resultWindowSentence } from "../copy";
+import { IMPORT_SIMULATION_EFFECT, JOURNEY_COPY, RESULTS_COPY, RESULT_STATE_HEADINGS, ROW_RESULT_COPY, TABLE_LABELS, chosenFileSize, resultCorrectionStatement, resultPartnerLinkLabel, resultStoppableRowSentence, resultWindowSentence, reviewDecisionLabel } from "../copy";
 import { IMPORT_ROW_RESULT_STATES } from "@/modules/import/receipt";
 import { StopImportReview, type ImportStopControl } from "./step-review";
 /** The destination of one row that became or extended a contact. */
@@ -70,6 +79,12 @@ export interface StepResultsProps {
   readonly stop: ImportStopControl;
   /** Clears this import from the page and returns the journey to its first step. */
   readonly onStartAnother: () => void;
+  /**
+   * Returns the journey to the review step at the row this import did not apply, so the worker can decide or
+   * correct it with the mapping and every decision recorded so far still in hand. Omitted by a journey that
+   * holds no file — a reloaded page — where the row can be stated but not reopened.
+   */
+  readonly onCorrection?: ((rowNumber: number) => void) | undefined;
   /** Whether the results were recovered from this page's own address rather than reached by accepting here. */
   readonly recovered: boolean;
 }
@@ -90,9 +105,57 @@ function FactRow({ label, value }: { readonly label: string; readonly value: str
     </div>
   );
 }
+/**
+ * Where one row leads, as the control that takes the worker there.
+ *
+ * Both descriptors the service states become real controls. A partner route is a link, because the contact is
+ * a destination of its own and nothing in this journey is needed to read it. A correction route is a button,
+ * because the review step is a step of this journey rather than a destination: it must be reopened where the
+ * chosen file, the confirmed mapping and every recorded decision still live, and leaving by navigation would
+ * discard exactly the work the route exists to take the worker back to.
+ */
+function RowRoute({ row, onCorrection }: { readonly row: ImportResultsRow; readonly onCorrection?: ((rowNumber: number) => void) | undefined }): ReactElement {
+  const route = row.route;
+  if (route === null) {
+    return <span className="text-muted-foreground">{RESULTS_COPY.noRoute}</span>;
+  }
+  if (route.kind === "partner") {
+    return (
+      <Link className="inline-flex min-h-6 items-center underline underline-offset-4" href={`${PARTNER_HREF_PREFIX}${encodeURIComponent(route.partnerId)}`}>
+        {resultPartnerLinkLabel(row.rowNumber)}
+      </Link>
+    );
+  }
+  if (onCorrection === undefined) {
+    // A reloaded page holds no chosen file, so the row it did not apply can be stated here but not reopened.
+    return <span className="text-muted-foreground">{resultCorrectionStatement(route.rowNumber)}</span>;
+  }
+  return (
+    <Button type="button" variant="outline" size="sm" className="h-auto min-h-6 whitespace-normal text-start" onClick={() => onCorrection(route.rowNumber)}>
+      {reviewDecisionLabel(route.rowNumber)}
+    </Button>
+  );
+}
 /** Step five of the contact import: the per-row result of one completed operation, its counts and its routes. */
-export default function StepResults({ results, onPageChange, onPageSizeChange, stop, onStartAnother, recovered }: StepResultsProps): ReactElement {
+export default function StepResults({ results, onPageChange, onPageSizeChange, stop, onStartAnother, onCorrection, recovered }: StepResultsProps): ReactElement {
   const stateCounts = results.stateCounts;
+  // The receipt is where an operation is actually read, so arriving at it — by accepting, by resolving a lost
+  // acknowledgement through the same operation, or by reopening the step — puts the keyboard on its first row
+  // instead of leaving focus on a control the step change has just removed from the page. It is placed once per
+  // operation, so a page change or an unrelated re-render never pulls focus out of what the worker is reading.
+  const firstRowHeader = useRef<HTMLTableCellElement | null>(null);
+  const focusedOperation = useRef<string | null>(null);
+  useEffect(() => {
+    if (focusedOperation.current === results.importOperationId) {
+      return;
+    }
+    const target = firstRowHeader.current;
+    if (target === null) {
+      return;
+    }
+    focusedOperation.current = results.importOperationId;
+    target.focus();
+  }, [results.importOperationId]);
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <p className="text-sm text-pretty text-muted-foreground">{RESULTS_COPY.lead}</p>
@@ -149,11 +212,22 @@ export default function StepResults({ results, onPageChange, onPageSizeChange, s
             </TableRow>
           </TableHeader>
           <TableBody>
-            {results.rows.map((row) => {
+            {results.rows.map((row, rowIndex) => {
               const result = rowResultCopyOf(row.state);
               return (
                 <TableRow key={row.rowNumber}>
-                  <TableHead scope="row" className="whitespace-normal align-top">
+                  <TableHead
+                    scope="row"
+                    tabIndex={rowIndex === 0 ? -1 : undefined}
+                    ref={
+                      rowIndex === 0
+                        ? (node) => {
+                            firstRowHeader.current = node;
+                          }
+                        : undefined
+                    }
+                    className="whitespace-normal align-top focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--ring)]"
+                  >
                     Row <bdi>{String(row.rowNumber)}</bdi>
                   </TableHead>
                   <TableCell className="whitespace-normal align-top">{row.decisionLabel}</TableCell>
@@ -164,15 +238,7 @@ export default function StepResults({ results, onPageChange, onPageSizeChange, s
                     <span className="block text-pretty">{row.reason === null ? RESULTS_COPY.noReason : row.reason}</span>
                   </TableCell>
                   <TableCell className="whitespace-normal align-top">
-                    {row.route === null ? (
-                      <span className="text-muted-foreground">{RESULTS_COPY.noRoute}</span>
-                    ) : row.route.kind === "partner" ? (
-                      <Link className="underline underline-offset-4" href={`${PARTNER_HREF_PREFIX}${encodeURIComponent(row.route.partnerId)}`}>
-                        {resultPartnerLinkLabel(row.rowNumber)}
-                      </Link>
-                    ) : (
-                      <span className="text-muted-foreground">{resultCorrectionStatement(row.route.rowNumber)}</span>
-                    )}
+                    <RowRoute row={row} onCorrection={onCorrection} />
                   </TableCell>
                 </TableRow>
               );

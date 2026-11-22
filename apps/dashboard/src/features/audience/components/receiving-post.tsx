@@ -8,12 +8,14 @@
  * it produces comes from the receiving copy module, so a denial, an unreadable source, a withdrawal and
  * a missing language each stay distinct and none of them is shown as an empty edition.
  */
+import Link from "next/link";
 import { useId, type ReactElement } from "react";
 import { SimulationLabel } from "@/components/simulation-label";
 import { StateNotice, type NoticeHeadingLevel, type StateNoticeProps } from "@/components/state-notice";
 import StatusBadge, { type StatusBadgeSpec } from "@/components/status-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import VideoPlayer from "@/components/video-player";
+import { PREFERENCES_ENTRY_COPY } from "@/features/audience/copy/preferences";
 import { RECEIVING_POST_COPY, RECEIVING_SIMULATION_EFFECT } from "@/features/audience/copy/receiving";
 import { useReceivingPost, type ReceivingPostEnvelope } from "@/features/audience/hooks/use-audience-reads";
 import { cn } from "@/lib/cn";
@@ -59,6 +61,10 @@ const HEADING_TAGS: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4
 const META_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-muted-foreground";
 const META_PAIR_CLASS = "flex items-baseline gap-1.5";
 const NOTE_CLASS = "text-sm text-muted-foreground text-pretty wrap-anywhere";
+/** The address of the reader's own preference-and-consent page: the one route this surface links to, and the reason it is reachable at all. */
+const PREFERENCES_HREF = "/preview/preferences";
+/** The entry point's link, sized so its target is at least 24 CSS px tall (WCAG 2.5.8) and underlined so its meaning is never carried by colour alone. */
+const PREFERENCES_LINK_CLASS = "inline-flex min-h-6 max-w-full items-center break-words text-start underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
 /** Every answer this surface renders. A denial, an unreadable source, a withdrawal and a missing language are four answers, never one. */
 type PostSurface =
@@ -266,6 +272,31 @@ function RenderedPost({ data, asOf, persona, headingLevel, onRefresh }: Rendered
   );
 }
 
+/**
+ * The one way into the reader's own preferences from a receiving surface.
+ *
+ * **Why this surface carries it and the shell does not.** The sidebar lists the worker's destinations, so a reader's
+ * own membership has no other addressable home: this link is the only reference to `/preview/preferences` anywhere in
+ * the application, which is what keeps that route reachable instead of URL-only. It is stated on every answer this
+ * surface renders — a reader whose edition was denied, withdrawn or unavailable in the language asked for still holds
+ * the same membership — and it describes the page it opens rather than the edition on screen.
+ *
+ * **Why it adds no read, no control and no promise.** The preferences route reads and states the membership itself,
+ * including the case where this session holds none, so nothing here reads a membership or claims one exists: the words
+ * say what that page holds, and that opening it changes nothing. It offers no Off, no unsubscribe and no proof control,
+ * because each of those is that page's own act on its own record, and no link could perform one.
+ */
+function PreferencesEntryPoint(): ReactElement {
+  return (
+    <footer data-slot="receiving-post-preferences" className="mt-4 flex min-w-0 flex-col gap-1.5">
+      <p className={NOTE_CLASS}>{PREFERENCES_ENTRY_COPY.description}</p>
+      <Link href={PREFERENCES_HREF} className={PREFERENCES_LINK_CLASS}>
+        {PREFERENCES_ENTRY_COPY.linkLabel}
+      </Link>
+    </footer>
+  );
+}
+
 /** Props of {@link ReceivingPost}. */
 export interface ReceivingPostProps {
   /** The authority the server read this edition under. */
@@ -316,6 +347,9 @@ export function ReceivingPost({ scope, params, initialEnvelope, persona, denialR
   return (
     <section data-slot="receiving-post-surface" data-surface={surface.kind} aria-busy={isFetching ? true : undefined} className={cn("min-w-0", className)}>
       {content}
+      {/* The reader's own preferences are offered on every answer below the edition, because the membership they
+          describe does not depend on which edition this reader was served or refused. */}
+      <PreferencesEntryPoint />
     </section>
   );
 }

@@ -29,9 +29,6 @@ const isCurrentContext = (admission: AdmittedContext, scope: Scope): boolean => 
 function keyOf(context: { readonly organizationId: string; readonly ministryId: string }): string {
   return `${context.organizationId}::${context.ministryId}`;
 }
-function describeContext(organizationLabel: string | null, organizationReference: string, ministryLabel: string | null, ministryReference: string): string {
-  return `${organizationLabel ?? organizationReference}, ${ministryLabel ?? ministryReference}`;
-}
 type ContextNameProps = { readonly organizationLabel: string | null; readonly organizationReference: string; readonly ministryLabel: string | null; readonly ministryReference: string; readonly truncate: boolean; readonly markCurrent?: boolean; readonly srPrefix?: string };
 function ContextName({ organizationLabel, organizationReference, ministryLabel, ministryReference, truncate, markCurrent = false, srPrefix }: ContextNameProps): ReactElement {
   const line = truncate ? "truncate" : "break-words";
@@ -76,8 +73,8 @@ function SwitchNotice({ summary }: { readonly summary: OutcomeSummary }): ReactE
 function requestFor(admission: AdmittedContext): ContextRequest {
   return { organizationId: admission.organizationId, ministryId: admission.ministryId };
 }
-type ContextChooserProps = { readonly admissions: readonly AdmittedContext[]; readonly current: AdmittedContext | null; readonly scope: Scope; readonly triggerLabel: string; readonly onRequestContext: (next: ContextRequest) => void; readonly children: ReactNode };
-function ContextChooser({ admissions, current, scope, triggerLabel, onRequestContext, children }: ContextChooserProps): ReactElement {
+type ContextChooserProps = { readonly admissions: readonly AdmittedContext[]; readonly current: AdmittedContext | null; readonly scope: Scope; readonly onRequestContext: (next: ContextRequest) => void; readonly children: ReactNode };
+function ContextChooser({ admissions, current, scope, onRequestContext, children }: ContextChooserProps): ReactElement {
   const currentKey = current === null ? null : keyOf(current);
   // The tooltip states the names in full — a truncated label cannot — and the two references, which are what distinguishes two ministries whose names read alike.
   const organizationName = current === null ? null : labelOrNull(current.organizationLabel);
@@ -89,8 +86,11 @@ function ContextChooser({ admissions, current, scope, triggerLabel, onRequestCon
           {/* One element is both the menu trigger and the tooltip trigger, so the full names are reachable by pointer without a second header control; this is the composition Base UI documents, where neither trigger replaces the other's behaviour. */}
           <TooltipTrigger
             render={
-              <DropdownMenuTrigger type="button" aria-label={triggerLabel} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-auto max-w-full min-w-0 justify-start gap-2 px-2.5 py-1 text-start")}>
+              <DropdownMenuTrigger type="button" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-auto max-w-full min-w-0 justify-start gap-2 px-2.5 py-1 text-start")}>
+                {/* The control's accessible name comes from its own content rather than an `aria-label`, because the visible name is the organization and the ministry on two lines and a label attribute cannot contain that visible text as one run: a name that omitted it would break WCAG 2.2 AA 2.5.3 (Label in Name). The two sentences a reader needs are therefore added as hidden text around the names, exactly as the static form states its own prefix. */}
+                <span className="sr-only">Active context: </span>
                 {children}
+                <span className="sr-only">. Change context.</span>
                 <ChevronsUpDownIcon aria-hidden="true" className="ms-auto size-3.5 shrink-0 text-muted-foreground" />
               </DropdownMenuTrigger>
             }
@@ -159,7 +159,7 @@ export function ContextIndicator({ scope, admissions, onRequestContext, showSupp
   return (
     <div className={cn("flex min-w-0 max-w-full flex-col gap-1", className)}>
       {canChoose ? (
-        <ContextChooser admissions={admissions} current={current} scope={scope} triggerLabel={`Active context: ${describeContext(organizationLabel, scope.organizationId, ministryLabel, scope.ministryId)}. Change context.`} onRequestContext={onRequestContext}>
+        <ContextChooser admissions={admissions} current={current} scope={scope} onRequestContext={onRequestContext}>
           <ContextName {...nameProps} />
         </ContextChooser>
       ) : (

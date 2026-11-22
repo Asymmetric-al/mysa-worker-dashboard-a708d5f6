@@ -136,7 +136,20 @@ const HEADING_CLASS = "font-heading text-lg font-medium text-pretty";
 
 const QUIET_CLASS = "text-sm text-pretty text-muted-foreground";
 
-const TITLE_CELL_CLASS = "font-medium text-pretty wrap-anywhere";
+/**
+ * A task title, and the floor its column keeps.
+ *
+ * The title is the one column on this table whose text wraps, and the automatic table layout gives every column
+ * only what its own contents ask for. `wrap-anywhere` let this text ask for a single character, which is what at
+ * 320 CSS px read `Visit / rou / nd: / Abb / ey / Roa / d` inside a 53 px column. Two declarations fix that at
+ * the cause. `min-w-48` gives the column a floor of 12rem, so the column — 12rem of text plus the cell's own
+ * padding — fits wholly inside the labelled scroll region at 320 px and a title reads as words; `block` is what
+ * lets the floor size the column, because min-width has no effect on an inline box. `break-words` breaks inside
+ * a word only when the floor cannot hold it, which keeps a word too long for the column inside that column rather
+ * than splitting every word to fit. The region still holds the table's extra width in its own horizontal scroll,
+ * so the page itself never scrolls sideways.
+ */
+const TITLE_CELL_CLASS = "block min-w-48 break-words font-medium text-pretty";
 
 const LIST_BODY_CLASS = "flex min-w-0 flex-col gap-3";
 

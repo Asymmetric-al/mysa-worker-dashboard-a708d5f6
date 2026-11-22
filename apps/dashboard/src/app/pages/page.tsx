@@ -19,6 +19,11 @@
  * release that reaches readers now, so it travels for a live release only: a withdrawn or superseded head
  * states its lifecycle and no reach, and this route never re-derives either from the other.
  *
+ * **Why the frozen candidate's identity travels.** The listing read states, per edition, the candidate that edition
+ * holds, and that identity is the only address the candidate's one review step has. The row carries it unchanged, so
+ * the index can offer a review exactly where one exists; it is not a lifecycle, a reach word or a review state, and
+ * nothing here evaluates it.
+ *
  * **Why the answers are handed on rather than re-stated.** A denial, an outage and a refused request each carry
  * no envelope, and an empty index has to stay distinguishable from both. The family surface renders every arm
  * — including the genuine first-use empty state, which leads to the two family catalogues below it — so a second
@@ -89,14 +94,25 @@ function titleOf(entry: DocumentEntry, family: PageFamily): string {
   return entry.title.status === "stated" ? entry.title.title : `${UNTITLED_PAGE_LABEL} ${copy.families[family].label}`;
 }
 
-/** One edition as the index lists it: the language it is read in, the lifecycle the shared evaluator derived, and — for a release that still reaches readers — the reach that release carries. */
+/**
+ * One edition as the index lists it: the language it is read in, the lifecycle the shared evaluator derived, for a
+ * release that still reaches readers the reach that release carries, and — while the edition holds one — the frozen
+ * candidate the read itself names.
+ *
+ * The candidate identity travels exactly as the read states it, because it is the only address the edition's one
+ * review step has. Nothing is derived from it: no lifecycle, no reach word and no review state are computed here, and
+ * an edition the read states no candidate for carries none, which is what keeps the index from offering a review that
+ * does not exist.
+ */
 function editionRowOf(documentId: string, edition: EditionEntry): PageIndexRow["editions"][number] {
   const lifecycle = lifecycleFor(documentId, edition);
   const locale = edition.locale.tag;
+  // The read's own pointer, omitted rather than set to `undefined`, so the row states exactly what the read stated.
+  const heldCandidate = edition.candidateId === null ? {} : { candidateId: edition.candidateId };
   if (edition.headRelease === null || !LIVE_RELEASE_LIFECYCLES.has(lifecycle)) {
-    return { locale, lifecycle };
+    return { locale, lifecycle, ...heldCandidate };
   }
-  return { locale, lifecycle, reach: edition.headRelease.reach };
+  return { locale, lifecycle, reach: edition.headRelease.reach, ...heldCandidate };
 }
 
 /** One listed document as a row, or nothing when it is not a Page: the read was asked for the two Page families only, so an Update entry is skipped rather than relabelled as one of them. */

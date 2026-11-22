@@ -144,8 +144,14 @@ const RELEASE_COPY = {
   failedUnderPriorGoodHead: "Release failed for this edition. The edition released before it is unchanged and stays readable.",
   stillNeedsAttention: "Still needs attention",
 } as const;
+/** What a review link says in words a screen reader reads and its visible words do not: the language edition it belongs to, so two frozen candidates listed together are told apart. */
+function openCandidateHint(localeTag: string): string {
+  return `for the ${localeTag} language edition`;
+}
 const REVIEW_COPY = {
   heading: "Review",
+  openCandidate: "Review this candidate",
+  openCandidateHint,
   frozenRevisionLabel: "Revision under review",
   approveNote: "Approving one language edition approves no other. Each edition is reviewed against its own frozen revision.",
   reviewDoesNotRelease: "Review does not release. Releasing is a separate action, taken for each edition.",

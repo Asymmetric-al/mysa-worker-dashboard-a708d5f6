@@ -37,6 +37,11 @@ export function CONFIRMATION_DEADLINE_COPY(deadlineLabel: string, expired: boole
   if (expired) return `The confirmation window closed at ${deadlineLabel}. A new request for notices starts a new window.`;
   return `This address can be confirmed until ${deadlineLabel}.`;
 }
+export const PREFERENCES_ENTRY_COPY: { readonly description: string; readonly linkLabel: string } = {
+  description:
+    "Your own preference and consent for this publisher's Update email sit on a page of your own: the Off or Immediate choice, the language you read it in, the proof of your address, and turning these notices off. That page states what this session actually holds, including the case where no membership is recorded, and opening it changes nothing.",
+  linkLabel: "Open your own preference and consent page for this publisher's Update email",
+};
 export const UNSUBSCRIBE_COPY = {
   action: "Turn off Update email from {publisher}",
   heading: "Turn off notices from this publisher",

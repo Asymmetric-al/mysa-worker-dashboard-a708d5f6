@@ -14,8 +14,8 @@ import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
-import { mediaStateReason, type MediaPreparationState } from "@/modules/media/asset";
-import { ADMITTED_IMAGE_FORMATS, ADMITTED_VIDEO_PROFILES, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH } from "@/modules/media/profile";
+// The picker states the preparation vocabulary in the browser before any bytes are sent, so it takes the words and the limits from the decoder-free profile module rather than from `asset.ts`, whose pipeline reaches `sharp`: a native binary a browser chunk cannot load.
+import { ADMITTED_IMAGE_FORMATS, ADMITTED_VIDEO_PROFILES, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH, mediaStateReason, type MediaPreparationState } from "@/modules/media/profile";
 // The two kinds, the descriptor and the transport shapes, declared structurally in the payload shapes the content family's schemas validate: no schema, scope or revision appears here, because only the feature knows those.
 export type MediaPickerKind = "image" | "video";
 export type MediaProbe = { readonly width?: number; readonly height?: number; readonly durationSeconds?: number };

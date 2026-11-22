@@ -51,9 +51,9 @@ import { acceptImportRowsRequest, cancelImportRequest, fetchImportProposal, fetc
 import { IMPORT_OPERATION_PARAM, JOURNEY_COPY, REFUSAL_FRAMING, STEPS, stepIndex, stepLabel, stepTitle } from "../copy";
 import { useImportJourney } from "../hooks/use-import-journey";
 import type { AcceptImportRowsPayload, CancelPayload } from "../schemas/acceptance";
-import AcceptanceReview from "./acceptance-review";
 import FileChooser from "./file-chooser";
 import ImportStepper from "./import-stepper";
+import StepAcceptance from "./step-acceptance";
 import StepMapping from "./step-mapping";
 import StepResults, { type ImportResultsRow, type ImportResultsView } from "./step-results";
 import StepReview, { type ImportStopControl, type StepReviewRefusal } from "./step-review";
@@ -351,6 +351,10 @@ export default function ImportJourney({ scope, expectedRevision, initialOperatio
   const [decidingRow, setDecidingRow] = useState<number | null>(null);
   const [reviewRefusal, setReviewRefusal] = useState<StepReviewRefusal | null>(null);
   const [acceptUnknown, setAcceptUnknown] = useState<string | null>(null);
+  // The row the worker asked to go back to from the results step: the review step opens its window at that
+  // row, so the return lands on the row the service said still needs a decision instead of the top of a
+  // window the worker then has to search.
+  const [correctionRow, setCorrectionRow] = useState<number | null>(null);
   // One summary object per refusal, so the shared summary announces and focuses it once rather than on every
   // render of the step.
   const proposeRefusal = useMemo(() => (proposeErrors === null ? null : fileRefusalSummary(proposeErrors)), [proposeErrors]);
@@ -477,10 +481,14 @@ export default function ImportJourney({ scope, expectedRevision, initialOperatio
       acknowledge();
       return;
     }
-    if (step !== "results") {
+    // A completed operation opens its results — except while the worker is deliberately back inside the journey.
+    // The results step's own correction route reopens the review at a row, and bouncing that navigation straight
+    // back to the receipt would make the route look like it did nothing. The marker is cleared the moment the
+    // worker moves forward again, so the next completed acceptance opens its result as usual.
+    if (step !== "results" && correctionRow === null) {
       goTo("results");
     }
-  }, [resultsView, acknowledged, step, acknowledge, goTo]);
+  }, [resultsView, acknowledged, step, acknowledge, goTo, correctionRow]);
   // A step whose work has just been recorded opens once the journey holds that work, because the guard
   // that admits the next step reads the state a dispatch only applies on the following render.
   const advance = journey.advance;
@@ -617,6 +625,19 @@ export default function ImportJourney({ scope, expectedRevision, initialOperatio
     // surface the acceptance applied nothing, and a completed operation as its own result.
     void readResults({ identity, page: paging.page, pageSize: paging.pageSize });
   }, [importIdentity, initialOperationId, paging.page, paging.pageSize, readResults]);
+  /**
+   * Returns the journey to the review step at one row the acceptance did not apply.
+   *
+   * It is a step of this journey rather than a destination, because the chosen file, the confirmed mapping and
+   * every decision recorded so far are the journey's own state: reopening the step keeps all of them, where
+   * navigating away would discard the work the route exists to take the worker back to. The row is handed on
+   * so the review step can put the worker at it, and nothing is re-read here — the review was read for this
+   * import already, and a read is not needed to reopen a step whose material is still in hand.
+   */
+  const correctRow = (rowNumber: number): void => {
+    setCorrectionRow(rowNumber);
+    journey.goTo("review");
+  };
   /** The stop control: the shared review step mints the attempt, and the cancellation's own receipt is read back. */
   const stop = useMemo(
     (): ImportStopControl => ({
@@ -633,8 +654,13 @@ export default function ImportJourney({ scope, expectedRevision, initialOperatio
   );
   const rereadWindow = (next: { readonly page: number; readonly pageSize: number }): void => {
     setPaging(next);
-    if (resultsRead.kind === "view") {
-      void readResults({ identity: resultsRead.request.identity, ...next });
+    // The step on screen decides which read is paged, not the order the reads happened in: a finished import
+    // leaves the proposal and the result both holding a view, so paging by "whichever answered last" would
+    // page the surface the worker is not on and leave the one they are on showing its old window.
+    if (journey.step === "results") {
+      if (resultsRead.kind === "view") {
+        void readResults({ identity: resultsRead.request.identity, ...next });
+      }
       return;
     }
     if (proposalRead.kind === "view") {
@@ -654,6 +680,7 @@ export default function ImportJourney({ scope, expectedRevision, initialOperatio
     setProposeNotice(null);
     setReviewRefusal(null);
     setAcceptUnknown(null);
+    setCorrectionRow(null);
     setPaging({ page: FIRST_PAGE, pageSize: paging.pageSize });
     // A finished import's attempts are spent: the identities this page minted named operations that are
     // already recorded, so a file chosen again after this control has to be proposed under a fresh identity
@@ -769,7 +796,11 @@ export default function ImportJourney({ scope, expectedRevision, initialOperatio
             }}
             decidingRowNumber={decidingRow}
             refusal={reviewRefusal}
+            focusRowNumber={correctionRow}
             onContinue={() => {
+              // Moving forward ends the return to a row: from here the journey continues as it always does, and the
+              // next completed acceptance opens its own results.
+              setCorrectionRow(null);
               journey.goTo("accept");
             }}
             stop={stop}
@@ -786,8 +817,9 @@ export default function ImportJourney({ scope, expectedRevision, initialOperatio
         }
         return (
           <div className="flex min-w-0 flex-col gap-4">
-            <AcceptanceReview
+            <StepAcceptance
               key={journey.acceptIntentKey}
+              summary={view.summary}
               input={{ scope: currentScope, expectedRevision: currentRevision, payload: { acknowledged: true, fileFingerprint: view.fileFingerprint, decisions: Object.values(journey.decisions) } }}
               submit={submitAcceptance}
               decidedRowCount={Object.values(journey.decisions).length}
@@ -812,7 +844,9 @@ export default function ImportJourney({ scope, expectedRevision, initialOperatio
         if (resultsView === null) {
           return resultsStepNotice ?? <StateNotice kind="loading" title={JOURNEY_COPY.reading} />;
         }
-        return <StepResults results={resultsView} recovered={recovered} onPageChange={changePage} onPageSizeChange={changePageSize} stop={stop} onStartAnother={startAnother} />;
+        // A journey still holding the chosen file and mapping can reopen the review at a row; one that was
+        // reloaded holds neither, so it states the row instead of offering a control it could not honour.
+        return <StepResults results={resultsView} recovered={recovered} onPageChange={changePage} onPageSizeChange={changePageSize} stop={stop} onStartAnother={startAnother} onCorrection={journey.canOpen("review") ? correctRow : undefined} />;
       }
     }
   })();

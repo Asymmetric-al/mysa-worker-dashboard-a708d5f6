@@ -3,8 +3,16 @@
  * repeats by, the one occurrence it admits, the plan review several missed dates open, and pause, resume or stop.
  *
  * **What this file is.** Composition, nothing else. It reads `reads.series.readSeries` once and hands the one
- * envelope to the family's own record body, which owns the occurrence group, the *Plan needs review* state, the
- * this-occurrence and this-and-future revisions, the next-three-date preview and the state controls.
+ * envelope to the family's own record body, which owns the occurrence group, the *Plan needs review* statement,
+ * the this-occurrence and this-and-future revisions and the state controls. This route restates none of it: no
+ * date, rule, count or review decision is derived here, because the read already computed each one and a second
+ * answer on this page could only disagree with the envelope it was handed.
+ *
+ * **Why the record body is the one series block composed here.** The family's next-date preview, plan-review
+ * panel and series editor each take resolved facts rather than an envelope — parsed civil dates, and the
+ * occurrence a resolution applies to — and each decides from those facts whether it renders at all. Building
+ * them from this route would mean parsing dates and branching on review state inside a page whose job is
+ * composition, and would put a second this-and-future editor beside the record body's own.
  *
  * **Why the refusal arms are stated here.** A series the caller may not read answers `denied` with no record,
  * count or title, and an unreadable document answers `unavailable`; both are stated in this route's own words

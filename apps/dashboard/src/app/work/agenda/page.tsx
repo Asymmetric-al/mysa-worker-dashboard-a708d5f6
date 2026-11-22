@@ -20,7 +20,7 @@ import Link from "next/link";
 import type { ReactElement } from "react";
 
 import { StateNotice } from "@/components/state-notice";
-import WorkAgenda from "@/features/work/components/work-agenda";
+import Agenda from "@/features/work/components/agenda";
 import { partnerLabelsOf } from "@/features/work/copy/partner-labels";
 import { assertNever } from "@/lib/result";
 import { reads } from "@/modules/data-service";
@@ -112,7 +112,7 @@ export default async function WorkAgendaPage(): Promise<ReactElement> {
           <Link href={WORK_HREF}>{PAGE_COPY.listsLink}</Link>
         </p>
       </div>
-      {agenda.kind === "envelope" ? <WorkAgenda envelope={agenda.envelope} partnerLabels={partnerLabels} /> : <AgendaNotice result={agenda} />}
+      {agenda.kind === "envelope" ? <Agenda scope={agenda.envelope.scope} envelope={agenda.envelope} partnerLabels={partnerLabels} /> : <AgendaNotice result={agenda} />}
     </div>
   );
 }

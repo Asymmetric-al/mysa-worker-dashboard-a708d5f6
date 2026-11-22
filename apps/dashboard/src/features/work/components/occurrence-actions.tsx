@@ -52,6 +52,8 @@ import { editThisAndFutureSchema, pauseSeriesSchema, resumeSeriesSchema, stopSer
 import { completeTaskSchema, type CompleteTaskPayload } from "../schemas/task";
 import { useSeriesMutations } from "../hooks/use-series-mutations";
 import { useTaskMutations } from "../hooks/use-task-mutations";
+// The one plan-review surface, mounted by this body: its resolutions are applied to the single date the read names.
+import PlanNeedsReviewPanel, { type PlanNeedsReviewFacts } from "./plan-needs-review-panel";
 
 // ---------------------------------------------------------------------------------------------
 // Contracts, derived from the read rather than restated
@@ -926,6 +928,16 @@ export default function OccurrenceActions({ envelope, effectiveFrom = null, onCh
   const planReview = series.planReview;
   const needsReview = planReview.state === "needs-review";
   const missedId = useId();
+  // The next date the read reports its rule produces, in the stored form the read used: this body names the date the
+  // review's "Move the next date forward" refers to without computing or formatting one of its own.
+  const nextNominalDate = series.preview.status === "preview" ? series.preview.dates.at(0) : undefined;
+  const planReviewFacts: PlanNeedsReviewFacts = {
+    state: series.state,
+    revision: envelope.revision,
+    planNeedsReview: needsReview,
+    missedDateCount: planReview.missedDateCount,
+    nextNominalDate: nextNominalDate === undefined ? null : { iso: nextNominalDate, display: nextNominalDate },
+  };
   return (
     <RecordDetail
       layout="page"
@@ -936,7 +948,15 @@ export default function OccurrenceActions({ envelope, effectiveFrom = null, onCh
       sections={{
         openTasks: (
           <div className="flex min-w-0 flex-col gap-4">
-            {needsReview ? (
+            {needsReview && series.actionableOccurrenceId !== null ? (
+              // The plan's own review is the one surface that applies a resolution, and it applies it to the single date
+              // the read names as awaiting an answer — so it is mounted here, where that date and this body's authority
+              // are both in hand, rather than restated as a second review beside it.
+              <PlanNeedsReviewPanel scope={envelope.scope} occurrenceId={series.actionableOccurrenceId} facts={planReviewFacts} seriesTitle={series.title} headingLevel={3} />
+            ) : null}
+            {needsReview && series.actionableOccurrenceId === null ? (
+              // No date is awaiting an answer, so there is nothing a resolution could be applied to: the plan is
+              // described and no control is offered over a record this read did not name.
               <Alert>
                 <AlertTitle>{PLAN_NEEDS_REVIEW_HEADING}</AlertTitle>
                 <AlertDescription className="flex flex-col gap-2">
