@@ -16,7 +16,7 @@
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, type ReactElement } from "react";
+import { useCallback, useMemo, type ReactElement } from "react";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import type { reads } from "@/modules/data-service";
@@ -246,6 +246,10 @@ export default function TargetsSurface({ envelope, locale, selectedTargetId, cla
   const targets = envelope.data.targets;
   const selectedIndex = selectedIndexIn(targets, selectedTargetId);
   const selected = selectedIndex === -1 ? undefined : targets[selectedIndex];
+  // The chart's value is derived once per (envelope, target, position) rather than once per commit: the progress
+  // component rebuilds its points, its series and every formatted figure from this object, so a fresh one on every
+  // render would pay all of it again for a render that changed neither.
+  const progress = useMemo(() => (selected === undefined ? null : progressViewOf(envelope, selected, selectedIndex)), [envelope, selected, selectedIndex]);
   return (
     <div className={cn("flex min-w-0 flex-col gap-6", className)}>
       {/* Which target is being read. One target is always in view, and the others stay one link away. */}
@@ -262,7 +266,7 @@ export default function TargetsSurface({ envelope, locale, selectedTargetId, cla
           <TargetHistory versions={versionsViewOf(selected)} closedPeriods={closedPeriodsViewOf(selected)} locale={locale} />
           {/* Then the counts: this target's periods as the read measured them, with the measures stated separately
               beside them. */}
-          <TargetProgress progress={progressViewOf(envelope, selected, selectedIndex)} comparison={comparisonViewOf(envelope)} locale={locale} />
+          <TargetProgress progress={progress} comparison={comparisonViewOf(envelope)} locale={locale} />
         </>
       )}
     </div>

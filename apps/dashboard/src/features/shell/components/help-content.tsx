@@ -39,12 +39,16 @@ const SWITCH_CHOICES = [
   { label: CONTEXT_SWITCH_COPY.stayLabel, note: CONTEXT_SWITCH_COPY.stayNote },
 ] as const;
 const SETTINGS_INTRO =
-  "Settings holds three presentation preferences for this browser, one panel that states where this session's data came from, and the reset that re-seeds the development data. None of the three preferences changes which records may be read, which ministry the session works in, or anything a partner receives.";
+  "Settings holds four preferences for this browser, one panel that states where this session's data came from, and the reset that re-seeds the development data. None of the four changes which records may be read or which ministry the session works in: appearance, interface language and display time zone change only how the workspace is shown to you, and the publishing preference decides only the release mode a new submission asks for, which sends nothing by itself.";
 type SettingFact = { readonly heading: string; readonly body: string };
 const SETTING_FACTS: readonly SettingFact[] = [
   { heading: "Appearance", body: "Light, dark, or matching your device. A choice applies to this browser and takes effect immediately, and matching your device follows your operating system while the page is open. Nothing else in the workspace changes with it." },
   { heading: "Interface language", body: "Sets the language of the dates, times and numbers shown to you. It does not translate the interface, and it is never the language of anything sent to a partner." },
   { heading: "Display time zone", body: "Changes how a time of day is shown to you. A date with no time of day — a due date, an introduction date — keeps the day the service recorded, and no deadline moves with this setting." },
+  {
+    heading: "Publishing preference",
+    body: "The release mode a new submission of an edition asks for: publish only, or publish and notify now. The submission records that mode and a reviewer cannot change it, so the choice belongs to the author before the review; choosing it here sends nothing by itself, because the release and the notice are separate deliberate steps and a notice is simulated where it is triggered.",
+  },
   {
     heading: "Source status",
     body: "States the source system, the source reference, the coverage that source reports and the instant the page read it, and adds the development scenario when the session carries one. Every value there is read rather than computed, and a status this session may not read, or one whose source did not answer, is stated as exactly that rather than as an absence.",

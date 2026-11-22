@@ -54,7 +54,16 @@ export const saveDraftSchema = z
       ctx.addIssue({ code: "custom", path: bodyFieldPath(issue.path), message: issue.message });
     }
   });
-export const submitForReviewSchema = z.strictObject({ variantId: contentIdSchema, revisionId: contentIdSchema });
+/**
+ * The release modes a submission asks for. The same closed pair as the shell's `PublishingPreference`, which the editor hands
+ * this schema as a browser preference: the editor assigns one type to the other, so a provider that widened its list would
+ * stop compiling here rather than quietly sending a mode the service refuses. A value this list alone widened is refused by
+ * `z.enum` at submit time, named at the field.
+ */
+export const SUBMISSION_NOTIFY_MODES = ["publish-only", "publish-and-notify"] as const;
+export type SubmissionNotifyMode = (typeof SUBMISSION_NOTIFY_MODES)[number];
+/** Feeds `submitForReview`: the exact revision to freeze and the release mode the submission records. The mode is optional, so a submission that states none keeps the service's own default of `publish-only`. */
+export const submitForReviewSchema = z.strictObject({ variantId: contentIdSchema, revisionId: contentIdSchema, notifyMode: z.enum(SUBMISSION_NOTIFY_MODES, { error: "Choose how this submission asks for its release: publish only, or publish and notify now." }).optional() });
 export type CreateVariantPayload = z.infer<typeof createVariantSchema>;
 export type SaveDraftPayload = z.infer<typeof saveDraftSchema>;
 export type SubmitForReviewPayload = z.infer<typeof submitForReviewSchema>;

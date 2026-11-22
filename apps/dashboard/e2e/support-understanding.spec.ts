@@ -530,7 +530,7 @@ test("the overview states five separate measures, cash first, and never one comb
 
   // No combined figure is named anywhere on the surface, in the interface's own words.
   await expect(page.getByText(/Commitments, committed amounts and the goal are measures of their own/u)).toBeVisible();
-  expect(await page.getByText(/total support/iu).count(), "The overview names no combined 'total support', because the five measures are never one figure.").toBe(0);
+  await expect(page.getByText(/total support/iu), "The overview names no combined 'total support', because the five measures are never one figure.").toHaveCount(0);
 
   // The one chart reads the same report result as the table beneath it, and carries that table as its
   // alternative: a figure that states its unit, coverage and as-of time can be checked without reading
@@ -568,12 +568,12 @@ test("the received report compares equal-elapsed periods and a month with no gif
   await expect(page.getByText("Earlier equal-elapsed period").first()).toBeVisible();
   await expect(page.getByText("Difference (this period minus the earlier one)").first()).toBeVisible();
   await expect(page.getByText("Higher than the earlier period").first()).toBeVisible();
-  expect(await page.getByText("Not like-for-like").count(), "The two spans are the same length, so the report states an equal-elapsed comparison rather than a mis-matched one.").toBe(0);
+  await expect(page.getByText("Not like-for-like"), "The two spans are the same length, so the report states an equal-elapsed comparison rather than a mis-matched one.").toHaveCount(0);
 
   // The month the source recorded nothing in is a gap, named as one, and no amount of that month is a
   // plotted or printed zero.
   await expect(page.getByText(REPORT_GAP_WORD).first()).toBeVisible();
-  expect(await page.getByText("0.00 USD", { exact: true }).count(), "A month with no gift is a gap rather than a zero, so no month of the period is printed at 0.00 USD.").toBe(0);
+  await expect(page.getByText("0.00 USD", { exact: true }), "A month with no gift is a gap rather than a zero, so no month of the period is printed at 0.00 USD.").toHaveCount(0);
 
   // The currency the source never identified has no amount to state, and is never given another
   // currency's amount in its place.
@@ -596,9 +596,9 @@ test("a zero-baseline comparison states its difference and no percentage at all"
 
   // A zero earlier period is no denominator: the surface states no percentage rather than 0% or ∞.
   await expect(page.getByText(/No percentage is shown, because a percentage needs a compatible numerator and a positive, known denominator\./u)).toBeVisible();
-  expect(await page.getByText("0%", { exact: true }).count(), "A zero baseline yields no percentage, so 0% is never stated for it.").toBe(0);
-  expect(await page.getByText("∞", { exact: true }).count(), "A zero baseline yields no percentage, so an infinite share is never stated for it.").toBe(0);
-  expect(await page.getByText("Not like-for-like").count(), "Both spans are 30 days, so the difference is stated as an equal-elapsed one.").toBe(0);
+  await expect(page.getByText("0%", { exact: true }), "A zero baseline yields no percentage, so 0% is never stated for it.").toHaveCount(0);
+  await expect(page.getByText("∞", { exact: true }), "A zero baseline yields no percentage, so an infinite share is never stated for it.").toHaveCount(0);
+  await expect(page.getByText("Not like-for-like"), "Both spans are 30 days, so the difference is stated as an equal-elapsed one.").toHaveCount(0);
 });
 
 test("every currency is stated on its own and the unidentified amount is never summed", async ({ page }) => {
@@ -663,7 +663,7 @@ test("a split gift counts once at its own grain and a refund is explained rather
   const split = splitRows[0];
   expect(split?.text, "The row states the grain it is reported at.").toContain(SPLIT_ALLOCATION_GRAIN_WORD);
   expect(split?.amount?.minorUnits, "Only the authorised allocation of the split gift is counted, so the row states the allocation rather than the whole gift.").toBe(4_000);
-  expect(await page.getByText("100.00 USD", { exact: false }).count(), "The whole gift's amount is nowhere in this view, because the gift is counted once at its allocation grain.").toBe(0);
+  await expect(page.getByText("100.00 USD", { exact: false }), "The whole gift's amount is nowhere in this view, because the gift is counted once at its allocation grain.").toHaveCount(0);
 
   // The refund is a row of its own, naming the row it corrects, and the original it corrects is still
   // in the result: a correction explains itself instead of replacing what it corrects.
@@ -722,7 +722,7 @@ test("the recurring outcomes stay five and stale evidence stays outside them", a
 
   // The seeded commitment whose evidence is stale is in that sixth value, not in an outcome.
   const outsideRows = page.getByText(OUTSIDE_PARTITION_LABEL);
-  expect(await outsideRows.count(), "The stale occurrence is stated outside the five outcomes, in the partition and on its row.").toBeGreaterThan(1);
+  await expect(outsideRows.nth(1), "The stale occurrence is stated outside the five outcomes, in the partition and on its row.").toBeVisible();
 });
 
 test("a goal save against a stale revision is a conflict that keeps the caller's input", async ({ page, request }) => {
@@ -804,7 +804,7 @@ test("a missing goal states no percentage and a goal met above 100% is stated ex
   await expect(goal).toBeVisible();
   await expect(goal.getByText("No support goal is set", { exact: true })).toBeVisible();
   await expect(goal.getByText(/No percentage is shown because no support goal is set\. A missing goal and a goal of zero are different facts, and neither is a denominator\./u)).toBeVisible();
-  expect(await goal.getByText("0%", { exact: true }).count(), "A subject with no goal states no percentage at all, so 0% is never shown for it.").toBe(0);
+  await expect(goal.getByText("0%", { exact: true }), "A subject with no goal states no percentage at all, so 0% is never shown for it.").toHaveCount(0);
 
   // A goal met above 100% is stated exactly as it was computed. This subject's read states no single
   // currency in its coverage, so the panel offers no amount field to type into; the goal is therefore
@@ -852,7 +852,7 @@ test("a recorded zero, an unknown amount and an incomplete subtotal are told apa
   await expect(page.getByRole("heading", { name: "Received support", level: 1, exact: true })).toBeVisible();
   await expect(page.getByText("0.00 EUR", { exact: true }).first()).toBeVisible();
   await expect(page.getByText(new RegExp(ZERO_STATE_CLAUSE.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u")).first()).toBeVisible();
-  expect(await page.getByText(UNKNOWN_AMOUNT_WORD, { exact: true }).count(), "A recorded zero is never rendered as an unknown amount.").toBe(0);
+  await expect(page.getByText(UNKNOWN_AMOUNT_WORD, { exact: true }), "A recorded zero is never rendered as an unknown amount.").toHaveCount(0);
 
   // And that month is never drawn at zero: with nothing recorded in it for this subject, the one chart
   // invents no series at all and says so. The month-by-month naming of a gap is the received report's
@@ -874,9 +874,9 @@ test("an unavailable financial source is stated as unavailable while other work 
   // overview of zeroes and never as an empty period.
   await expect(page.getByRole("heading", { name: "The support overview could not be read", level: 1 })).toBeVisible();
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
-  expect(await page.getByText(/No gift is in this result/u).count(), "An outage is not an empty result.").toBe(0);
-  expect(await page.getByText(/\b0\.00\b/u).count(), "An outage is not a zero.").toBe(0);
-  expect(await page.getByText(/^Unknown amount$/u).count(), "An outage states the source's unavailability rather than an unknown figure.").toBe(0);
+  await expect(page.getByText(/No gift is in this result/u), "An outage is not an empty result.").toHaveCount(0);
+  await expect(page.getByText(/\b0\.00\b/u), "An outage is not a zero.").toHaveCount(0);
+  await expect(page.getByText(/^Unknown amount$/u), "An outage states the source's unavailability rather than an unknown figure.").toHaveCount(0);
 
   // The gifts ledger behind the same source states the same outage rather than an empty ledger.
   await page.goto(`${GIFTS_HREF}${LEDGER_YEAR_QUERY}`);
@@ -914,9 +914,9 @@ test.describe("the goal without the edit capability", () => {
     await expect(goal.getByText("25,000.00 USD", { exact: false }).first()).toBeVisible();
 
     // No control is offered — not a disabled one, and not one hidden by styling.
-    expect(await goal.getByRole("button", { name: "Change the goal" }).count(), "A session without the capability is offered no way to change the goal.").toBe(0);
-    expect(await goal.getByRole("button", { name: "Set a goal" }).count(), "A session without the capability is offered no way to set one either.").toBe(0);
-    expect(await goal.getByLabel("Amount").count(), "No amount field is rendered, so nothing invites an edit that would be refused.").toBe(0);
+    await expect(goal.getByRole("button", { name: "Change the goal" }), "A session without the capability is offered no way to change the goal.").toHaveCount(0);
+    await expect(goal.getByRole("button", { name: "Set a goal" }), "A session without the capability is offered no way to set one either.").toHaveCount(0);
+    await expect(goal.getByLabel("Amount"), "No amount field is rendered, so nothing invites an edit that would be refused.").toHaveCount(0);
     await expect(goal.getByText(/no edit control is offered and a save would be refused\./u)).toBeVisible();
   });
 });

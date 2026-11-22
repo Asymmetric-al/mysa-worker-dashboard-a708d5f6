@@ -1,6 +1,6 @@
 "use client";
 /** The one chart in the application: a figure that says what it shows, draws it, and carries the same data beneath it as a real table. */
-import { useId, useSyncExternalStore, type ReactElement } from "react";
+import { useId, useMemo, useSyncExternalStore, type ReactElement } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ScrollRegion } from "@/components/scroll-region";
 import { StateNotice } from "@/components/state-notice";
@@ -379,7 +379,9 @@ export function ChartFigure({ title, summary, caption, kind, height = DEFAULT_CH
   const summaryId = `${baseId}-summary`;
   const tableId = `${baseId}-table`;
   const reducedMotion = usePrefersReducedMotion();
-  const groups = groupSeries(series, locale);
+  // The regeneration is the expensive part of this figure — a map per series, every point re-formatted — so it
+  // is derived once per (series, locale) pair rather than once per commit of a parent that re-renders.
+  const groups = useMemo(() => groupSeries(series, locale), [series, locale]);
   const partialFigures = groups.some((group) => group.series.some((member) => member.incomplete > 0));
   const seriesClauses = groups.flatMap((group, groupIndex) => group.series.map((member, seriesIndex) => ({ member, key: `${member.key}-${String(groupIndex)}-${String(seriesIndex)}`, clauses: summaryClauses(member) })));
   const named = seriesClauses.filter((entry) => entry.clauses.length > 0);

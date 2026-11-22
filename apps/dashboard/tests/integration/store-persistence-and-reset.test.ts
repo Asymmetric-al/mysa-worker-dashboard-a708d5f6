@@ -1,6 +1,6 @@
 /** Store persistence, atomic writes, session isolation and the deterministic reset: success criteria 2 and 21. */
 import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, utimes, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { newOperationId } from "@/lib/ids";
@@ -9,9 +9,9 @@ import { resolveSession } from "@/modules/data-service/authorize";
 import { DEFAULT_WORKLOAD_SESSION_ID, WORKLOAD_GIFT_COUNT, WORKLOAD_PARTNER_COUNT, generateWorkload } from "@/modules/dev-runtime/generate";
 import { resetSeed } from "@/modules/dev-runtime/reset";
 import { SEEDED_SESSION_IDS, seed, seedSessionDocuments, type SessionStateDocument } from "@/modules/dev-runtime/seed";
-import { existsOnDisk, readJson, removeIfExists, writeJsonAtomic } from "@/modules/store/atomic";
+import { canonicalDigest, existsOnDisk, readJson, removeIfExists, serialiseJson, writeJsonAtomic } from "@/modules/store/atomic";
 import { DATA_ROOT, listSessionIds, sessionPaths, type SessionDocuments } from "@/modules/store/paths";
-import { readSession, resetSession } from "@/modules/store/repository";
+import { MEMO_IDLE_MS, readSession, resetSession, transact } from "@/modules/store/repository";
 const PRIMARY_SESSION = "it-store-persistence";
 const ALT_SESSION = "it-store-persistence-alt";
 const SEEDED_CONTENT_SESSION = "established-worker";
@@ -201,6 +201,117 @@ describe("the file-backed store", () => {
     expect(resolution.refusal.kind).toBe("denied");
     if (resolution.refusal.kind !== "denied") throw new Error(`The discarded session ${ALT_SESSION} was refused as "${resolution.refusal.kind}" instead of a denial.`);
     expect(resolution.refusal.denied.reasonCode).toBe("session-unavailable");
+  });
+  it("copies and writes only the documents a transaction declares, so the generated dataset is never cloned", async () => {
+    // The store treats every document as opaque, so a small workload document stands in for the generated one: what
+    // this case asserts is that a transaction which cannot write the workload neither copies it nor rewrites it.
+    const paths = sessionPaths(PRIMARY_SESSION);
+    await writeJsonAtomic(paths.workload, { header: { version: 1, sessionId: PRIMARY_SESSION, giftCount: 2 }, partners: [{ partnerId: "workload-partner" }], gifts: [{ giftId: "workload-gift-1" }, { giftId: "workload-gift-2" }] });
+    const before = await readSession(PRIMARY_SESSION);
+    if (before === undefined) throw new Error(`The session ${PRIMARY_SESSION} holds no documents, so there is no document set for a transaction to draft.`);
+    const workloadDigestBefore = await sha256Of(paths.workload);
+    const stateDigestBefore = await sha256Of(paths.state);
+    let workloadWasHeldByReference = false;
+    let stateWasCopied = false;
+    await transact(PRIMARY_SESSION, ["state"], (draft) => {
+      // The declared document arrives as a copy the callback may change, while every undeclared one is the very
+      // document this transaction read: copying the workload here is the whole-dataset cost this case forbids.
+      workloadWasHeldByReference = draft.workload === before.workload;
+      stateWasCopied = draft.state !== before.state;
+      draft.state = { ...(draft.state as object), storeProbeMarker: "declared write set" };
+    });
+    expect(workloadWasHeldByReference).toBe(true);
+    expect(stateWasCopied).toBe(true);
+    // The declared document was written and the undeclared one was not touched at all, so the dataset's bytes are
+    // the ones that were already on disk.
+    expect(await sha256Of(paths.state)).not.toBe(stateDigestBefore);
+    expect(await sha256Of(paths.workload)).toBe(workloadDigestBefore);
+    // A change to a document the write set does not name is refused rather than dropped, and it is refused before
+    // any document is written, so an accepted edit can never be lost between the draft and the disk.
+    const digestsBeforeRefusal = await documentDigests(PRIMARY_SESSION);
+    await expect(
+      transact(PRIMARY_SESSION, ["state"], (draft) => {
+        draft.state = { ...(draft.state as object), storeProbeMarker: "refused write set" };
+        draft.workload = { header: {}, partners: [], gifts: [] };
+      }),
+    ).rejects.toThrow(/changed the "workload" document/);
+    expect(await documentDigests(PRIMARY_SESSION)).toEqual(digestsBeforeRefusal);
+    expect(await sha256Of(paths.workload)).toBe(workloadDigestBefore);
+  });
+  it("answers a read from the memo until the session has been idle, then drops the entry and reads the document again", async () => {
+    // The memo is a cache in front of the disk, and this proves both halves of that contract. While an entry is
+    // fresh, the session's bytes can change underneath it and a read still answers the parsed copy the entry
+    // holds; once the session has been idle past the window, the entry is dropped and the same read answers what
+    // is on the disk. The rewrite below keeps the document's byte length and its pinned modification time, so the
+    // entry's signature is unchanged and the second answer can differ only because the entry was dropped.
+    const paths = sessionPaths(ALT_SESSION);
+    const pinned = new Date(Math.floor(Date.now() / 1000) * 1000);
+    await utimes(paths.state, pinned, pinned);
+    const original = await readFile(paths.state, "utf8");
+    const stated = /"version": (\d+)/.exec(original);
+    if (stated === null) throw new Error(`The state document of ${ALT_SESSION} states no version, so no rewrite of it can keep the document's byte length.`);
+    const version = Number(stated[1]);
+    const rewritten = original.replace(`"version": ${String(version)}`, `"version": ${String(version + 1)}`);
+    expect(rewritten).not.toBe(original);
+    expect(rewritten).toHaveLength(original.length);
+    const warmed = await readSession(ALT_SESSION);
+    if (warmed === undefined) throw new Error(`The session ${ALT_SESSION} was laid down and then read as absent.`);
+    expect((warmed.state as { readonly version: number }).version).toBe(version);
+    await writeFile(paths.state, rewritten);
+    await utimes(paths.state, pinned, pinned);
+    expect((await readJson<{ readonly version: number }>(paths.state))?.version).toBe(version + 1);
+    // The same object comes back, so the read was answered from the entry rather than from the rewritten file. Its
+    // instant is taken before that read, so both clock readings below are measured from the entry's own recency
+    // rather than from whenever this case reached them: neither boundary then depends on how long the case took.
+    const entryTouchedAt = Date.now();
+    expect(await readSession(ALT_SESSION)).toBe(warmed);
+    vi.useFakeTimers();
+    try {
+      // Still inside the window, so the entry is answered again and its recency moves to this instant: the read
+      // either side of the boundary is then separated by the window alone rather than by anything else the clock does.
+      const insideTheWindow = entryTouchedAt + MEMO_IDLE_MS - 1;
+      vi.setSystemTime(insideTheWindow);
+      expect(await readSession(ALT_SESSION)).toBe(warmed);
+      vi.setSystemTime(insideTheWindow + MEMO_IDLE_MS + 1);
+      const afterIdle = await readSession(ALT_SESSION);
+      if (afterIdle === undefined) throw new Error(`The session ${ALT_SESSION} was read as absent once the idle window had passed.`);
+      expect(afterIdle).not.toBe(warmed);
+      // The rewritten document is what a read past the idle window answers, which is the whole of the drop.
+      expect((afterIdle.state as { readonly version: number }).version).toBe(version + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("digests two documents alike exactly when the store would serialise them to the same bytes", () => {
+    // Change detection compares digests instead of serialised bytes, so the two must agree on every form a stored
+    // document can take: a digest that differed where the bytes agree would rewrite an unchanged document, and one
+    // that agreed where the bytes differ would drop a real edit.
+    const pairs: readonly (readonly [unknown, unknown])[] = [
+      [
+        { partnerId: "partner-1", giftCount: 2 },
+        { giftCount: 2, partnerId: "partner-1" },
+      ],
+      [{ giftCount: 2, note: undefined }, { giftCount: 2 }],
+      [{ total: -0 }, { total: 0 }],
+      [{ gifts: ["gift-1", undefined, "gift-3"] }, { gifts: ["gift-1", null, "gift-3"] }],
+      [
+        { "givenName 😀": "𝒳avier", 𝒳avier: 1 },
+        { 𝒳avier: 1, "givenName 😀": "𝒳avier" },
+      ],
+      [{ giftCount: 2 }, { giftCount: 3 }],
+      [{ giftCount: "2" }, { giftCount: 2 }],
+    ];
+    for (const [left, right] of pairs) {
+      expect(canonicalDigest(left) === canonicalDigest(right)).toBe(serialiseJson(left) === serialiseJson(right));
+    }
+    // A value with no JSON form has no bytes to compare, and the digest refuses it with the refusal the writer uses
+    // rather than answering "unchanged" for two documents that could never be written.
+    const circular: Record<string, unknown> = { version: 1 };
+    circular.self = circular;
+    expect(() => canonicalDigest(circular)).toThrow(TypeError);
+    expect(() => canonicalDigest({ version: 1, unrepresentable: 1n })).toThrow(TypeError);
+    // A pair whose bytes differ keeps two digests, so the loop above is not passing on one constant answer.
+    expect(canonicalDigest({ giftCount: 2 })).not.toBe(canonicalDigest({ giftCount: "2" }));
   });
 });
 

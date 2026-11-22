@@ -1,6 +1,6 @@
 "use client";
 import { CalendarXIcon, EyeOffIcon, HourglassIcon } from "lucide-react";
-import { useId, type ReactElement } from "react";
+import { useId, useMemo, type ReactElement } from "react";
 import { ChartFigure, type ChartPoint, type ChartSeries, type ChartTable } from "@/components/chart-figure";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { COACHING_STATUS, statusBadgeProps, VALUE_STATE_WORDS, valueStateWord, type StatusTone } from "@/components/status-badge";
@@ -179,8 +179,8 @@ function figureText(figure: TargetProgressFigure): string {
   return carriesNumber ? `${String(value)} (${word.label})` : word.label;
 }
 function TargetProgressChart({ body, locale }: { readonly body: Extract<ModuleBody, { readonly kind: "target-progress" }>; readonly locale: string }): ReactElement {
-  const points: readonly ChartPoint[] = body.figures.map((figure) => ({ bucket: figure.periodLabel, value: figure.value, state: figure.valueState }));
-  const series: readonly ChartSeries[] = [{ key: "recorded", label: TARGETS_SERIES_LABEL, points }];
+  const points = useMemo<readonly ChartPoint[]>(() => body.figures.map((figure) => ({ bucket: figure.periodLabel, value: figure.value, state: figure.valueState })), [body]);
+  const series = useMemo<readonly ChartSeries[]>(() => [{ key: "recorded", label: TARGETS_SERIES_LABEL, points }], [points]);
   const table: ChartTable = {
     caption: TARGETS_TABLE_CAPTION,
     columns: [

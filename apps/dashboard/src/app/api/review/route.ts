@@ -21,6 +21,7 @@ const MESSAGES = {
   revisionRequired: "Name the exact revision to freeze, as revisionId, so the candidate is the revision the reviewer was shown rather than whatever is drafted now.",
   noteBlank: "Say what the note states, or leave it out: an empty note states nothing.",
   noteTooLong: `Keep the note to ${REVIEW_NOTE_MAX_CHARS} characters, which is all a review record holds.`,
+  notifyModeRefused: "Choose how this submission asks for its release, as publish-only or publish-and-notify: the submission records that mode and a reviewer cannot change it afterwards.",
   bodyNotJson: "Send the review decision as a JSON object carrying operationId, scope, expectedRevision and payload.",
 } as const;
 function recordReferenceSchema(required: string): z.ZodType<string> {
@@ -31,8 +32,10 @@ const variantIdSchema = recordReferenceSchema(MESSAGES.variantRequired);
 const revisionIdSchema = recordReferenceSchema(MESSAGES.revisionRequired);
 const candidateIdSchema = recordReferenceSchema(MESSAGES.candidateRequired);
 const noteSchema = z.string({ error: MESSAGES.noteBlank }).trim().min(1, MESSAGES.noteBlank).max(REVIEW_NOTE_MAX_CHARS, MESSAGES.noteTooLong);
+// The release mode the review record keeps, which the submission fixes. The pair is the service's own closed set, and any other value is refused here by name rather than dropped, so a mode the record would not hold never reaches it.
+const notifyModeSchema = z.enum(["publish-only", "publish-and-notify"], { error: MESSAGES.notifyModeRefused });
 // One payload schema per step, mirroring the fields that step's own service schema declares. Each is strict, because Zod strips an unknown key by default: a field this path does not admit has to be refused by name, not dropped, so no answer can carry a decision the review record does not hold.
-const submitForReviewPayloadSchema = z.strictObject({ operation: z.literal("submitForReview"), variantId: variantIdSchema, revisionId: revisionIdSchema });
+const submitForReviewPayloadSchema = z.strictObject({ operation: z.literal("submitForReview"), variantId: variantIdSchema, revisionId: revisionIdSchema, notifyMode: notifyModeSchema.optional() });
 const approveCandidatePayloadSchema = z.strictObject({ operation: z.literal("approveCandidate"), candidateId: candidateIdSchema });
 // The reviewer's own words, bounded once and shared by the two steps that carry them.
 const reviewerNoteFields = { candidateId: candidateIdSchema, note: noteSchema.optional(), reason: noteSchema.optional() } as const;

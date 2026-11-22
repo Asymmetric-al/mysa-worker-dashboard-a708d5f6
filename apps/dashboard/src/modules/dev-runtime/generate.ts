@@ -266,7 +266,7 @@ async function persistWorkload(sessionId: string, workload: WorkloadDocument): P
     existing = undefined;
   }
   if (existing === undefined) return void (await resetSession(sessionId, { ...seedSessionDocuments(sessionId), workload }));
-  await transact(sessionId, (draft) => {
+  await transact(sessionId, ["workload"], (draft) => {
     draft.workload = workload;
   });
 }

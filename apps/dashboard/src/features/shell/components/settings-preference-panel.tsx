@@ -6,11 +6,16 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/components/ui/native-select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
-import { VIEWER_APPEARANCES, canResolveTimeZone, useViewerPreferences, type ViewerAppearance } from "./viewer-preferences-provider";
+import { PUBLISHING_PREFERENCES, VIEWER_APPEARANCES, canResolveTimeZone, useViewerPreferences, type PublishingPreference, type ViewerAppearance } from "./viewer-preferences-provider";
 const APPEARANCE_COPY: Record<ViewerAppearance, { readonly label: string; readonly description: string }> = {
   system: { label: "Match your device", description: "Follows your operating system's light or dark setting while this page is open." },
   light: { label: "Light", description: "Always shows this application's light colour scheme." },
   dark: { label: "Dark", description: "Always shows this application's dark colour scheme." },
+};
+/** The two release modes a new submission can ask for, in the words this control shows: the value each option carries is the provider's own, so this map cannot offer a mode the preference does not hold. */
+const PUBLISHING_COPY: Record<PublishingPreference, { readonly label: string; readonly description: string }> = {
+  "publish-only": { label: "Publish only", description: "Releases the exact frozen candidate and submits no notice." },
+  "publish-and-notify": { label: "Publish and notify now", description: "Asks for one simulated notice for each eligible recipient." },
 };
 const LANGUAGE_SHORTLIST: readonly string[] = ["en-GB", "en-US", "en-AU", "en-CA", "fr-FR", "de-DE", "es-ES", "pt-BR", "ar", "he", "ko-KR", "ja-JP"];
 const TIME_ZONE_SHORTLIST: readonly string[] =
@@ -117,8 +122,11 @@ const usePlatformReady = (): boolean =>
 function isAppearanceChoice(value: string): value is ViewerAppearance {
   return (VIEWER_APPEARANCES as readonly string[]).includes(value);
 }
+function isPublishingChoice(value: string): value is PublishingPreference {
+  return (PUBLISHING_PREFERENCES as readonly string[]).includes(value);
+}
 export function SettingsPreferencePanel() {
-  const { appearance, interfaceLocale, displayTimeZone, setAppearance, setInterfaceLocale, setDisplayTimeZone } = useViewerPreferences();
+  const { appearance, interfaceLocale, displayTimeZone, publishing, setAppearance, setInterfaceLocale, setDisplayTimeZone, setPublishingPreference } = useViewerPreferences();
   const platformReady = usePlatformReady();
   const [announcement, setAnnouncement] = useState("");
   const idPrefix = useId();
@@ -128,6 +136,8 @@ export function SettingsPreferencePanel() {
   const languageHintId = `${idPrefix}-language-hint`;
   const timeZoneId = `${idPrefix}-time-zone`;
   const timeZoneHintId = `${idPrefix}-time-zone-hint`;
+  const publishingLegendId = `${idPrefix}-publishing-legend`;
+  const publishingHintId = `${idPrefix}-publishing-hint`;
   const languages = useMemo(() => languageChoices(interfaceLocale), [interfaceLocale]);
   const mode = useMemo(() => timeZoneMode(platformReady), [platformReady]);
   const zones = useMemo(() => timeZoneChoices(displayTimeZone, mode), [displayTimeZone, mode]);
@@ -164,123 +174,173 @@ export function SettingsPreferencePanel() {
   const announceTypedTimeZone = useCallback(() => {
     setAnnouncement(`Display time zone: ${displayTimeZone}. This browser cannot check time-zone names, so the name is used exactly as typed.`);
   }, [displayTimeZone]);
+  const choosePublishing = useCallback(
+    (next: string) => {
+      if (next === publishing || !isPublishingChoice(next)) {
+        return;
+      }
+      setPublishingPreference(next);
+      setAnnouncement(`Publishing preference: ${PUBLISHING_COPY[next].label}`);
+    },
+    [publishing, setPublishingPreference],
+  );
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          <h2>Appearance, language and time zone</h2>
-        </CardTitle>
-        <CardDescription>These are presentation preferences for this browser. They change only how dates, times and numbers are formatted on screen — not which records you can see, the ministry you are working in, or anything a partner receives.</CardDescription>
-      </CardHeader>
-      <CardContent className="flex min-w-0 flex-col gap-6">
-        <fieldset className="min-w-0">
-          <legend id={appearanceLegendId} className="mb-3 text-sm font-medium">
-            Appearance
-          </legend>
-          <div className="flex flex-col gap-3">
-            <p id={appearanceHintId} className="text-sm text-muted-foreground">
-              Applies to this browser only and takes effect immediately. “Match your device” follows your operating system while this page is open.
-            </p>
-            <RadioGroup value={appearance} onValueChange={chooseAppearance} aria-labelledby={appearanceLegendId} aria-describedby={appearanceHintId}>
-              {VIEWER_APPEARANCES.map((choice) => {
-                const copy = APPEARANCE_COPY[choice];
-                const choiceId = `${idPrefix}-appearance-${choice}-choice`;
-                const descriptionId = `${idPrefix}-appearance-${choice}-description`;
-                return (
-                  <label key={choice} htmlFor={choiceId} className="flex min-h-6 items-start gap-3 py-1">
-                    <RadioGroupItem id={choiceId} value={choice} aria-label={copy.label} aria-describedby={descriptionId} className="mt-0.5" />
-                    <span className="flex min-w-0 flex-col gap-0.5">
-                      <span className="text-sm font-medium">{copy.label}</span>
-                      <span id={descriptionId} className="text-sm text-muted-foreground">
-                        {copy.description}
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Appearance, language and time zone</h2>
+          </CardTitle>
+          <CardDescription>Appearance, language and time zone are presentation preferences for this browser. They change only how dates, times and numbers are formatted on screen — not which records you can see, the ministry you are working in, or anything a partner receives.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex min-w-0 flex-col gap-6">
+          <fieldset className="min-w-0">
+            <legend id={appearanceLegendId} className="mb-3 text-sm font-medium">
+              Appearance
+            </legend>
+            <div className="flex flex-col gap-3">
+              <p id={appearanceHintId} className="text-sm text-muted-foreground">
+                Applies to this browser only and takes effect immediately. “Match your device” follows your operating system while this page is open.
+              </p>
+              <RadioGroup value={appearance} onValueChange={chooseAppearance} aria-labelledby={appearanceLegendId} aria-describedby={appearanceHintId}>
+                {VIEWER_APPEARANCES.map((choice) => {
+                  const copy = APPEARANCE_COPY[choice];
+                  const choiceId = `${idPrefix}-appearance-${choice}-choice`;
+                  const descriptionId = `${idPrefix}-appearance-${choice}-description`;
+                  return (
+                    <label key={choice} htmlFor={choiceId} className="flex min-h-6 items-start gap-3 py-1">
+                      <RadioGroupItem id={choiceId} value={choice} aria-label={copy.label} aria-describedby={descriptionId} className="mt-0.5" />
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="text-sm font-medium">{copy.label}</span>
+                        <span id={descriptionId} className="text-sm text-muted-foreground">
+                          {copy.description}
+                        </span>
                       </span>
-                    </span>
-                  </label>
-                );
-              })}
-            </RadioGroup>
-          </div>
-        </fieldset>
-        <Separator />
-        <div className="flex min-w-0 flex-col gap-5">
-          <div className="flex min-w-0 flex-col gap-2">
-            <Label htmlFor={languageId}>Interface language</Label>
-            <NativeSelect
-              id={languageId}
-              className="w-full"
-              value={interfaceLocale}
-              aria-describedby={languageHintId}
-              onChange={(event) => {
-                chooseLanguage(event.target.value);
-              }}
-            >
-              {languages.map((tag) => (
-                <NativeSelectOption key={tag} value={tag}>
-                  {languageLabel(tag)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-            <p id={languageHintId} className="text-sm text-muted-foreground">
-              Sets the language of the dates, times and numbers you see here. It does not translate the interface, and it is never the language of something sent to a partner.
-            </p>
-          </div>
-          <div className="flex min-w-0 flex-col gap-2">
-            <Label htmlFor={timeZoneId}>Display time zone</Label>
-            {mode === "text" ? (
-              <Input
-                id={timeZoneId}
-                type="text"
-                value={displayTimeZone}
-                placeholder="Europe/Berlin"
-                autoComplete="off"
-                spellCheck={false}
-                aria-describedby={timeZoneHintId}
-                onChange={(event) => {
-                  setDisplayTimeZone(event.currentTarget.value);
-                }}
-                onBlur={() => {
-                  announceTypedTimeZone();
-                }}
-              />
-            ) : (
+                    </label>
+                  );
+                })}
+              </RadioGroup>
+            </div>
+          </fieldset>
+          <Separator />
+          <div className="flex min-w-0 flex-col gap-5">
+            <div className="flex min-w-0 flex-col gap-2">
+              <Label htmlFor={languageId}>Interface language</Label>
               <NativeSelect
-                id={timeZoneId}
+                id={languageId}
                 className="w-full"
-                value={displayTimeZone}
-                aria-describedby={timeZoneHintId}
+                value={interfaceLocale}
+                aria-describedby={languageHintId}
                 onChange={(event) => {
-                  chooseTimeZone(event.target.value);
+                  chooseLanguage(event.target.value);
                 }}
               >
-                <NativeSelectOptGroup label="Common time zones">
-                  {zones.common.map((zone) => (
-                    <NativeSelectOption key={zone} value={zone}>
-                      {zone}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelectOptGroup>
-                {zones.all.length > 0 ? (
-                  <NativeSelectOptGroup label="All time zones">
-                    {zones.all.map((zone) => (
+                {languages.map((tag) => (
+                  <NativeSelectOption key={tag} value={tag}>
+                    {languageLabel(tag)}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+              <p id={languageHintId} className="text-sm text-muted-foreground">
+                Sets the language of the dates, times and numbers you see here. It does not translate the interface, and it is never the language of something sent to a partner.
+              </p>
+            </div>
+            <div className="flex min-w-0 flex-col gap-2">
+              <Label htmlFor={timeZoneId}>Display time zone</Label>
+              {mode === "text" ? (
+                <Input
+                  id={timeZoneId}
+                  type="text"
+                  value={displayTimeZone}
+                  placeholder="Europe/Berlin"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-describedby={timeZoneHintId}
+                  onChange={(event) => {
+                    setDisplayTimeZone(event.currentTarget.value);
+                  }}
+                  onBlur={() => {
+                    announceTypedTimeZone();
+                  }}
+                />
+              ) : (
+                <NativeSelect
+                  id={timeZoneId}
+                  className="w-full"
+                  value={displayTimeZone}
+                  aria-describedby={timeZoneHintId}
+                  onChange={(event) => {
+                    chooseTimeZone(event.target.value);
+                  }}
+                >
+                  <NativeSelectOptGroup label="Common time zones">
+                    {zones.common.map((zone) => (
                       <NativeSelectOption key={zone} value={zone}>
                         {zone}
                       </NativeSelectOption>
                     ))}
                   </NativeSelectOptGroup>
-                ) : null}
-              </NativeSelect>
-            )}
-            <p id={timeZoneHintId} className="text-sm text-muted-foreground">
-              Changes how dates and times are shown to you. A date with no time of day — a due date, an introduction date — keeps the day the service recorded, and no deadline moves.
-              {mode === "text" ? " This browser cannot list or check time-zone names, so the name you type is used exactly as typed, for example Europe/Berlin." : ""}
-            </p>
+                  {zones.all.length > 0 ? (
+                    <NativeSelectOptGroup label="All time zones">
+                      {zones.all.map((zone) => (
+                        <NativeSelectOption key={zone} value={zone}>
+                          {zone}
+                        </NativeSelectOption>
+                      ))}
+                    </NativeSelectOptGroup>
+                  ) : null}
+                </NativeSelect>
+              )}
+              <p id={timeZoneHintId} className="text-sm text-muted-foreground">
+                Changes how dates and times are shown to you. A date with no time of day — a due date, an introduction date — keeps the day the service recorded, and no deadline moves.
+                {mode === "text" ? " This browser cannot list or check time-zone names, so the name you type is used exactly as typed, for example Europe/Berlin." : ""}
+              </p>
+            </div>
           </div>
-        </div>
-        {/* One polite region for all three controls: every change is announced once, in words, so the
-            applied value never depends on a checked mark or a colour alone. */}
-        <output className="sr-only">{announcement}</output>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>Publishing</h2>
+          </CardTitle>
+          <CardDescription>The release mode a new submission of an edition asks for. Nothing on this screen publishes, notifies or sends anything.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex min-w-0 flex-col gap-6">
+          <fieldset className="min-w-0">
+            <legend id={publishingLegendId} className="mb-3 text-sm font-medium">
+              Publishing preferences
+            </legend>
+            <div className="flex flex-col gap-3">
+              <p id={publishingHintId} className="text-sm text-muted-foreground">
+                This sets the release mode a new submission asks for. The submission records that mode, a reviewer cannot change it, and this control sends nothing itself: the release and the notice are separate deliberate steps.
+              </p>
+              <RadioGroup value={publishing} onValueChange={choosePublishing} aria-labelledby={publishingLegendId} aria-describedby={publishingHintId}>
+                {PUBLISHING_PREFERENCES.map((choice) => {
+                  const copy = PUBLISHING_COPY[choice];
+                  const choiceId = `${idPrefix}-publishing-${choice}-choice`;
+                  const descriptionId = `${idPrefix}-publishing-${choice}-description`;
+                  return (
+                    <label key={choice} htmlFor={choiceId} className="flex min-h-6 items-start gap-3 py-1">
+                      <RadioGroupItem id={choiceId} value={choice} aria-label={copy.label} aria-describedby={descriptionId} className="mt-0.5" />
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="text-sm font-medium">{copy.label}</span>
+                        <span id={descriptionId} className="text-sm text-muted-foreground">
+                          {copy.description}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </RadioGroup>
+            </div>
+          </fieldset>
+        </CardContent>
+      </Card>
+      {/* One polite region for all four controls, placed after both cards: every change is announced once, in words, so
+          the applied value never depends on a checked mark or a colour alone. */}
+      <output className="sr-only">{announcement}</output>
+    </>
   );
 }
 export default SettingsPreferencePanel;

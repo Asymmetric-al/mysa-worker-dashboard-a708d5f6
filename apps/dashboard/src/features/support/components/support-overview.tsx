@@ -349,7 +349,8 @@ function CommittedSupport({ envelope, locale }: { readonly envelope: SupportOver
   );
 }
 function MonthlyHistory({ report, locale }: { readonly report: SupportOverviewReport; readonly locale: string }): ReactElement {
-  const partitions = chartPartitions(report.series);
+  const partitions = useMemo(() => chartPartitions(report.series), [report]);
+  const series = useMemo(() => partitions.map(chartSeriesOf), [partitions]);
   const partitionText = partitions.length === 0 ? "no currency stated" : partitions.map((partition) => partition.currency).join(", ");
   return (
     <ChartFigure
@@ -357,7 +358,7 @@ function MonthlyHistory({ report, locale }: { readonly report: SupportOverviewRe
       summary={fillTemplate(CHART_CAPTIONS.summaryOpener, { series: SERIES_LABEL, currency: partitionText, takeaway: CHART_TAKEAWAY })}
       caption={CHART_ALT}
       kind="bar"
-      series={partitions.map(chartSeriesOf)}
+      series={series}
       units={fillTemplate(CHART_CAPTIONS.unit, { currency: partitionText })}
       coverage={report.snapshot.coverage}
       asOf={fillTemplate(CHART_CAPTIONS.asOf, { asOf: report.snapshot.asOf })}

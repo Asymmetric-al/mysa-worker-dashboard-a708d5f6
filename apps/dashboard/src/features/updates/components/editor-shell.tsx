@@ -52,7 +52,7 @@ import { useDraftRecovery, type DraftPlacementRef } from "../hooks/use-draft-rec
 import { useDraft, useRelease, useVariantOverview, type UpdateDraftData, type UpdateDraftReadResult, type UpdateReleaseReadResult, type VariantOverviewData, type VariantOverviewReadResult } from "../hooks/use-update-queries";
 import { useRegisterMediaAsset, useRemovePlacement, useSubmitForReview } from "../hooks/use-update-mutations";
 import type { MediaPlacement as PlacementDescriptor } from "../schemas/media";
-import type { SubmitForReviewPayload } from "../schemas/draft";
+import type { SubmissionNotifyMode, SubmitForReviewPayload } from "../schemas/draft";
 import { AutosaveStatus } from "./autosave-status";
 import { CompareWithRelease } from "./compare-with-release";
 
@@ -112,6 +112,12 @@ const REVIEW_CONFIRM = "Submit for review";
 const REVIEW_DESCRIPTION = "Submitting freezes the exact revision named here as the candidate one review step answers. Editing the draft afterwards changes nothing about what was submitted.";
 
 const REVIEW_CONSEQUENCE = REVIEW_ROUND_NOTE.approvalIsPerVariant + " " + REVIEW_ROUND_NOTE.furtherRoundIsNewSubmission;
+
+/** The release mode the submission records, in the words the review step states it with: the release does the work, and a mode sends no notice by itself. */
+const REVIEW_MODE_SENTENCES: Readonly<Record<SubmissionNotifyMode, string>> = {
+  "publish-only": "It asks for Publish only, so its release publishes the exact frozen candidate and submits no notice.",
+  "publish-and-notify": "It asks for Publish and notify now, so its release also asks for one simulated notice for each eligible recipient.",
+};
 
 const REVIEW_UNAVAILABLE_TITLE = "This draft cannot be submitted yet";
 
@@ -659,6 +665,12 @@ export interface EditorShellProps {
   readonly initialDataUpdatedAt?: number;
   /** The heading level this surface nests beneath. */
   readonly headingLevel?: EditorHeadingLevel;
+  /**
+   * The release mode a new submission asks for, as the browser's publishing preference states it. Left out, the submission
+   * states no mode and the service's own default — publish only — applies, so a caller that knows no preference submits
+   * exactly what this surface submitted before the preference existed.
+   */
+  readonly publishing?: SubmissionNotifyMode;
   readonly className?: string;
 }
 
@@ -671,7 +683,7 @@ export interface EditorShellProps {
  * switch controls, and the release read feeds the comparison with the last release; neither is allowed to stop the
  * worker writing, so a failure there is stated in its own place and the editor stays usable.
  */
-export function EditorShell({ scope, updateId, variantId, initialDraft, initialRelease, initialOverview, initialDataUpdatedAt, headingLevel = 2, className }: EditorShellProps): ReactElement {
+export function EditorShell({ scope, updateId, variantId, initialDraft, initialRelease, initialOverview, initialDataUpdatedAt, headingLevel = 2, publishing, className }: EditorShellProps): ReactElement {
   const titleId = useId();
   const router = useRouter();
   const submitForReview = useSubmitForReview();
@@ -726,7 +738,7 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
 
   const submitAction = envelope.actions.find((action) => action.name === SUBMIT_ACTION);
   const submissionOffered = draftRevisionId !== undefined && (submitAction === undefined || submitAction.available);
-  const submitPayload: SubmitForReviewPayload | null = draftRevisionId === undefined ? null : { variantId, revisionId: draftRevisionId };
+  const submitPayload: SubmitForReviewPayload | null = draftRevisionId === undefined ? null : { variantId, revisionId: draftRevisionId, ...(publishing === undefined ? {} : { notifyMode: publishing }) };
 
   let comparison: ReactElement;
   const releaseResult = release.result;
@@ -821,6 +833,7 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
           description={
             <span className="flex min-w-0 flex-col gap-1">
               <span>{REVIEW_DESCRIPTION}</span>
+              {publishing === undefined ? null : <span>{REVIEW_MODE_SENTENCES[publishing]}</span>}
               <span className="min-w-0 wrap-anywhere">
                 Revision <bdi className="mono-identifier">{submitPayload.revisionId}</bdi>
                 {draftChecksum === "" ? null : (

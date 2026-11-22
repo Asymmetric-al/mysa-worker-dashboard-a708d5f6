@@ -221,7 +221,7 @@ type MetaUpdate = (meta: SessionMetaDocument) => Result<SessionMetaDocument, Ses
 async function updateSessionMeta(sessionId: string, update: MetaUpdate): Promise<Result<SessionMetaDocument, SessionControlRefusal>> {
   if (!isSafeSessionId(sessionId)) return err(refuse("unknown-session", `${describeValue(sessionId)} cannot name a session: a session id is 1 to 64 characters drawn only from A-Z, a-z, 0-9, underscore and hyphen.`));
   try {
-    return await transact<Result<SessionMetaDocument, SessionControlRefusal>>(sessionId, (draft) => {
+    return await transact<Result<SessionMetaDocument, SessionControlRefusal>>(sessionId, ["meta"], (draft) => {
       const stored = parseSessionMeta(draft.meta);
       if (!stored.ok) return err(stored.error);
       const next = update(stored.value);

@@ -3,13 +3,17 @@
  * media placements"). This file composes and decides nothing: `EditorShell` arranges the prose, the media placements, the
  * save state and the single review step over the family's own reads, so no lifecycle word, revision, language, count or
  * permission is stated here. One service read seeds that surface, and every other answer is an honest notice.
+ *
+ * The editing surface itself is `./editor-surface`, the one client bridge of this route: a feature may not reach another
+ * feature's provider, so that module states the browser's publishing preference — the release mode a new submission asks
+ * for — and hands it to `EditorShell`, which this file neither holds nor edits.
  */
 import type { ReactElement } from "react";
 
 import StateNotice from "@/components/state-notice";
-import { EditorShell } from "@/features/updates/components/editor-shell";
 import { assertNever } from "@/lib/result";
 import { reads, type DenialReason } from "@/modules/data-service";
+import EditorSurface from "./editor-surface";
 
 // ---------------------------------------------------------------------------------------------
 // The read's own shapes, taken from its signature rather than restated
@@ -28,23 +32,11 @@ type UnavailableSource = Extract<DraftResult, { readonly kind: "unavailable" }>[
 // Fixed values
 // ---------------------------------------------------------------------------------------------
 
-/** The route's one `h1`: it names the job, never a record, so the same heading is honest whatever the read answers. */
-const SURFACE_TITLE = "Update edition";
-
-/**
- * The level of the editor's own heading. `EditorShell` states its heading beneath this page's `h1` and can only compose
- * levels 2 to 4, so the page supplies the level that nests under the heading it owns.
- */
-const EDITOR_HEADING_LEVEL = 2;
-
 /** The level a notice occupies when it stands in for the editor, so every answer from this route still states one `h1`. */
 const NOTICE_HEADING_LEVEL = 1;
 
-const TITLE_ID = "update-edition-heading";
-
+/** The page column a notice stands in, which `./editor-surface` states for the editor too, so a notice occupies the place the editor would. */
 const ROOT_CLASS = "flex min-w-0 flex-col gap-6 text-start";
-
-const TITLE_CLASS = "text-2xl font-semibold text-pretty wrap-anywhere";
 
 /** A refusal: the condition, and nothing about what may or may not exist, because the answer is identical either way. */
 const DENIED_TITLE = "This edition is not available in this session";
@@ -95,37 +87,11 @@ function refusedNotice(description: string): ReactElement {
 /**
  * The envelope as the browser handler would have answered with. The read states a revision's creation instant as a
  * `Temporal.Instant`, and a Client Component accepts only plain values, so this hands over the exact bytes the transport
- * carries: the same facts the render already holds, re-encoded into nothing.
+ * carries: the same facts the render already holds, re-encoded into nothing. `./editor-surface` receives the result.
  */
 function wireFormOf(envelope: DraftEnvelope): DraftEnvelope {
   const wire: unknown = JSON.parse(JSON.stringify(envelope));
   return wire as DraftEnvelope;
-}
-
-// ---------------------------------------------------------------------------------------------
-// The surface the envelope arm composes
-// ---------------------------------------------------------------------------------------------
-
-interface EditorSurfaceProps {
-  /** The Update the address names, which every edition link inside the editor is built from. */
-  readonly updateId: string;
-  readonly envelope: DraftEnvelope;
-}
-
-/**
- * The route's one `h1` and the family's editor beneath it, authored in the edition's own direction. The envelope is the
- * only copy of the draft anywhere in this request: `EditorShell` seeds its own reads from it and takes every save,
- * conflict and recovery path from the hooks it owns, so nothing here holds a second copy that could drift from it.
- */
-function EditorSurface({ updateId, envelope }: EditorSurfaceProps): ReactElement {
-  return (
-    <section aria-labelledby={TITLE_ID} dir={envelope.data.locale.direction} className={ROOT_CLASS}>
-      <h1 id={TITLE_ID} className={TITLE_CLASS}>
-        {SURFACE_TITLE}
-      </h1>
-      <EditorShell scope={envelope.scope} updateId={updateId} variantId={envelope.data.variant.variantId} initialDraft={{ kind: "envelope", envelope: wireFormOf(envelope) }} headingLevel={EDITOR_HEADING_LEVEL} />
-    </section>
-  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -150,7 +116,7 @@ export default async function CommunicationVariantEditorPage({ params }: { param
       if (data.variant.documentId !== updateId) {
         return <div className={ROOT_CLASS}>{refusedNotice(UNPAIRED_ADDRESS_DESCRIPTION)}</div>;
       }
-      return <EditorSurface updateId={updateId} envelope={result.envelope} />;
+      return <EditorSurface updateId={updateId} envelope={wireFormOf(result.envelope)} />;
     }
     case "denied":
       // The closed reason code is the whole answer: no title, no revision, no placement and no hint that an edition exists.

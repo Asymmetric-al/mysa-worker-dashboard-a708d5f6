@@ -1,17 +1,18 @@
 /**
- * `/settings` — the five things Settings carries: appearance, interface language, display time zone, source status and the
- * destructive development reset.
+ * `/settings` — what Settings carries: appearance, interface language, display time zone, the publishing preference,
+ * source status and the destructive development reset.
  *
- * AAP 0.10.1's Shell/Home/Settings/Help family states those five, and AAP 0.11.1 makes every route under `src/app` a
- * composition that holds no business logic. So this file reads through the one data service, hands the plain results to the
- * shell family's panels, and owns no state, no mutation call and no control of its own.
+ * AAP 0.1.1's Shell/Home/Settings/Help row states that Settings hold appearance, locale, display time zone and publishing
+ * preferences; AAP 0.10.1's family states the source status and the reset beside them; and AAP 0.11.1 makes every route
+ * under `src/app` a composition that holds no business logic. So this file reads through the one data service, hands the
+ * plain results to the shell family's panels, and owns no state, no mutation call and no control of its own.
  *
  * Two boundaries are settled here rather than at a control:
  *
- * - There is no publishing preference. Whether a publication also notifies readers is chosen at publish time in the
- *   Communication family, where the release and its notification are one deliberate act, so a stored default here would be
- *   a second place for that choice and a setting no read or mutation in the service declares. No control, no stored flag and
- *   no settings record exist for it.
+ * - The publishing preference is held in this browser by the shell's own preference owner, beside appearance, language and
+ *   display time zone, and it decides only the release mode a new submission of an edition asks for. The submission
+ *   records that mode, a reviewer cannot change it, and choosing one here sends nothing: the release and its notification
+ *   are separate deliberate steps. No read or mutation in the service stores it, and no control or state is declared here.
  * - The reset is a development control, not a preference. It is offered only where the development read answered an
  *   envelope, because that answer is the one signal that this session carries a runtime able to perform it.
  */
@@ -74,7 +75,7 @@ function ResetSection({ development }: { readonly development: DevelopmentResult
   }
 }
 // The route
-/** The Settings screen: appearance, interface language, display time zone, source status and the destructive development reset. */
+/** The Settings screen: appearance, interface language, display time zone, the publishing preference, source status and the destructive development reset. */
 export default async function SettingsPage(): Promise<ReactElement> {
   // Both answers describe the same request and neither depends on the other, so they are read together rather than one after the other.
   const [sourceStatus, development] = await Promise.all([reads.context.readAdmissionState(), reads.dev.readDevState()]);

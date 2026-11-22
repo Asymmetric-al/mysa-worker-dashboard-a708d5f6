@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { logger, type LogScope } from "@/lib/logger";
 import { failureFor, failurePlanOfDocument } from "@/modules/dev-runtime/failures";
-import type { SessionDocuments } from "@/modules/store/paths";
+import type { SessionDocumentKey, SessionDocuments } from "@/modules/store/paths";
 import { transact } from "@/modules/store/repository";
 import { now } from "@/modules/time/clock";
 import { assertScopeUnder, assertScopeUnchangedUnder, outcomeOfRefusal, resolveSession, type ResolvedSession, type ScopeAuthority, type ScopeDecision, type SessionResolution } from "./authorize";
@@ -177,6 +177,8 @@ async function sessionForMutation(sessionId: string, operationId: string): Promi
 }
 const ABSENT_TARGET: CurrentTarget = { kind: "absent" };
 const LEDGER_UNAVAILABLE_GUIDANCE = "Reload the page to read this session's operation ledger again; if it stays unreadable, reset the development seed, which rebuilds the session documents deterministically.";
+// No named mutation writes the generated workload document: every accepted attempt writes the ledger, the development mutations are the only ones that reach the meta document, and a record change is always a wholesale rewrite of the state document. A transaction declares exactly those three documents, so it never copies or serialises the dataset a mutation cannot touch.
+const MUTATION_WRITE_SET = ["meta", "operations", "state"] as const satisfies readonly SessionDocumentKey[];
 export async function runMutation<P, R extends MutationResult>(plan: MutationPlan<P, R>): Promise<MutationOutcome> {
   const startedAt = performance.now();
   const operationId = attemptIdOf(plan.input);
@@ -209,7 +211,7 @@ export async function runMutation<P, R extends MutationResult>(plan: MutationPla
   // 3 to 7 happen inside one transaction, so the check, the effect and the ledger entry are one write under that session's lock.
   const intent = intentHash(input.scope, input.payload);
   try {
-    const outcome = await transact<MutationOutcome>(plan.sessionId, async (docs) => {
+    const outcome = await transact<MutationOutcome>(plan.sessionId, MUTATION_WRITE_SET, async (docs) => {
       // The stored plan is read through the development runtime's one reader and consulted by this mutation's own name; the read layer asks the same reader and the same `failureFor`, so no second mechanism decides whether a failure is armed.
       const armed = failureFor(failurePlanOfDocument(docs.meta), "mutation", plan.name);
       if (armed === "denied") {

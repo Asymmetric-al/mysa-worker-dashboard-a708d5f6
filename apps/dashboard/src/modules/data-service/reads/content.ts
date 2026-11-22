@@ -705,6 +705,8 @@ export type ContentCandidateData =
         // The same answer as a record, with the principal, the instant and the note; `null` exactly when `decision` is, so a surface states the record instead of inferring it from the word.
         readonly recorded: CandidateDecisionRecord | null;
         readonly approvalScope: "this-variant-only";
+        // The release mode the submission fixed, which the reviewer reads and cannot change; `null` only where no review record exists for the candidate, so a surface never states a mode the store does not hold.
+        readonly notifyMode: SubmittedReleaseMode | null;
       };
       readonly recordRevision: string;
     }
@@ -796,7 +798,7 @@ export async function readCandidate(input: { readonly variantId: string; readonl
     placements,
     diff,
     headRelease: head === undefined ? null : releaseOf(head, checksums),
-    review: { steps: REVIEW_STEPS_PER_CANDIDATE, round: REVIEW_STEPS_PER_CANDIDATE, decision, recorded: recordedDecisionRecordOf(reviewRecord), approvalScope: "this-variant-only" },
+    review: { steps: REVIEW_STEPS_PER_CANDIDATE, round: REVIEW_STEPS_PER_CANDIDATE, decision, recorded: recordedDecisionRecordOf(reviewRecord), approvalScope: "this-variant-only", notifyMode: reviewRecord?.notifyMode ?? null },
     recordRevision: record.revision,
   };
   const envelope = contentEnvelope({

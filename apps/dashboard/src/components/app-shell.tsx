@@ -123,11 +123,11 @@ function useStickyOffset(headerRef: RefObject<HTMLElement | null>): void {
     };
   }, [headerRef]);
 }
-const SKIP_LINK_CLASS = cn("absolute start-3 top-3 z-50 -translate-y-[200%] rounded-md border border-border bg-background", "px-3 py-2 text-sm font-medium text-foreground", "focus:translate-y-0 focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--ring)]");
-/** The shell: the chrome every route renders inside. */
+const SKIP_LINK_CLASS = cn("absolute start-3 top-3 z-50 -translate-y-[200%] rounded-md border border-border bg-background", "px-3 py-2 text-sm font-medium text-foreground", "focus:translate-y-0 focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--ring)]", "print:hidden");
+/** The shell: the chrome every route renders inside. Every region of it is screen-only, so print media keeps the page's own content and drops the skip link, the navigation column, the sticky banner and the development region from paper. `Sidebar` puts a caller's class on its fixed inner container alone, which leaves the column's width-reserving wrapper in the printed layout, so the provider hides that whole column from print. */
 export function AppShell({ className, ...chrome }: AppShellProps): ReactElement {
   return (
-    <SidebarProvider className={cn("relative", className)}>
+    <SidebarProvider className={cn("relative", "print:[&>[data-slot=sidebar]]:hidden", className)}>
       <a href={`#${MAIN_CONTENT_ID}`} className={SKIP_LINK_CLASS}>
         {SKIP_LINK_LABEL}
       </a>
@@ -204,14 +204,14 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
       {/* The shell's only live region: polite, empty until a switch is accepted, and it never repeats the person's own words — an outcome sentence is all it says, once. */}
       <output className="sr-only">{announcement}</output>
       {/* One navigation model for both layouts: below the compact breakpoint `Sidebar` renders this same content in its own sheet, so every route stays reachable at 320 CSS px, and the resting side comes from the layout's direction. */}
-      <Sidebar side={direction === "rtl" ? "right" : "left"} collapsible="icon">
+      <Sidebar side={direction === "rtl" ? "right" : "left"} collapsible="icon" className="print:hidden">
         <SidebarContent>
           <SidebarNav currentPath={currentPath} onNavigate={closeCompactNav} />
         </SidebarContent>
       </Sidebar>
       <div className="flex min-w-0 flex-1 flex-col">
         {/* The banner region: sticky so the active context and the Development data label stay in view, and measured by `useStickyOffset` so a focused cell is never obscured (WCAG 2.4.11); `min-w-0` keeps a long ministry name from pushing the page sideways at 320 CSS px. */}
-        <header ref={headerRef} className="sticky top-0 z-20 flex flex-col gap-1.5 border-b border-border bg-background/95 px-3 py-2 backdrop-blur">
+        <header ref={headerRef} className="sticky top-0 z-20 flex flex-col gap-1.5 border-b border-border bg-background/95 px-3 py-2 backdrop-blur print:hidden">
           <div className="flex min-w-0 items-center gap-2">
             <SidebarTrigger />
             <ContextIndicator scope={scope} admissions={visibleAdmissions} onRequestContext={requestContext} showSupportSubject={showsFinancialFacts(currentPath)} lastResult={pending === null ? lastSwitch : null} className="min-w-0 flex-1" />
@@ -231,7 +231,7 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
         </main>
         {/* The development region, in a secondary landmark: the label and the landmark belong to the shell, and the composition placed here belongs to the layer above, which is also the only layer that may reach a feature. */}
         {showsDevelopmentRegion ? (
-          <aside aria-label={DEVELOPMENT_REGION_LABEL} className="border-t border-border bg-muted/30">
+          <aside aria-label={DEVELOPMENT_REGION_LABEL} className="border-t border-border bg-muted/30 print:hidden">
             <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-3 py-4">{developmentRegion}</div>
           </aside>
         ) : null}

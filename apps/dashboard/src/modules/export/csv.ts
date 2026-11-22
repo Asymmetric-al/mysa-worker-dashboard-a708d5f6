@@ -23,7 +23,12 @@ export const countCellText = (count: number, state: ValueState): string => (stat
 export type SnapshotFactField = "grain" | "basis" | "currency" | "period_from" | "period_to" | "period_state" | "coverage_from" | "coverage_to" | "coverage_state" | "snapshot_as_of" | "snapshot_query" | "row_total" | "amount_unit" | "neutralisation" | "page";
 /** One fact about the snapshot a file states: its machine field name, the label a printed statement shows, and the value exactly as the metadata record carries it. */
 export type SnapshotFact = { readonly field: SnapshotFactField; readonly label: string; readonly value: string };
-type CsvRowContext = { readonly index: number; readonly row: ReportRow; readonly stateOf: (path: string) => ValueState };
+type CsvRowContext = {
+  readonly row: ReportRow;
+  readonly stateOf: (path: string) => ValueState;
+  /** The amount column's two cells: computed once for this row and shared by both of the column's writers. */
+  readonly amountFields: () => readonly [string, string];
+};
 type CsvCellWriter = (context: CsvRowContext) => string;
 type CsvColumn<Field extends keyof ReportRow> = { readonly field: Field; readonly cells: readonly (readonly [header: string, write: CsvCellWriter])[] };
 type RowField = keyof ReportRow;
@@ -46,6 +51,11 @@ function amountCells(amount: Money, state: ValueState): readonly [string, string
   if (state === "value" || state === "zero") return [formatMinor(amount, state, MACHINE_LOCALE).plain, String(amount.minorUnits)];
   const marker = VALUE_STATE_TEXT[state];
   return [marker, marker];
+}
+/** One row's context, whose amount cells are formatted on first use and handed to the column's second writer from there. */
+function rowContextOf(row: ReportRow, index: number, stateOf: (path: string) => ValueState): CsvRowContext {
+  let cells: readonly [string, string] | undefined;
+  return { row, stateOf, amountFields: () => (cells ??= amountCells(row.amount, stateOf(rowAmountPath(index)))) };
 }
 function currencyOf(result: ReportResult): string {
   const codes = result.snapshot.currencies;
@@ -91,8 +101,8 @@ const COLUMN_TABLE = [
     field: "amount",
     cells: [
       ["currency", (context: CsvRowContext) => context.row.amount.currency],
-      ["amount", (context: CsvRowContext) => amountCells(context.row.amount, context.stateOf(rowAmountPath(context.index)))[0]],
-      ["amount_minor_units", (context: CsvRowContext) => amountCells(context.row.amount, context.stateOf(rowAmountPath(context.index)))[1]],
+      ["amount", (context: CsvRowContext) => context.amountFields()[0]],
+      ["amount_minor_units", (context: CsvRowContext) => context.amountFields()[1]],
     ],
   },
   { field: "originalGiftOn", cells: [["original_gift_on", (context: CsvRowContext) => giftDateText(context.row)]] },
@@ -149,7 +159,8 @@ export function toCsv(result: ReportResult): string {
   for (const fact of snapshotMetadata(result)) records.push(record([CSV_META_FIELD, fact.field, fact.value]));
   records.push(record(CSV_COLUMN_HEADERS));
   result.rows.forEach((row, index) => {
-    const cells = CSV_COLUMNS.flatMap((column) => column.cells.map(([, write]) => write({ index, row, stateOf })));
+    const context = rowContextOf(row, index, stateOf);
+    const cells = CSV_COLUMNS.flatMap((column) => column.cells.map(([, write]) => write(context)));
     records.push(record(cells));
   });
   return records.join("");

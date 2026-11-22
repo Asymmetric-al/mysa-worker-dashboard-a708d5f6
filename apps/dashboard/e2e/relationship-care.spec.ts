@@ -543,7 +543,7 @@ test("a person and a church are found by searching the whole roster and filterin
   const contactMethods = section(page, CONTACT_METHODS_SECTION);
   await expect(contactMethods.getByText(RESTRICTED_PERSON_EMAIL, { exact: true }), "The method this record permits is offered.").toBeVisible();
   await expect(contactMethods.getByText(PERMITTED_METHOD), "The offered method states that this session may use it.").toBeVisible();
-  expect(await contactMethods.getByText(RESTRICTED_NUMBER).count(), "The refused number is not on the record at all: the refusal is a restriction recorded beside it, not a disabled control or a blank field.").toBe(0);
+  await expect(contactMethods.getByText(RESTRICTED_NUMBER), "The refused number is not on the record at all: the refusal is a restriction recorded beside it, not a disabled control or a blank field.").toHaveCount(0);
   await expect(section(page, ACTIVITY_SECTION).getByText(NO_INTERACTION_RECORDED, { exact: true }), "A record nothing has happened on says so, rather than reading as an outage or as a zero.").toBeVisible();
 
   // -----------------------------------------------------------------------------------------
@@ -581,8 +581,8 @@ test("a person and a church are found by searching the whole roster and filterin
   await openRecord(page, CHURCH);
 
   await expect(page.getByText(CHURCH_KIND, { exact: true }).first(), "The church states its own record kind, which is a record kind no person shares.").toBeVisible();
-  expect(await page.getByText(CARE_PERSON_PRIVATE_NOTE, { exact: false }).count(), "The person's private note appears nowhere on the church's record: a shared name, address or email address is not a join between two records.").toBe(0);
-  expect(await page.getByText(SEEDED_INTERACTION_OUTCOME, { exact: false }).count(), "What was recorded against the person is not recorded against the church, because activity belongs to the record it was written on.").toBe(0);
+  await expect(page.getByText(CARE_PERSON_PRIVATE_NOTE, { exact: false }), "The person's private note appears nowhere on the church's record: a shared name, address or email address is not a join between two records.").toHaveCount(0);
+  await expect(page.getByText(SEEDED_INTERACTION_OUTCOME, { exact: false }), "What was recorded against the person is not recorded against the church, because activity belongs to the record it was written on.").toHaveCount(0);
   await expect(section(page, ACTIVITY_SECTION).getByText(NO_INTERACTION_RECORDED, { exact: true }), "The church's own record states that nothing has been recorded on it yet.").toBeVisible();
 
   await page.goBack();

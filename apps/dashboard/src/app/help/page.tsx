@@ -138,7 +138,7 @@ const JOURNEYS: Readonly<Record<JourneyId, Journey>> = {
     steps: [
       {
         title: "Compose from the two catalogues",
-        body: "Two guided catalogues offer eight admitted section types between them, and a section offers " + "only admitted presentation choices: normal or emphasized treatment, single-column or " + "two-column image and text, start or centre alignment, and cover or contain image fit.",
+        body: "Each of the two guided catalogues offers all eight admitted section types, and a section offers " + "only admitted presentation choices: normal or emphasized treatment, single-column or " + "two-column image and text, start or centre alignment, and cover or contain image fit.",
         boundary: "There is no arbitrary styling, script, embed or per-page theme: a presentation value outside the admitted set is rejected rather than styled.",
         links: [{ href: "/pages", label: "the Pages catalogue" }],
       },

@@ -8,6 +8,10 @@ import { isOutcome } from "@/modules/data-service/outcome";
 const REPORT_ENDPOINT = "/api/report";
 const REPORT_JOB = "report";
 const SNAPSHOT_ID_PREFIX = "report-";
+// How long an answered report is held fresh, the same window the overview, commitments and goal reads use on the
+// snapshot this report shares. Everything that changes the answer arrives as a new query: a filter or a year is a
+// new key, an accepted goal save invalidates the `report` job, and a failed read keeps the frame's own retry.
+const REPORT_STALE_TIME_MS = 30_000;
 // What the service answers with, derived from the service
 export type ReportReadResult = Awaited<ReturnType<typeof reads.support.readReport>>;
 export type ReportEnvelope = Extract<ReportReadResult, { readonly kind: "envelope" }>["envelope"];
@@ -123,5 +127,5 @@ async function requestReport(query: ReportRequestQuery, snapshotId: string, sign
 export function useReport({ scope, query, snapshotId, enabled }: UseReportOptions): UseQueryResult<ReportReadResult, Error> {
   const identity = snapshotId ?? reportSnapshotId(query);
   const key: ReportQueryKey = [...scopeKey(scope), REPORT_JOB, query];
-  return useQuery({ queryKey: key, queryFn: ({ signal }) => requestReport(query, identity, signal), enabled });
+  return useQuery({ queryKey: key, queryFn: ({ signal }) => requestReport(query, identity, signal), enabled, staleTime: REPORT_STALE_TIME_MS, refetchOnWindowFocus: false });
 }

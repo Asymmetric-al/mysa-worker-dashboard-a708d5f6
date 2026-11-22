@@ -249,6 +249,7 @@ function knownExponentsOf(codes: readonly string[]): Record<string, number> {
   }
   return exponents;
 }
+// One validated copy per workload document object: the store hands back a fresh object whenever any of the session's files change, so an entry is released with the document version it belongs to and one entry per anchor is the whole of the bound.
 const validatedWorkloads = new WeakMap<object, ReturnType<typeof workloadDocumentSchema.safeParse>>();
 function validatedWorkload(value: unknown): ReturnType<typeof workloadDocumentSchema.safeParse> {
   if (typeof value !== "object" || value === null) return workloadDocumentSchema.safeParse(value);
@@ -258,20 +259,16 @@ function validatedWorkload(value: unknown): ReturnType<typeof workloadDocumentSc
   validatedWorkloads.set(value, parsed);
   return parsed;
 }
-const storedProjections = new WeakMap<object, Map<string, SupportProjection>>();
+// The latest projection of one workload document, replaced rather than accumulated: a goal save moves the record's revision and a development clock change moves the read's as-of instant, and either answer of the projection is the only one a read of that document version may come back with.
+const storedProjections = new WeakMap<object, { readonly key: string; readonly projection: SupportProjection }>();
 function projectionFor(input: Parameters<typeof projectionOf>[0]): SupportProjection {
   const anchor = input.workload;
   if (anchor === undefined) return projectionOf(input);
-  let remembered = storedProjections.get(anchor);
-  if (remembered === undefined) {
-    remembered = new Map<string, SupportProjection>();
-    storedProjections.set(anchor, remembered);
-  }
   const key = `${input.record.supportSubjectId}|${input.record.revision}|${input.asOf}`;
-  const cached = remembered.get(key);
-  if (cached !== undefined) return cached;
+  const remembered = storedProjections.get(anchor);
+  if (remembered !== undefined && remembered.key === key) return remembered.projection;
   const built = projectionOf(input);
-  remembered.set(key, built);
+  storedProjections.set(anchor, { key, projection: built });
   return built;
 }
 function projectionOf(input: { readonly record: SupportProjectionRecord; readonly gifts: readonly GiftRowRecord[]; readonly workloadGifts: readonly GiftRowRecord[]; readonly workload: WorkloadDocument | undefined; readonly commitments: readonly CommitmentRowRecord[]; readonly asOf: string }): SupportProjection {

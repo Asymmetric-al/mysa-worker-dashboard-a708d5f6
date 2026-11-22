@@ -1,7 +1,7 @@
 /** Proves the money module's exact-integer contract at the currency boundary: an amount whose currency has no exponent is refused by every operation the module header names — negation included. */
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ValueState } from "@/modules/data-service/envelope";
 import { MoneyOperationError, addMinor, allocateMinor, compareMinor, minorUnitsOf, negateMinor, sumMinor, type MinorUnits, type Money, type MoneyOperationErrorCode } from "@/modules/money/amount";
 import { UNKNOWN_CURRENCY, exponentOf, isKnownCurrency } from "@/modules/money/currency";
@@ -209,6 +209,60 @@ describe("rendering an amount through its currency exponent", () => {
     expect(formatMinor(money("USD", 1250), "value", "en-US").plain).toBe("12.50 USD");
     expect(formatMinor(money("KWD", 1250), "value", "en-US").plain).toBe("1.250 KWD");
     expect(formatMinor(money("JPY", 1250), "value", "en-US").plain).toBe("1250 JPY");
+  });
+});
+describe("a locale's separators", () => {
+  const SEPARATOR_LOCALE = "de-DE";
+  const SEPARATOR_BATCH_SIZE = 50;
+  function separatorBatch(): readonly Rendering[] {
+    return Array.from({ length: SEPARATOR_BATCH_SIZE }, (_, position) => formatMinor(money("USD", 123_456 + position), "value", SEPARATOR_LOCALE));
+  }
+  it("are computed once for the locale and reused by every later amount in it", () => {
+    const constructions = vi.spyOn(Intl, "NumberFormat");
+    try {
+      const first = separatorBatch();
+      // Fifty renderings, one construction: the separators are a function of the locale tag alone, so a second
+      // construction for the same tag would be work whose answer the formatter already holds.
+      expect(constructions).toHaveBeenCalledTimes(1);
+      const second = separatorBatch();
+      expect(second).toEqual(first);
+      expect(constructions).toHaveBeenCalledTimes(1);
+      // The reused separators are the locale's own and not the fallback the formatter keeps for a tag it cannot
+      // use, which is what makes holding them worth anything.
+      expect(first[0]?.text).toBe("1.234,56 USD");
+    } finally {
+      constructions.mockRestore();
+    }
+  });
+  it("are held for a bounded number of tags, so a stream of tags cannot grow module state for ever", () => {
+    const firstTag = "x-money01";
+    const original = formatMinor(money("USD", 123_456), "value", firstTag);
+    // More distinct tags than the separators are kept for, then the first one again: the bound empties the cache, so
+    // that tag is computed once more instead of being answered from a map that would otherwise grow without limit.
+    const tags = Array.from({ length: 40 }, (_, position) => `x-money${String(position + 2).padStart(2, "0")}`);
+    const constructions = vi.spyOn(Intl, "NumberFormat");
+    try {
+      for (const tag of tags) formatMinor(money("USD", 123_456), "value", tag);
+      expect(constructions.mock.calls.length).toBeGreaterThan(0);
+      const beforeRepeat = constructions.mock.calls.length;
+      const repeated = formatMinor(money("USD", 123_456), "value", firstTag);
+      expect(constructions.mock.calls.length).toBe(beforeRepeat + 1);
+      expect(repeated).toEqual(original);
+    } finally {
+      constructions.mockRestore();
+    }
+  });
+  it("keep the fallback for a malformed tag, on every rendering of it, instead of throwing", () => {
+    const malformed = "en_US";
+    const render = (): Rendering => formatMinor(money("USD", 123_456), "value", malformed);
+    expect(render).not.toThrow();
+    const first = render();
+    const second = render();
+    expect(second).toEqual(first);
+    // The fallback groups with a comma every three digits and puts a dot before the cents, and the plain form
+    // carries no grouping at all, so a refused tag renders exactly as it did before the separators were held.
+    expect(first.text).toBe("1,234.56 USD");
+    expect(first.plain).toBe("1234.56 USD");
   });
 });
 describe("every value state renders as its own fact", () => {

@@ -1,5 +1,5 @@
 "use client";
-import { useId, type ChangeEvent, type ReactElement } from "react";
+import { useId, useMemo, type ChangeEvent, type ReactElement } from "react";
 import ChartFigure, { type ChartKind, type ChartPoint, type ChartSeries, type ChartTable } from "@/components/chart-figure";
 import StateNotice from "@/components/state-notice";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,13 +74,14 @@ type CurrencyHistoryFigureProps = { readonly partition: CurrencyPartition; reado
 function CurrencyHistoryFigure({ partition, year, coverage, asOf, locale }: CurrencyHistoryFigureProps): ReactElement {
   const yearText = String(year);
   const currency = partition.currency;
+  const series = useMemo<readonly ChartSeries[]>(() => [chartSeries(partition, locale)], [partition, locale]);
   return (
     <ChartFigure
       title={fillTemplate(TITLE_TEMPLATE, { year: yearText, currency })}
       summary={fillTemplate(CHART_CAPTIONS.summaryOpener, { series: SERIES_LABEL, currency, takeaway: fillTemplate(TAKEAWAY_TEMPLATE, { year: yearText }) })}
       caption={fillTemplate("{shape} of {series} in {currency} for each month of {year}.", { shape: CHART_SHAPE_WORD[CHART_KIND], series: SERIES_LABEL, currency, year: yearText })}
       kind={CHART_KIND}
-      series={[chartSeries(partition, locale)]}
+      series={series}
       units={fillTemplate(CHART_CAPTIONS.unit, { currency })}
       coverage={coverage}
       asOf={fillTemplate(CHART_CAPTIONS.asOf, { asOf })}
@@ -92,7 +93,7 @@ function CurrencyHistoryFigure({ partition, year, coverage, asOf, locale }: Curr
 /** The year's monthly history, one figure per currency, with the year control the report is asked for. */
 export function ReportHistory({ result, locale, dir, year, years, onSelectYear, className }: ReportHistoryProps): ReactElement {
   const selectId = useId();
-  const partitions = currencyPartitions(result.series);
+  const partitions = useMemo(() => currencyPartitions(result.series), [result]);
   const handleYearChange = (event: ChangeEvent<HTMLSelectElement>): void => {
     const chosen = years.find((candidate) => String(candidate) === event.currentTarget.value);
     if (chosen !== undefined) onSelectYear(chosen);

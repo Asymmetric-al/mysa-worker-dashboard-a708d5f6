@@ -390,12 +390,14 @@ function RepeatReasons({ reasons }: { readonly reasons: readonly RepeatReason[] 
   );
 }
 
-/** One named part of a dedupe identity: the name is announced, and the value beside it is isolated. */
-function DedupePart({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement {
+/** One named part of a dedupe identity: the name is announced, and the value beside it is isolated. The slot names the value, so it is addressed by what it is rather than by the order the parts are listed in. */
+function DedupePart({ slot, label, children }: { readonly slot: string; readonly label: string; readonly children: ReactNode }): ReactElement {
   return (
     <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0">{children}</dd>
+      <dd data-slot={slot} className="min-w-0">
+        {children}
+      </dd>
     </div>
   );
 }
@@ -404,17 +406,17 @@ function DedupePart({ label, children }: { readonly label: string; readonly chil
 function DedupeFigure({ identity }: { readonly identity: DedupeIdentity }): ReactElement {
   return (
     <dl data-slot="delivery-dedupe-identity" className="flex min-w-0 flex-col gap-0.5 text-xs">
-      <DedupePart label="Publisher">
+      <DedupePart slot="delivery-dedupe-publisher" label="Publisher">
         <ReferenceFigure reference={identity.publisherId} />
       </DedupePart>
-      <DedupePart label="Purpose">
+      <DedupePart slot="delivery-dedupe-purpose" label="Purpose">
         <span>{PURPOSE_LABELS[identity.purpose]} </span>
         <ReferenceFigure reference={identity.purpose} />
       </DedupePart>
-      <DedupePart label="Recipient">
+      <DedupePart slot="delivery-dedupe-recipient" label="Recipient">
         <ReferenceFigure reference={identity.recipientId} />
       </DedupePart>
-      <DedupePart label="Intent">
+      <DedupePart slot="delivery-dedupe-intent" label="Intent">
         <ReferenceFigure reference={identity.intentId} />
       </DedupePart>
     </dl>

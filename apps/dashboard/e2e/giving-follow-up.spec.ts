@@ -310,7 +310,7 @@ async function readEnvelope(request: APIRequestContext, path: string): Promise<R
 
 /** The open work the task read states: every task the seeded world holds, narrowed to the ones still open. */
 async function readOpenWork(request: APIRequestContext): Promise<OpenWork> {
-  const envelope = await readEnvelope(request, `/api/tasks?displayTimeZone=${encodeURIComponent(DISPLAY_TIME_ZONE)}&filter=${TASK_LIST}&pageSize=${TASK_PAGE_SIZE}`);
+  const envelope = await readEnvelope(request, `/api/tasks?displayTimeZone=${encodeURIComponent(DISPLAY_TIME_ZONE)}&list=${TASK_LIST}&pageSize=${TASK_PAGE_SIZE}`);
   const data = recordOf(envelope["data"], "The task read's data");
   const tasks = arrayOf(data["tasks"], "The task read's tasks");
   const open: TaskRow[] = [];

@@ -3,16 +3,21 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExte
 export type ViewerAppearance = "system" | "light" | "dark";
 /** The closed set of appearance choices, exported so a settings surface renders the same three options this module validates against rather than a second hand-written list. */
 export const VIEWER_APPEARANCES = ["system", "light", "dark"] as const satisfies readonly ViewerAppearance[];
+/** The closed set of release modes a new submission asks for, exported so the settings control renders the same two options this module validates against rather than a second hand-written list. The service records the same pair on the review of a submission and defaults to the first. */
+export const PUBLISHING_PREFERENCES = ["publish-only", "publish-and-notify"] as const;
+export type PublishingPreference = (typeof PUBLISHING_PREFERENCES)[number];
 export const DEFAULT_INTERFACE_LOCALE = "en-GB";
 export interface ViewerPreferences {
   readonly appearance: ViewerAppearance;
   readonly interfaceLocale: string;
   readonly displayTimeZone: string;
+  readonly publishing: PublishingPreference;
 }
 export interface ViewerPreferencesContextValue extends ViewerPreferences {
   setAppearance: (appearance: ViewerAppearance) => void;
   setInterfaceLocale: (interfaceLocale: string) => void;
   setDisplayTimeZone: (displayTimeZone: string) => void;
+  setPublishingPreference: (next: PublishingPreference) => void;
 }
 export interface ViewerPreferencesProviderProps {
   children: ReactNode;
@@ -21,11 +26,12 @@ const STORAGE_KEY = "dashboard:viewer-preferences";
 const DARK_CLASS = "dark";
 const DARK_MEDIA_QUERY = "(prefers-color-scheme: dark)";
 const PRE_HYDRATION_TIME_ZONE = "UTC";
-const DEFAULT_PREFERENCES: ViewerPreferences = { appearance: "system", interfaceLocale: DEFAULT_INTERFACE_LOCALE, displayTimeZone: PRE_HYDRATION_TIME_ZONE };
+const DEFAULT_PREFERENCES: ViewerPreferences = { appearance: "system", interfaceLocale: DEFAULT_INTERFACE_LOCALE, displayTimeZone: PRE_HYDRATION_TIME_ZONE, publishing: "publish-only" };
 interface ViewerPreferencesPatch {
   appearance?: ViewerAppearance;
   interfaceLocale?: string;
   displayTimeZone?: string;
+  publishing?: PublishingPreference;
 }
 let currentPreferences: ViewerPreferences = DEFAULT_PREFERENCES;
 const listeners = new Set<() => void>();
@@ -42,7 +48,7 @@ function readServerViewerPreferences(): ViewerPreferences {
   return DEFAULT_PREFERENCES;
 }
 function announceViewerPreferences(next: ViewerPreferences): boolean {
-  if (next.appearance === currentPreferences.appearance && next.interfaceLocale === currentPreferences.interfaceLocale && next.displayTimeZone === currentPreferences.displayTimeZone) {
+  if (next.appearance === currentPreferences.appearance && next.interfaceLocale === currentPreferences.interfaceLocale && next.displayTimeZone === currentPreferences.displayTimeZone && next.publishing === currentPreferences.publishing) {
     return false;
   }
   currentPreferences = next;
@@ -53,6 +59,9 @@ function announceViewerPreferences(next: ViewerPreferences): boolean {
 }
 function isViewerAppearance(value: string): value is ViewerAppearance {
   return (VIEWER_APPEARANCES as readonly string[]).includes(value);
+}
+function isPublishingPreference(value: string): value is PublishingPreference {
+  return (PUBLISHING_PREFERENCES as readonly string[]).includes(value);
 }
 /** Whether this platform can resolve an IANA zone at all: the one answer to that question, which the display-zone setter, the stored read and the settings panel all ask, so a platform without. */
 export function canResolveTimeZone(): boolean {
@@ -131,6 +140,9 @@ function readStoredPreferences(): ViewerPreferencesPatch {
         stored.displayTimeZone = timeZone;
       }
     }
+    if (typeof record.publishing === "string" && isPublishingPreference(record.publishing)) {
+      stored.publishing = record.publishing;
+    }
     return stored;
   } catch {
     return {};
@@ -150,21 +162,25 @@ function persistPreferences(preferences: ViewerPreferences): void {
 }
 function hydrateViewerPreferences(): void {
   const stored = readStoredPreferences();
-  announceViewerPreferences({ appearance: stored.appearance ?? DEFAULT_PREFERENCES.appearance, interfaceLocale: stored.interfaceLocale ?? DEFAULT_PREFERENCES.interfaceLocale, displayTimeZone: stored.displayTimeZone ?? browserTimeZone() });
+  announceViewerPreferences({ appearance: stored.appearance ?? DEFAULT_PREFERENCES.appearance, interfaceLocale: stored.interfaceLocale ?? DEFAULT_PREFERENCES.interfaceLocale, displayTimeZone: stored.displayTimeZone ?? browserTimeZone(), publishing: stored.publishing ?? DEFAULT_PREFERENCES.publishing });
 }
 function commitViewerPreferences(patch: ViewerPreferencesPatch): void {
-  const next: ViewerPreferences = { appearance: patch.appearance ?? currentPreferences.appearance, interfaceLocale: patch.interfaceLocale ?? currentPreferences.interfaceLocale, displayTimeZone: patch.displayTimeZone ?? currentPreferences.displayTimeZone };
+  const next: ViewerPreferences = { appearance: patch.appearance ?? currentPreferences.appearance, interfaceLocale: patch.interfaceLocale ?? currentPreferences.interfaceLocale, displayTimeZone: patch.displayTimeZone ?? currentPreferences.displayTimeZone, publishing: patch.publishing ?? currentPreferences.publishing };
   if (announceViewerPreferences(next)) {
     persistPreferences(next);
   }
 }
 const ViewerPreferencesContext = createContext<ViewerPreferencesContextValue | null>(null);
-/** Provides the viewer's appearance, interface locale and display time zone to the shell. */
+/**
+ * Provides the four preferences this browser holds to the shell: appearance, interface locale, display time zone and
+ * publishing. The publishing preference decides one thing — the release mode a new submission of an edition asks for. The
+ * submission records it, a reviewer cannot change it, and setting it sends no notice by itself.
+ */
 export function ViewerPreferencesProvider({ children }: ViewerPreferencesProviderProps) {
   const preferences = useSyncExternalStore(subscribeToViewerPreferences, readViewerPreferences, readServerViewerPreferences);
   // The browser-local key is read here, once the component is mounted on the client. The server
   // render and the hydration render both read the documented defaults, so their markup matches and
-  // the stored appearance, locale and zone take effect immediately afterwards.
+  // the stored appearance, locale, zone and publishing preference take effect immediately afterwards.
   useEffect(() => {
     hydrateViewerPreferences();
   }, []);
@@ -234,7 +250,15 @@ export function ViewerPreferencesProvider({ children }: ViewerPreferencesProvide
     }
     commitViewerPreferences({ displayTimeZone: timeZone });
   }, []);
-  const value = useMemo<ViewerPreferencesContextValue>(() => ({ appearance: preferences.appearance, interfaceLocale: preferences.interfaceLocale, displayTimeZone: preferences.displayTimeZone, setAppearance, setInterfaceLocale, setDisplayTimeZone }), [preferences, setAppearance, setInterfaceLocale, setDisplayTimeZone]);
+  // The publishing preference is one of a closed pair this module declares, so its setter takes the type rather than a
+  // string: a value from outside that pair is a compile error rather than a preference the submission would refuse.
+  const setPublishingPreference = useCallback((next: PublishingPreference) => {
+    commitViewerPreferences({ publishing: next });
+  }, []);
+  const value = useMemo<ViewerPreferencesContextValue>(
+    () => ({ appearance: preferences.appearance, interfaceLocale: preferences.interfaceLocale, displayTimeZone: preferences.displayTimeZone, publishing: preferences.publishing, setAppearance, setInterfaceLocale, setDisplayTimeZone, setPublishingPreference }),
+    [preferences, setAppearance, setInterfaceLocale, setDisplayTimeZone, setPublishingPreference],
+  );
   return <ViewerPreferencesContext.Provider value={value}>{children}</ViewerPreferencesContext.Provider>;
 }
 export function useViewerPreferences(): ViewerPreferencesContextValue {

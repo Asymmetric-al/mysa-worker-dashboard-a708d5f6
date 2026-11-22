@@ -1,6 +1,6 @@
 /** Whole-query agreement of the export: the integration half of success criterion 1, driven through the real store, the real service read and the real writers. */
 import { parse } from "csv-parse/sync";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { reads } from "@/modules/data-service";
 import type { SessionSource } from "@/modules/data-service/authorize";
 import { buildWorkload } from "@/modules/dev-runtime/generate";
@@ -20,6 +20,19 @@ const REFUSED_SESSION_ID = "it-export-parity-refused";
 const SESSION: SessionSource = { sessionId: SESSION_ID };
 const REFUSED_SESSION: SessionSource = { sessionId: REFUSED_SESSION_ID };
 const TIME_ZONE = "UTC";
+const formatCounters = vi.hoisted(() => ({ formatMinorCalls: 0 }));
+vi.mock("@/modules/money/format", async (importOriginal) => {
+  // Every assertion below reads the one formatter's real output; the wrapper only counts how many renderings the
+  // writer asks for, which is the cost the exporter pays per row.
+  const actual = await importOriginal<typeof import("@/modules/money/format")>();
+  return {
+    ...actual,
+    formatMinor: (...args: Parameters<typeof actual.formatMinor>) => {
+      formatCounters.formatMinorCalls += 1;
+      return actual.formatMinor(...args);
+    },
+  };
+});
 const CLOSED_PERIOD = { kind: "explicit", from: "2022-11-01", to: "2026-11-19" } as const;
 const RUNNING_PERIOD = { kind: "preset", preset: "this-month" } as const;
 const GAP_PERIOD = { kind: "explicit", from: "2024-01-01", to: "2024-03-31" } as const;
@@ -419,5 +432,22 @@ describe("whole-query export agreement (criterion 1)", () => {
     expect(refusedReport.kind).toBe("denied");
     if (refusedReport.kind !== "denied") throw new Error(`The refused principal's report answered "${refusedReport.kind}".`);
     expect(refusedReport.denied.reasonCode).toBe(refusedExport.denied.reasonCode);
+  });
+});
+describe("the exporter's formatting cost", () => {
+  it("formats each monetary row once and writes both amount columns from that one rendering", async () => {
+    const { data: result } = await reportEnvelope(EXPORT_REPORT_ID, { period: CLOSED_PERIOD, timeZone: TIME_ZONE });
+    formatCounters.formatMinorCalls = 0;
+    const parsed = parseExport(toCsv(result));
+    const markers = new Set<string>(Object.values(VALUE_STATE_TEXT));
+    const monetaryRows = parsed.rows.filter((row) => !markers.has(cell(row, "amount")));
+    expect(parsed.rows).toHaveLength(PAGE_SIZE_DEFAULT);
+    expect(monetaryRows.length).toBeGreaterThan(0);
+    // The amount column expands to two cells, and both are written from the one rendering the first of them asks
+    // for: a rendering per cell would ask for twice this count, which is the cost this case holds down.
+    expect(formatCounters.formatMinorCalls).toBe(monetaryRows.length);
+    for (const row of monetaryRows) {
+      expect(moneyOfCell(cell(row, "currency"), cell(row, "amount_minor_units"))).not.toBeNull();
+    }
   });
 });

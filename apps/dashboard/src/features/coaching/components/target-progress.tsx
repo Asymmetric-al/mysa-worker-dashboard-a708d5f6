@@ -1,5 +1,5 @@
 "use client";
-import type { ReactElement } from "react";
+import { useMemo, type ReactElement } from "react";
 import { ChartFigure, type ChartPoint, type ChartSeries, type ChartTable } from "@/components/chart-figure";
 import { StateNotice } from "@/components/state-notice";
 import { Badge } from "@/components/ui/badge";
@@ -93,8 +93,8 @@ function ProgressFigure({ progress, locale }: { readonly progress: Progress; rea
   const measureLabel = MEASURE_COPY[progress.measure].label;
   const measureNoun = measureLabel.toLowerCase();
   const quantity = String(progress.quantity);
-  const points: readonly ChartPoint[] = progress.recorded.map((period) => ({ bucket: period.periodLabel, value: period.value, state: period.valueState }));
-  const series: readonly ChartSeries[] = [{ key: progress.measure, label: measureLabel, points }];
+  const points = useMemo<readonly ChartPoint[]>(() => progress.recorded.map((period) => ({ bucket: period.periodLabel, value: period.value, state: period.valueState })), [progress]);
+  const series = useMemo<readonly ChartSeries[]>(() => [{ key: progress.measure, label: measureLabel, points }], [progress.measure, measureLabel, points]);
   const table: ChartTable = { caption: `${measureLabel} recorded in each period, against a target of ${quantity}.`, columns: TABLE_COLUMNS, rows: progress.recorded.map((period) => ({ period: period.periodLabel, dates: datesOf(period), recorded: recordedCell(period) })) };
   return (
     <ChartFigure

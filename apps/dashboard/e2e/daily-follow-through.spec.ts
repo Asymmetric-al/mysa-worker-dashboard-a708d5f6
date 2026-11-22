@@ -528,7 +528,7 @@ test("completing a task takes it out of Today, reopening returns it, a category 
   await expect(completion, "Completing a task is one accepted change, recorded in the row it changed.").toBeVisible();
   await expect(completion.locator('[data-slot="operation-result"][data-outcome="accepted"]'), "The receipt is the durable in-context result, not a toast.").toBeVisible();
   await expect(completion.getByRole("heading", { name: SAVED_HEADING })).toBeVisible();
-  expect(await page.getByText(COMPLETION_MEANS_NOTHING).count(), "The surface states what completing a task does not prove, beside the action that completes it.").toBeGreaterThan(0);
+  await expect(page.getByText(COMPLETION_MEANS_NOTHING).first(), "The surface states what completing a task does not prove, beside the action that completes it.").toBeVisible();
 
   const createdTask = taskNamed(await readTaskList(request, "all"), TODAY_TASK_TITLE);
   const createdActions = page.locator(`[data-slot="task-actions"][data-task-id="${createdTask.taskId}"]`);
@@ -602,7 +602,7 @@ test("completing a task takes it out of Today, reopening returns it, a category 
   await page.goto(`${PARTNER_ROUTE_PREFIX}/${LINKED_PARTNER}`);
   const activityAfter = page.getByRole("region", { name: ACTIVITY_SECTION });
   await expect(activityAfter).toBeVisible();
-  expect(await activityAfter.getByRole("listitem").count(), "Changing a task's category records no interaction, so the partner's activity is exactly what it was.").toBe(activityBefore);
+  await expect(activityAfter.getByRole("listitem"), "Changing a task's category records no interaction, so the partner's activity is exactly what it was.").toHaveCount(activityBefore);
   await expect(activityAfter.getByText(LINKED_TASK_TITLE), "A task is never listed as activity: only something that happened is.").toHaveCount(0);
 
   // -------------------------------------------------------------------------------------------

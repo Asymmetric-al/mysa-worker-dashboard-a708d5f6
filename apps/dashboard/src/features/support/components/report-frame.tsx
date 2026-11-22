@@ -2,7 +2,7 @@
 /** The frame every one of this application's four fixed reports renders inside. **One read, every artifact.** This file issues exactly one report read — `useReport`, once — and hands the … */
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, type ReactElement } from "react";
+import { useCallback, useMemo, type ReactElement } from "react";
 import StateNotice from "@/components/state-notice";
 import { refusalSummary } from "@/components/form-field";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -206,6 +206,14 @@ export function ReportFrame({ scope, reportId, query, initialEnvelope, locale, d
   // The envelope in force: the read's own answer whenever there is one, and the Server Component's
   // earlier read of the same query only while this read has neither answered nor failed.
   const envelope = answer === undefined ? (read.isError ? undefined : seededEnvelope(initialEnvelope, scope)) : answer.kind === "envelope" ? answer.envelope : undefined;
+  // The result an answered envelope carries, or `null` while no answer stands. The print model is a
+  // function of this object and the locale alone, so it is named here, above the branch below, because a
+  // hook cannot sit inside one arm of that branch.
+  const answeredResult = envelope === undefined ? null : envelope.data;
+  // The one print model of this result: built when the result or the locale changes and reused by every
+  // render in between, so a re-render for another reason — a filter keystroke in the parent included —
+  // no longer rebuilds every cell of every row. It is `null` exactly when no envelope stands.
+  const model = useMemo(() => (answeredResult === null ? null : printModel(answeredResult, { locale })), [answeredResult, locale]);
   const retry = {
     label: "Retry the read",
     onClick: (): void => {
@@ -240,7 +248,7 @@ export function ReportFrame({ scope, reportId, query, initialEnvelope, locale, d
   const description = REPORT_CATALOG[reportId].description;
   let content: ReactElement;
   let printed: ReactElement | null = null;
-  if (envelope === undefined) {
+  if (envelope === undefined || model === null) {
     if (answer !== undefined && answer.kind === "denied") {
       // A denial states no count, title or size, so nothing here hints at what the scope may not read.
       content = <StateNotice kind="denied" title={DENIED_TITLE} reasonCode={answer.denied.reasonCode} headingLevel={2} />;
@@ -257,8 +265,6 @@ export function ReportFrame({ scope, reportId, query, initialEnvelope, locale, d
     }
   } else {
     const result = envelope.data;
-    // The one print model of this result, built once and rendered once.
-    const model = printModel(result, { locale });
     // The snapshot facts every artifact states, taken from the read rather than derived here: the
     // per-currency partition and the period from the result, the coverage and the as-of instant from the
     // envelope, and the period state from the model the printed page reads.

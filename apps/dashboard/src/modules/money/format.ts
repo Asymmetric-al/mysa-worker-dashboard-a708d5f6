@@ -50,7 +50,22 @@ function formatAmount(amount: number, currency: string, valueState: AmountValueS
   const spoken = style === "machine" ? plainAmount : displayAmount;
   return { text: style === "machine" ? plain : `${displayAmount} ${currency}${marker}`, plain, accessibleLabel: `${spoken} ${currency}${marker}. ${stateClause(valueState)}` };
 }
+const SEPARATOR_CACHE_LIMIT = 32;
+// The separators are a pure function of the locale argument: one computed entry serves every later amount in that
+// locale, and nothing here captures an ambient locale or reads a default one, so a cache can never answer for a
+// different tag than the caller stated. The bound stops a generated or hostile tag from growing module state without
+// limit; at the limit the map is emptied before the new entry is stored, which costs a recomputation per locale still
+// in use and never a stale or wrong separator.
+const SEPARATOR_CACHE = new Map<string, LocaleSeparators>();
 function localeSeparators(locale: string): LocaleSeparators {
+  const cached = SEPARATOR_CACHE.get(locale);
+  if (cached !== undefined) return cached;
+  const computed = computeLocaleSeparators(locale);
+  if (SEPARATOR_CACHE.size >= SEPARATOR_CACHE_LIMIT) SEPARATOR_CACHE.clear();
+  SEPARATOR_CACHE.set(locale, computed);
+  return computed;
+}
+function computeLocaleSeparators(locale: string): LocaleSeparators {
   try {
     const probe = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     if (primaryLanguage(probe.resolvedOptions().locale) !== primaryLanguage(locale)) return FALLBACK_SEPARATORS;

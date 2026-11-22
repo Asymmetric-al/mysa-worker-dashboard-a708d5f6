@@ -311,6 +311,11 @@ function factValueOf(scope: Locator, label: string): Locator {
     .locator("xpath=following-sibling::dd[1]");
 }
 
+/** The recipient a row's dedupe identity names: the value's own slot, so the read does not depend on where the parts are listed. */
+function recipientOf(identity: Locator): Locator {
+  return identity.locator('[data-slot="delivery-dedupe-recipient"]');
+}
+
 /** The lifecycle word an edition's own status line states, as the state the shared vocabulary names. */
 function lifecycleOfCell(cell: Locator): Locator {
   return cell.locator('[data-slot="draft-status"]');
@@ -538,7 +543,7 @@ test("a release attempt reports one result per edition, and a sibling that canno
   const post = page.locator('[data-slot="receiving-post"]');
   await expect(post).toContainText(ARABIC_COPY.candidateOnly);
   await expect(post.getByText("Language served", { exact: false }).first()).toBeVisible();
-  expect(await post.locator('div[dir="rtl"][lang="ar"]').count()).toBeGreaterThan(0);
+  await expect(post.locator('div[dir="rtl"][lang="ar"]').first()).toBeVisible();
 });
 
 /** Opens the variant grid of the seeded Update and waits for the grid itself. */
@@ -765,15 +770,7 @@ test("one recorded notice gives every recipient one row and one pinned copy, and
     // The copy this recipient was pinned to is stated once and is a rendition, so it cannot drift with a later
     // change of audience or language.
     await expect(row).toContainText("rendition-");
-    recipients.push(
-      (
-        await identity
-          .locator("dt")
-          .filter({ hasText: /^Recipient$/u })
-          .locator("xpath=following-sibling::dd[1]")
-          .innerText()
-      ).trim(),
-    );
+    recipients.push((await recipientOf(identity).innerText()).trim());
   }
   // Four recipients, four rows: no person holds two rows, which is what one notice per recipient means here.
   expect(new Set(recipients).size).toBe(4);
@@ -790,14 +787,7 @@ test("one recorded notice gives every recipient one row and one pinned copy, and
   await expect(summary).toContainText(COPY.servedLabel);
 
   // The one recipient whose earlier submission definitely failed is the only one this notice could not reach.
-  const failedRecipient = (
-    await rows
-      .filter({ has: page.getByText("Failed", { exact: true }) })
-      .locator('[data-slot="delivery-dedupe-identity"] dt')
-      .filter({ hasText: /^Recipient$/u })
-      .locator("xpath=following-sibling::dd[1]")
-      .innerText()
-  ).trim();
+  const failedRecipient = (await recipientOf(rows.filter({ has: page.getByText("Failed", { exact: true }) }).locator('[data-slot="delivery-dedupe-identity"]')).innerText()).trim();
   expect(recipients).toContain(failedRecipient);
 
   // A deliberate notice for the French edition of the same Update. Nobody already covered may receive a second
@@ -808,14 +798,7 @@ test("one recorded notice gives every recipient one row and one pinned copy, and
   const frenchRows = frenchTable.locator("tbody tr");
   await expect(frenchRows).toHaveCount(1);
   await expect(frenchRows.first().locator('[data-slot="delivery-dedupe-identity"]')).toContainText(frenchIntent);
-  const servedAgain = (
-    await frenchRows
-      .first()
-      .locator('[data-slot="delivery-dedupe-identity"] dt')
-      .filter({ hasText: /^Recipient$/u })
-      .locator("xpath=following-sibling::dd[1]")
-      .innerText()
-  ).trim();
+  const servedAgain = (await recipientOf(frenchRows.first().locator('[data-slot="delivery-dedupe-identity"]')).innerText()).trim();
   expect(servedAgain).toBe(failedRecipient);
   // Everyone else is recorded as already holding a copy of this Update's notice, so a second language produced no
   // second message for them: the row count above is how many copies were made, not how many were eligible.

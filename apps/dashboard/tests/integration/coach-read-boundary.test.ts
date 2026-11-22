@@ -104,7 +104,7 @@ async function carryState(from: string, to: string): Promise<void> {
   const documents = await readSession(from);
   if (documents === undefined) throw new Error(`The store holds no session ${JSON.stringify(from)}, so the world there is not the one to carry.`);
   const state = structuredClone(documents.state);
-  await transact(to, (draft) => {
+  await transact(to, ["state"], (draft) => {
     draft.state = state;
   });
 }
