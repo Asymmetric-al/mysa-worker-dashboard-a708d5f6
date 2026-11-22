@@ -35,6 +35,8 @@ export const metadata: Metadata = { title: SURFACE_TITLE };
 const HEADING_ID = "receiving-preview-heading";
 const WRAPPER_CLASS = "flex min-w-0 flex-col gap-6 text-start";
 const H1_CLASS = "text-2xl font-semibold text-pretty wrap-anywhere";
+/** The interface locale the composed surface formats its counts in. The reading language the list serves is a separate value and travels in the address. */
+const INTERFACE_LOCALE = "en-GB";
 const LOCALE_PARAM = "locale";
 const PAGE_PARAM = "page";
 const PAGE_SIZE_PARAM = "pageSize";
@@ -105,7 +107,7 @@ export default async function ReceivingPreviewPage({ searchParams }: ReceivingPr
       <h1 id={HEADING_ID} className={H1_CLASS}>
         {SURFACE_TITLE}
       </h1>
-      <ReceivingList scope={scopeOf(result)} initialEnvelope={result} persona={personaOf(development)} params={query} />
+      <ReceivingList scope={scopeOf(result)} locale={INTERFACE_LOCALE} initialEnvelope={result} persona={personaOf(development)} params={query} />
     </section>
   );
 }

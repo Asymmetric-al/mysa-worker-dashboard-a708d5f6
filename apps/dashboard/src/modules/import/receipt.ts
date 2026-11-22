@@ -294,7 +294,12 @@ const NOT_FOUND_MESSAGE = "No receipt is stored under this import operation. Not
 const UNTRUSTWORTHY_TRAILER = "Nothing is reported as applied from it, so check the operation's recorded result before repeating any of this work.";
 const INTENT_PART_NOUNS: Readonly<Record<ImportReceiptIntentPart, string>> = { file: "file", mapping: "column mapping", "row-decisions": "row decisions" };
 const isJsonRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value);
-function canonicalJson(value: unknown): string {
+/**
+ * One value in a canonical form, independent of the order its members were built in, so two records assembled by
+ * different paths compare equal when they say the same thing. Exported because the import mutation decides with
+ * this same comparison whether a repeated proposal of one file would change anything.
+ */
+export function canonicalJson(value: unknown): string {
   if (value === null || typeof value === "boolean" || typeof value === "number") return JSON.stringify(value);
   if (typeof value === "string") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(",")}]`;

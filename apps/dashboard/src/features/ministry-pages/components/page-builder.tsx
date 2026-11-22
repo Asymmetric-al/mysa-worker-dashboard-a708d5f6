@@ -435,6 +435,7 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
   const openingLocale = openingLocaleOf(page, locales);
   const outlineHeadingId = useId();
   const fieldsHeadingId = useId();
+  const previewHeadingId = useId();
   const controlsHeadingId = useId();
   // The whole of the local state: which edition, which section, which pane, and which editions a release covers.
   const [selection, setSelection] = useState<BuilderSelection>({ locale: openingLocale, sectionId: null, pane: "outline", releaseVariantIds: [] });
@@ -629,7 +630,10 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
                 <SectionFields key={`${selectedSection.sectionId}:${signatureOf(selectedSection)}`} section={selectedSection} variantId={draftVariantId} expectedRevision={draftExpectedRevision} direction={direction} scope={scope} documentId={documentId} />
               )}
             </section>
-            <section data-pane="preview" className={paneClass("preview", selection.pane)}>
+            <section data-pane="preview" aria-labelledby={previewHeadingId} className={paneClass("preview", selection.pane)}>
+              <h2 id={previewHeadingId} className={HEADING_CLASS}>
+                {copy.builder.preview}
+              </h2>
               {activeLocale === "" ? null : (
                 <div className="flex min-w-0 flex-col gap-1">
                   <Link href={editionPreviewPathOf(documentId, activeLocale)} className={PREVIEW_LINK_CLASS}>
@@ -638,7 +642,7 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
                   <p className={NOTE_CLASS}>{copy.builder.openEditionPreviewNote}</p>
                 </div>
               )}
-              {previewView === undefined ? <StateNotice kind="loading" headingLevel={2} title={PREVIEW_LOADING_TITLE} description={PREVIEW_LOADING_DESCRIPTION} /> : <PagePreviewFrame layout="builder" preview={previewView} givingBinding={givingView?.data} />}
+              {previewView === undefined ? <StateNotice kind="loading" headingLevel={3} title={PREVIEW_LOADING_TITLE} description={PREVIEW_LOADING_DESCRIPTION} /> : <PagePreviewFrame layout="builder" preview={previewView} givingBinding={givingView?.data} />}
             </section>
           </div>
         </div>

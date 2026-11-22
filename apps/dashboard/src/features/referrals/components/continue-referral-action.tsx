@@ -31,8 +31,16 @@ const REFERRAL_DETAIL_ROUTE = "/partners/referrals";
 type ReferralDetailReadResult = Awaited<ReturnType<typeof reads.referrals.readReferral>>;
 type ReferralDetailEnvelope = Extract<ReferralDetailReadResult, { readonly kind: "envelope" }>["envelope"];
 type ReferralDetailView = Extract<ReferralDetailEnvelope["data"], { readonly view: "detail" }>;
-/** The cycle this action acts on: its identity and index, where its window stands, and what the read resolved about the one continuation it can carry. */
-export type ContinueReferralCycle = Pick<ReferralDetailView["referral"], "referralId" | "cycleIndex" | "datePrecision" | "windowKind" | "status" | "continuation" | "revision">;
+/**
+ * The cycle this action acts on: its identity and index, where its window stands, and what the read
+ * resolved about the one continuation it can carry.
+ *
+ * These are exactly the members the narrow permitted Expired projection carries, so one action serves
+ * the full detail body and the permitted history alike. The revision the command presents is the
+ * envelope's own and is handed over separately, because that projection carries no revision of its own
+ * and a value read from the row would have to be invented for it.
+ */
+export type ContinueReferralCycle = Pick<ReferralDetailView["referral"], "referralId" | "cycleIndex" | "datePrecision" | "windowKind" | "status" | "continuation">;
 /** The worker-continuation setting the read ran under, with the sentence it gives when it withholds the action. */
 export type ContinuePolicyFacts = ReferralDetailView["continuationPolicy"];
 /** The continuation values the read resolved, shown exactly as resolved. */
@@ -45,8 +53,10 @@ export type ResolvedContinuation = {
 export type ContinueReferralActionProps = {
   /** The context the command is submitted in. The service re-resolves it and re-checks the resulting record, so this is a claim the caller makes and not an authority it grants. */
   readonly scope: Scope;
-  /** The cycle the action acts on. Its `revision` is the revision the caller read, and the command presents it so a cycle that moved settles as a conflict rather than as an overwrite. */
+  /** The cycle the action acts on. Only its identity travels in the command, so nothing else about it is restated here. */
   readonly referral: ContinueReferralCycle;
+  /** The revision the read that answered this cycle published, taken from its envelope rather than from the row so the permitted Expired projection can offer the one continuation it is eligible for. The command presents it, so a cycle that moved settles as a conflict rather than as an overwrite. */
+  readonly expectedRevision: string;
   /** What the read resolved about the worker-continuation setting, including the sentence it gives when it withholds the action. */
   readonly continuationPolicy: ContinuePolicyFacts;
   /** The `actions` the read's envelope published. Continue is offered only where one of them admits it. */
@@ -199,14 +209,14 @@ function ContinuedWindow({ labelId, successorId, endsAt, elapsedSeconds }: { rea
     </section>
   );
 }
-export function ContinueReferralAction({ scope, referral, continuationPolicy, actions, resolvedContinuation = null, onCheckResult, headingLevel = DEFAULT_HEADING_LEVEL, dir, className }: ContinueReferralActionProps): ReactElement {
+export function ContinueReferralAction({ scope, referral, expectedRevision, continuationPolicy, actions, resolvedContinuation = null, onCheckResult, headingLevel = DEFAULT_HEADING_LEVEL, dir, className }: ContinueReferralActionProps): ReactElement {
   const { mutateAsync } = useContinueReferral();
   const headingId = useId();
   const successorLabelId = useId();
   const [submitted, setSubmitted] = useState<ContinueInput | null>(null);
   const [settled, setSettled] = useState<MutationOutcome | null>(null);
   const offered = actions.some((action) => action.name === CONTINUE_ACTION && action.available);
-  const liveInput = useMemo<ContinueInput>(() => ({ scope, expectedRevision: referral.revision, payload: { referralId: referral.referralId } }), [scope, referral.revision, referral.referralId]);
+  const liveInput = useMemo<ContinueInput>(() => ({ scope, expectedRevision, payload: { referralId: referral.referralId } }), [scope, expectedRevision, referral.referralId]);
   // A successful Continue advances this cycle's revision and the page beside it re-reads. Holding the
   // intent that was submitted, rather than the live one, is what keeps the receipt in place across
   // that re-read: the review step shows a result only while the input it is handed matches the intent

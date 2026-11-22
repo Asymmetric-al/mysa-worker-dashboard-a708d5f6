@@ -42,8 +42,18 @@ const MAX_PAGE_SIZE = 200;
 /** The row sizes this surface offers: the application's 50-row default and its 200-row cap, which are the sizes the preset's pager states. */
 const PAGE_SIZES: readonly number[] = [DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE];
 const NO_COLUMNS_HIDDEN: RecordListQueryState["columnVisibility"] = {};
-/** The counts are whole-result figures, so they are grouped the way every other figure on the application is. */
-const countFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+/** The counts are whole-result figures, so they are grouped the way every other figure on the application is: in the interface locale the route states. That locale is a viewer choice, so the formatter is keyed by it and the constructor is paid once per locale rather than once per formatted count. */
+const COUNT_FORMATS = new Map<string, Intl.NumberFormat>();
+/** The whole-number formatter for the interface locale the composing route states. */
+function countFormatOf(locale: string): Intl.NumberFormat {
+  const known = COUNT_FORMATS.get(locale);
+  if (known !== undefined) {
+    return known;
+  }
+  const made = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  COUNT_FORMATS.set(locale, made);
+  return made;
+}
 /** The one statement this surface adds to the copy module: the read projects the audience without the address a membership stores, so the column states that absence rather than inventing a value. */
 const ADDRESS_NOT_IN_PROJECTION = "No address in this projection";
 /** What a column says when the record itself states nothing for it: a blank cell reads as a rendering fault, and a word the copy module does not own would invent a state the membership is not in. */
@@ -87,11 +97,12 @@ function StatedValue({ value, mono = false }: { readonly value: string; readonly
   return mono ? <bdi className="mono-identifier">{stated}</bdi> : <bdi>{stated}</bdi>;
 }
 /** A count rendered from the value state its own read recorded, so a genuine zero stays a number while an unknown, withheld or unavailable count never becomes one. */
-function CountFigure({ count, state }: { readonly count: number; readonly state: ValueState }): ReactElement {
+function CountFigure({ count, state, locale }: { readonly count: number; readonly state: ValueState; readonly locale: string }): ReactElement {
   if (!Number.isFinite(count)) {
     // A count that is not a number is never printed as one; it is reported as the unknown it is.
     return <StatusBadge {...statusBadgeProps(VALUE_STATE_WORDS, "unknown")} />;
   }
+  const countFormat = countFormatOf(locale);
   switch (state) {
     case "value":
     case "zero":
@@ -120,12 +131,12 @@ function refusalSummary(fields: FieldMessages): string {
   return messages.length === 0 ? SURFACE_COPY.refusedTitle : messages.join(" ");
 }
 /** The one figure a counts block states first, with the phrase that names which count it is for a screen reader. */
-function CountHeadline({ label, count, state }: { readonly label: string; readonly count: number; readonly state: ValueState }): ReactElement {
+function CountHeadline({ label, count, state, locale }: { readonly label: string; readonly count: number; readonly state: ValueState; readonly locale: string }): ReactElement {
   return (
     <p className="flex flex-wrap items-baseline gap-2">
       <span className="text-2xl font-semibold tracking-tight">
         <span className="sr-only">{`${label}: `}</span>
-        <CountFigure count={count} state={state} />
+        <CountFigure count={count} state={state} locale={locale} />
       </span>
     </p>
   );
@@ -134,10 +145,12 @@ function CountHeadline({ label, count, state }: { readonly label: string; readon
 interface MembershipCountsProps {
   readonly view: MembershipView;
   readonly valueStates: Readonly<Record<string, ValueState>>;
+  /** The interface locale every count in this panel is formatted in, stated by the route that composes the surface. */
+  readonly locale: string;
   readonly className?: string;
 }
 /** The whole-result counts the read states: eligible and excluded totals, the four state counts with the eligibility each sentence states, and every exclusion reason with its own count. */
-function MembershipCounts({ view, valueStates, className }: MembershipCountsProps): ReactElement {
+function MembershipCounts({ view, valueStates, locale, className }: MembershipCountsProps): ReactElement {
   return (
     <div data-slot="membership-counts" className={cn("grid gap-3 lg:grid-cols-2", className)}>
       <Card>
@@ -147,7 +160,7 @@ function MembershipCounts({ view, valueStates, className }: MembershipCountsProp
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <CountHeadline label={SURFACE_COPY.eligibleFigureLabel} count={view.counts.eligible} state={statedState(valueStates, "counts.eligible")} />
+          <CountHeadline label={SURFACE_COPY.eligibleFigureLabel} count={view.counts.eligible} state={statedState(valueStates, "counts.eligible")} locale={locale} />
           <ul className="flex flex-col gap-2.5">
             {MEMBERSHIP_STATE_ORDER.map((state) => {
               const description = MEMBERSHIP_STATE_DESCRIPTIONS[state];
@@ -156,7 +169,7 @@ function MembershipCounts({ view, valueStates, className }: MembershipCountsProp
                   <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                     <StatusBadge {...statusBadgeProps(MEMBERSHIP_STATUS, state)} />
                     <span>
-                      <CountFigure count={view.memberStates[state]} state={statedState(valueStates, `memberStates.${state}`)} />
+                      <CountFigure count={view.memberStates[state]} state={statedState(valueStates, `memberStates.${state}`)} locale={locale} />
                     </span>
                     <span className="text-muted-foreground">{description.eligibleSuffix}</span>
                   </p>
@@ -174,12 +187,12 @@ function MembershipCounts({ view, valueStates, className }: MembershipCountsProp
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <CountHeadline label={SURFACE_COPY.excludedFigureLabel} count={view.counts.excluded} state={statedState(valueStates, "counts.excluded")} />
+          <CountHeadline label={SURFACE_COPY.excludedFigureLabel} count={view.counts.excluded} state={statedState(valueStates, "counts.excluded")} locale={locale} />
           <ul className="flex flex-col gap-2">
             {EXCLUSION_REASON_ORDER.map((reason) => (
               <li key={reason} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <span>
-                  <CountFigure count={view.excludedByReason[reason]} state={statedState(valueStates, `excludedByReason.${reason}`)} />
+                  <CountFigure count={view.excludedByReason[reason]} state={statedState(valueStates, `excludedByReason.${reason}`)} locale={locale} />
                 </span>
                 <span className="max-w-prose text-pretty text-xs leading-snug text-muted-foreground">{EXCLUSION_REASON_COPY[reason]}</span>
               </li>
@@ -198,6 +211,8 @@ export interface MembershipTableProps {
   readonly envelope: MembershipSource;
   /** The authority the route read under. Every browser read of this surface is issued under the same scope. */
   readonly scope: Scope;
+  /** The interface locale this surface formats its counts in, stated by the route that composes it. */
+  readonly locale: string;
   readonly className?: string;
 }
 /** The union the route handed over, as the one result shape this surface renders. An envelope carries no `kind` member, so the two arms are told apart without guessing. */
@@ -206,7 +221,7 @@ function asReadResult(value: MembershipSource): ReadResult<AudienceEnvelope> {
 }
 
 /** The publisher's audience for this purpose: the read's whole-result counts and one page of members, with every state the read can answer in kept distinct. */
-export function MembershipTable({ envelope, scope, className }: MembershipTableProps): ReactElement {
+export function MembershipTable({ envelope, scope, locale, className }: MembershipTableProps): ReactElement {
   const initial = useMemo(() => asReadResult(envelope), [envelope]);
   const initialWindow = initial.kind === "envelope" ? initial.envelope.data.page : undefined;
   // The last page the server's answer states, when it states any: a page the address names beyond it is
@@ -345,7 +360,7 @@ export function MembershipTable({ envelope, scope, className }: MembershipTableP
             <bdi className="mono-identifier">{stated.source.system}</bdi>
           </p>
         </div>
-        <MembershipCounts view={view} valueStates={stated.valueStates} />
+        <MembershipCounts view={view} valueStates={stated.valueStates} locale={locale} />
         <p className="max-w-prose text-pretty text-sm text-muted-foreground">{NOT_CONSENT_STATEMENT}</p>
         {/* No busy skeleton is handed to the preset below: the rows it receives are the ones the read
             answered with, so a placeholder would hide data that exists. A window with no rows yet is the

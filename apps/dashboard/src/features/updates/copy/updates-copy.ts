@@ -17,6 +17,11 @@ export const PUBLISH_MODE_LABELS: Record<PublishMode, { readonly label: string; 
   "publish-only": { label: "Publish only", consequence: "Releases the exact frozen candidate and submits no notice." },
   "publish-and-notify-now": { label: "Publish and notify now", consequence: "Releases the exact frozen candidate and submits one notice for each eligible recipient." },
 };
+/** The one control that records how a submitted edition is to be released: its group name, and what submitting does with the choice. */
+export const SUBMISSION_RELEASE_MODE = {
+  legend: "How this edition is to be released",
+  description: "Submitting records this choice with the frozen candidate, and the reviewer who answers the candidate releases the " + "edition in the mode chosen here. Submitting itself publishes nothing and notifies nobody: the release this " + "describes happens only once the review is answered.",
+} as const;
 export const DRAFT_VS_RELEASED = {
   draftIsNotWhatReadersSee: "A saved draft is not what readers see, and a candidate waiting for review is not a release either.",
   releaseIsWhatRecipientsReceive: "A release is what a reader is served and what a notice points at; the notice itself is a separate outcome.",

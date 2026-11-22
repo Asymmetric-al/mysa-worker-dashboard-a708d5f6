@@ -21,6 +21,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useCallback, useId, useState, type ReactElement, type ReactNode } from "react";
+import { PaginationBar } from "@/components/pagination-bar";
 import RecordDetail from "@/components/record-detail";
 import StateNotice from "@/components/state-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -33,7 +34,7 @@ import { cn } from "@/lib/cn";
 import { assertNever } from "@/lib/result";
 import type { ReadAction, reads } from "@/modules/data-service";
 import { CLOSURE_COPY, INITIATIVE_COPY, INITIATIVE_STATE_COPY, MEMBERSHIP_STATE_COPY, REQUESTED_TERMS_COPY, RESPONSE_KIND_COPY, RESULTS_COPY, STATE_NOTICE_COPY, dispositionFallback, type ResponseKind } from "../copy";
-import { useInitiative } from "../hooks/use-initiative";
+import { useInitiative, type InitiativeReadWindow } from "../hooks/use-initiative";
 import { invalidateInitiativeReads } from "../hooks/use-initiative-mutations";
 import CloseInitiativeDialog from "./close-initiative-dialog";
 import InitiativeHeader from "./initiative-header";
@@ -104,6 +105,11 @@ const WORK_LINK_SUFFIX = "opens the Work surface, where this task is owned";
 const DUE_LABEL = "Due";
 
 const PLANNED_LABEL = "Planned";
+
+/** The nouns each of this surface's pagers states its whole result in, so a count reads as the list it belongs to. */
+const NEXT_WORK_ITEM_NOUN = "tasks";
+
+const REQUESTS_ITEM_NOUN = "requests";
 
 const NOT_RECORDED_WORD = "Not recorded";
 
@@ -253,6 +259,10 @@ interface OverviewPanelProps {
   readonly envelope: InitiativeEnvelope;
   readonly onRequestClose: () => void;
   readonly onRequestReopen: () => void;
+  /** Takes the window the owned work is read with, so a page of it is a re-read of this initiative rather than a slice held here. */
+  readonly onWindowChange: (change: InitiativeReadWindow) => void;
+  /** Whether the initiative is being re-read, so the pager states that the page it lists is being replaced rather than that it is final. */
+  readonly isFetching: boolean;
 }
 
 /**
@@ -260,7 +270,7 @@ interface OverviewPanelProps {
  * counts from the family's own header, then the work it still owns — read-only, and stated as owned
  * elsewhere so this surface never implies it can finish a task.
  */
-function OverviewPanel({ envelope, onRequestClose, onRequestReopen }: OverviewPanelProps): ReactElement {
+function OverviewPanel({ envelope, onRequestClose, onRequestReopen, onWindowChange, isFetching }: OverviewPanelProps): ReactElement {
   const { nextWork } = envelope.data;
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -274,14 +284,30 @@ function OverviewPanel({ envelope, onRequestClose, onRequestReopen }: OverviewPa
         <CardContent className="flex min-w-0 flex-col gap-3">
           <p className="text-sm text-pretty text-muted-foreground">{NEXT_WORK_LISTED_NOTE}</p>
           <p className="text-sm text-pretty text-muted-foreground">{NEXT_WORK_OWNERSHIP_NOTE}</p>
-          {nextWork.items.length === 0 ? (
+          {nextWork.total === 0 ? (
             <StateNotice kind="empty" headingLevel={3} title={NEXT_WORK_EMPTY_TITLE} description={NEXT_WORK_EMPTY_BODY} action={{ label: NEXT_WORK_EMPTY_ACTION, href: WORK_ROUTE }} />
           ) : (
-            <ul className="flex min-w-0 flex-col gap-2">
-              {nextWork.items.map((task) => (
-                <OwnedWorkRow key={task.taskId} task={task} valueStates={envelope.valueStates} />
-              ))}
-            </ul>
+            <>
+              <ul className="flex min-w-0 flex-col gap-2">
+                {nextWork.items.map((task) => (
+                  <OwnedWorkRow key={task.taskId} task={task} valueStates={envelope.valueStates} />
+                ))}
+              </ul>
+              {/* The whole result this initiative owns, stated beside the page on show: the window belongs to the service, so a page change re-reads the initiative and no count is recomputed here. */}
+              <PaginationBar
+                total={nextWork.total}
+                page={nextWork.page}
+                pageSize={nextWork.pageSize}
+                onPageChange={(page) => {
+                  onWindowChange({ nextWorkPage: page });
+                }}
+                onPageSizeChange={(pageSize) => {
+                  onWindowChange({ nextWorkPageSize: pageSize });
+                }}
+                itemNoun={NEXT_WORK_ITEM_NOUN}
+                disabled={isFetching}
+              />
+            </>
           )}
         </CardContent>
       </Card>
@@ -293,6 +319,10 @@ interface RequestsPanelProps {
   readonly initiativeId: string;
   readonly envelope: InitiativeEnvelope;
   readonly onChanged: () => void;
+  /** Takes the window the Requests are read with, so a page of them is a re-read of this initiative rather than a slice held here. */
+  readonly onWindowChange: (change: InitiativeReadWindow) => void;
+  /** Whether the initiative is being re-read, so the pager states that the page it lists is being replaced rather than that it is final. */
+  readonly isFetching: boolean;
 }
 
 /**
@@ -301,8 +331,8 @@ interface RequestsPanelProps {
  * terms version it answers. The draft form is offered only where the read admits drafting, and where it
  * does not, the read's own reason is stated instead of a control that could only fail.
  */
-function RequestsPanel({ initiativeId, envelope, onChanged }: RequestsPanelProps): ReactElement {
-  const requests = envelope.data.requests.items;
+function RequestsPanel({ initiativeId, envelope, onChanged, onWindowChange, isFetching }: RequestsPanelProps): ReactElement {
+  const requests = envelope.data.requests;
   const draftAction = actionOf(envelope.actions, "draftRequest");
   const draftAdmitted = draftAction !== undefined && draftAction.available;
   const [composerOpen, setComposerOpen] = useState(false);
@@ -335,16 +365,32 @@ function RequestsPanel({ initiativeId, envelope, onChanged }: RequestsPanelProps
         </Alert>
       )}
       <Separator />
-      {requests.length === 0 ? (
+      {requests.total === 0 ? (
         <StateNotice kind="empty" headingLevel={3} title={REQUESTS_EMPTY_TITLE} description={REQUESTS_EMPTY_BODY} action={draftAdmitted ? { label: DRAFT_REQUEST_LABEL, onClick: openComposer } : { label: INITIATIVE_COPY.listHeading, href: INITIATIVES_ROUTE }} />
       ) : (
-        <ul className="flex min-w-0 flex-col gap-4">
-          {requests.map((request) => (
-            <li key={request.requestId} className="min-w-0 border-b border-border pb-4 last:border-b-0 last:pb-0">
-              <RequestPresentation initiativeId={initiativeId} request={request} envelope={envelope} onRecorded={onChanged} onCheckResult={onChanged} headingLevel={3} />
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="flex min-w-0 flex-col gap-4">
+            {requests.items.map((request) => (
+              <li key={request.requestId} className="min-w-0 border-b border-border pb-4 last:border-b-0 last:pb-0">
+                <RequestPresentation initiativeId={initiativeId} request={request} envelope={envelope} onRecorded={onChanged} onCheckResult={onChanged} headingLevel={3} />
+              </li>
+            ))}
+          </ul>
+          {/* The whole result this initiative recorded, stated beside the page on show: the window belongs to the service, so a page change re-reads the initiative and no count is recomputed here. */}
+          <PaginationBar
+            total={requests.total}
+            page={requests.page}
+            pageSize={requests.pageSize}
+            onPageChange={(page) => {
+              onWindowChange({ requestsPage: page });
+            }}
+            onPageSizeChange={(pageSize) => {
+              onWindowChange({ requestsPageSize: pageSize });
+            }}
+            itemNoun={REQUESTS_ITEM_NOUN}
+            disabled={isFetching}
+          />
+        </>
       )}
     </div>
   );
@@ -491,13 +537,25 @@ export default function InitiativeDetail({ envelope, candidates, resultsEnvelope
   const [tab, setTab] = useState<TabKey>(FIRST_TAB);
   const [closeOpen, setCloseOpen] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
+  // The window each paged list of this record is read with, seeded from the window the server's own answer
+  // states. Each list keeps its own page, so paging the Requests leaves the working list and the owned work
+  // exactly where the reader left them, and the window is the read's own parameter rather than a slice of an
+  // answer held here.
+  //
+  // The same two windows are what the server's envelope was read under, so they are also the only key that
+  // envelope may seed: another page is a request, not a re-window of the answer already held.
+  const seededWindow: InitiativeReadWindow = { requestsPage: envelope.data.requests.page, requestsPageSize: envelope.data.requests.pageSize, nextWorkPage: envelope.data.nextWork.page, nextWorkPageSize: envelope.data.nextWork.pageSize };
+  const [listWindow, setListWindow] = useState<InitiativeReadWindow>(() => ({ ...seededWindow }));
+  const changeWindow = useCallback((change: InitiativeReadWindow): void => {
+    setListWindow((held) => ({ ...held, ...change }));
+  }, []);
   const queryClient = useQueryClient();
   // This family's one recovery policy: an unconfirmed attempt is checked by re-reading the initiative, and
   // a settled change is followed by the same read, never by repeating the change under a second identity.
   const reread = useCallback((): void => {
     void invalidateInitiativeReads(queryClient, envelope.scope);
   }, [queryClient, envelope.scope]);
-  const query = useInitiative<InitiativeDetailData>(initiativeId, envelope);
+  const query = useInitiative<InitiativeDetailData>(initiativeId, envelope, listWindow, seededWindow);
   const handleTabChange = useCallback((next: unknown): void => {
     setTab(tabOf(String(next)));
   }, []);
@@ -548,13 +606,15 @@ export default function InitiativeDetail({ envelope, candidates, resultsEnvelope
             onRequestReopen={() => {
               setReopenOpen(true);
             }}
+            onWindowChange={changeWindow}
+            isFetching={query.isFetching}
           />
         </TabsContent>
         <TabsContent value="working-list" aria-label={TAB_COPY["working-list"].panel} className="min-w-0">
-          <WorkingList initiativeId={initiativeId} envelope={current} candidates={candidates ?? CANDIDATES_NOT_SUPPLIED} onChanged={reread} headingLevel={2} />
+          <WorkingList initiativeId={initiativeId} envelope={current} candidates={candidates ?? CANDIDATES_NOT_SUPPLIED} onChanged={reread} readWindow={listWindow} headingLevel={2} />
         </TabsContent>
         <TabsContent value="requests" aria-label={TAB_COPY.requests.panel} className="min-w-0">
-          <RequestsPanel initiativeId={initiativeId} envelope={current} onChanged={reread} />
+          <RequestsPanel initiativeId={initiativeId} envelope={current} onChanged={reread} onWindowChange={changeWindow} isFetching={query.isFetching} />
         </TabsContent>
         <TabsContent value="results" aria-label={TAB_COPY.results.panel} className="min-w-0">
           <ResultsPanel initiativeId={initiativeId} resultsEnvelope={resultsEnvelope} />

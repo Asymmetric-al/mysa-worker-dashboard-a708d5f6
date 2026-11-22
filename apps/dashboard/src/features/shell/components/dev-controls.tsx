@@ -1,7 +1,7 @@
 "use client";
 /**
- * The one development-control composition: the shared development panel and the identity statement this
- * session's runtime supports, bound to the session's development read and to the controls it advertises.
+ * The one development-control composition: the shared development panel and the persona switch this session's
+ * runtime supports, bound to the session's development read and to the controls it advertises.
  *
  * The invariants this file holds:
  *
@@ -13,10 +13,11 @@
  * - It offers only what the development read advertises: the scenarios, the failure modes and named targets,
  *   the presets and the identity roster all arrive in that envelope, so no control names a value the runtime
  *   does not hold (AAP assumption A13).
- * - The identity roster is stated, not switched. The development service advertises the five named controls
- *   of the specification and no call that changes the seeded session a browser acts as, so no selector is
- *   drawn here that no request could honour; switching identities is the seeded session's
- *   `dashboard_session` cookie and a deterministic reset, and the statement says exactly that.
+ * - The identity is switched, and only by the one control that can change it. The seeded session a browser
+ *   acts as is its own `dashboard_session` cookie, so the switch travels through the handler that owns that
+ *   cookie (`POST /api/dev`'s `selectPersona`): the roster arrives in the development read, the control offers
+ *   exactly that roster, and a settled switch drops the client cache and re-renders the shell, because every
+ *   query key is scoped to the identity that answered it.
  * - Every state that is not a result renders through the shared `StateNotice` and every outcome a control
  *   produces renders through the shared `OperationResult`, so an outage, a refusal or an unconfirmed effect
  *   can never be mistaken for an empty plan or an empty list.
@@ -27,12 +28,10 @@ import { mayReplay } from "@/components/action-review";
 import DevPanel from "@/components/dev-panel";
 import { refusalSummary } from "@/components/form-field";
 import OperationResult from "@/components/operation-result";
-import { PERSONA_KIND_LABELS, PERSONA_SESSION_STATE_LABELS, PERSONA_SESSION_STATE_OUTCOMES } from "@/components/persona-switcher";
+import PersonaSwitcher from "@/components/persona-switcher";
 import StateNotice from "@/components/state-notice";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import type { MutationOutcome, Scope } from "@/modules/data-service";
 import { isOutcome, outcomeFromError } from "@/modules/data-service/outcome";
@@ -56,6 +55,9 @@ type ClockPreset = (typeof CLOCK_PRESETS)[number];
 
 /** The receipt of the last preset advance: which preset was asked for, and what the service answered. */
 type PresetReceipt = { readonly preset: string; readonly outcome: MutationOutcome };
+
+/** The receipt of the last persona switch: which seeded persona was asked for, and what the handler answered. */
+type PersonaReceipt = { readonly personaId: string; readonly outcome: MutationOutcome };
 
 /** Whether an outcome records work that was applied, which is when the receipt names what was done. */
 const isSettled = (outcome: MutationOutcome): boolean => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged";
@@ -147,12 +149,12 @@ type ReadyControlsProps = {
   readonly devState: DevState;
   /** The controls built from that state, so each one it offers is a control the runtime advertises. */
   readonly transports: DevMutationTransports;
-  /** Re-reads the runtime, which is how an unconfirmed advance is checked without resubmitting it. */
+  /** Re-reads the runtime, which is how an unconfirmed advance or switch is checked without resubmitting it. */
   readonly onReread: () => void;
   readonly className?: string;
 };
 
-/** The advertised controls: the shared development panel, the preset advances and the identity statement. */
+/** The advertised controls: the shared development panel, the preset advances and the persona switch. */
 function ReadyControls({ devState, transports, onReread, className }: ReadyControlsProps): ReactElement {
   const presetsHintId = useId();
   const [receipt, setReceipt] = useState<PresetReceipt | null>(null);
@@ -231,19 +233,69 @@ function ReadyControls({ devState, transports, onReread, className }: ReadyContr
           </div>
         )}
       </fieldset>
-      <IdentityStatement devState={devState} />
+      <PersonaControl devState={devState} onSelectPersona={transports.onSelectPersona} onReread={onReread} />
     </div>
   );
 }
 
+type PersonaControlProps = {
+  /** The development state the read answered: the roster the switch offers, the identity it lists as active, and the session state it reports. */
+  readonly devState: DevState;
+  /** The switch's transport: it hands the handler the roster's own identifier, and the handler grants the cookie the identity travels in. */
+  readonly onSelectPersona: (personaId: string) => Promise<MutationOutcome>;
+  /** Re-reads the runtime, which is how an unconfirmed switch is checked without asking for it again. */
+  readonly onReread: () => void;
+};
+
 /**
- * The identity this session carries, as the development read reports it: the roster, the one entry that is
- * active and the admission state, stated rather than switched because the runtime advertises no such call.
+ * The identity this browser acts as, and the one control that changes it: the seeded sessions the development
+ * read lists, offered exactly as that read lists them. A switch grants nothing — the identity is the session
+ * cookie's own fact, so every read that follows is authorised again from whatever the service decided.
  */
-function IdentityStatement({ devState }: { readonly devState: DevState }): ReactElement {
+function PersonaControl({ devState, onSelectPersona, onReread }: PersonaControlProps): ReactElement {
   const { personaCatalogue: catalogue, activePersonaId, sessionState } = devState;
-  const activePersona = catalogue.personas.find((persona) => persona.id === activePersonaId);
-  const catalogueFinding = catalogue.finding ?? PERSONA_SWITCH_COPY.unlistedIdentityNote;
+  const [receipt, setReceipt] = useState<PersonaReceipt | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const switchingRef = useRef(false);
+  const lastPersonaId = useRef<string | null>(null);
+
+  const switchPersona = useCallback(
+    async (personaId: string): Promise<void> => {
+      if (switchingRef.current) {
+        return;
+      }
+      switchingRef.current = true;
+      setSwitching(true);
+      lastPersonaId.current = personaId;
+      let outcome: MutationOutcome;
+      try {
+        const answered: unknown = await onSelectPersona(personaId);
+        outcome = isOutcome(answered) ? answered : outcomeFromError(UNREACHED_ATTEMPT, answered);
+      } catch (error) {
+        // A transport that threw produced no answer at all, so the attempt is reported by the identity it
+        // carried rather than as either a switched session or a refused one.
+        outcome = outcomeFromError(UNREACHED_ATTEMPT, error);
+      } finally {
+        switchingRef.current = false;
+        setSwitching(false);
+      }
+      setReceipt({ personaId, outcome });
+    },
+    [onSelectPersona],
+  );
+
+  const replay = useCallback((): void => {
+    const personaId = lastPersonaId.current;
+    if (personaId !== null) {
+      void switchPersona(personaId);
+    }
+  }, [switchPersona]);
+
+  const switchedPersona = receipt === null ? undefined : catalogue.personas.find((persona) => persona.id === receipt.personaId);
+  const receiptHeading = receipt !== null && isSettled(receipt.outcome) ? `${PERSONA_SWITCH_COPY.label}: ${switchedPersona?.label ?? receipt.personaId}` : undefined;
+  const receiptReplay = receipt !== null && mayReplay(receipt.outcome) ? replay : undefined;
+  const receiptCheck = receipt !== null && receipt.outcome.outcome === "unknown" ? onReread : undefined;
+
   return (
     <Card data-slot="dev-controls-identity" className="min-w-0">
       <CardHeader>
@@ -253,49 +305,28 @@ function IdentityStatement({ devState }: { readonly devState: DevState }): React
         <CardDescription>{PERSONA_SWITCH_COPY.explanation}</CardDescription>
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-4">
+        <p className="text-sm text-pretty text-muted-foreground">{PERSONA_SWITCH_COPY.selectionNote}</p>
         <p className="text-sm text-pretty text-muted-foreground">{PERSONA_SWITCH_COPY.grantsNothingNote}</p>
-        <p className="text-sm text-pretty text-muted-foreground">{PERSONA_SWITCH_COPY.switchUnavailableNote}</p>
-        <Separator />
-        <div className="flex min-w-0 flex-col gap-1">
-          <h4 className="text-sm font-medium">{PERSONA_SWITCH_COPY.carriesLabel}</h4>
-          {catalogue.state !== "persisted" ? (
-            <p className="text-sm text-pretty text-muted-foreground">{catalogueFinding}</p>
-          ) : activePersona === undefined ? (
-            <p className="text-sm text-pretty text-muted-foreground">{PERSONA_SWITCH_COPY.unlistedIdentityNote}</p>
-          ) : (
-            <output aria-atomic="true" className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-              <bdi className="min-w-0 font-medium break-words">{activePersona.label}</bdi>
-              <Badge variant="outline">{PERSONA_KIND_LABELS[activePersona.kind].label}</Badge>
-              <bdi className="mono-identifier text-xs break-all text-muted-foreground">{activePersona.id}</bdi>
-            </output>
-          )}
-        </div>
-        {catalogue.state !== "persisted" ? null : (
-          <div className="flex min-w-0 flex-col gap-1">
-            <h4 className="text-sm font-medium">{PERSONA_SWITCH_COPY.rosterLabel}</h4>
-            <ul className="flex min-w-0 flex-col gap-2 text-sm">
-              {catalogue.personas.map((persona) => (
-                <li key={persona.id} className="flex min-w-0 flex-col gap-0.5">
-                  <span className="flex min-w-0 flex-wrap items-center gap-2">
-                    <bdi className="min-w-0 font-medium break-words">{persona.label}</bdi>
-                    <Badge variant="outline">{PERSONA_KIND_LABELS[persona.kind].label}</Badge>
-                    {persona.id === activePersonaId ? <Badge variant="secondary">{PERSONA_SWITCH_COPY.activeMarker}</Badge> : null}
-                    <bdi className="mono-identifier text-xs break-all text-muted-foreground">{persona.id}</bdi>
-                  </span>
-                  <span className="text-xs text-pretty text-muted-foreground break-words">{persona.description}</span>
-                </li>
-              ))}
-            </ul>
+        {catalogue.state !== "persisted" && catalogue.finding !== null ? <p className="text-sm text-pretty text-muted-foreground">{catalogue.finding}</p> : null}
+        <PersonaSwitcher
+          label={PERSONA_SWITCH_COPY.selectLabel}
+          // The persisted roster's four kinds are this control's own, so the list travels as it arrived: no
+          // identity the read lists is filtered out of a switch that would refuse it, and none is invented.
+          personas={catalogue.personas.map((persona) => ({ id: persona.id, kind: persona.kind, label: persona.label, description: persona.description }))}
+          activePersonaId={activePersonaId ?? ""}
+          // The session state is reported beside the identity and never switched here: those seats are their
+          // own state, and this control changes only the identity the session acts as.
+          activeSessionState={sessionState}
+          onSelect={(personaId) => {
+            void switchPersona(personaId);
+          }}
+        />
+        {switching ? <output className="block text-sm text-pretty text-muted-foreground">{PERSONA_SWITCH_COPY.pendingNote}</output> : null}
+        {receipt === null ? null : (
+          <div data-slot="dev-controls-persona-result" data-outcome={receipt.outcome.outcome} className="min-w-0">
+            <OperationResult outcome={receipt.outcome} heading={receiptHeading} headingLevel={RECEIPT_HEADING_LEVEL} onCheckResult={receiptCheck} onRetrySameWork={receiptReplay} />
           </div>
         )}
-        <Separator />
-        <div className="flex min-w-0 flex-col gap-1">
-          <h4 className="text-sm font-medium">{PERSONA_SWITCH_COPY.sessionStateLabel}</h4>
-          <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-            <Badge variant="outline">{PERSONA_SESSION_STATE_LABELS[sessionState].label}</Badge>
-            <span className="min-w-0 text-pretty text-muted-foreground">{PERSONA_SESSION_STATE_OUTCOMES[sessionState]}</span>
-          </p>
-        </div>
       </CardContent>
     </Card>
   );

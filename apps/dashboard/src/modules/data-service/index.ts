@@ -80,6 +80,7 @@ export type {
 // The payload schemas and vocabularies a Route Handler composes: a handler may import nothing below this barrel, so the schemas a body is validated against are re-exported from the mutation that owns them, and the bound and the message a caller is refused with have one author rather than a second copy at the
 // transport.
 export { NOTIFICATION_UNSERVED_REASONS, mutationInputSchema } from "./envelope";
+export { PUBLISH_MODES } from "./mutations/content";
 export { closeInitiativePayloadSchema, draftRequestPayloadSchema, presentRequestPayloadSchema, recordRequestResponsePayloadSchema, reopenInitiativePayloadSchema } from "./mutations/outreach";
 export { archivePreparationInput, deleteViewInput, renameViewInput, restorePreparationInput, saveContactEditsInput, saveViewInput } from "./mutations/partners";
 export type { DenialReason, MutationOutcome, PerItemResult, ReadResult } from "./outcome";

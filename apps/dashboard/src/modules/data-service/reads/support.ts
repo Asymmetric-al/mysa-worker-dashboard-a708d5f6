@@ -159,8 +159,10 @@ export type GiftLedgerData = { readonly report: ReportResult; readonly grain: ty
 export type CommitmentsData = { readonly commitments: readonly CommitmentFigure[]; readonly total: number; readonly page: { readonly index: number; readonly size: number; readonly totalPages: number }; readonly buckets: readonly RecurringBucketFigure[]; readonly commitmentKinds: readonly CommitmentKindFigure[] };
 /** The goal record as it is exposed: five facts, and nothing derived from them. */
 export type SupportGoalFigure = { readonly amount: Money; readonly measure: SupportGoalRecord["measure"]; readonly effectiveFrom: string; readonly revision: string };
-/** The goal read: the target, its progress, and the four states that must stay distinguishable. */
-export type GoalData = { readonly goal: SupportGoalFigure | null; readonly progress: GoalProgress; readonly percentage: string | null; readonly report: ReportResult; readonly period: SupportPeriod; readonly measure: typeof GOAL_MEASURE; readonly canEditGoal: boolean };
+/** One currency the subject's financial source states, at the exact precision an amount in it is written: the closed set a goal may be stated in. */
+export type GoalCurrency = { readonly currency: string; readonly exponent: number };
+/** The goal read: the target, its progress, the currencies the source states for this subject, and the four states that must stay distinguishable. */
+export type GoalData = { readonly goal: SupportGoalFigure | null; readonly progress: GoalProgress; readonly percentage: string | null; readonly report: ReportResult; readonly period: SupportPeriod; readonly measure: typeof GOAL_MEASURE; readonly canEditGoal: boolean; readonly currencies: readonly GoalCurrency[] };
 /** One whole-query export: the file, its name, and the snapshot identity every surface of that query states. */
 export type SupportExportData = { readonly csv: string; readonly filename: string; readonly rowCount: number; readonly metadata: readonly SnapshotFact[]; readonly snapshot: Snapshot };
 // The session documents these reads parse
@@ -247,6 +249,16 @@ function knownExponentsOf(codes: readonly string[]): Record<string, number> {
     if (exponent !== undefined) exponents[code] = exponent;
   }
   return exponents;
+}
+/** The currencies the subject's source states, each at the precision this application writes an amount in it: a currency the source does not state is never offered, and one this application holds no precision for is left out rather than given an assumed exponent. */
+function goalCurrenciesOf(projection: SupportProjection): readonly GoalCurrency[] {
+  const currencies: GoalCurrency[] = [];
+  for (const currency of Object.keys(projection.currencyExponents)) {
+    const exponent = exponentOf(currency);
+    if (exponent === undefined) continue;
+    currencies.push({ currency, exponent });
+  }
+  return currencies;
 }
 // One validated copy per workload document object: the store hands back a fresh object whenever any of the session's files change, so an entry is released with the document version it belongs to and one entry per anchor is the whole of the bound.
 const validatedWorkloads = new WeakMap<object, ReturnType<typeof workloadDocumentSchema.safeParse>>();
@@ -740,7 +752,16 @@ export async function readGoal(query: SupportQuery = {}, source?: SessionSource)
   const goal: SupportGoalFigure | null = stored === undefined ? null : project(stored, ["amount", "measure", "effectiveFrom", "revision"]);
   const progress = progressOf(result);
   const percentage = progress.percentageBasisPoints === null ? null : formatPercentageBasisPoints(progress.percentageBasisPoints);
-  const data: GoalData = { goal, progress, percentage, report: result, period: { from: serialiseCivilDate(result.snapshot.period.from), to: serialiseCivilDate(result.snapshot.period.to), state: result.snapshot.period.state }, measure: GOAL_MEASURE, canEditGoal: decision.allowed };
+  const data: GoalData = {
+    goal,
+    progress,
+    percentage,
+    report: result,
+    period: { from: serialiseCivilDate(result.snapshot.period.from), to: serialiseCivilDate(result.snapshot.period.to), state: result.snapshot.period.state },
+    measure: GOAL_MEASURE,
+    canEditGoal: decision.allowed,
+    currencies: goalCurrenciesOf(context.projection),
+  };
   const valueStates = recordedStatesOf(result);
   valueStates["goal.amount"] = goal === null ? "unknown" : recordedStateOf(statedAmountStateOf(goal.amount));
   valueStates["goal.percentage"] = progressStateOf(progress);

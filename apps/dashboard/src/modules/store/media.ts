@@ -1,6 +1,6 @@
 /** The store's media-byte custody: the one tree every served media byte lives in, the one reference form a record states for one, and the one place one is written or removed. */
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm, type FileHandle } from "node:fs/promises";
+import { mkdir, open, rename, rm, stat, type FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isSafeSessionId } from "@/lib/session-cookie";
 import { DATA_ROOT } from "./paths";
@@ -50,7 +50,8 @@ export async function writeMediaBytes(reference: string, bytes: Uint8Array): Pro
   }
   await syncDirectory(directory);
 }
-export async function readMediaBytes(reference: string): Promise<Uint8Array | undefined> {
+/** The size in bytes of one custody file: the one fact a serving decision needs, and the count the response's own length is computed from. Answers `undefined` exactly where a read would — a reference outside the custody tree, or a path that names no readable file. */
+export async function statMediaBytes(reference: string): Promise<number | undefined> {
   let file: string;
   try {
     file = mediaPathOf(reference);
@@ -59,9 +60,45 @@ export async function readMediaBytes(reference: string): Promise<Uint8Array | un
     return undefined;
   }
   try {
-    return new Uint8Array(await readFile(file));
+    const stats = await stat(file);
+    // Anything that is not a regular file holds no byte range to serve, so it is answered as absent rather than opened and failed on.
+    return stats.isFile() ? stats.size : undefined;
   } catch {
     return undefined;
+  }
+}
+/** One inclusive byte window of one custody file: the exact bytes one response carries. A window whose end precedes its start names no byte at all, which is how a zero-byte rendition is answered. */
+export type MediaByteWindow = { readonly start: number; readonly end: number };
+/** Reads one inclusive byte window of one custody file, so a request for a few hundred kilobytes costs those kilobytes rather than the whole rendition. Answers `undefined` exactly where reading the whole file did — a reference outside the custody tree, an unreadable file, or a file shorter than the window the caller probed — because the caller answers all three with the same unavailable source. */
+export async function readMediaBytes(reference: string, window: MediaByteWindow): Promise<Uint8Array | undefined> {
+  const length = window.end - window.start + 1;
+  const wellFormed = Number.isSafeInteger(window.start) && window.start >= 0 && Number.isSafeInteger(window.end) && Number.isSafeInteger(length) && length >= 0;
+  if (!wellFormed) return undefined;
+  // The probe has already answered for the file, so a window naming no byte opens nothing.
+  if (length === 0) return new Uint8Array(0);
+  let file: string;
+  try {
+    file = mediaPathOf(reference);
+  } catch {
+    // As in `statMediaBytes`: an absent answer, never a rule the caller can learn from.
+    return undefined;
+  }
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(file, "r");
+    const bytes = new Uint8Array(length);
+    let filled = 0;
+    while (filled < length) {
+      const { bytesRead } = await handle.read(bytes, filled, length - filled, window.start + filled);
+      // A file that ends inside the window cannot answer it with a shorter body: the response states the length it was authorised to send, so this is the same absent source as an unreadable file.
+      if (bytesRead === 0) return undefined;
+      filled += bytesRead;
+    }
+    return bytes;
+  } catch {
+    return undefined;
+  } finally {
+    await ignoreFailure(handle?.close());
   }
 }
 export async function removeAllMedia(): Promise<void> {

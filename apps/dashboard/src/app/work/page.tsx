@@ -27,6 +27,7 @@ import Link from "next/link";
 import type { ReactElement } from "react";
 
 import { StateNotice } from "@/components/state-notice";
+import { isSharedRecord } from "@/features/partners/record-class";
 import SeriesComposer from "@/features/work/components/series-composer";
 import type { TaskComposerInitialValues, TaskLinkChoice, TaskLinkChoices } from "@/features/work/components/task-composer";
 import TaskLists from "@/features/work/components/task-lists";
@@ -142,7 +143,10 @@ function linkChoicesOf(partners: PartnersResult, initiatives: InitiativesResult)
   if (partners.kind === "unavailable") return { status: "unavailable", source: partners.unavailable.source, guidance: partners.unavailable.guidance };
   if (initiatives.kind === "unavailable") return { status: "unavailable", source: initiatives.unavailable.source, guidance: initiatives.unavailable.guidance };
   if (partners.kind !== "envelope" || initiatives.kind !== "envelope") return undefined;
-  const partnerChoices: readonly TaskLinkChoice[] = partners.envelope.data.rows.map((row) => ({ value: partnerLinkValue(row.partner.partnerId), label: row.partner.displayName }));
+  // A worker-private preparation record is a different record class from a shared operational fact, so it is never a
+  // link target for a task; the partners family states that line once in `isSharedRecord`, and this page applies it
+  // rather than keeping a second copy of it.
+  const partnerChoices: readonly TaskLinkChoice[] = partners.envelope.data.rows.filter((row) => isSharedRecord(row.partner)).map((row) => ({ value: partnerLinkValue(row.partner.partnerId), label: row.partner.displayName }));
   const initiativeChoices: readonly TaskLinkChoice[] = initiatives.envelope.data.items.map((initiative) => ({ value: initiativeLinkValue(initiative.initiativeId), label: initiative.name }));
   return { status: "admitted", partners: partnerChoices, initiatives: initiativeChoices };
 }

@@ -1,4 +1,4 @@
-/** The one copy of the four request helpers every JSON mutation transport under `src/app/api` shares: the body reader, the attempt identity, the payload without its wire discriminant, and the dispatch that judges one body and calls one named mutation. A transport keeps only what is its own — the closed set of operations it admits, the messages for its fields, and the switch that names one mutation per request. */
+/** The one copy of the four request helpers every JSON mutation transport under `src/app/api` shares: the body readers, the attempt identity, the payload without its wire discriminant, and the dispatch that judges one body and calls one named mutation. A transport keeps only what is its own — the closed set of operations it admits, the messages for its fields, and the switch that names one mutation per request. */
 import { z } from "zod";
 import { outcomeFromError, toResponse, type MutationInput, type MutationOutcome } from "@/modules/data-service";
 import { UNIDENTIFIED_ATTEMPT } from "@/modules/data-service/outcome";
@@ -8,13 +8,59 @@ export { UNIDENTIFIED_ATTEMPT };
 
 const attemptIdentitySchema = z.object({ operationId: z.string() });
 
-/** Reads one request's body. A body that is not JSON is a request fault the caller can correct, answered as `invalid` by the body schema the transport always runs, never a thrown 500. */
-export async function jsonBodyOf(request: Request): Promise<unknown> {
-  try {
-    return await request.json();
-  } catch {
-    return undefined;
+/** The bytes one JSON body may occupy when its transport states no ceiling of its own: 16 MiB, above every body the application sends today — the largest is a reviewed import acceptance, whose corrections echo cell text from a file of at most 5 MiB — and far below what an unbounded read would let one request buffer. A transport whose body is legitimately larger states its own ceiling to {@link readRequestBody}. */
+export const DEFAULT_MAX_BODY_BYTES = 16 * 1024 * 1024;
+
+/** What reading one request's body produced: the value its JSON decodes to, the byte count at which the ceiling refused it, or the reason there is no value at all. */
+export type RequestBodyRead = { readonly kind: "body"; readonly value: unknown } | { readonly kind: "oversized"; readonly bytes: number; readonly maxBytes: number } | { readonly kind: "unreadable" };
+
+const utf8Decoder = new TextDecoder("utf-8");
+
+function joinChunks(chunks: readonly Uint8Array[], totalBytes: number): Uint8Array {
+  const joined = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.byteLength;
   }
+  return joined;
+}
+
+/** Reads one request's body up to `maxBytes`, so an over-size body is refused before any of it is parsed rather than after the whole of it is buffered: the declared `content-length` is judged first and costs no read at all, then the bytes are counted as they arrive and the stream is cancelled the moment the ceiling is passed. A body that arrives unreadable, or that is not JSON, is a request fault the caller can correct, answered `unreadable` here and as `invalid` by the body schema the transport always runs, never a thrown 500. */
+export async function readRequestBody(request: Request, maxBytes: number = DEFAULT_MAX_BODY_BYTES): Promise<RequestBodyRead> {
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength !== null) {
+    const declaredBytes = Number(declaredLength);
+    if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) return { kind: "oversized", bytes: declaredBytes, maxBytes };
+  }
+  try {
+    const stream = request.body;
+    if (stream === null) return { kind: "unreadable" };
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    let receivedBytes = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      receivedBytes += value.byteLength;
+      if (receivedBytes > maxBytes) {
+        // Cancelled rather than drained, so the rest of an over-size upload stops arriving; a cancel that fails leaves the refusal standing.
+        await reader.cancel().catch(() => undefined);
+        return { kind: "oversized", bytes: receivedBytes, maxBytes };
+      }
+      chunks.push(value);
+    }
+    // Decoded non-fatally, exactly as `request.json()` decoded it, so a byte sequence that is not valid UTF-8 stays the parse fault it was rather than a second refusal no ceiling asks for.
+    return { kind: "body", value: JSON.parse(utf8Decoder.decode(joinChunks(chunks, receivedBytes))) as unknown };
+  } catch {
+    return { kind: "unreadable" };
+  }
+}
+
+/** Reads one request's body as the value its JSON decodes to, or `undefined` for a body the reader refused or could not decode — the shape every transport's payload schema already answers as `invalid`. */
+export async function jsonBodyOf(request: Request): Promise<unknown> {
+  const body = await readRequestBody(request);
+  return body.kind === "body" ? body.value : undefined;
 }
 
 /** The operation id a request names, read before its envelope is judged, or {@link UNIDENTIFIED_ATTEMPT} when it names none a caller could match an answer to. */

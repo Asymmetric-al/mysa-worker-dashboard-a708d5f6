@@ -8,7 +8,9 @@ export default function ImportStepper({ current, completed, onReopen }: ImportSt
   const currentPosition = foundPosition === -1 ? 0 : foundPosition;
   return (
     <div className="flex flex-col gap-3">
-      <Progress value={currentPosition + 1} max={STEPS.length} aria-hidden="true" />
+      {/* The bar states the position it shows: a screen reader reads it on demand, while the live region below is what
+       * announces the step as the journey moves, so the two never compete to say the same thing twice. */}
+      <Progress value={currentPosition + 1} max={STEPS.length} aria-valuetext={stepAnnouncement(current)} />
       <p aria-live="polite" aria-atomic="true" className="sr-only">
         {stepAnnouncement(current)}
       </p>

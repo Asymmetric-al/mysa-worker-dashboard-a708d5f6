@@ -204,6 +204,74 @@
   }
 }
 
+/* The composed Page and Update markup. The one static renderer emits these semantic classes from fixed maps over the
+   four admitted presentation choices, so this block is the whole of what a section's presentation can style: no value
+   read from a document becomes a class name, a colour or a length, and every declaration below is a token utility. */
+@layer components {
+  .content-section {
+    @apply flex min-w-0 flex-col gap-4;
+  }
+
+  .content-section-text {
+    @apply min-w-0;
+  }
+
+  .content-section-media {
+    @apply flex min-w-0 flex-col gap-3;
+  }
+
+  .content-section-media img,
+  .content-section-media video {
+    @apply block max-h-96 w-full rounded-lg border border-border;
+  }
+
+  /* Treatment: an emphasized section reads at a weight above the page's own, and a normal one at the document's weight. */
+  .content-treatment-normal .content-section-text {
+    @apply font-normal;
+  }
+
+  .content-treatment-emphasized .content-section-text {
+    @apply font-semibold;
+  }
+
+  /* Alignment: start is the leading edge of the reading direction, so it stays the start in right-to-left content. */
+  .content-alignment-start .content-section-text {
+    @apply text-start;
+  }
+
+  .content-alignment-center .content-section-text {
+    @apply text-center;
+  }
+
+  /* Image fit: the frame bounds the rendition either way, so cover crops it to the frame and contain shows all of it. */
+  .content-image-fit-cover .content-section-media img,
+  .content-image-fit-cover .content-section-media video {
+    @apply object-cover;
+  }
+
+  .content-image-fit-contain .content-section-media img,
+  .content-image-fit-contain .content-section-media video {
+    @apply bg-muted object-contain;
+  }
+
+  /* Two columns only where the section carries media of its own, and only above the narrow breakpoint: below it the
+     layout is one column with the image above its text, which is what the two-column choice itself promises. */
+  .content-layout-two-column-image-text:has(> .content-section-media) > .content-section-media {
+    @apply order-first;
+  }
+
+  @media (min-width: 48rem) {
+    .content-layout-two-column-image-text:has(> .content-section-media) {
+      @apply grid items-start gap-6;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .content-layout-two-column-image-text:has(> .content-section-media) > .content-section-media {
+      @apply order-none;
+    }
+  }
+}
+
 /* Forced-colors mode replaces every colour, so a component that sets `outline-none` to draw its own ring would leave a focused control with no indicator; this restores the declared-width outline in a system colour, unlayered so it outranks the utility layer. */
 @media (forced-colors: active) {
   *:focus-visible {

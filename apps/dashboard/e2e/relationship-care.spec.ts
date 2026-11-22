@@ -17,14 +17,15 @@
  * second submission: "Check the result" replays the same operation identity and the service answers with
  * the result it stored.
  *
- * **What this file deliberately does not claim.** No control in this application launches mail or a
- * dialler — a contact method is presented as a value with its permission state, and no link, `mailto:` or
- * `tel:` exists anywhere in the source — so "opening email creates no interaction" is proven as the only
- * thing this build can prove: reading the address on a record and completing a task both leave the
- * activity history exactly as it stood. And the failure armed for the interaction is the only one this
- * criterion injects: a task creation is not one of the calls the development runtime can arm a failure
- * on, so the task that fails here is refused by the application itself, for input it really refuses,
- * which preserves the caller's input and proves the same property.
+ * **What the handoff proves, and what it deliberately does not.** A permitted contact method is offered as a
+ * handoff: an email method as a `mailto:` link carrying the record's own address, a phone method as a `tel:` link
+ * carrying its own number. Following one leaves this application for another program, so it sends nothing to this
+ * service and the activity history beside it stays exactly as it was — which is what "opening email creates no
+ * interaction" looks like on a surface that offers the handoff. A handoff still proves nothing about contact, and
+ * neither does the completed task below. And the failure armed for the interaction is the only one this criterion
+ * injects: a task creation is not one of the calls the development runtime can arm a failure on, so the task that
+ * fails here is refused by the application itself, for input it really refuses, which preserves the caller's input
+ * and proves the same property.
  *
  * **What every assertion is for.** A task needs only a title and a completed task records that work was
  * closed rather than that anyone was contacted; an interaction records something that actually happened
@@ -118,6 +119,15 @@ const PERMITTED_METHOD = "Permitted on this record";
 const RESTRICTED_NUMBER = "+44 20 7946 0958";
 const RESTRICTED_PERSON_EMAIL = "marcus.webb@example.org";
 const CARE_PERSON_EMAIL = "jo.mbeki@example.org";
+
+/**
+ * The person whose record permits a telephone number, and the number it permits.
+ *
+ * The person this journey cares for holds a permitted address and no number in the seed, so the dialler handoff is
+ * read on a record that really holds a number rather than asserted on a record with nothing to open.
+ */
+const PHONE_PERSON = "Kenji Nakamura";
+const PHONE_PERSON_NUMBER = "+44 20 7946 0421";
 
 /** The private note the seed writes on that person's record, which no other record may show. */
 const CARE_PERSON_PRIVATE_NOTE = "Prefers a call after 6pm, and asked for nothing to be posted to the shared house address.";
@@ -677,18 +687,30 @@ test("completing a task and creating the next one close work and change nothing 
   await openRecord(page, CARE_PERSON);
 
   // -----------------------------------------------------------------------------------------
-  // The contact method is a fact with a permission state, not a handoff
+  // The contact method is a fact with a permission state, offered as a handoff that proves nothing
   // -----------------------------------------------------------------------------------------
 
   const contactMethods = section(page, CONTACT_METHODS_SECTION);
   await expect(contactMethods.getByText(CARE_PERSON_EMAIL, { exact: true }), "The record states the address this session may use.").toBeVisible();
   await expect(contactMethods.getByText(PERMITTED_METHOD)).toBeVisible();
-  // This application offers no mail or dialler launch anywhere, so there is nothing for a reader to open and no
-  // `mailto:` link for a test to follow: the address is presented as a value with its permission state, and the
-  // proof that reading it records nothing about contact is the activity history below, which never moves.
-  await expect(page.getByRole("link", { name: CARE_PERSON_EMAIL }), "The address is not an action: no link on this application launches mail on the record's behalf.").toHaveCount(0);
+  const emailHandoff = contactMethods.getByRole("link", { name: /^Email\b/u });
+  await expect(emailHandoff, "The permitted address is offered as a handoff whose visible word names the app it opens, and whose hidden half names the address so the row's control is never a bare word.").toHaveAttribute("href", `mailto:${CARE_PERSON_EMAIL}`);
+  await expect(emailHandoff, "The handoff keeps the record's own address as the only thing it would open.").toContainText(CARE_PERSON_EMAIL);
 
   const before = await activityRows(page);
+  // Following the handoff hands the address to another program: this application is never asked to record anything,
+  // which is why the activity history below is the evidence that a handoff is not an interaction.
+  await emailHandoff.click();
+  expect(await activityRows(page), "Following the mail handoff records nothing about contact: the activity history holds exactly the rows it held before the link was followed.").toEqual([...before]);
+
+  // The person this journey cares for holds no number in the seed, so the dialler half of the same control is read on
+  // a record that really holds one: the link carries that record's own text under the dialler scheme.
+  await page.goto(ROSTER_HREF);
+  await searchRoster(page, PHONE_PERSON);
+  await openRecord(page, PHONE_PERSON);
+  await expect(section(page, CONTACT_METHODS_SECTION).getByRole("link", { name: /^Call\b/u }), "A permitted number is offered as a dialler handoff carrying the number the record stores.").toHaveAttribute("href", `tel:${PHONE_PERSON_NUMBER}`);
+  await page.goto(careAddress);
+  await expect(page.getByRole("heading", { name: CARE_PERSON, level: 1 }), "The record this journey acts on is reopened, so the reading above did not move the worker off it.").toBeVisible();
   const openTasksBefore = await section(page, OPEN_TASKS_SECTION).getByRole("listitem").allInnerTexts();
   expect(
     openTasksBefore.some((item) => item.includes(SEEDED_TASK_TITLE)),

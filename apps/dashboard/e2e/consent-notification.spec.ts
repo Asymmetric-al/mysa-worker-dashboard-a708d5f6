@@ -13,7 +13,7 @@
  *
  * **The scenario this file drives, from the deterministic seed.**
  * - The publisher is `publisher-harbour`, the Update-email audience of the seeded established worker's
- *   ministry: four active memberships, one awaiting proof (`membership-awaiting-proof`, accepted
+ *   ministry: five active memberships, one awaiting proof (`membership-awaiting-proof`, accepted
  *   2026-11-16T12:00:00Z, so its window closes at 2026-11-23T12:00:00Z), two off (one of them
  *   unsubscribed) and one restricted. Those four states are what makes "eligible" mean something: the
  *   awaiting-proof, off and restricted memberships must never be counted as recipients.
@@ -36,22 +36,22 @@
  * window does not refuse the attempt and the one definite failure the seed recorded may still be repeated,
  * and at exactly intended + 24 h the request is rejected and a fresh intent cannot revive it.
  *
- * **How a membership is opened, and why through the transport.** The preferences route renders the proof
- * surface only for a membership the session already holds, and no other route composes the signup control,
- * so the deliberate signup below travels over `POST /api/audience` — the handler that control posts to,
- * with the same four-field input and the same closed outcome set. The confirmation and the unsubscribe are
- * driven through the browser on the preferences surface, because those are the acts the criterion is
- * about. `delivery-recovery.spec.ts` reaches the notification request the same way, and for the same
- * reason: a control that is not composed cannot be clicked, and a journey that skipped the assertion would
- * be weaker evidence than one that states the transport it used.
+ * **How a membership is opened, and how a notice is submitted.** Both are driven through the surfaces that own them.
+ * The preferences route composes the family's proof flow: a session that holds no membership for this publisher and
+ * purpose is offered the request step (*Request notices from this publisher*), and once the service records the
+ * membership the page re-reads it and the *Confirm this address* control appears on the same card — so the request,
+ * the confirmation and the unsubscribe below are the person's own acts on their own surface. A notice is submitted
+ * through the composed release: the edition's own editor saves a draft and freezes it with the author's *Publish and
+ * notify now* choice, the review route answers that candidate, and the Update's release review publishes it and
+ * submits the notice for the edition that asked for one.
  *
- * **Why the notice is submitted rather than clicked.** `PublishReview` and its hooks exist, but no route
- * composes them, so this build offers no publish-and-notify control to press. What the criterion needs is
- * still asserted at the boundary the application enforces: the review read states that a reviewer cannot
- * release an edition with a mode its submission did not ask for (so Publish only never becomes Notify by
- * itself), a notice for an edition that publishes no release is refused (so publication and notification
- * are separate acts), and the notice itself is submitted under its own operation identity and then read off
- * the durable surfaces — the delivery results and the synthetic inbox — rather than off anything ephemeral.
+ * **What is still stated at the transport, and why.** Two steps are stated at the handler the controls post to, and
+ * neither of them is a journey: a notice for an edition that publishes no release (the release control offers no selection
+ * for an edition it cannot release), and a confirmation at exactly 168 elapsed hours (the surface disables the control at
+ * that instant, which is the point of the boundary). Each is the service's own answer, and every outcome it could have
+ * produced is asserted on the durable surface a person returns to. Every notice this file submits is submitted by the
+ * composed release, including the one its acting person is excluded from: the receipt names the notice it submitted and
+ * links to that notice's own results, so no identity is taken from the transport.
  */
 import type { Page } from "@playwright/test";
 
@@ -104,14 +104,21 @@ const SEEDED_NOTICE = { intentId: "intent-update-autumn-en", releaseId: "release
 /** The seeded membership states this file counts, so an excluded membership can be shown as excluded rather than missing. */
 const SEEDED_MEMBERSHIPS = { awaitingProof: "membership-awaiting-proof", off: "membership-unsubscribed", restricted: "membership-restricted" } as const;
 
-/** The seeded audience: four active memberships and four excluded, one for each of the reasons the states carry. */
-const SEEDED_AUDIENCE_COUNTS = { eligible: 4, excluded: 4 } as const;
+/** The seeded audience: five active memberships and four excluded, one for each of the reasons the states carry. */
+const SEEDED_AUDIENCE_COUNTS = { eligible: 5, excluded: 4 } as const;
 
 /** The member states the seed lays down, before this file opens one membership of its own. */
-const SEEDED_MEMBER_STATES = { active: 4, "awaiting-proof": 1, off: 2, restricted: 1 } as const;
+const SEEDED_MEMBER_STATES = { active: 5, "awaiting-proof": 1, off: 2, restricted: 1 } as const;
 
-/** The published editions no notice has been submitted for, so a notice for either is a genuinely new intent. */
-const NOT_YET_NOTIFIED = { publicFrench: "release-update-fr-1", approvedSupporter: "release-update-en-approved-supporter-1" } as const;
+/**
+ * The editions a fresh notice is driven through, each with the words its own release control carries: the composed
+ * path releases the edition again, so the release a notice names is the one that release produced rather than the
+ * seeded head, and this file never assumes the identity the service mints.
+ */
+const EDITION = { publicFrench: { variantId: "variant-update-autumn-fr-public", audience: "Public", locale: "Français" }, approvedSupporter: { variantId: "variant-update-autumn-en-approved-supporter", audience: "Approved supporters", locale: "English" } } as const;
+
+/** The prose a fresh edition is given, so the draft the submission freezes is this file's own text. */
+const EDITION_PROSE = "Autumn at Harbour Youth: a note from this edition, written for the one review step.";
 
 /** The edition whose frozen candidate is under review and which therefore publishes no release yet. */
 const UNRELEASED_VARIANT = "variant-update-autumn-ar-public";
@@ -355,25 +362,68 @@ function actionOf(body: unknown, name: string): { readonly available: boolean; r
 }
 
 // ---------------------------------------------------------------------------------------------
-// The application's own writes, at the boundary the browser submits them to
+// The addresses this file drives, and the composed path it drives them through
 // ---------------------------------------------------------------------------------------------
 
-/**
- * Opens the acting person's own purpose-specific membership, which leaves it awaiting proof.
- *
- * This is the application's own signup — the request the preference surface's signup control submits —
- * and it is used here because the preferences route renders the proof surface only for a membership the
- * session already holds. The membership it mints is keyed by the acting principal, which is what makes the
- * notice below address a copy to the person whose inbox is then read.
- */
-async function signUpForNotices(page: Page): Promise<string> {
-  const authority = await controlAuthority(page);
-  const body = await jsonOf(await page.request.post(AUDIENCE_API, { data: { operationId: newAttemptId(), scope: authority.scope, expectedRevision: authority.revision, payload: { publisherId: PUBLISHER, purpose: "update-email", email: OWN_EMAIL } } }), `POST ${AUDIENCE_API}`);
-  expect(outcomeOf(body), "Opening the acting person's own Update-email membership").toBe("accepted");
-  return stringAt(body, ["created", "0"], "The membership a signup minted");
+/** Where one edition's editor is composed, which is where a draft is written and frozen for review. */
+function editorPathOf(variantId: string): string {
+  return `/communication/${encodeURIComponent(UPDATE_DOCUMENT)}/${encodeURIComponent(variantId)}`;
 }
 
-/** Submits one notice for one published edition, under a stated attempt identity. */
+/** Where one edition's frozen candidate is answered by the single review step. */
+function reviewPathOf(variantId: string): string {
+  return `/communication/review/${encodeURIComponent(variantId)}`;
+}
+
+/** The Update's own release review, which publishes the editions selected there and submits a notice for any that asked. */
+const RELEASE_PATH = `/communication/${UPDATE_DOCUMENT}`;
+
+/** The status line the editor's autosave keeps, whose own state word is what a save is judged by. */
+const AUTOSAVE = '[data-slot="autosave-status"]';
+
+/** The receipt the release review renders once it has an answer, which is where a release and its notice are read. */
+const RELEASE_RESULT = '[data-slot="publish-review-result"]';
+
+/**
+ * Opens the acting person's own purpose-specific membership through the proof flow the preferences route composes.
+ *
+ * The request is the person's own act: the address is typed into the flow's own field and the control the flow offers
+ * submits it. Once the service has recorded the membership the page re-reads it, so the confirmation control appears
+ * in place — which is also what makes the membership keyed by the acting principal, and the person a recipient of the
+ * notice below rather than a bystander to it.
+ */
+async function requestNoticesThroughProof(page: Page): Promise<void> {
+  await openPreferences(page);
+  const proof = page.locator(PROOF_FLOW);
+  await expect(proof.getByRole("heading", { level: 2, name: "Confirm this address for notices" })).toBeVisible();
+  await proof.getByRole("textbox", { name: /Email address/u }).fill(OWN_EMAIL);
+  await proof.getByRole("button", { name: "Request notices from this publisher", exact: true }).click();
+  // The request is recorded once the page has re-read the membership it opened: the confirmation control appears in
+  // place, and the read states the membership as awaiting proof rather than as an address anyone may write to.
+  await expect(proof.getByRole("button", { name: /Confirm this address/u }), "The request is recorded, so the confirmation control appears in place").toBeVisible();
+  const opened = await readPreferences(page);
+  expect(fieldAt(opened, "data", "state"), "A request opens the proof step and nothing more").toBe("awaiting-proof");
+}
+
+/** Confirms the address the proof flow holds, inside the window its own acceptance recorded. */
+async function confirmThroughProof(page: Page): Promise<void> {
+  const proof = page.locator(PROOF_FLOW);
+  await proof.getByRole("button", { name: /Confirm this address/u }).click();
+  // The receipt is the durable record of the act, and it stays on the surface the act was made from.
+  await expect(proof.getByText("Saved", { exact: true })).toBeVisible();
+  const confirmed = await readPreferences(page);
+  expect(fieldAt(confirmed, "data", "state"), "The person's own act makes the membership active").toBe("active");
+}
+
+/**
+ * Submits one notice for one published edition, at the transport its handler answers.
+ *
+ * This is used for the two answers a control cannot produce, and for nothing else: a notice for an edition that
+ * publishes no release (the release review offers no selection for an edition it cannot release) and a notice whose
+ * intended instant is past the 24 useful hours (the review the control needs would have to be reached first). Both are
+ * refusals the service states itself, and both are asserted as the refusals they are rather than as a substitute for a
+ * journey.
+ */
 async function submitNotice(page: Page, input: { readonly releaseId?: string; readonly variantId?: string; readonly intendedAt?: string }): Promise<{ readonly operationId: string; readonly body: unknown }> {
   const authority = await controlAuthority(page);
   const operationId = newAttemptId();
@@ -392,6 +442,75 @@ async function submitNotice(page: Page, input: { readonly releaseId?: string; re
 }
 
 /**
+ * Drives one fresh notice through the composed controls, in the order a person meets them, and answers with the notice
+ * the receipt names.
+ *
+ * The edition's editor saves the prose as its draft and freezes that exact revision with the author's *Publish and
+ * notify now* choice; the review route answers the frozen candidate in its one step; and the Update's release review
+ * publishes the edition and submits the notice the submission asked for. Nothing here names a release, an instant, a
+ * recipient or a ceiling: the release mints its own identity, and the receipt names the notice it submitted, so the
+ * identity this returns is read off the act that submitted the notice rather than taken from the transport.
+ */
+async function releaseAndNotify(page: Page, edition: (typeof EDITION)[keyof typeof EDITION]): Promise<{ readonly intentId: string }> {
+  await page.goto(editorPathOf(edition.variantId));
+  const editor = page.locator('[data-slot="editor-shell"]');
+  await expect(editor).toBeVisible();
+  const prose = page.getByRole("textbox", { name: "The text of this Update edition", exact: true });
+  await prose.click();
+  await page.keyboard.type(EDITION_PROSE);
+  await expect(page.locator(AUTOSAVE)).toHaveAttribute("data-autosave-state", "saved");
+
+  // The author's choice is recorded with the submission, and the reviewer cannot change it afterwards.
+  const submitStep = editor.locator('[data-slot="action-review"]');
+  await expect(submitStep).toContainText("Submit this edition for review");
+  // The author's choice has to reach the step's own state, not only the radio's DOM: the mode group is React-controlled
+  // and states the mode this submission will record in its own `data-mode`, so the click is read back from that group
+  // and made again if the group still states the other mode, rather than leaving the release below to be refused for a
+  // mode the submission never asked for.
+  const modeGroup = submitStep.locator('[data-slot="submission-release-mode"]');
+  await expect(modeGroup).toBeVisible();
+  await expect(async () => {
+    await submitStep.getByRole("radio", { name: "Publish and notify now", exact: true }).click();
+    await expect(modeGroup).toHaveAttribute("data-mode", "publish-and-notify", { timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+  await submitStep.getByRole("button", { name: "Submit for review", exact: true }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Submit for review", exact: true }).click();
+  await expect(submitStep.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted");
+
+  // One review step, given once: the candidate is approved for this audience and this language and nothing else.
+  await page.goto(reviewPathOf(edition.variantId));
+  await expect(page.getByRole("heading", { name: "Review this Update", level: 1 })).toBeVisible();
+  // The reviewer reads the mode the submission recorded: Publish only and Publish and notify now are two facts, and
+  // this screen states the one the author asked for rather than the one a reviewer could prefer.
+  await expect(page.locator('[data-slot="review-publish-intent"]')).toHaveAttribute("data-notify-requested", "true");
+  await expect(page.getByRole("radio", { name: "Approve", exact: true })).toBeChecked();
+  await page.getByRole("button", { name: "Approve this revision", exact: true }).click();
+  // The decision is awaited where the panel records it, so the release below reads a candidate that is already approved:
+  // the release review derives the edition's release mode from that recorded decision, and a release that ran before it
+  // was recorded would be refused as a mode the submission never asked for.
+  await expect(page.locator('[data-slot="review-recorded-decision"]')).toHaveAttribute("data-decision", "approved");
+
+  // The release review publishes the edition and, because its submission asked for one, submits the notice.
+  await page.goto(RELEASE_PATH);
+  await expect(page.getByRole("heading", { level: 2, name: "Release the selected editions" })).toBeVisible();
+  await page.getByRole("checkbox", { name: `Release ${edition.audience} — ${edition.locale}`, exact: true }).click();
+  await page.getByRole("button", { name: "Release these editions", exact: true }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Release these editions", exact: true }).click();
+  const receipt = page.locator(RELEASE_RESULT);
+  await expect(receipt).toHaveAttribute("data-outcome", "accepted");
+  await expect(receipt, "The recorded mode asked for a notice, so the release submitted one").toContainText("Notice for this edition:");
+
+  // The receipt names the notice it submitted and links to that notice's own results, which is how the results of a
+  // submitted notice are reachable from the act that submitted it. The identity is therefore the link's own `intentId`
+  // rather than one read off the transport or off a message.
+  const noticeResults = receipt.getByRole("link", { name: "Open the recorded results for this notice", exact: true });
+  await expect(noticeResults, "The receipt links to the results of the notice it submitted").toBeVisible();
+  const intentId = new URL((await noticeResults.getAttribute("href")) ?? "", "http://127.0.0.1").searchParams.get("intentId") ?? "";
+  expect(intentId, "The link names the notice the release submitted").toMatch(/^intent-/u);
+  return { intentId };
+}
+
+/**
  * Submits one confirmation of one membership, presenting the revision the preferences read states.
  *
  * This is the transport the Confirm control posts to, used where the answer itself is the assertion — a
@@ -401,11 +520,6 @@ async function submitConfirmation(page: Page, membershipId: string): Promise<unk
   const authority = await controlAuthority(page);
   const preferences = await readPreferences(page);
   return jsonOf(await page.request.post(CONFIRM_API, { data: { operationId: newAttemptId(), scope: authority.scope, expectedRevision: stringAt(preferences, ["revision"], "The preferences read's revision"), payload: { membershipId } } }), `POST ${CONFIRM_API}`);
-}
-
-/** The intent and the send result a accepted notice created, in the order the outcome states them. */
-function noticeIdentitiesOf(body: unknown): { readonly intentId: string; readonly sendResultId: string } {
-  return { intentId: stringAt(body, ["created", "0"], "The intent a notice created"), sendResultId: stringAt(body, ["created", "1"], "The send result a notice created") };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -552,9 +666,10 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
   });
 
   test("a confirmation one second inside the 168-elapsed-hour window is accepted", async ({ page }) => {
-    const membershipId = await signUpForNotices(page);
-    expect(membershipId, "The membership is keyed by the principal that opened it").toBe(OWN_MEMBERSHIP);
+    // The request is the person's own act on the proof surface, and the membership it opens is keyed by the principal.
+    await requestNoticesThroughProof(page);
     const opened = await readPreferences(page);
+    expect(fieldAt(opened, "data", "membershipId"), "The membership is keyed by the principal that opened it").toBe(OWN_MEMBERSHIP);
     expect(fieldAt(opened, "data", "state"), "A signup opens the proof step and nothing more").toBe("awaiting-proof");
     expect(stringAt(opened, ["data", "acceptedOn"], "The acceptance a signup recorded"), "The acceptance is the scenario instant").toBe(SIGNUP_WINDOW.acceptedAt);
     expect(stringAt(opened, ["data", "confirmation", "deadline"], "The deadline a signup recorded"), "The window closes 168 elapsed hours after the acceptance").toBe(SIGNUP_WINDOW.deadline);
@@ -581,8 +696,9 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
   });
 
   test("a confirmation at exactly 168 elapsed hours is refused, and nothing revives the window", async ({ page }) => {
-    const membershipId = await signUpForNotices(page);
+    await requestNoticesThroughProof(page);
     const opened = await readPreferences(page);
+    const membershipId = stringAt(opened, ["data", "membershipId"], "The membership the signup opened");
     const recordedDeadline = stringAt(opened, ["data", "confirmation", "deadline"], "The deadline a signup recorded");
     expect(recordedDeadline).toBe(SIGNUP_WINDOW.deadline);
 
@@ -639,26 +755,26 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     expect(notifyNow.reason).toMatch(/with a mode the submission did not ask for/u);
 
     // Publication and notification are separate acts: an edition that publishes no release has nothing to
-    // notify anyone about, so a notice cannot stand in for a publication that has not happened.
+    // notify anyone about, so a notice cannot stand in for a publication that has not happened. The release
+    // control offers no selection for that edition, and the refusal below is the service's own answer to the
+    // request the control would have posted had the edition been releasable.
     const early = await submitNotice(page, { variantId: UNRELEASED_VARIANT, intendedAt: SEED_INSTANT });
     expect(outcomeOf(early.body), "A notice for an edition that publishes no release").toBe("invalid");
     expect(messagesAt(early.body, "releaseId"), "The refusal states that nothing is published to notify").toMatch(/publishes no release yet/u);
 
     // The acting person opens its own membership — the deliberate act, not a subscribed flag — and
     // confirms it, which is what makes it eligible rather than merely requested.
-    const membershipId = await signUpForNotices(page);
-    const confirmation = await submitConfirmation(page, membershipId);
-    expect(outcomeOf(confirmation), "Confirming the address inside its window").toBe("accepted");
+    await requestNoticesThroughProof(page);
+    await confirmThroughProof(page);
     const audience = await readAudience(page);
     expect(fieldAt(audience, "data", "counts", "eligible"), "The seeded actives plus the membership just confirmed").toBe(SEEDED_AUDIENCE_COUNTS.eligible + 1);
     expect(fieldAt(audience, "data", "counts", "excluded"), "An address awaiting proof, two Off choices and one restriction").toBe(SEEDED_AUDIENCE_COUNTS.excluded);
     expect(fieldAt(audience, "data", "memberStates"), "The four states stay four").toEqual({ ...SEEDED_MEMBER_STATES, active: SEEDED_MEMBER_STATES.active + 1 });
 
-    // One deliberate notice for one published edition, under its own attempt identity.
-    const submitted = await submitNotice(page, { releaseId: NOT_YET_NOTIFIED.publicFrench, intendedAt: SEED_INSTANT });
-    expect(outcomeOf(submitted.body), "Submitting the notice for the published edition").toBe("accepted");
-    const { intentId, sendResultId } = noticeIdentitiesOf(submitted.body);
-    expect(sendResultId, "A notice records its per-recipient results under its own identity").not.toBe(intentId);
+    // One deliberate notice for one published edition, submitted by the composed release the author's own
+    // Publish and notify now choice asked for. Its identity is the one the receipt names, and the inbox is
+    // still read below to prove the message that notice produced reached the recipient.
+    const intentId = (await releaseAndNotify(page, EDITION.publicFrench)).intentId;
 
     const result = await readSendResult(page, intentId);
     const eligibleCount = numberOf(audience, ["data", "counts", "eligible"], "The audience's eligible count");
@@ -742,19 +858,19 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
   });
 
   test("unsubscribing turns off one publisher and one purpose, and a later notice excludes that person", async ({ page }) => {
-    // The membership the reader will turn off, opened and confirmed by that reader's own acts.
-    const membershipId = await signUpForNotices(page);
-    expect(outcomeOf(await submitConfirmation(page, membershipId)), "Confirming the acting person's own address").toBe("accepted");
+    // The membership the reader will turn off, opened and confirmed by that reader's own acts on the proof flow.
+    await requestNoticesThroughProof(page);
+    await confirmThroughProof(page);
     const before = await readPreferences(page);
     const languageBefore = fieldAt(before, "data", "languagePreference");
     const supportBefore = await readSupport(page);
     const supportRevisionBefore = stringAt(supportBefore, ["revision"], "The support read's revision");
     const receivedBefore = fieldAt(supportBefore, "data", "report", "summary", "0", "received", "minorUnits");
 
-    // A notice reaches the eligible recipient, which is the state the unsubscribe then has to change.
-    const first = await submitNotice(page, { releaseId: NOT_YET_NOTIFIED.publicFrench, intendedAt: SEED_INSTANT });
-    expect(outcomeOf(first.body), "Submitting the notice the recipient is eligible for").toBe("accepted");
-    const firstIntent = noticeIdentitiesOf(first.body).intentId;
+    // A notice reaches the eligible recipient, which is the state the unsubscribe then has to change. The
+    // notice is submitted by the composed release, and the receipt names it; the inbox reads below are what
+    // prove the message it produced reached the recipient.
+    const firstIntent = (await releaseAndNotify(page, EDITION.publicFrench)).intentId;
     expect(numberOf(await readInbox(page), ["data", "intentCount"], "Messages in the inbox before unsubscribing")).toBe(1);
 
     // The unsubscribe is the message's own action on the reader's own surface, and it names exactly one
@@ -797,10 +913,12 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     await expect(page.getByText(/The person unsubscribed from this publisher and this purpose/u).first()).toBeVisible();
 
     // A later notice excludes that person: the ceiling is the eligible count without them, no recipient row
-    // names them, and no second message appears in their inbox.
-    const later = await submitNotice(page, { releaseId: NOT_YET_NOTIFIED.approvedSupporter, intendedAt: SEED_INSTANT });
-    expect(outcomeOf(later.body), "A later notice for another published edition").toBe("accepted");
-    const laterIntent = noticeIdentitiesOf(later.body).intentId;
+    // names them, and no second message appears in their inbox. The later notice is submitted by the composed
+    // release, for a different edition of this same Update, and the receipt names the notice it submitted — so
+    // the identity the results below are read under is no longer taken from the transport, even though the
+    // person whose acts this file follows is excluded from this notice and no inbox of theirs holds it.
+    const later = await releaseAndNotify(page, EDITION.approvedSupporter);
+    const laterIntent = later.intentId;
     expect(laterIntent, "Every notice is its own intent").not.toBe(firstIntent);
     const laterResult = await readSendResult(page, laterIntent);
     expect(numberOf(laterResult, ["data", "ceilingCount"], "The later notice's ceiling"), "The ceiling is the eligible count after the unsubscribe").toBe(SEEDED_AUDIENCE_COUNTS.eligible);
@@ -843,13 +961,21 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     await expect(page.getByText("Within its usefulness window").first()).toBeVisible();
     const rows = page.getByRole("row");
     await expect(rows.filter({ hasText: "Repeat permitted" })).toHaveCount(1);
-    await expect(rows.filter({ hasText: "Repeat not permitted" })).toHaveCount(3);
+    await expect(rows.filter({ hasText: "Repeat not permitted" })).toHaveCount(4);
     await expect(page.getByText(SIMULATED_MAIL).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: RESEND_CONTROL }), "The window permits a repeat; it never offers one here").toHaveCount(0);
-    // Inside the window the notice's own rule answers — not the window — which is what makes the closure below
-    // a boundary rather than a change in the notice.
-    const inside = await submitNotice(page, { releaseId: SEEDED_NOTICE.releaseId, intendedAt: SEEDED_NOTICE.intendedAt });
-    expect(outcomeOf(inside.body), "The same notice inside its usefulness window").toBe("unchanged");
+    // The window being open is what puts the repeat control on this surface: the read permits it, its own action
+    // names it, and the control submits the copies the service recorded as definite failures. It is never a resend
+    // under a new key, so nothing here matches the words a resend control would carry.
+    const repeatControl = page.getByRole("button", { name: "Repeat the failed copies", exact: true });
+    await expect(repeatControl, "Inside the window the read permits a repeat, so the surface offers one").toBeVisible();
+    await expect(page.getByRole("button", { name: RESEND_CONTROL }), "The window permits a repeat; it never offers a resend").toHaveCount(0);
+    const seededFingerprint = sendResultFingerprint(await readSendResult(page, SEEDED_NOTICE.intentId));
+    await repeatControl.click();
+    // The outcome renders in place through the durable receipt, in the service's own terms: the failed copy was
+    // submitted again as a notice of its own, so this notice's recorded results are exactly what they were.
+    await expect(page.locator('[data-slot="delivery-repeat-result"] [data-slot="operation-result"]')).toHaveAttribute("data-outcome", "accepted");
+    await expect(page.locator('[data-slot="delivery-repeat-result"]').getByRole("link", { name: "Open the repeated notice's results" })).toBeVisible();
+    expect(sendResultFingerprint(await readSendResult(page, SEEDED_NOTICE.intentId)), "A repeat leaves the notice it repeated exactly as it was").toBe(seededFingerprint);
 
     // At the deadline exactly: closed. Every row is unrepeatable and the failed row states why.
     await setClock(page, SEEDED_NOTICE.deadline);
@@ -871,6 +997,10 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     await expect(page.getByText("Past its usefulness window").first()).toBeVisible();
     await expect(page.getByText(/24-hour usefulness window has closed, so it cannot be revived as a fresh attempt/u)).toBeVisible();
     await expect(page.getByRole("row").filter({ hasText: "Repeat permitted" })).toHaveCount(0);
+    // At the boundary the surface states the read's own reason for refusing a repeat and offers no control at all.
+    await expect(page.getByText(/No recorded row may be submitted again/u)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Repeat the failed copies", exact: true }), "A closed window offers no repeat").toHaveCount(0);
+    await expect(page.locator('[data-slot="delivery-repeat-result"]')).toHaveCount(0);
 
     // A fresh attempt carrying the notice's own intended instant is rejected by the window, and a new intent
     // cannot revive it: nothing a caller can press turns the refusal into a second send.

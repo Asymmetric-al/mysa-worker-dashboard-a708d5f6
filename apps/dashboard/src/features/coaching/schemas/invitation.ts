@@ -12,7 +12,7 @@ const civilDateSchema = z
   });
 const invitedModulesShape = { "support-goal": z.literal(false), "support-results": z.literal(false), targets: z.literal(false), "check-ins": z.literal(false), "task-summaries": z.literal(false) } satisfies Record<ModuleKey, z.ZodLiteral<false>>;
 const shareDurationSchema = z.discriminatedUnion("kind", [z.strictObject({ kind: z.literal("ongoing") }), z.strictObject({ kind: z.literal("through-date"), shareThroughDate: civilDateSchema })]);
-const financialRangeSchema = z.strictObject({ fromDate: civilDateSchema, toDate: civilDateSchema }).refine((range) => range.fromDate <= range.toDate, { path: ["toDate"] });
+const financialRangeSchema = z.strictObject({ fromDate: civilDateSchema, toDate: civilDateSchema, currency: z.string().trim().min(1).optional() }).refine((range) => range.fromDate <= range.toDate, { path: ["toDate"] });
 export const invitationPayloadSchema = z.strictObject({ coachPrincipalId: opaqueReferenceSchema, organizationId: opaqueReferenceSchema, ministryId: opaqueReferenceSchema, modules: z.strictObject(invitedModulesShape), duration: shareDurationSchema, financialRange: financialRangeSchema.optional() });
 export type InvitationPayload = z.infer<typeof invitationPayloadSchema>;
 export const acceptancePayloadSchema = z.strictObject({ grantId: opaqueReferenceSchema, invitationRevision: z.number().int().min(0) });

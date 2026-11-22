@@ -43,14 +43,11 @@ export const FAILURE_MODE_COPY: Readonly<Record<FailureMode, FailureModeCopy>> =
 };
 export const PERSONA_SWITCH_COPY = {
   label: "Preview persona",
-  explanation: "This development control selects the seeded persona or session state this session carries, so a preview shows what that identity is given.",
+  selectLabel: "Seeded identity this browser acts as",
+  explanation: "This development control selects the seeded session this browser acts as, so a preview shows what that identity is given.",
   grantsNothingNote: "It grants nothing: every read that follows is authorised again, so a persona that may not read a surface receives the honest denial notice instead of a hidden destination.",
-  switchUnavailableNote: "The build this session runs advertises no call that changes the identity it acts as, so none is offered here. The identity is chosen by the seeded session this browser carries, which is laid down when the sessions are seeded, and a deterministic reset restores every one of them.",
-  carriesLabel: "This session carries",
-  rosterLabel: "Identities the runtime lists",
-  sessionStateLabel: "Session state",
-  activeMarker: "this session",
-  unlistedIdentityNote: "The principal this session acts as is not one the roster lists, so it is reported as an identity the roster does not describe rather than given a guessed label.",
+  selectionNote: "Choosing one of these selects the seeded session this browser acts as. The choice travels in this browser's own session cookie, it changes nothing the store holds, and it is not a sign-in: the identity a read is authorised for is decided again on every request.",
+  pendingNote: "Switching this browser's session and waiting for the answer.",
 } as const;
 /** The sentences the composition states instead of a panel when this session's development runtime could not be read at all. */
 export const DEV_READ_COPY = {

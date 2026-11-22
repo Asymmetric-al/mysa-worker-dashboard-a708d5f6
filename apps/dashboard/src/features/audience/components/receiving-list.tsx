@@ -49,6 +49,8 @@ export interface ReceivingPersonaView {
 export interface ReceivingListProps {
   /** The authority the server read under; every re-request is authorised again against it. */
   readonly scope: Scope;
+  /** The interface locale this surface formats its counts in, stated by the route that composes it. */
+  readonly locale: string;
   /** The server's own answer: adopted as the first render and replaced — never merged — by each later server render. */
   readonly initialEnvelope: ReadResult<ReceivingListEnvelope>;
   /** The persona being previewed, stated in text so the surface cannot be mistaken for an anonymous reader. */
@@ -114,7 +116,18 @@ const EDITION_LINK_CLASS = "inline-flex min-h-6 max-w-full items-center break-wo
 const HEADING_TAG: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4">> = { 1: "h1", 2: "h2", 3: "h3", 4: "h4" };
 /** The level a notice nests under: never above its surrounding heading, and never below `h4`. */
 const NESTED_HEADING: Readonly<Record<NoticeHeadingLevel, NoticeHeadingLevel>> = { 1: 2, 2: 3, 3: 4, 4: 4 };
-const COUNT_FORMAT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+/** The whole-number formatters this surface counts with, one per interface locale: the locale is a viewer choice, so the formatter is keyed by the one the route states and the constructor is paid once per locale rather than once per formatted count. */
+const COUNT_FORMATS = new Map<string, Intl.NumberFormat>();
+/** The whole-number formatter for the interface locale the composing route states. */
+function countFormatOf(locale: string): Intl.NumberFormat {
+  const known = COUNT_FORMATS.get(locale);
+  if (known !== undefined) {
+    return known;
+  }
+  const made = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  COUNT_FORMATS.set(locale, made);
+  return made;
+}
 // Reading the envelope's own statements
 const normaliseTag = (tag: string): string => tag.trim().toLowerCase();
 /**
@@ -216,9 +229,11 @@ function Heading({ id, level, children }: { readonly id: string; readonly level:
 interface PageWindowLineProps {
   readonly page: ReceivingPageWindow;
   readonly state: ValueState | undefined;
+  /** The interface locale the window's figures are formatted in, stated by the route that composes the surface. */
+  readonly locale: string;
 }
 /** The whole-result count, stated from the read's own window; a count the envelope did not state is reported as the value state it carries rather than formatted as a number. */
-function PageWindowLine({ page, state }: PageWindowLineProps): ReactElement {
+function PageWindowLine({ page, state, locale }: PageWindowLineProps): ReactElement {
   if (state !== undefined && state !== "value") {
     const word = VALUE_STATE_WORDS[state];
     return (
@@ -232,9 +247,10 @@ function PageWindowLine({ page, state }: PageWindowLineProps): ReactElement {
   if (total === 0) {
     return <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{`No ${ITEM_NOUN_SINGULAR}`}</p>;
   }
+  const countFormat = countFormatOf(locale);
   const first = (page.page - FIRST_PAGE) * page.pageSize + 1;
   const last = Math.min(page.page * page.pageSize, total);
-  return <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{`Showing ${COUNT_FORMAT.format(first)}\u2013${COUNT_FORMAT.format(last)} of ${COUNT_FORMAT.format(total)} ${total === 1 ? ITEM_NOUN_SINGULAR : ITEM_NOUN_PLURAL}`}</p>;
+  return <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{`Showing ${countFormat.format(first)}\u2013${countFormat.format(last)} of ${countFormat.format(total)} ${total === 1 ? ITEM_NOUN_SINGULAR : ITEM_NOUN_PLURAL}`}</p>;
 }
 interface EditionRowProps {
   readonly edition: ReceivingEditionView;
@@ -290,7 +306,7 @@ function EditionRow({ edition, requestedTag }: EditionRowProps): ReactElement {
  * route so the server authorises the read again; nothing below narrows, re-counts or re-orders what
  * the read supplied.
  */
-export function ReceivingList({ scope, initialEnvelope, persona, params, activeAudience, onSelectAudience, onDirectionChange, headingLevel = 2, className }: ReceivingListProps): ReactElement {
+export function ReceivingList({ scope, locale, initialEnvelope, persona, params, activeAudience, onSelectAudience, onDirectionChange, headingLevel = 2, className }: ReceivingListProps): ReactElement {
   const router = useRouter();
   const pathname = usePathname();
   const headingId = useId();
@@ -354,7 +370,7 @@ export function ReceivingList({ scope, initialEnvelope, persona, params, activeA
           ))}
         </ul>
         <div className="flex min-w-0 flex-col gap-2">
-          {page === undefined ? null : <PageWindowLine page={page} state={countState} />}
+          {page === undefined ? null : <PageWindowLine page={page} state={countState} locale={locale} />}
           {/* The window is the read's own, so paging is two links that ask the route for another page
               rather than a control that slices rows here. This file's dependency set excludes the
               shared paging bar on purpose — a reading list carries no page-size choice — so the two

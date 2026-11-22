@@ -177,14 +177,25 @@ const SETTLE_ATTEMPT_LIMIT = 12;
 const FOCUS_READ_ATTEMPTS = 3;
 
 /**
+ * The last control the zoomed roster's sweep has to reach, and where it stops.
+ *
+ * The sweep exists to prove the list's own controls are reachable in order and that the end of the list is operable from
+ * the keyboard rather than only from a pointer, so it ends on the control that states the end of the list. Past it the
+ * surface is the composing route's own blocks and then the browser's development overlay, which is no part of the list.
+ */
+const ZOOM_TAB_LAST_STOP = "Rows per page";
+
+/**
  * The sweep the zoomed layout takes, sized to reach the pager.
  *
  * At 200 % zoom the shell is below its 768 px breakpoint, so its navigation is composed into the mobile Sidebar behind
  * one trigger instead of standing ahead of the surface as fifteen stops, and the window is spent on the roster instead:
  * the search field, the facet toggles, the sortable column headers, the records' own actions and, last of them at this
- * seed, the pager. A shorter window would leave the end of the list reachable only by a pointer.
+ * seed, the pager. Each record now carries three controls — the link that opens it, the action that opens it beside the
+ * list, and the link to its own page — so the window holds three stops per record and not two. A shorter window would
+ * leave the end of the list reachable only by a pointer.
  */
-const ZOOM_TAB_SWEEP_STEPS = 64;
+const ZOOM_TAB_SWEEP_STEPS = 96;
 
 /** The text the zoomed roster is searched with, so the list is proved operable rather than merely reachable at that zoom. */
 const ROSTER_SEARCH_TEXT = "mbeki";
@@ -382,9 +393,11 @@ async function typeFromKeyboard(page: Page, control: Locator, text: string, step
  *
  * This is the half of the keyboard requirement a filled-in form cannot prove on its own: `Tab` reaches the controls,
  * focus moves in reading order, nothing covers what it reaches, and `Shift+Tab` returns along the same path. The names
- * of the stops are collected so an assertion can state that the sweep met the controls it was meant to meet.
+ * of the stops are collected so an assertion can state that the sweep met the controls it was meant to meet. A window
+ * may also name the control it has to reach (`until`), in which case the sweep ends on that control: everything past it
+ * belongs to another block or to the browser, and a stop there is no statement about this surface.
  */
-async function sweepTabOrder(page: Page, surface: string, steps: number): Promise<readonly string[]> {
+async function sweepTabOrder(page: Page, surface: string, steps: number, until?: string): Promise<readonly string[]> {
   await page.evaluate(() => {
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
@@ -396,6 +409,9 @@ async function sweepTabOrder(page: Page, surface: string, steps: number): Promis
     await settleLayout(page);
     const reading = await expectFocusVisibleAndUnobscured(page, `${surface}: Tab stop ${String(step)}`);
     names.push(reading.name);
+    if (until !== undefined && reading.name === until) {
+      break;
+    }
   }
   // One `Shift+Tab` proves the path runs backwards too, and lands on a control the forward sweep already met.
   await page.keyboard.press("Shift+Tab");
@@ -1048,7 +1064,7 @@ test.describe("at 200 % zoom", () => {
     // At this zoom the shell is below its 768 px breakpoint, so the sweep's stops are the surface's own controls: each is
     // proved visible and unobscured by the sweep itself, and the families of control the job needs are named here, so a
     // control that stopped being reachable cannot be covered by another stop.
-    const stops = await sweepTabOrder(page, "The partner roster at 200 % zoom", ZOOM_TAB_SWEEP_STEPS);
+    const stops = await sweepTabOrder(page, "The partner roster at 200 % zoom", ZOOM_TAB_SWEEP_STEPS, ZOOM_TAB_LAST_STOP);
     await testInfo.attach("tab order — partner roster at 200 % zoom", { body: JSON.stringify({ stops }, null, 2), contentType: "application/json" });
     const stopIndex = (name: string): number => stops.indexOf(name);
     const searchStop = stopIndex("Search");

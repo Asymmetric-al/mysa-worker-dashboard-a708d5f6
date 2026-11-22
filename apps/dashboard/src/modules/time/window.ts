@@ -1,9 +1,19 @@
-/** The fixed time boundaries of the worker dashboard: the referral New window, the referral continuation window, the coaching share cutoff, the notification usefulness window and the confirmation window. */
+/** The fixed time boundaries of the worker dashboard: the referral New window, the referral continuation window, the coaching share cutoff, the notification usefulness window and the confirmation window, and the accepted source zone the referral windows are resolved in. */
 import { Temporal } from "temporal-polyfill";
 import { type CivilDate, type CivilDayStart, type DatePrecision, civilDateAt, isPreciseDate, startOfCivilDay } from "./civil";
 /** How long an immediate notification stays useful after the instant it was intended for: a whole number of elapsed hours. */
 export const NOTIFICATION_USEFULNESS_HOURS = 24;
 export const CONFIRMATION_WINDOW_HOURS = 168;
+/**
+ * The accepted source zone every referral window is resolved in.
+ *
+ * An introduction date is a calendar date in one declared zone, so the endpoint the New window expires
+ * at resolves the same way whoever reads it and whatever zone they display the date in. The zone is a
+ * fixed property of the rule rather than a per-reader choice: this module owns it because it owns the
+ * window arithmetic that depends on it, and both the development seed and the surfaces that record an
+ * introduction read it from here rather than stating a second copy of it.
+ */
+export const REFERRAL_SOURCE_ZONE = "Europe/London";
 const SECONDS_PER_DAY = 86_400;
 /** How a resolved civil midnight is reported, taken from the civil module's own union so this declaration cannot drift from the one that produces it. */
 export type MidnightResolution = Extract<CivilDayStart, { status: "resolved" }>["resolution"];

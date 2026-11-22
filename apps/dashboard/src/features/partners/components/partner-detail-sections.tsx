@@ -7,6 +7,7 @@ import StateNotice, { type NoticeAction, type NoticeHeadingLevel, type NoticeRet
 import StatusBadge, { BUCKET_STATUS, statusBadgeProps, valueStateWord, type StatusBadgeSpec } from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
@@ -14,7 +15,7 @@ import type { CommitmentRowRecord, ContactMethodKind, Coverage, GiftRowRecord, I
 import type { FieldMessages } from "@/modules/data-service/outcome";
 import { formatMinor } from "@/modules/money/format";
 import { FACET_VALUE_LABELS, PERMISSION_FACT_COPY } from "../copy/facets";
-import { ARCHIVE_COPY, AUDIENCE_LABEL_COPY, IDENTITY_COPY, INTERACTION_COPY, PRIVATE_RECORD_COPY } from "../copy/privacy";
+import { ARCHIVE_COPY, AUDIENCE_LABEL_COPY, CONTACT_HANDOFF_COPY, IDENTITY_COPY, INTERACTION_COPY, PRIVATE_RECORD_COPY } from "../copy/privacy";
 import { PARTNER_ACTION_LABELS, SURFACE_STATE_COPY, VALUE_STATE_COPY, type PartnersSurface, type SurfaceState } from "../copy/states";
 type ReadSource = NonNullable<StateNoticeProps["source"]>;
 type DenialCode = NonNullable<StateNoticeProps["reasonCode"]>;
@@ -39,7 +40,7 @@ export type PartnerSupportHistory = {
 };
 export type PartnerDetailData = { readonly partner: PartnerRecord; readonly secondaryName?: string; readonly avatarSrc?: string; readonly relationshipContext: readonly PartnerRelationship[]; readonly openTasks: readonly TaskRecord[]; readonly supportHistory?: PartnerSupportHistory };
 export type PartnerPrivateData = { readonly notes: readonly PrivateNoteRecord[]; readonly preparation?: { readonly partnerId: string; readonly archived: boolean } };
-export type PartnerDetailActions = { readonly bar?: ReactNode; readonly status?: ReactNode; readonly privateNote?: ReactNode; readonly interaction?: ReactNode };
+export type PartnerDetailActions = { readonly bar?: ReactNode; readonly status?: ReactNode; readonly privateNote?: ReactNode; readonly interaction?: ReactNode; readonly preparation?: ReactNode; readonly filing?: ReactNode };
 export type PartnerDetailLinks = { readonly logInteraction?: string; readonly createTask?: string; readonly addPreparation?: string };
 export type PartnerDetailSectionsProps = {
   readonly partner: PartnerReadResult<PartnerDetailData>;
@@ -73,6 +74,11 @@ const SUPPORT_BASIS_LEAD = "Received support on the named basis";
 const COMMITMENTS_GROUP_TITLE = "Recurring commitments the source states";
 const SUPPORT_LEDGER_LINK_LABEL = "See every gift recorded for this partner";
 const CONTACT_METHOD_KIND_LABELS: Readonly<Record<ContactMethodKind, string>> = { email: "Email address", phone: "Phone number", postal: "Postal address" };
+/** The two contact methods a handoff exists for. A postal line leaves the application on no scheme, so it keeps its value and offers none. */
+type ContactHandoff = { readonly scheme: "mailto:" | "tel:"; readonly label: string };
+const CONTACT_HANDOFFS: Readonly<Partial<Record<ContactMethodKind, ContactHandoff>>> = { email: { scheme: "mailto:", label: "Email" }, phone: { scheme: "tel:", label: "Call" } };
+const CONTACT_HANDOFF_CLASS = cn(buttonVariants({ variant: "outline", size: "sm" }), "h-auto min-h-6 max-w-full whitespace-normal py-1.5");
+const CONTACT_METHODS_HANDOFF = `${INTERACTION_COPY.whatDoesNot.body} ${CONTACT_HANDOFF_COPY.recordsNothing.body}`;
 const PRECISION_WORDS: Readonly<Record<InteractionRecord["precision"], string>> = { date: "Date recorded", approximate: "Approximate date", unknown: "Date not known" };
 const TASK_STATUS_LABELS: Readonly<Record<TaskRecord["status"], StatusBadgeSpec>> = { open: { label: "Open", tone: "info" }, completed: { label: "Completed", tone: "positive" }, reopened: { label: "Reopened", tone: "caution" }, cancelled: { label: "Cancelled", tone: "muted" } };
 const NOTICE_HEADING_BY_LAYOUT: Readonly<Record<RecordDetailLayout, NoticeHeadingLevel>> = { page: 3, panel: 4, sheet: 4 };
@@ -207,23 +213,37 @@ function ReadNotice<T>({ read, surface, headingLevel }: { readonly read: Exclude
   }
 }
 function ContactMethodsBody({ partner }: { readonly partner: PartnerRecord }): ReactElement {
+  const offersHandoff = partner.contactMethods.some((method) => CONTACT_HANDOFFS[method.kind] !== undefined);
   return (
     <div className="flex flex-col gap-3">
       {partner.contactMethods.length === 0 ? (
         <p className="text-sm text-muted-foreground">{PERMISSION_FACT_COPY.contactability.whenAbsent}</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {partner.contactMethods.map((method, index) => (
-            <li key={`${method.kind}-${String(index)}`} className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">{CONTACT_METHOD_KIND_LABELS[method.kind]}</span>
-              {/* An address, a number and a postal line are weak-direction values, so each is
-                  isolated: a right-to-left neighbour cannot reorder it, and a leading zero survives. */}
-              <bdi className="mono-identifier text-sm">{method.value}</bdi>
-              <StatusBadge label={method.permitted ? CONTACT_METHOD_PERMITTED : CONTACT_METHOD_NOT_PERMITTED} tone={method.permitted ? "positive" : "muted"} srPrefix={CONTACT_METHOD_KIND_LABELS[method.kind]} />
-            </li>
-          ))}
+          {partner.contactMethods.map((method, index) => {
+            const handoff = CONTACT_HANDOFFS[method.kind];
+            return (
+              <li key={`${method.kind}-${String(index)}`} className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-muted-foreground">{CONTACT_METHOD_KIND_LABELS[method.kind]}</span>
+                {/* An address, a number and a postal line are weak-direction values, so each is
+                    isolated: a right-to-left neighbour cannot reorder it, and a leading zero survives. */}
+                <bdi className="mono-identifier text-sm">{method.value}</bdi>
+                <StatusBadge label={method.permitted ? CONTACT_METHOD_PERMITTED : CONTACT_METHOD_NOT_PERMITTED} tone={method.permitted ? "positive" : "muted"} srPrefix={CONTACT_METHOD_KIND_LABELS[method.kind]} />
+                {/* The row keeps the value the record stores and offers the handoff beside it: the link carries
+                    that value unchanged, and its hidden half names the value it would open so the visible word
+                    alone never leaves two rows reading the same. */}
+                {handoff === undefined ? null : (
+                  <a href={`${handoff.scheme}${method.value}`} className={CONTACT_HANDOFF_CLASS}>
+                    {handoff.label}
+                    <span className="sr-only">{`: ${method.value}`}</span>
+                  </a>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
+      {offersHandoff ? <p className="text-sm text-muted-foreground">{CONTACT_METHODS_HANDOFF}</p> : null}
       <p className="text-sm text-muted-foreground">{PERMISSION_FACT_COPY.contactability.explanation}</p>
       <p className="text-sm text-muted-foreground">{CONTACT_METHODS_SEPARATE_FACTS}</p>
       <p className="text-xs text-muted-foreground">{CONTACT_METHODS_UNVERIFIED}</p>
@@ -379,7 +399,7 @@ function PrivateNoteItem({ note }: { readonly note: PrivateNoteRecord }): ReactE
     </li>
   );
 }
-function PrivateNotesBody({ read, headingLevel, composer, links }: { readonly read: PartnerReadResult<PartnerPrivateData>; readonly headingLevel: NoticeHeadingLevel; readonly composer?: ReactNode; readonly links: PartnerDetailLinks }): ReactElement {
+function PrivateNotesBody({ read, headingLevel, composer, preparation: preparationAction, links }: { readonly read: PartnerReadResult<PartnerPrivateData>; readonly headingLevel: NoticeHeadingLevel; readonly composer?: ReactNode; readonly preparation?: ReactNode; readonly links: PartnerDetailLinks }): ReactElement {
   if (read.kind !== "read") {
     return <ReadNotice read={read} surface="private-preparation" headingLevel={headingLevel} />;
   }
@@ -388,6 +408,9 @@ function PrivateNotesBody({ read, headingLevel, composer, links }: { readonly re
   return (
     <div className="flex flex-col gap-3">
       {composer}
+      {/* The preparation record's own lifecycle sits beside the note composer: private preparation is this
+          section's record class, and a shared record is handed no control here at all. */}
+      {preparationAction}
       {archived ? (
         <div className="flex flex-col gap-1">
           <StatusBadge label={PREPARATION_ARCHIVED_LABEL} tone="muted" srPrefix="Private preparation" />
@@ -598,9 +621,9 @@ export default function PartnerDetailSections({ partner, privatePreparation, int
     restrictions: <RestrictionsBody partner={record} />,
     relationshipContext: <RelationshipBody relationships={envelope.data.relationshipContext} />,
     activity: interactions === undefined ? undefined : <ActivityBody read={interactions} headingLevel={headingLevel} composer={actions?.interaction} links={links} />,
-    privateNotes: privatePreparation === undefined ? undefined : <PrivateNotesBody read={privatePreparation} headingLevel={headingLevel} composer={actions?.privateNote} links={links} />,
+    privateNotes: privatePreparation === undefined ? undefined : <PrivateNotesBody read={privatePreparation} headingLevel={headingLevel} composer={actions?.privateNote} preparation={actions?.preparation} links={links} />,
     openTasks: <OpenTasksBody tasks={envelope.data.openTasks} coverage={envelope.coverage} headingLevel={headingLevel} links={links} />,
     supportHistory: envelope.data.supportHistory === undefined ? undefined : <SupportHistoryBody history={envelope.data.supportHistory} coverage={envelope.coverage} valueStates={envelope.valueStates} locale={locale} headingLevel={headingLevel} />,
   };
-  return <RecordDetail layout={layout} identity={identity} sections={sections} breadcrumb={breadcrumb} status={actions?.status ?? <RecordAudienceStatus record={record} />} actions={actions?.bar} />;
+  return <RecordDetail layout={layout} identity={identity} sections={sections} breadcrumb={breadcrumb} status={actions?.status ?? <RecordAudienceStatus record={record} />} actions={actions?.bar} trailing={actions?.filing} />;
 }

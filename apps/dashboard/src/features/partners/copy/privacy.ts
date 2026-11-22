@@ -32,6 +32,7 @@ export const INTERACTION_COPY: Readonly<Record<"whatCounts" | "whatDoesNot" | "p
   },
   recordedOnce: { title: "Recorded once", body: "An event a source already recorded appears once, and logging it again would record it twice." },
 };
+export const CONTACT_HANDOFF_COPY: Readonly<Record<"recordsNothing", Copy>> = { recordsNothing: { title: "A handoff writes nothing to the record", body: "Opening a mail or dialer app from this record records nothing on it: no interaction is logged, no note is written and its revision does not move." } };
 export const ARCHIVE_COPY: Readonly<Record<"archiveIsNotDelete" | "restore" | "leavesSharedAlone" | "scope", Copy>> = {
   archiveIsNotDelete: { title: "Archiving hides, it does not delete", body: "Archiving takes a private preparation record out of your working lists and deletes nothing, so the record and its text are still there." },
   restore: { title: "Restoring brings it back", body: "Restoring returns the record to your working lists with its content as you left it." },

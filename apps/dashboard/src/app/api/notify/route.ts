@@ -1,4 +1,4 @@
-/** `GET /api/notify` — the per-recipient results of one notification intent — and `POST /api/notify`, the deliberate request that submits one notice for one published edition. */
+/** `GET /api/notify` — the per-recipient results of one notification intent — and `POST /api/notify`, the deliberate request that submits one notice for one published edition, or repeats the copies of one recorded notice that definitely failed while that notice is still useful. */
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { mutationInputSchema, mutations, outcomeFromError, reads, refusedRead, toResponse } from "@/modules/data-service";
@@ -17,6 +17,7 @@ const MESSAGES = {
   releaseInvalid: "Name the published edition's release or variant identifier exactly as the release gave it, so the notice is submitted for the edition that was reviewed.",
   ceilingInvalid: "State the eligible count you acknowledged as a whole number from zero, so the ceiling the accepted notice cannot exceed is the number the review showed you.",
   intendedAtInvalid: "State the intended instant as an ISO-8601 instant carrying an offset, so the hours this notice stays useful for run from the moment the worker meant.",
+  repeatInvalid: "Name the notice a repeat submits again by its own identity, so the copy a definite failure recorded is recognised as that notice's and every accepted or uncertain copy stays untouched.",
   pageInvalid: "State the page as a whole number from 0, the first page.",
   pageSizeInvalid: "State the page size as a whole number.",
 } as const;
@@ -52,6 +53,9 @@ const noticeSchema = z.strictObject(
     releaseId: identifierOf(MESSAGES.releaseInvalid).optional(),
     acknowledgedCeiling: z.number({ error: MESSAGES.ceilingInvalid }).int(MESSAGES.ceilingInvalid).min(0, MESSAGES.ceilingInvalid).optional(),
     intendedAt: z.iso.datetime({ offset: true, error: MESSAGES.intendedAtInvalid }).optional(),
+    // A repeat of a definite failure names the notice that recorded it: the service reads that record's own instant and
+    // its own publication, so this transport cannot move the window or widen who a repeat could reach.
+    repeatOfIntentId: identifierOf(MESSAGES.repeatInvalid).optional(),
   },
   { error: MESSAGES.bodyNotJson },
 );

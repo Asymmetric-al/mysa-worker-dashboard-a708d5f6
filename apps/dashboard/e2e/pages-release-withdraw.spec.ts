@@ -1,26 +1,26 @@
 /**
  * Criterion 12 — Worker and Project pages.
  *
- * One contributor composes a Page from the sections its family catalogue admits, reorders them with the
- * keyboard alone, previews the exact revision that is on screen, sends it through its one review step,
- * releases that same revision, states how far it reaches, and then stops showing it publicly — all through
+ * One contributor composes a Page of each family from the sections that family's catalogue admits, reorders
+ * them with the keyboard alone, previews the exact revision that is on screen, sends it through its one review
+ * step, releases that same revision, states how far it reaches, and then stops showing it publicly — all through
  * the real application, from a freshly reset seed.
  *
- * **The scenario this file drives.** The deterministic seed lays one Worker Page (`doc-page-harbour-youth`)
- * down for the established worker: an English edition released and listed publicly, and an Arabic edition
- * holding nothing but a saved draft that was never submitted for review. The Page carries no approved
- * giving designation, which is what makes *Giving unavailable* reachable rather than a branch nobody can
- * see. A Project Page document is not seeded and the application deliberately offers no way to invent one
- * (`createVariant` resolves the document it edits and never creates one), so the second family is asserted
- * where it really is reachable — its catalogue on the Pages index, which lists all eight admitted section
- * types and the bounded presentation choices each one admits — and the composition assertions are made on
- * the one Page the seed holds. Both facts are stated rather than papered over, because a criterion that
- * claimed to compose a Project Page would be claiming a journey the application has no route for.
+ * **The scenario this file drives.** The deterministic seed lays two Pages down for the established worker, one per
+ * family. The Worker Page (`doc-page-harbour-youth`) carries an English edition released and listed publicly, and
+ * an Arabic edition holding nothing but a saved draft that was never submitted for review; it carries no approved
+ * giving designation, which is what makes *Giving unavailable* reachable rather than a branch nobody can see. The
+ * Project Page (`doc-page-harbour-kitchen`) carries one public English edition holding a saved draft and nothing
+ * else — no candidate and no release — so the second family is composed from its own catalogue, reviewed and
+ * released on its own edition, which is what criterion 12 means by composing both families rather than describing
+ * both catalogues.
  *
  * **What each test proves, and against which surface.** The composition test drives the builder's own
- * outline, field form, catalogue and media picker. The release test drives the builder's release controls
- * and the Pages family's one review route, and it compares the revision identity the preview named with
- * the revision the release published. The reach test drives the reach control and then both public
+ * outline, field form, catalogue and media picker, and asserts at the family's own transport that a presentation
+ * value outside the admitted set is refused with the edition's revision unchanged. The Project Page test composes
+ * the second family the same way and takes its edition all the way to a release. The release test drives the
+ * builder's release controls and the Pages family's one review route, and it compares the revision identity the
+ * preview named with the revision the release published. The reach test drives the reach control and then both public
  * addresses the application really serves — the discovery index at `/preview/pages` and the direct reading
  * view at `/preview/pages/[pageId]/[locale]` — so a reach value is demonstrated by what the application
  * serves rather than asserted from the control that set it. The containment test drives
@@ -56,13 +56,28 @@ test.beforeEach(async ({ request }) => {
 // The seeded world this file acts in
 // ---------------------------------------------------------------------------------------------
 
-/** The one Page the deterministic seed lays down, and the Worker Page family it belongs to. */
+/** The Worker Page the deterministic seed lays down, and the Worker Page family it belongs to. */
 const PAGE_DOCUMENT = "doc-page-harbour-youth";
 const PAGE_FAMILY = "worker-page";
 const PAGE_FAMILY_LABEL = "Worker Page";
 const PAGE_TITLE = "Harbour Youth";
 
-/** The two language editions the Page carries, in the order the switcher lists them. */
+/**
+ * The Project Page the same seed lays down: the second family, which the Project Page test composes.
+ *
+ * Its one public English edition holds a saved draft and nothing else, so the family is composed from its own
+ * catalogue rather than described from the catalogue alone.
+ */
+const PROJECT_PAGE_DOCUMENT = "doc-page-harbour-kitchen";
+const PROJECT_PAGE_FAMILY = "project-page";
+const PROJECT_PAGE_FAMILY_LABEL = "Project Page";
+const PROJECT_PAGE_TITLE = "Harbour Youth Kitchen";
+
+/** The prose this file composes into the Project Page, so the preview assertion is about text only this test wrote. */
+const PROJECT_SECTION_HEADING = "A kitchen the whole week uses";
+const PROJECT_SECTION_BODY = "On Fridays the hall seats forty, and the kitchen is where every one of those plates begins.";
+
+/** The two language editions the Worker Page carries, in the order the switcher lists them. */
 const ENGLISH = "en";
 const ARABIC = "ar";
 
@@ -83,6 +98,9 @@ const ADMITTED_SECTION_TYPES = ["Introduction", "Story", "Prayer", "Milestone", 
  * than by colour or by an icon.
  */
 const REACH = { notPublic: "Not public", linkPublic: "Shared by link: public", listed: "Listed publicly" } as const;
+
+/** Any one of the three reach words, so a released edition's row is asserted to state a reach rather than a particular one. */
+const ANY_REACH_WORD = new RegExp(`(?:${escaped(REACH.notPublic)}|${escaped(REACH.linkPublic)}|${escaped(REACH.listed)})`, "u");
 
 /** The word the shared receipt states for an accepted attempt; every other outcome is read from the receipt's own `data-outcome`. */
 const RECEIPT_SAVED = "Saved";
@@ -245,8 +263,14 @@ function nameOfCatalogueEntry(label: string): RegExp {
   return new RegExp(`^Add a section\\s*:\\s*${escaped(label)}\\s*,\\s*Position \\d+$`, "u");
 }
 
-/** The accessible name of the index row that opens this Page's builder. */
-const BUILDER_LINK_NAME = new RegExp(`^${escaped(PAGE_TITLE)}\\s*,\\s*Open the ${escaped(PAGE_FAMILY_LABEL)} builder$`, "u");
+/** The accessible name of the index row that opens a Page's builder, which names the Page and its family. */
+function builderLinkNameOf(title: string, familyLabel: string): RegExp {
+  return new RegExp(`^${escaped(title)}\\s*,\\s*Open the ${escaped(familyLabel)} builder$`, "u");
+}
+
+/** The two Pages the seed lays down, each by the name its own index row carries. */
+const BUILDER_LINK_NAME = builderLinkNameOf(PAGE_TITLE, PAGE_FAMILY_LABEL);
+const PROJECT_BUILDER_LINK_NAME = builderLinkNameOf(PROJECT_PAGE_TITLE, PROJECT_PAGE_FAMILY_LABEL);
 
 /** The accessible name of the review entry one frozen candidate holds, which also names the edition it belongs to. */
 function reviewLinkName(locale: string): RegExp {
@@ -258,10 +282,27 @@ function paneOf(page: Page, pane: "outline" | "fields" | "preview") {
   return page.locator(`[data-pane="${pane}"]`);
 }
 
-/** Opens one Page's builder and waits for the builder itself, which carries the family and the open edition. */
+/** Opens the Worker Page's builder and waits for the builder itself, which carries the family and the open edition. */
 async function openBuilder(page: Page): Promise<void> {
   await page.goto(builderPath(PAGE_DOCUMENT));
   await expect(builderOf(page)).toHaveAttribute("data-family", PAGE_FAMILY);
+}
+
+/**
+ * Opens the Project Page's builder from the Pages index row that names it, which is how a person reaches it.
+ *
+ * The index is the route the application offers to it and the row states both the Page and its family, so the
+ * second family is opened rather than addressed.
+ */
+async function openProjectBuilder(page: Page): Promise<void> {
+  await page.goto(PAGES_INDEX);
+  const link = page.getByRole("link", { name: PROJECT_BUILDER_LINK_NAME });
+  await expect(link).toBeVisible();
+  await link.click();
+  const builder = builderOf(page);
+  await expect(builder).toHaveAttribute("data-document-id", PROJECT_PAGE_DOCUMENT);
+  await expect(builder).toHaveAttribute("data-family", PROJECT_PAGE_FAMILY);
+  await expect(builder).toHaveAttribute("data-composing", "true");
 }
 
 /**
@@ -382,12 +423,12 @@ test("both family catalogues are admitted, and a Page is composed and reordered 
   await page.goto(PAGES_INDEX);
   await expect(page.getByRole("heading", { name: "Your Pages", exact: true })).toBeVisible();
 
-  // Both families are catalogues the worker is offered, and each lists the eight admitted section
-  // types. This is the whole of what a Project Page can be shown to admit today: the family's
-  // catalogue is real and reachable, while the seed holds no Project Page document to compose.
+  // Both families are catalogues the worker is offered, and each lists the eight admitted section types. The
+  // Project Page's own composition is driven by the last test in this file; here both catalogues are read as the
+  // index states them, which is the surface that offers them before either Page's builder is opened.
   for (const family of [
     { key: PAGE_FAMILY, label: PAGE_FAMILY_LABEL },
-    { key: "project-page", label: "Project Page" },
+    { key: PROJECT_PAGE_FAMILY, label: PROJECT_PAGE_FAMILY_LABEL },
   ] as const) {
     const catalogue = page.locator(`[data-slot="family-catalogue"][data-family="${family.key}"]`);
     await expect(catalogue.getByRole("heading", { name: `Sections for your ${family.label}`, exact: true })).toBeVisible();
@@ -396,7 +437,7 @@ test("both family catalogues are admitted, and a Page is composed and reordered 
     }
   }
 
-  // The one Page the seed holds is reached from the index by its own link, not by typing an address.
+  // The Worker Page is reached from the index by its own link, not by typing an address.
   const openBuilderLink = page.getByRole("link", { name: BUILDER_LINK_NAME });
   await expect(openBuilderLink).toBeVisible();
   await openBuilderLink.click();
@@ -449,6 +490,51 @@ test("both family catalogues are admitted, and a Page is composed and reordered 
     await expect(chosenFields.getByLabel(forbidden)).toHaveCount(0);
   }
   await expect(chosenFields.getByText("Presentation is limited to the options a section offers; a page has no styles of its own.", { exact: true })).toBeVisible();
+
+  // --- an admitted presentation value restyles the exact preview -------------------------------
+  // The frame renders the one renderer's own HTML, so the classes below are the application's statement that the
+  // choice reached the rendered section, and the defaults it starts from are read the same way.
+  const renderedPrayer = page.locator('[data-slot="page-preview-frame"]').locator("section.content-section").filter({ hasText: "A prayer for this term" });
+  await expect(renderedPrayer).toHaveClass(/content-layout-single-column/u);
+  await expect(renderedPrayer).toHaveClass(/content-treatment-normal/u);
+  await chosenFields.getByRole("radio", { name: "Two columns with image and text", exact: true }).click();
+  await chosenFields.getByRole("radio", { name: "Emphasized", exact: true }).click();
+  await chosenFields.getByRole("button", { name: "Save this section", exact: true }).click();
+  await expect(renderedPrayer, "the two-column layout an admitted layout choice sets reaches the rendered section").toHaveClass(/content-layout-two-column-image-text/u);
+  await expect(renderedPrayer, "the emphasized treatment an admitted treatment choice sets reaches the rendered section").toHaveClass(/content-treatment-emphasized/u);
+  // Back to the two defaults, saved the same way, so neither class is left over from the previous save.
+  await chosenFields.getByRole("radio", { name: "Single column", exact: true }).click();
+  await chosenFields.getByRole("radio", { name: "Normal", exact: true }).click();
+  await chosenFields.getByRole("button", { name: "Save this section", exact: true }).click();
+  await expect(renderedPrayer, "the default layout is what a section is rendered in again").toHaveClass(/content-layout-single-column/u);
+  await expect(renderedPrayer, "the default treatment is what a section is rendered in again").toHaveClass(/content-treatment-normal/u);
+
+  // --- an out-of-set presentation value is refused rather than styled --------------------------
+  // The four choices are judged by the family's own transport, so the value is posted to the handler the field form
+  // posts to, presenting the scope and revision the Page read states, and the answer must be the refusal.
+  const pageRead = await jsonOf(await page.request.get(`/api/pages?view=page&documentId=${encodeURIComponent(PAGE_DOCUMENT)}`), "GET /api/pages view=page");
+  const composedScope = fieldAt(pageRead, "scope");
+  if (!isRecord(composedScope)) {
+    throw new Error(`The Page read answered without the scope its sections are composed under, so no value could be submitted against it: ${JSON.stringify(pageRead).slice(0, 400)}`);
+  }
+  const pageRevision = stringAt(pageRead, ["revision"], "The Page record's revision");
+  const composedVariantId = stringAt(pageRead, ["data", "draft", "variantId"], "The composing edition's variant identity");
+  const composedDraftRevision = stringAt(pageRead, ["data", "draft", "revisionId"], "The composing edition's draft revision");
+  const outOfSet = await page.request.post("/api/pages/sections", {
+    data: { operationId: newAttemptId(), scope: composedScope, expectedRevision: pageRevision, payload: { operation: "saveSectionFields", variantId: composedVariantId, sectionId: "section-0", presentation: { treatment: "normal", layout: "single-column", alignment: "justify", imageFit: "cover" } } },
+  });
+  expect(outOfSet.status(), "an alignment outside the admitted set is refused as a request the caller has to correct").toBe(422);
+  const refusal = await jsonOf(outOfSet, "POST /api/pages/sections presenting an out-of-set alignment");
+  expect(fieldAt(refusal, "outcome"), "a value outside the admitted set is the closed outcome set's invalid, never a styled page").toBe("invalid");
+  const alignmentMessages = fieldAt(refusal, "fields", "presentation.alignment");
+  if (!Array.isArray(alignmentMessages) || alignmentMessages.length === 0) {
+    throw new Error(`The refusal named no field message for the alignment it refused, so the rule it broke could not be read: ${JSON.stringify(refusal).slice(0, 400)}`);
+  }
+  expect(String(alignmentMessages[0]), "the field message names the alignment rule the submitted value broke").toMatch(/Choose an alignment/iu);
+  // The refusal left nothing behind: the same read states the same document revision and the same draft revision.
+  const afterRefusal = await jsonOf(await page.request.get(`/api/pages?view=page&documentId=${encodeURIComponent(PAGE_DOCUMENT)}`), "GET /api/pages view=page after the refused value");
+  expect(stringAt(afterRefusal, ["revision"], "The Page record's revision after the refusal"), "the refused value wrote nothing to the Page").toBe(pageRevision);
+  expect(stringAt(afterRefusal, ["data", "draft", "revisionId"], "The composing edition's draft revision after the refusal"), "the refused value left the edition on the revision it was composing").toBe(composedDraftRevision);
 
   // --- a media section, with an image prepared through the one media picker -------------------
   await addSection(page, "Image");
@@ -802,14 +888,110 @@ test("a public edition serves what it published while its draft stays shut, and 
   await expect(published).toContainText("Withdraw 2 released editions?");
   await expect(page.locator('[data-slot="reach-control"]')).toHaveAttribute("data-reach-set", "true");
 
-  // A fresh attempt at the same work changes nothing: the edition already publishes exactly that revision.
+  // A fresh attempt at the same work changes nothing, and the release that published this revision consumed the
+  // candidate it froze: the edition states its publication, and the release step has nothing left to apply to it.
   await page.getByRole("checkbox", { name: `Language ${ARABIC}` }).check();
-  await page.getByRole("button", { name: "Release this edition", exact: true }).click();
-  await expect(page.locator('[data-slot="release-controls"] [data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "unchanged");
+  const publishStep = published.locator('[data-slot="action-review"]').filter({ has: page.getByRole("heading", { name: "Release this edition", exact: true }) });
+  await expect(publishStep.getByRole("button", { name: "Release this edition", exact: true }), "an edition that publishes this revision already holds no frozen candidate, so the step cannot be confirmed").toBeDisabled();
+  await expect(publishStep).toContainText("Excluded before this step");
+  await expect(publishStep).toContainText("Nothing is selected, so this step has nothing to apply");
+  await expect(published.locator(`[data-slot="release-edition"][data-lifecycle-state="released"]`).filter({ has: page.getByRole("checkbox", { name: `Language ${ARABIC}` }) })).toHaveCount(1);
 
   // The edition that was already published still serves, so the uncertain attempt took no other edition's
   // publication with it.
   await page.goto(readingPath(PAGE_DOCUMENT, ENGLISH));
   await expect(page.locator('[data-slot="public-reading-view-edition"]')).toBeVisible();
   await clearFailurePlan(page);
+});
+
+// ---------------------------------------------------------------------------------------------
+// 6. The Project Page family is composed from its own catalogue, and its edition is released
+// ---------------------------------------------------------------------------------------------
+
+test("a Project Page is composed from its own catalogue, reviewed and released, and then reads as published", async ({ page }) => {
+  await page.goto(PAGES_INDEX);
+  await expect(page.getByRole("heading", { name: "Your Pages", exact: true })).toBeVisible();
+  // Both families the criterion names hold a Page, and each row states the family it belongs to.
+  await expect(page.locator(`[data-slot="pages-index-row"][data-family="${PAGE_FAMILY}"]`)).toHaveCount(1);
+  await expect(page.locator(`[data-slot="pages-index-row"][data-family="${PROJECT_PAGE_FAMILY}"]`)).toHaveCount(1);
+
+  // The second family's builder is reached from its own row, which names the Page and the family it belongs to.
+  await openProjectBuilder(page);
+  const builder = builderOf(page);
+  await expect(builder).toHaveAttribute("data-locale", ENGLISH);
+  // Its one edition is a saved draft nobody has submitted: no candidate stands, so no review has been asked for.
+  await expect(builder.locator('[data-slot="locale-edition"]')).toHaveCount(1);
+  await expect(builder.locator(`[data-slot="locale-edition"][data-locale="${ENGLISH}"]`)).toHaveAttribute("data-lifecycle-state", "draft");
+
+  // The outline holds the section the seeded revision composed, and the catalogue beside it is this family's own.
+  await expect(page.locator('[data-slot="section-outline-row"]')).toHaveCount(1);
+  await expect(page.getByRole("button", { name: nameOfLabelAtPosition("Milestone", 1) })).toBeVisible();
+  const catalogue = page.locator('[data-slot="family-catalogue"]');
+  await expect(catalogue).toHaveAttribute("data-family", PROJECT_PAGE_FAMILY);
+  for (const sectionType of ADMITTED_SECTION_TYPES) {
+    await expect(catalogue.getByRole("heading", { name: sectionType, exact: true })).toBeVisible();
+  }
+
+  // --- a section composed into the Project Page's own draft ------------------------------------
+  await addSection(page, "Introduction");
+  // The read is the evidence the write happened: the outline lists the section it just composed.
+  await expect(page.getByRole("button", { name: nameOfLabelAtPosition("Introduction", 2) })).toBeVisible();
+  await expect(page.locator('[data-slot="section-outline-row"]')).toHaveCount(2);
+  await selectSection(page, 2, "Introduction");
+  const fields = paneOf(page, "fields");
+  await expect(fields.getByRole("heading", { name: "Introduction — Section fields", exact: true })).toBeVisible();
+  await fields.getByLabel("Heading", { exact: true }).fill(PROJECT_SECTION_HEADING);
+  await fields.getByLabel("Body", { exact: true }).fill(PROJECT_SECTION_BODY);
+  await fields.getByRole("button", { name: "Save this section", exact: true }).click();
+  // The exact preview renders the draft the save wrote to, so the sentence appearing there is the record's own
+  // statement that the text was written rather than the form's echo of what was typed into it.
+  await expect(paneOf(page, "preview")).toContainText(PROJECT_SECTION_HEADING);
+  await expect(paneOf(page, "preview")).toContainText(PROJECT_SECTION_BODY);
+
+  // The revision the preview names is the one the review step freezes and this Page's release then publishes.
+  const revision = await previewRevisionOf(page);
+
+  // --- the one review step, reached from the index's own review entry --------------------------
+  await submitDraftForReview(page, ENGLISH);
+  await expect(builderOf(page).locator(`[data-slot="locale-edition"][data-locale="${ENGLISH}"]`)).toHaveAttribute("data-lifecycle-state", "candidate");
+
+  await page.goto(PAGES_INDEX);
+  const reviewLink = page.getByRole("link", { name: reviewLinkName(ENGLISH) });
+  await expect(reviewLink).toBeVisible();
+  await reviewLink.click();
+  await expect(page.getByRole("heading", { name: "Page review", level: 1 })).toBeVisible();
+  // The review surface states the family of the Page it answers, and the revision it froze is the one on screen.
+  await expect(page.locator('[data-slot="page-review-surface"]')).toHaveAttribute("data-page-family", PROJECT_PAGE_FAMILY);
+  await expect(page.locator('[data-slot="review-frozen-revision"]')).toContainText(revision);
+  await expect(page.getByRole("radio", { name: "Approve", exact: true })).toBeChecked();
+  await page.getByRole("button", { name: "Approve this revision", exact: true }).click();
+  await expect(page.locator('[data-slot="review-decision"] [data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted");
+
+  // --- released from the builder's own control -------------------------------------------------
+  await openProjectBuilder(page);
+  await expect(builderOf(page).locator(`[data-slot="locale-edition"][data-locale="${ENGLISH}"]`)).toHaveAttribute("data-lifecycle-state", "candidate");
+  await releaseSelectedEditions(page, ENGLISH);
+  const controls = page.locator('[data-slot="release-controls"]');
+  await expect(controls.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted");
+  await expect(controls.locator('[data-slot="release-variant-results"] li[data-edition-state="released"]')).toHaveCount(1);
+  // The release published the very revision the preview named, and the preview still names it.
+  expect(await previewRevisionOf(page)).toBe(revision);
+
+  // --- the author state the release leaves, on both author surfaces ----------------------------
+  // The edition states the publication it now has rather than the submission it came from, because the release
+  // published exactly the revision its frozen candidate named.
+  await expect(builderOf(page).locator(`[data-slot="locale-edition"][data-locale="${ENGLISH}"]`)).toHaveAttribute("data-lifecycle-state", "released");
+  await expect(builderOf(page), "no author surface still calls this edition a submission").not.toContainText("Submitted for review");
+
+  await page.goto(PAGES_INDEX);
+  const listedRow = page.locator(`[data-slot="pages-index-row"][data-document-id="${PROJECT_PAGE_DOCUMENT}"]`);
+  const listedEdition = listedRow.locator(`[data-slot="pages-index-edition"][data-locale="${ENGLISH}"]`);
+  await expect(listedEdition).toHaveAttribute("data-lifecycle", "released");
+  await expect(listedEdition.locator('[data-slot="draft-status"]')).toHaveAttribute("data-lifecycle-state", "released");
+  await expect(listedEdition).toContainText("Published");
+  // The reach word belongs to the release that reaches readers now, so it stands beside the lifecycle.
+  await expect(listedEdition).toContainText(ANY_REACH_WORD);
+  // No review entry remains for the edition, and nothing on its row still calls it a submission.
+  await expect(listedRow.locator('[data-slot="pages-index-review"]')).toHaveCount(0);
+  await expect(listedRow, "the index row states the publication the release produced, not the submission it came from").not.toContainText("Submitted for review");
 });

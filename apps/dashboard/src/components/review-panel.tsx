@@ -28,6 +28,8 @@ export interface RecordedCandidateDecision {
   readonly decision: ReviewDecision;
   /** The principal identity that gave this answer, or `null` when the record states none. */
   readonly decidedByPrincipalId: string | null;
+  /** Whether the principal that gave this answer wrote the frozen revision it answers, as the read states the two identities. */
+  readonly decidedByAuthor: boolean;
   /** The deciding instant as the record holds it, an ISO 8601 instant, or `null` when the record states none. */
   readonly decidedAt: string | null;
   /** The note the reviewer left for the author, or `null` when they left none. */
@@ -46,6 +48,12 @@ export interface CandidateView {
   readonly staleTranslation?: boolean;
   /** The decision the reviewer recorded for this candidate, as the read states it, or `null` while its record still stands at `submitted` — the one state in which the decision is the reviewer's to give. */
   readonly decisionRecord: RecordedCandidateDecision | null;
+  /**
+   * Whether the principal reading this page wrote the frozen revision, as the read states the two identities. The panel
+   * uses it to say whose answer a decision would be; it withholds no decision, because the service records the principal
+   * that answers and re-checks the answer on submit.
+   */
+  readonly reviewedByAuthor: boolean;
 }
 export interface ApprovedDecisionPayload {
   readonly decision: "approved";
@@ -173,6 +181,13 @@ const COPY = {
   heldPriorGoodSentence: "Not rolled back: this edition still publishes the revision it published before that attempt, and " + "the failure belongs to the edition the attempt named.",
   approvalIsPerVariantSentence: "This decision answers the edition named above only: approving one language or audience approves " + "no other edition of this document.",
   approvalIsNotDeliverySentence: "A decision is not a publication and not a delivery. It sends no message, and nothing here proves " + "that any reader received or opened anything.",
+  selfReviewHeading: "You wrote the revision under review",
+  selfReviewSentence:
+    "This revision was written by the principal reading it, so approving it records your own review of your own work " +
+    "and the decision on record names you as the principal who decided it. A candidate is normally answered by a " +
+    "different reviewer, where one is admitted to it; this page states whose answer this one is rather than " +
+    "withholding it.",
+  authorDecidedSentence: "This answer was the author's own rather than an independent reviewer's: the principal who decided it wrote the revision it answers.",
   decisionLegend: "Your decision",
   decisionDescription: "One decision, given once. If something needs to change, the author's next attempt is a new " + "submission with a new revision — this candidate is not re-reviewed.",
   noteLabel: "Note for the author",
@@ -414,6 +429,14 @@ function DecisionStep({ candidate, scope, expectedRevision, onDecide, level }: {
   const payload = decisionPayloadFor(decision, candidate, note);
   return (
     <div data-slot="review-decision" data-decision={decision} data-answered={settled ? "true" : "false"} className="flex min-w-0 flex-col gap-5">
+      {candidate.reviewedByAuthor ? (
+        <Alert variant="default" role={undefined} data-slot="review-self-review">
+          <AlertTitle>{COPY.selfReviewHeading}</AlertTitle>
+          <AlertDescription>
+            <p className="text-pretty">{COPY.selfReviewSentence}</p>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <FormFieldGroup legend={COPY.decisionLegend} name="review.decision" description={COPY.decisionDescription} required>
         {({ describedBy, invalid, required, legendId }) => (
           <RadioGroup
@@ -512,6 +535,11 @@ function RecordedDecision({ record, level }: { readonly record: RecordedCandidat
         <AlertTitle>{copy.title}</AlertTitle>
         <AlertDescription>
           <p className="text-pretty">{copy.sentence}</p>
+          {record.decidedByAuthor ? (
+            <p data-slot="review-author-decision" className="text-pretty">
+              {COPY.authorDecidedSentence}
+            </p>
+          ) : null}
           <dl data-slot="review-decision-record" className="grid min-w-0 gap-x-4 gap-y-2 text-sm sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
             <dt className="text-muted-foreground">{COPY.decidedByLabel}</dt>
             <dd className="min-w-0 wrap-anywhere">{principal === "" ? <span className="text-muted-foreground">{COPY.notStated}</span> : <bdi className="mono-identifier">{principal}</bdi>}</dd>

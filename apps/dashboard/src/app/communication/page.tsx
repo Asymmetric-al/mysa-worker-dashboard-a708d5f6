@@ -6,7 +6,8 @@
  * names. Every column, every lifecycle word, the paging window and the one reviewed way to add an edition belong
  * to `features/updates`: `rosterOf` makes the read plain on the server, because a release instant is a
  * `Temporal.Instant` and a class instance cannot cross into a client component, and `updates-list` renders it.
- * Nothing here counts, filters, sorts, derives, defaults or authorises, and no scope, principal or permission is
+ * Nothing here counts, filters, sorts, derives or authorises, it states no value but the address's own page window
+ * and the one content family, and no scope, principal or permission is
  * ever taken from the URL.
  *
  * **Why the listing read rather than the variant overview.** This route is a collection of Updates, so its read is
@@ -40,6 +41,9 @@ type RosterResult = Awaited<ReturnType<RosterRead>>;
 
 /** The arms of that union that carry no envelope: the denial, the outage and the refused request. */
 type RosterWithoutEnvelope = Exclude<RosterResult, { readonly kind: "envelope" }>;
+
+/** The envelope arm itself: the roster the read answered with, in the encoding the surface is seeded from. */
+type RosterEnvelope = Extract<RosterResult, { readonly kind: "envelope" }>["envelope"];
 
 // ---------------------------------------------------------------------------------------------
 // Fixed values
@@ -98,14 +102,72 @@ function RosterNotice({ result }: { readonly result: RosterWithoutEnvelope }): R
 }
 
 // ---------------------------------------------------------------------------------------------
+// The envelope in the encoding a Client Component may receive
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The envelope as the browser handler would have answered with. The read states a release's instants as
+ * `Temporal.Instant` values, and a Client Component receives only plain ones, so this route hands over the
+ * exact bytes the transport would: the same facts the render already holds, carrying no object the browser
+ * could not have received itself. It re-encodes nothing — the page the roster surface is seeded with is the
+ * read's own answer, so the surface's first page costs no second request.
+ */
+function wireFormOf(envelope: RosterEnvelope): RosterEnvelope {
+  const wire: unknown = JSON.parse(JSON.stringify(envelope));
+  return wire as RosterEnvelope;
+}
+
+// ---------------------------------------------------------------------------------------------
 // The route
 // ---------------------------------------------------------------------------------------------
 
-/** The Ministry Updates roster: one read under the session's own scope, and the arm its result names. */
-export default async function CommunicationPage(): Promise<ReactElement> {
-  const result = await reads.updates.findContentDocuments({ families: UPDATE_FAMILY });
+/**
+ * The first page of the roster, stated rather than left out because the read answers a page only where one is named:
+ * without it the answer would be the whole collection, and the surface would be handed every row of it — the
+ * client-side window this route exists to remove.
+ */
+const FIRST_PAGE = 1;
+
+/** The two parameters this route forwards: the paging window the read declares, and nothing besides them. */
+const PARAM = { page: "page", pageSize: "pageSize" } as const;
+
+/** The URL's own parameter record, as Next hands a route its search parameters. */
+type SearchParams = Record<string, string | string[] | undefined>;
+
+// ---------------------------------------------------------------------------------------------
+// The read's own query, built from the URL and from nothing else
+// ---------------------------------------------------------------------------------------------
+
+/** One search parameter's first value: a repeated parameter is read once, and never treated as a decision. */
+function paramOf(searchParams: SearchParams, name: string): string | undefined {
+  const value = searchParams[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/**
+ * The query the roster read accepts, in the read's own vocabulary.
+ *
+ * The surface keeps its page window in the address, so the window read here is the one the surface opens on: the page
+ * and row size the address states are what the server paints, and no second request replaces them. Nothing is
+ * defaulted, clamped, validated or dropped here — the service derives the window (a page below the first is the first
+ * page; the size is the documented 50 with its 200 cap) and owns the whole-result counts beside these rows.
+ */
+function rosterQueryOf(searchParams: SearchParams): NonNullable<Parameters<RosterRead>[0]> {
+  const page = paramOf(searchParams, PARAM.page);
+  const pageSize = paramOf(searchParams, PARAM.pageSize);
+  return { families: UPDATE_FAMILY, ...(page === undefined ? { page: FIRST_PAGE } : { page: Number(page) }), ...(pageSize === undefined ? {} : { pageSize: Number(pageSize) }) };
+}
+
+/** The route's props: the address a reader followed, whose window is the one the surface opens on. */
+interface CommunicationPageProps {
+  readonly searchParams: Promise<SearchParams>;
+}
+
+/** The Ministry Updates roster: one page under the session's own scope, and the arm its result names. */
+export default async function CommunicationPage({ searchParams }: CommunicationPageProps): Promise<ReactElement> {
+  const result = await reads.updates.findContentDocuments(rosterQueryOf(await searchParams));
   if (result.kind !== "envelope") {
     return <RosterNotice result={result} />;
   }
-  return <UpdatesList roster={rosterOf(result.envelope)} headingLevel={PAGE_HEADING_LEVEL} />;
+  return <UpdatesList roster={rosterOf(result.envelope)} initialResult={{ kind: "envelope", envelope: wireFormOf(result.envelope) }} headingLevel={PAGE_HEADING_LEVEL} />;
 }

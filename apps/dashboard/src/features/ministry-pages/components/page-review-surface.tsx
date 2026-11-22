@@ -102,6 +102,8 @@ export type ReviewEditionView = {
   readonly staleTranslation?: boolean;
   /** The decision already recorded for this candidate, or `null` while its record still stands at `submitted`. */
   readonly decisionRecord?: RecordedCandidateDecision | null;
+  /** Whether the principal reading this page wrote the frozen revision, as the read states it. Present with the revision and checksum it describes. */
+  readonly reviewedByAuthor?: boolean;
 };
 
 /**
@@ -175,6 +177,7 @@ function candidateViewOf(edition: ReviewEditionView): CandidateView | undefined 
     lifecycle: edition.lifecycle,
     ...(edition.staleTranslation === undefined ? {} : { staleTranslation: edition.staleTranslation }),
     decisionRecord: edition.decisionRecord ?? null,
+    reviewedByAuthor: edition.reviewedByAuthor === true,
   };
 }
 

@@ -29,6 +29,9 @@ const PARAM = { intentId: "intentId", page: "page", pageSize: "pageSize" } as co
 
 const WHOLE_NUMBER = /^\d{1,9}$/u;
 
+/** The interface locale the composed surface formats its counts in. */
+const INTERFACE_LOCALE = "en-GB";
+
 const EMPTY_ACTION = { label: "Open the Updates list", href: UPDATES_HREF } as const;
 
 const PAGE_COPY = {
@@ -112,7 +115,7 @@ export default async function CommunicationDeliveryPage({ searchParams }: Commun
             <h1 className="text-2xl font-semibold text-pretty wrap-anywhere">{PAGE_COPY.title}</h1>
             <p className="max-w-prose text-sm text-pretty text-muted-foreground">{PAGE_COPY.lede}</p>
           </div>
-          <DeliveryResults scope={result.envelope.scope} intentId={intentId} initialData={result} headingLevel={SECTION_HEADING_LEVEL} />
+          <DeliveryResults scope={result.envelope.scope} locale={INTERFACE_LOCALE} intentId={intentId} initialData={result} headingLevel={SECTION_HEADING_LEVEL} />
         </div>
       );
     case "denied":

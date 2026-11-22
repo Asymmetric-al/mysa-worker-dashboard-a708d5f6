@@ -15,6 +15,7 @@ import { REVIEW_DECISIONS, REVIEW_STEPS_PER_CANDIDATE, VARIANT_FAMILIES, admitte
 import { mediaStateReason, type MediaRenditionPurpose, type MediaStateReason } from "@/modules/media/asset";
 import { readSession } from "@/modules/store/repository";
 import { GOAL_MEASURE } from "@/modules/support/goal";
+import { clampPageSize } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
 import { assertScope, canEdit, canView, readResultOfRefusal, resolveSession, type ResolvedSession, type SessionResolution, type SessionSource } from "../authorize";
 import {
@@ -53,6 +54,7 @@ import {
   type SupportProjectionRecord,
 } from "../envelope";
 import { LOCAL_STORE_SYSTEM, denied, unavailable, type ReadResult } from "../outcome";
+import type { PageWindow } from "./audience";
 const READ_ATTEMPT_ID = "read";
 const storedContentRevisionSchema = z.object({
   revisionId: z.string().min(1),
@@ -317,17 +319,12 @@ function mainRenditionPurpose(kind: MediaAssetKind): MediaRenditionPurpose {
   }
   return assertNever(kind);
 }
-function asRenderPurpose(purpose: MediaRenditionPurpose): RenderRenditionPurpose | undefined {
-  switch (purpose) {
-    case "display":
-    case "playback":
-    case "poster":
-    case "captions":
-      return purpose;
-    case "transcript":
-      return undefined;
-  }
-  return assertNever(purpose);
+// The renderer emits a rendition for each of the five purposes `modules/media` records, and this table is the whole of
+// the mapping: a purpose the media module adds without a row here, or a row naming a purpose the renderer cannot emit,
+// fails to compile rather than dropping a rendition out of the markup.
+const RENDER_PURPOSES: Readonly<Record<MediaRenditionPurpose, RenderRenditionPurpose>> = { display: "display", playback: "playback", poster: "poster", captions: "captions", transcript: "transcript" };
+function asRenderPurpose(purpose: MediaRenditionPurpose): RenderRenditionPurpose {
+  return RENDER_PURPOSES[purpose];
 }
 const VISIBLE_MEDIA_ASSET_FIELDS = ["assetId", "kind", "profileCheck", "renditions", "tagVerification", "revision"] as const;
 function placementViews(workspace: ContentWorkspace, placements: readonly MediaPlacementRecord[], captionTracks: readonly ContentCaptionTrackRecord[]): readonly ContentPlacementView[] {
@@ -361,27 +358,31 @@ function unreadablePlacement(placement: MediaPlacementRecord, kind: MediaAssetKi
   return { placementId: placement.placementId, assetId: placement.assetId, kind, sectionElement: placement.sectionElement, position: placement.position, altText: placement.altText, caption: placement.caption, credit: placement.credit, state: "unavailable", reason, renditions: [], captionTracks: tracks };
 }
 type RevisionRender = { readonly status: "rendered"; readonly html: string; readonly document: ContentDocumentJson } | { readonly status: "invalid"; readonly issues: readonly DocumentIssue[] };
+// The key each rendition of one placement travels under: the main rendition keeps the placement's own identity, and
+// each ancillary purpose gets a key of its own, so a poster, a caption track and a transcript can never stand in for one
+// another and the renderer can tell which one the read supplied.
+function renditionKeys(placementId: string): Readonly<Record<RenderRenditionPurpose, string>> {
+  return { display: placementId, playback: placementId, poster: `${placementId}:poster`, captions: `${placementId}:captions`, transcript: `${placementId}:transcript` };
+}
 function renderRevision(body: unknown, placements: readonly ContentPlacementView[]): RevisionRender {
   const renderedPlacements: RenderMediaPlacement[] = [];
   const renditions: Record<string, RenderRendition> = {};
   for (const placement of placements) {
     const captionTrack = placement.captionTracks.find((track) => track.isDefault) ?? placement.captionTracks[0];
-    const mainKey = placement.placementId;
-    const posterKey = `${placement.placementId}:poster`;
-    const captionsKey = `${placement.placementId}:captions`;
+    const keys = renditionKeys(placement.placementId);
     for (const rendition of placement.renditions) {
       const purpose = asRenderPurpose(rendition.purpose);
-      if (purpose === undefined) continue;
-      const key = purpose === "poster" ? posterKey : purpose === "captions" ? captionsKey : mainKey;
-      renditions[key] = { src: rendition.path, purpose };
+      renditions[keys[purpose]] = { src: rendition.path, purpose };
     }
     renderedPlacements.push({
       placementId: placement.placementId,
       kind: placement.kind,
       altText: placement.altText,
       ...(placement.caption === null ? {} : { caption: placement.caption }),
-      ...(hasRendition(placement, "poster") ? { posterId: posterKey } : {}),
-      ...(hasRendition(placement, "captions") ? { captionsId: captionsKey } : {}),
+      ...(placement.sectionElement === null ? {} : { sectionElement: placement.sectionElement }),
+      ...(hasRendition(placement, "poster") ? { posterId: keys.poster } : {}),
+      ...(hasRendition(placement, "captions") ? { captionsId: keys.captions } : {}),
+      ...(hasRendition(placement, "transcript") ? { transcriptId: keys.transcript } : {}),
       ...(captionTrack === undefined ? {} : { captionsLanguage: captionTrack.language, captionsLabel: captionTrack.label }),
     });
   }
@@ -424,12 +425,34 @@ function currentRevisionOf(state: ContentWorkspaceState, variant: ContentVariant
   const head = headReleaseOf(state, variant);
   return head === undefined ? undefined : findRevision(state, head.revisionId);
 }
+/**
+ * The frozen candidate one edition holds, as a release surface reads it: the exact revision the candidate froze with its
+ * checksum, and whether the submission that froze it asked for a notice.
+ *
+ * Why the release mode travels with the edition. A frozen candidate carries the release mode its author chose, the
+ * reviewer cannot change it, and `publishVariants` refuses a mode the submission never asked for — so a surface that
+ * offers a release cannot state or choose a mode without this fact. `notifyAdmitted` grants nothing: the mutation re-reads
+ * the same record when the release is applied.
+ */
+export type ContentEditionCandidateView = {
+  /** The candidate's own identity, which is the revision it froze. */
+  readonly candidateId: string;
+  /** The exact revision this candidate froze, and the one a release would publish. */
+  readonly revisionId: string;
+  /** The checksum of that revision, as the stored revision states it. */
+  readonly contentChecksum: string;
+  /** Whether the submission asked for a notice and its review was approved: the condition the `publish-and-notify-now` release action is available under. */
+  readonly notifyAdmitted: boolean;
+  /** Why a notice is not available for this edition, in the service's own words, when `notifyAdmitted` is false. */
+  readonly notifyRefusal?: string;
+};
 /** One edition as the variant matrix lists it: its audience and exact locale, its three independent pointers, the release standing at its head with everything reach reaches, and how its. */
-export type ContentEditionView = { readonly variantId: string; readonly audience: ContentAudience; readonly locale: ContentLocale; readonly draftRevisionId: string | null } & { readonly candidateId: string | null; readonly releaseHeadId: string | null; readonly recordRevision: string } & {
-  readonly headRelease: Release | null;
-  readonly reach: ReachMetadata | null;
-  readonly lastReleaseAt: string | null;
-} & { readonly translation: ContentTranslationView };
+export type ContentEditionView = { readonly variantId: string; readonly audience: ContentAudience; readonly locale: ContentLocale; readonly draftRevisionId: string | null } & {
+  readonly candidateId: string | null;
+  readonly candidate: ContentEditionCandidateView | null;
+  readonly releaseHeadId: string | null;
+  readonly recordRevision: string;
+} & { readonly headRelease: Release | null; readonly reach: ReachMetadata | null; readonly lastReleaseAt: string | null } & { readonly translation: ContentTranslationView };
 function editionViewOf(state: ContentWorkspaceState, variant: ContentVariantRecordLike, checksums: RevisionChecksums): ContentEditionView {
   const releases = releasesOfVariant(state, variant.variantId);
   const head = headReleaseOf(state, variant);
@@ -440,6 +463,7 @@ function editionViewOf(state: ContentWorkspaceState, variant: ContentVariantReco
     locale: localeOf(variant.locale, variant.direction),
     draftRevisionId: variant.draftRevisionId,
     candidateId: variant.candidateId,
+    candidate: candidateViewOf(state, variant),
     releaseHeadId: variant.releaseHeadId,
     recordRevision: variant.revision,
     headRelease: head === undefined ? null : releaseOf(head, checksums),
@@ -467,6 +491,22 @@ function documentViewOf(record: ContentDocumentRecord): ContentDocumentView {
 }
 /** The four bounded presentation choices, as the content profile declares them and no second time. */
 export type ContentPresentationChoices = typeof PRESENTATION_CHOICES;
+/**
+ * Whether one edition holds a frozen candidate that is not yet the revision it publishes.
+ *
+ * The comparison is between identities, never between the presence of a release head. A candidate's identity is the
+ * exact revision it froze, so an edition that already published an earlier revision still holds a candidate no release
+ * has answered, and a candidate its review has approved is still waiting for the release that would publish it. Only a
+ * candidate the head already publishes exactly is answered, which is the one state that is not waiting.
+ */
+function isCandidateAwaitingRelease(candidateId: string | null, headRevisionId: string | null): boolean {
+  return candidateId !== null && candidateId !== headRevisionId;
+}
+/** The revision one edition's head release publishes, or `null` when the edition has published nothing. */
+function headRevisionIdOf(state: ContentWorkspaceState, variant: ContentVariantRecordLike): string | null {
+  const head = headReleaseOf(state, variant);
+  return head === undefined ? null : head.revisionId;
+}
 /** The variant matrix of one Update or Page. */
 export type VariantOverviewData = { readonly document: ContentDocumentView; readonly audiences: readonly ContentAudience[]; readonly editions: readonly ContentEditionView[]; readonly awaitingRelease: readonly string[] };
 /** Reads the variant matrix of one document: every edition with its audience, exact locale, three independent pointers, head release and translation state. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
@@ -478,8 +518,9 @@ export async function readVariantOverview(input: { readonly documentId: string; 
   const document = findDocument(workspace.state, input.documentId);
   if (document === undefined) return recordNotFound();
   const checksums = checksumsOf(workspace.state);
-  const editions = variantsOf(workspace.state, document.documentId).map((variant) => editionViewOf(workspace.state, variant, checksums));
-  const awaitingRelease = editions.filter((edition) => edition.candidateId !== null && edition.releaseHeadId === null).map((edition) => edition.variantId);
+  const variants = variantsOf(workspace.state, document.documentId);
+  const editions = variants.map((variant) => editionViewOf(workspace.state, variant, checksums));
+  const awaitingRelease = variants.filter((variant) => isCandidateAwaitingRelease(variant.candidateId, headRevisionIdOf(workspace.state, variant))).map((variant) => variant.variantId);
   const data: VariantOverviewData = { document: documentViewOf(document), audiences: admittedAudiences(document.family), editions, awaitingRelease };
   const envelope = contentEnvelope({
     workspace,
@@ -490,7 +531,7 @@ export async function readVariantOverview(input: { readonly documentId: string; 
     actions: [
       { name: "create-variant", available: true },
       { name: "open-draft", available: editions.some((edition) => edition.draftRevisionId !== null), ...(editions.some((edition) => edition.draftRevisionId !== null) ? {} : { reason: "No edition of this document has a saved draft yet." }) },
-      { name: "review-candidate", available: awaitingRelease.length > 0, ...(awaitingRelease.length > 0 ? {} : { reason: "No edition of this document has a candidate awaiting review." }) },
+      { name: "review-candidate", available: awaitingRelease.length > 0, ...(awaitingRelease.length > 0 ? {} : { reason: "No edition of this document holds a frozen candidate waiting for a release." }) },
       { name: "publish-variants", available: editions.some((edition) => edition.candidateId !== null), ...(editions.some((edition) => edition.candidateId !== null) ? {} : { reason: "Only a frozen candidate can be published; no edition has one." }) },
     ],
   });
@@ -498,12 +539,16 @@ export async function readVariantOverview(input: { readonly documentId: string; 
 }
 /** How a list states one document's title: the edition whose current revision supplied it, or that no edition has one to state. */
 export type ContentDocumentTitleView = { readonly status: "stated"; readonly variantId: string; readonly title: string } | { readonly status: "unstated" };
-/** One canonical document as an index lists it: the document itself, its title, every edition's own independent pointers, and the editions whose candidate has no release head. */
+/** One canonical document as an index lists it: the document itself, its title, the editions of it this answer carries with their own independent pointers, and the editions among them whose frozen candidate is not yet the revision they publish. */
 export type ContentDocumentIndexEntry = { readonly document: ContentDocumentView; readonly title: ContentDocumentTitleView; readonly editions: readonly ContentEditionView[]; readonly awaitingRelease: readonly string[] };
-/** What a list of content documents states: the families it listed and their documents in document order. */
-export type ContentDocumentIndexData = { readonly families: readonly ContentFamily[]; readonly documents: readonly ContentDocumentIndexEntry[] };
-/** What a caller asks the list of content documents for: the families to list and the session to read under. */
-export type ContentDocumentIndexQuery = { readonly families?: readonly ContentFamily[]; readonly session?: SessionSource };
+/** What a list of content documents states: the families it listed, the documents of the page it answered with, and the window that page occupies in the whole authorised result. */
+export type ContentDocumentIndexData = { readonly families: readonly ContentFamily[]; readonly documents: readonly ContentDocumentIndexEntry[]; readonly page: PageWindow };
+/** What a caller asks the list of content documents for: the families to list, the page of listed rows to answer with, and the session to read under. */
+export type ContentDocumentIndexQuery = { readonly families?: readonly ContentFamily[]; readonly page?: number; readonly pageSize?: number; readonly session?: SessionSource };
+/** One listed row of the content index: one edition of one listed document. The row grain is the edition, because that is the grain both surfaces present — the Updates roster states one row per edition — and a window counted in documents would answer with a page of rows nobody asked for. */
+type ContentDocumentIndexRow = { readonly record: ContentDocumentRecord; readonly variant: ContentVariantRecordLike };
+/** One listed document with the editions this read may list for it, in document order. */
+type ListedContentDocument = { readonly record: ContentDocumentRecord; readonly variants: readonly ContentVariantRecordLike[] };
 /** The families one list states: the set the caller named, or every content family when it named none. */
 function listedFamiliesOf(requested: readonly ContentFamily[] | undefined): readonly ContentFamily[] {
   if (requested === undefined) return VARIANT_FAMILIES;
@@ -517,10 +562,10 @@ function digest(value: string): string {
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
-/** The revision of a listed collection: how many documents it holds and a digest of their own revisions at `documentId@revision`, so a document saved, released or withdrawn under an identity the list … */
-function collectionRevisionOf(entries: readonly ContentDocumentIndexEntry[]): string {
-  const revisions = entries.map((entry) => `${entry.document.documentId}@${entry.document.recordRevision}`).toSorted(compareCodeUnits);
-  return `content-documents/${String(entries.length)}/${digest(revisions.join("\u0000"))}`;
+/** The revision of a listed collection: how many documents it holds and a digest of their own revisions at `documentId@revision`, so a document saved, released or withdrawn under an identity the list … states the whole listed collection rather than the page on show, because a page boundary is not a change to what the collection holds. */
+function collectionRevisionOf(listed: readonly ListedContentDocument[]): string {
+  const revisions = listed.map(({ record }) => `${record.documentId}@${record.revision}`).toSorted(compareCodeUnits);
+  return `content-documents/${String(listed.length)}/${digest(revisions.join("\u0000"))}`;
 }
 /** The title a list states for one document: the share presentation title of the first of its editions, in the order the family stores them, whose current revision exists — the saved draft when one … */
 function titleOf(state: ContentWorkspaceState, variants: readonly ContentVariantRecordLike[]): ContentDocumentTitleView {
@@ -530,25 +575,33 @@ function titleOf(state: ContentWorkspaceState, variants: readonly ContentVariant
   }
   return { status: "unstated" };
 }
-/** One document as an index lists it: its own view, its title, every edition's independent draft, candidate and release pointers, and the editions whose candidate has no release head under `readVariantOverview`'s own rule. */
+/** One document as an index lists it: its own view, its title, every edition's independent draft, candidate and release pointers, and the editions whose frozen candidate is not yet the revision they publish under `readVariantOverview`'s own rule. */
 function indexEntryOf(state: ContentWorkspaceState, record: ContentDocumentRecord, checksums: RevisionChecksums): ContentDocumentIndexEntry {
   const variants = variantsOf(state, record.documentId);
   const editions = variants.map((variant) => editionViewOf(state, variant, checksums));
-  return { document: documentViewOf(record), title: titleOf(state, variants), editions, awaitingRelease: editions.filter((edition) => edition.candidateId !== null && edition.releaseHeadId === null).map((edition) => edition.variantId) };
+  return { document: documentViewOf(record), title: titleOf(state, variants), editions, awaitingRelease: variants.filter((variant) => isCandidateAwaitingRelease(variant.candidateId, headRevisionIdOf(state, variant))).map((variant) => variant.variantId) };
 }
-/** The actions one list of documents offers, computed across every listed document under the names the variant matrix uses: a draft to open, a candidate to review and a candidate to publish, each … */
-function indexActions(entries: readonly ContentDocumentIndexEntry[]): readonly ReadAction[] {
-  const editions = entries.flatMap((entry) => entry.editions);
-  const hasDraft = editions.some((edition) => edition.draftRevisionId !== null);
-  const awaitingRelease = editions.filter((edition) => edition.candidateId !== null && edition.releaseHeadId === null).length;
-  const hasCandidate = editions.some((edition) => edition.candidateId !== null);
+/** The actions one list of documents offers, computed across every edition of every listed document — the whole authorised result, never the page on show, so a page holding no candidate cannot withdraw an action the collection really admits — under the names the variant matrix uses: a draft to open, a candidate to review and a candidate to publish, each … */
+function indexActions(state: ContentWorkspaceState, rows: readonly ContentDocumentIndexRow[]): readonly ReadAction[] {
+  const hasDraft = rows.some((row) => row.variant.draftRevisionId !== null);
+  const awaitingRelease = rows.filter((row) => isCandidateAwaitingRelease(row.variant.candidateId, headRevisionIdOf(state, row.variant))).length;
+  const hasCandidate = rows.some((row) => row.variant.candidateId !== null);
   return [
     { name: "open-draft", available: hasDraft, ...(hasDraft ? {} : { reason: "No edition of the listed documents has a saved draft yet." }) },
-    { name: "review-candidate", available: awaitingRelease > 0, ...(awaitingRelease > 0 ? {} : { reason: "No edition of the listed documents has a candidate awaiting review." }) },
+    { name: "review-candidate", available: awaitingRelease > 0, ...(awaitingRelease > 0 ? {} : { reason: "No edition of the listed documents holds a frozen candidate waiting for a release." }) },
     { name: "publish-variants", available: hasCandidate, ...(hasCandidate ? {} : { reason: "Only a frozen candidate can be published; no edition of the listed documents has one." }) },
   ];
 }
-/** Lists the content documents of the requested families — every family when none is named — each with its title, its editions' own draft, candidate and release state, and the editions waiting for a release. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read content and `unavailable` when the records cannot be read. */
+/** The page number a caller's request states, or the first page: the read's own window arithmetic, as every other list read states it. A value that is not a whole number of pages is not a page this read can answer with, and the first page is what a caller who named none is asking for. */
+function pageOf(requested: number | undefined): number {
+  return requested !== undefined && Number.isSafeInteger(requested) && requested >= 1 ? requested : 1;
+}
+/** One listed document as a page of the index states it: the whole entry when the page carries every one of its editions, and otherwise the entry narrowed to the editions that page carries and to their awaiting-release state, so a row is never listed twice and an entry never states an edition it does not carry. */
+function pageEntryOf(whole: ContentDocumentIndexEntry, listedVariantIds: ReadonlySet<string>): ContentDocumentIndexEntry {
+  if (whole.editions.length === listedVariantIds.size) return whole;
+  return { ...whole, editions: whole.editions.filter((edition) => listedVariantIds.has(edition.variantId)), awaitingRelease: whole.awaitingRelease.filter((variantId) => listedVariantIds.has(variantId)) };
+}
+/** Lists the content documents of the requested families — every family when none is named — each with its title, the editions of it this page carries with their own draft, candidate and release state, and the editions among them waiting for a release, over the whole authorised collection with one page of listed rows answered. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read content and `unavailable` when the records cannot be read. */
 export async function findContentDocuments(query: ContentDocumentIndexQuery = {}): Promise<ReadResult<ReadEnvelope<ContentDocumentIndexData>>> {
   // Authorisation precedes enumeration: a caller who may not read content receives the refusal before a count, a title or an existence hint is computed, so a list cannot become a disclosure oracle.
   const opened = await openContentWorkspace("findContentDocuments", query.session);
@@ -557,19 +610,41 @@ export async function findContentDocuments(query: ContentDocumentIndexQuery = {}
   const families = listedFamiliesOf(query.families);
   const wanted = new Set<ContentFamily>(families);
   const checksums = checksumsOf(workspace.state);
-  const documents = workspace.state.contentDocuments
+  const listed: readonly ListedContentDocument[] = workspace.state.contentDocuments
     .filter((record) => wanted.has(record.family))
     .toSorted((left, right) => compareCodeUnits(left.documentId, right.documentId))
-    .map((record) => indexEntryOf(workspace.state, record, checksums));
-  const data: ContentDocumentIndexData = { families, documents };
+    .map((record) => ({ record, variants: variantsOf(workspace.state, record.documentId) }));
+  const rows: readonly ContentDocumentIndexRow[] = listed.flatMap(({ record, variants }) => variants.map((variant) => ({ record, variant })));
+  // A caller that states no window is answered with the whole listed collection as its one page: the Pages index reads every admitted Page in one answer, and a window applied to a surface that states none would drop rows from a list whose pager nobody asked for. A caller that states either half of the window is answered with that window, clamped by the one size every list in this application is clamped by.
+  const windowed = query.page !== undefined || query.pageSize !== undefined;
+  const pageSize = windowed ? clampPageSize(query.pageSize) : Math.max(1, rows.length);
+  const page = windowed ? pageOf(query.page) : 1;
+  const pageCount = rows.length === 0 ? 0 : Math.ceil(rows.length / pageSize);
+  const offset = (page - 1) * pageSize;
+  const carried = rows.slice(offset, offset + pageSize);
+  const editionsByDocument = new Map<string, Set<string>>();
+  for (const { record, variant } of carried) {
+    const carriedIds = editionsByDocument.get(record.documentId);
+    if (carriedIds === undefined) {
+      editionsByDocument.set(record.documentId, new Set([variant.variantId]));
+    } else {
+      carriedIds.add(variant.variantId);
+    }
+  }
+  const documents = listed.flatMap(({ record }) => {
+    const carriedIds = editionsByDocument.get(record.documentId);
+    // A document whose every edition falls outside this page is not on it: the page lists the rows it carries and no entry for a row it does not.
+    return carriedIds === undefined ? [] : [pageEntryOf(indexEntryOf(workspace.state, record, checksums), carriedIds)];
+  });
+  const data: ContentDocumentIndexData = { families, documents, page: { page, pageSize, total: rows.length, pageCount } };
   const envelope = contentEnvelope({
     workspace,
     data,
     source: contentSource(CONTENT_SOURCE_REFERENCE),
-    revision: collectionRevisionOf(documents),
-    // One state per value-bearing member of `data`, and no third: each document's own editions and awaiting-release list are members of that document's entry, so the list states their absence there and never invents an aggregate count this read does not return.
-    valueStates: { documents: documents.length === 0 ? "zero" : "value" },
-    actions: indexActions(documents),
+    revision: collectionRevisionOf(listed),
+    // One state per value-bearing member of `data`, and no third: `documents` states whether the whole listed collection holds any document at all rather than how many rows this page carries, `page.total` states the whole-result row count the window reports so a page beyond the last states its own zero without claiming the collection is empty, and each document's own editions and awaiting-release list are members of that document's entry, so the list states their absence there and never invents an aggregate count this read does not return.
+    valueStates: { documents: listed.length === 0 ? "zero" : "value", "page.total": rows.length === 0 ? "zero" : "value" },
+    actions: indexActions(workspace.state, rows),
   });
   return { kind: "envelope", envelope };
 }
@@ -678,6 +753,11 @@ export type CandidateDiffView = { readonly against: { readonly releaseId: string
 export interface CandidateDecisionRecord {
   readonly decision: ReviewDecision;
   readonly decidedByPrincipalId: string | null;
+  /**
+   * Whether the recorded principal is the author of the frozen revision this answer was given to: the one fact that
+   * separates an author's own answer from an independent reviewer's, derived here so no surface compares principals.
+   */
+  readonly decidedByAuthor: boolean;
   /** The deciding instant exactly as the record holds it, an ISO 8601 instant, so it serialises to a client component. */
   readonly decidedAt: string | null;
   readonly note: string | null;
@@ -704,9 +784,13 @@ export type ContentCandidateData =
         readonly decision: ReviewDecision | null;
         // The same answer as a record, with the principal, the instant and the note; `null` exactly when `decision` is, so a surface states the record instead of inferring it from the word.
         readonly recorded: CandidateDecisionRecord | null;
-        readonly approvalScope: "this-variant-only";
-        // The release mode the submission fixed, which the reviewer reads and cannot change; `null` only where no review record exists for the candidate, so a surface never states a mode the store does not hold.
+        // The release mode the submission recorded in the same record, in the vocabulary the review mutations store: `publish-and-notify` is the only value that asks for a notice, and a reviewer cannot change it. `null` only when no record states one, which is a candidate nothing can release.
         readonly notifyMode: SubmittedReleaseMode | null;
+        // Whether the principal reading this candidate wrote the revision it froze, stated as a fact about the two
+        // identities rather than as an authority: the review mutations re-check on submit, and an author's own answer
+        // is recorded exactly as any other, naming the principal who gave it.
+        readonly reviewedByAuthor: boolean;
+        readonly approvalScope: "this-variant-only";
       };
       readonly recordRevision: string;
     }
@@ -798,7 +882,15 @@ export async function readCandidate(input: { readonly variantId: string; readonl
     placements,
     diff,
     headRelease: head === undefined ? null : releaseOf(head, checksums),
-    review: { steps: REVIEW_STEPS_PER_CANDIDATE, round: REVIEW_STEPS_PER_CANDIDATE, decision, recorded: recordedDecisionRecordOf(reviewRecord), approvalScope: "this-variant-only", notifyMode: reviewRecord?.notifyMode ?? null },
+    review: {
+      steps: REVIEW_STEPS_PER_CANDIDATE,
+      round: REVIEW_STEPS_PER_CANDIDATE,
+      decision,
+      recorded: recordedDecisionRecordOf(reviewRecord, frozen.authorPrincipalId),
+      notifyMode: reviewRecord === undefined ? null : reviewRecord.notifyMode,
+      reviewedByAuthor: frozen.authorPrincipalId === workspace.scope.principalId,
+      approvalScope: "this-variant-only",
+    },
     recordRevision: record.revision,
   };
   const envelope = contentEnvelope({
@@ -815,11 +907,11 @@ export async function readCandidate(input: { readonly variantId: string; readonl
 function recordedDecisionOf(review: ContentReviewRecord | undefined): ReviewDecision | null {
   return review === undefined || review.decision === "submitted" ? null : review.decision;
 }
-/** The answer recorded for one candidate as a record, and `null` while its record still stands at `submitted`. */
-function recordedDecisionRecordOf(review: ContentReviewRecord | undefined): CandidateDecisionRecord | null {
+/** The answer recorded for one candidate as a record, and `null` while its record still stands at `submitted`. The author is the frozen revision's own recorded author, so whether an answer was the author's own is a comparison of the record with the revision it answered, made here rather than by a surface. */
+function recordedDecisionRecordOf(review: ContentReviewRecord | undefined, authorPrincipalId: string): CandidateDecisionRecord | null {
   const decision = recordedDecisionOf(review);
   if (review === undefined || decision === null) return null;
-  return { decision, decidedByPrincipalId: review.decidedByPrincipalId, decidedAt: review.decidedAt, note: review.note };
+  return { decision, decidedByPrincipalId: review.decidedByPrincipalId, decidedByAuthor: review.decidedByPrincipalId === authorPrincipalId, decidedAt: review.decidedAt, note: review.note };
 }
 // The refusals the review mutations give, in their own words, so a reviewer reads one vocabulary whichever surface states the condition.
 /** What `answerReview` refuses when no record holds the candidate being answered. */
@@ -839,11 +931,10 @@ const NOTIFY_NOW_REASON = "Only a reviewer who chooses it turns a release into a
 const NOT_ASKED_FOR_REASON = "A reviewer cannot release this edition with a mode the submission did not ask for, so a new submission is required.";
 /** One release action: the name it is stated by, the recorded mode it asks for and what it means when it is available. */
 type ReleaseActionOffer = { readonly name: string; readonly mode: SubmittedReleaseMode; readonly meaning: string };
+/** The release action that asks a submission's own recorded mode for a notice: declared once, so the fact this read projects and the action the review step offers are one rule rather than two. */
+const NOTIFY_NOW_OFFER: ReleaseActionOffer = { name: "publish-and-notify-now", mode: "publish-and-notify", meaning: NOTIFY_NOW_REASON };
 /** The two release actions, each with the recorded mode it asks `publishVariants` for. */
-const RELEASE_ACTION_OFFERS: readonly ReleaseActionOffer[] = [
-  { name: "publish-only", mode: "publish-only", meaning: PUBLISH_ONLY_REASON },
-  { name: "publish-and-notify-now", mode: "publish-and-notify", meaning: NOTIFY_NOW_REASON },
-];
+const RELEASE_ACTION_OFFERS: readonly ReleaseActionOffer[] = [{ name: "publish-only", mode: "publish-only", meaning: PUBLISH_ONLY_REASON }, NOTIFY_NOW_OFFER];
 /** Why a release cannot be offered for this candidate, or `null` when it can. */
 function releaseRefusalOf(review: ContentReviewRecord | undefined, decision: ReviewDecision | null): string | null {
   if (review === undefined) return NO_SUBMISSION_REASON;
@@ -877,6 +968,31 @@ function releaseActionOf(offer: ReleaseActionOffer, review: ContentReviewRecord 
   if (review !== undefined && offer.mode !== review.notifyMode) return { name: offer.name, available: false, reason: NOT_ASKED_FOR_REASON };
   if (releaseRefusal !== null) return { name: offer.name, available: false, reason: releaseRefusal };
   return { name: offer.name, available: true, reason: offer.meaning };
+}
+/**
+ * One edition's frozen candidate as a release surface reads it: the exact revision it froze with its checksum, whether its
+ * submission asked for a notice, and the service's own sentence for why one is not available when it did not.
+ *
+ * Both facts come from the records every other read here reads — the frozen revision for the checksum, and the
+ * candidate's own review record for the mode and the decision — and the notify fact is decided by the very action the
+ * review step offers, so no surface can state a notification policy the service would refuse.
+ */
+function candidateViewOf(state: ContentWorkspaceState, variant: ContentVariantRecordLike): ContentEditionCandidateView | null {
+  const candidateId = variant.candidateId;
+  if (candidateId === null) return null;
+  const frozen = findRevision(state, candidateId);
+  const review = state.contentReviews.find((candidate) => candidate.candidateId === candidateId);
+  const notifyAction = releaseActionOf(NOTIFY_NOW_OFFER, review, releaseRefusalOf(review, recordedDecisionOf(review)));
+  return {
+    candidateId,
+    // The store holds no separate candidate family: a candidate is identified by the revision it froze, which is the identity `submitForReview` records and the one a release names.
+    revisionId: candidateId,
+    // The frozen revision's own checksum, as the stored revision states it. A revision the store cannot find states none rather than a guess: the release it would become is refused before anything is published.
+    contentChecksum: frozen === undefined ? "" : frozen.contentChecksum,
+    notifyAdmitted: notifyAction.available,
+    // The offer's own sentence, so a surface explains an unavailable notice in the words the mutation would use rather than in a second vocabulary.
+    ...(notifyAction.available || notifyAction.reason === undefined ? {} : { notifyRefusal: notifyAction.reason }),
+  };
 }
 function candidateDiff(input: {
   readonly candidate: ContentDocumentJson;

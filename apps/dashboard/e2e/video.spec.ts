@@ -19,10 +19,12 @@
  * - The contributor is the established worker, and the edition under composition is the approved-supporter
  *   edition of `doc-update-autumn` — protected content, so the media placed in it is readable by the scope
  *   that owns it and by a reader holding a protected-reading grant, and by nobody else.
- * - `asset-video-welcome` is the seeded video whose three renditions are the committed fixtures: an MP4
- *   playback rendition, a poster image and a WebVTT caption track. The listed public Page edition
- *   `release-page-en-1` places it, so `/preview/pages/doc-page-harbour-youth/en` is where a real player,
- *   poster and caption track are served — the one place in this world where all three exist at once.
+ * - `asset-video-welcome` is the seeded video whose four renditions are the committed fixtures: an MP4
+ *   playback rendition, a poster image, a WebVTT caption track, and a transcript — the committed WebVTT text
+ *   served as a rendition of its own, so the reading alternative is an admitted rendition rather than a second
+ *   copy of the placement's words. The listed public Page edition `release-page-en-1` places it, so
+ *   `/preview/pages/doc-page-harbour-youth/en` is where a real player, poster, caption track and transcript are
+ *   served — the one place in this world where all four exist at once.
  * - The reader personas are sessions with their own cookies: `second-worker` belongs to another ministry
  *   and shares no scope with this one, and `reader-unauthorized` is a reader holding no grant.
  * - The committed media fixtures are the inputs: `sample-h264.mp4` and `sample-vp9.webm` are the two
@@ -107,8 +109,8 @@ const UPDATE_READING_PATH = `/preview/${UPDATE_DOCUMENT}`;
 /** The synthetic inbox of whichever reader acts. */
 const INBOX_PATH = "/communication/inbox";
 
-/** The seeded video and the three renditions its record holds. */
-const SEEDED_VIDEO = { assetId: "asset-video-welcome", playback: "rendition-video-welcome-playback", poster: "rendition-video-welcome-poster", captions: "rendition-video-welcome-captions" } as const;
+/** The seeded video, and the four renditions its record holds: playback, poster, captions and the transcript alternative. */
+const SEEDED_VIDEO = { assetId: "asset-video-welcome", playback: "rendition-video-welcome-playback", poster: "rendition-video-welcome-poster", captions: "rendition-video-welcome-captions", transcript: "rendition-video-welcome-transcript" } as const;
 
 /** The publisher this ministry's Update email speaks for, as every membership of the seeded audience records it. */
 const PUBLISHER = "publisher-harbour";
@@ -804,6 +806,21 @@ test("a released edition plays its MP4 with a poster and a WebVTT caption track,
   expect(captionsAnswer.contentType).toContain("text/vtt");
   expect(captionsAnswer.body.trimStart().startsWith("WEBVTT"), "the caption track is WebVTT rather than any text that happened to be there").toBe(true);
 
+  // The transcript is the placement's reading alternative: an anchor in the same figure as the player, pointing at
+  // that asset's own transcript rendition, which the same route serves as WebVTT.
+  const playerFigure = page
+    .locator("figure")
+    .filter({ has: page.locator("video") })
+    .first();
+  const transcriptLink = playerFigure.getByRole("link", { name: /Read the transcript/u });
+  await expect(transcriptLink, "the placement offers the transcript alternative the catalogue promises").toHaveCount(1);
+  const transcriptSrc = await transcriptLink.getAttribute("href");
+  expect(transcriptSrc, "the transcript alternative is a rendition of this application, not a file on a public path").toMatch(MEDIA_ROUTE);
+  expect(transcriptSrc).toContain(SEEDED_VIDEO.transcript);
+  const transcriptAnswer = await requestRendition(page, transcriptSrc ?? "");
+  expect(transcriptAnswer.status, "the transcript rendition is served to the contributor").toBe(200);
+  expect(transcriptAnswer.contentType).toContain("text/vtt");
+
   // The surface states that its reach is demonstrated rather than pushed to a real audience.
   await expect(page.getByText("simulated publication; reach is demonstrated in the receiving preview", { exact: true }).first()).toBeVisible();
 });
@@ -906,7 +923,12 @@ test("another persona's direct request for playback, poster, captions and transc
   // The preview renders the released revision, so both addresses below are ones the application emitted.
   await page.goto(`${EDITOR_PATH}/preview`);
   const protectedPlayback = (await page.locator("video").first().getAttribute("src")) ?? "";
-  const transcriptLink = page.getByRole("link", { name: /Read the transcript for/u });
+  // The placement's own transcript link, read from the figure the player stands in: the preview also lists the same
+  // rendition in its media region, and the alternative this address is taken from is the one beside the player.
+  const transcriptLink = page
+    .locator("figure")
+    .filter({ has: page.locator("video") })
+    .getByRole("link", { name: /Read the transcript for/u });
   await expect(transcriptLink).toBeVisible();
   const protectedTranscript = (await transcriptLink.getAttribute("href")) ?? "";
   const protectedPoster = renditionAddressOf(draft.assetId, "poster");
@@ -1087,7 +1109,12 @@ test("a protected notice carries no protected prose or media, and the link it ca
 
   // --- the transcript is on the edition, where the link leads, not in the message ----------------
   await page.goto(`${EDITOR_PATH}/preview`);
-  const transcriptLink = page.getByRole("link", { name: /Read the transcript for/u });
+  // The placement's own alternative, read from the figure the player stands in rather than from the preview's media
+  // region, which lists the same rendition beside it.
+  const transcriptLink = page
+    .locator("figure")
+    .filter({ has: page.locator("video") })
+    .getByRole("link", { name: /Read the transcript for/u });
   await expect(transcriptLink, "the released edition offers its transcript as the text alternative").toBeVisible();
   const transcriptAnswer = await requestRendition(page, (await transcriptLink.getAttribute("href")) ?? "");
   expect(transcriptAnswer.status, "the transcript rendition is readable where the edition is").toBe(200);

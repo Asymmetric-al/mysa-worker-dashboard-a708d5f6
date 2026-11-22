@@ -9,10 +9,10 @@
  * not own: the read and the write transports (`../hooks`), the words of a lifecycle state
  * (`@/components/draft-status`), the audience and reach vocabularies (`../copy`, `@/components/status-badge`),
  * the attempt's identity and its receipt (`@/components/action-review`), or any count, order or page
- * position the service decided. The read returns the whole authorised collection in one answer and takes
- * no search, order or page, so this surface windows it locally and never narrows or re-orders it — and the
- * page it opens on travels in the address, so an Update opened from this list returns the reader to the
- * same page rather than to the first one.
+ * position the service decided. The read is asked for one page of listed rows and answers with that page
+ * beside the whole-result total, so this surface renders the window the service measured, and never
+ * windows, narrows or re-orders the collection it was answered with. The page it shows travels in the
+ * address, so an Update opened from this list returns the reader to the same page rather than the first one.
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -31,10 +31,10 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/cn";
 import type { MutationInput, ValueState } from "@/modules/data-service/envelope";
-import { lifecycleFor, type EditionAudience, type RosterDocument, type RosterEdition, type UpdatesRoster } from "../roster";
+import { lifecycleFor, rosterOf, type EditionAudience, type RosterDocument, type RosterEdition, type UpdatesRoster } from "../roster";
 import { AUDIENCE_LABELS, DRAFT_VS_RELEASED, LOCALE_DISPLAY_NAMES, UPDATE_KIND_LABELS } from "../copy/updates-copy";
 import { useCreateVariant } from "../hooks/use-update-mutations";
-import { useVariantOverview, type VariantOverviewData } from "../hooks/use-update-queries";
+import { useUpdatesRoster, useVariantOverview, type UpdatesRosterReadResult, type VariantOverviewData } from "../hooks/use-update-queries";
 import { createVariantSchema, type CreateVariantPayload } from "../schemas/draft";
 
 // ---------------------------------------------------------------------------------------------
@@ -117,7 +117,7 @@ const SURFACE_COPY = {
   heading: "Updates",
   purpose: "Every Update this ministry's content holds, with each edition's own draft, its one review step and its own release.",
   intro: DRAFT_VS_RELEASED.draftIsNotWhatReadersSee,
-  orderNote: "Editions are listed in the order the read answered with: by Update, then in each Update's own edition order. Nothing on this page re-orders, narrows or adds them together, and the count beside the rows is the whole collection this read returned rather than the page on show.",
+  orderNote: "Editions are listed in the order the read answered with: by Update, then in each Update's own edition order. Nothing on this page re-orders, narrows or adds them together, and the count beside the rows is the whole collection the read measured rather than the page on show.",
   audienceNote: "A public edition is the one readers of this Update's public page are served. An approved-supporter edition is served only to supporters this publisher has approved. The same language can hold one of each, and the two are separate editions with separate releases.",
   outcomeNote:
     "This list states what has been written, frozen for review and released. It states nothing about who was notified, whose provider accepted a notice, what was delivered or what was read: publication, notification submission, provider acceptance, delivery and reading are separate outcomes, and none of the last four is shown here.",
@@ -128,7 +128,7 @@ const SURFACE_COPY = {
   noCandidate: "No candidate in review.",
   candidateFrozen: "Candidate frozen",
   candidateRevision: "Frozen revision",
-  awaitingRelease: "No release head yet.",
+  awaitingRelease: "This candidate is not yet the released revision.",
   notReleased: "Not released.",
   lastRelease: "Last release",
   published: "Published",
@@ -143,6 +143,12 @@ const SURFACE_COPY = {
   addEditionNote: "An edition is one audience in one content language. Adding one starts it with no draft, no review and no release: nothing is published and no notice is submitted by this step.",
   unavailableTitle: "The Updates could not be read",
   unavailableBody: "The source behind this list could not be read, so no count, no title and no empty result stands in its place. Reload the page to read it again.",
+  retry: "Read this list again",
+  loadingTitle: "The Updates are being read",
+  loadingBody: "No count, no title and no edition is stated until this page's read answers, so an answer that has not arrived is never shown as a ministry that has written nothing.",
+  deniedTitle: "The Updates are not available in this session",
+  deniedBody: "This session may not read the content this context's ministry holds, so no Update, edition, count or title is stated here: a refusal is not an empty list.",
+  refusedTitle: "This page of Updates was refused",
   emptyTitle: "No Update yet",
   emptyBody: "An Update is one canonical piece of writing. Each of its editions serves one audience in one content language, and keeps its own draft, its one review step and its own release. This ministry's content holds none yet, so there is no Update here to add an edition to.",
   emptyAction: "How Updates are written and released",
@@ -203,20 +209,10 @@ function rowsOf(roster: UpdatesRoster): readonly RosterRow[] {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * A page window over the records a read already authorised and ordered.
- *
- * The listing read answers with the whole collection and takes no page of its own, so this widens or
- * narrows what is shown without changing the total the pager states: that total is the number of rows the
- * read returned, never a number this surface invented.
+ * The two row sizes this surface offers: a stated size outside them is read as the default rather than sent
+ * to a pager that would clamp it silently. The read owns the window itself — it clamps the size it is given
+ * and states the whole-result total — so nothing here widens or narrows what it answered with.
  */
-function windowOf<T>(items: readonly T[], page: number, pageSize: number): { readonly items: readonly T[]; readonly page: number } {
-  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
-  const current = Number.isFinite(page) ? Math.min(Math.max(FIRST_PAGE, Math.trunc(page)), pageCount) : FIRST_PAGE;
-  const firstIndex = (current - FIRST_PAGE) * pageSize;
-  return { items: items.slice(firstIndex, firstIndex + pageSize), page: current };
-}
-
-/** The two row sizes this surface offers: a stated size outside them is read as the default rather than sent to a pager that would clamp it silently. */
 function pageSizeOf(stated: number): number {
   return stated === PAGE_SIZE_CAP ? PAGE_SIZE_CAP : PAGE_SIZE_DEFAULT;
 }
@@ -691,6 +687,11 @@ export function CreateEditionDialog({ roster, open, onOpenChange }: CreateEditio
 export interface UpdatesListProps {
   /** The listing read, made plain by {@link rosterOf} on the server that read it. */
   readonly roster: UpdatesRoster;
+  /**
+   * The listing read's own answer, as the browser handler would have returned it, so the first page paints
+   * from the envelope the request already read instead of asking the same question again.
+   */
+  readonly initialResult?: UpdatesRosterReadResult;
   /** The level this surface's own heading occupies, so a page that already states an `h1` keeps one. */
   readonly headingLevel?: 1 | 2;
   readonly className?: string;
@@ -699,29 +700,52 @@ export interface UpdatesListProps {
 const HEADING_TAG = { 1: "h1", 2: "h2" } as const;
 
 /** The Ministry Updates roster: every Update and every edition the admitted scope holds, with the one reviewed way to add an edition. */
-export default function UpdatesList({ roster, headingLevel = 2, className }: UpdatesListProps): ReactElement {
+export default function UpdatesList({ roster, initialResult, headingLevel = 2, className }: UpdatesListProps): ReactElement {
   const headingId = useId();
   const [dialogOpen, setDialogOpen] = useState(false);
-  // The columns a worker shows are presentation and stay in this component; the page window lives in the address,
-  // so a reader who opens an Update and returns reads the page they left rather than the first one.
-  const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(NO_COLUMNS_HIDDEN);
-  const listWindow = useRecordListWindow({ page: FIRST_PAGE, pageSize: PAGE_SIZE_DEFAULT });
+  // The window the route's read answered with is the window this surface opens on, so the first paint states the
+  // rows that answer holds and asks the read for nothing it has not already been asked; the default stands in only
+  // when that answer carries no window. The address owns the window from then on, so a reader who opens an Update,
+  // reloads or returns from another screen reopens the page they left rather than the first one.
+  const seededWindow = initialResult !== undefined && initialResult.kind === "envelope" ? initialResult.envelope.data.page : undefined;
+  const listWindow = useRecordListWindow({ page: seededWindow?.page ?? FIRST_PAGE, pageSize: pageSizeOf(seededWindow?.pageSize ?? PAGE_SIZE_DEFAULT) });
   const page = listWindow.page;
   const pageSize = pageSizeOf(listWindow.pageSize);
   const setWindow = listWindow.setWindow;
+  // The columns a worker shows are presentation and stay in this component: hiding a column changes what is shown of
+  // a row and never which records the read answered with.
+  const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(NO_COLUMNS_HIDDEN);
   const handleQueryStateChange = useCallback(
     (next: RecordListQueryState): void => {
-      // The page, the row size and the visible columns are kept; an ordering is never kept, because this read
-      // applies its own order and takes no ordering parameter. The window is written to the address and the
-      // columns to this component, so neither is held twice.
+      // The page and the row size travel in the address the read is driven from and the columns stay here, so neither
+      // is held twice. An ordering is never kept, because this read applies its own order and takes no ordering parameter.
       setColumnVisibility(next.columnVisibility);
-      setWindow({ page: next.page, pageSize: pageSizeOf(next.pageSize) });
+      setWindow({ page: Math.max(FIRST_PAGE, Math.trunc(next.page)), pageSize: pageSizeOf(next.pageSize) });
     },
     [setWindow],
   );
-  const rows = useMemo(() => rowsOf(roster), [roster]);
+  // The window this surface shows is the service's: the read is asked for the page the address states, and the page it
+  // answers with is the one rendered beside the whole-result total it measured. A page change is therefore a re-read
+  // of the same list, never a slice of an answer already held.
+  //
+  // The Server Component's envelope seeds only the window it was read for. Seeding it under another page's key, with
+  // `refetchOnMount` off, would answer the page the reader asked for with the first page and issue no request at all.
+  const seeded = useMemo<UpdatesRosterReadResult | undefined>(() => {
+    if (initialResult === undefined || initialResult.kind !== "envelope") return undefined;
+    const answered = initialResult.envelope.data.page;
+    return answered.page === page && answered.pageSize === pageSize ? initialResult : undefined;
+  }, [initialResult, page, pageSize]);
+  const read = useUpdatesRoster({ scope: roster.scope, page, pageSize }, seeded === undefined ? {} : { initialData: seeded });
+  const result = read.result;
+  // A result read under a context this session no longer shows is never presented as the current one, so it is dropped here rather than rendered with the previous context's authority behind it.
+  const stale = result !== undefined && read.isStale(result);
+  const answer = result === undefined || stale ? undefined : result;
+  // The answer on show, mapped once per answer: the read's own page, its own totals and its own words, never a second derivation of them built on every render.
+  const answeredRoster = useMemo(() => (answer !== undefined && answer.kind === "envelope" ? rosterOf(answer.envelope) : undefined), [answer]);
+  const current: UpdatesRoster = answeredRoster ?? roster;
+  const rows = useMemo(() => rowsOf(current), [current]);
   // The read's own statement that reviewing is one of the things it admits here, so a candidate is linked to its review only where that step is really available.
-  const reviewAvailable = roster.actions.some((action) => action.name === REVIEW_CANDIDATE_ACTION && action.available);
+  const reviewAvailable = current.actions.some((action) => action.name === REVIEW_CANDIDATE_ACTION && action.available);
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<RosterRow>>>(
     () => [
       { id: "update", header: SURFACE_COPY.columnLabels.update, enableSorting: false, enableHiding: false, cell: (context) => <UpdateCell row={context.row.original} /> },
@@ -743,31 +767,43 @@ export default function UpdatesList({ roster, headingLevel = 2, className }: Upd
     [reviewAvailable],
   );
   // The one value state this surface reads: the envelope's own statement about its collection, never a count recomputed from the rows.
-  const documentsState: ValueState = roster.valueStates[DOCUMENTS_MEMBER] ?? "value";
+  const documentsState: ValueState = current.valueStates[DOCUMENTS_MEMBER] ?? "value";
   const noticeLevel: NoticeHeadingLevel = headingLevel === 1 ? 2 : 3;
-  const offersCreate = roster.documents.length > 0;
+  const offersCreate = answeredRoster !== undefined && answeredRoster.documents.length > 0;
   const HeadingTag = HEADING_TAG[headingLevel];
   let content: ReactElement;
-  if (documentsState === "unavailable" || documentsState === "unknown" || documentsState === "withheld") {
+  if (answer === undefined) {
+    // No answer describes the context this surface now shows — one is in flight, or the held one belonged to a context the session has since left — so nothing is counted and no empty result is implied.
+    content = <StateNotice kind="loading" headingLevel={noticeLevel} title={SURFACE_COPY.loadingTitle} description={SURFACE_COPY.loadingBody} loadingLines={6} />;
+  } else if (answer.kind === "denied") {
+    // A denial states no count, no title and no existence, so the answer is the same whether or not this ministry holds an Update.
+    content = <StateNotice kind="denied" headingLevel={noticeLevel} title={SURFACE_COPY.deniedTitle} description={SURFACE_COPY.deniedBody} reasonCode={answer.denied.reasonCode} />;
+  } else if (answer.kind === "unavailable") {
+    // An outage is never an empty list: the roster would otherwise claim that nothing has been written.
+    content = <StateNotice kind="unavailable" headingLevel={noticeLevel} title={SURFACE_COPY.unavailableTitle} description={answer.unavailable.guidance} source={answer.unavailable.source} retry={{ label: SURFACE_COPY.retry, onClick: read.refetch }} />;
+  } else if (answer.kind === "refused") {
+    // This page asked the read for a request it does not admit, so the field to correct is stated rather than the answer being reported as an outage or a denial.
+    content = <StateNotice kind="refused" headingLevel={noticeLevel} title={SURFACE_COPY.refusedTitle} description={refusalSummary(answer.refused)} />;
+  } else if (documentsState === "unavailable" || documentsState === "unknown" || documentsState === "withheld") {
     // A value state that is not a number replaces every figure: an unreadable or withheld collection is never an empty list and never a zero.
-    content = <StateNotice kind="unavailable" headingLevel={noticeLevel} title={SURFACE_COPY.unavailableTitle} description={SURFACE_COPY.unavailableBody} source={roster.source} />;
-  } else if (documentsState === "zero" || roster.documents.length === 0) {
-    // An empty collection offers a real destination rather than a control that could only fail: this build creates an Update's canonical identity elsewhere.
+    content = <StateNotice kind="unavailable" headingLevel={noticeLevel} title={SURFACE_COPY.unavailableTitle} description={SURFACE_COPY.unavailableBody} source={current.source} />;
+  } else if (documentsState === "zero") {
+    // An empty collection offers a real destination rather than a control that could only fail: this build creates an Update's canonical identity elsewhere. A page of a collection that holds documents is never this state, so a window is never reported as an empty ministry.
     content = <StateNotice kind="empty" headingLevel={noticeLevel} title={SURFACE_COPY.emptyTitle} description={SURFACE_COPY.emptyBody} action={{ label: SURFACE_COPY.emptyAction, href: HELP_HREF }} />;
   } else {
-    const shown = windowOf(rows, page, pageSize);
     content = (
       <RecordList
         label={SURFACE_COPY.tableLabel}
         columns={columns}
-        rows={shown.items}
-        // The whole collection the read returned, never the size of the window on show.
-        rowCount={rows.length}
-        queryState={{ sort: NO_ORDER, page: shown.page, pageSize, columnVisibility }}
+        rows={rows}
+        // The whole collection the read measured, never the size of the window on show.
+        rowCount={current.page.total}
+        queryState={{ sort: NO_ORDER, page: current.page.page, pageSize: current.page.pageSize, columnVisibility }}
         onQueryStateChange={handleQueryStateChange}
         getRowId={(row) => row.key}
         itemNoun={ITEM_NOUN}
         pageSizeOptions={PAGE_SIZE_OPTIONS}
+        isLoading={read.isFetching}
       />
     );
   }
@@ -792,15 +828,17 @@ export default function UpdatesList({ roster, headingLevel = 2, className }: Upd
       </div>
       <p className={MUTED_PARAGRAPH_CLASS}>{SURFACE_COPY.orderNote}</p>
       {content}
-      {/* Coverage and the read instant travel with the envelope, so a list read before a change says so instead of presenting itself as current. */}
-      {roster.coverage.state === "complete" ? null : <StateNotice kind="partial-coverage" headingLevel={noticeLevel} title={SURFACE_COPY.coverageTitle} coverage={roster.coverage} />}
-      <p className={CELL_TEXT_CLASS}>
-        {`${SURFACE_COPY.readAt}: `}
-        <bdi className={IDENTIFIER_CLASS}>{roster.asOf}</bdi>
-      </p>
+      {/* Coverage and the read instant travel with the envelope, so a list read before a change says so instead of presenting itself as current — and neither is stated beside an answer that carries no envelope at all. */}
+      {answeredRoster === undefined || answeredRoster.coverage.state === "complete" ? null : <StateNotice kind="partial-coverage" headingLevel={noticeLevel} title={SURFACE_COPY.coverageTitle} coverage={answeredRoster.coverage} />}
+      {answeredRoster === undefined ? null : (
+        <p className={CELL_TEXT_CLASS}>
+          {`${SURFACE_COPY.readAt}: `}
+          <bdi className={IDENTIFIER_CLASS}>{answeredRoster.asOf}</bdi>
+        </p>
+      )}
       <p className={MUTED_PARAGRAPH_CLASS}>{SURFACE_COPY.audienceNote}</p>
       <p className={MUTED_PARAGRAPH_CLASS}>{SURFACE_COPY.outcomeNote}</p>
-      {offersCreate ? <CreateEditionDialog roster={roster} open={dialogOpen} onOpenChange={setDialogOpen} /> : null}
+      {offersCreate ? <CreateEditionDialog roster={current} open={dialogOpen} onOpenChange={setDialogOpen} /> : null}
     </section>
   );
 }

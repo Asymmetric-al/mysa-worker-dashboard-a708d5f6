@@ -394,7 +394,7 @@ describe("6. a definite failure comes from real input and retries only while the
 
 describe("7. a second edition accounts for every eligible recipient", () => {
   it("names each recipient the earlier intent already covered, and issues no second copy", async () => {
-    // The seeded notice of this Update recorded a copy for all four eligible recipients, so the
+    // The seeded notice of this Update recorded a copy for all five eligible recipients, so the
     // protected edition of the same Update owes a copy only to the one whose copy failed. The others
     // are eligible all the same, and the ceiling the intent is accepted for counts them.
     const supporter = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: SUPPORTER_ENGLISH_RELEASE });

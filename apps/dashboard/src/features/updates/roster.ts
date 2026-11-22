@@ -20,6 +20,9 @@ import type { ReadAction, ReadEnvelope, ValueState } from "@/modules/data-servic
 /** The listing read's envelope: every Update this ministry's content holds, with each edition's pointers. */
 type RosterEnvelope = Extract<Awaited<ReturnType<typeof reads.updates.findContentDocuments>>, { readonly kind: "envelope" }>["envelope"];
 
+/** The window the listing read answered with: the page of listed rows, the size it holds, the whole-result count and the pages that count makes. */
+type RosterPage = RosterEnvelope["data"]["page"];
+
 /** One Update as the listing read states it. */
 type IndexEntry = RosterEnvelope["data"]["documents"][number];
 
@@ -75,10 +78,10 @@ export interface RosterEdition {
   readonly localeTag: string;
   readonly direction: ContentDirection;
   readonly draftRevisionId: string | null;
-  /** The frozen candidate's revision identity, or `null` when nothing is awaiting review. */
+  /** The frozen candidate's revision identity, or `null` when the edition holds no candidate. */
   readonly candidateId: string | null;
   readonly releaseHeadId: string | null;
-  /** The read's own statement that this edition holds a frozen candidate and no release at its head. */
+  /** The read's own statement that this edition holds a frozen candidate that is not yet the revision it publishes. */
   readonly awaitingRelease: boolean;
   readonly lifecycle: ContentLifecycleState;
   /** When the source of a stale translation last changed, or `null` when the translation is not stale. */
@@ -104,6 +107,8 @@ export interface RosterDocument {
 /** Everything this surface renders: the listing read's envelope, made plain so it can be handed to a client component. */
 export interface UpdatesRoster {
   readonly documents: readonly RosterDocument[];
+  /** The window this roster occupies in the whole authorised collection: the page, the size it holds and the whole-result count the surface states beside the rows. */
+  readonly page: RosterPage;
   readonly scope: UpdatesRosterScope;
   readonly source: UpdatesRosterSource;
   readonly revision: string;
@@ -191,5 +196,5 @@ function documentRosterOf(entry: IndexEntry): RosterDocument {
  * records and opaque references, and this file states no opinion about any of them.
  */
 export function rosterOf(envelope: RosterEnvelope): UpdatesRoster {
-  return { documents: envelope.data.documents.map(documentRosterOf), scope: envelope.scope, source: envelope.source, revision: envelope.revision, asOf: envelope.asOf, coverage: envelope.coverage, valueStates: envelope.valueStates, actions: envelope.actions };
+  return { documents: envelope.data.documents.map(documentRosterOf), page: envelope.data.page, scope: envelope.scope, source: envelope.source, revision: envelope.revision, asOf: envelope.asOf, coverage: envelope.coverage, valueStates: envelope.valueStates, actions: envelope.actions };
 }

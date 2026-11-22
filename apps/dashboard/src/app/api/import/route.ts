@@ -1,7 +1,8 @@
 /** `POST /api/import` — the one browser transport for `proposeImport`, the call that turns the file a worker chose into a reviewable proposal. */
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse } from "@/modules/data-service";
-import { jsonBodyOf, operationIdentityOf } from "../handler";
+import { IMPORT_MAX_BYTES } from "@/modules/import/parse";
+import { UNIDENTIFIED_ATTEMPT, operationIdentityOf, readRequestBody } from "../handler";
 /** The store the service writes through uses `node:fs`, so this handler never runs on the edge runtime. */
 export const runtime = "nodejs";
 /** The development session and the scenario instant are resolved per request, never prerendered or cached. */
@@ -9,6 +10,12 @@ export const dynamic = "force-dynamic";
 /** The ceiling on the base64 one request may carry: 8,388,608 characters, a little over six MiB of file bytes. */
 const CONTENT_BASE64_MAX_CHARS = 8_388_608;
 const FILE_NAME_MAX_CHARS = 255;
+/** The characters base64 spends on a file at the 5 MiB product limit: 4 × ⌈5,242,880 ÷ 3⌉ = 6,990,508, four for every three bytes and padded to a whole block. */
+const MAX_FILE_BASE64_CHARS = 4 * Math.ceil(IMPORT_MAX_BYTES / 3);
+/** The JSON one request carries beside that field — the attempt identity, the scope and expected revision, the file name, and a confirmed mapping echoing up to 60 headers of up to 2,000 characters, at worst two bytes each and doubled by JSON escaping — roomed at one MiB, far above that echo's worst case. */
+const ENVELOPE_MAX_BYTES = 1_048_576;
+/** The ceiling on the bytes one import request may declare or send, because the file limit is applied before processing rather than after the body is buffered: the base64 of a file at the 5 MiB limit plus its envelope. A file of exactly 5 MiB arrives whole and is judged by the service's own limits; a request above the ceiling is refused without being read past it. */
+const MAX_REQUEST_BYTES = MAX_FILE_BASE64_CHARS + ENVELOPE_MAX_BYTES;
 /** The payload `proposeImport` accepts, taken from the mutation that validates it so the two cannot drift. */
 type ProposeImportPayload = Parameters<typeof mutations.import.proposeImport>[0]["payload"];
 const proposeImportBodySchema = mutationInputSchema(
@@ -25,11 +32,17 @@ function isBodyObject(value: unknown): value is Readonly<Record<string, unknown>
 }
 /** Proposes an import from the file the body carries, and answers with exactly one of the service's eight outcomes — `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`. */
 export async function POST(request: Request): Promise<Response> {
-  const body = await jsonBodyOf(request);
+  const body = await readRequestBody(request, MAX_REQUEST_BYTES);
+  // The file limit is applied before processing (AAP 0.8.7), so a request over the ceiling is refused on the bytes that had arrived or were declared, with nothing of it parsed and nothing written. The refusal is keyed at the field that carries the file, and it names no operation identity because a body refused this early never became one.
+  if (body.kind === "oversized") {
+    const message = `This import request passed the ${String(MAX_REQUEST_BYTES)}-byte ceiling of one request, which is the base64 of a file at the 5 MiB limit plus its envelope: ${String(body.bytes)} bytes had arrived or been declared when it was refused. Nothing was read and nothing was proposed: choose a smaller file and send it again.`;
+    return toResponse(outcomeFromError(UNIDENTIFIED_ATTEMPT, new ZodError([{ code: "custom", path: ["contentBase64"], message }])));
+  }
+  const raw = body.kind === "body" ? body.value : undefined;
   // A body that is not a JSON object and one that breaks a rule reach the caller the same way: as the `invalid` outcome, with messages keyed by field path and nothing read and nothing written. An absent object is judged as an absent envelope rather than reported as a parse
   // fault, so the caller is told which members the mutation needs instead of that its JSON was malformed.
-  const parsed = proposeImportBodySchema.safeParse(isBodyObject(body) ? body : {});
-  if (!parsed.success) return toResponse(outcomeFromError(operationIdentityOf(body), parsed.error));
+  const parsed = proposeImportBodySchema.safeParse(isBodyObject(raw) ? raw : {});
+  if (!parsed.success) return toResponse(outcomeFromError(operationIdentityOf(raw), parsed.error));
   try {
     return toResponse(await mutations.import.proposeImport(parsed.data));
   } catch (error) {

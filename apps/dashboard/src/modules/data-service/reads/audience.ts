@@ -9,7 +9,7 @@ import { MEMBER_CHOICES, UPDATE_EMAIL_PURPOSE, type AudiencePurpose, type Member
 import { dedupeKey, mayRepeatIntent, type SendOutcomeState } from "@/modules/audience/consent";
 import { EXCLUSION_REASONS, membershipAccessAt, type ContentAudience, type ExclusionReason } from "@/modules/audience/resolve";
 import { directionOfTag, resolveLocale, type ContentLocale } from "@/modules/content/locale";
-import { buildNotice, type PinnedRendition as NoticePinnedRendition } from "@/modules/content/notice";
+import { buildNotice, type Notice, type PinnedRendition as NoticePinnedRendition } from "@/modules/content/notice";
 import { isListedPublicly, reachMetadata, withdrawEdition, type ReachMetadata, type Tombstone } from "@/modules/content/reach";
 import { renderToHtml, type RenderMediaPlacement, type RenderRendition, type RenderRenditions } from "@/modules/content/render";
 import type { ContentDocument, Release } from "@/modules/content/variant";
@@ -102,9 +102,20 @@ export type AudienceView = { readonly publisherId: string | null; readonly purpo
 export type PinnedCopy = { readonly intentId: string; readonly sendResultId: string; readonly releaseId: string; readonly renditionId: string; readonly state: SendOutcomeState; readonly recordedAt: string };
 /** The confirmation window of one acceptance, stated at the instant this read ran. */
 export type ConfirmationWindowView = { readonly state: "not-awaiting-proof" | "open" | "expired"; readonly deadline: string | null; readonly remainingMilliseconds: number | null };
-/** A reader's own preference record for one publisher and one purpose. */
+/** One language this publisher releases its Updates in, as the reader's own language choice offers it: the tag a save records, that language's name in itself, and the direction it is read in. */
+export type OfferedLanguage = ContentLocale & { readonly label: string };
+/**
+ * A reader's own preference record for one publisher and one purpose.
+ *
+ * `publisherId` states the publisher this record is about: the membership's own publisher when the session holds one,
+ * and otherwise the one publisher the Update-email records this read was answered from name, which is the publisher a
+ * deliberate request from the preferences surface would address. It stays null when those records name none or several,
+ * so a surface never receives a publisher reference the records never stated.
+ */
 export type PreferencesView = { readonly state: "none" | DomainMembershipState; readonly membershipId: string | null; readonly publisherId: string | null } & { readonly purpose: AudiencePurpose; readonly choice: MemberChoice | null; readonly choiceOptions: readonly MemberChoice[] } & {
   readonly languagePreference: string | null;
+  /** The languages this publisher currently offers this reader, and never one whose every edition this reader may not open. */
+  readonly languageOptions: readonly OfferedLanguage[];
   readonly email: string | null;
   readonly acceptedOn: string | null;
 } & { readonly confirmation: ConfirmationWindowView; readonly pending: { readonly claimsMailSent: false; readonly nextStep: string } | null } & { readonly readingGrant: { readonly granted: boolean; readonly audience: ContentAudience } } & {
@@ -150,11 +161,16 @@ export type ReceivingPageView = { readonly state: "served" | "withdrawn" | "lang
 } & { readonly title: string | null; readonly description: string | null; readonly html: string | null } & { readonly renditions: readonly MediaReference[]; readonly giving: GivingPlacement | null; readonly tombstone: Tombstone | null } & { readonly simulated: readonly string[] };
 /** One recipient's recorded outcome within a send result. */
 export type SendResultRow = { readonly recipientId: string; readonly renditionId: string; readonly state: SendOutcomeState; readonly recordedAt: string; readonly dedupeKey: string; readonly retry: { readonly available: boolean; readonly reason: string }; readonly recovery: { readonly intentId: string } };
-/** The per-send results of one notification intent: one row per recipient the intent served, and one entry per eligible recipient it did not. */
-export type SendResultView = { readonly intentId: string; readonly releaseId: string; readonly publisherId: string; readonly purpose: AudiencePurpose } & { readonly intendedAt: string; readonly recordedAt: string | null; readonly ceilingCount: number } & {
+/**
+ * The per-send results of one notification intent: one row per recipient the intent served, and one entry per eligible
+ * recipient it did not. `documentId` and `variantId` are the publication and the edition the intent was recorded for,
+ * read from the intent and its release, so a surface that repeats a definite failure can state the edition it repeats
+ * rather than reconstructing one from the release identity.
+ */
+export type SendResultView = { readonly intentId: string; readonly releaseId: string; readonly publisherId: string; readonly purpose: AudiencePurpose } & { readonly documentId: string; readonly variantId: string } & { readonly intendedAt: string; readonly recordedAt: string | null; readonly ceilingCount: number } & {
   readonly counts: Readonly<Record<SendOutcomeState, number>>;
   readonly rows: readonly SendResultRow[];
-} & { readonly unserved: readonly NotificationUnservedRecipientRecord[] } & { readonly usefulness: { readonly state: "within-usefulness" | "past-usefulness"; readonly deadline: string; readonly remainingMilliseconds: number | null } } & { readonly page: PageWindow };
+} & { readonly unserved: readonly NotificationUnservedRecipientRecord[] } & { readonly usefulness: { readonly state: "within-usefulness" | "past-usefulness"; readonly deadline: string; readonly remainingMilliseconds: number | null } } & { readonly notice: Notice | null } & { readonly page: PageWindow };
 const storedContentRevisionSchema = z.object({
   revisionId: z.string().min(1),
   variantId: z.string().min(1),
@@ -328,11 +344,12 @@ function renderingMediaOf(revision: StoredRevision, assets: readonly MediaAssetR
   for (const placement of [...revision.mediaPlacements].sort((left, right) => left.position - right.position)) {
     const asset = byId.get(placement.assetId);
     if (asset === undefined) {
-      placementList.push({ placementId: placement.placementId, kind: "image", altText: placement.altText, ...(placement.caption === null ? {} : { caption: placement.caption }) });
+      placementList.push({ placementId: placement.placementId, kind: "image", altText: placement.altText, ...(placement.caption === null ? {} : { caption: placement.caption }), ...(placement.sectionElement === null ? {} : { sectionElement: placement.sectionElement }) });
       continue;
     }
     const main = asset.renditions.find((rendition) => (asset.kind === "video" ? rendition.purpose === "playback" : rendition.purpose === "display"));
     const poster = asset.renditions.find((rendition) => rendition.purpose === "poster");
+    const transcript = asset.renditions.find((rendition) => rendition.purpose === "transcript");
     const captions = revision.captions.find((track) => track.assetId === placement.assetId);
     const captionRendition = captions === undefined ? undefined : asset.renditions.find((rendition) => rendition.renditionId === captions.renditionId);
     if (main !== undefined) {
@@ -352,13 +369,23 @@ function renderingMediaOf(revision: StoredRevision, assets: readonly MediaAssetR
       renditions[captionsKey] = { src: path, purpose: "captions" };
       references.push({ assetId: asset.assetId, renditionId: captionRendition.renditionId, purpose: captionRendition.purpose, path });
     }
+    // The transcript is the video's own admitted rendition, keyed like the poster and the caption track and supplied to
+    // the renderer under a key of its own, so the reading alternative points at the address this read authorised.
+    if (transcript !== undefined) {
+      const transcriptKey = `${placement.placementId}:transcript`;
+      const path = renditionPath(asset.assetId, transcript.renditionId);
+      renditions[transcriptKey] = { src: path, purpose: "transcript" };
+      references.push({ assetId: asset.assetId, renditionId: transcript.renditionId, purpose: transcript.purpose, path });
+    }
     placementList.push({
       placementId: placement.placementId,
       kind: asset.kind,
       altText: placement.altText,
       ...(placement.caption === null ? {} : { caption: placement.caption }),
+      ...(placement.sectionElement === null ? {} : { sectionElement: placement.sectionElement }),
       ...(poster === undefined ? {} : { posterId: `${placement.placementId}:poster` }),
       ...(captions === undefined ? {} : { captionsId: `${placement.placementId}:captions`, captionsLanguage: captions.language, captionsLabel: captions.label }),
+      ...(transcript === undefined ? {} : { transcriptId: `${placement.placementId}:transcript` }),
     });
   }
   return { placements: placementList, renditions, references };
@@ -487,7 +514,11 @@ export async function readAudience(query: AudienceQuery = {}, source?: SessionSo
   });
   return { kind: "envelope", envelope };
 }
-/** The reader's own preference record for the one purpose this release keeps memberships for. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
+/**
+ * The reader's own preference record for the one purpose this release keeps memberships for. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read.
+ *
+ * A session that holds no membership is answered with an envelope stating `state: "none"` rather than a refusal, because a membership that does not exist yet is a fact this surface states instead of a permission it was refused. That arm names the publisher the records it was answered from hold, when they name exactly one, which is what lets the preferences surface compose the deliberate request rather than inventing a publisher for it.
+ */
 export async function readPreferences(source?: SessionSource): Promise<ReadResult<ReadEnvelope<PreferencesView>>> {
   const worlds = await resolveWorlds("readPreferences", source);
   if (!worlds.ok) return worlds.result;
@@ -500,10 +531,14 @@ export async function readPreferences(source?: SessionSource): Promise<ReadResul
   const membership = rows[0];
   const domain = domains[0];
   const readingGrant = readingGrantOf(session, domains, session.principalId);
+  // `readingGrant` is the same protected-reading grant `grantHeldFor` reports — decided once, from the reader's own rows — so the languages offered here are withheld on exactly the fact the receiving reads decide access by.
+  const languageOptions = languageOptionsOf(published.state, readingGrant);
   const pinnedCopies: PinnedCopy[] = [];
   if (rows.length > 0) {
+    // Built once, so this read is linear in the results it reports rather than in results × intents.
+    const intentsById = new Map(published.state.notificationIntents.map((intent) => [intent.intentId, intent] as const));
     for (const result of published.state.notificationResults) {
-      const intent = published.state.notificationIntents.find((candidate) => candidate.intentId === result.intentId);
+      const intent = intentsById.get(result.intentId);
       if (intent === undefined) continue;
       for (const copy of result.recipients) {
         if (copy.recipientId !== session.principalId) continue;
@@ -514,7 +549,11 @@ export async function readPreferences(source?: SessionSource): Promise<ReadResul
   pinnedCopies.sort((left, right) => compareCodeUnits(left.intentId, right.intentId));
   const confirmation = confirmationWindowOf(domain, at);
   const awaitingProof = domain !== undefined && domain.state === "awaiting-proof";
-  const publisherId = membership?.publisherId ?? null;
+  // A session that holds no membership names no publisher on its own record, so the one publisher the Update-email
+  // records this read was answered from name is stated instead: that is the publisher a deliberate request from the
+  // preferences surface addresses, it is read out of those records rather than typed in here, and it stays null
+  // whenever they name none or more than one, so this view invents no publisher and states no absence it cannot see.
+  const publisherId = membership?.publisherId ?? singlePublisherOf(published.state.memberships.filter((row) => row.purpose === UPDATE_EMAIL_PURPOSE)) ?? null;
   const data: PreferencesView = {
     state: domain?.state ?? "none",
     membershipId: membership?.membershipId ?? null,
@@ -523,12 +562,16 @@ export async function readPreferences(source?: SessionSource): Promise<ReadResul
     choice: domain?.choice ?? null,
     choiceOptions: MEMBER_CHOICES,
     languagePreference: membership?.languagePreference ?? null,
+    languageOptions,
     email: membership?.email ?? null,
     acceptedOn: membership?.acceptedAt ?? null,
     confirmation,
     pending: awaitingProof ? { claimsMailSent: false, nextStep: "confirm-from-the-rendered-message" } : null,
     readingGrant: { granted: readingGrant, audience: "approved-supporter" },
-    unsubscribeScope: publisherId === null ? null : { publisherId, purpose: UPDATE_EMAIL_PURPOSE },
+    // The scope an unsubscribe addresses is the membership's own publisher and purpose: a session that holds no
+    // membership has nothing to turn off, so it states none here even where the view names the publisher a request
+    // step would address.
+    unsubscribeScope: membership === undefined ? null : { publisherId: membership.publisherId, purpose: UPDATE_EMAIL_PURPOSE },
     pinnedCopies,
   };
   const envelope = buildEnvelope({
@@ -540,7 +583,12 @@ export async function readPreferences(source?: SessionSource): Promise<ReadResul
     revision: membership?.revision ?? collectionRevision(domains.map((row) => `${row.membershipId}@${String(row.revision)}`)),
     asOf: at.toString(),
     coverage: { from: null, to: null, state: "complete" },
-    valueStates: { "confirmation.deadline": textState(data.confirmation.deadline), "confirmation.remainingMilliseconds": data.confirmation.remainingMilliseconds === null ? "unknown" : countState(data.confirmation.remainingMilliseconds), pinnedCopies: countState(pinnedCopies.length) },
+    valueStates: {
+      "confirmation.deadline": textState(data.confirmation.deadline),
+      "confirmation.remainingMilliseconds": data.confirmation.remainingMilliseconds === null ? "unknown" : countState(data.confirmation.remainingMilliseconds),
+      pinnedCopies: countState(pinnedCopies.length),
+      languageOptions: countState(data.languageOptions.length),
+    },
     actions: [
       { name: "setPreference", available: domain !== undefined && domain.state !== "restricted", ...(domain === undefined ? { reason: "No membership exists yet: choose Immediate to begin the proof step." } : {}) },
       { name: "setLanguagePreference", available: domain !== undefined, ...(domain === undefined ? { reason: "No membership exists yet, so there is no preference to change." } : {}) },
@@ -574,14 +622,17 @@ export async function readInbox(query: InboxQuery = {}, source?: SessionSource):
   const messages: InboxMessage[] = [];
   const seenIntents = new Set<string>();
   let unresolvedIntents = 0;
+  // Built once, so this read is linear in the results it reports rather than in results × (intents + releases).
+  const intentsById = new Map(published.state.notificationIntents.map((intent) => [intent.intentId, intent] as const));
+  const releasesById = new Map(published.state.releases.map((release) => [release.releaseId, release] as const));
   for (const result of published.state.notificationResults) {
     const copies = result.recipients.filter((copy) => copy.recipientId === session.principalId);
     if (copies.length === 0) continue;
     // One message per recipient and intent: the first recorded copy is the message, and a second row for the same identity is not a second message.
     if (seenIntents.has(result.intentId)) continue;
     seenIntents.add(result.intentId);
-    const intent = published.state.notificationIntents.find((candidate) => candidate.intentId === result.intentId);
-    const release = intent === undefined ? undefined : published.state.releases.find((candidate) => candidate.releaseId === intent.releaseId);
+    const intent = intentsById.get(result.intentId);
+    const release = intent === undefined ? undefined : releasesById.get(intent.releaseId);
     const resolved = release === undefined ? undefined : resolveRelease(release, published.state);
     const copy = copies[0];
     if (intent === undefined || release === undefined || resolved === undefined || resolved.revision === undefined || resolved.domain === undefined || copy === undefined) {
@@ -672,6 +723,33 @@ export function grantHeldFor(session: ResolvedSession, scope: Scope, own: World,
     readerOwnedMemberships(session, own, published).map((row) => domainMembershipOf(row, scope)),
     session.principalId,
   );
+}
+/** A language's name in that language, or the tag itself where the runtime cannot name it. */
+function languageNameOf(tag: string): string {
+  try {
+    const named = new Intl.DisplayNames([tag], { type: "language" }).of(tag)?.trim() ?? "";
+    return named.length === 0 ? tag : named;
+  } catch {
+    return tag;
+  }
+}
+/** The languages this publisher releases Updates in that this reader may read them in, named and ordered once so the choice offers exactly what a save can act on. */
+function languageOptionsOf(state: StoredState, grantHeld: boolean): readonly OfferedLanguage[] {
+  const byTag = new Map<string, OfferedLanguage>();
+  for (const record of state.releases) {
+    const resolved = resolveRelease(record, state);
+    if (resolved.domain === undefined || resolved.document === undefined || resolved.document.family !== "update") continue;
+    // The reach rule and the release's own service decide what this list may name, exactly as the receiving list decides what it may serve.
+    if (!releaseStillServes(resolved.domain)) continue;
+    if (record.reach === "not-public") continue;
+    // A protected edition's language is withheld without the grant: naming it would state that a variant this reader may not read exists, and choosing it could only record a language none of the editions open to them is written in.
+    if (record.audience === "approved-supporter" && !grantHeld) continue;
+    // BCP-47 tags are case-insensitive, so two spellings of one language are one offered language.
+    const { tag, direction } = resolved.domain.locale;
+    const key = tag.toLowerCase();
+    if (!byTag.has(key)) byTag.set(key, { tag, label: languageNameOf(tag), direction });
+  }
+  return [...byTag.values()].sort((left, right) => compareCodeUnits(left.tag, right.tag));
 }
 type AdmittedEdition = { readonly record: ReleaseRecord; readonly revision: StoredRevision; readonly document: ContentDocumentRecord; readonly domain: Release };
 function editionsOf(documentId: string, state: StoredState): readonly AdmittedEdition[] {
@@ -1021,6 +1099,22 @@ function retryReason(state: SendOutcomeState, withinUsefulness: boolean): string
   if (state === "unknown") return "The acknowledgement was lost, so whether the effect happened is not known. Re-query this same intent instead of submitting again.";
   return withinUsefulness ? "The attempt failed and may be retried under the same intent while the usefulness window is open." : "The attempt failed, and its 24-hour usefulness window has closed, so it cannot be revived as a fresh attempt.";
 }
+/**
+ * The notice one intent submitted, rebuilt from the records it was submitted for: the release the intent names, that
+ * release's own revision and the rendition the first recorded copy was pinned to. It answers `null` when the release or
+ * its revision cannot be resolved, so a surface reports the absence rather than inventing a message, and its sender,
+ * subject, wording and link are the one notice implementation's — the same message the synthetic inbox shows a
+ * recipient, never a second construction of it.
+ */
+function noticeOfIntent(state: StoredState, intent: StoredState["notificationIntents"][number], rows: readonly SendResultRow[]): Notice | null {
+  const release = state.releases.find((candidate) => candidate.releaseId === intent.releaseId);
+  if (release === undefined) return null;
+  const resolved = resolveRelease(release, state);
+  if (resolved.revision === undefined || resolved.domain === undefined) return null;
+  const renditionId = rows[0]?.renditionId;
+  const pinned: NoticePinnedRendition = { variantId: release.variantId, releaseId: release.releaseId, revisionId: release.revisionId, audience: release.audience, locale: resolved.domain.locale, ...(renditionId === undefined ? {} : { renditionId }), checksum: resolved.revision.contentChecksum };
+  return buildNotice({ publisher: { displayName: UNNAMED_PUBLISHER }, purpose: intent.purpose, pinned, sender: NOTICE_SENDER, link: updateHref(intent.documentId) });
+}
 /** The query the per-send result view accepts. */
 export type SendResultQuery = { readonly intentId: string; readonly page?: number; readonly pageSize?: number };
 /** The per-send results of one notification intent. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
@@ -1070,11 +1164,16 @@ export async function readSendResult(query: SendResultQuery, source?: SessionSou
   }
   const recordedAt = results.map((result) => result.recordedAt).sort((left, right) => compareCodeUnits(right, left))[0] ?? null;
   const { window, offset, limit } = pageWindowOf(rows.length, query);
+  // The edition the intent names, read from the release it was recorded for: an intent states a release, and the
+  // variant is that release's own identity rather than anything inferred from the rendition a recipient was pinned to.
+  const intentRelease = published.state.releases.find((candidate) => candidate.releaseId === intent.releaseId);
   const data: SendResultView = {
     intentId: intent.intentId,
     releaseId: intent.releaseId,
     publisherId: intent.publisherId,
     purpose: intent.purpose,
+    documentId: intent.documentId,
+    variantId: intentRelease?.variantId ?? "",
     intendedAt: intent.intendedAt,
     recordedAt,
     ceilingCount: intent.ceilingCount,
@@ -1082,6 +1181,7 @@ export async function readSendResult(query: SendResultQuery, source?: SessionSou
     rows: sliceOf(rows, offset, limit),
     unserved,
     usefulness: usefulness.status === "within-usefulness" ? { state: "within-usefulness", deadline: usefulness.deadlineInstant.toString(), remainingMilliseconds: usefulness.remainingMilliseconds } : { state: "past-usefulness", deadline: usefulness.deadlineInstant.toString(), remainingMilliseconds: null },
+    notice: noticeOfIntent(published.state, intent, rows),
     page: window,
   };
   const envelope = buildEnvelope({

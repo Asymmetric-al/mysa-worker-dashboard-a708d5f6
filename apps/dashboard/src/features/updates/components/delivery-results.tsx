@@ -5,16 +5,27 @@
  *
  * **What this surface is.** It reports submission acceptance, a definite failure and an unknown outcome for
  * the one notice it was asked about, and it states the copy each recipient was pinned to. It publishes
- * nothing, submits no notice, manages no recipients and offers no submit control: a notification request
- * belongs to the surface that submitted the notice, and repeating one from a results page would be the
- * resend this feature exists to prevent. Acceptance is neither delivery nor reading; a definite failure may
- * be repeated only inside its usefulness window and under the same dedupe identity; an unknown outcome is
- * recovered by reading the same intent again, never by sending anything under a fresh key.
+ * nothing, submits no notice of its own and manages no recipients. It offers exactly two controls, and both
+ * are recoveries rather than new work: reading this same notice again, and, while the notice is still inside
+ * its usefulness window, repeating the copies the service recorded as definite failures.
+ *
+ * **What a repeat is, and what it never is.** Only a row the read itself marks repeatable can be repeated, the
+ * repeat is submitted under this same notice's identity and its own intended instant, and the service decides
+ * which copies of that notice it resubmits. An accepted copy and a copy whose outcome is unknown are never
+ * repeated — resending those is the duplicate this feature exists to prevent, and "unknown" is recovered by
+ * reading the notice again, never by sending anything — so neither gets a control here. At and past the
+ * usefulness boundary the surface states the read's own past-usefulness reason and offers no repeat at all,
+ * because a definite failure outside its window cannot be revived. Acceptance is neither delivery nor reading.
  *
  * **What it never computes.** Every count, the eligible ceiling, the page window, the usefulness deadline,
  * the remaining time and the resolved instant are the service's own values, rendered as it supplied them and
  * read through their value states. No clock is read here and no deadline is compared here, so this screen
  * cannot disagree with the record it is showing.
+ *
+ * **The message the notice carries.** The notice this screen reports on is shown as the message it is — its
+ * HTML rendering, its plain-text alternative and what it deliberately does not carry — through the one
+ * notice presentation the receiving surfaces share, so the message a recipient is served can be inspected
+ * from the same record as the outcomes. A notice whose release no longer resolves is stated as absent.
  *
  * **Why there is no filter or search bar.** The read this surface drives admits exactly three parameters —
  * the intent, the page and the page size — and its transport refuses every other name rather than ignoring
@@ -22,8 +33,10 @@
  * which would claim a narrowing that did not happen and leave the count above the table describing a
  * different result from the rows below it. The whole result is therefore paged, never filtered.
  */
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import OperationResult from "@/components/operation-result";
 import { PaginationBar } from "@/components/pagination-bar";
 import { RecordList, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import SimulationLabel from "@/components/simulation-label";
@@ -34,8 +47,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import type { Coverage, ReadAction, Scope, ValueState } from "@/modules/data-service/envelope";
+import type { MutationOutcome } from "@/modules/data-service/outcome";
 import { SIMULATED_EFFECT_BY_TRIGGER } from "../copy/updates-copy";
+import { useRequestNotification } from "../hooks/use-update-mutations";
 import { useSendResult, type SendResultData, type SendResultReadResult } from "../hooks/use-update-queries";
+import NoticePresentation from "./notice-presentation";
 
 // ---------------------------------------------------------------------------------------------
 // The contract: the read's own shapes, narrowed to the members this surface renders
@@ -70,9 +86,10 @@ const SURFACE = {
   heading: "Delivery results",
   intro:
     "One row per recipient of one submitted notice: the copy that was pinned for them, the outcome this " +
-    "application recorded, and whether a repeat is still permitted. Acceptance is not delivery and not " +
-    "reading, no figure here is added to another, and an unknown outcome is recovered by reading this same " +
-    "notice again rather than by sending anything a second time.",
+    "application recorded, and whether a repeat is still permitted. A definite failure may be repeated from " +
+    "here while the notice is inside its usefulness window; acceptance is not delivery and not reading, no " +
+    "figure here is added to another, and an unknown outcome is recovered by reading this same notice again " +
+    "rather than by sending anything a second time.",
   loadingTitle: "Delivery results",
   loadingDescription: "The recorded outcomes for this notice are being read. No count, no empty row and no zero stands in for " + "them while the read runs.",
   unavailableTitle: "The recorded outcomes could not be read",
@@ -118,6 +135,16 @@ const SUMMARY = {
   coverageLabel: "Coverage",
   sourceLabel: "Source",
   revisionLabel: "Revision",
+} as const;
+
+/**
+ * The message the notice carries, stated where its outcomes are read: criterion 10's inspection of the message has an
+ * in-app path here, and a notice the records can no longer resolve is stated as absent rather than reconstructed.
+ */
+const NOTICE_BLOCK = {
+  title: "The message this notice carries",
+  description: "The one message a recipient of this notice is served, rebuilt from the release the notice was submitted for: the " + "sender, subject and link it states, the wording it carries, and both the HTML and the plain text it renders as.",
+  absent: "The message cannot be shown: the release this notice was submitted for no longer resolves from the records, so no " + "message is reconstructed in its place.",
 } as const;
 
 const COLUMN = { recipient: "Recipient", pinned: "Pinned copy", outcome: "Outcome", dedupe: "Dedupe identity", recorded: "Recorded at", repeat: "Repeat" } as const;
@@ -178,19 +205,53 @@ const RECOVERY = {
   checkLabel: "Check the result",
   checkingLabel: "Checking the result…",
   checkDescription: "Reading this notice again, under the identity it already has.",
-  repeatAvailable:
-    "The service reports that at least one recorded recipient may be submitted again under this same identity " + "while the usefulness window is open. That repeat is made from the screen that submitted the notice: this " + "screen states that the read permits it and offers no control that would submit anything.",
   noActionNote: "The service offers no recovery action for this notice, so none is presented here.",
   noRepeatNote: "The service offers no repeat action for this notice, so none is presented here.",
+  noRepeatOnThisPage: "The copies this notice recorded as a definite failure are not on this page, so no repeat is offered here: a repeat submits exactly the copies that failed and nothing else, and those rows are on the page that states them.",
   unavailableNoReason: "The service reports this action as unavailable and stated no reason for it, so none is written here.",
   repeatsLabel: "A repeat under the same identity",
+} as const;
+
+/**
+ * The one write this surface performs: repeating the copies of this notice that definitely failed, while the notice is
+ * still inside its usefulness window. Every sentence here is about what the control does and, as importantly, about
+ * what it leaves alone.
+ */
+const REPEAT = {
+  label: "Repeat the failed copies",
+  pendingLabel: "Repeating the failed copies…",
+  description:
+    "This notice is still inside its usefulness window, so the copies the service recorded as definite failures may be " +
+    "submitted again under this same notice. Nothing else is resubmitted: an accepted copy is never sent a second time, " +
+    "an outcome the service reports as unknown is recovered by reading this notice again rather than by sending " +
+    "anything, and the earlier failure stays recorded as the failure it was. The repeat is a new notice of its own, so " +
+    "the result below names it.",
+  targetsLead: "The rows on this page the read marks repeatable:",
+  openLabel: "Open the repeated notice's results",
+  acceptedNote: "The repeat was accepted as a new notice: read its own results for the copies it submitted.",
 } as const;
 
 // ---------------------------------------------------------------------------------------------
 // Fixed values
 // ---------------------------------------------------------------------------------------------
 
-const countFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+/**
+ * The whole-number formatters this surface counts with, one per interface locale. The interface locale is a
+ * viewer choice, so the formatter is keyed by the locale the route states and the constructor is paid once per
+ * locale rather than once per formatted count.
+ */
+const COUNT_FORMATS = new Map<string, Intl.NumberFormat>();
+
+/** The whole-number formatter for the interface locale the composing route states. */
+function countFormatOf(locale: string): Intl.NumberFormat {
+  const known = COUNT_FORMATS.get(locale);
+  if (known !== undefined) {
+    return known;
+  }
+  const made = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  COUNT_FORMATS.set(locale, made);
+  return made;
+}
 
 const MINUTE_MS = 60_000;
 
@@ -213,6 +274,17 @@ const ADDRESS = { intentId: "intentId", page: "page", pageSize: "pageSize" } as 
 
 const WHOLE_NUMBER = /^\d+$/u;
 
+/** Where this surface is composed, and the address the repeat's own result is read from. */
+const DELIVERY_PATH = "/communication/delivery";
+
+/**
+ * The address of one notice's results, which is the same screen this notice is on. It is the one builder of that
+ * address, so the release receipt links to a notice's results with exactly the address this surface reads.
+ */
+export function deliveryPathOf(intentId: string): string {
+  return `${DELIVERY_PATH}?${ADDRESS.intentId}=${encodeURIComponent(intentId)}`;
+}
+
 /** Where this screen sends a reader who has not named a notice yet. */
 const UPDATES_LIST = { label: SURFACE.noNoticeAction, href: "/communication" } as const;
 
@@ -226,10 +298,11 @@ function stateOf(valueStates: ValueStates, path: string): ValueState {
 }
 
 /** One count, read through its own value state: a plain figure only where the read says the figure stands, and a distinct rendering for a genuine zero, an incomplete subtotal and every state that is not a number at all. */
-function CountFigure({ count, valueState }: { readonly count: number; readonly valueState: ValueState }): ReactElement {
+function CountFigure({ count, valueState, locale }: { readonly count: number; readonly valueState: ValueState; readonly locale: string }): ReactElement {
   if (!Number.isFinite(count)) {
     return <StatusBadge {...statusBadgeProps(VALUE_STATE_WORDS, "unknown")} />;
   }
+  const countFormat = countFormatOf(locale);
   switch (valueState) {
     case "value":
       return <span className="tabular-figures">{countFormat.format(count)}</span>;
@@ -252,9 +325,10 @@ function CountFigure({ count, valueState }: { readonly count: number; readonly v
 }
 
 /** The remaining time the read supplied, restated in hours and minutes without comparing it to any clock of this page's own. */
-function formatSpan(milliseconds: number): string {
+function formatSpan(milliseconds: number, locale: string): string {
   const hours = Math.trunc(milliseconds / HOUR_MS);
   const minutes = Math.trunc((milliseconds - hours * HOUR_MS) / MINUTE_MS);
+  const countFormat = countFormatOf(locale);
   const parts: readonly string[] = hours > 0 ? [`${countFormat.format(hours)} h`, `${countFormat.format(minutes)} min`] : [`${countFormat.format(minutes)} min`];
   return parts.join(" ");
 }
@@ -287,6 +361,19 @@ function coverageSentence(coverage: Coverage): string {
 /** The named action the read offers, or `undefined` when it offers none under that name. */
 function actionOf(actions: readonly ReadAction[], name: string): ReadAction | undefined {
   return actions.find((action) => action.name === name);
+}
+
+/**
+ * The notice a repeat recorded, when the service accepted one. A repeat is a notice of its own rather than a rewrite of
+ * the one it repeats — the failure it retried stays recorded as it was — so this is the identity its results are read
+ * under, and the first identifier the acceptance created is that notice's.
+ */
+function repeatedIntentOf(outcome: MutationOutcome | null): string | null {
+  if (outcome === null || (outcome.outcome !== "accepted" && outcome.outcome !== "alreadyAccepted")) {
+    return null;
+  }
+  const [created] = outcome.created ?? [];
+  return created === undefined || created.trim() === "" ? null : created;
 }
 
 /** The page window this surface reads from the address, before the read has applied its own bounds to it. */
@@ -448,9 +535,9 @@ function Fact({ label, children }: { readonly label: string; readonly children: 
 }
 
 /** The remaining time the read supplied, and the word for it when the read states none. */
-function RemainingFigure({ remaining, valueState }: { readonly remaining: number | null; readonly valueState: ValueState }): ReactElement {
+function RemainingFigure({ remaining, valueState, locale }: { readonly remaining: number | null; readonly valueState: ValueState; readonly locale: string }): ReactElement {
   if (remaining !== null && valueState !== "unknown" && valueState !== "withheld" && valueState !== "unavailable") {
-    return <span className="tabular-figures">{formatSpan(remaining)}</span>;
+    return <span className="tabular-figures">{formatSpan(remaining, locale)}</span>;
   }
   const word: Exclude<ValueState, "value" | "zero" | "incomplete-subtotal"> = valueState === "withheld" || valueState === "unavailable" ? valueState : "unknown";
   return <StatusBadge {...statusBadgeProps(VALUE_STATE_WORDS, word)} />;
@@ -460,7 +547,7 @@ function RemainingFigure({ remaining, valueState }: { readonly remaining: number
 const OUTCOME_ORDER: readonly SendOutcome[] = ["accepted", "failed", "unknown"];
 
 /** The three counts, each on its own and none of them added to another. */
-function OutcomeCounts({ counts, valueStates }: { readonly counts: SendResultData["counts"]; readonly valueStates: ValueStates }): ReactElement {
+function OutcomeCounts({ counts, valueStates, locale }: { readonly counts: SendResultData["counts"]; readonly valueStates: ValueStates; readonly locale: string }): ReactElement {
   return (
     <div data-slot="delivery-counts" className="flex min-w-0 flex-col gap-2">
       <p className="text-sm font-medium text-pretty">{COUNTS.title}</p>
@@ -471,7 +558,7 @@ function OutcomeCounts({ counts, valueStates }: { readonly counts: SendResultDat
               <StatusBadge {...SEND_STATUS[outcome]} />
             </dt>
             <dd className="min-w-0 text-sm">
-              <CountFigure count={counts[outcome]} valueState={stateOf(valueStates, `counts.${outcome}`)} />
+              <CountFigure count={counts[outcome]} valueState={stateOf(valueStates, `counts.${outcome}`)} locale={locale} />
             </dd>
           </div>
         ))}
@@ -482,7 +569,7 @@ function OutcomeCounts({ counts, valueStates }: { readonly counts: SendResultDat
 }
 
 /** The usefulness window exactly as the read resolved it, with the statement of what it governs. */
-function UsefulnessBlock({ usefulness, valueStates }: { readonly usefulness: Usefulness; readonly valueStates: ValueStates }): ReactElement {
+function UsefulnessBlock({ usefulness, valueStates, locale }: { readonly usefulness: Usefulness; readonly valueStates: ValueStates; readonly locale: string }): ReactElement {
   return (
     <div data-slot="delivery-usefulness" className="flex min-w-0 flex-col gap-2">
       <p className="text-sm font-medium text-pretty">{USEFULNESS_COPY.title}</p>
@@ -494,7 +581,7 @@ function UsefulnessBlock({ usefulness, valueStates }: { readonly usefulness: Use
           <InstantFigure instant={usefulness.deadline} />
         </Fact>
         <Fact label={USEFULNESS_COPY.remainingLabel}>
-          <RemainingFigure remaining={usefulness.remainingMilliseconds} valueState={stateOf(valueStates, "usefulness.remainingMilliseconds")} />
+          <RemainingFigure remaining={usefulness.remainingMilliseconds} valueState={stateOf(valueStates, "usefulness.remainingMilliseconds")} locale={locale} />
         </Fact>
       </dl>
       <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{USEFULNESS_COPY.statement}</p>
@@ -503,8 +590,32 @@ function UsefulnessBlock({ usefulness, valueStates }: { readonly usefulness: Use
   );
 }
 
+/**
+ * The notice these outcomes belong to, as the message it carries: the rendered HTML, its plain-text alternative and what
+ * the message does not carry, read through the one notice presentation the receiving surfaces share rather than through a
+ * second rendering here. A notice the records can no longer resolve is stated as absent, never reconstructed.
+ */
+function NoticeMessageBlock({ notice }: { readonly notice: SendResultData["notice"] }): ReactElement {
+  const headingId = useId();
+  return (
+    <section aria-labelledby={headingId} data-slot="delivery-notice" data-notice-state={notice === null ? "absent" : "stated"} className="flex min-w-0 flex-col gap-2">
+      <h3 id={headingId} className="font-heading text-base font-medium text-pretty">
+        {NOTICE_BLOCK.title}
+      </h3>
+      {notice === null ? (
+        <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{NOTICE_BLOCK.absent}</p>
+      ) : (
+        <>
+          <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{NOTICE_BLOCK.description}</p>
+          <NoticePresentation notice={notice} />
+        </>
+      )}
+    </section>
+  );
+}
+
 /** The notice these outcomes belong to: its identity, the edition it was submitted for, the counts and the window that governs a repeat. */
-function DeliverySummary({ envelope }: { readonly envelope: DeliveryEnvelope }): ReactElement {
+function DeliverySummary({ envelope, locale }: { readonly envelope: DeliveryEnvelope; readonly locale: string }): ReactElement {
   const { data, valueStates, coverage, asOf, source, revision } = envelope;
   return (
     <Card data-slot="delivery-summary">
@@ -532,13 +643,13 @@ function DeliverySummary({ envelope }: { readonly envelope: DeliveryEnvelope }):
           </Fact>
           <Fact label={SUMMARY.recordedLabel}>{data.recordedAt === null ? SUMMARY.notRecorded : <InstantFigure instant={data.recordedAt} />}</Fact>
           <Fact label={SUMMARY.ceilingLabel}>
-            <CountFigure count={data.ceilingCount} valueState={stateOf(valueStates, "ceilingCount")} />
+            <CountFigure count={data.ceilingCount} valueState={stateOf(valueStates, "ceilingCount")} locale={locale} />
           </Fact>
           <Fact label={SUMMARY.servedLabel}>
-            <CountFigure count={data.page.total} valueState={stateOf(valueStates, "page.total")} />
+            <CountFigure count={data.page.total} valueState={stateOf(valueStates, "page.total")} locale={locale} />
           </Fact>
           <Fact label={SUMMARY.unservedLabel}>
-            <CountFigure count={data.unserved.length} valueState={stateOf(valueStates, "unserved")} />
+            <CountFigure count={data.unserved.length} valueState={stateOf(valueStates, "unserved")} locale={locale} />
           </Fact>
           <Fact label={SUMMARY.asOfLabel}>
             <InstantFigure instant={asOf} />
@@ -553,9 +664,11 @@ function DeliverySummary({ envelope }: { readonly envelope: DeliveryEnvelope }):
           </Fact>
         </dl>
         <Separator />
-        <OutcomeCounts counts={data.counts} valueStates={valueStates} />
+        <OutcomeCounts counts={data.counts} valueStates={valueStates} locale={locale} />
         <Separator />
-        <UsefulnessBlock usefulness={data.usefulness} valueStates={valueStates} />
+        <UsefulnessBlock usefulness={data.usefulness} valueStates={valueStates} locale={locale} />
+        <Separator />
+        <NoticeMessageBlock notice={data.notice} />
       </CardContent>
     </Card>
   );
@@ -650,14 +763,38 @@ function DuplicateCard({ rows }: { readonly rows: readonly SendResultRow[] }): R
 }
 
 // ---------------------------------------------------------------------------------------------
-// Recovery: the one control that re-reads the same notice, and the action states behind it
+// Recovery: the two controls that read the same notice again and repeat its definite failure
 // ---------------------------------------------------------------------------------------------
 
-/** Recovering an outcome by reading the same intent again: the only action this surface offers, because a read repeats no effect. */
-function RecoveryCard({ actions, isFetching, onCheck }: { readonly actions: readonly ReadAction[]; readonly isFetching: boolean; readonly onCheck: () => void }): ReactElement {
+/**
+ * The repeat this surface can perform: the copies the read marks repeatable, the service's answer to the repeat, and
+ * the notice the repeat recorded when it was accepted. `allowed` is false at and past the usefulness boundary, where
+ * the read states its own reason and no control is offered at all.
+ */
+interface RepeatState {
+  /** The rows of this page the read itself marks repeatable: every one of them is a definite failure inside the window. */
+  readonly targets: readonly SendResultRow[];
+  /** Whether a repeat may be submitted now, decided from the read's own window state and its own action. */
+  readonly allowed: boolean;
+  /** The read's own reason for withholding the repeat, rendered exactly as the service stated it. */
+  readonly withheldReason: string;
+  readonly pending: boolean;
+  readonly outcome: MutationOutcome | null;
+  /** The notice a repeat recorded, when the service accepted one: a repeat is a notice of its own, never a rewrite. */
+  readonly repeatedIntentId: string | null;
+  readonly onRepeat: () => void;
+}
+
+/** The heading level the receipt nests beneath the surface that composes it, so an outcome is never announced out of order. */
+function receiptLevelOf(headingLevel: DeliveryHeadingLevel): 3 | 4 {
+  return headingLevel === 3 ? 4 : 3;
+}
+
+/** Recovering an outcome by reading the same intent again, and repeating the copies that definitely failed while the read permits it. */
+function RecoveryCard({ actions, isFetching, onCheck, repeat, headingLevel }: { readonly actions: readonly ReadAction[]; readonly isFetching: boolean; readonly onCheck: () => void; readonly repeat: RepeatState; readonly headingLevel: DeliveryHeadingLevel }): ReactElement {
   const hintId = useId();
+  const repeatHintId = useId();
   const recovery = actionOf(actions, "recoverByIntent");
-  const repeat = actionOf(actions, "retryRecipient");
   return (
     <Card data-slot="delivery-recovery">
       <CardHeader>
@@ -680,9 +817,42 @@ function RecoveryCard({ actions, isFetching, onCheck }: { readonly actions: read
           <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{actionReasonOf(recovery, RECOVERY.noActionNote)}</p>
         )}
         <Separator />
-        <div className="flex min-w-0 flex-col gap-1.5">
+        <div className="flex min-w-0 flex-col gap-2">
           <p className="text-sm font-medium text-pretty">{RECOVERY.repeatsLabel}</p>
-          {repeat !== undefined && repeat.available ? <p className="text-sm text-pretty wrap-anywhere">{RECOVERY.repeatAvailable}</p> : <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{actionReasonOf(repeat, RECOVERY.noRepeatNote)}</p>}
+          {repeat.allowed ? (
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <div>
+                <Button type="button" variant="outline" size="sm" disabled={repeat.pending} aria-describedby={repeatHintId} onClick={repeat.onRepeat}>
+                  {repeat.pending ? REPEAT.pendingLabel : REPEAT.label}
+                </Button>
+              </div>
+              <p id={repeatHintId} className="text-xs text-muted-foreground text-pretty wrap-anywhere">
+                {REPEAT.description}
+              </p>
+              {repeat.targets.length === 0 ? null : (
+                <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">
+                  {REPEAT.targetsLead}{" "}
+                  {repeat.targets.map((row) => (
+                    <span key={row.recipientId} className="me-1.5 inline-block">
+                      <ReferenceFigure reference={row.recipientId} />
+                    </span>
+                  ))}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{repeat.withheldReason}</p>
+          )}
+          {repeat.outcome === null ? null : (
+            <div data-slot="delivery-repeat-result" className="flex min-w-0 flex-col gap-2">
+              <OperationResult outcome={repeat.outcome} headingLevel={receiptLevelOf(headingLevel)} />
+              {repeat.repeatedIntentId === null ? null : (
+                <Link className="text-sm underline underline-offset-4" href={deliveryPathOf(repeat.repeatedIntentId)}>
+                  {REPEAT.openLabel}
+                </Link>
+              )}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -802,6 +972,8 @@ const HEADING_TAG: Readonly<Record<DeliveryHeadingLevel, "h1" | "h2" | "h3">> = 
 export interface DeliveryResultsProps {
   /** The exact authority this read runs under; the service re-derives scope from it on every request. */
   readonly scope: Scope;
+  /** The interface locale this surface formats its counts in, stated by the route that composes it. */
+  readonly locale: string;
   /** The notice whose results to report. Absent, the address's own `intentId` is read, so a link into this screen can name the notice it reports on. */
   readonly intentId?: string;
   /** The answer a Server Component already read, so the surface paints from that authority instead of asking the same question again. */
@@ -818,7 +990,7 @@ export interface DeliveryResultsProps {
 }
 
 /** The per-send results of one submitted notice: acceptance, definite failure and unknown outcome, kept apart. */
-export default function DeliveryResults({ scope, intentId: statedIntentId, initialData, initialDataUpdatedAt, queryState: controlledState, onQueryStateChange, headingLevel = 2, className }: DeliveryResultsProps): ReactElement {
+export default function DeliveryResults({ scope, locale, intentId: statedIntentId, initialData, initialDataUpdatedAt, queryState: controlledState, onQueryStateChange, headingLevel = 2, className }: DeliveryResultsProps): ReactElement {
   const headingId = useId();
   const router = useRouter();
   const pathname = usePathname();
@@ -831,8 +1003,14 @@ export default function DeliveryResults({ scope, intentId: statedIntentId, initi
   const pageSize = controlledState === undefined ? address.pageSize : controlledState.pageSize;
   // Column visibility is presentation and stays in this component, as the preset's other lists keep it.
   const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(controlledState === undefined ? NO_COLUMNS_HIDDEN : controlledState.columnVisibility);
+  // The notice a repeat was submitted for, so a receipt is only ever shown beside the notice it belongs to: a reader who
+  // opens another notice's results never meets the previous notice's answer on it.
+  const [repeatedFor, setRepeatedFor] = useState<string | null>(null);
   const listQueryState = useMemo<RecordListQueryState>(() => ({ sort: NO_SORT, page, pageSize, columnVisibility }), [page, pageSize, columnVisibility]);
   const read = useSendResult({ scope, intentId, page, pageSize }, { initialData, initialDataUpdatedAt });
+  // The one write this surface performs, through the family's own reviewed-mutation hook: the attempt identity, the
+  // in-flight fence and the replay of one intent belong to that step, so nothing here mints an identity or resends.
+  const notify = useRequestNotification();
   const Heading = HEADING_TAG[headingLevel];
   const result = read.result;
   // A result read under a context this session no longer shows is never presented as the current one, so
@@ -873,8 +1051,9 @@ export default function DeliveryResults({ scope, intentId: statedIntentId, initi
     writeWindow({ page: pageCount, pageSize });
   }, [controlledState, pageCount, page, pageSize, writeWindow]);
   function checkResult(): void {
-    // Reading this same notice again, under the identity it already has: a read performs no effect, so this
-    // is the only recovery this surface can offer and the only one that cannot repeat a submission.
+    // Reading this same notice again, under the identity it already has: a read performs no effect, so this recovery
+    // can reveal an outcome that was recorded and can never repeat a submission. It is the only recovery an unknown
+    // outcome is ever given here, because a repeat would be a second send of something that may already have arrived.
     read.refetch();
   }
   function frame(children: ReactNode): ReactElement {
@@ -931,6 +1110,30 @@ export default function DeliveryResults({ scope, intentId: statedIntentId, initi
   }
   const rows = data.rows;
   const duplicates = duplicateRowsOf(rows);
+  // The rows this page's read marks repeatable, each of them a definite failure inside the usefulness window: an
+  // accepted copy and one whose outcome is unknown are never among them, so neither can ever receive a control.
+  const repeatTargets = rows.filter((row) => row.retry.available);
+  const repeatAction = actionOf(envelope.actions, "retryRecipient");
+  // A repeat is offered only while the read says the notice is inside its usefulness window and still names a row that
+  // may be repeated. At and past the boundary the read's own reason is stated instead of a control.
+  const repeatAllowed = data.usefulness.state === "within-usefulness" && repeatAction !== undefined && repeatAction.available && repeatTargets.length > 0;
+  const repeatState: RepeatState = {
+    targets: repeatTargets,
+    allowed: repeatAllowed,
+    // Three different facts stay three: the read states why it withholds the action, the page may simply not hold the
+    // copies that failed, and the read may offer no such action at all. Only the last of those is the absent-action note.
+    withheldReason: repeatAction !== undefined && repeatAction.available && repeatTargets.length === 0 ? RECOVERY.noRepeatOnThisPage : actionReasonOf(repeatAction, RECOVERY.noRepeatNote),
+    pending: notify.pending,
+    outcome: repeatedFor === data.intentId ? notify.outcome : null,
+    repeatedIntentId: repeatedFor === data.intentId ? repeatedIntentOf(notify.outcome) : null,
+    onRepeat: () => {
+      // The service's own facts, stated as this read supplied them: the notice being repeated, the edition it was
+      // recorded for, the instant it was meant for and the ceiling it was accepted for. Nothing is recalculated here,
+      // and a recipient is never named, so which copies are submitted again is the service's answer alone.
+      setRepeatedFor(data.intentId);
+      void notify.submit({ scope: envelope.scope, expectedRevision: envelope.revision, payload: { documentId: data.documentId, variantId: data.variantId, releaseId: data.releaseId, acknowledgedCeiling: data.ceilingCount, intendedAt: data.intendedAt, repeatOfIntentId: data.intentId } });
+    },
+  };
   // Only the outcomes this answer actually holds are described, so the page never explains a state it has no
   // row or count for.
   const outcomes = OUTCOME_ORDER.filter((outcome) => data.counts[outcome] > 0 || rows.some((row) => row.state === outcome));
@@ -987,13 +1190,13 @@ export default function DeliveryResults({ scope, intentId: statedIntentId, initi
     );
   return frame(
     <>
-      <DeliverySummary envelope={envelope} />
+      <DeliverySummary envelope={envelope} locale={locale} />
       {outcomes.length === 0 ? null : <OutcomeNarratives outcomes={outcomes} />}
       {duplicates.length === 0 ? null : <DuplicateCard rows={duplicates} />}
       {data.unserved.length === 0 ? null : <UnservedCard entries={data.unserved} />}
       {rowsBlock}
       <RepeatReasons reasons={repeatReasonsOf(rows)} />
-      <RecoveryCard actions={envelope.actions} isFetching={read.isFetching} onCheck={checkResult} />
+      <RecoveryCard actions={envelope.actions} isFetching={read.isFetching} onCheck={checkResult} repeat={repeatState} headingLevel={headingLevel} />
     </>,
   );
 }

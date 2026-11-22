@@ -22,16 +22,27 @@
  * `rev-update-en-2` while its Arabic sibling failed and kept its earlier publication `rev-update-ar-1`.
  *
  * **What is proven where, and why.** Everything a person can see is asserted on the screen that shows it: the
- * variant grid, the editor, the preview, the receiving view, the review route and the delivery surface. Two
- * facts are not on any screen and are read as the application's own JSON, exactly as the surfaces read them:
- * the translation record's source revision (the grid states that a translation is stale but names the source
- * only in a detail sentence) and a release's per-edition result (the Updates family mounts no release
- * control — `publishVariants` is reached through the handler the browser transport uses, `POST /api/publish`).
- * Neither read derives a value: the notice, the ceiling, the pinned copy and the intent are the service's
- * own, and each is then confirmed on the delivery surface. The single-pin resolution across two audiences is
- * proven against the domain companion `tests/integration/notification-dedupe`, because the seeded audience
- * holds one membership row per recipient; what this file proves is the recorded consequence — one row per
- * recipient, one pinned copy, and no second copy when a second language edition is notified.
+ * variant grid, the editor, the preview, the receiving view, the review route, the release review the overview
+ * route composes below the grid, and the delivery surface. The release is one of those screens: an edition is
+ * selected by the checkbox its own row names, the one *Release these editions* step publishes every selected
+ * edition at the exact revision its frozen candidate holds, and the receipt beneath it reports each edition's
+ * result on a row of its own. A revision nobody has submitted is frozen first, on the editor's submit step
+ * (which records the author's release mode) and the review route (which answers that candidate), because a
+ * release publishes only the editions whose frozen candidate the review states. Two facts are not on any screen
+ * and are read as the application's own JSON, exactly as the surfaces read them: the translation record's source
+ * revision (the grid states that a translation is stale but names the source only in a detail sentence) and the
+ * intent an accepted notice created, which is the notice the delivery surface is then opened by. Neither read
+ * derives a value: the notice, the ceiling, the pinned copy and the intent are the service's own, and each is
+ * then confirmed on the delivery surface. One write stays below the surfaces and states why at its own code: the
+ * replay of a release attempt whose acknowledgement was lost (an uncertain result states the operation a recovery is
+ * read back under, and replaying that one recorded attempt is recovery rather than a step a person takes). The notice
+ * this file's one-copy case counts is not posted to any handler either: a second French edition is drafted, submitted
+ * at the author's *Publish and notify now* choice, answered on the review route and released through the release
+ * review, so the rows it counts belong to the notice that composed release submitted. The single-pin
+ * resolution across two audiences is proven against the domain companion `tests/integration/notification-dedupe`,
+ * because the seeded audience holds one membership row per recipient; what this file proves is the recorded
+ * consequence — one row per recipient, one pinned copy, and no second copy when a second language edition is
+ * notified.
  *
  * **What it never does.** No fixed wait and no idle-network condition, no snapshot, no direct read of the
  * synthetic store's files, and no assertion on a colour: every expectation is a role, an accessible name, a
@@ -115,6 +126,9 @@ const COPY = {
   ceilingLabel: "Eligible recipients the notice could not exceed",
   servedLabel: "Recipients with a recorded outcome",
   alreadyCovered: "Already had a copy from an earlier notice",
+  noticeForEdition: "Notice for this edition:",
+  noticeAccepted: "Accepted — not delivered",
+  noticeTarget: "The notice links to",
   outboundNotice: "simulated — no mail leaves this application",
   publicationSimulation: "simulated publication; reach is demonstrated in the receiving preview",
   devLabel: "Development data",
@@ -128,6 +142,20 @@ const reviewPath = (candidateId: string): string => `/communication/review/${enc
 const receivingPath = (locale: string): string => `/preview/${UPDATE}?locale=${encodeURIComponent(locale)}`;
 const deliveryPath = (intentId: string): string => `/communication/delivery?intentId=${encodeURIComponent(intentId)}`;
 const PAGE_BUILDER = "/pages/doc-page-harbour-youth";
+
+/** The one release step the overview route composes, and the language names a release receipt states an edition by. */
+const RELEASE_ACTION = "Release these editions";
+const LOCALE_NAME = { fr: "Français", ar: "العربية" } as const;
+
+/** The two release modes the editor's submit step offers, in that step's own words, and the transport a notice travels. */
+const RELEASE_MODE = { publishOnly: "Publish only", publishAndNotifyNow: "Publish and notify now" } as const;
+type ReleaseMode = (typeof RELEASE_MODE)[keyof typeof RELEASE_MODE];
+/** The mode each of those words records, in the store's own vocabulary, as the submit step's own mode group states it back. */
+const MODE_VALUE: Readonly<Record<ReleaseMode, string>> = { [RELEASE_MODE.publishOnly]: "publish-only", [RELEASE_MODE.publishAndNotifyNow]: "publish-and-notify" };
+const NOTICE_PATH = "/api/notify";
+
+/** The identity an uncertain result states, so the recovery is read back under the attempt that produced it. */
+const STATED_OPERATION = /Operation ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/u;
 
 // ---------------------------------------------------------------------------------------------
 // Reading the application's own JSON: the answers a surface reads, and nothing derived here
@@ -231,61 +259,167 @@ async function clearFailurePlan(page: Page): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The writes this family mounts no control for, taken through the handler the browser uses
+// The release, pressed where the application composes it, and the notice that release submits
 // ---------------------------------------------------------------------------------------------
 
-/** The revision of the Update as the variant overview read states it, which is the revision a release presents. */
+/** The revision of the Update as the variant overview read states it, which is the revision a notice presents. */
 async function updateRevisionOf(page: Page): Promise<string> {
   const body = await jsonOf(await page.request.get(`/api/updates?documentId=${encodeURIComponent(UPDATE)}`), "GET /api/updates");
   return stringAt(body, ["revision"], "The Update's revision");
 }
 
-/** The scope a release or a notice claims, which is the context the session is working in. */
+/** The scope a notice claims, which is the context the session is working in. */
 async function actingScopeOf(page: Page): Promise<Record<string, unknown>> {
   return (await readDevState(page)).scope;
 }
 
 /**
- * Releases one or more editions through `POST /api/publish`.
+ * Submits one edition's saved draft for review through the editor's own step, at the mode the journey needs.
  *
- * The Updates family mounts no release control — its review route answers the frozen candidate and states
- * that the release is a separate step — so the step is taken through the same handler a browser surface
- * would post to, with the same four-field attempt. The answer's per-edition `items` are the durable result:
- * one state per edition, which is what a batch never collapses into one status.
+ * A release publishes the revision a submission froze, so a journey that releases a revision nobody has submitted
+ * freezes it first: the step names the exact revision it submits, the author chooses the release mode the journey is
+ * about — Publish only as this file's releases default to, or Publish and notify now where the release is meant to
+ * submit a notice — and the answer on the step is the record that the candidate now stands.
  */
-async function releaseEditions(page: Page, variantIds: readonly string[], operation = attemptId()): Promise<unknown> {
-  const [scope, expectedRevision] = await Promise.all([actingScopeOf(page), updateRevisionOf(page)]);
-  const payload = { documentId: UPDATE, variants: variantIds.map((variantId) => ({ variantId, mode: "publish-only" })) };
-  return jsonOf(await page.request.post("/api/publish", { data: { operationId: operation, scope, expectedRevision, payload } }), "POST /api/publish");
+async function submitForReview(page: Page, variantId: string, revisionId: string, mode: ReleaseMode = RELEASE_MODE.publishOnly): Promise<void> {
+  await page.goto(editorPath(variantId));
+  const editor = page.locator(`[data-slot="editor-shell"][data-edition="${variantId}"]`);
+  await expect(editor).toBeVisible();
+  const step = editor.locator('[data-slot="action-review"]');
+  await expect(step).toContainText("Submit this edition for review");
+  // The step names the exact revision it freezes, so the submission is a stated identity rather than a guess.
+  await expect(step).toContainText(revisionId);
+  // The choice has to reach the step's own state, not only the radio's DOM: the mode group is React-controlled and
+  // states the mode this submission will record in its own `data-mode`, so the click is read back from that group and
+  // made again if the group still states the other mode. The release below is then never refused for a mode the
+  // submission never asked for.
+  const modeGroup = step.locator('[data-slot="submission-release-mode"]');
+  await expect(modeGroup).toBeVisible();
+  await expect(async () => {
+    await modeGroup.getByRole("radio", { name: mode, exact: true }).click();
+    await expect(modeGroup).toHaveAttribute("data-mode", MODE_VALUE[mode], { timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
+  await step.getByRole("button", { name: "Submit for review", exact: true }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Submit for review", exact: true }).click();
+  await expect(step.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted");
 }
 
-/** One release's per-edition result, by edition, or a failure naming what the answer held instead. */
-function editionResultOf(body: unknown, variantId: string): Record<string, unknown> {
-  const items = fieldAt(body, "items");
-  if (!Array.isArray(items)) {
-    throw new Error(`The release answered without a per-edition result: ${JSON.stringify(body).slice(0, 400)}`);
-  }
-  for (const item of items) {
-    if (fieldAt(item, "targetId") === variantId) {
-      if (!isRecord(item)) break;
-      return item;
-    }
-  }
-  throw new Error(`The release answered no result for ${variantId}: ${JSON.stringify(body).slice(0, 400)}`);
+/**
+ * Answers one edition's frozen candidate on the review route: the one decision that step offers, given once.
+ *
+ * The panel states the exact revision under review, so the decision is read as an answer to that revision rather than
+ * to whatever the edition holds now.
+ */
+async function approveCandidate(page: Page, variantId: string, revisionId: string): Promise<void> {
+  await page.goto(reviewPath(variantId));
+  const panel = page.locator('[data-slot="review-panel"]');
+  await expect(panel).toHaveAttribute("data-family", "update");
+  const frozen = panel.locator('[data-slot="review-frozen-revision"]');
+  await expect(frozen).toHaveCount(1);
+  await expect(frozen).toContainText(revisionId);
+  await expect(panel.getByRole("radio", { name: "Approve", exact: true })).toBeChecked();
+  await panel.getByRole("button", { name: "Approve this revision", exact: true }).click();
+  await expect(page.locator('[data-slot="review-recorded-decision"]')).toHaveAttribute("data-decision", "approved");
 }
 
-/** Submits one deliberate notice for one published edition and answers the intent it created. */
-async function requestNotice(page: Page, releaseId: string, acknowledgedCeiling: number): Promise<string> {
-  const [scope, expectedRevision] = await Promise.all([actingScopeOf(page), updateRevisionOf(page)]);
-  const payload = { documentId: UPDATE, releaseId, acknowledgedCeiling };
-  const body = await jsonOf(await page.request.post("/api/notify", { data: { operationId: attemptId(), scope, expectedRevision, payload } }), "POST /api/notify");
-  acceptedOutcomeOf(body, "The notice request");
+/** The release review the overview route composes below the variant grid. */
+function releaseReviewOf(page: Page): Locator {
+  return page.locator('[data-slot="publish-review"]');
+}
+
+/** One edition's row inside that review, named by the identity the grid lists it under. */
+function releaseRowOf(page: Page, variantId: string): Locator {
+  return page.locator(`[data-slot="publish-review-edition"][data-variant-id="${variantId}"]`);
+}
+
+/**
+ * Releases the named editions through the one step the overview route composes, and answers its receipt.
+ *
+ * Each edition is selected by the checkbox its own row names, the release is requested once for the whole selection,
+ * and the confirmation inside the dialog is the step that takes effect. The attempt's identity, the release mode each
+ * submission fixed and the notice a notifying submission asks for are the surface's own business: nothing here mints
+ * an identity, assembles a payload or chooses a mode. The receipt is returned because its per-edition rows are the
+ * durable result a batch never collapses into one status.
+ */
+async function releaseEditions(page: Page, variantIds: readonly string[]): Promise<Locator> {
+  await openOverview(page);
+  await selectEditions(page, variantIds);
+  return pressRelease(page);
+}
+
+/** Ticks one or more editions in the release review, by the checkbox each edition's own row names. */
+async function selectEditions(page: Page, variantIds: readonly string[]): Promise<void> {
+  const review = releaseReviewOf(page);
+  await expect(review).toBeVisible();
+  for (const variantId of variantIds) {
+    const row = releaseRowOf(page, variantId);
+    await expect(row).toBeVisible();
+    await row.getByRole("checkbox").click();
+    await expect(row).toHaveAttribute("data-selected", "true");
+  }
+}
+
+/** Presses the release and its confirmation, and answers the receipt the attempt is reported on. */
+async function pressRelease(page: Page): Promise<Locator> {
+  await releaseReviewOf(page).getByRole("button", { name: RELEASE_ACTION, exact: true }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: RELEASE_ACTION, exact: true }).click();
+  return page.locator('[data-slot="publish-review-result"]');
+}
+
+/** One edition's row of a release receipt, named by the language the row states it in. */
+function releasedRowOf(receipt: Locator, localeName: string): Locator {
+  return receipt.locator('[data-slot="publish-edition"]').filter({ hasText: localeName });
+}
+
+/** Whether one observed request is the notice the release review submits for the edition it has just released. */
+function isNoticeSubmission(requestUrl: string, method: string): boolean {
+  if (method !== "POST") {
+    return false;
+  }
+  try {
+    return new URL(requestUrl).pathname === NOTICE_PATH;
+  } catch {
+    // An address this module cannot read is not the submission this file is waiting for.
+    return false;
+  }
+}
+
+/** The notification intent an accepted notice created, from the answer the surface that submitted it received. */
+function intentIdentityOf(body: unknown): string {
   const created = fieldAt(body, "created");
   const intentId = Array.isArray(created) ? created.find((entry) => typeof entry === "string" && entry.startsWith("intent-")) : undefined;
   if (typeof intentId !== "string") {
-    throw new Error(`The accepted notice named no intent: ${JSON.stringify(body).slice(0, 400)}`);
+    throw new Error(`The notice the release submitted named no intent, so its per-recipient results could not be read: ${JSON.stringify(body).slice(0, 400)}`);
   }
   return intentId;
+}
+
+/**
+ * Releases one edition through the release review and answers the notice the edition's submission asked for.
+ *
+ * The publication and its notice are one press of one control: the surface releases the edition at the revision its
+ * candidate froze and then submits the notice that submission asked for, against the release it just produced, so the
+ * notice read here is the one the composed release created rather than one this file posted to a handler. The release
+ * waits for the notice's own target to be read, because a release pressed before that read settles records the
+ * notification as needing attention rather than submitting it. The receipt states the notice's outcome where a person
+ * reads it; the identity its per-recipient results are read under is on no screen — the delivery surface is opened by
+ * it — so it is read from the answer that same surface received, which is the application's own JSON read exactly as
+ * the surface read it.
+ */
+async function releaseNotifyingEdition(page: Page, variantId: string, localeName: string): Promise<{ readonly receipt: Locator; readonly intentId: string }> {
+  await openOverview(page);
+  await selectEditions(page, [variantId]);
+  const notice = page.locator('[data-slot="publish-notice"]');
+  await expect(notice).toContainText(COPY.noticeTarget);
+  const noticeAnswer = page.waitForResponse((answer) => isNoticeSubmission(answer.url(), answer.request().method()));
+  const receipt = await pressRelease(page);
+  await expect(receipt).toHaveAttribute("data-outcome", "accepted");
+  // The edition's own row states that this submission's notice was taken and accepted, which is the notice the identity
+  // belongs to: a release whose submission asked for none states no such line, and a refused notice states another word.
+  const notified = releasedRowOf(receipt, localeName);
+  await expect(notified).toContainText(COPY.noticeForEdition);
+  await expect(notified).toContainText(COPY.noticeAccepted);
+  return { receipt, intentId: intentIdentityOf(await jsonOf(await noticeAnswer, "POST /api/notify (submitted by the release review)")) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -309,11 +443,6 @@ function factValueOf(scope: Locator, label: string): Locator {
     .filter({ hasText: new RegExp(`^${escaped(label)}$`, "u") })
     .first()
     .locator("xpath=following-sibling::dd[1]");
-}
-
-/** The recipient a row's dedupe identity names: the value's own slot, so the read does not depend on where the parts are listed. */
-function recipientOf(identity: Locator): Locator {
-  return identity.locator('[data-slot="delivery-dedupe-recipient"]');
 }
 
 /** The lifecycle word an edition's own status line states, as the state the shared vocabulary names. */
@@ -497,15 +626,20 @@ test("a release attempt reports one result per edition, and a sibling that canno
   expect(restoredDraft).not.toBe(SEEDED.frRelease);
   expect(restoredDraft.length).toBeGreaterThan(0);
 
+  // A release publishes a frozen candidate, so the restored draft is submitted and answered first: the submission,
+  // the one review step and the release are three separate steps, and each is taken on the surface that composes it.
+  await submitForReview(page, EDITION.frPublic, restoredDraft);
+  await approveCandidate(page, EDITION.frPublic, restoredDraft);
+
   // One attempt names both editions. The Arabic edition is still awaiting its one review, so the attempt reports
   // a released French edition and an Arabic one that needs attention — never one status for the pair.
   const release = await releaseEditions(page, [EDITION.frPublic, EDITION.arPublic]);
-  expect(fieldAt(release, "outcome")).toBe("accepted");
-  const frenchResult = editionResultOf(release, EDITION.frPublic);
-  const arabicResult = editionResultOf(release, EDITION.arPublic);
-  expect(fieldAt(frenchResult, "state")).toBe("released");
-  expect(fieldAt(arabicResult, "state")).toBe("needs-attention");
-  expect(fieldAt(arabicResult, "reasonCode")).toBe("awaiting-review");
+  await expect(release).toHaveAttribute("data-outcome", "accepted");
+  const frenchResult = releasedRowOf(release, LOCALE_NAME.fr);
+  const arabicResult = releasedRowOf(release, LOCALE_NAME.ar);
+  await expect(frenchResult).toHaveAttribute("data-edition-state", "released");
+  await expect(arabicResult).toHaveAttribute("data-edition-state", "needs-attention");
+  await expect(arabicResult).toContainText("awaiting-review");
 
   await openOverview(page);
   // The French edition now publishes the revision that was restored, under its own identity.
@@ -518,21 +652,18 @@ test("a release attempt reports one result per edition, and a sibling that canno
   await expect(await publishedRevisionOf(editionCell(page, EDITION.enPublic))).toBe(SEEDED.enPublicRelease);
 
   // The Arabic edition's one review step answers its frozen candidate, and only then is that same revision
-  // released. The review route is reached by the identity the grid linked.
-  await page.goto(reviewPath(SEEDED.arCandidate));
-  const review = page.locator('[data-slot="review-panel"]');
-  await expect(review).toHaveAttribute("data-family", "update");
-  await expect(review.getByRole("radio", { name: "Approve", exact: true })).toBeChecked();
-  await review.getByRole("button", { name: "Approve this revision", exact: true }).click();
-  await expect(page.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted");
+  // released — through the same composed release review, at the revision the review answered.
+  await approveCandidate(page, EDITION.arPublic, SEEDED.arCandidate);
 
   const arabicRelease = await releaseEditions(page, [EDITION.arPublic]);
-  expect(fieldAt(editionResultOf(arabicRelease, EDITION.arPublic), "state")).toBe("released");
+  await expect(arabicRelease).toHaveAttribute("data-outcome", "accepted");
+  await expect(releasedRowOf(arabicRelease, LOCALE_NAME.ar)).toHaveAttribute("data-edition-state", "released");
   await openOverview(page);
   await expect(await publishedRevisionOf(editionCell(page, EDITION.arPublic))).toBe(SEEDED.arCandidate);
-  // The approved candidate stays the edition's submission, so the lifecycle word keeps saying so; the release the
-  // facts name is what a reader is served, which is the distinction this file exists to keep.
-  await expect(lifecycleOfCell(editionCell(page, EDITION.arPublic))).toHaveAttribute("data-lifecycle-state", "candidate");
+  // The lifecycle word states the publication that now serves the approved revision: the release took the candidate up,
+  // so the edition is released rather than still holding one, and the revision a reader is served is the one the review
+  // answered (asserted above). Those two facts stay separate even when one revision is both.
+  await expect(lifecycleOfCell(editionCell(page, EDITION.arPublic))).toHaveAttribute("data-lifecycle-state", "released");
   // The French edition that the earlier attempt released is still served: releasing a sibling never withdraws it.
   await expect(await publishedRevisionOf(editionCell(page, EDITION.frPublic))).toBe(restoredDraft);
 
@@ -543,7 +674,7 @@ test("a release attempt reports one result per edition, and a sibling that canno
   const post = page.locator('[data-slot="receiving-post"]');
   await expect(post).toContainText(ARABIC_COPY.candidateOnly);
   await expect(post.getByText("Language served", { exact: false }).first()).toBeVisible();
-  await expect(post.locator('div[dir="rtl"][lang="ar"]').first()).toBeVisible();
+  expect(await post.locator('div[dir="rtl"][lang="ar"]').count()).toBeGreaterThan(0);
 });
 
 /** Opens the variant grid of the seeded Update and waits for the grid itself. */
@@ -665,14 +796,21 @@ test("a release whose acknowledgement was lost is recovered by replaying the sam
   const restoredDraft = (await factValueOf(editionCell(page, EDITION.frPublic), "Saved draft").innerText()).trim();
   const publicationBefore = await publicationIdOf(editionCell(page, EDITION.frPublic));
 
+  // A release publishes a frozen candidate, so the new revision is submitted and answered before it is released.
+  await submitForReview(page, EDITION.frPublic, restoredDraft);
+  await approveCandidate(page, EDITION.frPublic, restoredDraft);
+
   // The acknowledgement of this release is going to be withheld. The effect and its ledger entry are stored; only
   // the answer is lost, which is exactly the state a person must be able to recover from.
   await armLostReleaseAcknowledgement(page);
-  const [scope, expectedRevision] = await Promise.all([actingScopeOf(page), updateRevisionOf(page)]);
-  const operation = attemptId();
-  const attempt = { operationId: operation, scope, expectedRevision, payload: { documentId: UPDATE, variants: [{ variantId: EDITION.frPublic, mode: "publish-only" }] } };
-  const first = await jsonOf(await page.request.post("/api/publish", { data: attempt }), "POST /api/publish (acknowledgement withheld)");
-  expect(fieldAt(first, "outcome")).toBe("unknown");
+  const receipt = await releaseEditions(page, [EDITION.frPublic]);
+  await expect(receipt).toHaveAttribute("data-outcome", "unknown");
+  // The uncertain result names the attempt it may be checked under, and offers nothing that would send the work again.
+  await expect(receipt).toContainText(STATED_OPERATION);
+  const operation = STATED_OPERATION.exec(await receipt.innerText())?.[1];
+  if (operation === undefined) {
+    throw new Error(`The lost acknowledgement named no operation, so the recovery could not be read back under it: ${(await receipt.innerText()).slice(0, 400)}`);
+  }
 
   await openOverview(page);
   // The attempt did reach the record: the French edition publishes the restored revision, under a new release.
@@ -680,9 +818,16 @@ test("a release whose acknowledgement was lost is recovered by replaying the sam
   const publicationAfterAttempt = await publicationIdOf(editionCell(page, EDITION.frPublic));
   expect(publicationAfterAttempt).not.toBe(publicationBefore);
 
-  // The recovery is the same attempt replayed, byte for byte, and the application answers with the result it
-  // stored rather than performing the release a second time.
-  const replay = await jsonOf(await page.request.post("/api/publish", { data: attempt }), "POST /api/publish (same attempt replayed)");
+  // The recovery is the same attempt replayed, and the application answers with the result it stored rather than
+  // releasing a second time. The surface offers the check and no resend, so replaying this one recorded attempt is the
+  // recovery itself rather than a step a person takes: it carries the selection the release review submitted — the
+  // revision its candidate froze, and the mode that edition's own row stated — under the identity the receipt named.
+  const mode = (await releaseRowOf(page, EDITION.frPublic).getAttribute("data-mode"))?.trim() ?? "";
+  if (mode === "") {
+    throw new Error("The release review stated no mode for the French edition, so the replayed attempt would not be the one that was made.");
+  }
+  const replayInput = { operationId: operation, scope: await actingScopeOf(page), expectedRevision: await updateRevisionOf(page), payload: { documentId: UPDATE, variants: [{ variantId: EDITION.frPublic, revisionId: restoredDraft, mode }] } };
+  const replay = await jsonOf(await page.request.post("/api/publish", { data: replayInput }), "POST /api/publish (same attempt replayed)");
   expect(fieldAt(replay, "outcome")).toBe("alreadyAccepted");
   await openOverview(page);
   expect(await publicationIdOf(editionCell(page, EDITION.frPublic))).toBe(publicationAfterAttempt);
@@ -749,17 +894,18 @@ test("one recorded notice gives every recipient one row and one pinned copy, and
   // otherwise take "accepted" for a message that left the application.
   await expect(page.getByText(COPY.outboundNotice, { exact: true }).first()).toBeVisible();
 
-  // The notice the seed recorded: four recipients, each with one row, and the three outcomes kept apart.
+  // The notice the seed recorded: five recipients — the audience's four originals and the receiving reader's own
+  // membership — each with one row, and the three outcomes kept apart.
   const table = page.getByRole("table", { name: new RegExp(`^${escaped(COPY.deliveryHeading)}: recorded outcomes for notice ${escaped(SEEDED.noticeIntent)}$`, "u") });
   await expect(table).toBeVisible();
   const rows = table.locator("tbody tr");
-  await expect(rows).toHaveCount(4);
-  await expect(table.getByText("Accepted — not delivered", { exact: true })).toHaveCount(2);
+  await expect(rows).toHaveCount(5);
+  await expect(table.getByText("Accepted — not delivered", { exact: true })).toHaveCount(3);
   await expect(table.getByText("Failed", { exact: true })).toHaveCount(1);
   await expect(table.getByText("Outcome unknown", { exact: true })).toHaveCount(1);
 
   const recipients: string[] = [];
-  for (let index = 0; index < 4; index += 1) {
+  for (let index = 0; index < 5; index += 1) {
     const row = rows.nth(index);
     const identity = row.locator('[data-slot="delivery-dedupe-identity"]');
     // The dedupe identity is four values, and the intent is one of them, so every row is this notice's own copy.
@@ -770,10 +916,18 @@ test("one recorded notice gives every recipient one row and one pinned copy, and
     // The copy this recipient was pinned to is stated once and is a rendition, so it cannot drift with a later
     // change of audience or language.
     await expect(row).toContainText("rendition-");
-    recipients.push((await recipientOf(identity).innerText()).trim());
+    recipients.push(
+      (
+        await identity
+          .locator("dt")
+          .filter({ hasText: /^Recipient$/u })
+          .locator("xpath=following-sibling::dd[1]")
+          .innerText()
+      ).trim(),
+    );
   }
-  // Four recipients, four rows: no person holds two rows, which is what one notice per recipient means here.
-  expect(new Set(recipients).size).toBe(4);
+  // Five recipients, five rows: no person holds two rows, which is what one notice per recipient means here.
+  expect(new Set(recipients).size).toBe(5);
   for (const recipient of recipients) expect(recipient.length).toBeGreaterThan(0);
   // No two rows share one dedupe identity, and no recipient who was eligible went unserved, so the recorded
   // result reconciles with the ceiling the review acknowledged rather than being summarised into it.
@@ -787,24 +941,78 @@ test("one recorded notice gives every recipient one row and one pinned copy, and
   await expect(summary).toContainText(COPY.servedLabel);
 
   // The one recipient whose earlier submission definitely failed is the only one this notice could not reach.
-  const failedRecipient = (await recipientOf(rows.filter({ has: page.getByText("Failed", { exact: true }) }).locator('[data-slot="delivery-dedupe-identity"]')).innerText()).trim();
+  const failedRecipient = (
+    await rows
+      .filter({ has: page.getByText("Failed", { exact: true }) })
+      .locator('[data-slot="delivery-dedupe-identity"] dt')
+      .filter({ hasText: /^Recipient$/u })
+      .locator("xpath=following-sibling::dd[1]")
+      .innerText()
+  ).trim();
   expect(recipients).toContain(failedRecipient);
 
-  // A deliberate notice for the French edition of the same Update. Nobody already covered may receive a second
-  // copy in another language, so the accepted notice serves only the recipient whose earlier copy failed.
-  const frenchIntent = await requestNotice(page, SEEDED.frReleaseRecord, 4);
+  // A second French edition of the same Update, released and notified through the composed controls: the published
+  // revision is restored as a new draft, a sentence of this file's own makes it a revision nobody has published yet, the
+  // author submits it at *Publish and notify now*, the reviewer answers it, and the release review publishes it and
+  // submits the notice that submission asked for. Nobody already covered may receive a second copy in another language,
+  // so the notice that release submitted serves only the recipient whose earlier copy definitely failed.
+  await openOverview(page);
+  await editionCell(page, EDITION.frPublic).getByRole("button", { name: COPY.restoreAction, exact: true }).click();
+  await page.getByRole("button", { name: COPY.restoreConfirm, exact: true }).click();
+  await expect(page.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted");
+  await appendToDraft(page, EDITION.frPublic, " Merci pour votre fidélité cette année.");
+  await openOverview(page);
+  const frenchDraft = (await factValueOf(editionCell(page, EDITION.frPublic), "Saved draft").innerText()).trim();
+  expect(frenchDraft).not.toBe(SEEDED.frRelease);
+  expect(frenchDraft.length).toBeGreaterThan(0);
+  await submitForReview(page, EDITION.frPublic, frenchDraft, RELEASE_MODE.publishAndNotifyNow);
+  await approveCandidate(page, EDITION.frPublic, frenchDraft);
+  const { receipt: frenchReceipt, intentId: frenchIntent } = await releaseNotifyingEdition(page, EDITION.frPublic, LOCALE_NAME.fr);
+  // The receipt reports the edition this notice was submitted for as released, so the notice below belongs to a release
+  // this attempt made rather than to one that failed.
+  await expect(releasedRowOf(frenchReceipt, LOCALE_NAME.fr)).toHaveAttribute("data-edition-state", "released");
+
+  // The publication that attempt produced, read from the edition's own facts on the grid: the notice below is the one
+  // for that publication, so its summary is compared against the identity this release minted rather than a constant.
+  await openOverview(page);
+  const frenchPublication = await publicationIdOf(editionCell(page, EDITION.frPublic));
+  expect(frenchPublication).not.toBe(SEEDED.frReleaseRecord);
+  expect(await publishedRevisionOf(editionCell(page, EDITION.frPublic))).toBe(frenchDraft);
+
   await page.goto(deliveryPath(frenchIntent));
   const frenchTable = page.getByRole("table", { name: new RegExp(`^${escaped(COPY.deliveryHeading)}: recorded outcomes for notice ${escaped(frenchIntent)}$`, "u") });
   const frenchRows = frenchTable.locator("tbody tr");
   await expect(frenchRows).toHaveCount(1);
-  await expect(frenchRows.first().locator('[data-slot="delivery-dedupe-identity"]')).toContainText(frenchIntent);
-  const servedAgain = (await recipientOf(frenchRows.first().locator('[data-slot="delivery-dedupe-identity"]')).innerText()).trim();
+  const frenchIdentity = frenchRows.first().locator('[data-slot="delivery-dedupe-identity"]');
+  await expect(frenchIdentity).toContainText(frenchIntent);
+  // The same four values the seeded notice's rows state — publisher, purpose, recipient and intent — so this row is this
+  // notice's own copy rather than a second message for the other audience.
+  await expect(frenchIdentity).toContainText("Publisher");
+  await expect(frenchIdentity).toContainText("Purpose");
+  await expect(frenchIdentity).toContainText("Recipient");
+  // The copy this recipient was pinned to is stated as one opaque identity, so it cannot drift with a later change of
+  // audience or language: the service pins the rendition the source registered, or — where the released revision
+  // registered no share image — the exact edition release the notice points at, which is the same rule it applies to
+  // every notice.
+  await expect(frenchRows.first()).toContainText(/edition:|rendition-/u);
+  // The summary names this notice and the release this attempt published, so the outcomes below are read under the
+  // identities the composed release produced.
+  await expect(summary).toContainText(frenchIntent);
+  await expect(summary).toContainText(frenchPublication);
+  const servedAgain = (
+    await frenchRows
+      .first()
+      .locator('[data-slot="delivery-dedupe-identity"] dt')
+      .filter({ hasText: /^Recipient$/u })
+      .locator("xpath=following-sibling::dd[1]")
+      .innerText()
+  ).trim();
   expect(servedAgain).toBe(failedRecipient);
   // Everyone else is recorded as already holding a copy of this Update's notice, so a second language produced no
   // second message for them: the row count above is how many copies were made, not how many were eligible.
   const unserved = page.locator('[data-slot="delivery-unserved"]');
   await expect(unserved).toBeVisible();
-  await expect(unserved.getByText(COPY.alreadyCovered, { exact: false })).toHaveCount(3);
+  await expect(unserved.getByText(COPY.alreadyCovered, { exact: false })).toHaveCount(4);
   for (const recipient of recipients.filter((id) => id !== failedRecipient)) {
     await expect(unserved).toContainText(recipient);
   }

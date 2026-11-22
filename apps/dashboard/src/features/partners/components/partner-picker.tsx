@@ -5,7 +5,9 @@
  *
  * Every match is the service's. The debounced term travels in the roster read's own `search` parameter, so the whole
  * authorised dataset is searched and nothing here filters, orders or compares a name, an address or an identifier:
- * two records that read alike stay two records, and a name is never a key. The control itself is the installed
+ * two records that read alike stay two records, and a name is never a key. Only records of the shared class are offered:
+ * the read is asked for them through the roster's own `preparation-state` facet, so a worker-private preparation record
+ * is never a participant here and never becomes the record a task is linked to. The control itself is the installed
  * combobox, the composition the architecture note records for searchable selection, so the popup, the list and its
  * keyboard belong to one implementation rather than to a second listbox beside it.
  *
@@ -24,6 +26,7 @@ import { PARTNER_KINDS, sameScope, type PartnerKind, type ReadEnvelope, type Sco
 import { FACET_VALUE_LABELS } from "../copy/facets";
 import { fetchPartnerRead, PARTNER_KEY, PartnerReadTransportError } from "../hooks/use-partner-mutations";
 import { PARTNERS_READ_PATH, ROSTER_PAGE_SIZE_CAP, ROSTER_QUERY_PARAM, ROSTER_READ_JOB, rosterRequestParams, type RosterRequestParams } from "../hooks/use-roster-query";
+import { isSharedRecord, SHARED_RECORD_FACET, SHARED_RECORD_FACET_SELECTION } from "../record-class";
 
 // The words this control states, in one place, so no two renders word the same condition differently.
 const PICKER_COPY = {
@@ -31,8 +34,8 @@ const PICKER_COPY = {
   loading: "Reading the partner records this search matches",
   noMatch: "No partner record matches that search. Try fewer words, or a different spelling.",
   noRecords: "This roster holds no record this control can offer yet.",
-  emptyTitle: "No partner record exists yet",
-  emptyBody: "Nothing is on the roster to choose from, so the first useful step is bringing contacts in rather than picking one.",
+  emptyTitle: "No shared record exists yet",
+  emptyBody: "This control offers only the roster's shared records, and it holds none yet, so the first useful step is bringing contacts in rather than picking one. A private preparation record stays the worker's own and is never a participant or a link target.",
   emptyAction: "Bring in contacts from a file",
   emptyHref: "/partners/import",
   deniedTitle: "Partner records are not available in this context",
@@ -60,7 +63,7 @@ const PICKER_PAGE_SIZE = Math.min(20, ROSTER_PAGE_SIZE_CAP);
 const PICKER_PAGE = 1;
 
 /** The read's parameter names, as `GET /api/partners` parses them; the values come from the roster hook's own request grammar. */
-const READ_PARAM = { search: "search", page: "page", pageSize: "pageSize" } as const;
+const READ_PARAM = { search: "search", facet: "facet", page: "page", pageSize: "pageSize" } as const;
 
 /**
  * One partner the worker may choose: the opaque record reference the source owns, the source system that owns it, and
@@ -109,11 +112,16 @@ interface PartnerPickerCommonProps {
 export type PartnerPickerProps = PartnerPickerCommonProps &
   ({ readonly mode: "single"; readonly value: PartnerSelection | null; readonly onValueChange: (value: PartnerSelection | null) => void } | { readonly mode: "multiple"; readonly value: readonly PartnerSelection[]; readonly onValueChange: (value: readonly PartnerSelection[]) => void });
 
-/** The members this control needs off one roster row: the record's opaque identity, its kind and the name the source gives it. */
+/**
+ * The members this control needs off one roster row: the record's opaque identity, its kind, the name the source gives
+ * it, and the record class it states — which decides whether the record may be offered at all.
+ */
 interface RosterPartnerRow {
   readonly partnerId: string;
   readonly kind: PartnerKind;
   readonly displayName: string;
+  /** The record class the row states, or `null` when it states none this control can read: never assumed shared. */
+  readonly audience: string | null;
 }
 
 /** One page of matches, once its payload is the shape this read documents. */
@@ -141,8 +149,8 @@ function rowOf(row: unknown): RosterPartnerRow | null {
   if (typeof partner !== "object" || partner === null) {
     return null;
   }
-  const record = partner as { partnerId?: unknown; kind?: unknown; displayName?: unknown };
-  const { partnerId, kind, displayName } = record;
+  const record = partner as { partnerId?: unknown; kind?: unknown; displayName?: unknown; audience?: unknown };
+  const { partnerId, kind, displayName, audience } = record;
   if (typeof partnerId !== "string" || partnerId === "") {
     return null;
   }
@@ -152,7 +160,17 @@ function rowOf(row: unknown): RosterPartnerRow | null {
   if (typeof kind !== "string" || !isPartnerKind(kind)) {
     return null;
   }
-  return { partnerId, kind, displayName };
+  // The class is read as the row stated it: a row that states none is left unshared, so it is never offered.
+  return { partnerId, kind, displayName, audience: typeof audience === "string" ? audience : null };
+}
+
+/**
+ * Whether the read reported the record-class filter among the ones it could not apply. A closed facet offers a value
+ * only while the scope holds a record of that class, so this is how the read says the scope holds no shared record at
+ * all — not that its answer is empty because of the search.
+ */
+function classFilterUnapplied(value: unknown): boolean {
+  return Array.isArray(value) && value.some((entry) => typeof entry === "object" && entry !== null && (entry as { readonly facet?: unknown }).facet === SHARED_RECORD_FACET.id);
 }
 
 /**
@@ -160,20 +178,32 @@ function rowOf(row: unknown): RosterPartnerRow | null {
  * response boundary, so it reaches the query's error state as an outage instead of rendering as an empty list or a zero.
  */
 function pageOf(data: unknown, url: string, source: SourceReference): PartnerPage {
-  const payload = typeof data === "object" && data !== null ? (data as { rows?: unknown; total?: unknown }) : {};
-  const { rows, total } = payload;
+  const payload = typeof data === "object" && data !== null ? (data as { rows?: unknown; total?: unknown; unappliedFacets?: unknown }) : {};
+  const { rows, total, unappliedFacets } = payload;
   if (!Array.isArray(rows) || typeof total !== "number" || !Number.isFinite(total)) {
     throw new PartnerReadTransportError(url, undefined, "a payload that is not the roster page this picker reads");
   }
+  const classApplied = !classFilterUnapplied(unappliedFacets);
   const options: PartnerSelection[] = [];
   for (const row of rows) {
     const stated = rowOf(row);
     if (stated === null) {
       throw new PartnerReadTransportError(url, undefined, "a roster row that states no partner identity");
     }
-    options.push({ ...stated, source });
+    if (!isSharedRecord(stated)) {
+      // A row of another class beside a read that applied the class is a fault of the response boundary, so it never
+      // becomes an option; beside a read that could not apply it, the row is simply not a record this control offers.
+      if (classApplied) {
+        throw new PartnerReadTransportError(url, undefined, "a roster row of a record class this control never offers");
+      }
+      continue;
+    }
+    const { partnerId, kind, displayName } = stated;
+    options.push({ partnerId, kind, displayName, source });
   }
-  return { options, total };
+  // The read's own count is the shared class's when it applied the filter; when it could not, the rows it answered are
+  // of no class this control offers, so the count is the records actually left to offer rather than the unfiltered one.
+  return { options, total: classApplied ? total : options.length };
 }
 
 /** The roster read as the family's transport issues it, so this file does not restate the envelope or its refusals. */
@@ -194,12 +224,17 @@ async function readPartnerPage(url: string): Promise<PartnerPageReadResult> {
   return { kind: "envelope", envelope };
 }
 
-/** The address of one picker read: the roster job, asked with the search, page and size the roster's own grammar produced. */
+/** The address of one picker read: the roster job, asked with the search, facet selection, page and size the roster's own grammar produced. */
 function pickerReadUrl(request: RosterRequestParams): string {
   const search = new URLSearchParams();
   search.set(ROSTER_QUERY_PARAM, ROSTER_READ_JOB.roster);
   if (request.search !== undefined && request.search !== "") {
     search.set(READ_PARAM.search, request.search);
+  }
+  // The record class travels as the roster's own facet expressions, so the rows and the whole-result count this control
+  // states are the shared class's rather than a filtered page of every record.
+  for (const expression of request.facet ?? []) {
+    search.append(READ_PARAM.facet, expression);
   }
   // The read refuses a size with no page, so both are always stated together.
   search.set(READ_PARAM.page, String(request.page));
@@ -228,19 +263,29 @@ function useSettledTerm(value: string, delayMs: number): string {
 
 /**
  * The picker's own bounded read of the roster: the first matches of the settled term, beside the whole-result count they
- * are a page of. The scope leads the cache key, so a context switch clears it with the rest of the previous context, and
- * the page already on screen stays while the next one lands — a pending read is a busy list, never an empty one.
+ * are a page of. The read is asked for the shared record class, so neither its rows nor its count includes a record this
+ * control could never offer. The scope leads the cache key, so a context switch clears it with the rest of the previous
+ * context, and the page already on screen stays while the next one lands — a pending read is a busy list, never an
+ * empty one.
  */
 function usePartnerPickerPage(scope: Scope, term: string, enabled: boolean) {
   const request = useMemo<RosterRequestParams>(
     // The roster's own grammar resolves a page size to the window its surface serves; this control reads a bounded page
     // of matches instead, so the size the read is asked with is stated here rather than left to that surface's window.
-    () => ({ ...rosterRequestParams({ search: term, facets: {}, sort: null, page: PICKER_PAGE, pageSize: PICKER_PAGE_SIZE, columnVisibility: {} }), pageSize: PICKER_PAGE_SIZE }),
+    // The record class is stated as a facet selection so the read, rather than this control, decides which rows exist.
+    () => ({ ...rosterRequestParams({ search: term, facets: SHARED_RECORD_FACET_SELECTION, sort: null, page: PICKER_PAGE, pageSize: PICKER_PAGE_SIZE, columnVisibility: {} }), pageSize: PICKER_PAGE_SIZE }),
     [term],
   );
   const url = useMemo(() => pickerReadUrl(request), [request]);
   const resolved = scopeIsResolved(scope);
-  return useQuery<PartnerPageReadResult>({ queryKey: queryKey(scope, PARTNER_KEY.roster, { job: ROSTER_READ_JOB.roster, search: request.search ?? "", page: request.page, pageSize: request.pageSize }), queryFn: () => readPartnerPage(url), placeholderData: keepPreviousData, enabled: enabled && resolved });
+  return useQuery<PartnerPageReadResult>({
+    // Every variable the read is asked with is in the key, the facet selection included, so a page read for one record
+    // class is never served from an entry asked for another.
+    queryKey: queryKey(scope, PARTNER_KEY.roster, { job: ROSTER_READ_JOB.roster, search: request.search ?? "", facet: request.facet ?? [], page: request.page, pageSize: request.pageSize }),
+    queryFn: () => readPartnerPage(url),
+    placeholderData: keepPreviousData,
+    enabled: enabled && resolved,
+  });
 }
 
 /** The name the combobox echoes for a chosen record; the reference, never this, is what identifies it. */

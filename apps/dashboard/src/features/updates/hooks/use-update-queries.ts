@@ -1,5 +1,5 @@
 "use client";
-/** The Ministry Updates family's browser read plumbing: exactly seven hooks, one per named read, on the one scope-led query key the rest of the family reuses. **What it caches.** … */
+/** The Ministry Updates family's browser read plumbing: exactly eight hooks, one per named read, on the one scope-led query key the rest of the family reuses. **What it caches.** … */
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { queryKey, type QueryParams, type ScopedQueryKey } from "@/components/context-switch-guard";
 import type { ReadEnvelope, Scope, reads } from "@/modules/data-service";
@@ -10,14 +10,16 @@ import { isOutcome, isReadResult, unavailable, type ReadResult } from "@/modules
 // The closed set of jobs, and the handler each one rides
 // ---------------------------------------------------------------------------------------------
 
-/** The seven reads this family exercises, listed once so the closed set has a runtime form as well as a type. */
-export const UPDATES_READ_JOBS = ["variant-overview", "draft", "candidate", "release", "preview", "share-presentation", "send-result"] as const;
+/** The eight reads this family exercises, listed once so the closed set has a runtime form as well as a type. */
+export const UPDATES_READ_JOBS = ["roster", "variant-overview", "draft", "candidate", "release", "preview", "share-presentation", "send-result"] as const;
 
-/** One named read of the Ministry Updates family. No eighth job belongs here: a surface that seems to need one is a component defect, not a hook to add. */
+/** One named read of the Ministry Updates family. No ninth job belongs here: a surface that seems to need one is a component defect, not a hook to add. */
 export type UpdatesReadJob = (typeof UPDATES_READ_JOBS)[number];
 
 /** The handler that answers each job, keyed by the job's name. */
-export const UPDATES_READ_ENDPOINTS = { "variant-overview": "/api/updates", draft: "/api/drafts", candidate: "/api/review", release: "/api/variants", preview: "/api/pages/preview", "share-presentation": "/api/variants", "send-result": "/api/notify" } as const satisfies Readonly<Record<UpdatesReadJob, string>>;
+export const UPDATES_READ_ENDPOINTS = { roster: "/api/updates", "variant-overview": "/api/updates", draft: "/api/drafts", candidate: "/api/review", release: "/api/variants", preview: "/api/pages/preview", "share-presentation": "/api/variants", "send-result": "/api/notify" } as const satisfies Readonly<
+  Record<UpdatesReadJob, string>
+>;
 
 // ---------------------------------------------------------------------------------------------
 // Fixed values
@@ -49,6 +51,7 @@ const DRAFT_VIEW = "draft";
 
 /** What a surface is told when a read produced no usable answer. */
 const TRANSPORT_GUIDANCE: Readonly<Record<UpdatesReadJob, string>> = {
+  roster: "The ministry's Updates could not be read, so this list states no count, no title and no edition. Retry the same read: an outage is never presented as a ministry that has written nothing.",
   "variant-overview": "The Update's editions could not be read, so this update has no variant matrix, no per-edition draft state and no release head to show. Retry the same read: an outage is never presented as an Update with no editions.",
   draft: "This edition's draft could not be read, so the editor has no revision, no autosave token and no media placement to restore. Retry the same read: an outage is never presented as an empty draft.",
   candidate: "The frozen candidate could not be read, so this review has no exact revision to approve or return. Retry the same read: a candidate is never inferred from the draft that now stands.",
@@ -67,6 +70,9 @@ type PayloadOf<Answer> = Answer extends { readonly envelope: { readonly data: in
 
 /** The variant matrix of one Update, with a draft, a candidate and a release pointer per edition. */
 export type VariantOverviewData = PayloadOf<Awaited<ReturnType<typeof reads.updates.readVariantOverview>>>;
+
+/** One page of the ministry's Updates roster: every Update of the listed families with the editions that page carries, and the window it occupies in the whole authorised result. */
+export type UpdatesRosterData = PayloadOf<Awaited<ReturnType<typeof reads.updates.findContentDocuments>>>;
 
 /** One edition's working draft: the revision its editor autosaves against, its placements and its checks. */
 export type UpdateDraftData = PayloadOf<Awaited<ReturnType<typeof reads.updates.readDraft>>>;
@@ -88,6 +94,9 @@ export type SendResultData = PayloadOf<Awaited<ReturnType<typeof reads.audience.
 
 /** What the variant-overview read answers: its envelope, the denial it was given, or an unavailable source. */
 export type VariantOverviewReadResult = ReadResult<ReadEnvelope<VariantOverviewData>>;
+
+/** What the roster read answers: its envelope, the denial it was given, or an unavailable source. */
+export type UpdatesRosterReadResult = ReadResult<ReadEnvelope<UpdatesRosterData>>;
 
 /** What the draft read answers. */
 export type UpdateDraftReadResult = ReadResult<ReadEnvelope<UpdateDraftData>>;
@@ -250,6 +259,10 @@ function statedId(value: string | undefined): string {
   return value?.trim() ?? "";
 }
 
+function rosterPath(page: number | undefined, pageSize: number | undefined): string {
+  return urlWith(UPDATES_READ_ENDPOINTS.roster, { ...(page === undefined ? {} : { [QUERY_PARAM.page]: String(page) }), ...(pageSize === undefined ? {} : { [QUERY_PARAM.pageSize]: String(pageSize) }) });
+}
+
 function variantOverviewPath(documentId: string): string {
   return urlWith(UPDATES_READ_ENDPOINTS["variant-overview"], { [QUERY_PARAM.documentId]: documentId });
 }
@@ -323,8 +336,33 @@ function queryStateOf<T>(query: UseQueryResult<ReadResult<ReadEnvelope<T>>, neve
 }
 
 // ---------------------------------------------------------------------------------------------
-// The seven reads
+// The eight reads
 // ---------------------------------------------------------------------------------------------
+
+/** What a surface supplies to read the ministry's Updates roster. */
+export interface RosterParams {
+  readonly scope: Scope;
+  /** The page of listed rows this surface shows — one row per edition. Left unstated, the read answers the whole collection it holds, which is what a surface that pages nothing asks for. */
+  readonly page?: number;
+  /** The rows per page to request. The service keeps its own 50-row default and 200-row ceiling, so nothing is clamped here. */
+  readonly pageSize?: number;
+}
+
+/** Drives `reads.updates.findContentDocuments` — every Update this ministry's content holds with the editions of each, one page of listed rows at a time, beside the whole-result total the service measured. Answers an envelope, a `denied` outcome or an `unavailable` one. */
+export function useUpdatesRoster(params: RosterParams, options: UpdatesQueryOptions<UpdatesRosterData> = {}): UpdatesQueryState<UpdatesRosterData> {
+  const { scope } = params;
+  const query = useQuery<UpdatesRosterReadResult, never>({
+    // The key names the window, so every page is its own entry and a page change asks the service for that page rather than re-windowing an answer already held.
+    queryKey: updateQueryKey(scope, "roster", { ...(params.page === undefined ? {} : { [QUERY_PARAM.page]: params.page }), ...(params.pageSize === undefined ? {} : { [QUERY_PARAM.pageSize]: params.pageSize }) }),
+    queryFn: ({ signal }) => readThrough<UpdatesRosterData>("roster", rosterPath(params.page, params.pageSize), signal),
+    // A list is always readable under the scope this hook was handed, so nothing is disabled and nothing is retried: a refusal is an answer, and a second attempt could only ask again for what the read has already refused.
+    retry: false,
+    staleTime: UPDATES_STALE_TIME_MS,
+    ...seedOf(options),
+    refetchOnMount: options.initialData === undefined,
+  });
+  return queryStateOf(query, scope);
+}
 
 /** What a surface supplies to read one Update's variant matrix. */
 export interface VariantOverviewParams {

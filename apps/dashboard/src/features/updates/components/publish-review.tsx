@@ -17,7 +17,8 @@
  * **Publication, acceptance, delivery and reading are four outcomes.** This surface submits a release and, when the
  * recorded mode asks for it, one deliberate notice per released edition. It never states that a message arrived or was
  * opened, and it never offers a resend: a repeated press is the same attempt under the same intent, so a replay answers
- * with the result already recorded rather than producing a second copy.
+ * with the result already recorded rather than producing a second copy. The notice an attempt submitted is named in the
+ * result by its own identity, which is where the recorded per-send outcomes of that one notice are read.
  *
  * **How to wire it.** `editions` is one row per edition of the variant matrix (`readVariantOverview`), its frozen
  * candidate as `readCandidate` states it — including whether the candidate's own release actions admit a notice — and
@@ -383,16 +384,30 @@ function publishStateOf(state: string): PublishedEdition["state"] {
   }
 }
 
-/** What one notice attempt reported, in the words the result rows use for a notice. */
+/**
+ * The identity the recorded per-send results of one accepted notice are read under, or nothing when the answer states
+ * none. A first acceptance mints the intent and then the send result it is recorded in, so the intent is the first
+ * identity the answer reports; a replay answers with the stored submission, whose own `intentId` names that same
+ * notice. Nothing here mints, parses or derives an identity, and nothing states one the service did not.
+ */
+function noticeIdentityOf(outcome: PublishOutcome): Pick<PublishedEditionNotice, "intentId"> {
+  const stored = outcome.outcome === "alreadyAccepted" ? textOf(isRecordValue(outcome.result) ? outcome.result["intentId"] : undefined) : null;
+  const created = outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" ? textOf(outcome.created?.[0]) : null;
+  const intentId = stored ?? created;
+  return intentId === null ? {} : { intentId };
+}
+
+/** What one notice attempt reported, in the words the result rows use for a notice, with the identity its outcomes are recorded under where the answer states one. */
 function noticeAttemptOf(variantId: string, outcome: PublishOutcome): NoticeAttempt {
   switch (outcome.outcome) {
     case "accepted":
-      return { variantId, notice: { state: "accepted", detail: NOTICE_ACCEPTED_DETAIL } };
+      return { variantId, notice: { state: "accepted", detail: NOTICE_ACCEPTED_DETAIL, ...noticeIdentityOf(outcome) } };
     case "alreadyAccepted":
-      return { variantId, notice: { state: "accepted", detail: NOTICE_REPLAY_DETAIL } };
+      return { variantId, notice: { state: "accepted", detail: NOTICE_REPLAY_DETAIL, ...noticeIdentityOf(outcome) } };
     case "unchanged":
       // The service answers `unchanged` when this publication's notice was already submitted: no second copy exists
-      // and none was created by this attempt.
+      // and none was created by this attempt, and the answer names no identity for the copy already on record — so
+      // this row states that and offers no link rather than pointing at a notice it would have had to guess.
       return { variantId, notice: { state: "accepted", detail: NOTICE_REPLAY_DETAIL } };
     case "conflict":
       return { variantId, notice: { state: "failed", detail: NOTICE_CONFLICT_DETAIL } };
@@ -951,7 +966,11 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
       // statement of it: the route's envelope catches up a moment later, and until it does this is the only honest
       // source for the revision a reader is now served.
       const fromRead = standingRelease !== undefined && standingRelease.variantId === submitted.variantId && standingRelease.revisionId === submitted.revisionId ? standingRelease : undefined;
-      const publication = fromRoute ?? fromRead;
+      // The surface's own read answers first for a release, because the route's envelope lags a moment behind it and
+      // can still name the head this attempt has just superseded: preferring the route there would let a stale head
+      // mask the revision the service just published, so the row would name no revision at all. Every other outcome
+      // reads the route's prior-good head first, falling back to the read when the envelope carries none.
+      const publication = state === "released" ? (fromRead ?? fromRoute) : (fromRoute ?? fromRead);
       // A head is named only when it is the revision this attempt released, or when it is the prior-good head an
       // edition kept: naming any other revision would describe a publication this attempt did not produce.
       const named = publication !== undefined && (state === "released" ? publication.revisionId === submitted.revisionId : true) ? publication : undefined;

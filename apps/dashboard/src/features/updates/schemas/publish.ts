@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PUBLISH_MODE_LABELS, REVIEW_ROUND_NOTE } from "../copy/updates-copy";
 import { contentIdSchema } from "./draft";
+/** The two release choices a release selection states, in the family's client spelling: the author records one at submission (the store's own word for it is `SUBMISSION_NOTIFY_MODES` in `./draft`), and a release selection names the same choice as the review surface offers it. */
 export const PUBLISH_MODES = ["publish-only", "publish-and-notify-now"] as const;
 export type PublishMode = (typeof PUBLISH_MODES)[number];
 const PUBLISH_MODE_PARITY = { "publish-only": "publish-only", "publish-and-notify-now": "publish-and-notify-now" } as const satisfies Readonly<Record<keyof typeof PUBLISH_MODE_LABELS, PublishMode> & Record<PublishMode, keyof typeof PUBLISH_MODE_LABELS>>;

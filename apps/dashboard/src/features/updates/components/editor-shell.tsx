@@ -56,6 +56,7 @@ import type { MediaPlacement as PlacementDescriptor } from "../schemas/media";
 import type { SubmissionNotifyMode, SubmitForReviewPayload } from "../schemas/draft";
 import { AutosaveStatus } from "./autosave-status";
 import { CompareWithRelease } from "./compare-with-release";
+import { DEFAULT_SUBMISSION_RELEASE_MODE, SubmissionReleaseMode } from "./submission-release-mode";
 
 // ---------------------------------------------------------------------------------------------
 // The shapes this surface reads, taken from the reads that answer them
@@ -693,6 +694,11 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
   // The direction the locale control reports, kept with the edition it describes: a report about the edition this
   // component was showing must never describe the edition it now shows.
   const [reportedDirection, setReportedDirection] = useState<{ readonly edition: string; readonly direction: EditorDirection } | null>(null);
+  // The release mode this submission records, held beside the editor rather than inside the review step: the author
+  // chooses once, a save never restates a notice nobody asked for, and the choice travels in the payload the step submits.
+  // The choice the submission records. It starts at the browser's publishing preference where the shell states one, so a
+  // worker who always notifies states it once, and the author can still change it for this submission.
+  const [releaseMode, setReleaseMode] = useState<SubmissionNotifyMode>(publishing ?? DEFAULT_SUBMISSION_RELEASE_MODE);
   const stamped = initialDataUpdatedAt === undefined ? {} : { initialDataUpdatedAt };
   const draft = useDraft({ scope, variantId }, initialDraft === undefined ? {} : { initialData: initialDraft, ...stamped });
   const overview = useVariantOverview({ scope, documentId: updateId }, initialOverview === undefined ? {} : { initialData: initialOverview, ...stamped });
@@ -741,7 +747,7 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
 
   const submitAction = envelope.actions.find((action) => action.name === SUBMIT_ACTION);
   const submissionOffered = draftRevisionId !== undefined && (submitAction === undefined || submitAction.available);
-  const submitPayload: SubmitForReviewPayload | null = draftRevisionId === undefined ? null : { variantId, revisionId: draftRevisionId, ...(publishing === undefined ? {} : { notifyMode: publishing }) };
+  const submitPayload: SubmitForReviewPayload | null = draftRevisionId === undefined ? null : { variantId, revisionId: draftRevisionId, notifyMode: releaseMode };
 
   let comparison: ReactElement;
   const releaseResult = release.result;
@@ -834,7 +840,8 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
         <ActionReview<SubmitForReviewPayload>
           title={REVIEW_TITLE}
           description={
-            <span className="flex min-w-0 flex-col gap-1">
+            // A block container rather than an inline one: the release choice below is a fieldset of real radio inputs.
+            <div className="flex min-w-0 flex-col gap-1">
               <span>{REVIEW_DESCRIPTION}</span>
               {publishing === undefined ? null : <span>{REVIEW_MODE_SENTENCES[publishing]}</span>}
               <span className="min-w-0 wrap-anywhere">
@@ -848,7 +855,9 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
                 .
               </span>
               <span>{REVIEW_ROUND_NOTE.oneStepWherePolicyRequires}</span>
-            </span>
+              <span>{REVIEW_ROUND_NOTE.reviewerCannotAddNotify}</span>
+              <SubmissionReleaseMode value={releaseMode} onChange={setReleaseMode} />
+            </div>
           }
           consequence={REVIEW_CONSEQUENCE}
           confirmLabel={REVIEW_CONFIRM}

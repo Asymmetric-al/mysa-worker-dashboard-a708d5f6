@@ -113,9 +113,16 @@ export type CurrentTarget = { readonly kind: "record"; readonly revision: string
 const ABSENT_TARGET_REVISION = "no-target";
 const advancedRevision = (revision: string): string => `${revision}#advanced`;
 export type MutationContext = { readonly docs: SessionDocuments; readonly session: ResolvedSession; readonly currentRevision: string; readonly operationId: string };
-/** What `apply` answers: nothing to do, the change it made, or a refusal it reached only by reading the record the change acts on. */
+/**
+ * What `apply` answers: nothing to do, the change it made, or a refusal it reached only by reading the record the
+ * change acts on. A nothing-to-do answer may state the revision of the record the attempt found, for a mutation that
+ * compares no stored revision of its own: the caller then receives that record's revision rather than the token it
+ * presented. It may also state the record it found, which the runner then records under the attempt's own identity:
+ * an attempt that changed nothing can still be the only identity a caller holds for what it found, and an identity
+ * that stands for nothing cannot be read back.
+ */
 export type ApplyResult<R extends MutationResult> =
-  | { readonly changed: false }
+  | { readonly changed: false; readonly revision?: string; readonly result?: R }
   | { readonly refused: MutationOutcome }
   | { readonly changed: true; readonly revision: string; readonly result: R; readonly created?: readonly string[]; readonly changedIds?: readonly string[]; readonly items?: readonly PerItemResult[]; readonly scope?: Scope };
 export interface MutationPlan<P, R extends MutationResult> {
@@ -230,6 +237,10 @@ export async function runMutation<P, R extends MutationResult>(plan: MutationPla
       if (begun.state === "replay") {
         // No new effect and no new revision: the stored result is the answer, so a caller that lost the first response recovers exactly what it was told. The entry carries what the accepted answer reported — the change's own revision and the identifiers it created or changed — so the replay states those rather than
         // the revision the caller presented with the request. An entry written before an answer stored them falls back to the target's current revision.
+        if (begun.record.outcome === "unchanged") {
+          // An attempt recorded as having changed nothing replays as having changed nothing: the same identity, the revision that attempt found, and no result to recover, because there was never an effect to recover. `alreadyAccepted` would tell the caller a change had been applied exactly once, and none ever was.
+          return unchanged({ operationId, revision: begun.record.revision ?? reportedRevision });
+        }
         return alreadyAccepted({
           operationId,
           revision: begun.record.revision ?? reportedRevision,
@@ -255,8 +266,12 @@ export async function runMutation<P, R extends MutationResult>(plan: MutationPla
         return applied.refused;
       }
       if (!applied.changed) {
-        // Nothing needed doing: no revision advance, no history or activity entry, nothing recorded.
-        return unchanged({ operationId, revision: reportedRevision });
+        // Nothing needed doing: no revision advance, no history or activity entry. The answer states the revision the change's own record holds when the mutation reported one, so a caller that presented a token of its own is told the revision the record is actually at.
+        const revision = applied.revision ?? reportedRevision;
+        if (applied.result === undefined) return unchanged({ operationId, revision });
+        // A no-change answer that states the record it found records the attempt under its own identity in this same transaction: the attempt changed nothing, but it did find something, and a caller holding only the identity it minted has to be able to name what it found. The entry is written here rather than by `apply`, because the ledger is the runner's alone; its outcome is `unchanged`, which is why replaying it below answers `unchanged` again rather than an acceptance.
+        docs.operations = record(ledger, { operationId, intentHash: intent, scope: input.scope, outcome: "unchanged", result: applied.result, revision, at: now().toString() });
+        return unchanged({ operationId, revision });
       }
       // A write re-checks the scope it started from and the one it produced, so a change can never move a record into a context the caller cannot see. Throwing is how a draft is discarded: the store writes nothing when this callback throws.
       const scopeHeld = assertScopeUnchangedUnder(session, input.scope, applied.scope ?? input.scope, scopeAuthority);

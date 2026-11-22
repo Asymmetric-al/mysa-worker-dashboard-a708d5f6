@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { CalendarXIcon, ClockIcon, EyeOffIcon, HourglassIcon, TriangleAlertIcon } from "lucide-react";
-import type { ReactElement, ReactNode } from "react";
+import { useId, type ReactElement, type ReactNode } from "react";
 import SimulationLabel from "@/components/simulation-label";
 import StateNotice from "@/components/state-notice";
 import StatusBadge, { COACHING_STATUS, statusBadgeProps, type StatusTone } from "@/components/status-badge";
@@ -17,7 +17,7 @@ import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { formatMinor, type MinorFormatting } from "@/modules/money/format";
 import { BASIS_DESCRIPTION, SUPPORT_BASIS } from "@/modules/support/basis";
 import { parseCivilDate, serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
-import { COACHING_COPY, FINANCIAL_RANGE_COPY, GRANT_STATE_COPY, MODULE_COPY, MODULE_READ_STATE_COPY, SHARING_OUTCOME_COPY, type SharingOutcomeCopy, type SharingOutcomeId } from "../copy";
+import { COACHING_COPY, FINANCIAL_RANGE_COPY, GRANT_STATE_COPY, MODULE_COMPLETE_COPY, MODULE_COPY, MODULE_READ_STATE_COPY, SHARING_OUTCOME_COPY, type SharingOutcomeCopy, type SharingOutcomeId } from "../copy";
 export type SharingOutcome = "reached" | "not-reached" | "unknown";
 export type SharingOutcomeSet = { readonly delivery: SharingOutcome; readonly identityVerification: SharingOutcome; readonly acceptance: SharingOutcome; readonly access: SharingOutcome };
 /** The availability of the grant, kept apart from its lifecycle state. */
@@ -55,8 +55,6 @@ function outcomeWord(entry: SharingOutcomeCopy, state: SharingOutcome): string {
   }
 }
 const MODULE_READ_STATE_TONE: Readonly<Record<ModuleReadState, StatusTone>> = { empty: "muted", partial: "info", withheld: "caution", unavailable: "danger", ended: "neutral" };
-const MODULE_SHARED_WORD = "Shared";
-const MODULE_SHARED_SENTENCE = "This module is switched on and your coach can read it inside the dates you chose. Nothing in it " + "is held, missing or unavailable.";
 const MODULE_OFF_WORD = "Switched off";
 const MODULE_OFF_SENTENCE = "This module is switched off, so your coach cannot read it.";
 const AVAILABILITY_COPY: Readonly<Record<SubjectAvailability, { label: string; description: string }>> = {
@@ -175,11 +173,13 @@ function StatementAlert({ icon, label, sentence }: { readonly icon: ReactElement
   );
 }
 function moduleWordAndTone(readState: ModuleReadState | null | undefined): { readonly label: string; readonly tone: StatusTone } {
+  // `undefined` is a module this grant does not share, and `null` is the read's own answer for a
+  // module whose content is complete: the null answer states the complete share, never an unknown one.
   if (readState === undefined) {
     return { label: MODULE_OFF_WORD, tone: "muted" };
   }
   if (readState === null) {
-    return { label: MODULE_SHARED_WORD, tone: "positive" };
+    return { label: MODULE_COMPLETE_COPY.label, tone: "positive" };
   }
   return { label: MODULE_READ_STATE_COPY[readState].label, tone: MODULE_READ_STATE_TONE[readState] };
 }
@@ -188,7 +188,7 @@ function ModuleStatement({ readState }: { readonly readState: ModuleReadState | 
     return <p className="text-sm text-pretty text-muted-foreground">{MODULE_OFF_SENTENCE}</p>;
   }
   if (readState === null) {
-    return <p className="text-sm text-pretty text-muted-foreground">{MODULE_SHARED_SENTENCE}</p>;
+    return <p className="text-sm text-pretty text-muted-foreground">{MODULE_COMPLETE_COPY.description}</p>;
   }
   const copy = MODULE_READ_STATE_COPY[readState];
   switch (readState) {
@@ -205,7 +205,9 @@ function ModuleStatement({ readState }: { readonly readState: ModuleReadState | 
   }
 }
 export function SharingSummary({ grant, locale, unavailable, className }: SharingSummaryProps): ReactElement {
-  const headingId = "coaching-sharing-summary";
+  // The summary's own identity, minted per instance: a worker can hold several relationships, and each one's
+  // summary is a separately labelled region rather than a second element answering to the same ids.
+  const headingId = useId();
   const heading = COACHING_COPY.sharing.heading;
   if (unavailable !== undefined && unavailable !== null) {
     return <StateNotice kind="unavailable" headingLevel={2} title={heading} description={COACHING_COPY.sharing.unavailable} source={unavailable.source} className={className} />;

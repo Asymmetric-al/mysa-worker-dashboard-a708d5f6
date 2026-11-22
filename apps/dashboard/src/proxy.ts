@@ -2,10 +2,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isCommittedMediaFixturePath } from "@/lib/fixture-path-guard";
 import { isDevelopment } from "@/lib/guards";
-import { SESSION_COOKIE, readSessionId } from "@/lib/session-cookie";
+import { SESSION_COOKIE, SESSION_COOKIE_GRANT, readSessionId } from "@/lib/session-cookie";
 import { DEFAULT_SESSION_ID } from "@/modules/dev-runtime/seed";
-const SESSION_COOKIE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
-const SESSION_COOKIE_ATTRIBUTES = { httpOnly: true, sameSite: "lax", path: "/", maxAge: SESSION_COOKIE_MAX_AGE_SECONDS } as const;
 const FRAMEWORK_ASSET_PREFIX = "/_next/";
 function refuseFixturePath(): NextResponse {
   return new NextResponse(null, { status: 404, headers: { "cache-control": "no-store" } });
@@ -22,6 +20,6 @@ export default function proxy(request: NextRequest): NextResponse {
   const carriedCookieHeader = headers.get("cookie");
   headers.set("cookie", carriedCookieHeader === undefined ? `${SESSION_COOKIE}=${DEFAULT_SESSION_ID}` : `${carriedCookieHeader}; ${SESSION_COOKIE}=${DEFAULT_SESSION_ID}`);
   const response = NextResponse.next({ request: { headers } });
-  response.cookies.set(SESSION_COOKIE, DEFAULT_SESSION_ID, SESSION_COOKIE_ATTRIBUTES);
+  response.cookies.set(SESSION_COOKIE, DEFAULT_SESSION_ID, SESSION_COOKIE_GRANT);
   return response;
 }

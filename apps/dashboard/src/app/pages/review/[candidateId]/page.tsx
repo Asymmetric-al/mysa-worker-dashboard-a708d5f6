@@ -95,6 +95,8 @@ interface ReviewedCandidate {
   readonly renderedHtml: string;
   readonly mediaRenditions: NonNullable<ReviewEditionView["mediaRenditions"]>;
   readonly decisionRecord: NonNullable<ReviewEditionView["decisionRecord"]> | null;
+  /** Whether the principal reading this page wrote the frozen revision, as the candidate read states it. */
+  readonly reviewedByAuthor: boolean;
   /** The release standing at this edition's head, or `null` when the edition has published nothing to reach anyone. */
   readonly headRelease: ReviewableCandidate["headRelease"];
 }
@@ -141,6 +143,7 @@ function reviewedOf(data: ReviewableCandidate): ReviewedCandidate {
     // original is not among them, and a placement whose rendition is unavailable contributes none.
     mediaRenditions: data.placements.flatMap((placement) => placement.renditions.map((rendition) => ({ purpose: rendition.purpose, url: rendition.path }))),
     decisionRecord: data.review.recorded,
+    reviewedByAuthor: data.review.reviewedByAuthor,
     headRelease: data.headRelease,
   };
 }
@@ -153,7 +156,7 @@ function reviewedOf(data: ReviewableCandidate): ReviewedCandidate {
 function editionViewOf(edition: EditionView, documentId: string, reviewed: ReviewedCandidate | undefined): ReviewEditionView {
   const stated = { variantId: edition.variantId, locale: edition.locale, lifecycle: lifecycleOfEdition(documentId, edition), ...(edition.translation.status === "stale" ? { staleTranslation: true } : {}) };
   if (reviewed !== undefined && reviewed.variantId === edition.variantId) {
-    return { ...stated, candidateId: reviewed.candidateId, revisionId: reviewed.revisionId, contentChecksum: reviewed.contentChecksum, renderedHtml: reviewed.renderedHtml, mediaRenditions: reviewed.mediaRenditions, decisionRecord: reviewed.decisionRecord };
+    return { ...stated, candidateId: reviewed.candidateId, revisionId: reviewed.revisionId, contentChecksum: reviewed.contentChecksum, renderedHtml: reviewed.renderedHtml, mediaRenditions: reviewed.mediaRenditions, decisionRecord: reviewed.decisionRecord, reviewedByAuthor: reviewed.reviewedByAuthor };
   }
   return edition.candidateId === null ? stated : { ...stated, candidateId: edition.candidateId };
 }

@@ -63,7 +63,7 @@ import {
   type TargetVersion,
 } from "@/modules/coaching/target";
 import { TASK_SUMMARY_MAX_CODE_POINTS, safeTaskSummary, taskShareReadState, type TaskShare, type TaskShareSummaryState, type TaskStatus, type TaskSummaryDueDate } from "@/modules/coaching/taskshare";
-import type { Money } from "@/modules/money/amount";
+import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { exponentOf } from "@/modules/money/currency";
 import { BASIS_DESCRIPTION, SUPPORT_BASIS, type GiftRow, type SupportProjection } from "@/modules/support/basis";
 import { buildReportQuery, runReport, type ReportResult } from "@/modules/support/report";
@@ -231,6 +231,21 @@ function clampPageIndex(requested: number | undefined, totalPages: number): numb
 function countState(count: number | null): RecordedValueState {
   if (count === null) return "unavailable";
   return count === 0 ? "zero" : "value";
+}
+// The envelope derives `incomplete-subtotal` from the coverage it states for a whole read. A reviewed range carries the
+// coverage of the support source it was reported over, which this overview's own coverage does not describe, so the
+// figure's derived state is stated beside the figure itself and recorded here as the value it carries.
+function recordedStateOf(state: ValueState): RecordedValueState {
+  switch (state) {
+    case "incomplete-subtotal":
+      return "value";
+    case "value":
+    case "zero":
+    case "unknown":
+    case "withheld":
+    case "unavailable":
+      return state;
+  }
 }
 function actionOf(name: string, available: boolean, reason?: string): ReadAction {
   return available ? { name, available: true } : { name, available: false, reason: reason ?? "This action is not available here." };
@@ -461,6 +476,33 @@ function supportProjectionOf(state: CoachingState): SupportLoad {
   }
   return { ok: true, projection: { supportSubjectId: record.supportSubjectId, basis: record.basis, currencyExponents: record.currencyExponents, coverage: record.coverage, asOf: record.asOf, lastSourceUpdate: record.lastSourceUpdate, source: record.source, gifts, commitments } };
 }
+type WorkerFinancialRangeView = { readonly from: string; readonly to: string; readonly currency: string; readonly money: Money | null; readonly valueState: ValueState; readonly coverage: Coverage };
+// The coverage of a source nothing could be read from: no period is stated as covered, because stating one would claim a
+// completeness the outage never established.
+const UNSTATED_COVERAGE: Coverage = { from: null, to: null, state: "unknown" };
+/**
+ * One relationship's separately reviewed financial range as the worker's own surface reads it: the fixed period and the
+ * one currency the grant records, and the figure a coach would read for that period, computed by the one report path over
+ * the one named basis — so the worker's surface and the coach's cannot state different sums for one range.
+ *
+ * A source that cannot be read, or one this session's scenario reports down, projects the period with no figure at all
+ * and the state that names why: an unavailable range is never a zero, and it is never the last figure the store happened
+ * to hold. Coverage travels with the figure from the projection it was reported over, so a partial subtotal is stated as
+ * one on the surface that shows it.
+ */
+function workerFinancialRangeOf(range: { readonly from: string; readonly to: string; readonly currency: string }, support: SupportLoad, sourceDown: boolean, authority: Scope): WorkerFinancialRangeView {
+  const period = { from: range.from, to: range.to, currency: range.currency };
+  if (!support.ok) return { ...period, money: null, valueState: "unavailable", coverage: UNSTATED_COVERAGE };
+  const coverage = support.projection.coverage;
+  if (sourceDown) return { ...period, money: null, valueState: "unavailable", coverage };
+  const figures = receivedFiguresOf(support.projection, range, authority);
+  // A report the engine could not produce leaves the range's period and currency stated and its figure absent: the range
+  // itself is a recorded fact, and only what could not be read is withheld from the surface.
+  if (!figures.ok) return { ...period, money: null, valueState: "unavailable", coverage };
+  const figure = figures.value[0];
+  if (figure === undefined || figure.minorUnits === null) return { ...period, money: null, valueState: "unknown", coverage };
+  return { ...period, money: { currency: figure.currency, minorUnits: minorUnitsOf(figure.minorUnits) }, valueState: figure.valueState, coverage };
+}
 function dueDateOf(task: TaskRecord): TaskSummaryDueDate {
   if (task.dueOn === null) return { kind: "undated" };
   const date = civilDateOf(task.dueOn);
@@ -487,6 +529,17 @@ function taskSummaryObservation(states: readonly TaskShareSummaryState[]): Modul
 function taskStatusOf(task: TaskRecord | undefined): TaskStatus | null {
   return task === undefined ? null : task.status;
 }
+// The stored tasks indexed by their identity, built once per read: a read that resolves many shares resolves each against the same collection, so the collection is scanned once and each share is a lookup rather than another scan.
+// The first stored record for an identity is the one a scan of the collection returned, so a duplicate record never changes an answer.
+function tasksByIdOf(tasks: readonly TaskRecord[]): ReadonlyMap<string, TaskRecord> {
+  const byId = new Map<string, TaskRecord>();
+  for (const task of tasks) if (!byId.has(task.taskId)) byId.set(task.taskId, task);
+  return byId;
+}
+/** The same index restricted to one principal's own work, because a share is resolved only against the tasks its owner holds. */
+function ownedTasksByIdOf(tasks: readonly TaskRecord[], ownerPrincipalId: string): ReadonlyMap<string, TaskRecord> {
+  return tasksByIdOf(tasks.filter((task) => task.ownerPrincipalId === ownerPrincipalId));
+}
 function statedDurationViewOf(duration: GrantDuration | null, at: Temporal.Instant): CoachingDurationView {
   if (duration === null) return { kind: "none", shareThroughDate: null, frozenZone: null, cutoffInstant: null, boundedBy: null, boundInstant: null, openAtRead: false, remainingMilliseconds: null };
   const bound = duration.cutoffInstant ?? duration.sourceLimitInstant;
@@ -508,12 +561,13 @@ type CoachingOutcomesView = { readonly invitationIssued: boolean; readonly ident
 type AdmittedModuleView = { readonly module: ModuleKey; readonly readState: ModuleReadState | null };
 type WorkerRelationshipView = { readonly grantId: string; readonly recipientPrincipalId: string; readonly ministryIds: readonly string[]; readonly state: GrantLifecycleState } & { readonly modules: readonly CoachingModuleFlagView[]; readonly selectedModules: readonly ModuleKey[]; readonly sharesNothing: boolean } & {
   readonly availability: { readonly source: SubjectAvailability; readonly permissionHold: PermissionHold };
-} & { readonly admittedModules: readonly AdmittedModuleView[]; readonly duration: CoachingDurationView } & { readonly invitation: { readonly issuedAt: string; readonly expiresAt: string; readonly supersededBy: string | null; readonly acceptanceWindowOpen: boolean } } & {
-  readonly outcomes: CoachingOutcomesView;
-  readonly readRefusal: CoachingRefusal | null;
-  readonly revision: string;
+} & { readonly admittedModules: readonly AdmittedModuleView[]; readonly duration: CoachingDurationView } & { readonly financialRange: WorkerFinancialRangeView | null } & {
+  readonly invitation: { readonly issuedAt: string; readonly expiresAt: string; readonly supersededBy: string | null; readonly acceptanceWindowOpen: boolean };
+} & { readonly outcomes: CoachingOutcomesView; readonly readRefusal: CoachingRefusal | null; readonly revision: string };
+type CoachingOverviewView = { readonly preparation: readonly PrivatePreparationView[]; readonly relationships: readonly WorkerRelationshipView[]; readonly activeGrantId: string | null; readonly activeModuleCount: number; readonly invitableCoaches: readonly InvitableCoachView[] } & {
+  /** The currencies this session's support source holds, which a reviewed range must name exactly one of. */
+  readonly reviewedRangeCurrencies: readonly string[];
 };
-type CoachingOverviewView = { readonly preparation: readonly PrivatePreparationView[]; readonly relationships: readonly WorkerRelationshipView[]; readonly activeGrantId: string | null; readonly activeModuleCount: number };
 function latestPrivateNoteOf(notes: readonly PrivateNoteRecord[], partnerId: string, principalId: string): { readonly body: string; readonly updatedOn: string | null } | null {
   let latest: PrivateNoteRecord | null = null;
   let latestAt: Temporal.Instant | null = null;
@@ -529,6 +583,28 @@ function latestPrivateNoteOf(notes: readonly PrivateNoteRecord[], partnerId: str
   if (latest === null || latestAt === null) return null;
   const day = civilDateAt(latestAt, COACHING_PLANNING_ZONE);
   return { body: latest.body, updatedOn: day.status === "resolved" ? serialiseCivilDate(day.date) : null };
+}
+/** One person an invitation can name: the principal this session's own coaching records name as a coach, and nothing those records do not hold. */
+type InvitableCoachView = { readonly principalId: string; readonly displayName: string };
+/**
+ * The people an invitation can name, taken from this session's own coaching records — the coach principals its grants
+ * already name — rather than from the development runtime's persona catalogue, which belongs to the preview switcher,
+ * or from the store's listing of other sessions, which belong to whoever holds them: a session reads only its own
+ * documents, so no surface here enumerates another session's identity.
+ *
+ * One entry per distinct coach principal, the person acting left out because a worker cannot invite themselves, in
+ * code-unit order so two reads answer the same list. The record states no display name for a principal, so the opaque
+ * reference stands as the name a choice shows rather than a name resolved from another record. A worker whose records
+ * name nobody as a coach is offered nobody, and the form states that rather than this read inventing a person.
+ */
+function invitableCoachesOf(coachPrincipalIds: readonly string[], actingPrincipalId: string): readonly InvitableCoachView[] {
+  const coaches = new Map<string, InvitableCoachView>();
+  for (const principalId of coachPrincipalIds) {
+    // A worker is never offered themselves as their own coach, and one principal named by several grants is offered once.
+    if (principalId === actingPrincipalId || coaches.has(principalId)) continue;
+    coaches.set(principalId, { principalId, displayName: principalId });
+  }
+  return Array.from(coaches.values()).toSorted((one, two) => compareCodeUnits(one.principalId, two.principalId));
 }
 /** The worker's own preparation and sharing situation. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readCoachingOverview(): Promise<ReadResult<ReadEnvelope<CoachingOverviewView>>> {
@@ -590,8 +666,15 @@ export async function readCoachingOverview(): Promise<ReadResult<ReadEnvelope<Co
       activeGrantId = record.grantId;
       activeModuleCount = selectedModules.length;
     }
+    // The separately reviewed financial range this relationship records, read for the worker's own surface: its period,
+    // its one currency, and the figure a coach would read for that period. The support source is assembled only for a
+    // record that states a range, so a relationship sharing no figures records no outage this read never asked for.
+    const storedRange = reviewedRangeOf(record);
+    const rangeSource: SupportLoad | null = storedRange === null ? null : supportLoad();
+    const financialRange: WorkerFinancialRangeView | null = storedRange === null || rangeSource === null ? null : workerFinancialRangeOf(storedRange, rangeSource, moduleSourceReportedDown(session, "support-results"), scope);
     const index = relationships.length;
     valueStates[`relationships.${index}.duration.remainingMilliseconds`] = countState(episode === null ? null : episode.remainingMilliseconds);
+    if (financialRange !== null) valueStates[`relationships.${index}.financialRange.money`] = recordedStateOf(financialRange.valueState);
     relationships.push({
       grantId: record.grantId,
       recipientPrincipalId: record.coachPrincipalId,
@@ -603,6 +686,7 @@ export async function readCoachingOverview(): Promise<ReadResult<ReadEnvelope<Co
       availability,
       admittedModules,
       duration: episode === null ? statedDurationViewOf(working.value.duration, at) : durationViewOf(episode),
+      financialRange,
       invitation: { issuedAt: record.invitation.issuedAt, expiresAt: record.invitation.expiresAt, supersededBy: record.invitation.supersededBy, acceptanceWindowOpen: record.state === "invited" && record.invitation.supersededBy === null && expiresAt !== null && Temporal.Instant.compare(at, expiresAt) < 0 },
       outcomes: { invitationIssued: true, identityVerified: working.value.identityVerification === "verified", accepted: working.value.acceptedAt !== null, accessLive: episode !== null },
       readRefusal,
@@ -610,6 +694,19 @@ export async function readCoachingOverview(): Promise<ReadResult<ReadEnvelope<Co
     });
   }
   relationships.sort((one, two) => compareCodeUnits(one.grantId, two.grantId));
+  // The invitation's recipient list is read here, in this read, because it is a projection over the relationships this
+  // read already resolved: the principal each of them names as its coach. No second read is added for it, and nothing
+  // outside this session's own document is consulted — the store keeps one document per session and a session reads
+  // only its own.
+  const invitableCoaches = invitableCoachesOf(
+    relationships.map((relationship) => relationship.recipientPrincipalId),
+    session.principalId,
+  );
+  // The currencies this session's support source holds, in code-unit order. A reviewed range names exactly one of them —
+  // the invitation mutation refuses a currency the source does not hold — so the invitation control offers this closed
+  // list instead of free text. A session whose source holds no projection at all states none, and the form offers no range
+  // at all rather than a figure nothing could have measured.
+  const reviewedRangeCurrencies = state.supportProjection === null ? [] : Object.keys(state.supportProjection.currencyExponents).toSorted(compareCodeUnits);
   valueStates.activeModuleCount = countState(activeModuleCount);
   const anyLive = relationships.some((relationship) => relationship.outcomes.accessLive);
   const actions: readonly ReadAction[] = [
@@ -619,7 +716,7 @@ export async function readCoachingOverview(): Promise<ReadResult<ReadEnvelope<Co
     actionOf("endCoaching", anyLive, "No live coaching relationship covers this ministry, so there is nothing to end."),
   ];
   const envelope = buildEnvelope({
-    data: { preparation, relationships, activeGrantId, activeModuleCount },
+    data: { preparation, relationships, activeGrantId, activeModuleCount, invitableCoaches, reviewedRangeCurrencies },
     scope,
     source: { system: LOCAL_STORE_SYSTEM, reference: COACHING_SOURCE_REFERENCE },
     revision: collectionRevision(relationships.map((relationship) => ({ id: relationship.grantId, revision: relationship.revision }))),
@@ -882,13 +979,34 @@ function workingCheckInOf(record: CoachingCheckInRecord): Result<CheckIn, string
   }
   return ok({ checkInId: record.checkInId, revision: revisionNumberOf(record.revision), ...(privateDraft === undefined ? {} : { privateDraft }), ...(shared === undefined ? {} : { shared }) });
 }
-type WorkerTaskShareView = { readonly shareId: string; readonly occurrenceId: string; readonly state: TaskShareSummaryState; readonly description: string | null } & { readonly reviewedCodePoints: number; readonly reviewedAt: string; readonly dueDate: TaskDueDateView | null } & {
+type WorkerTaskShareView = { readonly shareId: string; readonly taskId: string; readonly occurrenceId: string; readonly state: TaskShareSummaryState; readonly description: string | null } & { readonly reviewedCodePoints: number; readonly reviewedAt: string; readonly dueDate: TaskDueDateView | null } & {
   readonly status: TaskStatus | null;
   readonly revision: number;
   readonly withdrawnAt: string | null;
 } & { readonly successorSelectionRequired: boolean };
-type TaskSharesView = { readonly shares: readonly WorkerTaskShareView[]; readonly page: CoachingPageView; readonly maxCodePoints: number; readonly sharesNothing: boolean };
-/** The task summaries the worker selected for sharing, and how each one stands now. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
+// One task the worker may share a summary of, as the envelope states it: the task's identity, the label it is chosen by, the civil day it is due, the status it holds now, the fingerprint of the meaning a description is reviewed against, and the task's own revision.
+// A share attempt presents that revision because the service compares it before it writes, so the revision the surface read and the revision the write expects are the same record's.
+type TaskSummaryCandidateView = { readonly taskId: string; readonly safeLabel: string; readonly dueDate: TaskDueDateView; readonly status: TaskStatus; readonly isRecurringSuccessor: boolean; readonly reviewedFingerprint: string; readonly revision: string };
+type TaskSharesView = { readonly candidates: readonly TaskSummaryCandidateView[]; readonly shares: readonly WorkerTaskShareView[]; readonly page: CoachingPageView; readonly maxCodePoints: number; readonly sharesNothing: boolean };
+/**
+ * The worker's own tasks as shareable candidates, in one deterministic order so two reads of the same records offer the same list.
+ *
+ * A repeating task is not offered. The service shares one occurrence of a repeating task only when the payload names
+ * that occurrence, and no read states an occurrence identity for a repeating task's current occurrence, so a candidate
+ * for one would be a choice no surface could complete: the selector would have to tell the worker to pick an occurrence
+ * it does not offer. The task stays exactly where it is on Work; nothing about it is hidden or changed here, and a read
+ * that later states occurrences is what would make it offerable.
+ *
+ * The label is the task's own title, which is the worker's private choosing surface: every coach-facing projection in
+ * this file carries the reviewed description, the due date and the status, and no title at all.
+ */
+function taskSummaryCandidatesOf(tasks: readonly TaskRecord[]): readonly TaskSummaryCandidateView[] {
+  return tasks
+    .filter((task) => task.seriesId === null)
+    .map((task) => ({ taskId: task.taskId, safeLabel: task.title, dueDate: dueDateViewOf(dueDateOf(task)), status: task.status, isRecurringSuccessor: false, reviewedFingerprint: taskReviewedFingerprint(task), revision: task.revision }))
+    .sort((one, two) => compareCodeUnits(one.taskId, two.taskId));
+}
+/** The tasks a summary may be shared from and the summaries the worker selected for sharing, each with how it stands now. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readTaskShares(input: { readonly page?: number; readonly pageSize?: number } = {}): Promise<ReadResult<ReadEnvelope<TaskSharesView>>> {
   const loaded = await loadCoachingState("readTaskShares");
   if (!loaded.ok) return loaded.result;
@@ -896,9 +1014,11 @@ export async function readTaskShares(input: { readonly page?: number; readonly p
   if (!scoped.ok) return scoped.result;
   const { session, state, at } = loaded.context;
   const valueStates: Record<string, RecordedValueState> = {};
+  // The worker's own tasks indexed once: every share below resolves against this index rather than scanning the collection, and the same index answers which tasks may be shared next.
+  const tasksById = ownedTasksByIdOf(state.tasks, session.principalId);
   const shares: WorkerTaskShareView[] = [];
   for (const stored of state.coachingTaskShares ?? []) {
-    const task = state.tasks.find((candidate) => candidate.taskId === stored.taskId && candidate.ownerPrincipalId === session.principalId);
+    const task = tasksById.get(stored.taskId);
     const working = workingShareOf(stored);
     const sourceAvailable = working !== null && task !== undefined;
     const currentFingerprint = task === undefined ? undefined : taskReviewedFingerprint(task);
@@ -911,6 +1031,7 @@ export async function readTaskShares(input: { readonly page?: number; readonly p
     const currentSummary = summaryResult !== null && summaryResult.state === "shared" ? summaryResult : null;
     shares.push({
       shareId: stored.shareId,
+      taskId: stored.taskId,
       occurrenceId: stored.occurrenceId,
       state: shareState,
       description: currentSummary === null ? null : currentSummary.description,
@@ -929,7 +1050,7 @@ export async function readTaskShares(input: { readonly page?: number; readonly p
     valueStates[`shares.${index}.reviewedCodePoints`] = countState(share.reviewedCodePoints);
   });
   const envelope = buildEnvelope({
-    data: { shares: paged.items, page: paged.page, maxCodePoints: TASK_SUMMARY_MAX_CODE_POINTS, sharesNothing: shares.every((share) => share.state !== "shared") },
+    data: { candidates: taskSummaryCandidatesOf([...tasksById.values()]), shares: paged.items, page: paged.page, maxCodePoints: TASK_SUMMARY_MAX_CODE_POINTS, sharesNothing: shares.every((share) => share.state !== "shared") },
     scope: scoped.scope,
     source: { system: LOCAL_STORE_SYSTEM, reference: "coaching-task-shares" },
     revision: collectionRevision(shares.map((share) => ({ id: share.shareId, revision: String(share.revision) }))),
@@ -1076,7 +1197,9 @@ function observationOf(module: ModuleKey, state: CoachingState, support: Support
     }
     case "task-summaries": {
       const shares = (state.coachingTaskShares ?? []).filter((share) => share.state === "shared");
-      const states = shares.map((share) => taskShareSummaryStateOf(share, state.tasks));
+      // The collection is indexed once for the module rather than scanned for every share, so what a share's task states is a lookup.
+      const tasksById = tasksByIdOf(state.tasks);
+      const states = shares.map((share) => taskShareSummaryStateOf(share, tasksById));
       return taskSummaryObservation(states);
     }
     case "support-goal": {
@@ -1091,9 +1214,9 @@ function observationOf(module: ModuleKey, state: CoachingState, support: Support
       return { presence: "none", withheldUntilReReviewed: false };
   }
 }
-function taskShareSummaryStateOf(share: StoredCoachingTaskShare, tasks: readonly TaskRecord[]): TaskShareSummaryState {
+function taskShareSummaryStateOf(share: StoredCoachingTaskShare, tasksById: ReadonlyMap<string, TaskRecord>): TaskShareSummaryState {
   const working = workingShareOf(share);
-  const task = tasks.find((candidate) => candidate.taskId === share.taskId);
+  const task = tasksById.get(share.taskId);
   if (working === null) return "unavailable";
   return taskShareReadState({ share: working, currentFingerprint: task === undefined ? undefined : taskReviewedFingerprint(task), sourceAvailable: task !== undefined });
 }
@@ -1133,10 +1256,10 @@ function coachSharedCheckInsOf(state: CoachingState, grantId: string): readonly 
   }
   return shared;
 }
-function coachTaskSummariesOf(state: CoachingState, workerPrincipalId: string): readonly CoachTaskSummaryView[] {
+function coachTaskSummariesOf(state: CoachingState, tasksById: ReadonlyMap<string, TaskRecord>): readonly CoachTaskSummaryView[] {
   const summaries: CoachTaskSummaryView[] = [];
   for (const stored of state.coachingTaskShares ?? []) {
-    const task = state.tasks.find((candidate) => candidate.taskId === stored.taskId && candidate.ownerPrincipalId === workerPrincipalId);
+    const task = tasksById.get(stored.taskId);
     if (task === undefined) continue;
     const working = workingShareOf(stored);
     const readState = working === null ? "unavailable" : taskShareReadState({ share: working, currentFingerprint: task === undefined ? undefined : taskReviewedFingerprint(task), sourceAvailable: task !== undefined });
@@ -1180,7 +1303,7 @@ function coachModulesOf(context: CoachingReadContext, working: CoachingGrant, re
         views.push({ module: key, ...base, sharedCheckIns: coachSharedCheckInsOf(state, working.grantId) });
         break;
       case "task-summaries":
-        views.push({ module: key, ...base, summaries: coachTaskSummariesOf(state, working.workerPrincipalId) });
+        views.push({ module: key, ...base, summaries: coachTaskSummariesOf(state, ownedTasksByIdOf(state.tasks, working.workerPrincipalId)) });
         break;
       case "support-goal":
         // A goal is a figure like any other: a module whose source is down states no goal at all, rather than the last goal the store happens to hold.

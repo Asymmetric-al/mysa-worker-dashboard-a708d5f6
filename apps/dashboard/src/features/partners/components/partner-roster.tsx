@@ -22,6 +22,11 @@
  * the family's tag and favourite controls beside a record, and rows carry no selection at all, because a selection is
  * never an audience, a consent or a campaign.
  *
+ * **One record, three presentations.** A row is also a place a record opens: one row action opens it in the shared
+ * shell beside the list on a desktop and as the sheet on a phone, and that shell hosts the family's own detail body
+ * rather than a second one (AAP 0.6.4, 0.3.4). The name and the `Open` action keep navigating to the record's own
+ * route, so the direct address stays the direct entry and the list stays visible while the panel is open.
+ *
  * **The address owns the query.** `useRosterQuery` parses the search, the filters, the ordering, the page and the
  * column set out of the URL and writes every change back to it, so opening a record and returning re-issues the
  * identical read and the browser restores the list where it was left (AAP 0.1.1 Continuity). This file therefore
@@ -29,12 +34,14 @@
  */
 import Link from "next/link";
 import { ChevronRightIcon } from "lucide-react";
-import { useMemo, type ReactElement, type ReactNode } from "react";
+import { useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { RecordList, type RecordListColumnDef, type RecordListQueryState, type SortDescriptor } from "@/components/record-list";
+import SidePanel from "@/components/side-panel";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { valueStateWord } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { useIsMobile } from "@/components/ui/use-mobile";
 import { cn } from "@/lib/cn";
 import type { ContactMethodKind, PartnerKind, ReadEnvelope, RecordAudience, Scope, ValueState } from "@/modules/data-service/envelope";
 import type { ReadResult } from "@/modules/data-service/outcome";
@@ -43,6 +50,7 @@ import { PARTNER_ACTION_LABELS, SURFACE_STATE_COPY, VALUE_STATE_COPY } from "../
 import { ROSTER_PAGE_SIZE_CAP, ROSTER_PAGE_SIZE_DEFAULT, useRosterQuery, type RosterEnvelope, type RosterSort } from "../hooks/use-roster-query";
 import ColumnChooser, { PARTNER_COLUMN_KEYS, admittedPartnerColumns, type PartnerColumn, type PartnerColumnKey } from "./column-chooser";
 import { PartnerFacets } from "./partner-facets";
+import PartnerRecordPanel from "./partner-record-panel";
 import SavedViewBar from "./saved-view-bar";
 
 // ---------------------------------------------------------------------------------------------
@@ -163,6 +171,9 @@ const ROSTER_COPY = {
   emptyAction: "Import a contact list",
   emptyActionNote: "A contact list is imported into this ministry and reviewed row by row before anything is accepted.",
   openRecord: (name: string): string => `Open ${name}`,
+  openBeside: "Open",
+  openBesideNote: (name: string): string => ` ${name} beside the list`,
+  panelTitle: "Partner record",
   noPermittedContact: "No permitted contact method",
   noTags: "No tag",
   noStage: "No relationship label recorded",
@@ -542,6 +553,27 @@ function OpenRecordAction({ row }: { readonly row: PartnerRosterRow }): ReactEle
   );
 }
 
+/**
+ * The row action that opens the record beside the list. Its visible word is the same on every row, so the hidden half
+ * names the record it opens and where it opens it: one control never reads as a second way to the record's own page.
+ */
+function OpenBesideAction({ row, onOpen }: { readonly row: PartnerRosterRow; readonly onOpen: (partnerId: string) => void }): ReactElement {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      onClick={() => {
+        onOpen(row.partner.partnerId);
+      }}
+      className="max-w-full whitespace-normal"
+    >
+      {ROSTER_COPY.openBeside}
+      <span className="sr-only">{ROSTER_COPY.openBesideNote(nameOf(row))}</span>
+    </Button>
+  );
+}
+
 // ---------------------------------------------------------------------------------------------
 // The surface
 // ---------------------------------------------------------------------------------------------
@@ -606,6 +638,22 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
   const columns = useMemo(() => rosterColumns(admitted, states), [admitted, states]);
   const busy = roster.roster.isFetching || roster.facets.isFetching;
   const hasActiveFilters = roster.query.search !== "" || Object.keys(roster.query.facets).length > 0;
+  // The record opened beside the list, held as the identifier the read named so the panel's own reads stay keyed by the
+  // record rather than by its position on a page. Its label is read back from the page on screen and falls back to that
+  // identifier where a filter change has since moved the row out of the page: the record the panel reads is still the
+  // one the worker opened, and the shell's title never states a name this page no longer holds.
+  const [openPartnerId, setOpenPartnerId] = useState<string | null>(null);
+  const isMobile = useIsMobile();
+  const openRow = openPartnerId === null ? null : (envelope?.data.rows.find((row) => row.partner.partnerId === openPartnerId) ?? null);
+  const openLabel = openPartnerId === null ? null : openRow === null ? openPartnerId : nameOf(openRow);
+  const openBeside = (partnerId: string): void => {
+    setOpenPartnerId(partnerId);
+  };
+  // Only a close clears the selection: the shell reports the state it moved to, and a report of `true` leaves the row
+  // the panel was opened from in place rather than replacing it with nothing.
+  const closePanel = (open: boolean): void => {
+    if (!open) setOpenPartnerId(null);
+  };
   // The preset's state and the read's query are one state: the address owns it, so a page, a sort and a visible column
   // set are the same facts here, in the handler and in the request.
   const queryState: RecordListQueryState = { sort: sortDescriptorsOf(roster.query.sort), page: roster.query.page, pageSize: roster.query.pageSize, columnVisibility: roster.query.columnVisibility };
@@ -701,7 +749,12 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
             rowLabel={partnerRowLabel}
             queryState={queryState}
             onQueryStateChange={changeQueryState}
-            rowActions={rowActions === undefined ? (row) => <OpenRecordAction row={row} /> : (row) => rowActions(row)}
+            rowActions={(row) => (
+              <span className="inline-flex min-w-0 items-center justify-end gap-1">
+                <OpenBesideAction row={row} onOpen={openBeside} />
+                {rowActions === undefined ? <OpenRecordAction row={row} /> : rowActions(row)}
+              </span>
+            )}
             emptyAction={emptyAction === undefined ? <ImportFirstAction /> : emptyAction}
             itemNoun={ITEM_NOUN}
             pageSizeOptions={PAGE_SIZE_OPTIONS}
@@ -749,8 +802,24 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
         </div>
         {filtersNotice()}
       </div>
-      {rosterBody()}
-      {envelope === null ? null : <RosterNotes envelope={envelope} />}
+      {/* The list and the record it opens sit side by side from the width the shared shell presents a column beside a
+          list, so the filtered list stays in view while the record is read; below it they are one column and the record
+          is the sheet the phone shows. */}
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start">
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
+          {rosterBody()}
+          {envelope === null ? null : <RosterNotes envelope={envelope} />}
+        </div>
+        {/* Always mounted, outside the list, so a panel that closes returns focus to the row control that opened it. The
+            body is the family's own detail body: the panel is a presentation of the record, never a second one. */}
+        <SidePanel
+          open={openPartnerId !== null}
+          onOpenChange={closePanel}
+          variant={isMobile ? "phone" : "desktop"}
+          title={openLabel === null ? ROSTER_COPY.panelTitle : `${ROSTER_COPY.panelTitle}, ${openLabel}`}
+          body={openPartnerId === null ? null : <PartnerRecordPanel scope={scope} partnerId={openPartnerId} layout={isMobile ? "sheet" : "panel"} />}
+        />
+      </div>
     </div>
   );
 }

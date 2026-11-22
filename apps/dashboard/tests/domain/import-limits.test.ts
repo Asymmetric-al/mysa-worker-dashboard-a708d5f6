@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { IMPORT_DECISION_KINDS, createDecisionSet, recordDecision, summariseDecisions, type ImportDecisionContext, type ImportDecisionInput } from "@/modules/import/decide";
 import { confirmMapping, suggestMapping, type ImportConfirmedMapping, type ImportSuggestedMapping } from "@/modules/import/map";
 import { IMPORT_LIMIT_DESCRIPTORS, IMPORT_MAX_BYTES, IMPORT_MAX_CELL_CODE_POINTS, IMPORT_MAX_COLUMNS, IMPORT_MAX_DATA_ROWS, checkLimits, parseCsv, type AdmittedImportFile, type ImportLimitCheckResult, type ImportRefusal, type ParsedCsvFile } from "@/modules/import/parse";
-import { suggestMatches, validateRows, type ImportMatchCandidate, type ImportValidatedRow, type ImportValidation } from "@/modules/import/validate";
+import { flagDuplicateLookingRows, suggestMatches, validateRows, type ImportMatchCandidate, type ImportValidatedRow, type ImportValidation } from "@/modules/import/validate";
 const ENCODER = new TextEncoder();
 function bytesOf(text: string): Uint8Array {
   return ENCODER.encode(text);
@@ -381,5 +381,58 @@ describe("import mapping: headers are positions, never identities", () => {
     expect(summary.summary.facts).toEqual({ memberships: 0, consentRecords: 0, audienceMembers: 0, preservedColumnsCreateNothing: true });
     expect(summary.summary.consentLookingColumnCount).toBe(1);
     expect(summary.summary.preservedColumns.filter((column) => column.statesConsent).map((column) => column.header)).toEqual(["Subscribed"]);
+  });
+});
+describe("import review: rows of one file that look alike", () => {
+  it("flags the two rows of one name that share no contact method, both ways and only them", async () => {
+    const { validation } = await importFixture();
+    const sameName = validation.rows.filter((row) => row.mappedCells.some((cell) => cell.fieldId === "name-given" && cell.value.trim() === "Tomas"));
+    expect(sameName.map((row) => row.rowNumber)).toEqual([10, 11]);
+    const flagged = flagDuplicateLookingRows(validation.rows);
+    expect([...flagged.keys()].sort((left, right) => left - right)).toEqual([10, 11]);
+    for (const row of sameName) {
+      const flag = mustFind(flagged.get(row.rowNumber), `the look-alike flag of row ${row.rowNumber}`);
+      expect(flag.name).toBe("Tomas Rivera");
+      expect(flag.otherRowNumbers).toEqual([row.rowNumber === 10 ? 11 : 10]);
+      // A look-alike is a signal and no more: it names no reference of its own, and the row keeps the verdict validation
+      // graded, so nothing is merged and no decision and no count moves.
+      expect(Object.keys(flag).sort()).toEqual(["name", "otherRowNumbers", "rowNumber"]);
+      expect(row.verdict).toBe("ready");
+    }
+    // The pass reads the graded rows and returns a signal beside them: no count and no other row's verdict moves.
+    expect(validation.counts.ready).toBe(22);
+    expect(validation.counts.needsCorrection).toBe(3);
+  });
+  it("folds case and spacing when it compares two names", async () => {
+    const file = await parsedFile(
+      csvWith(
+        ["First name", "Last name", "Email"],
+        [
+          ["Siobhán", "Ní Bhraonáin", "siobhan.nb@example.org"],
+          ["SIOBHÁN", "NÍ  BHRAONÁIN", "s.nibhraonain@example.net"],
+        ],
+      ),
+    );
+    const flagged = flagDuplicateLookingRows(validateRows(file, confirmedMappingFor(file)).rows);
+    expect([...flagged.keys()].sort((left, right) => left - right)).toEqual([1, 2]);
+    expect(mustFind(flagged.get(2), "the second row's look-alike flag").otherRowNumbers).toEqual([1]);
+  });
+  it("does not flag a name carried once, or two rows that already share an email address", async () => {
+    const file = await parsedFile(
+      csvWith(
+        ["First name", "Last name", "Email"],
+        [
+          ["Ada", "Lovelace", "ada.lovelace@example.org"],
+          ["Grace", "Hopper", "grace.hopper@example.org"],
+          ["GRACE", "Hopper", "Grace.Hopper@example.org"],
+          ["Marie", "Curie", "marie.curie@example.org"],
+          ["Marie", "Curie", "m.curie@example.net"],
+        ],
+      ),
+    );
+    const validation = validateRows(file, confirmedMappingFor(file));
+    // Rows 2 and 3 already agree on the address, so they are a reuse question rather than a file carrying one person
+    // twice; rows 1 and 4 carry names nothing else in the file repeats; rows 4 and 5 are the only look-alike pair.
+    expect([...flagDuplicateLookingRows(validation.rows).keys()].sort((left, right) => left - right)).toEqual([4, 5]);
   });
 });

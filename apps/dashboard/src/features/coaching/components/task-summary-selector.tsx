@@ -8,11 +8,12 @@
  * `invalid`, `unavailable` or `unknown`.
  *
  * What leaves this surface is exactly the reviewed description plus the task's live due date and live
- * status. No field here carries the task's own title, notes, donor, amounts, attachments, source
- * reference, links or history, and a task's raw title is never rendered into anything this component
- * submits. A repeating task's successor occurrence is shared only after a fresh selection in this
- * session, so nothing is inherited from the occurrence shared before it. Stopping a share is a
- * different action on a different surface, and it leaves the task itself untouched.
+ * status. No field it submits carries the task's own title, notes, donor, amounts, attachments, source
+ * reference, links or history: the raw title is rendered only as the worker's own label for choosing a
+ * task, and never into anything this component submits. A repeating task's successor occurrence is shared
+ * only after a fresh selection in this session, so nothing is inherited from the occurrence shared before
+ * it. Stopping a share is a different action on a different surface, and it leaves the task itself
+ * untouched.
  */
 import { useCallback, useId, useMemo, useState, type ReactElement } from "react";
 import { Temporal } from "temporal-polyfill";
@@ -30,7 +31,7 @@ import { cn } from "@/lib/cn";
 import { TASK_SUMMARY_MAX_CODE_POINTS, reviewTaskSummary, selectSuccessorForSharing, type TaskShare, type TaskShareRefusalReason, type TaskShareSummaryState, type TaskStatus } from "@/modules/coaching/taskshare";
 import type { MutationInput, Scope } from "@/modules/data-service/envelope";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
-import { serialiseCivilDate, type CivilDate, type DatePrecision } from "@/modules/time/civil";
+import type { DatePrecision } from "@/modules/time/civil";
 import { COACHING_COPY, LIMIT_COPY, MODULE_COPY, TASK_SHARE_STATE_COPY } from "../copy";
 import { useShareTaskSummary } from "../hooks/use-coaching-mutations";
 import { taskSharePayloadSchema, type TaskSharePayload } from "../schemas/taskshare";
@@ -79,7 +80,7 @@ const EMPTY_BODY = "A summary is shared from a task you already have. Add the wo
 const EMPTY_ACTION_LABEL = "Go to Work";
 const EMPTY_ACTION_HREF = "/work";
 const OCCURRENCE_MISSING_HEADING = "This occurrence cannot be shared yet";
-const OCCURRENCE_MISSING_BODY = "The list did not say which occurrence of this repeating task this is, so nothing can be shared from it. Reload the list and choose the occurrence again.";
+const OCCURRENCE_MISSING_BODY = "This task repeats, and the list states no occurrence of it: a repeating task's summary is shared only for the occurrence you select, so nothing can be shared from it here. The task itself is unchanged, and a summary can still be shared from a task that does not repeat.";
 const FINGERPRINT_MISSING_HEADING = "This task cannot be shared yet";
 const FINGERPRINT_MISSING_BODY = "The list did not carry the fingerprint of this task's reviewed meaning, so a description could not be tied to what was reviewed. Reload the list and choose the task again.";
 const RELOAD_LABEL = "Reload the list";
@@ -124,14 +125,20 @@ const REFUSAL_COPY: Readonly<Record<Exclude<TaskShareRefusalReason, "description
 export type TaskSummaryCandidate = {
   /** The task this summary is of. */
   readonly taskId: string;
-  /** The worker's own neutral label for choosing among tasks. It is not the task's title and never leaves this surface. */
+  /** The worker's own label for choosing among tasks: the task's title, which is the worker's private choosing surface and is never submitted to the service or shown to a coach. */
   readonly safeLabel: string;
-  /** The civil due date, or `null` when the task carries none. A calendar day is never turned into an instant here. */
-  readonly dueOn: CivilDate | null;
+  /** The civil due day as the envelope states it, a `YYYY-MM-DD` day carrying no zone and no instant behind it, or `null` when the task carries none. */
+  readonly dueOn: string | null;
   readonly duePrecision: DatePrecision;
   readonly status: TaskStatus;
   /** Whether this is a new occurrence of a repeating task, which requires a fresh selection in this session. */
   readonly isRecurringSuccessor: boolean;
+  /**
+   * The task's own revision, as the envelope stated it. A share attempt presents it, because the service
+   * compares the revision of the task the summary is written against, so a task that moved since the list was
+   * read settles as a conflict rather than sharing a description of something else.
+   */
+  readonly revision: string;
   /**
    * The occurrence this description would be shared for, where the task repeats. The service shares a
    * repeating task's occurrence only when the payload names it.
@@ -162,8 +169,6 @@ export type TaskSummarySelectorProps = {
   readonly existing: ReadonlyArray<TaskSummaryExistingShare>;
   /** The context the command is submitted in. The service re-resolves it, so this is a claim the caller makes and not an authority it grants. */
   readonly scope: Scope;
-  /** The revision the caller read. A summary that moved settles as a conflict rather than overwriting. */
-  readonly expectedRevision: string;
   /** The locale the worker writes in, set on the authored text only, never on the surrounding interface copy. */
   readonly locale: string;
   /**
@@ -218,9 +223,9 @@ function dueTextOf(candidate: TaskSummaryCandidate): string {
   if (date === null) return NO_DUE_DATE;
   switch (candidate.duePrecision) {
     case "date":
-      return serialiseCivilDate(date);
+      return date;
     case "approximate":
-      return `${DUE_APPROXIMATE_PREFIX}${serialiseCivilDate(date)}`;
+      return `${DUE_APPROXIMATE_PREFIX}${date}`;
     case "unknown":
       return DATE_NOT_KNOWN;
   }
@@ -273,7 +278,8 @@ function decideShare({ selected, shares, description, selectedOccurrenceId, revi
   }
   const occurrenceId = selected.occurrenceId;
   if (selected.isRecurringSuccessor && occurrenceId === undefined) {
-    return { kind: "cannot", heading: OCCURRENCE_MISSING_HEADING, description: OCCURRENCE_MISSING_BODY, reloadable: true };
+    // No reload is offered here: the surface states that it can name no occurrence, so re-reading the same list would answer the same way.
+    return { kind: "cannot", heading: OCCURRENCE_MISSING_HEADING, description: OCCURRENCE_MISSING_BODY, reloadable: false };
   }
   let reviewedFingerprint = selected.reviewedFingerprint;
   if (selected.isRecurringSuccessor) {
@@ -420,7 +426,7 @@ type AttemptInput = Omit<MutationInput<TaskSharePayload>, "operationId">;
  * `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or
  * `unknown`.
  */
-export function TaskSummarySelector({ candidates, existing, scope, expectedRevision, locale, initialTaskId, asOf, onCheckResult, onReload, headingLevel = DEFAULT_HEADING_LEVEL, dir, className }: TaskSummarySelectorProps): ReactElement {
+export function TaskSummarySelector({ candidates, existing, scope, locale, initialTaskId, asOf, onCheckResult, onReload, headingLevel = DEFAULT_HEADING_LEVEL, dir, className }: TaskSummarySelectorProps): ReactElement {
   const { mutateAsync } = useShareTaskSummary();
   const headingId = useId();
   const counterId = useId();
@@ -440,10 +446,12 @@ export function TaskSummarySelector({ candidates, existing, scope, expectedRevis
   const reviewInstant = useMemo(() => reviewInstantOf(asOf), [asOf]);
   const selectedOccurrenceId = selected !== undefined && selectedOccurrence !== null && selectedOccurrence.taskId === selected.taskId ? selectedOccurrence.occurrenceId : undefined;
   const decision = useMemo<ShareDecision>(() => decideShare({ selected, shares: existing, description, selectedOccurrenceId, reviewInstant }), [selected, existing, description, selectedOccurrenceId, reviewInstant]);
-  const liveInput = useMemo<AttemptInput | null>(() => (decision.kind === "ready" ? { scope, expectedRevision, payload: decision.payload } : null), [decision, scope, expectedRevision]);
-  // An accepted share advances the collection's revision and the list beside this surface re-reads, which
-  // would otherwise read as a different intention and take the receipt away. Holding the intent that was
-  // submitted keeps the receipt where it is until the worker changes what it would apply.
+  // The revision presented with the attempt is the chosen task's own: the service compares the revision of the task
+  // the summary is written against, so the revision this surface read and the revision the write expects are the same
+  // record's, and a task that moved settles as a conflict rather than a description of something else.
+  const liveInput = useMemo<AttemptInput | null>(() => (decision.kind === "ready" && selected !== undefined ? { scope, expectedRevision: selected.revision, payload: decision.payload } : null), [decision, scope, selected]);
+  // A share settles the summary itself, so this surface's own live decision moves on and would take the receipt with
+  // it. Holding the intent that was submitted keeps the receipt where it is until the worker changes what it would apply.
   const receiptHolds = settled !== null && (settled.outcome === "accepted" || settled.outcome === "alreadyAccepted" || settled.outcome === "unchanged");
   const input = receiptHolds && submitted !== null ? submitted : liveInput;
   const clearReceipt = useCallback((): void => {

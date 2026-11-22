@@ -1,7 +1,15 @@
 /**
- * `/coaching/sharing` — the worker's invitation and grant surface: the named coach, the ministry a share
- * is scoped to, the five modules with the state a coach meets in each, the duration and the cutoff frozen
- * when it was accepted, the separately reviewed financial range, and the closed set of stop-type effects.
+ * `/coaching/sharing` — the worker's invitation and grant surface: every relationship the coaching read
+ * returns, each named by its own opaque grant and coach references, with the five modules and the state a
+ * coach meets in each, the duration and the cutoff frozen when it was accepted, the separately reviewed
+ * financial range, and the closed set of stop-type effects.
+ *
+ * One section per relationship, because one worker can hold more than one grant with the same coach in the
+ * same ministry: a surface that showed only the live grant it named first would leave a second grant — one a
+ * coach can still read through, and one nothing on the page had disclosed — standing after the first was
+ * revoked, so the page would read as if the revoke had changed nothing. Each section is built from its own
+ * relationship, with its own grant view, its own modules and its own stop controls, so no control on this
+ * page ever stands for another grant.
  *
  * The read is the authority for every fact here: this route composes the family's own components with the
  * envelope and derives nothing — no permission, no cutoff, no elapsed judgement and no count. A denial, an
@@ -10,15 +18,13 @@
  */
 import type { Metadata } from "next";
 import type { ReactElement } from "react";
-import { Temporal } from "temporal-polyfill";
 import StateNotice from "@/components/state-notice";
-import FinancialRangeReview from "@/features/coaching/components/financial-range-review";
+import FinancialRangeReview, { type SharedFinancialRange } from "@/features/coaching/components/financial-range-review";
 import InvitationForm, { type InvitationFormProps } from "@/features/coaching/components/invitation-form";
 import ModuleToggles, { type ModuleToggleEntry } from "@/features/coaching/components/module-toggles";
-import SharingSummary, { type CoachingGrantView, type GrantDurationView, type ModuleRead, type SharingOutcome } from "@/features/coaching/components/sharing-summary";
+import SharingSummary, { type CoachingGrantView, type FinancialRange, type GrantDurationView, type ModuleRead, type SharingOutcome } from "@/features/coaching/components/sharing-summary";
 import StopActions from "@/features/coaching/components/stop-actions";
 import { COACHING_COPY, type StopEffect } from "@/features/coaching/copy";
-import { compareCodeUnits } from "@/lib/ordering";
 import { reads } from "@/modules/data-service";
 
 /** The read's own members, taken from the service so a change to the envelope fails to compile here rather than drifting. */
@@ -26,12 +32,18 @@ type SharingResult = Awaited<ReturnType<typeof reads.coaching.readCoachingOvervi
 type SharingEnvelope = Extract<SharingResult, { readonly kind: "envelope" }>["envelope"];
 type SharingOverview = SharingEnvelope["data"];
 type SharingRelationship = SharingOverview["relationships"][number];
+type SharingScope = SharingEnvelope["scope"];
 type SharingCandidates = InvitationFormProps["candidates"];
 
 /** The interface language this route hands the client surfaces that format amounts and calendar dates. */
 const INTERFACE_LOCALE = "en-GB";
 const PAGE_CLASS = "flex min-w-0 flex-col gap-6 text-start";
 const PAGE_HEADING_CLASS = "text-2xl font-semibold text-pretty wrap-anywhere";
+/** One relationship's own section: its heading, the summary it states, and the controls that act on it alone. */
+const RELATIONSHIP_CLASS = "flex min-w-0 flex-col gap-4";
+const RELATIONSHIP_HEADING_CLASS = "text-lg font-semibold text-pretty wrap-anywhere";
+/** An opaque reference is rendered as the read reports it, so a reader sees the identity a record carries. */
+const IDENTIFIER_CLASS = "mono-identifier wrap-anywhere";
 
 /**
  * The stop-type effects a surface that names no module, check-in or task summary can apply. Switching a
@@ -47,27 +59,74 @@ const ACTING_ROLE = "worker";
 
 export const metadata: Metadata = { title: COACHING_COPY.sharing.heading };
 
-/**
- * Orders two relationships newest invitation first: the later stated instant wins, and two invitations issued at the
- * same instant are resolved on the greater `grantId`, so the order is the same on every render. The read refuses a
- * record whose invitation instants cannot be parsed, so every relationship here states an instant this can compare.
- */
-function byMostRecentlyInvited(one: SharingRelationship, two: SharingRelationship): number {
-  const order = Temporal.Instant.compare(Temporal.Instant.from(two.invitation.issuedAt), Temporal.Instant.from(one.invitation.issuedAt));
-  return order !== 0 ? order : compareCodeUnits(two.grantId, one.grantId);
+/** What one relationship's section is built from: the relationship itself, its place in the read, and the envelope it was read in. */
+interface RelationshipSectionProps {
+  readonly relationship: SharingRelationship;
+  readonly index: number;
+  readonly scope: SharingScope;
+  /** The instant the envelope was read at, which the range review states beside the figure it was read with. */
+  readonly asOf: string;
+  /** The grant-level effects the envelope published as available, offered on this relationship alone. */
+  readonly grantLevelEffects: readonly StopEffect[];
 }
 
 /**
- * The relationship this surface manages: the live episode when there is one, and otherwise the one the worker most
- * recently began. The surface manages the relationship in use, so once none is live it manages the last one the
- * worker started rather than whichever record the read happens to sort first — an unrelated earlier episode is not
- * the relationship these controls are about. The read states when each relationship began in its own invitation, so
- * that instant decides and `null` is answered only when the read holds no relationship at all.
+ * One relationship, disclosed in full and stoppable on its own: the grant and coach references it is known
+ * by, the state and duration it currently stands in, the reviewed financial range its own record states, the
+ * five modules with the state a coach meets in each, and the grant-level stop-type effects that act on this
+ * grant and no other.
+ *
+ * Every fact here comes from this relationship alone, so a worker who holds two grants with one coach reads
+ * each of them and can stop either; revoking one can never be mistaken for stopping the other. The reviewed
+ * range is one of those facts: it belongs to the grant that recorded it, so a relationship whose record states
+ * no range says so in its own section rather than standing for every relationship on the page.
+ *
+ * A relationship the read refused — a revoked, ended, expired or out-of-scope episode — states that refusal in
+ * the read's own words and offers neither a module switch nor a stop effect. Offering either would present a
+ * control the service refuses, and a module row there would describe sharing the read has already ended: a
+ * revoked grant whose rows still read "Shared" would claim an access the same section says has stopped.
  */
-function currentRelationshipOf(overview: SharingOverview): SharingRelationship | null {
-  const live = overview.relationships.find((relationship) => relationship.grantId === overview.activeGrantId);
-  if (live !== undefined) return live;
-  return overview.relationships.toSorted(byMostRecentlyInvited)[0] ?? null;
+function RelationshipSection({ relationship, index, scope, asOf, grantLevelEffects }: RelationshipSectionProps): ReactElement {
+  // The heading's identity is this section's own, so several relationships on one page keep distinct sections
+  // for a screen reader's outline rather than sharing one label.
+  const headingId = `coaching-relationship-${String(index)}`;
+  // The read's own refusal for this relationship, or `null` when it admitted the episode: the one fact that
+  // decides whether there is anything to switch or stop here at all.
+  const refusal = relationship.readRefusal;
+  return (
+    <section data-slot="coaching-relationship" data-grant={relationship.grantId} data-state={relationship.state} aria-labelledby={headingId} className={RELATIONSHIP_CLASS}>
+      {/*
+        Both references are opaque and are shown exactly as the read reports them: the grant a stop-type effect
+        names, and the principal the coach acts as. Neither is parsed, shortened or resolved to a name here.
+      */}
+      <h2 id={headingId} className={RELATIONSHIP_HEADING_CLASS}>
+        Sharing with <bdi className={IDENTIFIER_CLASS}>{relationship.recipientPrincipalId}</bdi> under <bdi className={IDENTIFIER_CLASS}>{relationship.grantId}</bdi>
+      </h2>
+      <SharingSummary grant={grantViewOf(relationship)} locale={INTERFACE_LOCALE} />
+      {/*
+        The range this relationship's own record states, with the figure a coach reads for it and the coverage that
+        figure was reported over. A record that states no range renders the review's own "not shared" statement here,
+        in this relationship's section, so the page never speaks for another grant's range.
+      */}
+      <FinancialRangeReview range={reviewedRangeOf(relationship, asOf)} reviewedAt={relationship.invitation.issuedAt} reviewedByRole={ACTING_ROLE} locale={INTERFACE_LOCALE} />
+      {/*
+        A relationship the read refused states that refusal in the read's own words and offers no module switch: a module
+        row there would describe sharing the read has already ended, and a switch the service refuses is not a control.
+      */}
+      {refusal === null ? (
+        <ModuleToggles grantId={relationship.grantId} modules={moduleEntriesOf(relationship)} scope={scope} expectedRevision={relationship.revision} grantState={relationship.state} cutoffInstant={relationship.duration.cutoffInstant ?? relationship.duration.boundInstant} headingLevel={2} />
+      ) : (
+        <StateNotice kind="denied" headingLevel={3} title={COACHING_COPY.sharing.heading} description={refusal.message} />
+      )}
+      {/*
+        The stop-type effects stay composed for every relationship, because this is the surface that states them: on a
+        closed episode each effect is a statement rather than a control, and the record of a change the worker has just
+        made stays beside the state that change produced. A refused relationship is offered no effect at all, since the
+        read admitted none for it.
+      */}
+      <StopActions available={refusal === null ? grantLevelEffects : []} target={{ grantId: relationship.grantId, episodeState: relationship.state }} scope={scope} expectedRevision={relationship.revision} role={ACTING_ROLE} headingLevel={2} />
+    </section>
+  );
 }
 
 /** Four outcomes never collapse into one: a recorded invitation is not delivery, verification, acceptance or live access. */
@@ -91,11 +150,27 @@ function grantViewOf(relationship: SharingRelationship): CoachingGrantView {
     // The cutoff is displayed exactly as the read reports it, with the zone it was resolved in: an earlier
     // source limit is shown as winning rather than recomputed, and a bound the read states none of stays empty.
     shareCutoff: { instant: relationship.duration.cutoffInstant ?? relationship.duration.boundInstant ?? "", zone: relationship.duration.frozenZone ?? "", sourceLimitWins: relationship.duration.boundedBy === "source" },
-    // The overview states no reviewed financial range for a relationship, so this summary claims none: a range
-    // nothing stated is shown as not shared, never as a zero.
-    financialRange: null,
+    // The range this relationship's record states, passed through as the read projected it: a period and currency
+    // nothing was reported for stays a period with no figure, and a record that states no range shares none.
+    financialRange: summaryRangeOf(relationship),
     outcomes: { delivery: outcomeOf(relationship.outcomes.invitationIssued), identityVerification: outcomeOf(relationship.outcomes.identityVerified), acceptance: outcomeOf(relationship.outcomes.accepted), access: outcomeOf(relationship.outcomes.accessLive) },
   };
+}
+
+/** One relationship's reviewed range in the summary's own shape, with nothing derived here: the read computed the figure. */
+function summaryRangeOf(relationship: SharingRelationship): FinancialRange | null {
+  const range = relationship.financialRange;
+  return range === null ? null : { from: range.from, to: range.to, currency: range.currency, money: range.money, valueState: range.valueState };
+}
+
+/**
+ * The same range for the review card, which also states the coverage its figure was reported over and the instant it
+ * was read at. The coverage travels with the figure from the projection behind it, so a partial subtotal is never
+ * presented as a complete one; both values are the read's own and neither is recomputed here.
+ */
+function reviewedRangeOf(relationship: SharingRelationship, asOf: string): SharedFinancialRange | null {
+  const range = relationship.financialRange;
+  return range === null ? null : { from: range.from, to: range.to, currency: range.currency, money: range.money, valueState: range.valueState, coverage: range.coverage, asOf };
 }
 
 function moduleEntriesOf(relationship: SharingRelationship): readonly ModuleToggleEntry[] {
@@ -111,19 +186,20 @@ function grantLevelStopEffectsOf(actions: SharingEnvelope["actions"]): readonly 
 }
 
 /**
- * The three closed choices one invitation offers. The overview summarises the relationship it read and
- * carries no roster of people or contexts, so the admitted contexts come from the read whose job is to
- * enumerate them and the seeded principals from the one read that lists a roster. A source that cannot
- * answer leaves its own list empty, and the form states the missing choice rather than this route
- * inventing a candidate an invitation could then be recorded against.
+ * The three closed choices one invitation offers. The admitted contexts come from the read whose job is to enumerate
+ * them, and the people come from the overview this page composes: that read projects the service's own session
+ * records, so the roster is an identity fact the service holds rather than the development runtime's persona
+ * catalogue, which belongs to the preview switcher alone. A context source that cannot answer leaves its own list
+ * empty, and the form states the missing choice rather than this route inventing a candidate an invitation could then
+ * be recorded against.
  */
-async function readInvitationCandidates(excludedPrincipalId: string): Promise<SharingCandidates> {
-  const [chooser, roster] = await Promise.all([reads.context.readContextChooser(), reads.dev.readDevState()]);
+async function readInvitationCandidates(invitableCoaches: SharingOverview["invitableCoaches"]): Promise<SharingCandidates> {
+  const chooser = await reads.context.readContextChooser();
   const groups = chooser.kind === "envelope" ? chooser.envelope.data.groups : [];
-  const personas = roster.kind === "envelope" && roster.envelope.data.personaCatalogue.state === "persisted" ? roster.envelope.data.personaCatalogue.personas : [];
   return {
-    // A worker cannot invite their own principal as coach, so the person acting is never offered to themselves.
-    recipients: personas.filter((persona) => persona.kind === "coach" && persona.principalId !== excludedPrincipalId).map((persona) => ({ principalId: persona.principalId, displayName: persona.label })),
+    // The roster exactly as the overview projected it: the person acting is already left out of it, and the name it
+    // states is the opaque reference the source of record holds for that principal, so nothing here resolves one.
+    recipients: invitableCoaches,
     // A blank label means the source of record named no name for that context, so the opaque reference is shown
     // rather than a blank presented as a name: the name is never derived here.
     organizations: groups.map((group) => ({ organizationId: group.organizationId, displayName: group.organizationLabel === "" ? group.organizationId : group.organizationLabel })),
@@ -159,25 +235,27 @@ export default async function CoachingSharingPage(): Promise<ReactElement> {
       );
     case "envelope": {
       const envelope = result.envelope;
-      const relationship = currentRelationshipOf(envelope.data);
-      const candidates = await readInvitationCandidates(envelope.scope.principalId);
+      const grantLevelEffects = grantLevelStopEffectsOf(envelope.actions);
+      const candidates = await readInvitationCandidates(envelope.data.invitableCoaches);
       return (
         <div className={PAGE_CLASS}>
-          {/* The one h1: the composed surfaces below each open their own section at level two. */}
+          {/* The one h1: every relationship below opens its own section at level two, and the cards and stop controls inside a section state their own headings beneath that. */}
           <h1 className={PAGE_HEADING_CLASS}>{COACHING_COPY.sharing.heading}</h1>
-          <SharingSummary grant={relationship === null ? null : grantViewOf(relationship)} locale={INTERFACE_LOCALE} />
+          {/*
+            Every relationship the read returned is disclosed, including one this page would have called "the"
+            relationship before: the read carries each grant separately, and a surface that showed one of them
+            would leave the others — and the access a coach still holds through them — unnamed and unstoppable.
+          */}
+          {envelope.data.relationships.length === 0 ? <SharingSummary grant={null} locale={INTERFACE_LOCALE} /> : null}
+          {envelope.data.relationships.map((relationship, index) => (
+            <RelationshipSection key={relationship.grantId} relationship={relationship} index={index} scope={envelope.scope} asOf={envelope.asOf} grantLevelEffects={grantLevelEffects} />
+          ))}
           {/*
             The duration control is composed inside this form, which owns the value it edits: it is a
             controlled input, so a route that renders on the server cannot hand it the change handler its
             state would need. The cutoff that the chosen duration produces is stated by the summary above.
           */}
-          <InvitationForm candidates={candidates} scope={envelope.scope} expectedRevision={envelope.revision} locale={INTERFACE_LOCALE} />
-          {relationship === null ? null : (
-            <ModuleToggles grantId={relationship.grantId} modules={moduleEntriesOf(relationship)} scope={envelope.scope} expectedRevision={relationship.revision} grantState={relationship.state} cutoffInstant={relationship.duration.cutoffInstant ?? relationship.duration.boundInstant} headingLevel={2} />
-          )}
-          {/* The read states no reviewed range, so the review states that none is shared rather than a figure. */}
-          <FinancialRangeReview range={null} locale={INTERFACE_LOCALE} />
-          {relationship === null ? null : <StopActions available={grantLevelStopEffectsOf(envelope.actions)} target={{ grantId: relationship.grantId, episodeState: relationship.state }} scope={envelope.scope} expectedRevision={relationship.revision} role={ACTING_ROLE} headingLevel={2} />}
+          <InvitationForm candidates={candidates} rangeCurrencies={envelope.data.reviewedRangeCurrencies} scope={envelope.scope} expectedRevision={envelope.revision} locale={INTERFACE_LOCALE} />
         </div>
       );
     }

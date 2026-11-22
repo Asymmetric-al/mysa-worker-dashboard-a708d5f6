@@ -16,8 +16,10 @@
  * whether it is offered as a control or attempted through the application's own transport. A check-in within
  * its limits is accepted intact and one past them is refused with the count it reached and never shortened.
  * The exclusive cutoff denies a read at the instant itself and a display-timezone change cannot move it.
- * Revocation stops access, survives an unrelated invalid draft, and takes nothing away from the worker's own
- * work. One admitted module whose source is down reports itself unavailable while the others stay readable.
+ * The sharing surface discloses every relationship the read returns, so revoking one grant cannot stand in for
+ * stopping another: revocation stops access to the grant it names, survives an unrelated invalid draft, leaves the
+ * second grant the coach can still read through disclosed and stoppable on its own, and takes nothing away from the
+ * worker's own work. One admitted module whose source is down reports itself unavailable while the others stay readable.
  *
  * **How time and sources move.** Only through the development control (`/api/dev`) — the same control the
  * Settings reset and the development panel operate. The scenario clock is session state inside the running
@@ -45,11 +47,27 @@ const WORKER_SESSION = "established-worker";
 /** The coach admitted read-only to exactly the modules and periods the worker switched on. */
 const COACH_SESSION = "coach";
 
+/** The principal that coach acts as, which every relationship section names beside the grant it discloses. */
+const COACH_PRINCIPAL = "principal-coach";
+
 /** The active grant behind the worker's sharing surface: targets and check-ins on, the financial modules off. */
 const PRIMARY_GRANT = "grant-established-coach";
 
 /** The active grant that shares a reviewed financial range, so the financial modules are exercised admitted. */
 const FINANCIAL_GRANT = "grant-established-coach-support";
+
+/** The fixed period that grant records, and the one currency it was reviewed in. */
+const REVIEWED_RANGE_FROM = "2026-10-01";
+const REVIEWED_RANGE_TO = "2026-10-31";
+const REVIEWED_RANGE_CURRENCY = "USD";
+
+/**
+ * The received support the reviewed range carries, as the one report path reads it: the harbour allocation into youth
+ * for its own original gift date in that period — the parent gift row counts once at the allocation's grain, so the
+ * period sums to this allocation and not to the gift it came from. The state the figure carries is its own, because the
+ * seeded projection states partial coverage.
+ */
+const REVIEWED_RANGE_FIGURE = /40\.00 USD/u;
 
 /** An episode the worker revoked: the coach may no longer read it, and revoking never recalled what was seen. */
 const REVOKED_GRANT = "grant-revoked-coach";
@@ -150,6 +168,22 @@ async function originOf(page: Page): Promise<string> {
 async function actAs(context: BrowserContext, origin: string, sessionId: string): Promise<void> {
   await context.clearCookies();
   await context.addCookies([{ name: SESSION_COOKIE, value: sessionId, url: origin }]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// One relationship's own section on the sharing surface
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The section the sharing surface opens for one relationship, addressed by the grant reference it is
+ * disclosed under.
+ *
+ * The surface discloses every relationship the coaching read returns, so a locator that is not scoped to one
+ * of them is a question about the whole page: a count of module rows, a switch and a stop review each belong
+ * to the grant whose section holds them, and this file means one grant at a time.
+ */
+function relationshipSection(page: Page, grantId: string): Locator {
+  return page.locator(`[data-slot="coaching-relationship"][data-grant="${grantId}"]`);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -336,7 +370,13 @@ test("records an invitation that names the person, the ministry, the five unsele
   // The three choices are admitted lists, not typed values: a typed address would establish nothing.
   await expect(form.getByText("A typed name or address would establish nothing: an address that looks the same verifies nobody.")).toBeVisible();
   const recipient = form.getByRole("combobox", { name: /^Coach/u });
-  await expect(recipient.locator("option")).toHaveText(["Choose the person to invite", "Coach"]);
+  // The people an invitation can name are the ones the service's own identity records hold — one entry per principal
+  // with a signed-in session, the person acting left out — stated by the opaque reference the record carries rather
+  // than a name resolved from another record. The list is taken from the same read the page composes, so this
+  // assertion follows the store the runner seeded instead of a roster written into this file.
+  const invitable = invitableCoachesOf(await readOverview(page));
+  expect(invitable).toContain(COACH_PRINCIPAL);
+  await expect(recipient.locator("option")).toHaveText(["Choose the person to invite", ...invitable]);
   const organization = form.getByRole("combobox", { name: /^Organization/u });
   await expect(organization.locator("option")).toHaveText(["Choose the organization", "Harbour Community Church"]);
   const ministry = form.getByRole("combobox", { name: /^Ministry/u });
@@ -344,7 +384,7 @@ test("records an invitation that names the person, the ministry, the five unsele
 
   // A duration is required, and the surface says so before anything is submitted: a missing duration is a
   // validation error rather than permission to share.
-  await recipient.selectOption({ label: "Coach" });
+  await recipient.selectOption({ label: COACH_PRINCIPAL });
   await organization.selectOption({ label: "Harbour Community Church" });
   await ministry.selectOption({ label: "Youth Ministry" });
   await expect(form.getByText("Still needed before this invitation can be recorded: How long sharing runs.")).toBeVisible();
@@ -376,18 +416,63 @@ test("shows a coach only the modules switched on and offers no write of any kind
   await actAs(context, origin, WORKER_SESSION);
   await page.goto("/coaching/sharing");
 
-  // What the worker has switched on is stated module by module, and the two financial modules are off.
-  const rows = page.locator('[data-slot="module-toggle-row"]');
+  // Every relationship the read returns is disclosed, each in its own section named by the grant it carries and by
+  // the principal the coach acts as. A surface that showed only the live one it named first would leave the others —
+  // and the access a coach still holds through them — unnamed, which is what this assertion exists to catch.
+  const overview = await readOverview(page);
+  const disclosed = grantIdsOf(overview);
+  const readable = readableGrantIdsOf(overview);
+  expect(readable).toEqual(expect.arrayContaining([PRIMARY_GRANT, FINANCIAL_GRANT]));
+  await expect(page.locator('[data-slot="coaching-relationship"]')).toHaveCount(disclosed.length);
+  for (const grantId of disclosed) {
+    const section = relationshipSection(page, grantId);
+    await expect(section).toHaveCount(1);
+    // A relationship the read admitted states its five switches; one it refused states that refusal and offers no
+    // switch at all, because a module row there would describe sharing the read has already ended.
+    await expect(section.locator('[data-slot="module-toggle-row"]')).toHaveCount(readable.includes(grantId) ? FIVE_MODULES.length : 0);
+    // A refused relationship states the read's own refusal in the read's own words, and no count, module or
+    // sharing claim of its own: the section is unreadable and says why.
+    if (!readable.includes(grantId)) {
+      await expect(section.getByText(refusalMessageOf(overview, grantId))).toBeVisible();
+    }
+  }
+  // The two live grants the seed holds, the episode the worker revoked and the one they ended are all among the
+  // disclosed set, and each names its coach and its own grant in its heading.
+  for (const seededGrant of [PRIMARY_GRANT, FINANCIAL_GRANT, REVOKED_GRANT, ENDED_GRANT]) {
+    expect(disclosed).toContain(seededGrant);
+    await expect(relationshipSection(page, seededGrant).getByRole("heading", { level: 2, name: `Sharing with ${COACH_PRINCIPAL} under ${seededGrant}` })).toBeVisible();
+  }
+  // Each section states the lifecycle of its own record, and no two of them state one another's.
+  await expect(relationshipSection(page, PRIMARY_GRANT)).toHaveAttribute("data-state", "active");
+  await expect(relationshipSection(page, FINANCIAL_GRANT)).toHaveAttribute("data-state", "active");
+  await expect(relationshipSection(page, REVOKED_GRANT)).toHaveAttribute("data-state", "revoked");
+  await expect(relationshipSection(page, ENDED_GRANT)).toHaveAttribute("data-state", "ended");
+
+  // Inside the primary grant's own section, what the worker switched on is stated module by module: a count of five
+  // rows is a statement about one grant at a time, and a switch reached here is that relationship's own.
+  const primary = relationshipSection(page, PRIMARY_GRANT);
+  const rows = primary.locator('[data-slot="module-toggle-row"]');
   await expect(rows).toHaveCount(FIVE_MODULES.length);
   for (const moduleName of FIVE_MODULES) {
-    await expect(page.getByRole("switch", { name: new RegExp(`^${moduleName} `, "u") })).toHaveCount(1);
+    await expect(primary.getByRole("switch", { name: new RegExp(`^${moduleName} `, "u") })).toHaveCount(1);
   }
-  await expect(page.getByRole("switch", { name: /^Support goal Switched off$/u })).toHaveAttribute("aria-checked", "false");
-  await expect(page.getByRole("switch", { name: /^Support results Switched off$/u })).toHaveAttribute("aria-checked", "false");
-  await expect(page.getByRole("switch", { name: /^Task summaries Switched off$/u })).toHaveAttribute("aria-checked", "false");
-  await expect(page.getByText("This module is switched off, so your coach cannot read it.").first()).toBeVisible();
-  // No reviewed financial range is shared on this relationship, and the surface states that rather than a zero.
-  await expect(page.getByText("No financial range has been shared with a coach yet.")).toBeVisible();
+  await expect(primary.getByRole("switch", { name: /^Support goal Switched off$/u })).toHaveAttribute("aria-checked", "false");
+  await expect(primary.getByRole("switch", { name: /^Support results Switched off$/u })).toHaveAttribute("aria-checked", "false");
+  await expect(primary.getByRole("switch", { name: /^Task summaries Switched off$/u })).toHaveAttribute("aria-checked", "false");
+  await expect(primary.getByText("This module is switched off, so your coach cannot read it.").first()).toBeVisible();
+  // No reviewed financial range is shared under this grant, and its own section states that rather than a zero: the
+  // statement belongs to the relationship whose record carries no range, so it is read inside that relationship's
+  // section instead of as a fact about the page.
+  await expect(primary.getByText("No financial range has been shared with a coach yet.")).toHaveCount(1);
+  // The other live grant records a reviewed range, and its own section states the period, the one currency and the
+  // figure the one report path reads for that period — which is what makes the range a fact a worker and a coach can
+  // both read rather than a capability with no surface.
+  const reviewed = relationshipSection(page, FINANCIAL_GRANT);
+  await expect(reviewed.getByText(REVIEWED_RANGE_FROM, { exact: true }).first()).toBeVisible();
+  await expect(reviewed.getByText(REVIEWED_RANGE_TO, { exact: true }).first()).toBeVisible();
+  await expect(reviewed.getByText(REVIEWED_RANGE_CURRENCY, { exact: true }).first()).toBeVisible();
+  await expect(reviewed.getByText(REVIEWED_RANGE_FIGURE).first()).toBeVisible();
+  await expect(reviewed.getByText("No financial range has been shared with a coach yet.")).toHaveCount(0);
 
   // The coach's portfolio: two relationships, each listing only the modules the worker switched on.
   await actAs(context, origin, COACH_SESSION);
@@ -463,11 +548,64 @@ function activeGrantIdOf(value: unknown): string {
 }
 
 /**
+ * The people the coaching overview offers an invitation, in the order it states them.
+ *
+ * The invitation form's recipient choice is held to exactly this list: it is taken from the read the page composes,
+ * so the assertion follows the store the runner seeded and the records this service holds rather than a roster
+ * written into this file.
+ */
+function invitableCoachesOf(value: unknown): readonly string[] {
+  const coaches = isRecord(value) && isRecord(value.data) && Array.isArray(value.data.invitableCoaches) ? value.data.invitableCoaches : [];
+  const names = coaches.map((coach) => (isRecord(coach) && typeof coach.displayName === "string" ? coach.displayName : ""));
+  if (names.includes("")) {
+    throw new Error(`The coaching overview states an invitable person with no name to choose: ${JSON.stringify(value).slice(0, 300)}.`);
+  }
+  return names;
+}
+
+/**
+ * The grant references the coaching overview reports, in the order it states them.
+ *
+ * The sharing surface is held to disclosing exactly these: the set is taken from the read the page composes, so
+ * the assertion follows the seed the runner restores rather than a count written into this file.
+ */
+function grantIdsOf(value: unknown): readonly string[] {
+  const relationships = isRecord(value) && isRecord(value.data) && Array.isArray(value.data.relationships) ? value.data.relationships : [];
+  const ids = relationships.map((candidate) => (isRecord(candidate) && typeof candidate.grantId === "string" ? candidate.grantId : ""));
+  if (ids.length === 0 || ids.includes("")) {
+    throw new Error(`The coaching overview states no relationship this test can address: ${JSON.stringify(value).slice(0, 300)}.`);
+  }
+  return ids;
+}
+
+/**
+ * The grants the coaching overview admitted, which are the ones a coach can read through right now.
+ *
+ * A relationship the read refused carries that refusal, so the read itself is what separates a grant this
+ * surface may switch modules on for from one it can only state as unreadable.
+ */
+function readableGrantIdsOf(value: unknown): readonly string[] {
+  const relationships = isRecord(value) && isRecord(value.data) && Array.isArray(value.data.relationships) ? value.data.relationships : [];
+  return relationships.flatMap((candidate) => (isRecord(candidate) && typeof candidate.grantId === "string" && candidate.readRefusal === null ? [candidate.grantId] : []));
+}
+
+/** The refusal message the coaching overview states for one relationship, taken from the same read the page composes. */
+function refusalMessageOf(value: unknown, grantId: string): string {
+  const relationships = isRecord(value) && isRecord(value.data) && Array.isArray(value.data.relationships) ? value.data.relationships : [];
+  const found = relationships.find((candidate) => isRecord(candidate) && candidate.grantId === grantId);
+  const message = isRecord(found) && isRecord(found.readRefusal) ? found.readRefusal.message : undefined;
+  if (typeof message !== "string" || message.length === 0) {
+    throw new Error(`The coaching overview states no refusal for ${JSON.stringify(grantId)}, so the refusal this test expects on the surface cannot be named: ${JSON.stringify(value).slice(0, 300)}.`);
+  }
+  return message;
+}
+
+/**
  * The lifecycle state one relationship stands in, read from the overview the sharing surface itself composes.
  *
- * The surface manages the relationship that is live, so a grant it just revoked is no longer the one it
- * displays; the read behind the surface is where the state of the revoked record is still stated, and it is
- * the same read the page composes rather than a second account of it.
+ * The surface discloses every relationship the read returns, so the state a section shows is the state of the
+ * grant that section names; this reading takes the same read the page composes by identity, so the assertion is
+ * about the record this file acted on rather than about a label the page happened to render.
  */
 function relationshipStateOf(value: unknown, grantId: string): string {
   const relationships = isRecord(value) && isRecord(value.data) && Array.isArray(value.data.relationships) ? value.data.relationships : [];
@@ -574,13 +712,14 @@ test("admits a coach one second before the frozen cutoff, denies the read at the
   // The cutoff is the exclusive start of the civil day after the share-through date, and it was frozen when
   // the episode began. A display preference changes how dates are shown to this worker and nothing else.
   await page.goto("/coaching/sharing");
-  await expect(page.getByText(CUTOFF_INSTANT, { exact: true })).toBeVisible();
-  await expect(page.getByText(FROZEN_ZONE, { exact: true })).toBeVisible();
+  const primary = relationshipSection(page, PRIMARY_GRANT);
+  await expect(primary.getByText(CUTOFF_INSTANT, { exact: true })).toBeVisible();
+  await expect(primary.getByText(FROZEN_ZONE, { exact: true })).toBeVisible();
   await page.goto("/settings");
   await page.getByRole("combobox", { name: "Display time zone" }).selectOption(OTHER_DISPLAY_ZONE);
   await page.goto("/coaching/sharing");
-  await expect(page.getByText(CUTOFF_INSTANT, { exact: true })).toBeVisible();
-  await expect(page.getByText(FROZEN_ZONE, { exact: true })).toBeVisible();
+  await expect(primary.getByText(CUTOFF_INSTANT, { exact: true })).toBeVisible();
+  await expect(primary.getByText(FROZEN_ZONE, { exact: true })).toBeVisible();
 
   // One second before the cutoff the relationship is still readable, so the boundary is a boundary and not
   // the whole day it falls in.
@@ -615,7 +754,7 @@ test("admits a coach one second before the frozen cutoff, denies the read at the
 // Revocation: an unrelated invalid draft does not block it, and the worker's work is untouched
 // ---------------------------------------------------------------------------------------------
 
-test("stops a grant through its own review while an unrelated draft is invalid, and leaves the worker's own work in place", async ({ context, page }) => {
+test("stops each grant through its own review while an unrelated draft is invalid, discloses the second grant the coach can still read through, and leaves the worker's own work in place", async ({ context, page }) => {
   const origin = await originOf(page);
   await actAs(context, origin, WORKER_SESSION);
 
@@ -627,20 +766,22 @@ test("stops a grant through its own review while an unrelated draft is invalid, 
   await expect(editor.getByRole("alert").filter({ hasText: "Nothing will be sent yet" })).toBeVisible();
 
   // Stopping a module and revoking the grant are two different effects, each with its own question, its own
-  // consequence and its own assurance — and stopping a module is a review, not a silently flipped switch.
+  // consequence and its own assurance — and stopping a module is a review, not a silently flipped switch. Both
+  // act inside the section of the grant they belong to, so a switch reached here is that relationship's own.
   await page.goto("/coaching/sharing");
-  await page.getByRole("switch", { name: /^Targets /u }).click();
-  const moduleStop = page.getByRole("region", { name: "Stop sharing a module" });
+  const primary = relationshipSection(page, PRIMARY_GRANT);
+  await primary.getByRole("switch", { name: /^Targets /u }).click();
+  const moduleStop = primary.getByRole("region", { name: "Stop sharing a module" });
   await expect(moduleStop.getByText("Stop sharing this module?")).toBeVisible();
   await expect(moduleStop.getByText("The module stops being readable from now on and is no longer part of what the invitation shares. The other modules you switched on are unaffected.")).toBeVisible();
   await expect(moduleStop.getByText("The work in the module is not deleted: your targets, check-ins and task summaries stay exactly as they are. Nothing that was already seen can be recalled.")).toBeVisible();
   await moduleStop.getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByRole("region", { name: "Stop sharing a module" })).toHaveCount(0);
+  await expect(primary.getByRole("region", { name: "Stop sharing a module" })).toHaveCount(0);
 
   // Revoking: the review states what stops, that the work behind it stays, and that nothing already read can
   // be recalled; the confirmation is the second, deliberate step.
-  await page.getByRole("button", { name: `Revoke the grant for ${PRIMARY_GRANT}` }).click();
-  const revokeReview = page.getByRole("region", { name: "Revoke the grant" });
+  await primary.getByRole("button", { name: `Revoke the grant for ${PRIMARY_GRANT}` }).click();
+  const revokeReview = primary.getByRole("region", { name: "Revoke the grant" });
   await expect(revokeReview.getByText("Revoke this coach's access?")).toBeVisible();
   await expect(revokeReview.getByText("Access stops from now on for every module, and the invitation that granted it can no longer be used.")).toBeVisible();
   await expect(revokeReview.getByText("Nothing a coach has already read can be recalled, and no message is taken back: this stops what can be read from now on, and it cannot undo what has already been seen.")).toBeVisible();
@@ -648,7 +789,7 @@ test("stops a grant through its own review while an unrelated draft is invalid, 
   const confirmation = page.locator('[role="alertdialog"]');
   await expect(confirmation).toBeVisible();
   await confirmation.getByRole("button", { name: "Revoke the grant" }).click();
-  await expect(page.getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
+  await expect(primary.getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
 
   // The accepted revoke re-reads this route itself, so the surface stops naming the grant it just revoked before
   // anything navigates: the controls name the surviving relationship while the accepted record stays on screen.
@@ -658,23 +799,59 @@ test("stops a grant through its own review while an unrelated draft is invalid, 
 
   // The read the surface composes is where the revoked record's state is stated, and the relationship it
   // manages is now the other live one: a revoked grant is not left standing as the record in use.
+  // The read the surface composes is where the revoked record's state is stated, and every relationship the read
+  // returns stays disclosed: a revoked grant is not left standing as a readable record, and the other live grant is
+  // named beside it with its own controls.
   const afterRevoke = await readOverview(page);
   expect(relationshipStateOf(afterRevoke, PRIMARY_GRANT)).toBe("revoked");
   expect(activeGrantIdOf(afterRevoke)).toBe(FINANCIAL_GRANT);
+
+  // Read again, the surface still discloses that second grant as a live relationship, with a revoke control of its
+  // own: no grant a coach can read through is left unnamed after another one is stopped, and the worker can stop it
+  // from this page instead of being left with access they can neither see nor end. The revoked section offers no
+  // revoke control at all, because a stopped episode states its effects rather than offering them again.
+  await page.goto("/coaching/sharing");
+  await expect(primary).toHaveAttribute("data-state", "revoked");
+  await expect(primary.getByText("Revoked by the worker").first()).toBeVisible();
+  await expect(primary.getByRole("button", { name: `Revoke the grant for ${PRIMARY_GRANT}` })).toHaveCount(0);
+  const financial = relationshipSection(page, FINANCIAL_GRANT);
+  await expect(financial).toHaveAttribute("data-state", "active");
+  await expect(financial.getByRole("button", { name: `Revoke the grant for ${FINANCIAL_GRANT}` })).toBeVisible();
 
   // The worker's own work is what revocation never touches: the shared check-in still holds its questions.
   await page.goto("/coaching/check-ins");
   await expect(page.getByText("Check-in state: Shared")).toBeVisible();
   await expect(page.getByText("Two good conversations and one difficult one.").first()).toBeVisible();
 
-  // A revoked and an ended episode are both refused to the coach, and each refusal states nothing about what it withheld.
+  // The second grant is then stopped from its own section through the same review: the worker ends the access the
+  // page has just disclosed, rather than the first revoke being taken to cover a grant it never named.
+  await page.goto("/coaching/sharing");
+  await financial.getByRole("button", { name: `Revoke the grant for ${FINANCIAL_GRANT}` }).click();
+  const financialReview = financial.getByRole("region", { name: "Revoke the grant" });
+  await expect(financialReview.getByText("Revoke this coach's access?")).toBeVisible();
+  await financialReview.getByRole("button", { name: "Revoke the grant" }).click();
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: "Revoke the grant" }).click();
+  await expect(financial.getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
+
+  // Read again, each section states the state its own record now holds, and with no live relationship left the
+  // envelope publishes no revoke effect, so no section offers one: nothing is left claiming access can be stopped.
+  await page.goto("/coaching/sharing");
+  await expect(relationshipSection(page, PRIMARY_GRANT)).toHaveAttribute("data-state", "revoked");
+  await expect(relationshipSection(page, FINANCIAL_GRANT)).toHaveAttribute("data-state", "revoked");
+  await expect(page.getByRole("button", { name: /^Revoke the grant for /u })).toHaveCount(0);
+
+  // A revoked and an ended episode are both refused to the coach, and each refusal states nothing about what it
+  // withheld. What a coach is refused is judged on the grants the coach's own session record states — the store keeps
+  // one document per development session (AAP 0.7.2 "Isolation": a session sees only its own files), so the worker's
+  // two revokes above are asserted in the worker's own read, and the coach's refusals are asserted on the revoked and
+  // ended episodes that session holds. Nothing here claims a grant this session's record does not state is refused.
   await actAs(context, origin, COACH_SESSION);
-  await page.goto(`/coaching/coach/${REVOKED_GRANT}`);
-  await expect(page.locator("main").getByText(/Reason no-permission/u)).toBeVisible();
-  await expect(page.getByRole("tab")).toHaveCount(0);
-  await page.goto(`/coaching/coach/${ENDED_GRANT}`);
-  await expect(page.locator("main").getByText(/Reason no-permission/u)).toBeVisible();
-  await expect(page.getByRole("tab")).toHaveCount(0);
+  for (const stoppedGrant of [REVOKED_GRANT, ENDED_GRANT]) {
+    await page.goto(`/coaching/coach/${stoppedGrant}`);
+    await expect(page.locator("main").getByText(/Reason no-permission/u)).toBeVisible();
+    await expect(page.getByRole("tab")).toHaveCount(0);
+  }
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -695,17 +872,25 @@ test("closes the last live relationship and keeps the accepted record beside the
     const confirmation = page.locator('[role="alertdialog"]');
     await expect(confirmation).toBeVisible();
     await confirmation.getByRole("button", { name: "Revoke the grant", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
+    await expect(relationshipSection(page, grantId).getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
   }
 
   // The route re-reads itself and reports the relationship it manages as revoked: the surface states the state the
   // revoke produced, not an earlier episode the worker never acted on in this session.
-  await expect(page.getByText("Revoked by the worker", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Ended by the worker", { exact: true })).toHaveCount(0);
-  await expect(page.locator("main")).not.toContainText(ENDED_GRANT);
+  // Every relationship stays disclosed and each states the state its own record now holds: the two the worker closed in
+  // this session read as revoked, and the episode they never acted on in this session keeps its own ended state rather
+  // than being rewritten. A surface that showed only one relationship would have to pick one and leave the other's
+  // access unnamed, which is the defect this disclosure exists to close.
+  for (const revokedGrant of [PRIMARY_GRANT, FINANCIAL_GRANT]) {
+    const section = relationshipSection(page, revokedGrant);
+    await expect(section).toHaveAttribute("data-state", "revoked");
+    await expect(section.getByText("Revoked by the worker", { exact: true }).first()).toBeVisible();
+  }
+  await expect(relationshipSection(page, ENDED_GRANT)).toHaveAttribute("data-state", "ended");
   // And the accepted record is still what stands beside that state: the re-read that reported the closed relationship
   // may not displace the record the change itself left. Nothing is offered for a relationship with no access left.
-  await expect(page.getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
+  // Each section keeps the record of the change made in it: the receipt stands inside the section whose grant it names.
+  await expect(relationshipSection(page, FINANCIAL_GRANT).getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Revoke the grant for /u })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^End the coaching relationship for /u })).toHaveCount(0);
 });
@@ -738,4 +923,240 @@ test("reports one admitted module's source as unavailable while the other admitt
   await setScenarioTo(page, "baseline");
   await page.goto(`/coaching/coach/${FINANCIAL_GRANT}`);
   await expect(page.locator("main").getByText("Unavailable right now", { exact: true })).toHaveCount(0);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The task summary: a reviewed description, the withholding rule, and Stop sharing
+// ---------------------------------------------------------------------------------------------
+
+/** The task-summary read and the two changes it admits, as the application's own transport names them. */
+const TASK_SHARES_PATH = "/api/coaching/taskshare";
+
+/** The reviewed-description limit (AAP 0.8.4: at most 240 Unicode code points), which the read states and the surface counts against. */
+const MAX_DESCRIPTION_CODE_POINTS = 240;
+
+/** The four statuses a task holds in the words the surfaces use for them, so a preview is held to the status the read reports. */
+const TASK_STATUS_WORDS: Readonly<Record<string, string>> = { open: "Open", completed: "Completed", reopened: "Reopened", cancelled: "Cancelled" };
+
+/** The three states of a share this journey passes through, in the list's own words. */
+const SHARED_STATE_WORD = "Shared";
+const HELD_STATE_WORD = "Held until you review it";
+const REMOVED_STATE_WORD = "No longer shared";
+
+/** The keyword a held summary states before its reason, so the withholding is named as well as explained. */
+const WITHHELD_LABEL = "Description withheld";
+
+/** The selector's empty arm, which a surface that offers the worker's own tasks never states. */
+const NO_CANDIDATE_HEADING = "No task to share yet";
+
+/** The preview panel's own name for the facts a coach reads, and the two controls the selector is driven by. */
+const COACH_PREVIEW_LABEL = "What your coach will read";
+const TASK_TO_SHARE_LABEL = "Task to share";
+const DESCRIPTION_LABEL = "Reviewed description — a coach will read exactly this";
+
+/** The review step's name and its one commit control. */
+const SHARE_REVIEW_HEADING = "Share this summary with your coach";
+const SHARE_CONFIRM_LABEL = "Share this summary";
+
+/** The description this journey writes: the worker's own words about the work, carrying none of the task's title. */
+const REVIEWED_DESCRIPTION = "Reviewed with the youth team: the next steps for Jo's follow-up and one call afterwards are agreed. Nothing about a donor, an amount or an attachment is part of this summary.";
+
+/** The title the task is given afterwards through the application, which changes the meaning the description was reviewed against. */
+const REVISED_TASK_TITLE = "Follow up with Jo about the youth weekend";
+
+/** How the list words the withholding rule, and how it words a share that was stopped. */
+const HELD_SENTENCE = "The reviewed description changed, so the summary is withheld until you review it again. Nothing new is shown in the meantime, and the task itself keeps working as before.";
+const REMOVED_SENTENCE = "You stopped sharing this summary. The task itself is untouched: it keeps its title, its due date and its status.";
+
+/** The stop step's title and the assurance it gives before it acts, which is what makes stopping distinct from deleting. */
+const STOP_REVIEW_TITLE = "Stop sharing a task summary";
+const STOP_REVIEW_ASSURANCE = "The task is not deleted: stopping the share changes nothing about the work itself. Nothing that was already seen can be recalled.";
+const STOP_LABEL = "Stop sharing";
+
+/** The Work surface's own labels for the two controls this journey changes a task through, and for the list it holds every task. */
+const WORK_TITLE_LABEL = "Title";
+const SAVE_TASK_LABEL = "Save task";
+const ALL_LIST_LABEL = "All";
+
+/**
+ * The worker's own shared task summaries and the tasks they may be shared from, read through the application's
+ * own transport.
+ *
+ * The surface a decision just changed can still be rendering the payload it was handed before it, so what a
+ * share carries — and what it withholds once the task moves — is judged here, in the read that decision changed.
+ */
+async function readTaskShares(page: Page): Promise<unknown> {
+  const response = await page.request.get(TASK_SHARES_PATH);
+  if (!response.ok()) {
+    throw new Error(`The task summaries could not be read from ${TASK_SHARES_PATH}: HTTP ${String(response.status())}. The share this journey made cannot be judged from a read that did not answer.`);
+  }
+  return await response.json();
+}
+
+test("shares one task's summary under a reviewed description a coach reads, holds it when the task's meaning changes, and stops sharing without touching the task", async ({ context, page }) => {
+  const origin = await originOf(page);
+  await actAs(context, origin, WORKER_SESSION);
+  await page.goto("/coaching/check-ins");
+
+  const selector = page.locator('[data-slot="task-summary-selector"]');
+  const shareList = page.locator('[data-slot="task-share-list"]');
+
+  // -------------------------------------------------------------------------------------------
+  // The tasks on offer are the ones the read states, and the surface is not on its empty arm
+  // -------------------------------------------------------------------------------------------
+
+  // The candidate set is taken from the read the page itself composes, so this assertion follows the store the
+  // runner seeded rather than a list of titles written into this file.
+  const opened = await readTaskShares(page);
+  const candidates = isRecord(opened) && isRecord(opened.data) && Array.isArray(opened.data.candidates) ? opened.data.candidates : [];
+  const candidateIds = candidates.map((candidate) => (isRecord(candidate) && typeof candidate.taskId === "string" ? candidate.taskId : ""));
+  const codePointLimit = isRecord(opened) && isRecord(opened.data) ? opened.data.maxCodePoints : undefined;
+  expect(candidateIds.length, "The worker's own work is what a summary is shared from, so the read states at least one task.").toBeGreaterThan(0);
+  expect(candidateIds, "Every candidate the read states names the task it is.").not.toContain("");
+  expect(codePointLimit, "The read states the reviewed-description limit the surface counts a description against.").toBe(MAX_DESCRIPTION_CODE_POINTS);
+
+  // A summary is shared from work this worker already has: the empty arm belongs to a session with no task at all.
+  await expect(selector.getByText(NO_CANDIDATE_HEADING), "The surface offers the worker's own tasks, so it states no empty arm.").toHaveCount(0);
+
+  const choice = selector.getByRole("combobox", { name: TASK_TO_SHARE_LABEL, exact: true });
+  const options = choice.locator("option");
+  await expect(options, "One choice per candidate the read states, beside the placeholder that means no choice yet.").toHaveCount(candidateIds.length + 1);
+  const optionValues = await options.evaluateAll((entries) => entries.map((entry) => entry.getAttribute("value") ?? ""));
+  expect(optionValues, "The list offers exactly the candidate set the read states, in the read's own order.").toEqual(["", ...candidateIds]);
+  const optionTexts = await options.evaluateAll((entries) => entries.map((entry) => (entry.textContent ?? "").trim()));
+
+  // The one task this journey shares from: an open task that does not repeat. A repeating task's occurrence is
+  // shared only after a fresh selection, which is a separate rule with its own domain test.
+  const chosen = candidates.find((candidate) => isRecord(candidate) && candidate.status === "open" && candidate.isRecurringSuccessor === false);
+  const chosenTaskId = isRecord(chosen) ? textAt(chosen, "taskId") : undefined;
+  const title = isRecord(chosen) ? textAt(chosen, "safeLabel") : undefined;
+  const status = isRecord(chosen) ? textAt(chosen, "status") : undefined;
+  const chosenDueDate = isRecord(chosen) ? chosen.dueDate : undefined;
+  const dueOn = isRecord(chosenDueDate) && chosenDueDate.kind === "dated" ? textAt(chosenDueDate, "date") : undefined;
+  const statusWord = status === undefined ? undefined : TASK_STATUS_WORDS[status];
+  if (chosenTaskId === undefined || title === undefined || dueOn === undefined || statusWord === undefined) {
+    throw new Error(`The read states no open task this journey can share a summary of, or states one without a label, a due day or a status this file knows the word for: ${JSON.stringify(opened).slice(0, 300)}.`);
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // A reviewed description, beside the live due date and status a coach will read with it
+  // -------------------------------------------------------------------------------------------
+
+  // The route's browser bundle takes hold after its document is on screen, so the choice is made until the panel
+  // it drives appears: the panel is the surface's own state, which no server-rendered markup shows.
+  await expect(async () => {
+    await choice.selectOption(chosenTaskId);
+    await expect(selector.locator('[data-slot="task-summary-preview"]')).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 20_000 });
+  await expect(choice).toHaveValue(chosenTaskId);
+  expect(optionTexts[candidateIds.indexOf(chosenTaskId) + 1] ?? "", "The chosen entry states the worker's own label for the task with the day it is due and the status it holds.").toContain(`${title} — ${dueOn} — ${statusWord}`);
+
+  const preview = selector.locator('[data-slot="task-summary-preview"]');
+  await expect(preview.getByText(COACH_PREVIEW_LABEL, { exact: true }), "The surface states what a coach will read before anything is shared.").toBeVisible();
+  await expect(preview.getByText(dueOn, { exact: true }).first(), "The due date a coach reads is the task's own civil day, not a day this surface invented.").toBeVisible();
+  await expect(preview.getByText(`Status: ${statusWord}`, { exact: true }).first(), "The status a coach reads is the one the task holds now.").toBeVisible();
+
+  const description = selector.getByRole("textbox", { name: DESCRIPTION_LABEL, exact: true });
+  await fillUntilCounted(description, REVIEWED_DESCRIPTION, selector.getByText(`Written: ${String(scalarCount(REVIEWED_DESCRIPTION))} / ${String(MAX_DESCRIPTION_CODE_POINTS)} code points`, { exact: true }));
+  await expect(preview.getByText(REVIEWED_DESCRIPTION, { exact: true }).first(), "The panel states the description as it stands, which is exactly what a coach reads.").toBeVisible();
+  // The task's own title is the worker's label for choosing work, and it stays that: the panel that states what a
+  // coach reads carries the reviewed description, the live day and the live status, and no title.
+  await expect(preview.getByText(title, { exact: true }), "A coach reads the reviewed description, never the task's raw title.").toHaveCount(0);
+
+  // -------------------------------------------------------------------------------------------
+  // One reviewed submission, and the receipt names the share it created
+  // -------------------------------------------------------------------------------------------
+
+  const review = selector.locator('[data-slot="action-review"]');
+  await expect(review.getByRole("heading", { name: SHARE_REVIEW_HEADING, exact: true }), "Sharing is reviewed before it is written.").toBeVisible();
+  await expect(review.getByText(REVIEWED_DESCRIPTION, { exact: true }), "The review states the description it would share.").toBeVisible();
+  await review.getByRole("button", { name: SHARE_CONFIRM_LABEL }).click();
+  await expect(review.getByRole("heading", { name: "Saved", exact: true }), "The share is written once, and its own receipt says so.").toBeVisible();
+  const createdShareId = (
+    await review
+      .getByText(/^coaching-task-share-\S+$/u)
+      .first()
+      .innerText()
+  ).trim();
+
+  // The share the decision produced, read in the read it changed: the description that was reviewed, the task's
+  // live due date and its live status — and nothing else this surface would have had to send to say them.
+  const afterShare = await readTaskShares(page);
+  const shares = isRecord(afterShare) && isRecord(afterShare.data) && Array.isArray(afterShare.data.shares) ? afterShare.data.shares : [];
+  const shareOfTask = shares.filter((share) => isRecord(share) && share.taskId === chosenTaskId);
+  expect(shareOfTask, "One share exists for the task this journey selected, under the identity its receipt named.").toHaveLength(1);
+  expect(shareOfTask[0], "The share carries the reviewed description with the live due date and status, and it is the record the receipt reported.").toMatchObject({ shareId: createdShareId, taskId: chosenTaskId, state: "shared", description: REVIEWED_DESCRIPTION, status, dueDate: { kind: "dated", date: dueOn } });
+  const recordedShare = shareOfTask[0];
+  expect(JSON.stringify(recordedShare), "Nothing of the task's own title travels with the share, so no part of it is in the record a coach reads.").not.toContain(title);
+  expect(isRecord(recordedShare) ? Object.keys(recordedShare).filter((key) => /title|note|partner|donor|amount|attachment|link|history/iu.test(key)) : ["<unreadable>"], "The record a coach reads carries no field for a title, a note, a partner, a donor, an amount, an attachment, a link or a history.").toEqual([]);
+
+  // -------------------------------------------------------------------------------------------
+  // The shared row a coach's read is projected from states the description and no title
+  // -------------------------------------------------------------------------------------------
+
+  await page.reload();
+  const sharedRow = shareList.getByRole("region", { name: `${SHARED_STATE_WORD}: task summary ${chosenTaskId}` });
+  await expect(sharedRow, "The summary this journey shared is the row the list states, in the shared state.").toBeVisible();
+  await expect(sharedRow).toHaveAttribute("data-state", "shared");
+  await expect(sharedRow.getByText(REVIEWED_DESCRIPTION, { exact: true }), "The row states the description that was reviewed.").toBeVisible();
+  await expect(sharedRow.getByText(title, { exact: true }), "The row states the description a coach reads, and never the task's raw title.").toHaveCount(0);
+
+  // -------------------------------------------------------------------------------------------
+  // The task's reviewed meaning changes through the application, and the summary is withheld
+  // -------------------------------------------------------------------------------------------
+
+  // A task's title is part of the meaning its description was reviewed against, and it is changed through the
+  // Work surface's own form rather than through a request this file composes.
+  await page.goto("/work");
+  await page.getByRole("tab", { name: ALL_LIST_LABEL }).click();
+  // The task is reached by the one control the list names it by: the actions menu the row offers for its title.
+  const actions = page.getByRole("button", { name: `Actions for ${title}` });
+  await expect(actions, "The task the summary describes is the worker's own work, on the list that holds every task.").toBeVisible();
+  await actions.click();
+  await page.getByRole("menuitem", { name: `Edit for ${title}` }).click();
+  const composer = page.locator('[data-slot="task-composer"][data-mode="edit"]');
+  await expect(composer, "Editing opens the one task form, on the task the row names.").toBeVisible();
+  await composer.getByRole("textbox", { name: new RegExp(`^${WORK_TITLE_LABEL}`, "u") }).fill(REVISED_TASK_TITLE);
+  await composer.getByRole("button", { name: SAVE_TASK_LABEL }).click();
+  await expect(composer.locator('[data-slot="operation-result"][data-outcome="accepted"]'), "A change to the task's own title is one accepted change to that task.").toBeVisible();
+
+  await page.goto("/coaching/check-ins");
+  const heldRow = shareList.getByRole("region", { name: `${HELD_STATE_WORD}: task summary ${chosenTaskId}` });
+  await expect(heldRow, "The summary is held, and the list names that state rather than an empty or a shared one.").toBeVisible();
+  await expect(heldRow).toHaveAttribute("data-state", "needs-review");
+  await expect(heldRow, "A held summary states in its own words that the description is withheld and why.").toContainText(`${WITHHELD_LABEL}. ${HELD_SENTENCE}`);
+  await expect(heldRow.getByText(REVIEWED_DESCRIPTION), "A held summary withholds the description it carried until it is reviewed again.").toHaveCount(0);
+
+  const heldRead = await readTaskShares(page);
+  const heldShares = isRecord(heldRead) && isRecord(heldRead.data) && Array.isArray(heldRead.data.shares) ? heldRead.data.shares : [];
+  const heldShare = heldShares.filter((share) => isRecord(share) && share.taskId === chosenTaskId);
+  expect(heldShare, "The withheld summary is one record, and it is still the one this journey shared.").toHaveLength(1);
+  expect(heldShare[0], "The read states the summary as held and carries no description, because a changed task withholds it until it is reviewed again.").toMatchObject({ shareId: createdShareId, state: "needs-review", description: null });
+
+  // -------------------------------------------------------------------------------------------
+  // Stop sharing: the summary stops, and the task itself is untouched
+  // -------------------------------------------------------------------------------------------
+
+  await heldRow.getByRole("button", { name: `${STOP_LABEL}: task summary ${chosenTaskId}, ${HELD_STATE_WORD}` }).click();
+  const stopReview = shareList.locator('[data-slot="action-review"]');
+  await expect(stopReview.getByRole("heading", { name: STOP_REVIEW_TITLE, exact: true }), "Stopping a share is a review of its own, with its own effect.").toBeVisible();
+  await expect(stopReview.getByText(`This stops the summary for task summary ${chosenTaskId}, currently held until you review it again.`, { exact: true })).toBeVisible();
+  await expect(stopReview.getByText(STOP_REVIEW_ASSURANCE, { exact: true }).first(), "The stop states that the task itself is not deleted.").toBeVisible();
+  await stopReview.getByRole("button", { name: STOP_LABEL }).click();
+  const confirmStop = page.locator('[role="alertdialog"]');
+  await expect(confirmStop).toBeVisible();
+  await confirmStop.getByRole("button", { name: STOP_LABEL }).click();
+  await expect(stopReview.getByRole("heading", { name: "Saved", exact: true }), "The stop is written once, and its own receipt says so.").toBeVisible();
+
+  await page.reload();
+  const removedRow = shareList.getByRole("region", { name: `${REMOVED_STATE_WORD}: task summary ${chosenTaskId}` });
+  await expect(removedRow, "The stopped share is stated as no longer shared, not dropped from the list without a word.").toBeVisible();
+  await expect(removedRow).toHaveAttribute("data-state", "removed");
+  await expect(removedRow.getByText(REMOVED_SENTENCE, { exact: true })).toBeVisible();
+  await expect(shareList.getByRole("button", { name: /^Stop sharing: /u }), "A stopped share offers no stop control of its own.").toHaveCount(0);
+
+  // The source work is what stopping a share never touches: the task is still on the list, with the title it holds.
+  await page.goto("/work");
+  await page.getByRole("tab", { name: ALL_LIST_LABEL }).click();
+  await expect(page.getByRole("button", { name: `Actions for ${REVISED_TASK_TITLE}` }), "Stopping a summary leaves the task itself on the list, with its own title.").toBeVisible();
 });

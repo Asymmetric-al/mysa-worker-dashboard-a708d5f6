@@ -5,6 +5,7 @@ import type { ReactElement } from "react";
 import StateNotice, { type NoticeAction } from "@/components/state-notice";
 import InitiativeDetail, { type InitiativeDetailProps } from "@/features/initiatives/components/initiative-detail";
 import { INITIATIVE_COPY, STATE_NOTICE_COPY } from "@/features/initiatives/copy";
+import { isSharedRecord } from "@/features/partners/record-class";
 import { assertNever } from "@/lib/result";
 import { reads } from "@/modules/data-service";
 
@@ -75,7 +76,8 @@ function membershipByPartner(members: readonly MemberRow[]): ReadonlyMap<string,
  * partner who already holds a membership is passed with it, so the picker leaves them out of the choices
  * rather than offering a row whose only possible answer is "unchanged" or "not eligible": exclusion is a
  * source fact this surface never re-opens. A worker-private preparation record is a different record
- * class from a shared relationship and is never a candidate for an approach.
+ * class from a shared relationship and is never a candidate for an approach; that line is stated once,
+ * in the partners family's own record-class rule, and this page applies it rather than restating it.
  *
  * The set is passed whole or not at all: a roster larger than one page is not enumerable here, so the
  * picker is told it holds no answer instead of being handed the first page as though it were the set.
@@ -97,7 +99,7 @@ async function eligibleCandidatesOf(initiative: InitiativeEnvelope): Promise<Can
     return CANDIDATES_UNCOMPOSED;
   }
   const membership = membershipByPartner(initiative.data.workingList.items);
-  return { state: "available", partners: rows.filter((row) => row.partner.audience === "shared").map((row) => ({ partnerId: row.partner.partnerId, displayName: row.partner.displayName, membership: membership.get(row.partner.partnerId) ?? null })) };
+  return { state: "available", partners: rows.filter((row) => isSharedRecord(row.partner)).map((row) => ({ partnerId: row.partner.partnerId, displayName: row.partner.displayName, membership: membership.get(row.partner.partnerId) ?? null })) };
 }
 
 // ---------------------------------------------------------------------------------------------

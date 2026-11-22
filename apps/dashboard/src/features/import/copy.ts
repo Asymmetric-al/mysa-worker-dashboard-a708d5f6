@@ -1,5 +1,5 @@
 /**
- * The contact-import family's only wording: the five steps of the journey, the four limits a file is held to before anything is read, the vocabulary of the four row decisions and the five row results, the facts the acceptance summary states, the framing of a refused file, the words the choose-file and selectively-accept step bodies add around those, and the words the validate-and-review and results bodies and the journey's own frame add around the material the read derived.
+ * The contact-import family's only wording: the five steps of the journey, the four limits a file is held to before anything is read, the vocabulary of the four row decisions and the five row results, the facts the acceptance summary states, the framing of a refused file, the words the choose-file and selectively-accept step bodies add around those, the words the validate-and-review and results bodies and the journey's own frame add around the material the read derived, and the one address that reads a completed operation back by its identity.
  */
 import type { SimulatedEffect } from "@/components/simulation-label";
 import type { ImportRowWindow } from "@/modules/data-service/reads/import";
@@ -7,7 +7,7 @@ import type { ImportDecisionKind } from "@/modules/import/decide";
 import type { ImportLimitDescriptor, ImportLimitId } from "@/modules/import/parse";
 import { IMPORT_LIMIT_DESCRIPTORS } from "@/modules/import/parse";
 import type { ImportRowResultState } from "@/modules/import/receipt";
-import type { ImportRowVerdict } from "@/modules/import/validate";
+import type { ImportDuplicateLooking, ImportRowVerdict } from "@/modules/import/validate";
 /**
  * The query parameter the journey's address uses to name one import operation: the page reads it on load, so a
  * reload restores the operation it names rather than starting again, and the surface writes it once it knows the
@@ -132,6 +132,10 @@ export const CHOOSE_FILE_COPY = {
   fileHint: "Choose one UTF-8 CSV file from this device. This step reads its bytes in your browser and hands them to the importer, which parses them and measures them against the four limits below; nothing is imported until you have reviewed every row.",
   limitsHeading: "Limits this file is measured against",
   limitsLead: "These are the importer's own limits, shown before you choose a file so a file that could not be accepted is not chosen in the first place.",
+  exampleHeading: "The example file",
+  exampleLead:
+    "This example holds rows that are new, rows that need correcting, and two rows that look like a duplicate of another row, so one file can meet every case the review states. Choosing it only opens a review: the importer never applies a row until you accept it, and importing a contact never subscribes anyone.",
+  exampleLinkLabel: "Download the example contacts CSV",
   chosenFileHeading: "The file you chose",
   fileNameLabel: "Name",
   fileSizeLabel: "Size",
@@ -166,6 +170,7 @@ export const REVIEW_COPY = {
     row: "Row",
     verdict: "Verdict",
     recordedDecision: "Decision recorded",
+    material: "Row review material",
     suppliedValues: "Values this row would supply",
     problems: "Problems this row states",
     keptCells: "Kept as data, never read as consent",
@@ -183,6 +188,7 @@ export const REVIEW_COPY = {
   correctionsNote: "A corrected value travels with the decision about this row; the file itself is unchanged.",
   skipReasonNote: "Optional. A reason you give is kept beside the row's own problem.",
   decisionNote: "Recording a decision applies nothing on its own.",
+  decisionsHeading: "What each decision does, and leaves alone",
   windowLead: "This is the window of rows the read returned; every control below acts on the rows shown.",
   continueLabel: "Continue to Selectively accept",
   continueBlocked: "Record a decision about at least one row to continue: acceptance covers only the rows you have decided.",
@@ -202,6 +208,18 @@ export const REVIEW_COPY = {
 } as const;
 /** A row's verdict as words, keyed by the domain's own closed union so a verdict added or renamed there fails to compile here instead of rendering unexplained. */
 export const REVIEW_VERDICT_WORDS: Record<ImportRowVerdict, string> = { ready: "Ready", "needs-correction": "Needs correction" };
+/** The word a row's look-alike badge carries: it states that a row of this file resembles another row of it, which is a signal to read and never a verdict, a merge or a decision. */
+export const REVIEW_DUPLICATE_WORD = "Duplicate-looking";
+/** The name of the control that opens one row's review material, so the disclosure carries its row number and is never one of many unnamed controls. */
+export function reviewMaterialSummaryLabel(rowNumber: number): string {
+  return `Review material for row ${rowNumber}`;
+}
+/** The sentence naming the other rows of the file one row looks like, what was compared, and that nothing was merged or decided. */
+export function reviewDuplicateLookingSentence(duplicate: ImportDuplicateLooking): string {
+  const others = duplicate.otherRowNumbers.map((rowNumber) => `row ${rowNumber}`);
+  const named = others.length === 1 ? (others[0] ?? "") : `${others.slice(0, -1).join(", ")} and ${others[others.length - 1] ?? ""}`;
+  return `Row ${duplicate.rowNumber} carries the same name, "${duplicate.name}", as ${named} of this file, and no email address, phone number or source reference is shared between them. Nothing was merged and nothing was decided: each row keeps its own verdict and its own decision, and no contact you already hold was compared.`;
+}
 /** The accessible name of one row's decision control: the row number is part of the name, so the control is never one of many unnamed selects. */
 export function reviewDecisionLabel(rowNumber: number): string {
   return `Decision about row ${rowNumber}`;
@@ -236,9 +254,16 @@ export function reviewWindowSentence(window: ImportRowWindow): string {
   return `Showing rows ${first}\u2013${last} of ${window.total} in this file.`;
 }
 // What step five's body says
-/** The words the results step states around the per-row outcomes the read reported: the lead it is read under, the facts about the file, the labels of the counts acceptance decided, and the headings and columns of its one per-row table. */
+/** The words the results step states around the per-row outcomes the read reported: the lead it is read under, the operation's own identity and the address that reads it back, the facts about the file, the labels of the counts acceptance decided, and the headings and columns of its one per-row table. */
 export const RESULTS_COPY = {
   lead: "This is the result of one import operation, read back by its own identity. Each row below states what became of it and why; a row that became a contact can be opened from here, and a row that was not applied says so instead of offering a control.",
+  operationHeading: "The operation this import belongs to",
+  operationLabels: { identity: "Operation identity", receiptAddress: "Receipt address" },
+  receiptLinkLabel: "Open this import's result by its own identity",
+  receiptNote: "This address reads the same operation back rather than importing again. The control beside it copies the address, and the address itself is always selectable, so a browser that cannot copy it takes nothing away.",
+  copyReceiptLabel: "Copy the receipt address",
+  copyReceiptCopied: "The receipt address is on the clipboard.",
+  copyReceiptUnavailable: "This browser did not copy the address. The receipt address above is selectable, so it can still be copied by hand.",
   fileHeading: "The file this import read",
   fileLabels: { name: "Name", size: "Size", rows: "Data rows", columns: "Columns" },
   summaryHeading: "What acceptance decided about the rows",
@@ -272,6 +297,14 @@ export function resultWindowSentence(window: ImportRowWindow): string {
   const first = (window.page - 1) * window.pageSize + 1;
   const last = Math.min(window.page * window.pageSize, window.total);
   return `Showing rows ${first}\u2013${last} of ${window.total} in this import.`;
+}
+/**
+ * The receipt address of one import operation: this page's own address, naming the operation by the identity it was
+ * read back by. It is built here so the link, the address the step states and the address the copy control writes are
+ * one string, and so it matches the parameter the journey writes into the address and the server page reads on load.
+ */
+export function importReceiptHref(operationId: string): string {
+  return `/partners/import?${IMPORT_OPERATION_PARAM}=${encodeURIComponent(operationId)}`;
 }
 // The journey's own frame
 /** The words the journey frame states around the five steps: the page's heading and lead, the control that starts another import, the stop-this-import review, and what a reload of this page can and cannot resume. */

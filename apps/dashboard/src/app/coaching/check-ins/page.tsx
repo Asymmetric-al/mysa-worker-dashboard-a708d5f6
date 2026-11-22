@@ -13,14 +13,16 @@
  * the outline needs its top level exactly once, and the family copy supplies its words rather than a
  * second copy written here.
  *
- * **What the two envelopes do not carry, and what this page therefore cannot hand on.**
- * - `TaskSummarySelector` chooses among *tasks*: it needs each task's identity, a neutral label and the
- *   fingerprint of its reviewed meaning. Neither read states a task record — the share read states the
- *   occurrence a summary was shared for — so no candidate is offered rather than a fabricated one, and the
- *   selector states its own empty surface.
- * - A share's task identity and share instant are not stated either, so a row is given the occurrence
- *   identity the read does state, rendered by the list as an opaque reference and nothing more, and the
- *   list's own "no share date recorded" words rather than an invented day.
+ * **What the two envelopes carry, and what they do not.**
+ * - `TaskSummarySelector` chooses among *tasks*, and the share read states them: each candidate arrives with
+ *   its identity, the worker's own label for it, the civil day it is due, the status it holds now, the
+ *   fingerprint of the meaning a description is reviewed against and the task's own revision, so the page
+ *   hands those on unchanged and offers nothing of its own.
+ * - A repeating task's current occurrence is stated by no task record, so no candidate names one and the
+ *   selector says so rather than sharing an occurrence nobody selected. A summary already shared is matched
+ *   by its task's identity, so the same occurrence is never offered twice.
+ * - A share's share instant is not stated, so a row keeps the list's own "no share date recorded" words
+ *   rather than an invented day.
  * - A share whose task status the read does not state cannot be rendered truthfully, because the list
  *   states a status for every row; that outage is therefore stated once above the list instead of being
  *   given a status the read never reported.
@@ -59,6 +61,9 @@ type TaskSharesEnvelope = Extract<TaskSharesResult, { readonly kind: "envelope" 
 
 /** One shared task summary as the read states it. */
 type TaskShareRow = TaskSharesEnvelope["data"]["shares"][number];
+
+/** One task the read offers for sharing a summary of, in the read's own projection. */
+type TaskSummaryCandidateRow = TaskSharesEnvelope["data"]["candidates"][number];
 
 /** One stored revision of a check-in: its question set in the order it was captured and the answers given. */
 type CheckInRevisionView = NonNullable<CheckInRow["privateDraft"]>;
@@ -111,15 +116,6 @@ const NOTICE_HEADING_LEVEL = 2;
 
 /** No check-in and no share is stated yet: the read answered a denial or an outage, so no row stands in for it. */
 const NO_CHECK_INS: readonly CheckInRow[] = [];
-
-/**
- * Nothing is offered to the task-summary selector and nothing blocks a selection: neither read states a
- * task record or the fingerprint a share is submitted with, so the selector's own empty surface is shown
- * rather than candidates or blocking states assembled from what these two reads do not carry.
- */
-const NO_CANDIDATES: readonly TaskSummaryCandidate[] = [];
-
-const NO_EXISTING_SHARES: readonly TaskSummaryExistingShare[] = [];
 
 // ---------------------------------------------------------------------------------------------
 // The address, read and forwarded without being decided here
@@ -199,9 +195,12 @@ function taskShareEntryOf(share: TaskShareRow, taskStatus: TaskShareListEntry["t
   const due = share.dueDate;
   return {
     shareId: share.shareId,
-    // The read states the occurrence a summary was shared for, never the task's own identity: this is that
-    // occurrence's opaque reference, and the list draws it as an opaque reference and nothing more.
-    taskId: share.occurrenceId,
+    // The task behind the share: an opaque identity that carries none of its title, notes or history, and the
+    // identity an existing share is matched by so the same occurrence is never offered for sharing twice.
+    taskId: share.taskId,
+    // The share record's own revision, which a stop presents: the service compares it before it writes, so a share
+    // stopped from a page that has moved on is a conflict rather than an overwrite.
+    revision: String(share.revision),
     state: share.state,
     reviewedDescription: share.description,
     dueOn: due !== null && due.kind === "dated" ? due.date : null,
@@ -224,6 +223,30 @@ function taskSharesOf(shares: readonly TaskShareRow[]): { readonly entries: read
     entries.push(taskShareEntryOf(share, share.status));
   }
   return { entries, unstatedStatus };
+}
+
+/**
+ * One task the read offers, in the selector's own vocabulary: the civil day the read states is handed on as
+ * that day, and a task with no due date states no day at all.
+ */
+function candidateOf(candidate: TaskSummaryCandidateRow): TaskSummaryCandidate {
+  const due = candidate.dueDate;
+  return {
+    taskId: candidate.taskId,
+    safeLabel: candidate.safeLabel,
+    dueOn: due.kind === "dated" ? due.date : null,
+    // A task with no due date states no day, so no precision is read for it: the selector says "No due date" before it reads one.
+    duePrecision: due.kind === "dated" ? duePrecisionOf(due.precision) : "unknown",
+    status: candidate.status,
+    isRecurringSuccessor: candidate.isRecurringSuccessor,
+    reviewedFingerprint: candidate.reviewedFingerprint,
+    revision: candidate.revision,
+  };
+}
+
+/** One summary that already exists for a task, so the same occurrence is never shared twice. */
+function existingShareOf(share: TaskShareRow): TaskSummaryExistingShare {
+  return { taskId: share.taskId, state: share.state, reviewedDescription: share.description };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -288,9 +311,9 @@ export default async function CheckInsPage({ searchParams }: CheckInsPageProps):
     const shares = taskSharesOf(taskShares.envelope.data.shares);
     shareRegion = (
       <>
-        <TaskSummarySelector candidates={NO_CANDIDATES} existing={NO_EXISTING_SHARES} scope={taskShares.envelope.scope} expectedRevision={taskShares.envelope.revision} locale={INTERFACE_LOCALE} asOf={taskShares.envelope.asOf} />
+        <TaskSummarySelector candidates={taskShares.envelope.data.candidates.map(candidateOf)} existing={taskShares.envelope.data.shares.map(existingShareOf)} scope={taskShares.envelope.scope} locale={INTERFACE_LOCALE} asOf={taskShares.envelope.asOf} />
         {shares.unstatedStatus === 0 ? null : <StateNotice kind="unavailable" headingLevel={NOTICE_HEADING_LEVEL} title={TASK_SHARE_REGION_TITLE} source={taskShares.envelope.source} />}
-        <TaskShareList shares={shares.entries} scope={taskShares.envelope.scope} expectedRevision={taskShares.envelope.revision} locale={INTERFACE_LOCALE} />
+        <TaskShareList shares={shares.entries} scope={taskShares.envelope.scope} locale={INTERFACE_LOCALE} />
       </>
     );
   } else {

@@ -10,14 +10,21 @@
  * acceptance, strict at equality, and a reload, a retry or a resent message never extends it; AAP 0.7.1 for the
  * four-field mutation input and the closed eight-outcome set; AAP 0.12.1 criterion 10.
  *
- * **What this surface never does.** It confirms nothing by being rendered, opened, reloaded, re-read or
- * previewed: the one call to `confirmMembership` is bound to the Confirm control's own activation. There is no
- * effect, no mount-time request, no query callback and no refresh handler that reaches a mutation. The window is
- * displayed from what the service states and never computed here, so there is no clock read and no second
- * arithmetic behind the deadline. There is no token, verification code or signed link, because the confirmation
- * is identified by the membership and the person's explicit act alone. Nothing here says a message was sent,
- * delivered or read: notice sending is simulated, and the label beside the request control says exactly that.
+ * **What this surface never does.** It confirms nothing by being rendered, opened, reloaded, re-read or previewed: the
+ * one call to `confirmMembership` is bound to the Confirm control's own activation. There is no effect, no mount-time
+ * request and no query callback. The window is displayed from what the service states and never computed here, so
+ * there is no clock read and no second arithmetic behind the deadline. There is no token, verification code or signed
+ * link, because the confirmation is identified by the membership and the person's explicit act alone. Nothing here says
+ * a message was sent, delivered or read: notice sending is simulated, and the label beside the request control says
+ * exactly that.
+ *
+ * **The one re-read, and why it follows a request.** A request the service records changes what the page holding this
+ * surface reads, so once that answer arrives this surface asks the page for its own read again. That is how the
+ * confirmation control appears without a manual reload when the read reports the membership back as awaiting proof. The
+ * refresh follows the person's own activation of the request control, re-renders facts the page read on the server and
+ * sends nothing itself; a refused request changes nothing to re-read, so it asks for nothing.
  */
+import { useRouter } from "next/navigation";
 import { useCallback, useId, useMemo, useState, type ReactElement } from "react";
 import { intentKeyOf, useReviewedMutation } from "@/components/action-review";
 import FormField, { fieldErrorsFromInvalid } from "@/components/form-field";
@@ -184,6 +191,7 @@ function Receipt({ outcome, headingLevel, fieldLabels, onCheckResult, onRetrySam
 export function ProofFlow({ scope, publisherId, publisherLabel, purpose, state, membership, expectedRevision, confirmation, languagePreference = null, headingLevel = 2, dir, onCheckResult, className }: ProofFlowProps): ReactElement {
   const titleId = useId();
   const closedReasonId = useId();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   // The membership this page's own confirm attempt addressed. The receipt is shown for that membership only, so a
   // later read cannot present one membership's outcome beside another's, and a refetch after an acceptance (which
@@ -223,8 +231,12 @@ export function ProofFlow({ scope, publisherId, publisherLabel, purpose, state, 
   const activeOutcome = confirmOutcome ?? signupOutcome;
   const activeOperationId = confirmOutcome === null ? (signupOutcome === null ? null : signupReview.operationId) : confirmReview.operationId;
   const requestNotices = (): void => {
-    // The only act that opens a membership: the person's own activation of this control.
-    void signupReview.submit(signupInput);
+    // The only act that opens a membership: the person's own activation of this control. Once the service has recorded
+    // it, what the page read is out of date, so the page is asked for its own read again — that is what puts the
+    // confirmation control in place without a manual reload. A refusal changed nothing, so nothing is re-read.
+    void signupReview.submit(signupInput).then((recorded) => {
+      if (recorded.outcome === "accepted" || recorded.outcome === "alreadyAccepted" || recorded.outcome === "unchanged") router.refresh();
+    });
   };
   const confirmAddress = (): void => {
     // The only call to confirmMembership in this component, reachable from the Confirm control's activation alone.

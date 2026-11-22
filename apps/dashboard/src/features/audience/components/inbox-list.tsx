@@ -25,6 +25,8 @@ interface InboxPaging {
 export interface InboxListProps {
   /** The exact authority this inbox is read under; the service re-derives scope from it on every read. */
   readonly scope: Scope;
+  /** The interface locale this surface formats its counts in, stated by the route that composes it. */
+  readonly locale: string;
   /** The answer the route's Server Component read, shown until this surface's own read answers under the same authority and for the same page window. */
   readonly initialEnvelope?: ReadResult<InboxEnvelope>;
   readonly className?: string;
@@ -36,7 +38,18 @@ const DEFAULT_PAGE_SIZE = 50;
 const INBOX_PAGE_SIZES: readonly number[] = [50, 200];
 const ITEM_NOUN = "message";
 const RETRY_LABEL = "Try again";
-const countFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+/** The whole-number formatters this surface counts with, one per interface locale: the locale is a viewer choice, so the formatter is keyed by the one the route states and the constructor is paid once per locale rather than once per formatted count. */
+const COUNT_FORMATS = new Map<string, Intl.NumberFormat>();
+/** The whole-number formatter for the interface locale the composing route states. */
+function countFormatOf(locale: string): Intl.NumberFormat {
+  const known = COUNT_FORMATS.get(locale);
+  if (known !== undefined) {
+    return known;
+  }
+  const made = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  COUNT_FORMATS.set(locale, made);
+  return made;
+}
 const EMPTY_MESSAGES: readonly InboxMessage[] = [];
 // The surface's own words
 const SURFACE_INTRO = "Every message this membership's notification purpose has produced, at the copy the recipient was pinned to: " + "the sender, the subject, the body as HTML and as plain text, and the outcome this application recorded for it.";
@@ -56,7 +69,8 @@ const AS_OF_EXPLANATION = "the scenario instant this inbox was evaluated at, so 
 const STATE_HEADINGS = { loading: "Reading this inbox", unavailable: "The inbox could not be read", denied: "This inbox is not permitted here", refused: "The inbox request was not admitted", partialCoverage: "The source covers only part of the period this inbox records" } as const;
 const BEYOND_LAST_PAGE = { title: "This page of the inbox holds no message", action: "Go to the last page" } as const;
 /** The statement for a page the result no longer reaches, told with the read's own page count so no number here is computed. */
-function beyondLastPageStatement(pageCount: number, page: number): string {
+function beyondLastPageStatement(pageCount: number, page: number, locale: string): string {
+  const countFormat = countFormatOf(locale);
   return `The result now holds ${countFormat.format(pageCount)} ${pageCount === 1 ? "page" : "pages"} of messages, so page ${countFormat.format(page)} holds none; no message was dropped, and the pager states where they are.`;
 }
 const DUPLICATE_DEFECT = {
@@ -98,10 +112,10 @@ function directionOf(message: InboxMessage): MessageDirection {
   return message.locale?.direction === "rtl" ? "rtl" : "ltr";
 }
 /** One message count, stated as the whole result rather than as the page on screen. */
-function messageCountStatement(total: number): string {
-  return total === 1 ? "One message has been produced for this membership." : `${countFormat.format(total)} messages have been produced for this membership.`;
+function messageCountStatement(total: number, locale: string): string {
+  return total === 1 ? "One message has been produced for this membership." : `${countFormatOf(locale).format(total)} messages have been produced for this membership.`;
 }
-export function InboxList({ scope, initialEnvelope, className }: InboxListProps): ReactElement {
+export function InboxList({ scope, locale, initialEnvelope, className }: InboxListProps): ReactElement {
   const headingId = useId();
   const readerHeadingId = useId();
   const readerRegionId = useId();
@@ -283,6 +297,8 @@ export function InboxList({ scope, initialEnvelope, className }: InboxListProps)
   } else {
     const envelope = read.envelope;
     const data = envelope.data;
+    // Every count below is the read's own, grouped in the interface locale the route states.
+    const formatCount = countFormatOf(locale);
     const unresolvedNoun = data.unresolvedIntents === 1 ? "intent" : "intents";
     const body =
       data.page.total === 0 ? (
@@ -290,7 +306,7 @@ export function InboxList({ scope, initialEnvelope, className }: InboxListProps)
         <StateNotice kind="empty" title={INBOX_EMPTY_COPY.title} description={INBOX_EMPTY_COPY.description} headingLevel={3} />
       ) : data.messages.length === 0 ? (
         // The page asked for is past the last one this result holds — a result that shrank while it was open. Nothing re-reads behind the worker's back: the notice states the window and offers the move.
-        <StateNotice kind="empty" title={BEYOND_LAST_PAGE.title} description={beyondLastPageStatement(data.page.pageCount, data.page.page)} action={{ label: BEYOND_LAST_PAGE.action, onClick: () => setWindow({ page: Math.max(FIRST_PAGE, data.page.pageCount), pageSize: paging.pageSize }) }} headingLevel={3} />
+        <StateNotice kind="empty" title={BEYOND_LAST_PAGE.title} description={beyondLastPageStatement(data.page.pageCount, data.page.page, locale)} action={{ label: BEYOND_LAST_PAGE.action, onClick: () => setWindow({ page: Math.max(FIRST_PAGE, data.page.pageCount), pageSize: paging.pageSize }) }} headingLevel={3} />
       ) : (
         <>
           <RecordList
@@ -313,12 +329,12 @@ export function InboxList({ scope, initialEnvelope, className }: InboxListProps)
       <>
         <div className="flex min-w-0 flex-col gap-2">
           {/* The whole authorised result, counted by the read: the page on screen is never read as the whole inbox. */}
-          <p className="text-sm font-medium text-pretty wrap-anywhere">{messageCountStatement(data.page.total)}</p>
+          <p className="text-sm font-medium text-pretty wrap-anywhere">{messageCountStatement(data.page.total, locale)}</p>
           <ul aria-label={OUTCOMES_HEADING} className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
             {SEND_STATE_ORDER.map((state) => (
               <li key={state} className="flex min-w-0 flex-wrap items-center gap-1.5">
                 <StatusBadge {...statusBadgeProps(SEND_STATUS, state)} srPrefix={COLUMNS.sendState} />
-                <span className="tabular-figures text-sm">{countFormat.format(data.sendStates[state])}</span>
+                <span className="tabular-figures text-sm">{formatCount.format(data.sendStates[state])}</span>
               </li>
             ))}
           </ul>
@@ -337,7 +353,7 @@ export function InboxList({ scope, initialEnvelope, className }: InboxListProps)
           <Alert role={undefined} data-slot="inbox-unresolved-intents">
             <AlertTitle>{UNRESOLVED_NOTE.title}</AlertTitle>
             <AlertDescription>
-              <p>{`${countFormat.format(data.unresolvedIntents)} ${unresolvedNoun} recorded for this recipient produced no message.`}</p>
+              <p>{`${formatCount.format(data.unresolvedIntents)} ${unresolvedNoun} recorded for this recipient produced no message.`}</p>
               <p>{UNRESOLVED_NOTE.lead}</p>
             </AlertDescription>
           </Alert>
@@ -352,7 +368,7 @@ export function InboxList({ scope, initialEnvelope, className }: InboxListProps)
                 {duplicatedIntents.map((entry) => (
                   <li key={entry.intentId} className="min-w-0">
                     <bdi className="mono-identifier">{entry.intentId}</bdi>
-                    {` — ${countFormat.format(entry.copies)} copies on this page`}
+                    {` — ${formatCount.format(entry.copies)} copies on this page`}
                   </li>
                 ))}
               </ul>

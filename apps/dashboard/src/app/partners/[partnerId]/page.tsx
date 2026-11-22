@@ -4,8 +4,10 @@ import type { ReactElement } from "react";
 import StateNotice from "@/components/state-notice";
 import { buttonVariants } from "@/components/ui/button";
 import PartnerDetailSections, { type PartnerDetailLinks, type PartnerReadResult } from "@/features/partners/components/partner-detail-sections";
+import { PartnerFilingSurface, PartnerPreparationSurface } from "@/features/partners/components/partner-record-actions";
 import PrivateNoteComposer from "@/features/partners/components/private-note-composer";
 import { PARTNER_ACTION_LABELS, SURFACE_STATE_COPY } from "@/features/partners/copy/states";
+import ReferralIntroductionForm from "@/features/referrals/components/referral-introduction-form";
 import { reads, type ReadAction, type ReadEnvelope, type ReadResult } from "@/modules/data-service";
 const ROSTER_HREF = "/partners";
 const WORK_PATH = "/work";
@@ -15,6 +17,8 @@ const ROSTER_CRUMB_LABEL = "Partners";
 const EDIT_LABEL = "Edit permitted fields";
 const DETAIL_COPY = SURFACE_STATE_COPY["partner-detail"];
 const INTERFACE_LOCALE = "en-GB";
+/** The action a record states when an introduction may be recorded against it. */
+const RECORD_INTRODUCTION_ACTION = "recordIntroduction";
 /** Props of {@link PartnerDetailPage}. */
 export interface PartnerDetailPageProps {
   readonly params: Promise<{ partnerId: string }>;
@@ -113,26 +117,52 @@ export default async function PartnerDetailPage({ params }: PartnerDetailPagePro
   const logInteractionAdmitted = admitted(envelope.actions, "logInteraction");
   const privateNoteAdmitted = admitted(envelope.actions, "savePrivateNote");
   const createTaskAdmitted = admitted(envelope.actions, "createTask");
+  // Personal tags and the favourite mark are one filing surface, so it is mounted only where the read admits both halves of it.
+  const filingAdmitted = admitted(envelope.actions, "setTag") && admitted(envelope.actions, "setFavourite");
+  const recordIntroductionAdmitted = admitted(envelope.actions, RECORD_INTRODUCTION_ACTION);
   // The two further reads are issued only for the sections this record admits, and each arrives in the body's own vocabulary: a source that fails here costs its section, never the whole record.
   const interactions = logInteractionAdmitted ? await reads.interactions.readInteractions({ partnerId }) : null;
   const privatePreparation = privateNoteAdmitted ? await reads.partners.readPrivatePreparation({ partnerId }) : null;
+  // The vocabulary the record is filed against is the roster's own tag facet, read only where the record admits filing: a facet read that refuses or does not answer costs the suggestions, never the record.
+  const facets = filingAdmitted ? await reads.partners.readFacets() : null;
+  const tagSuggestions = facets !== null && facets.kind === "envelope" ? (facets.envelope.data.find((facet) => facet.id === "tag")?.options.map((option) => option.label) ?? []) : [];
+  const { partner } = envelope.data;
+  // Archive and restore are the worker's own preparation's lifecycle, so they are offered only where the private read answered with that record: every other record carries no such control.
+  const preparation = privatePreparation !== null && privatePreparation.kind === "envelope" ? privatePreparation.envelope.data.preparation : undefined;
   const links: PartnerDetailLinks = { ...(logInteractionAdmitted ? { logInteraction: partnerHref(partnerId, NEW_INTERACTION_SUFFIX) } : {}), ...(createTaskAdmitted ? { createTask: workHref(partnerId) } : {}), addPreparation: ROSTER_HREF };
   return (
-    <PartnerDetailSections
-      partner={detailRead(result, (data) => data)}
-      layout="page"
-      locale={INTERFACE_LOCALE}
-      breadcrumb={[{ label: ROSTER_CRUMB_LABEL, href: ROSTER_HREF }]}
-      links={links}
-      actions={{
-        bar: <RecordActions partnerId={partnerId} contactEditsAdmitted={contactEditsAdmitted} logInteractionAdmitted={logInteractionAdmitted} createTaskAdmitted={createTaskAdmitted} />,
-        // The note composer is placed only for a record whose read admits `savePrivateNote`, and it is
-        // handed the revision this page read, which its receipt then reports as the revision the record
-        // now holds.
-        ...(privateNoteAdmitted ? { privateNote: <PrivateNoteComposer scope={envelope.scope} partnerId={partnerId} expectedRevision={envelope.revision} /> } : {}),
-      }}
-      {...(interactions === null ? {} : { interactions: detailRead(interactions, (page) => page.interactions) })}
-      {...(privatePreparation === null ? {} : { privatePreparation: detailRead(privatePreparation, (data) => data) })}
-    />
+    <div className="flex min-w-0 flex-col gap-6 text-start">
+      <PartnerDetailSections
+        partner={detailRead(result, (data) => data)}
+        layout="page"
+        locale={INTERFACE_LOCALE}
+        breadcrumb={[{ label: ROSTER_CRUMB_LABEL, href: ROSTER_HREF }]}
+        links={links}
+        actions={{
+          bar: <RecordActions partnerId={partnerId} contactEditsAdmitted={contactEditsAdmitted} logInteractionAdmitted={logInteractionAdmitted} createTaskAdmitted={createTaskAdmitted} />,
+          // The note composer is placed only for a record whose read admits `savePrivateNote`, and it is
+          // handed the revision this page read, which its receipt then reports as the revision the record
+          // now holds.
+          ...(privateNoteAdmitted ? { privateNote: <PrivateNoteComposer scope={envelope.scope} partnerId={partnerId} expectedRevision={envelope.revision} /> } : {}),
+          // The record files under the worker's own labels in the body it already opens, so the roster's tag and
+          // favourite facets filter values a control on the record can set.
+          ...(filingAdmitted ? { filing: <PartnerFilingSurface scope={envelope.scope} target={{ partnerRef: { partnerId, expectedRevision: envelope.revision, displayName: partner.displayName, tags: partner.tags, favourite: partner.favourite } }} tagSuggestions={tagSuggestions} /> } : {}),
+          // The preparation lifecycle is handed the revision and the advisory actions this route read, so a change
+          // presents the revision it was read at and the service still re-checks the record on submit.
+          ...(preparation === undefined ? {} : { preparation: <PartnerPreparationSurface partnerId={partnerId} kind={partner.kind} archived={preparation.archived} expectedRevision={envelope.revision} scope={envelope.scope} availableActions={envelope.actions} /> }),
+        }}
+        {...(interactions === null ? {} : { interactions: detailRead(interactions, (page) => page.interactions) })}
+        {...(privatePreparation === null ? {} : { privatePreparation: detailRead(privatePreparation, (data) => data) })}
+      />
+      {/*
+        The introduction that brought this person here is recorded against this record and nowhere else:
+        the referral list states the same thing in its own words, because a list has no partner identity,
+        revision or source to hand a form. Every fact below is the read's own — the record's identity, the
+        revision this page read, the source that answered, and the accepted source zone the read states —
+        so the route states none of them itself and the window the introduction opens is counted in the
+        one zone the referral rules declare.
+      */}
+      {recordIntroductionAdmitted ? <ReferralIntroductionForm scope={envelope.scope} partnerId={envelope.data.partner.partnerId} expectedRevision={envelope.revision} sourceReference={envelope.source} sourceZone={envelope.data.referralSourceZone} /> : null}
+    </div>
   );
 }

@@ -248,6 +248,14 @@ export function createRelease(input: CreateReleaseInput): CreateReleaseResult {
   return { status: "created", release: { releaseId: input.releaseId, variantId: variant.variantId, revisionId: revision.revisionId, audience: variant.audience, locale: variant.locale, publishedAt: input.at ?? now(), reach, contentChecksum: revision.contentChecksum } };
 }
 export type ReleaseOutcome = { readonly status: "released"; readonly release: Release } | { readonly status: "failed"; readonly reason: string };
+/**
+ * Whether a release publishes the exact revision this variant's frozen candidate names.
+ *
+ * A candidate is identified by the revision it froze, so the edition's candidate pointer and a release of that
+ * same revision meet for one revision only: that is the release which answers the submission, which is why it
+ * consumes the candidate and any other release leaves it standing.
+ */
+const releaseConsumesCandidate = (variant: ContentVariant, release: Release): boolean => variant.candidateId !== undefined && variant.candidateId === release.revisionId;
 export function applyReleaseOutcome(variant: ContentVariant, outcome: ReleaseOutcome, currentHead?: Release): VariantChange {
   if (outcome.status === "failed") return { status: "applied", variant };
   const { release } = outcome;
@@ -259,7 +267,11 @@ export function applyReleaseOutcome(variant: ContentVariant, outcome: ReleaseOut
   if (!isOneOf(RELEASE_REACH_VALUES, release.reach)) issues.push({ path: "release.reach", message: `Reach is one of ${RELEASE_REACH_VALUES.join(", ")}.` });
   if (issues.length > 0) return { status: "invalid", issues };
   if (currentHead !== undefined && currentHead.releaseId === release.releaseId) return { status: "applied", variant };
-  const advanced: ContentVariant = { ...variant, releaseHeadId: release.releaseId };
+  // A release of the very revision the candidate froze consumes that candidate: the submitted revision is now
+  // the current release, so the edition states the publication its head carries instead of a submission nothing
+  // is waiting on. A release of any other revision leaves the candidate untouched, so a newer frozen submission
+  // standing beside an older release still reads as a submission.
+  const advanced: ContentVariant = releaseConsumesCandidate(variant, release) ? { ...variant, releaseHeadId: release.releaseId, candidateId: undefined } : { ...variant, releaseHeadId: release.releaseId };
   if (currentHead === undefined) return { status: "applied", variant: advanced };
   return { status: "applied", variant: advanced, supersededRelease: { ...currentHead, supersededBy: release.releaseId } };
 }

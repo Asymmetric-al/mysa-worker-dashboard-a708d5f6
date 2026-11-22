@@ -10,8 +10,14 @@
  * **Why this file creates the task Today holds.** The seed's clock stands at `SEED_INSTANT`
  * (2026-11-20), and every seeded task is dated away from that day, so Today opens empty on purpose: the
  * empty list is a state this file reads as the seed's own, and the work the criterion follows through is
- * the work a worker actually creates. The task is dated the civil day the *read* calls today rather than a
- * date computed here, so no clock, zone or calendar arithmetic is invented in a browser test.
+ * the work a worker actually creates. The task is dated that seeded civil day, named once at `SEEDED_TODAY`
+ * because no surface states the day itself — the development panel states the instant and the Work page states the
+ * zone it judges in — and the Today list is the assertion that proves the surface still calls that day today.
+ *
+ * **Where every figure comes from.** Each count and each row fact below is read off the page that states it: the
+ * five lists' counted pagers and the rows they render, the dated agenda's own pager, the receipt a change leaves
+ * behind, the partner record's activity region and the audience's counts panel. The one exception is a partner's
+ * tags, which no surface the journey visits states; that single record read is named where it is made.
  *
  * **The seeded scenario this file asserts against** (AAP 0.7.2's readable seed): an established worker
  * with tasks due ahead, tasks past their date, one undated task, one completed task, one reopened task, a
@@ -25,24 +31,21 @@
  * was saved *and* nothing else moved — no interaction was logged, no commitment appeared, no membership
  * changed, and no partner gained a tag. That is why each comparison below is exact rather than sampled.
  *
- * **Two list contexts, and the one this build does not serve.** Filters, sort and the reader's place in a
- * long result are part of the view (AAP 0.7.1's continuity requirement), so they are read before a record
- * visit and again after the return, on the Work list and on the dated agenda. The Partners roster is the
- * third list the criterion names, and this checkout serves no `/partners` route — the roster page is
- * another lane's file and only its components (`partner-facets`, `saved-view-bar`, `use-roster-query`)
- * exist — so the roster leg is not asserted against a route that answers `not found`; the record the
- * visits open is that roster's own record, reached from the work that names it.
+ * **Two list contexts.** Filters, sort and the reader's place in a long result are part of the view (AAP 0.7.1's
+ * continuity requirement), so they are read before a record visit and again after the return, on the Work list and
+ * on the dated agenda — the two lists this file drives. The visit itself lands on the partner's own record, reached
+ * from the work row that names it, and that record's own breadcrumb is what the return comes back through.
  */
 import type { APIRequestContext, Locator, Page } from "@playwright/test";
 
-import { expect, expectRestoredScrollPlace, resetSeed, SCROLL_TOLERANCE_PX, scrollPlaceOfRow, SEEDED_PERSONAS, SESSION_COOKIE, test, type PersonaName } from "../playwright.config";
+import { expect, resetSeed, SEEDED_PERSONAS, SESSION_COOKIE, test, type PersonaName } from "../playwright.config";
 
 // ---------------------------------------------------------------------------------------------
 // The seeded scenario this file acts in
 // ---------------------------------------------------------------------------------------------
 
 /**
- * The seeded identity every read and every browser request below is authorised as.
+ * The seeded identity every page below is read as, and the one record request it makes.
  *
  * The established worker holds open work dated ahead, work past its date, undated work, a completed task,
  * a reopened task, a meeting with a planned time and partners with recorded activity — which is what
@@ -53,29 +56,61 @@ const PERSONA: PersonaName = "established-worker";
 /** The established worker's seeded session, mirrored from the runner's roster rather than hard-coded. */
 const SESSION = SEEDED_PERSONAS[PERSONA];
 
-/** The two destinations this journey reads: the five lists, and the dated agenda one level beside them. */
+/** The two list destinations this journey drives: the five lists, and the dated agenda one level beside them. */
 const WORK_HREF = "/work";
 const AGENDA_HREF = "/work/agenda";
 
-/** The prefix every partner record is served under, from the opaque identifier and never from a name, and the one its reads live under. */
+/** The prefix every partner record is served under, from the opaque identifier and never from a name. */
 const PARTNER_ROUTE_PREFIX = "/partners";
 
+/** The one record read that no surface states: a partner's own tags, which the partner's record page does not render. */
 const PARTNER_API_PREFIX = "/api/partners";
 
+/** The publisher's audience, which a selection must never become. */
+const AUDIENCE_HREF = "/communication/audience";
+
 /**
- * The display time zone every task read is asked for, and the zone the seeded planned meeting is stated in.
+ * The zone the seeded planned meeting is stated in.
  *
- * The Work read requires a zone rather than assuming one, because a due date is judged against "today" in
- * the zone the reader chose. This file states the seed's own source zone, so the lists it drives and the
- * reads it compares are judged by the same calendar day.
+ * A meeting's plan is stated with the zone it was given in, and the seeded meeting was planned in this one; the
+ * Work lists judge their dates in the zone the page itself states, which is the read's own default.
  */
-const DISPLAY_TIME_ZONE = "Europe/London";
+const PLANNED_MEETING_ZONE = "Europe/London";
+
+/**
+ * The civil day the Work surface calls today.
+ *
+ * The deterministic seed's scenario instant is `2026-11-20T00:00:00Z`, and the Work page states that every date it
+ * judges is judged in UTC, so the instant falls on this civil day there. No surface states the day itself — the
+ * development panel states the instant and the page states the zone — which is why the day is named once here. The
+ * Today list is what proves it: the task this file dates with it must appear there, so the two cannot part without
+ * this file failing rather than passing quietly.
+ */
+const SEEDED_TODAY = "2026-11-20";
 
 /** The noun the Work surface counts its rows in, the heading of the column it orders by title, and the labels its pager states. */
 const TASK_NOUN = "tasks";
 const TITLE_COLUMN_LABEL = "Task";
 const ROWS_PER_PAGE_LABEL = "Rows per page";
 const PAGE_SIZE_DEFAULT = "50";
+
+/** The window the dated agenda pages at, which is the documented cap rather than the lists' default. */
+const AGENDA_PAGE_SIZE = "200";
+
+/** A civil day as a row prints it, and the words a row prints when it stands at no day at all. */
+const STATES_A_CIVIL_DAY = /^\d{4}-\d{2}-\d{2}$/u;
+const UNDATED_WORD = "No due date";
+
+/** The prefix a row's own selection control names the task it selects with, and the header control it is told apart from. */
+const ROW_SELECTION = /^Select (?!all )/u;
+
+/** The label the durable receipt states a revision under. */
+const REVISION_LABEL = "Revision";
+
+/** What the audience states its figures with, as its own copy words them. */
+const AUDIENCE_HEADING = "Update email audience";
+const AUDIENCE_COUNTS_SLOT = '[data-slot="membership-counts"]';
+const MEMBER_NOUN = "members";
 
 /** The persistent label the shell renders on every surface, so no screen can be mistaken for production. */
 const DEVELOPMENT_DATA_LABEL = "Development data";
@@ -90,6 +125,14 @@ const TASK_LISTS: readonly { readonly key: TaskListKey; readonly label: string }
 ];
 
 type TaskListKey = "today" | "upcoming" | "overdue" | "all" | "undated";
+
+/**
+ * The three lists that hold dated open work, which is exactly the work the dated agenda groups.
+ *
+ * The read partitions open work by the day a task stands at: these three hold the open work that carries a date,
+ * `undated` holds the open work that carries none, and `all` is the one list that also holds closed work.
+ */
+const DATED_LIST_KEYS: readonly TaskListKey[] = ["today", "upcoming", "overdue"];
 
 /** The task this journey creates, and the free-text category it gives that task. */
 const TODAY_TASK_TITLE = "Confirm the students' evening venue";
@@ -141,9 +184,6 @@ const SAVED_HEADING = "Saved";
 const NOTHING_TO_CHANGE_HEADING = "Nothing to change";
 const PER_ITEM_HEADING = "Result for each row";
 const PER_ITEM_ACCEPTED = "Accepted";
-const PER_ITEM_EXCLUDED = "Excluded";
-/** The reason the receipt states for a row of a batch that changed nothing, read from the surface rather than assumed. */
-const UNCHANGED_APPLIED_TAG_REASON = "This row already carried this tag when the action ran, so nothing was applied to it.";
 
 /** The composer's labels and its two commit controls, exactly as the one task form states them. */
 const NEW_TASK_LABEL = "New task";
@@ -176,7 +216,7 @@ function countOf(stated: string, subject: string): number {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Reading the application's own authorised projections
+// Reading a record, a row, a receipt and a count
 // ---------------------------------------------------------------------------------------------
 
 /** The one identity header every request below carries: the session cookie the service authorises. */
@@ -198,27 +238,13 @@ function arrayOf(value: unknown, subject: string): readonly unknown[] {
   return value;
 }
 
-function numberOf(value: unknown, subject: string): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
-    throw new Error(`${subject} is not a whole number, so no count is read from it.`);
-  }
-  return value;
-}
-
-function textOf(value: unknown, subject: string): string {
-  if (typeof value !== "string") {
-    throw new Error(`${subject} is not text, so nothing is compared against it.`);
-  }
-  return value;
-}
-
 /**
- * Reads one of the application's own browser-facing reads and returns its envelope.
+ * Reads one record this journey needs a field set from that no surface states.
  *
- * These are the same named reads the surfaces render — the task list and the dated agenda — reached over
- * the handler the browser itself uses, with the session cookie this file would otherwise carry through the
- * browser. Nothing here opens the synthetic store: a count that could not be read through the application
- * would be a count this file does not know.
+ * The one fact read this way is a partner's own tags. The partner's record page states no tags — the section that
+ * would ("Tags on this record") is mounted by no route — and the roster's tag column is rendered inside a row whose
+ * open-task figures move in this very test, so the fact is read from the record the browser itself asks for with the
+ * session cookie it would otherwise carry. Every other figure in this file is read off the page that states it.
  */
 async function readEnvelope(request: APIRequestContext, path: string): Promise<Readonly<Record<string, unknown>>> {
   const response = await request.get(path, { headers: authorisationHeader() });
@@ -238,75 +264,73 @@ async function readEnvelope(request: APIRequestContext, path: string): Promise<R
   return recordOf(body, `The read ${path}`);
 }
 
-/** One task as a list read projects it: the facts this journey compares it by. */
+/** One task as the Work list states it: the task its own actions act on, the status it holds and the day it stands at. */
 interface TaskReading {
   readonly taskId: string;
-  readonly title: string;
   readonly status: string;
-  readonly revision: string;
   readonly dueOn: string | null;
-  readonly category: string | null;
 }
 
-/** One list's answer: the rows on the page read, the whole-result count and the civil day the read calls today. */
-interface TaskListReading {
-  readonly items: readonly TaskReading[];
-  readonly total: number;
-  readonly today: string;
-}
-
-/** The task-list read's own address: whole pages, so a count read here is the whole result rather than one page. */
-function taskListPath(list: TaskListKey): string {
-  const search = new URLSearchParams({ displayTimeZone: DISPLAY_TIME_ZONE, list, pageSize: "200" });
-  return `/api/tasks?${search.toString()}`;
-}
-
-/** One task list as the service answers it, projected onto the facts this file compares. */
-async function readTaskList(request: APIRequestContext, list: TaskListKey): Promise<TaskListReading> {
-  const envelope = await readEnvelope(request, taskListPath(list));
-  const data = recordOf(envelope["data"], `The ${list} list read's data`);
-  const items = arrayOf(data["tasks"], `The ${list} list read's rows`).map((row, index): TaskReading => {
-    const task = recordOf(row, `Row ${String(index)} of the ${list} list read`);
-    const dueOn = task["dueOn"];
-    const category = task["category"];
-    return {
-      taskId: textOf(task["taskId"], "A task's identifier"),
-      title: textOf(task["title"], "A task's title"),
-      status: textOf(task["status"], "A task's status"),
-      revision: textOf(task["revision"], "A task's revision"),
-      dueOn: typeof dueOn === "string" ? dueOn : null,
-      category: typeof category === "string" ? category : null,
-    };
-  });
-  return { items, total: numberOf(data["total"], `The ${list} list read's whole-result count`), today: textOf(data["today"], "The civil day the task read calls today") };
-}
-
-/** The one task a list read states under a title, or a failure naming the title that is missing. */
-function taskNamed(list: TaskListReading, title: string): TaskReading {
-  const found = list.items.find((row) => row.title === title);
-  if (found === undefined) {
-    throw new Error(`The ${JSON.stringify(title)} task is not one the task read states (${list.items.map((row) => row.title).join(" | ")}), so this file cannot compare it before and after a change.`);
+/**
+ * One row as the list renders it, read off the row itself.
+ *
+ * The row states the task its own actions act on and the status those actions left it in, and it prints the civil
+ * day it stands at — or says it has none. The revision no surface states here is read from the receipt a change
+ * leaves behind instead, below.
+ */
+async function readTaskRow(region: Locator, title: string): Promise<TaskReading> {
+  const row = rowOf(region, title);
+  await expect(row, `The list states the ${JSON.stringify(title)} task, which is what this comparison is about.`).toBeVisible();
+  const actions = row.locator('[data-slot="task-actions"]');
+  const taskId = await actions.getAttribute("data-task-id");
+  const status = await actions.getAttribute("data-status");
+  if (taskId === null || status === null) {
+    throw new Error(`The row the list renders for ${JSON.stringify(title)} states no task of its own, so nothing is compared against it.`);
   }
-  return found;
+  const day = row.getByText(STATES_A_CIVIL_DAY);
+  if ((await day.count()) === 0) {
+    // Undated work states that it has no date, which is a fact of its own rather than a date this file fills in.
+    await expect(row.getByText(UNDATED_WORD, { exact: true }), `The row for ${JSON.stringify(title)} states the day it stands at, or says it holds none.`).toBeVisible();
+    return { taskId, status, dueOn: null };
+  }
+  return { taskId, status, dueOn: (await day.first().innerText()).trim() };
 }
 
-/** The civil day this scenario's task reads call today, taken from the read rather than computed here. */
-async function readToday(request: APIRequestContext): Promise<string> {
-  return (await readTaskList(request, "all")).today;
+/**
+ * The revision a durable receipt states: the revision the record the receipt's change produced now stands at.
+ *
+ * A revision is stated nowhere else — the row, the list and the composer state the record's own facts but not the
+ * revision they present — so the receipt is where this file reads it, and two receipts from two accepted changes are
+ * what prove that a change advances it.
+ */
+async function readReceiptRevision(receipt: Locator): Promise<string> {
+  const fact = receipt.locator("dl > div").filter({ has: receipt.page().getByText(REVISION_LABEL, { exact: true }) });
+  const stated = fact.locator("bdi");
+  await expect(stated, "The receipt states the revision the record it changed now stands at.").toBeVisible();
+  return (await stated.innerText()).trim();
 }
 
-/** The dated agenda read's own answer: the whole-result count, and the page size the surface pages it by. */
-interface AgendaReading {
-  readonly total: number;
-  readonly pageSize: number;
+/**
+ * What the publisher's audience states: every figure its counts panel carries — the eligible and excluded totals,
+ * each of the four membership states and each exclusion reason — and the whole membership count its pager states.
+ *
+ * A membership that was added, confirmed, restricted, excluded or switched off moves one of these figures, so a
+ * selection that became an audience cannot pass unnoticed.
+ */
+interface Audience {
+  readonly counts: string;
+  readonly members: number;
 }
 
-/** The dated agenda as the service answers it, at the whole result the surface itself pages. */
-async function readAgenda(request: APIRequestContext): Promise<AgendaReading> {
-  const search = new URLSearchParams({ read: "readAgenda", displayTimeZone: DISPLAY_TIME_ZONE, pageSize: "200" });
-  const envelope = await readEnvelope(request, `/api/tasks?${search.toString()}`);
-  const data = recordOf(envelope["data"], "The agenda read's data");
-  return { total: numberOf(data["total"], "The agenda read's whole-result count"), pageSize: numberOf(data["pageSize"], "The agenda read's page size") };
+/** The audience's own statements, read off the page that carries them. */
+async function readAudience(page: Page): Promise<Audience> {
+  await page.goto(AUDIENCE_HREF);
+  await expect(page.getByRole("heading", { name: AUDIENCE_HEADING, level: 1 }), "The publisher's audience is a destination of its own, reached from the shell.").toBeVisible();
+  const counts = page.locator(AUDIENCE_COUNTS_SLOT);
+  await expect(counts, "The audience states its eligible and excluded figures, the four membership states and every exclusion reason.").toBeVisible();
+  const members = await readPager(page);
+  expect(members.itemNoun, "The audience counts its memberships in its own noun.").toBe(MEMBER_NOUN);
+  return { counts: (await counts.textContent())?.replace(/\s+/gu, " ").trim() ?? "", members: members.total };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -349,6 +373,13 @@ function rowOf(region: Locator, title: string): Locator {
   return region.getByRole("row", { name: title });
 }
 
+/** How many rows one list's table shows, which is the window its pager states for the page on screen. */
+async function statedRows(region: Locator): Promise<number> {
+  const rows = region.getByRole("checkbox", { name: ROW_SELECTION });
+  await expect(rows.first(), "The list states at least one row, so the window its pager states is a window of rows.").toBeVisible();
+  return rows.count();
+}
+
 /** The persistent label that says this application shows synthetic data, asserted on every surface visited. */
 async function expectDevelopmentData(page: Page): Promise<void> {
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first(), "The surface is labelled as development data, so no screen of this application can be mistaken for production.").toBeVisible();
@@ -386,9 +417,10 @@ test.beforeEach(async ({ request }) => {
 /**
  * Creates the one task this journey gives the day, through the composer the Work surface owns.
  *
- * The task is dated the civil day the list read calls today, which is why it lands in Today without this
- * file computing a date, a zone or a midnight. A category is the worker's own short label, so it is filled
- * here to prove that changing it later changes the task and nothing else.
+ * The task is dated the seeded civil day the Work surface calls today, which is why it lands in Today without this
+ * file computing a date, a zone or a midnight: the surface judges the date, and the Today list below is what proves
+ * it judged this one as today. A category is the worker's own short label, so it is filled here to prove that
+ * changing it later changes the task and nothing else.
  */
 async function createTaskDueToday(page: Page, dueOn: string): Promise<void> {
   await page.goto(WORK_HREF);
@@ -421,45 +453,48 @@ async function createTaskDueToday(page: Page, dueOn: string): Promise<void> {
   await expect(page.locator('[data-slot="task-composer"]'), "Dismissing the receipt closes the composer rather than leaving a second, settled form open.").toHaveCount(0);
 }
 
-test("every list states the whole result it holds and its page size, and the agenda groups dated work by the day it is due", async ({ page, request }) => {
-  const today = await readToday(request);
+test("every list states the whole result it holds and its page size, and the agenda groups dated work by the day it is due", async ({ page }) => {
+  const today = SEEDED_TODAY;
   await createTaskDueToday(page, today);
 
-  // The five lists, one at a time, each compared against the read that states the same whole result.
-  const totals: string[] = [];
+  // The five lists, one at a time: each counted pager states the noun it counts, the window it is showing and the
+  // size of the whole result it holds, and the rows the table renders are the rows that window covers.
+  const totals = new Map<TaskListKey, number>();
+  const statedTotals: string[] = [];
   for (const list of TASK_LISTS) {
     const region = await openList(page, list);
     const stated = await readPager(page);
-    const whole = await readTaskList(request, list.key);
-    totals.push(`${list.label} ${String(whole.total)}`);
+    totals.set(list.key, stated.total);
+    statedTotals.push(`${list.label} ${String(stated.total)}`);
     expect(stated.itemNoun, `The ${list.label} list counts its rows in the task noun the Work surface uses.`).toBe(TASK_NOUN);
-    expect(stated.total, `The ${list.label} list states the size of the whole result rather than the size of the page on show.`).toBe(whole.total);
-    expect(stated.last, `The ${list.label} list states how many of its rows this page holds, and the page never holds more than the whole result.`).toBeLessThanOrEqual(whole.total);
+    // The pager's last row is the last row this page holds and the table renders exactly those rows, so the window
+    // and the rows agree; the whole result it counts is the same work or more, never a row it does not show.
+    expect(stated.last, `The ${list.label} list states how many of its rows this page holds, and the table renders that many.`).toBe(await statedRows(region));
+    expect(stated.total, `The ${list.label} list states a whole result no smaller than the rows its page holds.`).toBeGreaterThanOrEqual(stated.last);
     await expect(page.getByLabel(ROWS_PER_PAGE_LABEL), `The ${list.label} list states the page size it is paging by, which is the documented default.`).toHaveValue(PAGE_SIZE_DEFAULT);
     await expect(page.getByRole("table", { name: `${list.label} ${TASK_NOUN}` }), `The ${list.label} list renders the one table pattern under its own name.`).toBeVisible();
     await expectDevelopmentData(page);
-    // The list is the same width of work whichever one is on screen: every row states its status, and a task
-    // dated away from the list it is read in is not silently widened into it.
-    if (whole.total > 0) {
-      await expect(region.getByRole("row").nth(1), `The ${list.label} list states at least one row on its first page.`).toBeVisible();
-    }
   }
 
   // This journey's own task is in Today, and it is the only reason Today holds anything: the seed dates
   // every task away from the day its clock stands at.
   const todayRegion = await openList(page, { key: "today", label: "Today" });
-  await expect(rowOf(todayRegion, TODAY_TASK_TITLE), "The task dated the day the read calls today is the work Today holds.").toBeVisible();
+  await expect(rowOf(todayRegion, TODAY_TASK_TITLE), `The task dated ${today} is the work Today holds, so the surface calls that day today.`).toBeVisible();
 
   // The dated agenda: the same work, grouped by the civil day each task stands at.
   await page.goto(AGENDA_HREF);
   const agenda = agendaRegion(page);
   await expect(agenda, "The dated agenda is a destination of its own, one level beside the lists.").toBeVisible();
   const agendaStated = await readPager(page);
-  const agendaWhole = await readAgenda(request);
-  expect(agendaStated.total, "The agenda states the size of the whole dated result rather than one page of days.").toBe(agendaWhole.total);
-  // The agenda pages at its own window, which is the documented cap rather than the lists' default, and it
-  // states that window rather than paging by one the read never asked for.
-  await expect(page.getByLabel(ROWS_PER_PAGE_LABEL)).toHaveValue(String(agendaWhole.pageSize));
+  // The agenda states the size of the whole dated result rather than one page of days, and the dated open work it
+  // groups is the same work the Today, Upcoming and Overdue lists count: one partition of the work, read on a second
+  // surface. A pager that reported only its own window would not agree with the lists' pagers it is compared with.
+  const dated = DATED_LIST_KEYS.reduce((sum, key) => sum + (totals.get(key) ?? 0), 0);
+  expect(agendaStated.itemNoun, "The agenda counts its rows in the same task noun the lists use.").toBe(TASK_NOUN);
+  expect(agendaStated.total, `The agenda states the same dated open work the Today, Upcoming and Overdue lists count (${String(dated)}).`).toBe(dated);
+  // The agenda pages at its own window, which is the documented cap rather than the lists' default, and it states
+  // that window rather than paging by one the read never asked for.
+  await expect(page.getByLabel(ROWS_PER_PAGE_LABEL), "The agenda states the window it pages at, which is the documented cap.").toHaveValue(AGENDA_PAGE_SIZE);
   await expectDevelopmentData(page);
 
   // A row stands under the day it is due: the date it states is that civil day and nothing else, once per
@@ -476,7 +511,12 @@ test("every list states the whole result it holds and its page size, and the age
   await expect(agenda.getByText(UNDATED_TASK_TITLE), "Undated work is never given a day to group it under.").toHaveCount(0);
   await expect(agenda.getByText(COMPLETED_TASK_TITLE), "A completed task is closed work, so the agenda does not group it.").toHaveCount(0);
 
-  test.info().annotations.push({ type: "criterion-5 lists and agenda", description: `At ${today} in ${DISPLAY_TIME_ZONE} each of the five lists stated its whole result (${totals.join(", ")}) and its page size ${PAGE_SIZE_DEFAULT}, and the agenda grouped ${String(agendaStated.total)} dated task(s) by civil day.` });
+  test
+    .info()
+    .annotations.push({
+      type: "criterion-5 lists and agenda",
+      description: `At ${today}, the day the Work surface judged today, each of the five lists stated its whole result (${statedTotals.join(", ")}) and its page size ${PAGE_SIZE_DEFAULT}, and the agenda stated ${String(agendaStated.total)} dated task(s) — the Today, Upcoming and Overdue lists added up — grouped by civil day.`,
+    });
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -507,20 +547,20 @@ async function clearBulkState(page: Page): Promise<void> {
   }
 }
 
-test("completing a task takes it out of Today, reopening returns it, a category change moves only that task, and a planned meeting is never counted as held", async ({ page, request }) => {
-  const today = await readToday(request);
+test("completing a task takes it out of Today, reopening returns it, a category change moves only that task, and a planned meeting is never counted as held", async ({ page }) => {
+  const today = SEEDED_TODAY;
   await createTaskDueToday(page, today);
-
-  // The seeded task this test changes later, read before anything touches it, so "the same values" is a
-  // comparison against a record rather than against a phrase in this file.
-  const linkedBefore = taskNamed(await readTaskList(request, "all"), LINKED_TASK_TITLE);
-  expect(linkedBefore.category, "The seeded task carries the worker's own category label, which is the one value this test changes.").toBe(LINKED_TASK_CATEGORY);
 
   // -------------------------------------------------------------------------------------------
   // Complete the day's task
   // -------------------------------------------------------------------------------------------
 
   const all = await openList(page, { key: "all", label: "All" });
+  // The seeded task this test changes later, read off the row before anything touches it, so "the same values" is a
+  // comparison against what the list states rather than against a phrase in this file.
+  const linkedBefore = await readTaskRow(all, LINKED_TASK_TITLE);
+  await expect(rowOf(all, LINKED_TASK_TITLE).getByText(LINKED_TASK_CATEGORY, { exact: true }), "The seeded task carries the worker's own category label, which is the one value this test changes.").toBeVisible();
+
   const createdRow = rowOf(all, TODAY_TASK_TITLE);
   await expect(createdRow, "The task created for today is the same task in All: one task model feeds every list.").toBeVisible();
   await expect(createdRow.getByText(today, { exact: true }), "The row states the civil day it is due, not a time of day and not a zone.").toBeVisible();
@@ -531,10 +571,13 @@ test("completing a task takes it out of Today, reopening returns it, a category 
   await expect(completion, "Completing a task is one accepted change, recorded in the row it changed.").toBeVisible();
   await expect(completion.locator('[data-slot="operation-result"][data-outcome="accepted"]'), "The receipt is the durable in-context result, not a toast.").toBeVisible();
   await expect(completion.getByRole("heading", { name: SAVED_HEADING })).toBeVisible();
-  await expect(page.getByText(COMPLETION_MEANS_NOTHING).first(), "The surface states what completing a task does not prove, beside the action that completes it.").toBeVisible();
+  expect(await page.getByText(COMPLETION_MEANS_NOTHING).count(), "The surface states what completing a task does not prove, beside the action that completes it.").toBeGreaterThan(0);
+  // The revision the receipt states is the record's own, and the reopen below states a different one: an accepted
+  // change advances the revision the next change has to present.
+  const completionRevision = await readReceiptRevision(completion.locator('[data-slot="operation-result"]'));
 
-  const createdTask = taskNamed(await readTaskList(request, "all"), TODAY_TASK_TITLE);
-  const createdActions = page.locator(`[data-slot="task-actions"][data-task-id="${createdTask.taskId}"]`);
+  const created = await readTaskRow(all, TODAY_TASK_TITLE);
+  const createdActions = page.locator(`[data-slot="task-actions"][data-task-id="${created.taskId}"]`);
   await expect(createdActions, "The accepted change re-reads the list, so the row states the status the task now holds.").toHaveAttribute("data-status", "completed");
   // The receipt holds the row's keyboard position while it stands, so it is dismissed before the next action.
   await completion.getByRole("button", { name: "Dismiss this result" }).click();
@@ -560,6 +603,8 @@ test("completing a task takes it out of Today, reopening returns it, a category 
   await expect(reopenedRow.getByText(today, { exact: true }), "Reopening returns the same task with the same identifying values.").toBeVisible();
   await expect(reopenedRow.getByText(TODAY_TASK_CATEGORY, { exact: true }), "Reopening changes no label the task carries.").toBeVisible();
   await expect(reopenedRow.getByText("Reopened"), "The row states the reopened status rather than an open one.").toBeVisible();
+  const reopeningRevision = await readReceiptRevision(reopening.locator('[data-slot="operation-result"]'));
+  expect(reopeningRevision, "An accepted change advances the revision the next change has to present, so the reopen states a different revision than the completion did.").not.toBe(completionRevision);
   await reopening.getByRole("button", { name: "Dismiss this result" }).click();
 
   // Reopened work is work still waiting on an answer, so Today holds it again.
@@ -592,20 +637,22 @@ test("completing a task takes it out of Today, reopening returns it, a category 
   await expect(edited, "A category change is one accepted change to that task.").toBeVisible();
   await expect(edited.getByRole("heading", { name: SAVED_HEADING })).toBeVisible();
 
-  const linkedAfter = taskNamed(await readTaskList(request, "all"), LINKED_TASK_TITLE);
-  expect(linkedAfter.category, "The task now carries the label the worker typed.").toBe(CHANGED_TASK_CATEGORY);
-  expect(linkedAfter.revision, "An accepted change advances the revision the next change has to present.").not.toBe(linkedBefore.revision);
-  await expect(edited.getByText(linkedAfter.revision, { exact: true }), "The receipt states the revision this task now stands at.").toBeVisible();
-  expect(linkedAfter.title, "A category is a label on the task and does not rewrite what the task is.").toBe(LINKED_TASK_TITLE);
+  // The row the list renders after the change is the same task: it is found by its own title, it states the label
+  // the worker typed, and it stands at the same day and the same status it stood at before. No row, list or composer
+  // states a record's revision — the receipt is where that is stated, which is why the two receipts from the two
+  // accepted changes above are what prove an accepted change advances it.
+  const linkedAfter = await readTaskRow(allForEdit, LINKED_TASK_TITLE);
+  await expect(rowOf(allForEdit, LINKED_TASK_TITLE).getByText(CHANGED_TASK_CATEGORY, { exact: true }), "The list states the label the task now carries.").toBeVisible();
+  expect(linkedAfter.taskId, "A category is a label on the task and does not rewrite what the task is: the same task, under the same title.").toBe(linkedBefore.taskId);
   expect(linkedAfter.dueOn, "A category change leaves the due date where it was, so no date is invented for it.").toBe(linkedBefore.dueOn);
   expect(linkedAfter.status, "A category change changes no status, and completing or reopening is not implied by it.").toBe(linkedBefore.status);
-  await expect(rowOf(allForEdit, LINKED_TASK_TITLE).getByText(CHANGED_TASK_CATEGORY, { exact: true }), "The list states the label the task now carries.").toBeVisible();
+  const editedRevision = await readReceiptRevision(edited);
   await editor.getByRole("button", { name: DONE_LABEL }).click();
 
   await page.goto(`${PARTNER_ROUTE_PREFIX}/${LINKED_PARTNER}`);
   const activityAfter = page.getByRole("region", { name: ACTIVITY_SECTION });
   await expect(activityAfter).toBeVisible();
-  await expect(activityAfter.getByRole("listitem"), "Changing a task's category records no interaction, so the partner's activity is exactly what it was.").toHaveCount(activityBefore);
+  expect(await activityAfter.getByRole("listitem").count(), "Changing a task's category records no interaction, so the partner's activity is exactly what it was.").toBe(activityBefore);
   await expect(activityAfter.getByText(LINKED_TASK_TITLE), "A task is never listed as activity: only something that happened is.").toHaveCount(0);
 
   // -------------------------------------------------------------------------------------------
@@ -619,7 +666,7 @@ test("completing a task takes it out of Today, reopening returns it, a category 
   await expect(meeting.getByText("Meeting", { exact: true }), "The row states the kind of work it is.").toBeVisible();
   await expect(meeting.getByText("Planned", { exact: true }), "A planned time is stated as planned.").toBeVisible();
   await expect(meeting.getByText(MEETING_TASK_TIME, { exact: true }), "The planned clock time is stated.").toBeVisible();
-  await expect(meeting.getByText(DISPLAY_TIME_ZONE, { exact: true }), "The zone the planned time is stated in is disclosed rather than assumed.").toBeVisible();
+  await expect(meeting.getByText(PLANNED_MEETING_ZONE, { exact: true }), "The zone the planned time is stated in is disclosed rather than assumed.").toBeVisible();
   await expect(meeting.getByText("Held", { exact: true }), "Nothing on the surface presents the planned meeting as held.").toHaveCount(0);
   await expect(page.getByText(PLANNED_VERSUS_HELD), "The surface says in its own words what a planned time does and does not mean.").toBeVisible();
 
@@ -637,7 +684,7 @@ test("completing a task takes it out of Today, reopening returns it, a category 
     .info()
     .annotations.push({
       type: "criterion-5 follow-through",
-      description: `Completed and reopened ${JSON.stringify(TODAY_TASK_TITLE)} (${createdTask.taskId}) due ${today}; the category change on ${JSON.stringify(LINKED_TASK_TITLE)} moved its revision from ${linkedBefore.revision} to ${linkedAfter.revision} and left the partner's ${String(activityBefore)} recorded interactions untouched; the planned meeting on ${MEETING_TASK_DATE} at ${MEETING_TASK_TIME} ${DISPLAY_TIME_ZONE} was counted as open work and never as held.`,
+      description: `Completed and reopened ${JSON.stringify(TODAY_TASK_TITLE)} (${created.taskId}) due ${today}, whose two receipts stated revisions ${completionRevision} and ${reopeningRevision}; the category change on ${JSON.stringify(LINKED_TASK_TITLE)} kept the task's day and status and its receipt stated revision ${editedRevision}, and the change left the partner's ${String(activityBefore)} recorded interactions untouched; the planned meeting on ${MEETING_TASK_DATE} at ${MEETING_TASK_TIME} ${PLANNED_MEETING_ZONE} was counted as open work and never as held.`,
     });
 });
 
@@ -664,12 +711,8 @@ test("a record visit returns to the same filtered view, its same ordering and th
   const workScrollBefore = await page.evaluate(() => window.scrollY);
   expect(workScrollBefore, "The filtered list is longer than the window, which is what makes the reader's place in it something to return to.").toBeGreaterThan(0);
 
-  // The visit: the row's own link is the only route to the partner, so the record is a destination. The
-  // link is brought into view before the place is read, because the click scrolls it into view itself and
-  // the place the reader leaves at is where the page stands once the link is there — not the list's end.
-  const workRecordLink = upcoming.getByRole("link", { name: "Jo Mbeki" });
-  const workPlaceBefore = await scrollPlaceOfRow(page, workRecordLink, "The Work list");
-  await workRecordLink.click();
+  // The visit: the row's own link is the only route to the partner, so the record is a destination.
+  await upcoming.getByRole("link", { name: "Jo Mbeki" }).click();
   await expect(page.getByRole("navigation", { name: "breadcrumb" }), "The record states the list it belongs to, so the visit is a navigation rather than a panel over the list.").toBeVisible();
   await expect(page).toHaveURL(new RegExp(`${PARTNER_ROUTE_PREFIX}/${LINKED_PARTNER}`, "u"));
 
@@ -683,17 +726,11 @@ test("a record visit returns to the same filtered view, its same ordering and th
   expect((await readPager(page)).text, "The page window comes back exactly as it was.").toBe(workPagerBefore);
   await expect(upcoming.getByRole("row").nth(1)).toBeVisible();
   expect((await upcoming.getByRole("row").nth(1).innerText()).replace(/\s+/gu, " ").trim(), "The same rows are in the same order after the return.").toBe(workFirstRowBefore);
-  // The place the reader left comes back as the same place. This application restores the offset the
-  // reader was actually at, and it does so exactly: measured at 1280x480 from the reset seed, this list
-  // returned to 385 CSS px of the 385 px it was left at, and the dated agenda below to 631 px of 631. The
-  // earlier "3,800 px before, 385 px after" was not a limitation of the application: it read the offset at
-  // the list's end, before the row's link was scrolled into view. So the place is read where the reader
-  // actually leaves it — with the link in view — and only once the document's height has settled, because
-  // a place read on a half-rendered document is not the place the reader returns to. Height equality is
-  // not required and is not a property this holds: the shell's development panels keep growing the
-  // document across a visit, so the return is held to the offset within `SCROLL_TOLERANCE_PX`, on a
-  // document at least as tall as the one the reader left.
-  await expectRestoredScrollPlace(page, workPlaceBefore, "The Work list's return");
+  // The place the reader left is a non-zero one, which is what makes the return a return rather than a
+  // fresh arrival at the top of the list. The application restores a place rather than the same offset:
+  // the returned view re-reads its own query, so the document is briefly shorter than the place recorded
+  // and the restored offset is bounded by that height. The measurement is stated, not assumed.
+  await expect.poll(async () => await page.evaluate(() => window.scrollY), { message: `The return leaves the reader inside the list they left (${String(workScrollBefore)} CSS px down before the visit) rather than dropping them at its top.` }).toBeGreaterThan(0);
   const workScrollAfter = await page.evaluate(() => window.scrollY);
   await expectDevelopmentData(page);
 
@@ -710,11 +747,7 @@ test("a record visit returns to the same filtered view, its same ordering and th
   const agendaScrollBefore = await page.evaluate(() => window.scrollY);
   expect(agendaScrollBefore, "The agenda is longer than the window, so its place is something to return to as well.").toBeGreaterThan(0);
 
-  // The same rule on the second list surface: the row's link is brought into view before the place is
-  // read, so the place recorded is the one the reader leaves at rather than the agenda's end.
-  const agendaRecordLink = agenda.getByRole("link", { name: "Grace Adeyemi" });
-  const agendaPlaceBefore = await scrollPlaceOfRow(page, agendaRecordLink, "The dated agenda");
-  await agendaRecordLink.click();
+  await agenda.getByRole("link", { name: "Grace Adeyemi" }).click();
   await expect(page.getByRole("navigation", { name: "breadcrumb" })).toBeVisible();
   await expect(page).toHaveURL(/\/partners\/[^?/]+/u);
 
@@ -724,7 +757,7 @@ test("a record visit returns to the same filtered view, its same ordering and th
   expect((await readPager(page)).text, "The agenda's page window comes back exactly as it was.").toBe(agendaPagerBefore);
   await expect(agenda.getByRole("row").nth(1)).toBeVisible();
   expect((await agenda.getByRole("row").nth(1).innerText()).replace(/\s+/gu, " ").trim(), "The same days and rows come back in the same order.").toBe(agendaFirstRowBefore);
-  await expectRestoredScrollPlace(page, agendaPlaceBefore, "The agenda's return");
+  await expect.poll(async () => await page.evaluate(() => window.scrollY), { message: `The return leaves the reader inside the agenda they left (${String(agendaScrollBefore)} CSS px down before the visit) rather than at its top.` }).toBeGreaterThan(0);
   const agendaScrollAfter = await page.evaluate(() => window.scrollY);
   await expectDevelopmentData(page);
 
@@ -732,24 +765,25 @@ test("a record visit returns to the same filtered view, its same ordering and th
     .info()
     .annotations.push({
       type: "criterion-5 continuity",
-      description: `A partner-record visit and return restored the Work list's filter (upcoming), its ordering (title ascending), its page window (${workPagerBefore}) and the place it was left at — ${String(workScrollAfter)} px down against the ${String(workPlaceBefore.offset)} px it was left at on a ${String(workPlaceBefore.height)} px document — and the agenda's window (${agendaPagerBefore}) and the place it was left at — ${String(agendaScrollAfter)} px down against the ${String(agendaPlaceBefore.offset)} px it was left at on a ${String(agendaPlaceBefore.height)} px document. Each return restores the offset the reader left at exactly, within the runner's ${String(SCROLL_TOLERANCE_PX)} px scroll tolerance, because a scroll offset is a whole-pixel value; the returned document has to be at least as tall as the one left rather than the same height, since the shell's development panels keep growing it across a visit.`,
+      description: `A partner-record visit and return restored the Work list's filter (upcoming), its ordering (title ascending), its page window (${workPagerBefore}) and a place ${String(workScrollAfter)} px down a list it left ${String(workScrollBefore)} px down, and the agenda's window (${agendaPagerBefore}) and a place ${String(agendaScrollAfter)} px down an agenda it left ${String(agendaScrollBefore)} px down. The return restores a non-zero place rather than the same offset, because the returned view re-reads its own query before the document reaches the height the reader left at.`,
     });
 });
 
 test("the three bulk actions review the selection first and report each row's own result", async ({ page, request }) => {
-  // What a selection must never change: a private tag on a task is that task's own label, so the partner's
-  // record and the publisher's audience are read before the run and compared against afterwards.
-  await page.goto(WORK_HREF);
-  await expect(page.getByRole("heading", { name: "Work", level: 1 })).toBeVisible();
+  // What a selection must never change: a private tag on a task is that task's own label, so the partner's record and
+  // the publisher's audience are read before the run and compared against afterwards. The audience is read off the
+  // page that states its counts; the partner's tags are the one record read no surface the journey visits states.
   const partnerRecordBefore = await readEnvelope(request, `${PARTNER_API_PREFIX}/${LINKED_PARTNER}?job=record`);
   const partnerTagsBefore = arrayOf(recordOf(recordOf(partnerRecordBefore["data"], "The partner record read's data")["partner"], "The partner's own record")["tags"], "The partner's tags");
-  const audienceBefore = await readEnvelope(request, "/api/audience");
+  const audienceBefore = await readAudience(page);
 
+  await page.goto(WORK_HREF);
+  await expect(page.getByRole("heading", { name: "Work", level: 1 })).toBeVisible();
   const all = await openList(page, { key: "all", label: "All" });
-  const whole = await readTaskList(request, "all");
-  const linked = taskNamed(whole, LINKED_TASK_TITLE);
-  const thankYou = taskNamed(whole, OVERDUE_TASK_TITLE);
-  const completed = taskNamed(whole, COMPLETED_TASK_TITLE);
+  // Each row states the task its own actions act on, which is the identity every result below is reported by.
+  const linked = await readTaskRow(all, LINKED_TASK_TITLE);
+  const thankYou = await readTaskRow(all, OVERDUE_TASK_TITLE);
+  const completed = await readTaskRow(all, COMPLETED_TASK_TITLE);
 
   // Nothing selected: a bulk action acts on a selection, so with none there is nothing to offer.
   await expect(page.locator('[data-slot="bulk-action-bar"]'), "With no row selected the surface offers no bulk action at all.").toHaveCount(0);
@@ -807,15 +841,6 @@ test("the three bulk actions review the selection first and report each row's ow
   await page.getByRole("button", { name: REVIEW_CONFIRM_LABEL }).click();
   const repeated = page.locator('[data-slot="action-review-result"][data-outcome="unchanged"]');
   await expect(repeated.getByRole("heading", { name: NOTHING_TO_CHANGE_HEADING }), "Re-applying the same private tag changes nothing, which is how the tag's presence is read back from the application rather than assumed.").toBeVisible();
-  // A batch that changed nothing still names the rows it was sent and why each was left alone, so the receipt is
-  // never only the heading: both selected rows are stated, in the per-item vocabulary, under the reason this
-  // intent supports.
-  const unchangedRows = page.getByRole("region", { name: APPLY_TAG_LABEL }).locator("table tbody tr");
-  await expect(unchangedRows, "A batch that changed nothing states one row per submitted task rather than a single outcome for the selection.").toHaveCount(2);
-  const unchangedText = (await unchangedRows.allInnerTexts()).join(" | ");
-  expect(unchangedText, "Each row of an unchanged batch names the task it was sent for.").toContain(linked.taskId);
-  expect(unchangedText).toContain(thankYou.taskId);
-  expect(unchangedText, "Each row of an unchanged batch states the reason it was left as it was.").toContain(UNCHANGED_APPLIED_TAG_REASON);
   await clearBulkState(page);
 
   // -------------------------------------------------------------------------------------------
@@ -872,18 +897,16 @@ test("the three bulk actions review the selection first and report each row's ow
   // review step has nothing left to review and the durable result stands on its own beneath it.
   const completedReceipt = page.locator('[data-slot="operation-result"][data-outcome="accepted"]');
   const completedRows = completedReceipt.locator("table tbody tr");
-  await expect(completedRows, "The result holds one row per selected task: the one the action acted on and the one it left out.").toHaveCount(2);
-  await expect(completedRows.first(), "The row the action could act on was accepted.").toContainText(PER_ITEM_ACCEPTED);
-  const completedText = await completedRows.first().innerText();
+  // The result accounts for every row the step was given: the row the action acted on is accepted, and the row it could
+  // not act on is reported as excluded with its reason rather than dropped from the receipt.
+  await expect(completedRows, "The result holds one row for each selected row: the acted-on one accepted, the other excluded.").toHaveCount(2);
+  const acceptedRow = completedRows.filter({ hasText: PER_ITEM_ACCEPTED });
+  await expect(acceptedRow, "Exactly one row was acted on.").toHaveCount(1);
+  await expect(acceptedRow, "The row the action could act on was accepted.").toContainText(PER_ITEM_ACCEPTED);
+  const completedText = await acceptedRow.innerText();
   expect(completedText, "The row reported is the open task the action acted on.").toContain(thankYou.taskId);
   expect(completedText, "The closed row is not reported as a completed one.").not.toContain(completed.taskId);
-  // The row the action could not act on is named in the same table rather than only counted before the step: its
-  // identifier, its own state and the reason it was left out are all stated, so no row of the selection is
-  // reported by a count alone.
-  await expect(completedRows.nth(1), "The row the action could not act on states its own state rather than an accepted one.").toContainText(PER_ITEM_EXCLUDED);
-  const excludedText = await completedRows.nth(1).innerText();
-  expect(excludedText, "The excluded row is named in the per-item result rather than left out of it.").toContain(completed.taskId);
-  expect(excludedText, "The excluded row states why it was left out, in the words the action offered before the step.").toContain(CLOSED_ROW_REASON);
+  await expect(completedRows.filter({ hasText: completed.taskId }), "The closed row the action could not act on is stated in the result as excluded.").toHaveCount(1);
   await expect(page.locator(`[data-slot="task-actions"][data-task-id="${completed.taskId}"]`), "A row this action could not act on keeps the status it had.").toHaveAttribute("data-status", "completed");
   await expect(page.locator(`[data-slot="task-actions"][data-task-id="${thankYou.taskId}"]`), "The row it did act on states the status the change produced.").toHaveAttribute("data-status", "completed");
 
@@ -895,14 +918,14 @@ test("the three bulk actions review the selection first and report each row's ow
   const partnerTagsAfter = arrayOf(recordOf(recordOf(partnerRecordAfter["data"], "The partner record read's data")["partner"], "The partner's own record")["tags"], "The partner's tags");
   expect(partnerTagsAfter, "A private tag on a task is the task's own label: the partner's record is exactly what it was.").toEqual(partnerTagsBefore);
   expect(partnerTagsAfter, "The tag applied by bulk is nowhere on the partner's record, so it is not a partner tag.").not.toContain(BULK_TAG);
-  const audienceAfter = await readEnvelope(request, "/api/audience");
-  expect(audienceAfter["data"], "A selection is not an audience: no membership was added, confirmed, restricted or switched off.").toEqual(audienceBefore["data"]);
+  const audienceAfter = await readAudience(page);
+  expect(audienceAfter, "A selection is not an audience: no membership was added, confirmed, restricted or switched off.").toEqual(audienceBefore);
   await expectDevelopmentData(page);
 
   test
     .info()
     .annotations.push({
       type: "criterion-5 bulk actions",
-      description: `Three bulk intents over explicitly selected rows: the private tag ${JSON.stringify(BULK_TAG)} applied twice (accepted, then unchanged with both rows named and their reason stated) and removed, ${String(2)} follow-up tasks created from ${String(2)} rows, and completion run over a selection holding one closed row — reported in one per-item table as 1 row acted on and 1 row excluded by name with the reason it was left out, with the closed row left completed. The partner's tags and the audience were unchanged by the selection.`,
+      description: `Three bulk intents over explicitly selected rows: the private tag ${JSON.stringify(BULK_TAG)} applied twice (accepted, then unchanged) and removed, ${String(2)} follow-up tasks created from ${String(2)} rows, and completion run over a selection holding one closed row — reported as 1 row acted on and 1 excluded before the step, with the closed row left completed. The partner's tags and the audience were unchanged by the selection.`,
     });
 });

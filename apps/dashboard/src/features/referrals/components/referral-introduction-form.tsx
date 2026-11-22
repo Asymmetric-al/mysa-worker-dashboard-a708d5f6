@@ -1,5 +1,6 @@
 "use client";
 import { useForm } from "@tanstack/react-form";
+import { useRouter } from "next/navigation";
 import { useCallback, useId, useState, type ReactElement } from "react";
 import ActionReview from "@/components/action-review";
 import FormField, { fieldErrorsFromInvalid, FormFieldGroup } from "@/components/form-field";
@@ -107,15 +108,23 @@ export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, s
   const headingId = useId();
   const optionIdPrefix = useId();
   const form = useForm({ defaultValues: INITIAL_VALUES });
+  const router = useRouter();
   const [settledOutcome, setSettledOutcome] = useState<MutationOutcome | null>(null);
   const { mutateAsync } = useRecordIntroduction();
   const submit = useCallback((input: MutationInput<IntroductionPayload>): Promise<MutationOutcome> => mutateAsync({ operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload }), [mutateAsync]);
+  // A recorded introduction is a new cycle in the referral lists and a new fact on the record this form is
+  // composed beside, so a resolved attempt asks the route to re-read the reads it renders rather than this
+  // form placing the result in a list it does not own. The receipt stays on screen across that re-read: the
+  // outcome is this component's own state, and only the server reads around it are issued again.
   const handleSettled = useCallback(
     (outcome: MutationOutcome): void => {
       setSettledOutcome(outcome);
+      if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") {
+        router.refresh();
+      }
       onRecorded?.(outcome);
     },
-    [onRecorded],
+    [onRecorded, router],
   );
   // A refusal's per-field messages are read from the settled outcome, keyed by the schema's own field paths. Correcting a field begins a new intent, so the previous refusal stops being shown against the values it was raised for; returning the current `null` unchanged lets React bail out.
   const fieldErrors = settledOutcome !== null && settledOutcome.outcome === "invalid" ? fieldErrorsFromInvalid(settledOutcome) : null;

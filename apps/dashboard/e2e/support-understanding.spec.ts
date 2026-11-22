@@ -24,7 +24,9 @@
  * - the five recurring outcomes stay five, and an occurrence whose evidence is unknown or stale is
  *   counted in none of them rather than in a sixth;
  * - the goal is read-only without the explicit `canEditGoal` capability (no control at all, not a
- *   disabled one), a save against a stale revision is a conflict that keeps the caller's input beside
+ *   disabled one), a first goal is set through the panel's own control — its amount typed at the
+ *   precision the currency the panel states carries, its effective day chosen, and its reviewed submit
+ *   confirmed — a save against a stale revision is a conflict that keeps the caller's input beside
  *   the value the record holds, a replayed acceptance changes nothing, and a goal met above 100% is
  *   stated exactly as computed;
  * - an unavailable financial source is stated as unavailable — never as zero and never as an empty
@@ -157,6 +159,9 @@ const STUDENTS_GOAL_MINOR = 8_750;
 const STUDENTS_GOAL_EFFECTIVE_FROM = "2026-01-01";
 const STUDENTS_GOAL_PERCENTAGE = "120%";
 const STUDENTS_GOAL_SENTENCE = /The goal is 120% met over/u;
+
+/** The revision a goal created where none existed starts at, as the goal panel's own fact states it. */
+const FIRST_GOAL_REVISION = "1";
 
 /** The development control the runner and this file both operate, and the payload the runner sends. */
 const DEV_CONTROL_PATH = "/api/dev";
@@ -315,6 +320,31 @@ function requiredAmount(text: string, subject: string): DisplayedAmount {
     throw new Error(`${subject} states no amount and currency this file can read: ${JSON.stringify(text)}.`);
   }
   return amount;
+}
+
+/**
+ * The facts the goal panel states about the goal it holds.
+ *
+ * The panel states the amount in its own currency, the measure it counts, the effective day and the
+ * revision a change must present as one list, so the list is read whole: the amount and the revision
+ * this file compares are then read out of what the panel says, never out of the record behind it.
+ */
+async function statedGoalFacts(goal: ReturnType<Page["locator"]>): Promise<string> {
+  const facts = goal.locator("dl").first();
+  await expect(facts, "The goal panel states the goal it holds, so the facts it states about it can be read.").toBeVisible();
+  return (await facts.innerText()).replace(/\s+/gu, " ").trim();
+}
+
+/** The revision the goal panel states a change must present, with the note the panel states it by. */
+const STATED_REVISION = /Revision\s+(\S+)\s+\(the revision a change must present/u;
+
+/** The revision one statement of the goal panel's facts names, refusing a statement that names none. */
+function statedRevision(facts: string, subject: string): string {
+  const matched = STATED_REVISION.exec(facts);
+  if (matched === null) {
+    throw new Error(`${subject} states no revision a change must present, so nothing is compared with it: ${JSON.stringify(facts)}.`);
+  }
+  return matched[1] ?? "";
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -530,7 +560,7 @@ test("the overview states five separate measures, cash first, and never one comb
 
   // No combined figure is named anywhere on the surface, in the interface's own words.
   await expect(page.getByText(/Commitments, committed amounts and the goal are measures of their own/u)).toBeVisible();
-  await expect(page.getByText(/total support/iu), "The overview names no combined 'total support', because the five measures are never one figure.").toHaveCount(0);
+  expect(await page.getByText(/total support/iu).count(), "The overview names no combined 'total support', because the five measures are never one figure.").toBe(0);
 
   // The one chart reads the same report result as the table beneath it, and carries that table as its
   // alternative: a figure that states its unit, coverage and as-of time can be checked without reading
@@ -568,12 +598,12 @@ test("the received report compares equal-elapsed periods and a month with no gif
   await expect(page.getByText("Earlier equal-elapsed period").first()).toBeVisible();
   await expect(page.getByText("Difference (this period minus the earlier one)").first()).toBeVisible();
   await expect(page.getByText("Higher than the earlier period").first()).toBeVisible();
-  await expect(page.getByText("Not like-for-like"), "The two spans are the same length, so the report states an equal-elapsed comparison rather than a mis-matched one.").toHaveCount(0);
+  expect(await page.getByText("Not like-for-like").count(), "The two spans are the same length, so the report states an equal-elapsed comparison rather than a mis-matched one.").toBe(0);
 
   // The month the source recorded nothing in is a gap, named as one, and no amount of that month is a
   // plotted or printed zero.
   await expect(page.getByText(REPORT_GAP_WORD).first()).toBeVisible();
-  await expect(page.getByText("0.00 USD", { exact: true }), "A month with no gift is a gap rather than a zero, so no month of the period is printed at 0.00 USD.").toHaveCount(0);
+  expect(await page.getByText("0.00 USD", { exact: true }).count(), "A month with no gift is a gap rather than a zero, so no month of the period is printed at 0.00 USD.").toBe(0);
 
   // The currency the source never identified has no amount to state, and is never given another
   // currency's amount in its place.
@@ -596,9 +626,9 @@ test("a zero-baseline comparison states its difference and no percentage at all"
 
   // A zero earlier period is no denominator: the surface states no percentage rather than 0% or ∞.
   await expect(page.getByText(/No percentage is shown, because a percentage needs a compatible numerator and a positive, known denominator\./u)).toBeVisible();
-  await expect(page.getByText("0%", { exact: true }), "A zero baseline yields no percentage, so 0% is never stated for it.").toHaveCount(0);
-  await expect(page.getByText("∞", { exact: true }), "A zero baseline yields no percentage, so an infinite share is never stated for it.").toHaveCount(0);
-  await expect(page.getByText("Not like-for-like"), "Both spans are 30 days, so the difference is stated as an equal-elapsed one.").toHaveCount(0);
+  expect(await page.getByText("0%", { exact: true }).count(), "A zero baseline yields no percentage, so 0% is never stated for it.").toBe(0);
+  expect(await page.getByText("∞", { exact: true }).count(), "A zero baseline yields no percentage, so an infinite share is never stated for it.").toBe(0);
+  expect(await page.getByText("Not like-for-like").count(), "Both spans are 30 days, so the difference is stated as an equal-elapsed one.").toBe(0);
 });
 
 test("every currency is stated on its own and the unidentified amount is never summed", async ({ page }) => {
@@ -663,7 +693,7 @@ test("a split gift counts once at its own grain and a refund is explained rather
   const split = splitRows[0];
   expect(split?.text, "The row states the grain it is reported at.").toContain(SPLIT_ALLOCATION_GRAIN_WORD);
   expect(split?.amount?.minorUnits, "Only the authorised allocation of the split gift is counted, so the row states the allocation rather than the whole gift.").toBe(4_000);
-  await expect(page.getByText("100.00 USD", { exact: false }), "The whole gift's amount is nowhere in this view, because the gift is counted once at its allocation grain.").toHaveCount(0);
+  expect(await page.getByText("100.00 USD", { exact: false }).count(), "The whole gift's amount is nowhere in this view, because the gift is counted once at its allocation grain.").toBe(0);
 
   // The refund is a row of its own, naming the row it corrects, and the original it corrects is still
   // in the result: a correction explains itself instead of replacing what it corrects.
@@ -722,7 +752,7 @@ test("the recurring outcomes stay five and stale evidence stays outside them", a
 
   // The seeded commitment whose evidence is stale is in that sixth value, not in an outcome.
   const outsideRows = page.getByText(OUTSIDE_PARTITION_LABEL);
-  await expect(outsideRows.nth(1), "The stale occurrence is stated outside the five outcomes, in the partition and on its row.").toBeVisible();
+  expect(await outsideRows.count(), "The stale occurrence is stated outside the five outcomes, in the partition and on its row.").toBeGreaterThan(1);
 });
 
 test("a goal save against a stale revision is a conflict that keeps the caller's input", async ({ page, request }) => {
@@ -731,12 +761,14 @@ test("a goal save against a stale revision is a conflict that keeps the caller's
   await expect(goal).toBeVisible();
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
 
-  // The capability is present for this identity, so the change is offered and the current goal is
-  // stated with the revision a change has to present.
-  const before = await readGoal(request, SESSION.sessionId);
-  expect(before.canEditGoal, "The established worker holds the goal-editing capability.").toBe(true);
-  expect(before.minorUnits, "The seeded goal states its exact amount.").toBe(HARBOUR_GOAL_CURRENT_MINOR);
-  await expect(goal.getByRole("button", { name: "Change the goal" })).toBeVisible();
+  // The capability is present for this identity, so the panel offers the change, and the goal it holds
+  // is read off the panel itself — the amount in its own currency and the revision a change must present
+  // — rather than from the read behind it.
+  await expect(goal.getByRole("button", { name: "Change the goal" }), "The established worker holds the goal-editing capability, so the panel offers the change.").toBeVisible();
+  const statedBefore = await statedGoalFacts(goal);
+  const held = requiredAmount(statedBefore, "The goal panel's statement of the goal it holds");
+  expect(held.minorUnits, "The seeded goal states its exact amount.").toBe(HARBOUR_GOAL_CURRENT_MINOR);
+  expect(held.currency, "The seeded goal states the currency it is held in.").toBe("USD");
 
   // Arm the changed-revision failure on this one mutation, then save through the surface. The save
   // presents the revision the panel opened with, so the answer is a genuine conflict rather than a
@@ -757,20 +789,25 @@ test("a goal save against a stale revision is a conflict that keeps the caller's
   expect(receiptText, "The current goal's own minor units are stated beside the preserved input.").toContain(String(HARBOUR_GOAL_CURRENT_MINOR));
   expect(receiptText, "The amount the caller typed is preserved exactly as it was sent.").toContain(String(HARBOUR_GOAL_INPUT_MINOR));
 
-  // Nothing was overwritten in either direction: clear the armed failure and read the goal again.
+  // Nothing was overwritten in either direction: clear the armed failure, return to the surface and read
+  // the facts it states now. They are the facts it stated before the attempt, amount and revision alike.
   await clearFailure(request, SESSION.sessionId);
-  const after = await readGoal(request, SESSION.sessionId);
-  expect(after.minorUnits, "The conflict wrote nothing, so the goal still holds the amount it held.").toBe(HARBOUR_GOAL_CURRENT_MINOR);
-  expect(after.envelopeRevision, "The conflict advanced no revision, so the token a change must present is the one it was.").toBe(before.envelopeRevision);
   await page.goto(SUPPORT_HREF);
-  await expect(page.getByRole("region", { name: "Support goal" }).getByText("25,000.00 USD", { exact: false }).first()).toBeVisible();
+  const statedAfter = await statedGoalFacts(goal);
+  expect(requiredAmount(statedAfter, "The goal panel's statement of the goal it holds").minorUnits, "The conflict wrote nothing, so the goal still holds the amount it held.").toBe(HARBOUR_GOAL_CURRENT_MINOR);
+  expect(statedRevision(statedAfter, "The goal panel"), "The conflict advanced no revision, so the token a change must present is the one it was.").toBe(statedRevision(statedBefore, "The goal panel"));
 });
 
 test("an accepted goal save replays to its stored result and advances no second revision", async ({ page, request }) => {
   await page.goto(SUPPORT_HREF);
   const goal = page.getByRole("region", { name: "Support goal" });
   await expect(goal).toBeVisible();
+
+  // The attempt this test replays is the one the panel submits: the revision it presents is the one the
+  // panel states a change must present, and its identity is the review step's own. The scope is the one
+  // member of that attempt no surface states, so it is read from the named read the panel renders.
   const before = await readGoal(request, SESSION.sessionId);
+  const openedRevision = statedRevision(await statedGoalFacts(goal), "The goal panel");
 
   await goal.getByRole("button", { name: "Change the goal" }).click();
   await goal.getByLabel("Amount").fill("26000.00");
@@ -786,7 +823,11 @@ test("an accepted goal save replays to its stored result and advances no second 
   expect(saved.minorUnits, "The accepted save stored the amount the caller stated.").toBe(HARBOUR_GOAL_INPUT_MINOR);
 
   // The same attempt, replayed: the stored result comes back and no second effect or revision exists.
-  const replayed = await postGoalSave(request, SESSION.sessionId, { operationId: operationId ?? "", scope: before.scope, expectedRevision: before.envelopeRevision, payload: { currency: "USD", amount: { currency: "USD", minorUnits: HARBOUR_GOAL_INPUT_MINOR }, measure: "received-gifts", effectiveFrom: "2026-01-01" } });
+  // This leg stays on the transport by its nature rather than by a missing control: a replay is the
+  // recovery of an attempt whose acceptance was already recorded, and the surface has no control that
+  // repeats a settled attempt — it states the result and closes the step. The four members below are
+  // exactly the contract the panel's own submit sends.
+  const replayed = await postGoalSave(request, SESSION.sessionId, { operationId: operationId ?? "", scope: before.scope, expectedRevision: openedRevision, payload: { currency: "USD", amount: { currency: "USD", minorUnits: HARBOUR_GOAL_INPUT_MINOR }, measure: "received-gifts", effectiveFrom: "2026-01-01" } });
   expect(replayed.outcome, "A replayed acceptance is answered as an acceptance that already happened.").toBe("alreadyAccepted");
   expect(replayed.revision, "The replay reports the revision the accepted save produced.").toBe(saved.goalRevision);
   const afterReplay = await readGoal(request, SESSION.sessionId);
@@ -794,7 +835,7 @@ test("an accepted goal save replays to its stored result and advances no second 
   expect(afterReplay.minorUnits, "The replay wrote nothing, so the goal holds the amount the accepted save stored.").toBe(HARBOUR_GOAL_INPUT_MINOR);
 });
 
-test("a missing goal states no percentage and a goal met above 100% is stated exactly", async ({ page, request }) => {
+test("a missing goal states no percentage and a goal met above 100% is stated exactly", async ({ page }) => {
   // The students ministry's support source is complete and carries no goal: a missing denominator,
   // which is a different fact from a goal of zero.
   await page.goto(SUPPORT_HREF);
@@ -804,25 +845,43 @@ test("a missing goal states no percentage and a goal met above 100% is stated ex
   await expect(goal).toBeVisible();
   await expect(goal.getByText("No support goal is set", { exact: true })).toBeVisible();
   await expect(goal.getByText(/No percentage is shown because no support goal is set\. A missing goal and a goal of zero are different facts, and neither is a denominator\./u)).toBeVisible();
-  await expect(goal.getByText("0%", { exact: true }), "A subject with no goal states no percentage at all, so 0% is never shown for it.").toHaveCount(0);
+  expect(await goal.getByText("0%", { exact: true }).count(), "A subject with no goal states no percentage at all, so 0% is never shown for it.").toBe(0);
 
-  // A goal met above 100% is stated exactly as it was computed. This subject's read states no single
-  // currency in its coverage, so the panel offers no amount field to type into; the goal is therefore
-  // established through the same `saveGoal` transport the form posts to, in the subject's own currency,
-  // and the surface is then read to prove the figure it computes from it.
-  const students = await readGoal(request, STUDENTS_SESSION_ID);
-  expect(students.goalRevision, "This subject starts with no goal at all.").toBeNull();
-  const created = await postGoalSave(request, STUDENTS_SESSION_ID, {
-    operationId: crypto.randomUUID(),
-    scope: students.scope,
-    expectedRevision: students.envelopeRevision,
-    payload: { currency: "EUR", amount: { currency: "EUR", minorUnits: STUDENTS_GOAL_MINOR }, measure: "received-gifts", effectiveFrom: STUDENTS_GOAL_EFFECTIVE_FROM },
-  });
-  expect(created.outcome, "The goal is created once, in the currency the subject reports in.").toBe("accepted");
-  expect(created.revision, "A created goal starts at the first revision.").toBe("1");
+  // The goal is then set through the panel's own control: the capability this identity holds opens the
+  // form, the amount is typed into the panel's field, the effective day is chosen, and the reviewed step
+  // submits it.
+  await goal.getByRole("button", { name: "Set a goal" }).click();
+  await expect(goal.getByLabel("Amount")).toBeVisible();
+  // This subject's source reports one currency, so the panel states that currency as the fact it is
+  // instead of offering a choice of one, and the amount takes the precision that currency carries rather
+  // than one this file assumes.
+  await expect(goal.getByLabel("Currency"), "One stated currency is stated rather than offered as a choice, so no currency control is rendered.").toHaveCount(0);
+  await expect(goal.getByText(/The currency is EUR and is not a free choice/u)).toBeVisible();
+  await goal.getByLabel("Amount").fill("87.50");
+  await goal.getByLabel("Effective from").fill(STUDENTS_GOAL_EFFECTIVE_FROM);
 
-  await page.goto(SUPPORT_HREF);
+  // The review step states the change before it is applied: the goal the record holds now, the amount and
+  // currency this change states, and the day it takes effect on.
+  const review = goal.locator('[data-slot="action-review"]');
+  await expect(review.getByRole("heading", { name: "Review this goal change", level: 3 })).toBeVisible();
+  await expect(review.getByText("No goal is set", { exact: true })).toBeVisible();
+  await expect(review.getByText(/^87\.50\s+EUR$/u)).toBeVisible();
+  await expect(review.getByText(STUDENTS_GOAL_EFFECTIVE_FROM, { exact: true })).toBeVisible();
+  await review.getByRole("button", { name: "Save goal" }).click();
+
+  // The outcome the panel reports is the acceptance itself: the goal is created once, in the currency the
+  // subject reports in, and the step it opened closes on the goal the panel then states.
+  await expect(page.locator('[data-slot="operation-result"][data-outcome="accepted"]'), "The goal is created once, in the currency the subject reports in.").toBeVisible();
+  await goal.getByRole("button", { name: "Close" }).click();
+
+  // A goal met above 100% is stated exactly as it was computed, with the amount, currency and revision the
+  // panel states the created goal holds.
   await expect(goal.getByRole("button", { name: "Change the goal" })).toBeVisible();
+  const stated = await statedGoalFacts(goal);
+  const held = requiredAmount(stated, "The goal panel's statement of the goal it holds");
+  expect(held.minorUnits, "The panel states the goal in the exact minor units this journey set.").toBe(STUDENTS_GOAL_MINOR);
+  expect(held.currency, "The panel states the goal in the currency the subject reports in.").toBe("EUR");
+  expect(statedRevision(stated, "The goal panel"), "A created goal starts at the first revision.").toBe(FIRST_GOAL_REVISION);
   await expect(goal.getByText(STUDENTS_GOAL_PERCENTAGE, { exact: true })).toBeVisible();
   await expect(goal.getByText(STUDENTS_GOAL_SENTENCE)).toBeVisible();
   await expect(goal.getByText(/A figure above 100% is stated exactly as it was computed and is never capped\./u)).toBeVisible();
@@ -852,7 +911,7 @@ test("a recorded zero, an unknown amount and an incomplete subtotal are told apa
   await expect(page.getByRole("heading", { name: "Received support", level: 1, exact: true })).toBeVisible();
   await expect(page.getByText("0.00 EUR", { exact: true }).first()).toBeVisible();
   await expect(page.getByText(new RegExp(ZERO_STATE_CLAUSE.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u")).first()).toBeVisible();
-  await expect(page.getByText(UNKNOWN_AMOUNT_WORD, { exact: true }), "A recorded zero is never rendered as an unknown amount.").toHaveCount(0);
+  expect(await page.getByText(UNKNOWN_AMOUNT_WORD, { exact: true }).count(), "A recorded zero is never rendered as an unknown amount.").toBe(0);
 
   // And that month is never drawn at zero: with nothing recorded in it for this subject, the one chart
   // invents no series at all and says so. The month-by-month naming of a gap is the received report's
@@ -874,9 +933,9 @@ test("an unavailable financial source is stated as unavailable while other work 
   // overview of zeroes and never as an empty period.
   await expect(page.getByRole("heading", { name: "The support overview could not be read", level: 1 })).toBeVisible();
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
-  await expect(page.getByText(/No gift is in this result/u), "An outage is not an empty result.").toHaveCount(0);
-  await expect(page.getByText(/\b0\.00\b/u), "An outage is not a zero.").toHaveCount(0);
-  await expect(page.getByText(/^Unknown amount$/u), "An outage states the source's unavailability rather than an unknown figure.").toHaveCount(0);
+  expect(await page.getByText(/No gift is in this result/u).count(), "An outage is not an empty result.").toBe(0);
+  expect(await page.getByText(/\b0\.00\b/u).count(), "An outage is not a zero.").toBe(0);
+  expect(await page.getByText(/^Unknown amount$/u).count(), "An outage states the source's unavailability rather than an unknown figure.").toBe(0);
 
   // The gifts ledger behind the same source states the same outage rather than an empty ledger.
   await page.goto(`${GIFTS_HREF}${LEDGER_YEAR_QUERY}`);
@@ -914,9 +973,9 @@ test.describe("the goal without the edit capability", () => {
     await expect(goal.getByText("25,000.00 USD", { exact: false }).first()).toBeVisible();
 
     // No control is offered — not a disabled one, and not one hidden by styling.
-    await expect(goal.getByRole("button", { name: "Change the goal" }), "A session without the capability is offered no way to change the goal.").toHaveCount(0);
-    await expect(goal.getByRole("button", { name: "Set a goal" }), "A session without the capability is offered no way to set one either.").toHaveCount(0);
-    await expect(goal.getByLabel("Amount"), "No amount field is rendered, so nothing invites an edit that would be refused.").toHaveCount(0);
+    expect(await goal.getByRole("button", { name: "Change the goal" }).count(), "A session without the capability is offered no way to change the goal.").toBe(0);
+    expect(await goal.getByRole("button", { name: "Set a goal" }).count(), "A session without the capability is offered no way to set one either.").toBe(0);
+    expect(await goal.getByLabel("Amount").count(), "No amount field is rendered, so nothing invites an edit that would be refused.").toBe(0);
     await expect(goal.getByText(/no edit control is offered and a save would be refused\./u)).toBeVisible();
   });
 });

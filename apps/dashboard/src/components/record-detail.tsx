@@ -58,6 +58,8 @@ export type RecordDetailProps = {
   readonly breadcrumb?: readonly RecordDetailBreadcrumbEntry[];
   readonly status?: ReactNode;
   readonly actions?: ReactNode;
+  /** Content that belongs to the record body but to no one section, rendered after the sections region in every layout. */
+  readonly trailing?: ReactNode;
   readonly unavailable?: RecordDetailUnavailable;
   readonly isLoading?: boolean;
   readonly className?: string;
@@ -112,7 +114,7 @@ export function RecordDetailFigures({ figures, className }: RecordDetailFiguresP
   );
 }
 /** The single record detail body described at the top of this file. */
-export function RecordDetail({ layout, identity, sections = {}, breadcrumb, status, actions, unavailable, isLoading = false, className }: RecordDetailProps) {
+export function RecordDetail({ layout, identity, sections = {}, breadcrumb, status, actions, trailing, unavailable, isLoading = false, className }: RecordDetailProps) {
   const chrome = LAYOUT_CHROME[layout];
   const generatedId = useId();
   const identityHeadingId = toDomId(generatedId, "identity");
@@ -220,6 +222,14 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
           })}
         </div>
       )}
+      {hasContent(trailing) ? (
+        // After the sections region and inside the same surface: content that belongs to the record body but
+        // to no one section, so it appears in each of the three layouts without a second detail body.
+        <>
+          <Separator />
+          {trailing}
+        </>
+      ) : null}
     </article>
   );
 }

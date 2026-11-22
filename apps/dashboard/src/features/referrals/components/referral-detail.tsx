@@ -9,6 +9,11 @@
  * succession is computed, reformatted, compared or re-derived here — a date the read resolved is
  * printed exactly as it was resolved, and a fact the read does not carry is shown as not carried
  * rather than filled in.
+ *
+ * The permitted Expired history is the one presentation that does not go through that body, because it
+ * is a permission over history rather than a partner record. It shows the narrow projection the read
+ * answered with, and it offers the one continuation an eligible cycle can hold beside that card and
+ * never inside it: the card states a read-only permission over facts a continuation leaves untouched.
  */
 import { useCallback, useId, type ReactElement, type ReactNode } from "react";
 import RecordDetail, { type RecordDetailBreadcrumbEntry, type RecordDetailIdentity, type RecordDetailLayout, type RecordDetailSectionSlots } from "@/components/record-detail";
@@ -61,6 +66,8 @@ const DEFAULT_BREADCRUMB: readonly RecordDetailBreadcrumbEntry[] = [{ label: LIS
 const RETRY_LABEL = "Try again";
 /** The value state a permitted fact the read does not carry renders as, from the shared vocabulary, so it is never an empty gap and never a zero. */
 const NOT_RECORDED = statusBadgeProps(VALUE_STATE_WORDS, "unknown");
+/** The one advisory action this presentation reflects: the read publishing it is what makes Continue appear, and the service re-checks the permission on submit, so a stale envelope can produce a `denied` outcome and never an unauthorised write. */
+const CONTINUE_ACTION = "continueReferral";
 /**
  * The tone each status word carries. Colour never stands alone — the word itself is always rendered
  * beside it — and each closure the source can record (`withdrawn`, `revoked`, `erased`, `departed`)
@@ -72,7 +79,7 @@ const STATUS_TONE: Readonly<Record<ReferralStatusWord, StatusTone>> = { active: 
 const BODY_HEADING: Readonly<Record<RecordDetailLayout, "h3" | "h4">> = { page: "h3", panel: "h4", sheet: "h4" };
 /** The level the review step's own heading takes: the body's own level, so the step nests under the section it belongs to. */
 const REVIEW_HEADING: Readonly<Record<RecordDetailLayout, 3 | 4>> = { page: 3, panel: 4, sheet: 4 };
-/** The level the permitted Expired history's title takes: it is the only content of that presentation, so it takes the surface's own highest level. */
+/** The level the permitted Expired history's own title takes: the history is the first content of that presentation, so it takes the surface's highest level, and the one continuation a cycle can hold nests under it at the review step's own level. */
 const EXPIRED_HEADING: Readonly<Record<RecordDetailLayout, 2 | 3 | 4>> = { page: 2, panel: 3, sheet: 3 };
 /** The level a state notice takes where this body renders one instead of a record: the route's page has no other heading, a panel or sheet nests under its own title. */
 const NOTICE_HEADING: Readonly<Record<RecordDetailLayout, NoticeHeadingLevel>> = { page: 1, panel: 2, sheet: 2 };
@@ -236,6 +243,8 @@ type ReferralBodyProps = {
   readonly continuationPolicy: ContinuationPolicyFacts;
   /** The `actions` the envelope published. Continue is offered only where one of them admits it, so this body never derives eligibility of its own. */
   readonly actions: readonly ReadAction[];
+  /** The revision the envelope published for this cycle. The continuation presents it, so a cycle that moved while this body was open settles as a conflict rather than as an overwrite. */
+  readonly expectedRevision: string;
   readonly layout: RecordDetailLayout;
   readonly dir?: "ltr" | "rtl";
   /** Re-reads this record after a continuation whose acknowledgement was lost. Recovery is by operation identity, so this reads the result rather than re-sending the work. */
@@ -249,7 +258,7 @@ type ReferralBodyProps = {
  * The order and the facts are identical in all three presentations; only the heading levels, which
  * belong to the surface the body lands in, differ. Nothing here is conditional on the layout.
  */
-function ReferralBody({ scope, referral, continuationPolicy, actions, layout, dir, onCheckResult }: ReferralBodyProps): ReactElement {
+function ReferralBody({ scope, referral, continuationPolicy, actions, expectedRevision, layout, dir, onCheckResult }: ReferralBodyProps): ReactElement {
   const generatedId = useId();
   const level = BODY_HEADING[layout];
   const idOf = (section: string): string => `referral-detail-${generatedId.replace(/[^a-zA-Z0-9_-]/g, "")}-${section}`;
@@ -277,7 +286,7 @@ function ReferralBody({ scope, referral, continuationPolicy, actions, layout, di
         <PermittedDatesFacts referral={referral} />
       </BodySection>
       <Separator />
-      <ContinueReferralAction scope={scope} referral={referral} continuationPolicy={continuationPolicy} actions={actions} onCheckResult={onCheckResult} headingLevel={REVIEW_HEADING[layout]} dir={dir} />
+      <ContinueReferralAction scope={scope} referral={referral} expectedRevision={expectedRevision} continuationPolicy={continuationPolicy} actions={actions} onCheckResult={onCheckResult} headingLevel={REVIEW_HEADING[layout]} dir={dir} />
       <Separator />
       <BodySection headingId={idOf("cycle")} level={level} slot="referral-detail-cycle" title={EXPIRED_HISTORY_COPY.fieldLabels.cycleIndex}>
         <CycleReferenceFacts referral={referral} />
@@ -289,6 +298,17 @@ function ReferralBody({ scope, referral, continuationPolicy, actions, layout, di
 function refusalSummary(fields: Readonly<Record<string, readonly string[]>>): string | undefined {
   const messages = Object.values(fields).flat();
   return messages.length === 0 ? undefined : messages.join(" ");
+}
+/**
+ * Whether the read admits the one continuation an expired cycle can hold. Both conditions are the
+ * envelope's own facts and neither is derived here: the action it published for this cycle, which the
+ * service re-checks on submit, and the worker-continuation setting the same read resolved, which
+ * withholds that action entirely when it is off. A cycle that has not ended, one whose date is too
+ * imprecise for a window and one that already carries a successor publish no action at all, so this
+ * presentation offers no control in their place.
+ */
+function continueOffered(actions: readonly ReadAction[], policy: ContinuationPolicyFacts): boolean {
+  return actions.some((action) => action.name === CONTINUE_ACTION && action.available) && policy.setting === "on";
 }
 /** The one referral detail body. */
 export function ReferralDetail({ scope, referralId, layout, dir, breadcrumb, className }: ReferralDetailProps): ReactElement {
@@ -343,8 +363,22 @@ export function ReferralDetail({ scope, referralId, layout, dir, breadcrumb, cla
           partner record while this is a permission over history: an approved identity, its source
           reference, its status and its permitted dates, and nothing wider. The discriminant is the
           `view` the read supplies, never a comparison of dates here.
+
+          The one continuation an eligible cycle can hold is offered beside that card and never inside
+          it. The card states a read-only permission over facts a continuation leaves exactly as it
+          carries them, so the control belongs to the surface around the history rather than to the
+          permission itself; and it appears only where the envelope published `continueReferral` and
+          the policy the same read resolved admits one, which is what keeps a cycle that has not ended,
+          a cycle already continued and a setting that is off rendering the history alone.
         */
-        return <ExpiredReferralHistory referral={data.referral} status={data.referral.status.status} headingLevel={EXPIRED_HEADING[layout]} dir={dir} className={className} />;
+        return (
+          <div dir={dir} className={cn("flex min-w-0 flex-col gap-4", className)}>
+            <ExpiredReferralHistory referral={data.referral} status={data.referral.status.status} headingLevel={EXPIRED_HEADING[layout]} dir={dir} />
+            {continueOffered(envelope.actions, data.continuationPolicy) ? (
+              <ContinueReferralAction scope={scope} referral={data.referral} expectedRevision={envelope.revision} continuationPolicy={data.continuationPolicy} actions={envelope.actions} onCheckResult={reread} headingLevel={REVIEW_HEADING[layout]} dir={dir} />
+            ) : null}
+          </div>
+        );
       }
       const record = data.referral;
       const identity: RecordDetailIdentity = {
@@ -363,7 +397,7 @@ export function ReferralDetail({ scope, referralId, layout, dir, breadcrumb, cla
         This is a gap in the shared component, which lives outside this folder: a body that is not a
         partner record needs a section slot of its own rather than borrowing this one.
       */
-      const sections: RecordDetailSectionSlots = { relationshipContext: <ReferralBody scope={scope} referral={record} continuationPolicy={data.continuationPolicy} actions={envelope.actions} layout={layout} dir={dir} onCheckResult={reread} /> };
+      const sections: RecordDetailSectionSlots = { relationshipContext: <ReferralBody scope={scope} referral={record} continuationPolicy={data.continuationPolicy} actions={envelope.actions} expectedRevision={envelope.revision} layout={layout} dir={dir} onCheckResult={reread} /> };
       // The breadcrumb names the list context the visitor returns to. A caller that came from a filtered
       // list supplies that address itself, so the filter, the sort and the scroll position survive the
       // visit; a direct visit falls back to the list the shell links to.

@@ -16,6 +16,8 @@ const PAGE_HEADING = "Synthetic inbox";
 const PAGE_HEADING_ID = "communication-inbox-heading";
 const HEADING_CLASS = "text-2xl font-semibold text-pretty wrap-anywhere";
 const PAGE_CLASS = "flex min-w-0 flex-col gap-6 text-start";
+/** The interface locale the composed surface formats its counts in. */
+const INTERFACE_LOCALE = "en-GB";
 /** The level the notice occupies beneath this route's heading; the notice's own title becomes that level rather than a second page heading. */
 const NOTICE_HEADING_LEVEL = 2;
 const DENIED_TITLE = "This inbox is not available in this session";
@@ -87,7 +89,7 @@ export default async function CommunicationInboxPage({ searchParams }: Communica
               it: a reader composed here as well would show that message twice and make the second message
               surface this application does not have. The whole answer is passed down, not a narrowed copy, so
               the surface reads scope, value states and the instant it was evaluated at from the read. */}
-          <InboxList scope={result.envelope.scope} initialEnvelope={result} />
+          <InboxList scope={result.envelope.scope} locale={INTERFACE_LOCALE} initialEnvelope={result} />
         </section>
       );
     case "denied":

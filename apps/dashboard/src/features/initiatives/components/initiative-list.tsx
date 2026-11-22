@@ -12,9 +12,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { assertNever } from "@/lib/result";
 import type { ValueState, reads } from "@/modules/data-service";
-import { PAGE_SIZE_CAP, PAGE_SIZE_DEFAULT } from "@/modules/support/report";
+import { PAGE_SIZE_CAP, PAGE_SIZE_DEFAULT, clampPageSize } from "@/modules/support/report";
 import { CLOSURE_COPY, INITIATIVE_COPY, INITIATIVE_STATES, INITIATIVE_STATE_COPY, MEMBERSHIP_STATES, MEMBERSHIP_STATE_COPY, REQUESTED_TERMS_COPY, STATE_NOTICE_COPY, type InitiativeState } from "../copy";
 import { useInitiatives, type InitiativesEnvelope, type InitiativesFilters } from "../hooks/use-initiatives";
+import { DEFAULT_ORDER, FIRST_PAGE, INITIATIVE_ORDERS, STATE_ALL, isInitiativeOrder, isInitiativeState, pageNumberOf, parseInitiativesQuery, toInitiativesParams, type InitiativeOrder, type InitiativeStateFilter, type InitiativesViewState } from "../query/initiatives-query";
 import InitiativeComposer from "./initiative-composer";
 
 // The contract: the list read's own types, narrowed to the fields this surface renders
@@ -26,144 +27,16 @@ export type InitiativeListPage = InitiativeListEnvelope["data"];
 /** One initiative as the list states it. */
 export type InitiativeRow = InitiativeListPage["items"][number];
 
-/** The column-visibility slice the record list preset controls, named from its own query state. */
-type ColumnVisibility = RecordListQueryState["columnVisibility"];
-
 type ValueStates = Readonly<Record<string, ValueState>>;
 
-// The three orders the read admits, and the state filter's own word for "either"
-/** The orders `readInitiatives` admits, in the order this surface offers them. */
-const INITIATIVE_ORDERS = ["name", "period-start", "state"] as const;
+// The URL grammar, shared with the route that renders this list
+//
+// The grammar is one non-client module, so the Server Component that asks the service for this view and this surface
+// that asks the route handler for it parse and write one address rather than a copy each. It is re-exported here
+// because this list is where the family's surfaces reach for it.
+export { parseInitiativesQuery, toInitiativesParams };
+export type { InitiativeOrder, InitiativeStateFilter, InitiativesViewState };
 
-/** One order the list may be presented in. The read owns the direction of each, so no direction travels. */
-export type InitiativeOrder = (typeof INITIATIVE_ORDERS)[number];
-
-/** The one state filter value that states no filter: either of the read's two states. */
-const STATE_ALL = "all";
-
-/** The state filter a view may state: one of the read's two states, or either of them. */
-export type InitiativeStateFilter = InitiativeState | typeof STATE_ALL;
-
-const DEFAULT_ORDER: InitiativeOrder = "name";
-
-const FIRST_PAGE = 1;
-
-/** The columns a reader may hide: the name column carries the row's link, so it is never one of them. */
-const HIDEABLE_COLUMN_IDS = ["purpose", "responsible", "period", "state", "members"] as const;
-
-const PAGE_SIZE_OPTIONS: readonly number[] = [PAGE_SIZE_DEFAULT, PAGE_SIZE_CAP];
-
-const NO_SORT: RecordListQueryState["sort"] = [];
-
-const NO_VALUE_STATES: ValueStates = {};
-
-const NO_ROWS: InitiativeListPage["items"] = [];
-
-// The one address a row opens, and the actions a read may publish
-/** Where an initiative's own record lives, so a row's visit carries the list state with it. */
-const DETAILS_PATH = "/partners/initiatives";
-/** The one action the list's read publishes for the entry point this surface offers. */
-const CREATE_INITIATIVE = "createInitiative";
-/** The two facets this surface states: the read's state filter and the read's own orders. */
-const STATE_FACET = "state";
-
-const ORDER_FACET = "order";
-
-// The URL grammar
-/** The parameters the view state travels as. */
-const PARAM = { search: "search", state: "state", sort: "sort", page: "page", pageSize: "pageSize", hidden: "hidden" } as const;
-
-const HIDDEN_SEPARATOR = ",";
-
-const WHOLE_NUMBER = /^\d+$/u;
-
-/** Everything the list's view states: the search text, the state filter, the order, the page window and the columns a reader has hidden. */
-export interface InitiativesViewState {
-  /** The whole-dataset search the read applies to an initiative's name and purpose; empty asks for nothing. */
-  readonly search: string;
-  /** The state filter the read applies, or `all` for both states. */
-  readonly state: InitiativeStateFilter;
-  /** The column whose order the read states; the read applies each order in its own direction. */
-  readonly sort: InitiativeOrder;
-  /** The page the read states, counted from one as the read counts it. */
-  readonly page: number;
-  /** The rows a page holds: the default fifty or the admitted cap. */
-  readonly pageSize: number;
-  /** The columns the reader has hidden, in the preset's own shape. */
-  readonly columnVisibility: ColumnVisibility;
-}
-function isInitiativeState(value: string | null): value is InitiativeState {
-  return value !== null && INITIATIVE_STATES.some((admitted) => admitted === value);
-}
-function isInitiativeOrder(value: string | null): value is InitiativeOrder {
-  return value !== null && INITIATIVE_ORDERS.some((admitted) => admitted === value);
-}
-function integerOf(value: string | null): number | undefined {
-  if (value === null || !WHOLE_NUMBER.test(value)) {
-    return undefined;
-  }
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) ? parsed : undefined;
-}
-function pageNumberOf(value: number): number {
-  return Number.isSafeInteger(value) && value >= FIRST_PAGE ? value : FIRST_PAGE;
-}
-function pageSizeNumberOf(value: number): number {
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    return PAGE_SIZE_DEFAULT;
-  }
-  return value >= PAGE_SIZE_CAP ? PAGE_SIZE_CAP : PAGE_SIZE_DEFAULT;
-}
-/** The columns a view has hidden, in the order they are written, so the same view always writes one string. */
-function hiddenColumnIds(visibility: ColumnVisibility): readonly string[] {
-  return HIDEABLE_COLUMN_IDS.filter((id) => visibility[id] === false);
-}
-function columnVisibilityOf(value: string | null): ColumnVisibility {
-  const visibility: ColumnVisibility = {};
-  if (value === null) {
-    return visibility;
-  }
-  for (const stated of value.split(HIDDEN_SEPARATOR)) {
-    if (HIDEABLE_COLUMN_IDS.some((admitted) => admitted === stated)) {
-      visibility[stated] = false;
-    }
-  }
-  return visibility;
-}
-/** Writes the view state as URL parameters. */
-export function toInitiativesParams(state: InitiativesViewState): URLSearchParams {
-  const params = new URLSearchParams();
-  if (state.search !== "") {
-    params.set(PARAM.search, state.search);
-  }
-  if (state.state !== STATE_ALL) {
-    params.set(PARAM.state, state.state);
-  }
-  if (state.sort !== DEFAULT_ORDER) {
-    params.set(PARAM.sort, state.sort);
-  }
-  params.set(PARAM.page, String(pageNumberOf(state.page)));
-  params.set(PARAM.pageSize, String(pageSizeNumberOf(state.pageSize)));
-  const hidden = hiddenColumnIds(state.columnVisibility);
-  if (hidden.length > 0) {
-    params.set(PARAM.hidden, hidden.join(HIDDEN_SEPARATOR));
-  }
-  return params;
-}
-/** Reads the view state back from an address, applying the same rules the writer applies so a round trip returns an equal view. */
-export function parseInitiativesQuery(source: URLSearchParams | string): InitiativesViewState {
-  const params = typeof source === "string" ? new URLSearchParams(source) : source;
-  const statedState = params.get(PARAM.state);
-  const statedSort = params.get(PARAM.sort);
-  return {
-    search: params.get(PARAM.search) ?? "",
-    state: isInitiativeState(statedState) ? statedState : STATE_ALL,
-    sort: isInitiativeOrder(statedSort) ? statedSort : DEFAULT_ORDER,
-    page: pageNumberOf(integerOf(params.get(PARAM.page)) ?? FIRST_PAGE),
-    pageSize: pageSizeNumberOf(integerOf(params.get(PARAM.pageSize)) ?? PAGE_SIZE_DEFAULT),
-    columnVisibility: columnVisibilityOf(params.get(PARAM.hidden)),
-  };
-}
 // Wording this surface alone states
 /** The order labels, in the read's own terms: each names the column and the direction the read applies. */
 const ORDER_VALUE_COPY: Readonly<Record<InitiativeOrder, string>> = { name: "Name, A to Z", "period-start": "Period start, earliest first", state: "State, open first" };
@@ -187,6 +60,24 @@ const SURFACE_COPY = {
 } as const;
 
 // Fixed values
+const PAGE_SIZE_OPTIONS: readonly number[] = [PAGE_SIZE_DEFAULT, PAGE_SIZE_CAP];
+
+const NO_SORT: RecordListQueryState["sort"] = [];
+
+const NO_VALUE_STATES: ValueStates = {};
+
+const NO_ROWS: InitiativeListPage["items"] = [];
+
+// The one address a row opens, and the actions a read may publish
+/** Where an initiative's own record lives, so a row's visit carries the list state with it. */
+const DETAILS_PATH = "/partners/initiatives";
+/** The one action the list's read publishes for the entry point this surface offers. */
+const CREATE_INITIATIVE = "createInitiative";
+/** The two facets this surface states: the read's state filter and the read's own orders. */
+const STATE_FACET = "state";
+
+const ORDER_FACET = "order";
+
 const countFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
 /** The row's one link, styled with the shared token utilities so its focus indicator matches the rest. */
@@ -472,7 +363,7 @@ export default function InitiativeList({ initialEnvelope, headingLevel = 2, clas
   const handleQueryStateChange = useCallback(
     (next: RecordListQueryState) => {
       const [first] = next.sort;
-      commit({ ...latestView.current, ...(first === undefined || !isInitiativeOrder(first.id) ? {} : { sort: first.id }), page: pageNumberOf(next.page), pageSize: pageSizeNumberOf(next.pageSize), columnVisibility: next.columnVisibility });
+      commit({ ...latestView.current, ...(first === undefined || !isInitiativeOrder(first.id) ? {} : { sort: first.id }), page: pageNumberOf(next.page), pageSize: clampPageSize(next.pageSize), columnVisibility: next.columnVisibility });
     },
     [commit],
   );

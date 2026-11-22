@@ -9,6 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import { assertNever } from "@/lib/result";
@@ -17,7 +18,7 @@ import { ROOT_FIELD_KEY, type MutationOutcome } from "@/modules/data-service/out
 import { exponentOf, UNKNOWN_CURRENCY } from "@/modules/money/currency";
 import { SUPPORT_BASIS } from "@/modules/support/basis";
 import { formatPercentageBasisPoints, GOAL_CAPABILITY, type GoalProgress } from "@/modules/support/goal";
-import { EMPTY_STATES, MEASURE_LABELS, NO_PERCENTAGE, type NoPercentageReason } from "../copy";
+import { EMPTY_STATES, GOAL_CURRENCY_CHOICE, GOAL_CURRENCY_UNSTATED, MEASURE_LABELS, NO_PERCENTAGE, type NoPercentageReason } from "../copy";
 import { useGoal, type GoalEnvelope } from "../hooks/use-goal";
 import { useSaveGoal, type GoalSaveFormPayload } from "../hooks/use-save-goal";
 import { goalSavePayloadSchema } from "../schemas";
@@ -42,10 +43,11 @@ const UNEDITABLE_CURRENCY_BODY =
   "The goal is stated in a currency this application holds no minor-unit precision for, so an amount in it cannot " + "be written exactly. No currency is substituted in its place and no exponent is assumed, so the goal stays " + "read-only until a source states it in a currency whose precision is known.";
 
 const AMOUNT_LABEL = "Amount";
+const CURRENCY_LABEL = "Currency";
 const MEASURE_LABEL = "Measure";
 const EFFECTIVE_FROM_LABEL = "Effective from";
 const FACT_LABELS = { amount: AMOUNT_LABEL, measure: MEASURE_LABEL, effectiveFrom: EFFECTIVE_FROM_LABEL, revision: "Revision" } as const;
-const FORM_LABELS: Readonly<Record<string, string>> = { amount: AMOUNT_LABEL, effectiveFrom: EFFECTIVE_FROM_LABEL, currency: "Currency", measure: MEASURE_LABEL };
+const FORM_LABELS: Readonly<Record<string, string>> = { amount: AMOUNT_LABEL, effectiveFrom: EFFECTIVE_FROM_LABEL, currency: CURRENCY_LABEL, measure: MEASURE_LABEL };
 const FORM_FIELD_ORDER = ["amount", "effectiveFrom", "currency", "measure"] as const;
 const CIVIL_DAY_NOTE = "a calendar day, with no time of day and no zone behind it";
 
@@ -164,7 +166,7 @@ function GoalComparison({ current, currentState, locale, amount, currency, effec
       <div className="flex flex-wrap items-baseline gap-x-1.5">
         <dt className="font-medium">This change</dt>
         <dd>
-          <bdi>{amount.trim() === "" ? "an amount you have not entered yet" : amount}</bdi> <bdi>{currency}</bdi>
+          <bdi>{amount.trim() === "" ? "an amount you have not entered yet" : amount}</bdi> <bdi>{currency.trim() === "" ? GOAL_CURRENCY_CHOICE.unchosen : currency}</bdi>
         </dd>
       </div>
       <div className="flex flex-wrap items-baseline gap-x-1.5">
@@ -185,8 +187,16 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
   const { data } = envelope;
   const goal = data.goal;
   const measureLabel = MEASURE_LABELS[data.measure];
-  const currency = goal === null ? envelope.coverage.currency : goal.amount.currency;
-  const exponent = exponentOf(currency);
+  // A stored goal is stated in its own currency. A first goal is stated in one of the currencies the read
+  // reports this subject's source stating: where the source states exactly one, the form states it as the
+  // fixed fact it is, and where it states more the caller chooses, so no currency is chosen for them.
+  const statedCurrencies = data.currencies;
+  const [chosenCurrency, setChosenCurrency] = useState("");
+  const statedSingle = statedCurrencies.length === 1 ? statedCurrencies[0] : undefined;
+  const stated = goal !== null ? undefined : (statedSingle ?? statedCurrencies.find((entry) => entry.currency === chosenCurrency));
+  const choosingCurrency = goal === null && statedCurrencies.length > 1;
+  const currency = goal === null ? (stated?.currency ?? "") : goal.amount.currency;
+  const exponent = goal === null ? stated?.exponent : exponentOf(goal.amount.currency);
   const currencyKnown = exponent !== undefined && currency !== UNKNOWN_CURRENCY;
   const [amount, setAmount] = useState("");
   const [effectiveFrom, setEffectiveFrom] = useState(goal === null ? "" : goal.effectiveFrom);
@@ -215,7 +225,17 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
     if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") setSettled(true);
   };
   const markTouched = (): void => setTouched(true);
-  if (!currencyKnown) {
+  if (goal === null && statedCurrencies.length === 0) {
+    // The source states no currency this application holds an exact precision for, so a first goal cannot
+    // be typed here: no currency is substituted in its place and no exponent is assumed.
+    return (
+      <Alert>
+        <AlertTitle>{GOAL_CURRENCY_UNSTATED.title}</AlertTitle>
+        <AlertDescription>{GOAL_CURRENCY_UNSTATED.body}</AlertDescription>
+      </Alert>
+    );
+  }
+  if (goal !== null && !currencyKnown) {
     return (
       <Alert>
         <AlertTitle>{UNEDITABLE_CURRENCY_TITLE}</AlertTitle>
@@ -229,7 +249,33 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
         Saved against <bdi>{measureLabel}</bdi>: this release sets a goal against one measure only, so the form states the measure and offers no choice of another.
       </p>
       {errors === null || errors.count === 0 ? null : <FormErrorSummary errors={errors} labels={FORM_LABELS} order={FORM_FIELD_ORDER} headingLevel={3} />}
-      <FormField name="amount" label={AMOUNT_LABEL} description={precisionDescription(currency, exponent)} error={errors?.byField.amount} required>
+      {choosingCurrency ? (
+        <FormField name="currency" label={CURRENCY_LABEL} description={GOAL_CURRENCY_CHOICE.guidance} error={errors?.byField.currency} required>
+          {(field) => (
+            <NativeSelect
+              id={field.id}
+              name="currency"
+              className="w-full sm:max-w-72"
+              value={chosenCurrency}
+              aria-describedby={field.describedBy}
+              aria-invalid={field.invalid ? true : undefined}
+              onChange={(event) => {
+                setChosenCurrency(event.target.value);
+                setSettled(false);
+              }}
+              onBlur={markTouched}
+            >
+              <NativeSelectOption value="">{GOAL_CURRENCY_CHOICE.unset}</NativeSelectOption>
+              {statedCurrencies.map((entry) => (
+                <NativeSelectOption key={entry.currency} value={entry.currency}>
+                  {entry.currency}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          )}
+        </FormField>
+      ) : null}
+      <FormField name="amount" label={AMOUNT_LABEL} description={exponent === undefined ? GOAL_CURRENCY_CHOICE.awaitingCurrency : precisionDescription(currency, exponent)} error={errors?.byField.amount} required>
         {(field) => (
           <Input
             id={field.id}
@@ -265,9 +311,11 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
           />
         )}
       </FormField>
-      <p className="text-sm text-muted-foreground">
-        The currency is <bdi>{currency}</bdi> and is not a free choice: it is the currency this support subject reports in, so the amount inherits a precision the source states rather than one this form assumes.
-      </p>
+      {choosingCurrency ? null : (
+        <p className="text-sm text-muted-foreground">
+          The currency is <bdi>{currency}</bdi> and is not a free choice: it is the currency this support subject reports in, so the amount inherits a precision the source states rather than one this form assumes.
+        </p>
+      )}
       <Separator />
       <ActionReview<GoalSaveFormPayload>
         title="Review this goal change"

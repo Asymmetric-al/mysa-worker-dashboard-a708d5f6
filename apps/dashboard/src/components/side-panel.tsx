@@ -1,14 +1,23 @@
 "use client";
 /** The one shell for the two in-place presentations of a record: the column beside a list on a desktop, and the full-width sheet a phone shows. */
 import { XIcon } from "lucide-react";
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import RecordDetail, { type RecordDetailProps } from "@/components/record-detail";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/cn";
 import { useDismissableLayer, useModalFocusContainment, type DismissReason } from "@/lib/ui-sdk";
 export type SidePanelVariant = "desktop" | "phone";
-export type SidePanelProps = { readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly variant: SidePanelVariant; readonly title: string; readonly detail: Omit<RecordDetailProps, "layout">; readonly returnFocusTo?: RefObject<HTMLElement | null>; readonly className?: string };
+/**
+ * The two ways a caller states the panel's body, of which it states exactly one: the shared record body as a `detail`
+ * statement, which this shell lays out for the variant it presents, or a family's own body, which already carries its
+ * own headings and its own layout for the presentation it lands in. A family body is the same one its direct route
+ * renders, so the panel adds no second implementation of it.
+ */
+export type SidePanelDetailBody = { readonly detail: Omit<RecordDetailProps, "layout"> };
+export type SidePanelOwnBody = { readonly body: ReactNode };
+export type SidePanelChrome = { readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly variant: SidePanelVariant; readonly title: string; readonly returnFocusTo?: RefObject<HTMLElement | null>; readonly className?: string };
+export type SidePanelProps = SidePanelChrome & (SidePanelDetailBody | SidePanelOwnBody);
 const DESKTOP_SURFACE_CLASS = "flex w-full min-w-0 shrink-0 flex-col border-s border-border bg-card text-card-foreground lg:sticky lg:top-0 lg:max-h-dvh lg:w-96 lg:self-start";
 const DESKTOP_HEADER_CLASS = "flex items-start justify-between gap-2 border-b border-border px-4 py-3";
 const DESKTOP_HEADING_CLASS = "min-w-0 break-words font-heading text-sm font-medium text-muted-foreground";
@@ -45,8 +54,13 @@ function focusWasReleased(): boolean {
 function toHeadingId(generated: string): string {
   return `side-panel-${generated.replace(/[^a-zA-Z0-9_-]/g, "")}-title`;
 }
+/** The body this shell presents in the layout its variant is, from whichever of the two statements the caller made. */
+function panelBodyOf(props: SidePanelProps, layout: "panel" | "sheet"): ReactNode {
+  return "detail" in props ? <RecordDetail {...props.detail} layout={layout} /> : props.body;
+}
 /** Presents one record beside a list on a desktop, or as a sheet on a phone. */
-export function SidePanel({ open, onOpenChange, variant, title, detail, returnFocusTo, className }: SidePanelProps) {
+export function SidePanel(props: SidePanelProps) {
+  const { open, onOpenChange, variant, title, returnFocusTo, className } = props;
   const generatedId = useId();
   const titleId = toHeadingId(generatedId);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
@@ -124,9 +138,7 @@ export function SidePanel({ open, onOpenChange, variant, title, detail, returnFo
               {title}
             </SheetTitle>
           </SheetHeader>
-          <div className={PHONE_BODY_CLASS}>
-            <RecordDetail {...detail} layout="sheet" />
-          </div>
+          <div className={PHONE_BODY_CLASS}>{panelBodyOf(props, "sheet")}</div>
         </SheetContent>
       </Sheet>
     );
@@ -144,9 +156,7 @@ export function SidePanel({ open, onOpenChange, variant, title, detail, returnFo
           <span className="sr-only">{CLOSE_LABEL}</span>
         </Button>
       </div>
-      <div className={DESKTOP_BODY_CLASS}>
-        <RecordDetail {...detail} layout="panel" />
-      </div>
+      <div className={DESKTOP_BODY_CLASS}>{panelBodyOf(props, "panel")}</div>
     </aside>
   );
 }

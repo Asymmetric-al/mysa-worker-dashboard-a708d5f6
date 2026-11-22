@@ -387,6 +387,10 @@ export default function ImportJourney({ scope, expectedRevision, initialOperatio
   // The operation this surface is reviewing, once a read has named it: every later write presents its
   // revision, and every follow-up read asks for it by its own identity.
   const importIdentity = proposalRead.kind === "view" ? proposalRead.request.identity : null;
+  // The import a results read found still in review: an address that named one reports it as pending, and that is
+  // the same import this surface can review again once the worker chooses its file, before any proposal read has
+  // named an identity.
+  const inReviewIdentity = resultsRead.kind === "pending" ? resultsRead.request.identity : null;
   const readProposal = useCallback(async (request: ReadRequest): Promise<ProposalAnswer> => {
     latestRequest.current += 1;
     const fence = latestRequest.current;
@@ -564,9 +568,11 @@ export default function ImportJourney({ scope, expectedRevision, initialOperatio
         return "refused";
       }
       setPaging({ page: FIRST_PAGE, pageSize: paging.pageSize });
-      return readProposal({ identity: recordIdentityOf(outcome), page: FIRST_PAGE, pageSize: paging.pageSize });
+      // An `unchanged` answer names no identity it created, because the proposal it answered about already existed: the review to show is the one this journey already knows — the one a proposal read named, or the one an address-opened read reported as still in review — and only a journey that knows of none falls back to the attempt that changed nothing. Every other applied answer names what it created or continued.
+      const identity = outcome.outcome === "unchanged" ? (importIdentity ?? inReviewIdentity ?? recordIdentityOf(outcome)) : recordIdentityOf(outcome);
+      return readProposal({ identity, page: FIRST_PAGE, pageSize: paging.pageSize });
     },
-    [currentScope, expectedRevision, journey.file, operationIdFor, paging.pageSize, readProposal],
+    [currentScope, expectedRevision, importIdentity, inReviewIdentity, journey.file, operationIdFor, paging.pageSize, readProposal],
   );
   const decide = useCallback(
     async (rowNumber: number, decision: ImportDecisionInput): Promise<void> => {
@@ -738,6 +744,8 @@ export default function ImportJourney({ scope, expectedRevision, initialOperatio
             {resultsStepNotice}
             {proposeNotice === null ? null : <ProposeNoticeBlock notice={proposeNotice} />}
             {proposeRefusal === null ? null : <FormErrorSummary errors={proposeRefusal} title={REFUSAL_FRAMING.title} description={REFUSAL_FRAMING.lead} />}
+            {/* A proposal read this step started can be refused, and the worker is standing here when it is: the same notice the map and review steps render is rendered here too, so a follow-up read that names no reachable proposal is never silence on this step. */}
+            {proposalStepNotice}
             <FileChooser
               selection={journey.file}
               onChoose={journey.setFile}

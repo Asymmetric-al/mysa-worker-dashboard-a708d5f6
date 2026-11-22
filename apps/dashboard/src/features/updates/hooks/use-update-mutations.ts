@@ -277,9 +277,9 @@ function restoreRevisionAsDraftBody(payload: RestoreRevisionAsDraftPayload): unk
   return { operation: "restoreRevisionAsDraft", ...payload };
 }
 
-/** `submitForReview` freezes one exact revision, named in the body because `/api/review` serves four writes. */
+/** `submitForReview` freezes one exact revision under the release mode its author asked for: the name in the body is what `/api/review` selects on, and the mode travels with it because the review record keeps the author's choice for the reviewer to see and the release to honour. */
 function submitForReviewBody(payload: SubmitForReviewPayload): unknown {
-  return { operation: "submitForReview", ...payload };
+  return { operation: "submitForReview", variantId: payload.variantId, revisionId: payload.revisionId, ...(payload.notifyMode === undefined ? {} : { notifyMode: payload.notifyMode }) };
 }
 
 /** An approval names the frozen candidate alone: the candidate *is* the revision the reviewer read, and the edition and checksum the panel carries are its own guard that the panel showed that revision, not fields the review record holds. */
@@ -358,7 +358,7 @@ export function useSaveDraft(): UseReviewedMutationResult<SaveDraftPayload> {
   return useUpdatesMutation(config);
 }
 
-/** `submitForReview` — freezes one exact revision of one edition as the candidate a single review step answers; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
+/** `submitForReview` — freezes one exact revision of one edition as the candidate a single review step answers, recording the release mode its author asked for so the reviewer cannot change it; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useSubmitForReview(): UseReviewedMutationResult<SubmitForReviewPayload> {
   const config: UpdatesMutationConfig<SubmitForReviewPayload> = { name: "submitForReview", endpoint: UPDATES_MUTATION_ENDPOINTS.submitForReview, schema: submitForReviewSchema, invalidates: UPDATES_MUTATION_INVALIDATIONS.submitForReview, request: submitForReviewBody };
   return useUpdatesMutation(config);

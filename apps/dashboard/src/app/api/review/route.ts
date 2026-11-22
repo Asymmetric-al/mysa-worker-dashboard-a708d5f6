@@ -55,12 +55,19 @@ function withoutOperation<P extends { readonly operation: ReviewOperation }>(pay
   const { operation: _discriminant, ...forwarded } = payload;
   return forwarded;
 }
+/** The payload `submitForReview` accepts, taken from the service so this file cannot restate it. */
+type ServiceSubmitPayload = Parameters<typeof mutations.updates.submitForReview>[1]["payload"];
+/** One submission forwarded with the release mode its body stated: this boundary admits only the vocabulary the review record keeps, so nothing is translated here, and a body that named no mode forwards none — the service records publish-only for it as it always has. */
+function submitForReviewPayloadOf(payload: Extract<ReviewPayload, { readonly operation: "submitForReview" }>): ServiceSubmitPayload {
+  const { operation: _discriminant, ...forwarded } = payload;
+  return forwarded;
+}
 /** One review step per request: the switch calls exactly one named mutation and never chains two. */
 async function runReview(sessionId: string, input: ReviewRequest): Promise<MutationOutcome> {
   const { payload } = input;
   switch (payload.operation) {
     case "submitForReview":
-      return mutations.updates.submitForReview(sessionId, { ...input, payload: withoutOperation(payload) });
+      return mutations.updates.submitForReview(sessionId, { ...input, payload: submitForReviewPayloadOf(payload) });
     case "approveCandidate":
       return mutations.updates.approveCandidate(sessionId, { ...input, payload: withoutOperation(payload) });
     case "requestChanges":

@@ -58,7 +58,7 @@ import type { CommitmentKind, RecurringBucket } from "@/modules/support/buckets"
 import { GOAL_CAPABILITY, GOAL_MEASURE } from "@/modules/support/goal";
 import { SEED_INSTANT } from "@/modules/time/clock";
 import { startOfCivilDay } from "@/modules/time/civil";
-import { confirmationDeadline, continuedWindowEnd, newWindowEnd } from "@/modules/time/window";
+import { REFERRAL_SOURCE_ZONE, confirmationDeadline, continuedWindowEnd, newWindowEnd } from "@/modules/time/window";
 import { buildSessionMeta, DEFAULT_SCENARIO_ID, type PersistedPersonaKind, type PersistedPersonaRecord, type ScenarioId, type SessionMetaDocument, type SessionState } from "./scenario";
 /** The version of the state document this module writes; a stored document of another version is not read as this one. */
 export const SESSION_STATE_VERSION = 1;
@@ -67,7 +67,6 @@ export const OPERATION_LEDGER_VERSION = 1;
 const INITIAL_REVISION = "rev-1";
 const REFERRAL_NEW_WINDOW_DAYS = 14;
 const REFERRAL_CONTINUATION_DAYS = 30;
-const REFERRAL_SOURCE_ZONE = "Europe/London";
 const identifier = <Brand extends string>(value: string): Brand => value as Brand;
 const ORGANIZATION_HARBOUR: OrganizationId = identifier<OrganizationId>("org-harbour");
 const MINISTRY_YOUTH: MinistryId = identifier<MinistryId>("min-harbour-youth");
@@ -96,7 +95,7 @@ const HARBOUR_YOUTH: AdmittedMembership = { organizationId: ORGANIZATION_HARBOUR
 const HARBOUR_STUDENTS: AdmittedMembership = { organizationId: ORGANIZATION_HARBOUR, ministryId: MINISTRY_STUDENTS, supportSubjectId: SUPPORT_SUBJECT_STUDENTS, organizationLabel: "Harbour Community Church", ministryLabel: "Students Ministry" };
 const HARBOUR_BOTH: readonly AdmittedMembership[] = [HARBOUR_YOUTH, HARBOUR_STUDENTS];
 const RIVERBEND_OUTREACH: AdmittedMembership = { organizationId: ORGANIZATION_RIVERBEND, ministryId: MINISTRY_OUTREACH, supportSubjectId: SUPPORT_SUBJECT_OUTREACH, organizationLabel: "Riverbend Chapel", ministryLabel: "Outreach" };
-export type SeededWorkspace = "new-worker" | "established-worker" | "established-worker-partial-release" | "students-ministry" | "second-worker" | "coach" | "subscriber" | "empty";
+export type SeededWorkspace = "new-worker" | "established-worker" | "established-worker-partial-release" | "students-ministry" | "second-worker" | "coach" | "subscriber" | "reader-approved-supporter" | "empty";
 /** The context a seeded session has already selected: three separate references, never one id. */
 export type SeededContext = { readonly organizationId: OrganizationId; readonly ministryId: MinistryId; readonly supportSubjectId: SupportSubjectId };
 /** The closed roster of personas AAP 0.1.2 fixes, as identifiers a browser spec, a development panel and the seed itself can address. */
@@ -148,11 +147,13 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = deepFreeze([
   buildSession("deputized-fundraiser", "fundraiser", "Deputized fundraiser", "Acting inside one admitted ministry, among the shared records and their own private work.", PRINCIPAL_DEPUTIZED, [HARBOUR_YOUTH], { selectedContext: HARBOUR_YOUTH, workspace: "established-worker" }),
   buildSession("coach", "coach", "Coach", "Read-only access to exactly the modules and periods the worker has shared.", PRINCIPAL_COACH, [], { workspace: "coach" }),
   buildSession("content-reviewer", "reviewer", "Content reviewer", "Approves frozen content candidates, and only candidates.", PRINCIPAL_REVIEWER, [HARBOUR_YOUTH], { selectedContext: HARBOUR_YOUTH, workspace: "established-worker" }),
-  // A reader is admitted by the persona it previews, not by a ministry membership, so its session
-  // carries no admitted membership and has chosen no context: the receiving preview reads one
-  // document and one edition, never a workspace.
+  // A reader is admitted by the persona it previews, not by a ministry membership, so its session carries no
+  // admitted membership and has chosen no context: the receiving preview reads one document and one edition,
+  // never a workspace. The one exception is the record the reader itself owns — the approved-supporter reader's
+  // membership, which its own preference controls write and which the publisher's world also holds as the copy a
+  // receiving read reaches across.
   buildSession("reader-public", "reader-public", "Public reader", "A public reader in the receiving preview, admitted to the public edition only.", PRINCIPAL_READER_PUBLIC, [], {}),
-  buildSession("reader-approved-supporter", "reader-approved-supporter", "Approved-supporter reader", "A reader admitted to the approved-supporter edition, and refused the public one's siblings.", PRINCIPAL_READER_SUPPORTER, [], {}),
+  buildSession("reader-approved-supporter", "reader-approved-supporter", "Approved-supporter reader", "A reader admitted to the approved-supporter edition, and refused the public one's siblings.", PRINCIPAL_READER_SUPPORTER, [], { workspace: "reader-approved-supporter" }),
   buildSession("reader-unauthorized", "reader-unauthorized", "Unauthorized reader", "Refused protected content honestly, with nothing about it disclosed.", PRINCIPAL_READER_UNAUTHORIZED, [], {}),
   buildSession("subscriber", "subscriber", "Subscriber", "A reader whose own membership is waiting for proof: confirmable inside its 168-hour window, with Off or Immediate available for it.", PRINCIPAL_SUBSCRIBER, [], { workspace: "subscriber" }),
   // A session state belongs to a seat rather than being a persona of its own, so these rows are the
@@ -296,6 +297,7 @@ export const SEEDED_MEDIA_BYTES: readonly SeededMediaBytes[] = Object.freeze([
   { assetId: "asset-video-welcome", renditionId: "rendition-video-welcome-playback", file: "sample-h264.mp4", fixture: "sample-h264.mp4", producedBy: "copy" },
   { assetId: "asset-video-welcome", renditionId: "rendition-video-welcome-poster", file: "poster.jpg", fixture: "poster.jpg", producedBy: "copy" },
   { assetId: "asset-video-welcome", renditionId: "rendition-video-welcome-captions", file: "sample.vtt", fixture: "sample.vtt", producedBy: "copy" },
+  { assetId: "asset-video-welcome", renditionId: "rendition-video-welcome-transcript", file: "transcript.vtt", fixture: "sample.vtt", producedBy: "copy" },
   { assetId: "asset-image-portrait", renditionId: "rendition-image-portrait-display", file: "display.jpg", fixture: "IMG_20260814-harbour-youth-group.jpg", producedBy: "image-display" },
   { assetId: "asset-video-unavailable", renditionId: "rendition-video-unavailable-poster", file: "poster.jpg", fixture: "poster.jpg", producedBy: "copy" },
 ]);
@@ -712,6 +714,9 @@ function harbourContentDocuments(): readonly ContentDocumentRecord[] {
   return [
     { documentId: "doc-update-autumn", family: "update", kind: "update", sourceSubject: source("content", "update-autumn-2026"), siteId: "site-harbour", givingBinding: null, managedFields: ["title"], revision: INITIAL_REVISION },
     { documentId: "doc-page-harbour-youth", family: "worker-page", kind: "story", sourceSubject: source("content", "worker-page-harbour-youth"), siteId: "site-harbour", givingBinding: null, managedFields: ["title", "givingBinding"], revision: INITIAL_REVISION },
+    // The second family's Page: the same site and the same contributor authority, composed from the Project Page
+    // catalogue's own sections, so both families the Pages index names hold a Page a worker can actually compose.
+    { documentId: "doc-page-harbour-kitchen", family: "project-page", kind: "milestone", sourceSubject: source("content", "project-page-harbour-kitchen"), siteId: "site-harbour", givingBinding: null, managedFields: ["title", "givingBinding"], revision: INITIAL_REVISION },
   ];
 }
 function harbourMediaAssets(session: SeededSession): readonly MediaAssetRecord[] {
@@ -722,11 +727,13 @@ function harbourMediaAssets(session: SeededSession): readonly MediaAssetRecord[]
       "video",
       { container: "mp4", codec: "avc1.64001f", durationSeconds: 2, width: 960, height: 540 },
       "media-originals/welcome-sunday-raw.mp4",
-      [rendition("rendition-video-welcome-playback", "playback", "video/mp4"), rendition("rendition-video-welcome-poster", "poster", "image/jpeg"), rendition("rendition-video-welcome-captions", "captions", "text/vtt")],
+      [rendition("rendition-video-welcome-playback", "playback", "video/mp4"), rendition("rendition-video-welcome-poster", "poster", "image/jpeg"), rendition("rendition-video-welcome-captions", "captions", "text/vtt"), rendition("rendition-video-welcome-transcript", "transcript", "text/vtt")],
       scope,
       // The committed fixtures are the bytes served here, and `scripts/make-media-fixtures.mjs --check`
       // verified them: the poster carries no EXIF, ICC profile or comment segment, the caption track is plain
-      // WebVTT, and the clip's container reports a creation timestamp and no descriptive metadata tag.
+      // WebVTT, and the clip's container reports a creation timestamp and no descriptive metadata tag. The
+      // transcript is served from the committed WebVTT text under a custody name of its own, so the reading
+      // alternative is the clip's own admitted rendition rather than a second copy of the placement's words.
     ),
     buildMediaAsset(
       "asset-image-portrait",
@@ -756,6 +763,9 @@ function harbourMediaAssets(session: SeededSession): readonly MediaAssetRecord[]
 function harbourContentRevisions(): readonly ContentRevisionRecord[] {
   const author = PRINCIPAL_ESTABLISHED;
   const pageSection: ContentSection = { element: "story", fields: { heading: "A term with the youth group", body: "Friday evenings, a shared meal and a great deal of football." }, presentation: NORMAL_PRESENTATION };
+  // The Project Page's one composed section, from the milestone type that family's catalogue admits: the three fields
+  // its type edits, under the seeded presentation every composed section starts with.
+  const kitchenSection: ContentSection = { element: "milestone", fields: { heading: "The new cooker arrived", date: "2026-09-12", body: "The kitchen is what makes a Friday evening possible, and the refit began with the oven nobody could repair." }, presentation: NORMAL_PRESENTATION };
   const autumnEnglish = contentBody("ltr", ["Autumn at Harbour Youth", "This term we have met every Friday, shared a meal each week and welcomed six new faces.", "Thank you for praying with us and for giving what makes the work possible."]);
   const autumnForSupporters = contentBody("ltr", ["Autumn at Harbour Youth", "This term we have met every Friday, shared a meal each week and welcomed six new faces.", "For those who support this work: the monthly costs rose in September and your regular giving is what carried them."]);
   const autumnArabic = contentBody("rtl", ["الخريف في هاربر يوث", "التقينا كل يوم جمعة هذا الفصل، وتشاركنا وجبة، ورحّبنا بستة وجوه جديدة."]);
@@ -773,6 +783,16 @@ function harbourContentRevisions(): readonly ContentRevisionRecord[] {
       sharePresentation: { title: "Harbour Youth", description: "Fridays in the church hall.", imageAssetId: "asset-image-portrait", imageAltText: "The youth group gathered in the church hall." },
     }),
     buildContentRevision("rev-page-ar-draft-1", "variant-page-harbour-youth-ar-public", pageArabic, author, "2026-11-15T16:45:00Z", "هاربر يوث"),
+    // The Project Page's own draft: one composed milestone section and the prose around it, saved and never
+    // submitted, so the family's builder opens on an edition there is something to compose in.
+    buildContentRevision(
+      "rev-page-harbour-kitchen-en-draft-1",
+      "variant-page-harbour-kitchen-en-public",
+      contentBody("ltr", ["The kitchen is where a Friday evening begins.", "This page follows the refit of it, says what has been done and what it still needs."], [kitchenSection]),
+      author,
+      "2026-11-16T10:00:00Z",
+      "Harbour Youth Kitchen",
+    ),
   ];
 }
 function harbourContentVariants(): readonly ContentVariantRecord[] {
@@ -785,6 +805,9 @@ function harbourContentVariants(): readonly ContentVariantRecord[] {
     buildContentVariant("variant-update-autumn-ar-public", "doc-update-autumn", "public", "ar", "rtl", { draftRevisionId: "rev-update-ar-draft-1", candidateId: "rev-update-ar-candidate-1" }),
     buildContentVariant("variant-page-harbour-youth-en-public", "doc-page-harbour-youth", "public", "en", "ltr", { releaseHeadId: "release-page-en-1" }),
     buildContentVariant("variant-page-harbour-youth-ar-public", "doc-page-harbour-youth", "public", "ar", "rtl", { draftRevisionId: "rev-page-ar-draft-1" }),
+    // The Project Page's one edition: public English, holding a saved draft and no candidate and no release, which is
+    // the state the family's second composition starts from.
+    buildContentVariant("variant-page-harbour-kitchen-en-public", "doc-page-harbour-kitchen", "public", "en", "ltr", { draftRevisionId: "rev-page-harbour-kitchen-en-draft-1" }),
   ];
 }
 // The failed sibling's frozen candidate carries the submission record that put it under review, so a fresh-seed reviewer can answer it.
@@ -837,12 +860,27 @@ function partialReleaseReleases(): readonly ReleaseRecord[] {
     buildRelease("release-update-en-2", "variant-update-autumn-en-public", "rev-update-en-2", "public", "en", "2026-11-18T09:00:00Z", "link-public"),
   ];
 }
+/**
+ * The receiving reader's own membership: its approval is the protected-reading grant, the row is the membership a
+ * notification copy is addressed at, and it is the record that reader's own preference, confirmation and
+ * unsubscribe controls write. The id is the reader's own principal, which is the store's convention for a reader's
+ * membership (`membershipId: identity`), and it is built once here so the copy this publisher's world carries and
+ * the copy the reader's own world holds cannot disagree about what was approved.
+ */
+function approvedSupporterMembership(): MembershipRecord {
+  return buildMembership(PRINCIPAL_READER_SUPPORTER, "supporter@example.org", "active", { displayName: "Approved supporter", acceptedAt: "2026-07-22T10:30:00Z", languagePreference: "en" });
+}
 function harbourMemberships(): readonly MembershipRecord[] {
   return [
     buildMembership("membership-ada-active", "ada.quinn@example.org", "active", { displayName: "Ada Quinn", acceptedAt: "2026-03-02T08:00:00Z", languagePreference: "en" }),
     buildMembership("membership-priya-active", "priya.raman@example.org", "active", { displayName: "Priya Raman", acceptedAt: "2026-04-11T19:30:00Z", languagePreference: "en" }),
     buildMembership("membership-jonas-active", "jonas.oyelaran@example.org", "active", { displayName: "Jonas Oyelaran", acceptedAt: "2026-05-19T12:00:00Z", languagePreference: "en" }),
     buildMembership("membership-tobias-active", "tobias.kern@example.org", "active", { displayName: "Tobias Kern", acceptedAt: "2026-06-30T06:45:00Z", languagePreference: "de" }),
+    // The receiving reader is a member of this publisher's Update-email audience, so this one row is two facts on
+    // the publisher's side: the approval a receiving read decides the grant from, and the membership the notice's
+    // copy is addressed at. Its own world holds the same record, because a reader's preference controls write the
+    // document of the session that acts, never the publisher's (AAP 0.7.2: a session sees only its own files).
+    approvedSupporterMembership(),
     // Awaiting proof: not membership, and its 168-hour confirmation window is stored as the instant it closes.
     buildMembership("membership-awaiting-proof", "iwan.pritchard@example.org", "awaiting-proof", { displayName: "Iwan Pritchard", acceptedAt: "2026-11-16T12:00:00Z", confirmationDeadline: membershipConfirmationDeadline(Temporal.Instant.from("2026-11-16T12:00:00Z")), languagePreference: "cy" }),
     buildMembership("membership-unsubscribed", "hilary.baptiste@example.org", "off", { displayName: "Hilary Baptiste", acceptedAt: "2026-02-08T09:15:00Z", languagePreference: "en" }),
@@ -851,7 +889,10 @@ function harbourMemberships(): readonly MembershipRecord[] {
   ];
 }
 const harbourNotificationIntents = (): readonly NotificationIntentRecord[] => [
-  { intentId: "intent-update-autumn-en", publisherId: PUBLISHER_HARBOUR, purpose: "update-email", documentId: "doc-update-autumn", releaseId: "release-update-en-1", intendedAt: "2026-11-10T09:05:00Z", ceilingCount: 4, revision: INITIAL_REVISION },
+  // The ceiling is every eligible recipient of the seeded audience at the instant this notice was meant for, which
+  // now includes the receiving reader the accepted copy below is addressed at: the reader's own membership is one
+  // of the publisher's active, audience-addressed memberships and not a fifth of a kind beside them.
+  { intentId: "intent-update-autumn-en", publisherId: PUBLISHER_HARBOUR, purpose: "update-email", documentId: "doc-update-autumn", releaseId: "release-update-en-1", intendedAt: "2026-11-10T09:05:00Z", ceilingCount: 5, revision: INITIAL_REVISION },
 ];
 function harbourNotificationResults(): readonly NotificationSendResultRecord[] {
   const recipients: readonly NotificationRecipientOutcomeRecord[] = [
@@ -859,8 +900,12 @@ function harbourNotificationResults(): readonly NotificationSendResultRecord[] {
     { recipientId: "membership-priya-active", renditionId: "rendition-update-en-notice", state: "accepted", at: "2026-11-10T09:06:14Z" },
     { recipientId: "membership-jonas-active", renditionId: "rendition-update-en-notice", state: "failed", at: "2026-11-10T09:06:15Z" },
     { recipientId: "membership-tobias-active", renditionId: "rendition-update-de-notice", state: "unknown", at: "2026-11-10T09:06:31Z" },
+    // The receiving reader's copy, recorded under the identity the notice is addressed at, is the message the
+    // synthetic inbox renders for that persona: the same outcome the publisher recorded, never a claim that it was
+    // delivered or read.
+    { recipientId: PRINCIPAL_READER_SUPPORTER, renditionId: "rendition-update-en-notice", state: "accepted", at: "2026-11-10T09:06:33Z" },
   ];
-  // The seeded intent serves all four eligible recipients of its ceiling — accepted, failed and
+  // The seeded intent serves all five eligible recipients of its ceiling — accepted, failed and
   // unknown outcomes are all a recorded copy — so no recipient of this intent went unserved.
   return [{ sendResultId: "send-result-update-autumn-en", intentId: "intent-update-autumn-en", recipients, unserved: [], recordedAt: "2026-11-10T09:07:00Z", revision: INITIAL_REVISION }];
 }
@@ -1036,6 +1081,15 @@ function subscriberWorkspace(session: SeededSession): SessionStateDocument {
   ];
   return stateDocument(session, { memberships });
 }
+/**
+ * The approved-supporter reader's own world: the record its own Off/Immediate choice, reading language,
+ * confirmation and unsubscribe write. A session sees only its own files (AAP 0.7.2), so the membership a reader
+ * changes is this copy; the publisher's world carries the copy a receiving read reaches across for the grant and
+ * for the notice addressed at it, and both are built by `approvedSupporterMembership` so they start identical.
+ */
+function approvedSupporterWorkspace(session: SeededSession): SessionStateDocument {
+  return stateDocument(session, { memberships: [approvedSupporterMembership()] });
+}
 /** Builds the state document a seeded session starts with, from the workspace its row names. */
 export function seedWorkspace(session: SeededSession): SessionStateDocument {
   switch (session.workspace) {
@@ -1053,6 +1107,8 @@ export function seedWorkspace(session: SeededSession): SessionStateDocument {
       return coachWorkspace(session);
     case "subscriber":
       return subscriberWorkspace(session);
+    case "reader-approved-supporter":
+      return approvedSupporterWorkspace(session);
     case "empty":
       return stateDocument(session, {});
   }

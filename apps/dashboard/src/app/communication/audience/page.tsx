@@ -54,6 +54,9 @@ const HEADING_ID = "communication-audience-heading";
 /** The two parameters this route forwards: the paging window the read declares, and nothing besides them. */
 const PARAM = { page: "page", pageSize: "pageSize" } as const;
 
+/** The interface locale the composed surface formats its counts in. */
+const INTERFACE_LOCALE = "en-GB";
+
 /** This page's own wording: its heading and lede, and the notices a denial, an outage or a refusal is stated with. */
 const PAGE_COPY = {
   heading: `${PURPOSE_LABEL["update-email"]} audience`,
@@ -146,7 +149,7 @@ export default async function CommunicationAudiencePage({ searchParams }: Commun
         <p className="max-w-prose text-sm text-pretty text-muted-foreground">{PAGE_COPY.lede}</p>
       </div>
       {result.kind === "envelope" ? (
-        <MembershipTable envelope={result.envelope} scope={result.envelope.scope} />
+        <MembershipTable envelope={result.envelope} scope={result.envelope.scope} locale={INTERFACE_LOCALE} />
       ) : (
         <>
           <p className="max-w-prose text-pretty text-sm text-muted-foreground">{NOT_CONSENT_STATEMENT}</p>

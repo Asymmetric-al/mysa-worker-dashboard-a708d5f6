@@ -1,14 +1,21 @@
 /**
  * `/preview/preferences` — the reader's own preference-and-consent surface: the Off or Immediate choice for one
- * publisher's Update email, the reading language beside it, the proof of the address that membership is set for, and
- * the unsubscribe for that same publisher and purpose (AAP 0.9.1 "Language, Off/Immediate, unsubscribe, proof flow";
- * AAP 0.10.1 family 10; `GET /api/preferences`, `POST /api/preferences`, `POST /api/unsubscribe`,
- * `POST /api/confirm` in AAP 0.6.3).
+ * publisher's Update email, the reading language beside it, the proof flow that opens a membership by the person's own
+ * request and confirms the address that membership is set for, and the unsubscribe for that same publisher and purpose
+ * (AAP 0.9.1 "Language, Off/Immediate, unsubscribe, proof flow"; AAP 0.10.1 family 10; `GET /api/preferences`,
+ * `POST /api/preferences`, `POST /api/audience`, `POST /api/unsubscribe`, `POST /api/confirm` in AAP 0.6.3).
  *
  * **Composition only.** One `readPreferences` answer, then the four surfaces the audience feature owns, in the fixed
  * order preference → language → proof → unsubscribe. Nothing here counts, formats, dates, decides a permission or
  * writes anything: each surface takes its own mutation, its own receipt and its own wording, and this file hands the
- * envelope's facts to them.
+ * envelope's facts to them. A session that holds no membership has one surface to compose — the proof surface's
+ * request step — because the other three each address a record the read did not name.
+ *
+ * **The request step is the proof surface's own.** No route composed the deliberate request that opens a membership,
+ * so it is composed here from the same surface that carries the pending result and the confirmation: one `ProofFlow`,
+ * one signup schema, one hook, handed the state the read reports, no membership and the revision the read returned.
+ * That arm confirms nothing on render — the request records a membership awaiting proof, and the confirmation appears
+ * only once the read reports that membership back, which the surface asks the page for after the service accepts it.
  *
  * **The four facts stay four.** A language is not consent, awaiting proof is not consent, a source `subscribed` flag
  * is not consent, and an accepted notice is neither delivery nor reading. Rendering this page confirms nothing and
@@ -31,7 +38,7 @@ import type { Metadata } from "next";
 import type { ReactElement } from "react";
 
 import { StateNotice } from "@/components/state-notice";
-import LanguagePreference, { type LanguageOption } from "@/features/audience/components/language-preference";
+import LanguagePreference from "@/features/audience/components/language-preference";
 import PreferenceControl from "@/features/audience/components/preference-control";
 import ProofFlow, { type ProofMembership } from "@/features/audience/components/proof-flow";
 import UnsubscribeConfirm from "@/features/audience/components/unsubscribe-confirm";
@@ -84,28 +91,21 @@ const SURFACES_CLASS = "flex min-w-0 flex-col gap-8";
 const LEDE = "Four separate facts are stated here: your Off or Immediate choice for this publisher's Update email, the language you read it in, the proof that the address that membership is set for is yours, and turning those notices off. Each is changed on its own, and choosing one never decides another.";
 
 /**
- * The languages this page may offer for the reading-language choice.
- *
- * The preferences read publishes the language the membership records and no catalogue of languages the publisher
- * offers, so this page offers none rather than typing tags here: a tag written into this route would be a second source
- * for content locales, and saving one would record a language the read never stated the publisher publishes in. The
- * control then states the language the record holds, in its own words, and lists nothing to choose from.
- */
-const NO_OFFERED_LANGUAGES: readonly LanguageOption[] = [];
-
-/**
  * The publisher's display name. The read states the publisher as an opaque reference and no name, so no name is
  * invented: the proof surface shows the reference it was given, and the unsubscribe surface is handed no label at all,
  * which is how it falls back to the reference and marks it as one.
  */
 const NO_PUBLISHER_LABEL = "";
 
-/** What this page states where the read gave it no membership to compose, and where the read answered with a refusal. */
+/**
+ * What this page states where the read gave it no membership and named no publisher a request could address, and where
+ * the read answered with a refusal.
+ */
 const NOTICE_COPY = {
   noMembership: {
     title: "No Update-email membership is recorded for this session",
     description:
-      "The read found no membership for this publisher and this purpose, so there is no Off or Immediate choice to record, no reading language to state, no address awaiting proof and no subscription to turn off. A membership is created by requesting notices and then confirming the address yourself; rendering a page, opening a link, importing a contact or editing one creates none.",
+      "The read found no membership for this purpose, so there is no Off or Immediate choice to record, no reading language to state, no address awaiting proof and no subscription to turn off. It also names no single publisher whose Update email this session could ask for, so the request is not offered here, and rendering a page, opening a link, importing a contact or editing one creates no membership.",
     action: { label: "Open the receiving preview", href: "/preview" },
   },
   denied: { title: "Your preferences are not available in this session", description: "This session may not read a membership here, so no choice, language, address or subscription state is stated in its place." },
@@ -129,15 +129,31 @@ function availabilityOf(envelope: PreferencesEnvelope, name: string): ActionAvai
   return { available: action?.available === true, reason: action?.reason };
 }
 
-/** The envelope arm: the four surfaces, composed over the facts the read itself published. */
+/**
+ * The envelope arm: the four surfaces, composed over the facts the read itself published.
+ *
+ * A session that holds no membership gets the proof surface's request step and nothing beside it: the Off or Immediate
+ * choice, the reading language and the unsubscribe each address a record this read did not name, so none of them is
+ * composed. That step is the family's own — the same `ProofFlow`, signup schema and hook the pending result and the
+ * confirmation use — handed the state, the absent membership and the revision this read stated, so no second form and
+ * no duplicate state arrives with it.
+ */
 function MembershipPreferences({ envelope }: { readonly envelope: PreferencesEnvelope }): ReactElement {
   const { data, scope, revision } = envelope;
   const { membershipId, publisherId, choice, state } = data;
   // A membership the read did not name — no identifier, no publisher reference, no recorded choice, or no state at all
-  // — leaves the four surfaces without a record to address, so the absence is stated rather than four controls over
-  // values this page invented.
+  // — leaves the three record-addressing surfaces without a record to address. Where the read states the publisher such
+  // a request would be made to, the proof surface composes the deliberate request that opens one; where it states none,
+  // the absence is stated instead, because a request form over a publisher this page invented would address a record the
+  // read never mentioned.
   if (membershipId === null || publisherId === null || choice === null || state === "none") {
-    return <StateNotice kind="empty" headingLevel={2} title={NOTICE_COPY.noMembership.title} description={NOTICE_COPY.noMembership.description} action={NOTICE_COPY.noMembership.action} />;
+    if (publisherId === null) {
+      return <StateNotice kind="empty" headingLevel={2} title={NOTICE_COPY.noMembership.title} description={NOTICE_COPY.noMembership.description} action={NOTICE_COPY.noMembership.action} />;
+    }
+    // The request step alone: this notice and that step would state the same absence twice, and the step is the one that
+    // offers the real first action an empty surface owes the person. The state, the absent membership and the revision
+    // are the read's own, so nothing composed here claims a membership exists or confirms one on render.
+    return <ProofFlow scope={scope} publisherId={publisherId} publisherLabel={publisherId} purpose={data.purpose} state={state} membership={null} expectedRevision={revision} confirmation={data.confirmation} languagePreference={data.languagePreference} headingLevel={2} />;
   }
   const choiceAction = availabilityOf(envelope, "setPreference");
   const languageAction = availabilityOf(envelope, "setLanguagePreference");
@@ -147,7 +163,11 @@ function MembershipPreferences({ envelope }: { readonly envelope: PreferencesEnv
     <div className={SURFACES_CLASS}>
       {/* One closed pair — Off or Immediate — for this publisher and this purpose. */}
       <PreferenceControl scope={scope} membershipId={membershipId} publisherId={publisherId} purpose={data.purpose} currentChoice={choice} expectedRevision={revision} disabled={!choiceAction.available} disabledReason={choiceAction.reason} headingLevel={2} />
-      {/* The reading language, with its own save and its own payload: nothing here is folded into the choice above. */}
+      {/* The reading language, with its own save and its own payload: nothing here is folded into the choice above. The
+          languages offered are the read's own list — one per language this publisher currently releases Updates in that
+          this reader may read them in, a protected edition's language withheld when the reader holds no grant — so this
+          page types no tag of its own and adds no second source for content locales. A list the read states as empty is
+          stated by the control in its own words rather than filled in here. */}
       <LanguagePreference
         scope={scope}
         membershipId={membershipId}
@@ -156,7 +176,7 @@ function MembershipPreferences({ envelope }: { readonly envelope: PreferencesEnv
         currentChoice={choice}
         currentLanguage={data.languagePreference}
         expectedRevision={revision}
-        languageOptions={NO_OFFERED_LANGUAGES}
+        languageOptions={data.languageOptions}
         disabled={!languageAction.available}
         disabledReason={languageAction.reason}
         headingLevel={2}

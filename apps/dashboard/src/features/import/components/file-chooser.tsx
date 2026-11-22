@@ -6,6 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CHOOSE_FILE_COPY, IMPORT_SIMULATION_EFFECT, LIMIT_ROWS, chosenFileSize } from "../copy";
 import type { ImportFileSelection } from "../hooks/use-import-journey";
+/**
+ * The committed example file, served from this application's own public directory. It is a plain download rather
+ * than a route: a worker with no file in hand can read what this step accepts, and choosing the downloaded copy
+ * opens the same review any other file does.
+ */
+const EXAMPLE_FILE_HREF = "/fixtures/contacts-example.csv";
 function readContentBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -64,6 +70,14 @@ export default function FileChooser({ selection, onChoose, onContinue }: FileCho
             </li>
           ))}
         </ul>
+      </div>
+      {/* Offered before the control, for the worker who has no file in hand: the example is a download, and choosing it is the same review as any other file. */}
+      <div className="flex min-w-0 flex-col gap-1 text-sm">
+        <p className="font-medium">{CHOOSE_FILE_COPY.exampleHeading}</p>
+        <p className="text-pretty text-muted-foreground">{CHOOSE_FILE_COPY.exampleLead}</p>
+        <a href={EXAMPLE_FILE_HREF} download className="inline-flex min-h-6 items-center underline underline-offset-4">
+          {CHOOSE_FILE_COPY.exampleLinkLabel}
+        </a>
       </div>
       <div className="flex min-w-0 flex-col gap-3">
         <FormField label={CHOOSE_FILE_COPY.fileLabel} name="file" description={CHOOSE_FILE_COPY.fileHint} error={readError ?? undefined} required>

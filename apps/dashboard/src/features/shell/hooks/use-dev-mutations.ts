@@ -1,30 +1,64 @@
 "use client";
 
-/** The five development controls, as the transports the development panel and the Settings reset call. */
+/** The six development controls, as the transports the development panel and the Settings reset call. */
 
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { ZodType } from "zod";
+import { z, type ZodType } from "zod";
 
 import type { DevFailureArming, DevResetTransport } from "@/components/dev-panel";
 import { scopeKey } from "@/components/context-switch-guard";
 import { isRecord } from "@/lib/guards";
 import { newOperationId } from "@/lib/ids";
 import type { MutationInput, MutationOutcome } from "@/modules/data-service";
-import type { ReadEnvelope, Scope } from "@/modules/data-service/envelope";
+import { mutationInputSchema, type ReadEnvelope, type Scope } from "@/modules/data-service/envelope";
 import { invalid } from "@/modules/data-service/outcome";
 import type { DevState } from "@/modules/data-service/reads/dev";
 import { instantAt } from "@/modules/time/clock";
 
 import { submitDevAction } from "../api-client";
-import { advanceClockRequestSchema, makeSetFailurePlanRequestSchema, resetSeedRequestSchema, setClockRequestSchema, setScenarioRequestSchema, type AdvertisedFailurePlan, type DevMutationName, type DevRequest } from "../schemas/dev";
+import { advanceClockRequestSchema, makeSetFailurePlanRequestSchema, resetSeedRequestSchema, setClockRequestSchema, setScenarioRequestSchema, type AdvertisedFailurePlan, type DevMutationName } from "../schemas/dev";
 import { devStateQueryKey } from "./use-dev-state";
 
 const REMEMBERED_INTENT_LIMIT = 32;
 
+/**
+ * The persona switch is the one action this family sends that has no `mutations.dev.*` counterpart: the
+ * session a browser acts as is its own cookie's fact, so the switch stores nothing and the handler grants the
+ * cookie. Its request schema is therefore declared here rather than beside the five service mutations, whose
+ * `DevMutationName` is the service's own roster and does not carry this name.
+ */
+type SelectPersonaAction = "selectPersona";
+
+/** Every action these transports send: the five service mutations, and the switch. */
+type DevTransportAction = DevMutationName | SelectPersonaAction;
+
+/** One request as the transport hands it to the handler: the four fields the mutation envelope states, and the action the handler dispatches on. */
+type DevTransportRequest<Action extends DevTransportAction, Payload> = MutationInput<Payload> & { readonly action: Action };
+
+type SelectPersonaPayload = { readonly personaId: string };
+
+/** The refusal the switch's own schema states for an identifier it cannot use: the roster is the only thing a persona can be named from, so an empty or a written value is not one. */
+const PERSONA_ID_REQUIRED = "A persona switch names one of the seeded personas this session's development read lists, so send that roster's own identifier rather than an empty or a written one.";
+
+const selectPersonaPayloadSchema = z.strictObject({ personaId: z.string().min(1, PERSONA_ID_REQUIRED).max(64, PERSONA_ID_REQUIRED) });
+
+const selectPersonaRequestSchema: ZodType<DevTransportRequest<SelectPersonaAction, SelectPersonaPayload>> = z
+  .looseObject({ action: z.literal("selectPersona", { error: "A development request names the action it asks for, so send the control's own action with the rest of the request." }) })
+  .transform((raw): unknown => {
+    if (!isRecord(raw)) {
+      return undefined;
+    }
+    const projection: Record<string, unknown> = { ...raw };
+    delete projection.action;
+    return projection;
+  })
+  .pipe(mutationInputSchema(selectPersonaPayloadSchema))
+  .transform((input) => ({ action: "selectPersona" as const, ...input }));
+
 interface DevIntent {
-  readonly action: DevMutationName;
+  readonly action: DevTransportAction;
   readonly scope: Scope;
   readonly expectedRevision: string;
   readonly payload: unknown;
@@ -52,9 +86,11 @@ export interface DevMutationTransports {
   readonly onSetFailurePlan: (arming: DevFailureArming | null) => Promise<MutationOutcome>;
   /** The reviewed reset. */
   readonly reset: DevResetTransport;
+  /** Switches the seeded session this browser acts as, so every surface afterwards is read as that identity. */
+  readonly onSelectPersona: (personaId: string) => Promise<MutationOutcome>;
 }
 
-/** Builds the five transports for the session acting in `scope`. */
+/** Builds the six transports for the session acting in `scope`. */
 export function useDevMutations(scope: Scope, envelope: ReadEnvelope<DevState> | null, enabled: boolean): DevMutationTransports | null {
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -72,7 +108,7 @@ export function useDevMutations(scope: Scope, envelope: ReadEnvelope<DevState> |
 
   const failurePlanSchema = useMemo(() => makeSetFailurePlanRequestSchema(advertised), [advertised]);
 
-  /** Re-renders the Server Components once for one settled scenario change or reset. */
+  /** Re-renders the Server Components once for one settled change that reaches past this panel: a scenario, a reset, or the identity the session acts as. */
   const refreshOnceFor = useCallback(
     (operationId: string): void => {
       if (refreshedFor.current === operationId) {
@@ -86,7 +122,22 @@ export function useDevMutations(scope: Scope, envelope: ReadEnvelope<DevState> |
 
   /** Applies the invalidation policy above to one settled attempt. */
   const settle = useCallback(
-    async (action: DevMutationName, outcome: MutationOutcome): Promise<void> => {
+    async (action: DevTransportAction, outcome: MutationOutcome): Promise<void> => {
+      if (action === "selectPersona") {
+        // A switch that was not applied leaves this browser acting as the identity it already acted as, so
+        // nothing it holds is stale. One that was applied changes which identity every read answers for, and
+        // every query key is scoped to the identity that answered it, so nothing cached can be reused: the
+        // whole client world is dropped rather than invalidated, and the Server Components are re-rendered for
+        // the session this browser now carries (AAP 0.2.1 and 0.7.2: a context switch clears the cache before
+        // any new read is issued).
+        const switched = outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged";
+        if (!switched) {
+          return;
+        }
+        queryClient.clear();
+        refreshOnceFor(outcome.operationId);
+        return;
+      }
       const applied = outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted";
       if (!applied) {
         return;
@@ -135,7 +186,7 @@ export function useDevMutations(scope: Scope, envelope: ReadEnvelope<DevState> |
 
   /** Validates one control's body and dispatches it, answering exactly one outcome. */
   const submit = useCallback(
-    async <Action extends DevMutationName, Payload>(action: Action, schema: ZodType<DevRequest<Action, Payload>>, input: MutationInput<unknown>): Promise<MutationOutcome> => {
+    async <Action extends DevTransportAction, Payload>(action: Action, schema: ZodType<DevTransportRequest<Action, Payload>>, input: MutationInput<unknown>): Promise<MutationOutcome> => {
       const key = intentKeyOf({ action, scope, expectedRevision: input.expectedRevision, payload: input.payload });
       const running = inFlight.current.get(key);
       if (running !== undefined) {
@@ -169,8 +220,18 @@ export function useDevMutations(scope: Scope, envelope: ReadEnvelope<DevState> |
       return null;
     }
 
+    /**
+     * The authority every control submits: the scope this development read itself ran under, never the
+     * shell's admission scope. A session that admits no ministry — a seeded reader, say — is refused no
+     * development control by its admission, and the read has already named the development runtime's own
+     * scope for it; submitting the shell's empty scope instead would be refused by the request envelope
+     * before the service was ever reached. The reviewed reset below has always stated this scope for the
+     * same reason.
+     */
+    const authority = envelope.scope;
+
     /** The four-field input for one control, carrying the identity its intent already has. */
-    const build = (action: DevMutationName, payload: unknown): MutationInput<unknown> => ({ operationId: identityFor({ action, scope, expectedRevision, payload }), scope, expectedRevision, payload });
+    const build = (action: DevTransportAction, payload: unknown): MutationInput<unknown> => ({ operationId: identityFor({ action, scope: authority, expectedRevision, payload }), scope: authority, expectedRevision, payload });
 
     return {
       onSetScenario: (scenarioId) => submit("setScenario", setScenarioRequestSchema, build("setScenario", { scenarioId })),
@@ -200,8 +261,13 @@ export function useDevMutations(scope: Scope, envelope: ReadEnvelope<DevState> |
       // The reviewed reset: its identity and its double-press fence belong to the review step, so this
       // transport validates and dispatches the input it is handed instead of minting another one.
       reset: { input: { scope: envelope.scope, expectedRevision, payload: {} }, submit: (input) => submit("resetSeed", resetSeedRequestSchema, input) },
+
+      onSelectPersona: (personaId) =>
+        // The switch names one seeded persona of the roster the read lists and stores nothing: the handler
+        // grants this browser's session cookie, so the payload carries the identifier and no other field.
+        submit("selectPersona", selectPersonaRequestSchema, build("selectPersona", { personaId })),
     };
-  }, [enabled, envelope, expectedRevision, failurePlanSchema, identityFor, scope, submit]);
+  }, [enabled, envelope, expectedRevision, failurePlanSchema, identityFor, submit]);
 
   return transports;
 }

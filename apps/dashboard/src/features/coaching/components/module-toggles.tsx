@@ -27,24 +27,23 @@ import type { SourceReference } from "@/lib/ids";
 import { MODULE_KEYS, type GrantLifecycleState, type ModuleKey, type ModuleReadState } from "@/modules/coaching/grant";
 import type { Scope } from "@/modules/data-service/envelope";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
-import { COACHING_COPY, GRANT_STATE_COPY, MODULE_COPY, MODULE_READ_STATE_COPY, STOP_EFFECT_COPY, type StateCopy } from "../copy";
+import { COACHING_COPY, GRANT_STATE_COPY, MODULE_COMPLETE_COPY, MODULE_COPY, MODULE_READ_STATE_COPY, STOP_EFFECT_COPY, type StateCopy } from "../copy";
 import { useSetModule } from "../hooks/use-coaching-mutations";
 import { moduleChangePayloadSchema, type ModuleChangePayload } from "../schemas/module";
 
 // ---------------------------------------------------------------------------------------------
 // The words this surface owns
 //
-// The module names, their descriptions, the five state words and the lifecycle words all come from
-// `../copy`, and the stop step's title, question, consequence and assurance come from the one
-// `STOP_EFFECT_COPY` entry for stopping a module. Only the sentences nothing else states live here.
+// The module names, their descriptions, the five state words, the complete-share word and the
+// lifecycle words all come from `../copy`, and the stop step's title, question, consequence and
+// assurance come from the one `STOP_EFFECT_COPY` entry for stopping a module. Only the sentences
+// nothing else states live here.
 // ---------------------------------------------------------------------------------------------
 
 const CARD_HEADING = "Modules you share";
 const INTRO_SENTENCE = "Modules start switched off, and each of the five is chosen on its own, so your coach can read only the ones you switch on.";
 const OFF_WORD = "Switched off";
 const OFF_SENTENCE = "This module is switched off, so your coach cannot read it. The work inside it stays exactly as it is, and switching it back on is the same deliberate act as switching it on the first time.";
-const UNSTATED_WORD = "State not stated";
-const UNSTATED_SENTENCE = "This module is switched on and the read stated no state for it, so nothing is claimed here about what your coach can read.";
 const BUSY_SENTENCE = "Applying this module change, and nothing else…";
 const INVITED_REASON = "Modules are chosen after the invitation is accepted: nothing is shared before that, so there is no selection to change yet.";
 const ACCEPTED_REASON = "The invitation is accepted and access is not live yet, so a module cannot be switched until it is. Accepting on its own makes no module readable.";
@@ -64,10 +63,13 @@ const ROW_HEADING_LEVEL: Readonly<Record<RowHeadingLevel, RowHeadingLevel>> = { 
 type StateVariant = "secondary" | "outline" | "destructive" | "ghost";
 /**
  * The tone each state's badge carries. Tone never carries the state on its own — the badge always
- * shows the state word from `MODULE_READ_STATE_COPY` — so a reader who cannot see the colour reads
- * the same five distinct words.
+ * shows the state word from `MODULE_READ_STATE_COPY`, and the complete-share word from
+ * `MODULE_COMPLETE_COPY` for a module whose content is whole — so a reader who cannot see the colour
+ * reads the same distinct words in every state.
  */
 const STATE_VARIANT: Readonly<Record<ModuleReadState, StateVariant>> = { empty: "outline", partial: "secondary", withheld: "outline", unavailable: "destructive", ended: "secondary" };
+/** The tone a complete share carries: the secondary tone the sharing summary gives its own complete-share badge, so one reading looks the same on both surfaces. */
+const COMPLETE_VARIANT: StateVariant = "secondary";
 
 // ---------------------------------------------------------------------------------------------
 // The contract
@@ -78,9 +80,10 @@ export type ModuleToggleEntry = {
   readonly key: ModuleKey;
   readonly enabled: boolean;
   /**
-   * The state a coach meets in this module, or `null` when this read admitted none for it — which is
-   * what the service itself states for a module the grant does not share (`AdmittedModuleView`), so a
-   * switched-off module is never given an invented state.
+   * The state a coach meets in this module, or `null` when this read stated none for it. The domain
+   * answers `null` for a shared module whose content is complete — nothing held, missing or
+   * unavailable — and states no state at all for a module the grant does not share, which is why a
+   * switched-off module is never given an invented state either.
    */
   readonly readState: ModuleReadState | null;
   readonly source?: SourceReference | null;
@@ -147,16 +150,22 @@ function entryFor(modules: ReadonlyArray<ModuleToggleEntry>, key: ModuleKey): Mo
   return undefined;
 }
 
-/** The state word a row shows: the module's own state while it is shared, and the plain fact that it is off when it is not. */
+/** The state word a row shows: the complete-share word for a switched-on module whose content is whole, the module's own state word while the read states one, and the plain fact that it is off when it is not shared. */
 function stateWordOf(entry: ModuleToggleEntry): string {
   if (!entry.enabled) return OFF_WORD;
-  return entry.readState === null ? UNSTATED_WORD : MODULE_READ_STATE_COPY[entry.readState].label;
+  return entry.readState === null ? MODULE_COMPLETE_COPY.label : MODULE_READ_STATE_COPY[entry.readState].label;
 }
 
-/** The tone a row's badge carries, matching the word it shows. */
+/** The tone a row's badge carries, matching the word it shows: a complete share takes the tone the summary gives it rather than the outline tone of a state the read never stated. */
 function stateVariantOf(entry: ModuleToggleEntry): StateVariant {
   if (!entry.enabled) return "ghost";
-  return entry.readState === null ? "outline" : STATE_VARIANT[entry.readState];
+  return entry.readState === null ? COMPLETE_VARIANT : STATE_VARIANT[entry.readState];
+}
+
+/** The row's `data-read-state`: what the read established, in the read's own vocabulary — `complete` for a switched-on module whose content is whole, the state while the read states one, and `not-stated` only for a module that is not shared, whose read states no module state at all. */
+function readStateAttributeOf(entry: ModuleToggleEntry): ModuleReadState | "complete" | "not-stated" {
+  if (!entry.enabled) return "not-stated";
+  return entry.readState ?? "complete";
 }
 
 type BuiltPayload = { readonly payload: ModuleChangePayload } | { readonly refusal: string };
@@ -329,7 +338,7 @@ function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowH
   const receipt = direct.outcome ?? settledStop;
 
   return (
-    <div data-slot="module-toggle-row" data-module-key={entry.key} data-enabled={entry.enabled ? "true" : "false"} data-read-state={entry.readState ?? "not-stated"} aria-busy={direct.pending ? true : undefined} className="flex min-w-0 flex-col gap-2">
+    <div data-slot="module-toggle-row" data-module-key={entry.key} data-enabled={entry.enabled ? "true" : "false"} data-read-state={readStateAttributeOf(entry)} aria-busy={direct.pending ? true : undefined} className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <p className="flex min-w-0 flex-wrap items-baseline gap-2">
           <span id={nameId} className="min-w-0 text-sm font-medium wrap-anywhere">
@@ -361,9 +370,9 @@ function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowH
       )}
       {entry.enabled && entry.readState === null ? (
         <p className="text-sm text-pretty text-muted-foreground">
-          <bdi>{UNSTATED_WORD}</bdi>
+          <bdi>{MODULE_COMPLETE_COPY.label}</bdi>
           {": "}
-          {UNSTATED_SENTENCE}
+          {MODULE_COMPLETE_COPY.description}
         </p>
       ) : null}
       {entry.enabled && entry.readState !== null ? <StateStatement state={entry.readState} source={entry.source ?? null} headingLevel={rowHeadingLevel} /> : null}
@@ -414,12 +423,13 @@ function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowH
 
 /**
  * The worker's control over the five coaching modules: one switch per module, each submitting
- * `setModule` for that module alone, and each module's read state stated as one of five distinct
- * statements (`empty`, `partial`, `withheld`, `unavailable`, `ended`) that are never words for one
- * another. Switching a module off is a stop: it ends future sharing of that module, deletes nothing,
- * and cannot recall what a coach has already seen; it therefore goes through the shared review step,
- * while switching one on is applied directly with its outcome recorded in the row. Every outcome is
- * one of the shared eight, rendered in place, and a module that cannot be switched says why in text.
+ * `setModule` for that module alone, and each module's read state stated as the read's own answer —
+ * the complete share for a module whose content is whole, then `empty`, `partial`, `withheld`,
+ * `unavailable` and `ended` — never as words for one another. Switching a module off is a stop: it
+ * ends future sharing of that module, deletes nothing, and cannot recall what a coach has already
+ * seen; it therefore goes through the shared review step, while switching one on is applied directly
+ * with its outcome recorded in the row. Every outcome is one of the shared eight, rendered in place,
+ * and a module that cannot be switched says why in text.
  */
 export default function ModuleToggles({ grantId, modules, scope, expectedRevision, grantState, cutoffInstant, onOutcome, onCheckResult, headingLevel = 2, className }: ModuleTogglesProps): ReactElement {
   const headingId = useId();

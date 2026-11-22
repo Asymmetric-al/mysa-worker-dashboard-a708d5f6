@@ -1,10 +1,12 @@
 "use client";
+import Link from "next/link";
 import { useId, type ReactElement, type ReactNode } from "react";
 import { DraftStatus, lifecycleOf, type VariantReleaseOutcome } from "@/components/draft-status";
 import { fieldErrorsFromInvalid } from "@/components/form-field";
 import OperationResult, { type ReceiptHeadingLevel } from "@/components/operation-result";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { SEND_STATUS, type SendStatus } from "@/components/status-badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
@@ -14,7 +16,7 @@ type PublishingVariant = Parameters<typeof lifecycleOf>[0];
 type PublishingRelease = NonNullable<Parameters<typeof lifecycleOf>[1]>;
 export const PUBLISH_EDITION_STATES = ["released", "failed-with-prior-good-head", "needs-attention", "withdrawn"] as const;
 export type PublishEditionState = (typeof PUBLISH_EDITION_STATES)[number];
-export type PublishedEditionNotice = { readonly state: SendStatus; readonly detail?: string };
+export type PublishedEditionNotice = { readonly state: SendStatus; readonly detail?: string; readonly intentId?: string };
 export type PublishedEdition = { readonly variant: PublishingVariant; readonly state: PublishEditionState; readonly release?: PublishingRelease; readonly reasonCode?: string; readonly reason?: string; readonly notice?: PublishedEditionNotice };
 const EDITIONS_HEADING = "Result for each edition";
 const EDITIONS_INTRO = "Each edition below reports its own result, and editions can differ, so they are read one at a " + "time rather than as one result for the whole submission.";
@@ -30,6 +32,13 @@ const RECEIPT_HEADING: Readonly<Partial<Record<MutationOutcome["outcome"], strin
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 const PUBLICATION_LABEL: Readonly<Record<PublishEditionState, string>> = { released: "Revision released", "failed-with-prior-good-head": "Earlier revision still published", "needs-attention": "Earlier revision still published", withdrawn: "Revision withdrawn" };
 const NO_REVISION_STATE = "No revision is published for this edition.";
+/** Where the recorded per-send results of one submitted notice are read, named by that notice's own identity. */
+const DELIVERY_PATH = "/communication/delivery";
+const NOTICE_IDENTITY_LABEL = "Notice submitted";
+const NOTICE_RESULTS_LINK = "Open the recorded results for this notice";
+const noticeResultsHrefOf = (intentId: string): string => `${DELIVERY_PATH}?intentId=${encodeURIComponent(intentId)}`;
+/** The link's own target size and wrapping, as the family's outlined links state them. */
+const NOTICE_LINK_CLASS = cn(buttonVariants({ variant: "outline", size: "sm" }), "h-auto min-h-8 max-w-full py-1.5 whitespace-normal");
 function synthesisOf(editions: readonly PublishedEdition[]): readonly VariantReleaseOutcome[] {
   const evidence: VariantReleaseOutcome[] = [];
   for (const edition of editions) {
@@ -73,9 +82,10 @@ function EditionRow({ edition, synthesis, renderAction }: EditionRowProps): Reac
   const reason = edition.reason?.trim() ?? "";
   const reasonCode = edition.reasonCode?.trim() ?? "";
   const noticeDetail = edition.notice?.detail?.trim() ?? "";
+  const noticeIntentId = edition.notice?.intentId?.trim() ?? "";
   const action = renderAction?.(edition) ?? null;
   return (
-    <li data-slot="publish-edition" data-edition-state={state} className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3">
+    <li data-slot="publish-edition" data-variant-id={variant.variantId} data-edition-state={state} className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3">
       <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <StatusBadge label={audience.label} srPrefix="Audience" />
         <span className="text-sm text-muted-foreground">
@@ -103,11 +113,31 @@ function EditionRow({ edition, synthesis, renderAction }: EditionRowProps): Reac
         </p>
       )}
       {edition.notice === undefined ? null : (
-        <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-          <span className="text-muted-foreground">Notice for this edition:</span>
-          <StatusBadge {...SEND_STATUS[edition.notice.state]} srPrefix="Notice" />
-          {noticeDetail === "" ? null : <span className="min-w-0 text-muted-foreground wrap-anywhere">{noticeDetail}</span>}
-        </p>
+        <div data-slot="publish-edition-notice" data-notice-state={edition.notice.state} className="flex min-w-0 flex-col gap-2">
+          <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+            <span className="text-muted-foreground">Notice for this edition:</span>
+            <StatusBadge {...SEND_STATUS[edition.notice.state]} srPrefix="Notice" />
+            {noticeDetail === "" ? null : <span className="min-w-0 text-muted-foreground wrap-anywhere">{noticeDetail}</span>}
+          </p>
+          {/*
+            The notice's own identity, where the answer stated one: the recorded outcomes are read under it, so the result
+            row names the notice it is about instead of describing whichever was submitted last. Acceptance is neither
+            delivery nor reading, so the link opens the recorded outcomes and claims nothing about arrival.
+          */}
+          {noticeIntentId === "" ? null : (
+            <div className="flex min-w-0 flex-col gap-1 text-sm">
+              <p className="min-w-0 wrap-anywhere">
+                <span className="text-muted-foreground">{`${NOTICE_IDENTITY_LABEL}: `}</span>
+                <bdi className="mono-identifier">{noticeIntentId}</bdi>
+              </p>
+              <p className="min-w-0">
+                <Link href={noticeResultsHrefOf(noticeIntentId)} className={NOTICE_LINK_CLASS}>
+                  {NOTICE_RESULTS_LINK}
+                </Link>
+              </p>
+            </div>
+          )}
+        </div>
       )}
       {action === null ? null : <div className="min-w-0">{action}</div>}
     </li>

@@ -401,4 +401,74 @@ function phraseList(phrases: readonly string[]): string {
   const last = unique[unique.length - 1] ?? "";
   return `${head} and ${last}`;
 }
+/** One row that looks like another row of the same file: the name they share, and the other rows of the file carrying it with no contact method in common. */
+export type ImportDuplicateLooking = { readonly rowNumber: number; readonly name: string; readonly otherRowNumbers: readonly number[] };
+// The forms a name is read from, in the order a row is believed: the label a contact is shown under, then the organization it
+// acts as, then its given and family names joined — so a row that carries a display name meets a row that carries the two parts.
+const NAME_FORMS: readonly (readonly ImportFieldId[])[] = [["display-name"], ["name-organization"], ["name-given", "name-family"]];
+const NAME_SPACE = /\s+/gu;
+/**
+ * Flags, per row of one file, the other rows of that file it looks like: the same comparable name, and no shared email
+ * address, phone number or source reference. An empty map says nothing in the file resembles anything else in it.
+ *
+ * This is a look-alike signal for the worker to read, never a second rule over the rows: a row's verdict is the one
+ * validation graded, no reuse candidate is offered (a candidate is a contact this session already holds), no reference is
+ * created, and no decision and no count is touched. Both rows of a pair are named, because both look alike.
+ */
+export function flagDuplicateLookingRows(rows: readonly ImportValidatedRow[]): ReadonlyMap<number, ImportDuplicateLooking> {
+  const groups = new Map<string, { readonly name: string; readonly members: ImportValidatedRow[] }>();
+  for (const row of rows) {
+    const name = comparableNameOf(row);
+    if (name === null) continue;
+    const group = groups.get(name.key);
+    if (group === undefined) groups.set(name.key, { name: name.text, members: [row] });
+    else group.members.push(row);
+  }
+  const flagged = new Map<number, ImportDuplicateLooking>();
+  for (const group of groups.values()) {
+    if (group.members.length < 2) continue;
+    for (const row of group.members) {
+      const otherRowNumbers: number[] = [];
+      for (const other of group.members) {
+        if (other.rowNumber !== row.rowNumber && !sharesSignal(row, other)) otherRowNumbers.push(other.rowNumber);
+      }
+      if (otherRowNumbers.length === 0) continue;
+      flagged.set(row.rowNumber, { rowNumber: row.rowNumber, name: group.name, otherRowNumbers: otherRowNumbers.sort((left, right) => left - right) });
+    }
+  }
+  return flagged;
+}
+// The name a row is compared by, from the first form it supplies in full; `null` when it supplies no name at all, because a
+// row nothing names is compared with nothing. Case and spacing are folded so two spellings of one name meet, and nothing
+// else is: stripping an accent would claim two spellings are one person.
+function comparableNameOf(row: ImportValidatedRow): { readonly key: string; readonly text: string } | null {
+  for (const form of NAME_FORMS) {
+    const parts: string[] = [];
+    for (const fieldId of form) {
+      const value = valuesOf(row, fieldId).join(" ");
+      if (value.length === 0) break;
+      parts.push(value);
+    }
+    if (parts.length !== form.length) continue;
+    const text = parts.join(" ").replace(NAME_SPACE, " ").trim();
+    const key = text.toLowerCase();
+    if (key.length > 0) return { key, text };
+  }
+  return null;
+}
+// Whether two rows already agree on something that names a contact method or a source record, compared as the matching over
+// stored contacts compares them, so the two readings of "the same email address" never disagree.
+function sharesSignal(left: ImportValidatedRow, right: ImportValidatedRow): boolean {
+  for (const { fieldId, kind } of MATCH_SIGNAL_FIELDS) {
+    const held = new Set(valuesOf(left, fieldId).map((value) => comparableValue(kind, value)));
+    if (held.size === 0) continue;
+    for (const value of valuesOf(right, fieldId)) if (held.has(comparableValue(kind, value))) return true;
+  }
+  return false;
+}
+const valuesOf = (row: ImportValidatedRow, fieldId: ImportFieldId): readonly string[] =>
+  row.mappedCells
+    .filter((cell) => cell.fieldId === fieldId)
+    .map((cell) => cell.value.trim())
+    .filter((value) => value.length > 0);
 // What this file deliberately does not do: nothing here creates a consent record, a membership, an audience entry, a gift, a commitment, a task, an interaction, a note or an identity, and nothing here decides a row's fate — `decide.ts` records the worker's decision and `receipt.ts` records what happened at acceptance. No function authorises anything: permission arrives with a candidate as a fact the service resolved, and a candidate without that fact is excluded. Nothing claims the file is safe: a successful local parse is not a safety qualification.

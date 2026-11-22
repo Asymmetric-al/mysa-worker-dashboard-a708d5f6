@@ -33,6 +33,8 @@ export interface TaskShareListEntry {
   readonly shareId: string;
   /** The opaque identity of the task behind the share: safe to render, because it carries none of the task's title, notes or history. */
   readonly taskId: string;
+  /** The share record's own revision, which a stop presents: the service compares it before it writes, so a share that moved since is a conflict rather than an overwrite. */
+  readonly revision: string;
   readonly state: TaskShareSummaryState;
   readonly reviewedDescription: string | null;
   readonly dueOn: TaskShareDueDate | null;
@@ -49,8 +51,6 @@ export interface TaskShareListProps {
   readonly shares: ReadonlyArray<TaskShareListEntry>;
   /** The exact authority this list was read under; the service re-derives scope from it on every write. */
   readonly scope: Scope;
-  /** The revision the surrounding read reported. Stopping presents it, so a share that moved since is a conflict rather than an overwrite. */
-  readonly expectedRevision: string;
   /** The direction and language the surrounding document resolved, recorded on this region without re-rendering any stored value. */
   readonly locale: string;
   /** Set when the source behind these summaries cannot be read at all: the whole region then reports the outage, never an empty list. */
@@ -307,13 +307,15 @@ interface StoppingShare {
   readonly shareId: string;
   readonly taskId: string;
   readonly state: TaskShareSummaryState;
+  /** The revision the share held when the review opened, which the attempt presents. */
+  readonly revision: string;
 }
 
 /**
  * The worker's shared task summaries and their four states, a held description withheld until it is reviewed again,
  * and the one stop action, which ends the share without deleting the task and without claiming any recall.
  */
-export default function TaskShareList({ shares, scope, expectedRevision, locale, unavailable }: TaskShareListProps): ReactElement {
+export default function TaskShareList({ shares, scope, locale, unavailable }: TaskShareListProps): ReactElement {
   const regionHeadingId = useId();
   const reviewRegionId = useId();
   const queryClient = useQueryClient();
@@ -323,7 +325,7 @@ export default function TaskShareList({ shares, scope, expectedRevision, locale,
   const unavailableSource = unavailable ?? null;
 
   const beginStop = (entry: TaskShareListEntry): void => {
-    setStopping({ shareId: entry.shareId, taskId: entry.taskId, state: entry.state });
+    setStopping({ shareId: entry.shareId, taskId: entry.taskId, state: entry.state, revision: entry.revision });
     setStopSettled(false);
   };
   const closeStop = (): void => {
@@ -344,7 +346,9 @@ export default function TaskShareList({ shares, scope, expectedRevision, locale,
   // The payload is validated where the worker acts, so a row that names no share refuses to open the review at all
   // rather than submitting a request the service would only refuse.
   const stopRequest = stopping === null ? null : taskShareStopPayloadSchema.safeParse({ taskShareId: stopping.shareId });
-  const stopInput = stopRequest !== null && stopRequest.success ? { scope, expectedRevision, payload: stopRequest.data } : null;
+  // The revision the attempt presents is the stopped share's own, because the service compares that record's revision
+  // before it writes: a share that moved since this page read it settles as a conflict rather than being overwritten.
+  const stopInput = stopRequest !== null && stopRequest.success && stopping !== null ? { scope, expectedRevision: stopping.revision, payload: stopRequest.data } : null;
   const stopRefusal = stopRequest !== null && !stopRequest.success ? (stopRequest.error.issues[0]?.message ?? STOP_REFUSED_FALLBACK) : null;
   const regionState = unavailableSource !== null ? "unavailable" : shares.length === 0 ? "empty" : "listed";
 

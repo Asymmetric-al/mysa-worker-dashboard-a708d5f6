@@ -9,7 +9,21 @@ import { decisionInputOf, fingerprintOf, recordedDecisionInputOf, type ImportDec
 import { IMPORT_FIELD_VOCABULARY, suggestMapping, type ImportFieldId, type ImportSuggestedMapping } from "@/modules/import/map";
 import { IMPORT_LIMIT_DESCRIPTORS, parseCsv, type ImportLimitId, type ImportLimitUnit } from "@/modules/import/parse";
 import { IMPORT_RECEIPT_FORMAT, readStoredReceipt, type ImportReceipt, type ImportReceiptRead, type ImportResultRoute } from "@/modules/import/receipt";
-import { suggestMatches, validateRows, type ImportFieldIssue, type ImportMappedCell, type ImportMatchReference, type ImportMatchSuggestion, type ImportPreservedCell, type ImportRestriction, type ImportRowVerdict, type ImportValidationCounts, type ImportValidationProblem } from "@/modules/import/validate";
+import {
+  flagDuplicateLookingRows,
+  suggestMatches,
+  validateRows,
+  type ImportDuplicateLooking,
+  type ImportFieldIssue,
+  type ImportMappedCell,
+  type ImportMatchReference,
+  type ImportMatchSuggestion,
+  type ImportPreservedCell,
+  type ImportRestriction,
+  type ImportRowVerdict,
+  type ImportValidationCounts,
+  type ImportValidationProblem,
+} from "@/modules/import/validate";
 import { readSession } from "@/modules/store/repository";
 import { clampPageSize } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
@@ -100,6 +114,8 @@ export type ImportProposalRowView = { readonly rowNumber: number; readonly decis
 export type ImportProposalRowReview = { readonly rowNumber: number; readonly verdict: ImportRowVerdict } & { readonly issues: readonly ImportFieldIssue[]; readonly mappedCells: readonly ImportMappedCell[]; readonly preservedCells: readonly ImportPreservedCell[] } & {
   readonly restrictions: readonly ImportRestriction[];
   readonly suggestions: readonly ImportMatchSuggestion[];
+  /** The other rows of this same file this row looks like, or `null` when nothing in the file resembles it: a look-alike signal derived once for the whole file, and neither a verdict nor a decision. */
+  readonly duplicateLooking: ImportDuplicateLooking | null;
 };
 /**
  * What the review step reads: the file's fingerprint, the mapping suggestion, the validation counts and one entry per returned row. The counts are `null` until a mapping is confirmed, because a count is a fact about a mapping and there is none to count yet: the Map step reads the suggestion and the fingerprint from the file the review stored, and no cell, issue, restriction or count is stated about a mapping the worker has not chosen.
@@ -205,12 +221,21 @@ async function readImportDocuments(sessionId: string): Promise<ImportDocuments |
 }
 // Ownership: a proposal belongs to the scope its operation was recorded under
 type OwnedProposal = { readonly record: ImportProposalRecord; readonly entry: OperationRecord };
-function ownedProposals(documents: ImportDocuments, scope: Scope): OwnedProposal[] {
+/** The ledger as a lookup keyed by the identity each entry is recorded under, built once per read and shared by everything that resolves an identity through it. */
+function ledgerIndex(entries: readonly OperationRecord[]): ReadonlyMap<string, OperationRecord> {
+  return new Map(entries.map((entry): [string, OperationRecord] => [entry.operationId, entry]));
+}
+/**
+ * The proposals this scope owns, each with the ledger entry that records it. The ledger is indexed by operation
+ * identity once per read instead of being scanned once per proposal: it grows with every mutation of the session, so
+ * this read's cost has to follow the proposals it lists rather than the length of that ledger.
+ */
+function ownedProposals(documents: ImportDocuments, scope: Scope, entryByOperationId: ReadonlyMap<string, OperationRecord>): OwnedProposal[] {
   const { proposals, entries } = documents;
   if (proposals === null || entries === null) return [];
   const owned: OwnedProposal[] = [];
   for (const record of proposals) {
-    const entry = entries.find((candidate) => candidate.operationId === record.importOperationId);
+    const entry = entryByOperationId.get(record.importOperationId);
     if (entry === undefined || !sameScope(entry.scope, scope)) continue;
     owned.push({ record, entry });
   }
@@ -220,6 +245,31 @@ function newestFirst(left: OwnedProposal, right: OwnedProposal): number {
   const byInstant = Temporal.Instant.compare(Temporal.Instant.from(right.entry.at), Temporal.Instant.from(left.entry.at));
   if (byInstant !== 0) return byInstant;
   return compareCodeUnits(right.entry.operationId, left.entry.operationId);
+}
+/**
+ * The import an attempt recorded finding: the import identity the result a same-scope ledger entry stores carries.
+ * An attempt that answered `unchanged` writes no proposal of its own, so its entry is the only thing that names the
+ * import it found. Only a result stating a non-empty string identity resolves; every other shape resolves to nothing,
+ * so no other stored value can be used to name a proposal.
+ */
+function foundImportIdOf(entry: OperationRecord | undefined, scope: Scope): string | null {
+  if (entry === undefined || !sameScope(entry.scope, scope) || !isRecord(entry.result)) return null;
+  const importOperationId = entry.result["importOperationId"];
+  return typeof importOperationId === "string" && importOperationId.length > 0 ? importOperationId : null;
+}
+/**
+ * The proposal a requested identity names: the proposal recorded under it, or the import an attempt that answered
+ * `unchanged` recorded finding. Both are resolved inside the owned proposals, so the scope check every proposal read
+ * makes is the one that decides reachability and the identity's own entry proves nothing on its own; an identity that
+ * names neither resolves to nothing.
+ */
+function proposalNamedBy(owned: readonly OwnedProposal[], requested: string, found: string | null): ImportProposalRecord | undefined {
+  let throughAttempt: ImportProposalRecord | undefined;
+  for (const proposal of owned) {
+    if (proposal.record.importOperationId === requested) return proposal.record;
+    if (found !== null && proposal.record.importOperationId === found) throughAttempt = proposal.record;
+  }
+  return throughAttempt;
 }
 function pagedRows<T>(rows: readonly T[], paging: ImportPagingInput): { readonly rows: readonly T[]; readonly window: ImportRowWindow } {
   const pageSize = clampPageSize(paging.pageSize);
@@ -362,6 +412,9 @@ async function proposalReviewOf(stored: ImportReviewRecord | undefined, window: 
     return { fileFingerprint, suggestion, counts: null, problems: [], rows: [] };
   }
   const validation = validateRows(file, mapping);
+  // The rows are compared with each other once for the whole file rather than once per returned row: a look-alike pair can
+  // straddle two windows, and the answer is a property of the file the worker is importing.
+  const duplicateLooking = flagDuplicateLookingRows(validation.rows);
   // Reuse candidates are the contacts this session already holds, projected once by the mutation that writes
   // them; an absent partners member offers none, because a candidate is never invented.
   const candidates = candidatesOf(partners);
@@ -374,7 +427,16 @@ async function proposalReviewOf(stored: ImportReviewRecord | undefined, window: 
     if (validated === undefined) {
       return null;
     }
-    rows.push({ rowNumber: validated.rowNumber, verdict: validated.verdict, issues: validated.issues, mappedCells: validated.mappedCells, preservedCells: validated.preservedCells, restrictions: validated.restrictions, suggestions: suggestMatches(validated, candidates).suggestions });
+    rows.push({
+      rowNumber: validated.rowNumber,
+      verdict: validated.verdict,
+      issues: validated.issues,
+      mappedCells: validated.mappedCells,
+      preservedCells: validated.preservedCells,
+      restrictions: validated.restrictions,
+      suggestions: suggestMatches(validated, candidates).suggestions,
+      duplicateLooking: duplicateLooking.get(validated.rowNumber) ?? null,
+    });
   }
   return { fileFingerprint, suggestion, counts: validation.counts, problems: validation.problems, rows };
 }
@@ -547,10 +609,11 @@ export async function readImportProposal(input: ReadImportProposalInput = {}): P
       "This session's import proposal cannot be read as this build records it, so no proposal is shown rather than an empty one. Start the import again; nothing that was already accepted is affected, and a finished import is read from its receipt by operation identity.",
     );
   }
-  const owned = ownedProposals(documents, scope);
+  const entryByOperationId = ledgerIndex(documents.entries);
+  const owned = ownedProposals(documents, scope, entryByOperationId);
   const requested = input.importOperationId;
-  // Only the current proposal is returned: the newest in-flight one when no identity is named, and never a superseded proposal of the same scope, which is not enumerated at all.
-  const record = requested === undefined ? owned.find((proposal) => proposal.record.processedAt === null)?.record : owned.find((proposal) => proposal.record.importOperationId === requested)?.record;
+  // Only the current proposal is returned: the newest in-flight one when no identity is named, and never a superseded proposal of the same scope, which is not enumerated at all. A named identity may be the proposal's own or the identity of an attempt that answered `unchanged` and recorded the import it found, so it is resolved through that attempt's entry too: the review such an attempt found stays reachable by the only identity its caller holds. The resolution never reaches past the owned proposals, so a proposal this caller may not see stays unreachable however it is named, and an identity that names nothing answers exactly as one that never existed.
+  const record = requested === undefined ? owned.find((proposal) => proposal.record.processedAt === null)?.record : proposalNamedBy(owned, requested, foundImportIdOf(entryByOperationId.get(requested), scope));
   if (record === undefined) {
     // An absent proposal is not an empty proposal: a named identity the caller cannot reach answers exactly as one that never existed, and a caller with nothing in flight is told so plainly.
     return requested === undefined

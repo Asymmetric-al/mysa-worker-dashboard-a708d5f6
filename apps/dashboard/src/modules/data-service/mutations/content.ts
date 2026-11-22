@@ -10,7 +10,7 @@ import { directionOfTag } from "@/modules/content/locale";
 import { buildNotice, resolveRendition, type NoticeRecipient, type RenditionCandidate as NoticeRenditionCandidate } from "@/modules/content/notice";
 import { containEditions, decideReach, withdrawEdition } from "@/modules/content/reach";
 import { VARIANT_AUDIENCES, VARIANT_FAMILIES, admittedAudiences, applyDraftRevision, applyReleaseOutcome, applyReviewDecision, createRelease, createRevision, createVariant as buildVariant, freezeCandidate, isReleaseUnchanged, restoreAsNewDraft, revisionChecksum, variantKeyAllowed } from "@/modules/content/variant";
-import type { ContentRevision, ContentVariant, MediaPlacement, Release, SharePresentation, VariantAudience, VariantFamily } from "@/modules/content/variant";
+import type { ContentRevision, ContentVariant, MediaPlacement, Release, VariantAudience, VariantFamily } from "@/modules/content/variant";
 import { uploadedMediaReference, writeMediaBytes } from "@/modules/store/media";
 import { RENDITION_PURPOSES, acceptImage, acceptVideo, mediaStateReason, prepareRendition, type MediaAcceptanceSuccess, type MediaAssetScope, type MediaProfileCheck, type MediaRefusal, type MediaRendition, type MediaTagVerification } from "@/modules/media/asset";
 import { instantAt } from "@/modules/time/clock";
@@ -351,9 +351,25 @@ function resolveDraftDocument(input: { readonly body: unknown; readonly sections
   return parseDocument({ ...parsed.document, sections: input.sections });
 }
 const UNTITLED_SHARE_TITLE = "Untitled";
-
-function storedShareOf(share: SharePresentation, previous: SharePresentationRecord | undefined): SharePresentationRecord {
-  return { title: share.title ?? UNTITLED_SHARE_TITLE, description: share.description ?? "", imageAssetId: share.imageAssetId ?? null, imageAltText: previous?.imageAltText ?? null };
+/** The share presentation one save states, where a stated `null` image is the author clearing the image rather than the save leaving it unstated. */
+type StatedShare = { readonly title?: string; readonly description?: string; readonly imageAssetId?: string | null; readonly imageAltText?: string | null };
+/** The text one save states for a share field: a blank field is the author leaving the field out rather than emptying it. */
+function statedShareTextOf(value: string | undefined): string | undefined {
+  return value === undefined || value.trim().length === 0 ? undefined : value;
+}
+/**
+ * The share presentation one revision stores. A body-only save changes the body and nothing else — one canonical Update
+ * keeps the title and description its author gave it — so every field the save does not state is inherited from the
+ * revision it supersedes. "Untitled" and the empty description are the fallbacks a first revision with nothing stated
+ * gets, and a stated `null` image stays cleared rather than restoring the previous one.
+ */
+function storedShareOf(share: StatedShare, previous: SharePresentationRecord | undefined): SharePresentationRecord {
+  return {
+    title: statedShareTextOf(share.title) ?? statedShareTextOf(previous?.title) ?? UNTITLED_SHARE_TITLE,
+    description: statedShareTextOf(share.description) ?? previous?.description ?? "",
+    imageAssetId: share.imageAssetId === undefined ? (previous?.imageAssetId ?? null) : share.imageAssetId,
+    imageAltText: share.imageAltText ?? previous?.imageAltText ?? null,
+  };
 }
 function storedContentEquals(left: StoredContentRevision, right: StoredContentRevision): boolean {
   return (
@@ -413,8 +429,8 @@ function resolveCaptionTracks(input: { readonly state: ContentMutationState; rea
 function principalIdOf(value: string): PrincipalId {
   return principalIdSchema.parse(value);
 }
-function storedRevisionOf(input: { readonly revision: ContentRevision; readonly placements: readonly MediaPlacementRecord[]; readonly tracks: readonly ContentCaptionTrackRecord[]; readonly previousShare: SharePresentationRecord | undefined }): StoredContentRevision {
-  const sharePresentation = storedShareOf(input.revision.sharePresentation, input.previousShare);
+function storedRevisionOf(input: { readonly revision: ContentRevision; readonly placements: readonly MediaPlacementRecord[]; readonly tracks: readonly ContentCaptionTrackRecord[]; readonly statedShare: StatedShare; readonly previousShare: SharePresentationRecord | undefined }): StoredContentRevision {
+  const sharePresentation = storedShareOf(input.statedShare, input.previousShare);
   const authorPrincipalId = principalIdOf(input.revision.authorPrincipalId);
   const createdAt = input.revision.createdAt.toString();
   return { revisionId: input.revision.revisionId, variantId: input.revision.variantId, body: input.revision.body, mediaPlacements: [...input.placements], captions: [...input.tracks], sharePresentation, contentChecksum: input.revision.contentChecksum, authorPrincipalId, createdAt, revision: INITIAL_REVISION_TOKEN };
@@ -530,10 +546,14 @@ function applySaveDraft(context: MutationContext, input: MutationInput<SaveDraft
   const opened = openState(context.docs),
     state = opened.state;
   const variant = requireVariant(state, input.payload.variantId);
-  const previousRevision = variant.draftRevisionId === null ? undefined : state.contentRevisions.find((candidate) => candidate.revisionId === variant.draftRevisionId);
+  const draftRevision = variant.draftRevisionId === null ? undefined : state.contentRevisions.find((candidate) => candidate.revisionId === variant.draftRevisionId);
+  // The revision this save supersedes: the edition's own draft, or the revision standing at its release head when the edition
+  // has no draft yet, because that is where a published edition's stated title, description and image live.
+  const headRevisionId = headReleaseOf(state, variant)?.revisionId;
+  const supersededRevision = draftRevision ?? (headRevisionId === undefined ? undefined : state.contentRevisions.find((candidate) => candidate.revisionId === headRevisionId));
   const resolved = resolveDraftDocument({ body: input.payload.body, sections: input.payload.sections });
   if (resolved.status === "invalid") throw invalidAt(resolved.issues);
-  const resolvedPlacements = resolvePlacements({ state, session: context.session, previous: previousRevision?.mediaPlacements ?? [], requested: input.payload.mediaPlacements ?? [] });
+  const resolvedPlacements = resolvePlacements({ state, session: context.session, previous: draftRevision?.mediaPlacements ?? [], requested: input.payload.mediaPlacements ?? [] });
   const explicitTracks = resolveCaptionTracks({ state, requested: input.payload.captions ?? [] });
   const requestedShare = input.payload.sharePresentation;
   const written = createRevision({
@@ -556,10 +576,9 @@ function applySaveDraft(context: MutationContext, input: MutationInput<SaveDraft
     at: scenarioInstant(context.session),
   });
   if (written.status === "invalid") throw invalidAt(written.issues);
-  const storedShare = storedShareOf(written.revision.sharePresentation, previousRevision?.sharePresentation);
-  const sharePresentation = { ...storedShare, ...(requestedShare?.imageAltText === undefined || requestedShare.imageAltText === null ? {} : { imageAltText: requestedShare.imageAltText }) };
-  const nextRecord: StoredContentRevision = { ...storedRevisionOf({ revision: written.revision, placements: resolvedPlacements.placements, tracks: [...explicitTracks, ...resolvedPlacements.tracks], previousShare: previousRevision?.sharePresentation }), sharePresentation };
-  if (previousRevision !== undefined && storedContentEquals(previousRevision, nextRecord)) return { changed: false };
+  const statedShare: StatedShare = requestedShare ?? written.revision.sharePresentation;
+  const nextRecord: StoredContentRevision = storedRevisionOf({ revision: written.revision, placements: resolvedPlacements.placements, tracks: [...explicitTracks, ...resolvedPlacements.tracks], statedShare, previousShare: supersededRevision?.sharePresentation });
+  if (draftRevision !== undefined && storedContentEquals(draftRevision, nextRecord)) return { changed: false };
   const pointed = applyDraftRevision(domainVariantOf(variant), written.revision);
   if (pointed.status === "invalid") throw invalidAt(pointed.issues);
   writeState(context.docs, opened, { contentRevisions: [...state.contentRevisions, nextRecord], contentVariants: replaceVariant(state.contentVariants, storedVariantOf(pointed.variant, nextRevision(variant.revision))) });
@@ -695,8 +714,13 @@ function applyPublishVariants(context: MutationContext, input: MutationInput<Pub
       continue;
     }
     const head = headReleaseOf(state, variant);
-    const review = variant.candidateId === null ? undefined : state.contentReviews.find((candidate) => candidate.candidateId === variant.candidateId);
+    const heldReview = variant.candidateId === null ? undefined : state.contentReviews.find((candidate) => candidate.candidateId === variant.candidateId);
     const revisionId = selection.revisionId ?? variant.candidateId ?? variant.draftRevisionId ?? undefined;
+    // A release is authorised by the approval of the revision it publishes. Once a release consumes the candidate
+    // for its own revision the edition holds no pointer, so the approval on record is found by the released
+    // revision itself: that record still states the mode the submission asked for, which is what keeps a
+    // Publish-only approval from being widened to Notify afterwards.
+    const review = heldReview ?? (revisionId === undefined ? undefined : state.contentReviews.find((candidate) => candidate.candidateId === revisionId && candidate.decision === "approved"));
     if (review !== undefined && review.decision === "submitted") {
       attempts.push({ variantId: variant.variantId, state: "needs-attention", reasonCode: "awaiting-review", reason: "This edition is still awaiting its one review, so it cannot be released yet." });
       continue;
@@ -802,6 +826,7 @@ const requestNotificationPayloadSchema = z
     purpose: z.enum(["update-email"]).optional(),
     acknowledgedCeiling: z.int().nonnegative().optional(),
     intendedAt: z.iso.datetime({ offset: true }).optional(),
+    repeatOfIntentId: recordIdSchema.optional(),
   })
   .superRefine((payload, ctx) => {
     if (payload.releaseId === undefined && payload.releaseIds === undefined && payload.variantId === undefined) ctx.addIssue({ code: "custom", path: ["releaseId"], message: "A notice names the published edition it is about, so choose one from the release." });
@@ -853,7 +878,12 @@ function applyRequestNotification(context: MutationContext, input: MutationInput
     state = opened.state;
   const document = requireDocument(state, input.payload.documentId);
   const at = scenarioInstant(context.session);
-  const intendedAt = input.payload.intendedAt === undefined ? at : Temporal.Instant.from(input.payload.intendedAt);
+  // A repeat names the notice it repeats, so the instant the notice was meant for is that record's own and a repeat
+  // can never move the window it stands in. The same window then refuses it once the 24 useful hours are spent.
+  const repeatRequested = input.payload.repeatOfIntentId !== undefined;
+  const repeated = repeatRequested ? state.notificationIntents.find((intent) => intent.intentId === input.payload.repeatOfIntentId) : undefined;
+  if (repeatRequested && repeated === undefined) throw invalidField("repeatOfIntentId", "This request names no notice of this ministry, so there is no recorded failure for it to submit again.");
+  const intendedAt = repeated === undefined ? (input.payload.intendedAt === undefined ? at : Temporal.Instant.from(input.payload.intendedAt)) : Temporal.Instant.from(repeated.intendedAt);
   if (notificationDeadline({ intendedAt, now: at }).status === "past-usefulness") throw invalidField("intendedAt", "This notice is past the 24 hours it stays useful for, so it cannot be submitted now and a new intent cannot revive it.");
   const variantHead = input.payload.variantId === undefined ? undefined : headReleaseOf(state, requireVariant(state, input.payload.variantId));
   const namedReleaseId = input.payload.releaseIds?.[0] ?? input.payload.releaseId ?? variantHead?.releaseId;
@@ -866,10 +896,21 @@ function applyRequestNotification(context: MutationContext, input: MutationInput
   if (publisherId === undefined) throw invalidField("documentId", "This ministry holds no single Update audience, so there is no publisher a notice could speak for.");
   const purpose = input.payload.purpose ?? UPDATE_EMAIL_PURPOSE;
   const existing = state.notificationIntents.find((intent) => intent.documentId === document.documentId && intent.releaseId === release.releaseId && intent.publisherId === publisherId && intent.purpose === purpose);
-  if (existing !== undefined) {
+  if (repeated !== undefined && (repeated.documentId !== document.documentId || repeated.releaseId !== release.releaseId || repeated.publisherId !== publisherId || repeated.purpose !== purpose)) {
+    throw invalidField("repeatOfIntentId", "This repeat names a notice of another edition or another publisher, so there is nothing here for it to submit again.");
+  }
+  if (existing !== undefined && repeated === undefined) {
     // This publication's notice was already submitted: a second intent would be a second copy.
     return { changed: false };
   }
+  // A repeat with nothing to repeat changes nothing: no intent is recorded for work that was never a definite failure.
+  if (repeated !== undefined && !state.notificationResults.some((result) => result.intentId === repeated.intentId && result.recipients.some((copy) => copy.state === "failed"))) {
+    return { changed: false };
+  }
+  // A repeat is the one case that reaches past that guard, and it is the case the dedupe rule names: the copies that
+  // definitely failed are attempted again under the intent's own identity, while every accepted or uncertain copy is
+  // recognised as already covered below and receives nothing. The earlier record is never rewritten, so it keeps
+  // stating the failure that was retried.
   const intentId = newRecordId("intent");
   const acknowledged = input.payload.acknowledgedCeiling;
   const eligibility: EligibilityResult = eligibleRecipients({
@@ -919,6 +960,9 @@ function applyRequestNotification(context: MutationContext, input: MutationInput
     copies.push({ recipientId: recipient.recipientId, renditionId: pinned.rendition.renditionId ?? `edition:${pinned.rendition.releaseId}`, state: "accepted", at: at.toString() });
     recipients.push({ recipientId: recipient.recipientId, dedupeKey: recipient.dedupeKey });
   }
+  // A repeat that served nobody changes nothing: every failed copy of the notice it names is already covered by an
+  // accepted or uncertain one, so a second press of the same repeat records no notice that reached anyone.
+  if (repeated !== undefined && copies.length === 0) return { changed: false };
   // The covered count is the audience this intent was accepted for — who the loop above served or recorded as unserved — never the smaller number the caller acknowledged, so the record agrees with the ceiling and a later signup can never expand it (`NotificationIntentRecord` in envelope.ts).
   const ceilingCount = eligibility.eligible.length;
   const intent: NotificationIntentRecord = { intentId, publisherId, purpose, documentId: document.documentId, releaseId: release.releaseId, intendedAt: intendedAt.toString(), ceilingCount, revision: INITIAL_REVISION_TOKEN };

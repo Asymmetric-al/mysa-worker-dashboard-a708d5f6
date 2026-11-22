@@ -19,6 +19,8 @@ export const MODULE_READ_STATE_COPY: Readonly<Record<ModuleReadState, StateCopy>
   unavailable: { label: "Unavailable right now", description: "The source behind this module cannot be read at the moment. This is an outage that ends on " + "its own — not an empty module, and not the end of the relationship." },
   ended: { label: "Has ended", description: "The dates this module was shared for have run out, so nothing new appears here. Whether the " + "coaching relationship continues is a separate question from this share ending." },
 };
+/** The reading `moduleReadState` gives as `null`: a module switched on whose content is complete, with nothing in it held, missing or unavailable. It is not a member of `MODULE_READ_STATE_COPY` because the domain states it as the absence of a state, and both coaching surfaces take the one word and one sentence for it from here so neither can drift from the other. */
+export const MODULE_COMPLETE_COPY: StateCopy = { label: "Shared", description: "This module is switched on and your coach can read it inside the dates you chose. Nothing in it " + "is held, missing or unavailable." };
 export type MeasureCopy = { readonly label: string; readonly hint: string };
 export const MEASURE_COPY: Readonly<Record<TargetMeasure, MeasureCopy>> = {
   "calls-made": { label: "Calls made", hint: "Counts only the individual calls you record as an interaction. Opening a dialler counts " + "nothing, and a call you planned but have not made is not a call." },

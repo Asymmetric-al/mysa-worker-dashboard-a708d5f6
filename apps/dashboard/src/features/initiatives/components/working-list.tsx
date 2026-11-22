@@ -23,7 +23,7 @@ import { cn } from "@/lib/cn";
 import { assertNever } from "@/lib/result";
 import type { MutationOutcome, PerItemResult, ReadAction, ReadEnvelope, Scope, ValueState, reads } from "@/modules/data-service";
 import { CLOSURE_COPY, INITIATIVE_COPY, MEMBERSHIP_RULES_COPY, MEMBERSHIP_STATES, MEMBERSHIP_STATE_COPY, REQUESTED_TERMS_COPY, STAGE_SELECTOR_COPY, STAGE_STATE_COPY, STATE_NOTICE_COPY, type MembershipState, type StageState } from "../copy";
-import { useInitiative } from "../hooks/use-initiative";
+import { useInitiative, type InitiativeReadWindow } from "../hooks/use-initiative";
 import { invalidateInitiativeReads, useRemoveMember, useReturnMember, type RemoveMemberVariables, type ReturnMemberVariables } from "../hooks/use-initiative-mutations";
 import { MEMBER_ACTION_STATE, type RemoveMemberPayload, type ReturnMemberPayload } from "../schemas/member";
 import CloseInitiativeDialog from "./close-initiative-dialog";
@@ -937,15 +937,21 @@ export interface WorkingListProps {
   readonly candidates: readonly MemberCandidate[] | MemberCandidates;
   /** Called with the outcome once a change made through this surface stands, so the caller can re-read or move on. */
   readonly onChanged?: (outcome: MutationOutcome) => void;
+  /**
+   * The page windows the composing detail read states for the lists beside this one. They travel here so this
+   * section re-reads the same record under the same window — one cache entry for one read — rather than a
+   * second entry of the same initiative whose own lists sit on a different page.
+   */
+  readonly readWindow?: InitiativeReadWindow;
   /** The heading level this section renders at; its groups, cards and closure section render one level deeper. */
   readonly headingLevel?: WorkingListHeadingLevel;
   readonly className?: string;
 }
 
 /** The reviewed working list of one initiative. */
-export default function WorkingList({ initiativeId, envelope, candidates, onChanged, headingLevel = 3, className }: WorkingListProps): ReactElement {
+export default function WorkingList({ initiativeId, envelope, candidates, onChanged, readWindow, headingLevel = 3, className }: WorkingListProps): ReactElement {
   const headingId = useId();
-  const query = useInitiative<InitiativeDetail>(initiativeId, envelope);
+  const query = useInitiative<InitiativeDetail>(initiativeId, envelope, readWindow);
   const queryClient = useQueryClient();
   const checkResult = useCallback((): void => {
     // This family's one invalidation policy is the re-read: an unconfirmed attempt is checked by

@@ -23,9 +23,10 @@
  * **The three identities whose surfaces belong to them.** A coach's portfolio, one subject it admits, and
  * the reader's receiving view are reached only by the session that holds the grant or the membership, so the
  * crawl switches the development-session cookie to the seeded coach, reviewer and public reader for those
- * hops. That is the same mechanism the runner's own automatic fixture uses, and the only one this release
- * has: the development runtime states that a session id is the identity, and no control switches it. No
- * sign-in, no persona endpoint and no second identity mechanism is invented here.
+ * hops. That is the same cookie the development panel's own persona switch grants through `POST /api/dev`
+ * and the one the runner's automatic fixture carries: a session id is the identity. The crawl sets it
+ * directly because it never opens the development panel, so no sign-in and no second identity mechanism is
+ * invented here.
  *
  * **The one declared exception.** `/feed` is not a destination: `src/app/feed/page.tsx` answers a request
  * with `redirect("/communication")`, so it is never reached by navigation and its own test asserts the

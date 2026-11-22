@@ -13,14 +13,14 @@ import type { SelectContextRequest } from "./schemas/select-context";
 // Fixed values
 // ---------------------------------------------------------------------------------------------
 
-/** The namespaced development handler (AAP 0.6.3): one read, five named controls, one path. */
+/** The namespaced development handler (AAP 0.6.3): one read, six named controls, one path. */
 export const DEV_ENDPOINT = "/api/dev";
 
 /** The context-switch handler (AAP 0.6.3): `selectContext`, and nothing else. */
 export const CONTEXT_SWITCH_ENDPOINT = "/api/session/context";
 
-/** The five controls the development handler accepts, in the order the panel offers them. */
-export const DEV_ACTIONS = ["setScenario", "setClock", "advanceClock", "setFailurePlan", "resetSeed"] as const;
+/** The six controls the development handler accepts, in the order the panel offers them. */
+export const DEV_ACTIONS = ["setScenario", "setClock", "advanceClock", "setFailurePlan", "resetSeed", "selectPersona"] as const;
 
 /** One named development control. */
 export type DevAction = (typeof DEV_ACTIONS)[number];
@@ -136,7 +136,7 @@ export async function readDevState(): Promise<ReadResult<ReadEnvelope<DevState>>
   return { kind: "unavailable", unavailable: unavailableMember(READ_ATTEMPT, TRANSPORT_GUIDANCE) };
 }
 
-/** Operates exactly one of the five development controls and answers with its outcome. */
+/** Operates exactly one of the six development controls and answers with its outcome. */
 export async function submitDevAction(action: DevAction, input: MutationInput<unknown>): Promise<MutationOutcome> {
   const response = await send(DEV_ENDPOINT, { method: "POST", body: { action, ...input } });
 

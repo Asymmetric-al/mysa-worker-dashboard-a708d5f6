@@ -4,7 +4,7 @@ import RenderedContent from "@/components/rendered-content";
 import { SimulationLabel } from "@/components/simulation-label";
 import { StateNotice } from "@/components/state-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/cn";
 import type { SourceReference } from "@/lib/ids";
 import { copy } from "../copy";
@@ -65,13 +65,13 @@ const PREVIEW_CONTENT = cn(
   "[&_figcaption]:text-xs [&_figcaption]:text-muted-foreground",
 );
 const BODY_CLASS = "flex min-w-0 flex-col gap-4";
-const HEADING_CLASS: Readonly<Record<PagePreviewFrameProps["layout"], string>> = { builder: "font-heading text-base font-medium", route: "font-heading text-lg font-medium" };
+const HEADING_CLASS = "font-heading text-lg font-medium";
 const IDENTITY_CLASS = "flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-muted-foreground";
 const IDENTITY_PAIR_CLASS = "flex items-baseline gap-1.5";
 const NOTE_CLASS = "text-xs text-muted-foreground text-pretty wrap-anywhere";
 
-function PreviewHeading({ layout }: { readonly layout: PagePreviewFrameProps["layout"] }): ReactElement {
-  return <h2 className={HEADING_CLASS[layout]}>{PREVIEW_HEADING}</h2>;
+function PreviewHeading(): ReactElement {
+  return <h2 className={HEADING_CLASS}>{PREVIEW_HEADING}</h2>;
 }
 function IdentityPair({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement {
   return (
@@ -181,20 +181,22 @@ function previewBody(preview: PagePreviewView, layout: PagePreviewFrameProps["la
 /** The exact, currently authorised, inert preview of one Page edition. */
 export function PagePreviewFrame({ layout, preview, givingBinding, className }: PagePreviewFrameProps): ReactElement {
   const body = previewBody(preview, layout, givingBinding);
+  // The builder composes this frame inside the pane that already names and titles this region, so there the frame states
+  // neither a landmark name nor a heading of its own: one region called "Preview" with one heading, rather than a region
+  // nested in a region of the same name and a second heading saying the same words. The route preview has no such pane,
+  // so it keeps both.
+  const named = layout === "route" ? { "aria-label": PREVIEW_HEADING } : {};
   return (
-    <section data-slot="page-preview-frame" data-layout={layout} data-preview-status={preview.status} aria-label={PREVIEW_HEADING} className={cn("flex min-w-0 flex-col gap-3 text-start", className)}>
-      {layout === "builder" ? (
-        <Card size="sm" className="min-w-0 text-start">
-          <CardHeader>
-            <PreviewHeading layout={layout} />
-          </CardHeader>
-          <CardContent className={BODY_CLASS}>{body}</CardContent>
-        </Card>
-      ) : (
+    <section data-slot="page-preview-frame" data-layout={layout} data-preview-status={preview.status} {...named} className={cn("flex min-w-0 flex-col gap-3 text-start", className)}>
+      {layout === "route" ? (
         <div className={BODY_CLASS}>
-          <PreviewHeading layout={layout} />
+          <PreviewHeading />
           {body}
         </div>
+      ) : (
+        <Card size="sm" className="min-w-0 text-start">
+          <CardContent className={BODY_CLASS}>{body}</CardContent>
+        </Card>
       )}
     </section>
   );

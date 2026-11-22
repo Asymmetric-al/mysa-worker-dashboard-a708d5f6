@@ -159,6 +159,11 @@ export type ActionReviewProps<P = unknown> = {
   readonly onSettled?: (outcome: MutationOutcome) => void;
   readonly fieldLabels?: Readonly<Record<string, string | undefined>>;
   readonly headingLevel?: ReviewHeadingLevel;
+  /**
+   * A choice this step's own input carries, rendered with the step rather than in a second surface beside it: the
+   * control belongs to the reviewed intent, so changing it changes the intent and begins a new attempt's identity.
+   */
+  readonly children?: ReactNode;
   readonly className?: string;
 };
 const receiptHeadingLevel = (level: ReviewHeadingLevel): 2 | 3 | 4 => (level === 2 ? 3 : 4);
@@ -178,7 +183,7 @@ function SelectionSummary({ selection }: { readonly selection: ActionReviewSelec
   );
 }
 /** The one review-then-accept step. */
-export function ActionReview<P = unknown>({ title, description, consequence, confirmLabel, cancelLabel = "Cancel", onCancel, consequential = false, simulationEffect, selection, input, submit, checkResult, onSettled, fieldLabels, headingLevel = 2, className }: ActionReviewProps<P>): ReactElement {
+export function ActionReview<P = unknown>({ title, description, consequence, confirmLabel, cancelLabel = "Cancel", onCancel, consequential = false, simulationEffect, selection, input, submit, checkResult, onSettled, fieldLabels, headingLevel = 2, children, className }: ActionReviewProps<P>): ReactElement {
   const { operationId, pending, outcome, reviewedIntent, submit: dispatchSubmit, retry, reapply } = useReviewedMutation<P>(submit);
   const titleId = useId();
   const emptySelectionId = useId();
@@ -233,6 +238,11 @@ export function ActionReview<P = unknown>({ title, description, consequence, con
         <CardContent className="flex min-w-0 flex-col gap-4">
           {description === undefined ? null : <div className="min-w-0 text-sm text-pretty text-muted-foreground">{description}</div>}
           {selection === undefined ? null : <SelectionSummary selection={selection} />}
+          {children === undefined ? null : (
+            <div data-slot="action-review-choice" className="flex min-w-0 flex-col gap-3">
+              {children}
+            </div>
+          )}
           <p className="text-sm text-pretty text-muted-foreground">{CONTAINMENT_SENTENCE}</p>
           {simulationEffect === undefined ? null : <SimulationLabel effect={simulationEffect} />}
           <Separator />

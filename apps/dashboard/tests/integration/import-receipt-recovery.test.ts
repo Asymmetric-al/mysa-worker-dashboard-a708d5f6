@@ -407,4 +407,45 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
     expect(firstReceipt.file.rowCount).toBe(FIXTURE_DATA_ROWS);
     expect(firstReceipt.revision).toContain(acceptance.receipt.fingerprint.checksum);
   });
+  it("answers an identical second proposal as unchanged, and reads the review back by the attempt's own identity", async () => {
+    const scope = await sessionScope();
+    const first = newOperationId();
+    const repeated = newOperationId();
+    const payload = { fileName: FIXTURE_NAME, contentBase64: FIXTURE_BASE64 };
+    const proposed = await mutations.import.proposeImport({ operationId: first, scope, expectedRevision: NO_REVISION_TO_COMPARE, payload }, SESSION);
+    expectOutcome(proposed, "accepted");
+    // The same file proposed again under an identity of its own changes nothing, so the attempt is answered
+    // `unchanged` rather than as a second acceptance of the import the first attempt started.
+    const again = await mutations.import.proposeImport({ operationId: repeated, scope, expectedRevision: NO_REVISION_TO_COMPARE, payload }, SESSION);
+    expectOutcome(again, "unchanged");
+    if (again.outcome !== "unchanged") throw new Error(`proposing the same file under a fresh identity answered "${again.outcome}" instead of "unchanged": ${JSON.stringify(again)}`);
+    expect(again.operationId).toBe(repeated);
+    // A journey that left the review and came back holds the identity it minted and nothing else, so that
+    // identity has to name the review the attempt found: reading it back answers the same proposal.
+    const byFirst = envelopeOf(await reads.import.readImportProposal({ importOperationId: first, session: SESSION, pageSize: 200 }), "the proposal the first attempt wrote").data;
+    const byRepeated = envelopeOf(await reads.import.readImportProposal({ importOperationId: repeated, session: SESSION, pageSize: 200 }), "the proposal the attempt that changed nothing found").data;
+    expect(byRepeated.importOperationId).toBe(first);
+    expect(byRepeated.revision).toBe(again.revision);
+    expect(byRepeated.fileFingerprint).toBe(byFirst.fileFingerprint);
+    expect(byRepeated.summary).toEqual(byFirst.summary);
+    // Replaying that attempt still changes nothing: it answers `unchanged` again rather than an acceptance of
+    // work it never did, and the proposal stands at the revision both answers named.
+    const replayed = await mutations.import.proposeImport({ operationId: repeated, scope, expectedRevision: NO_REVISION_TO_COMPARE, payload }, SESSION);
+    if (replayed.outcome !== "unchanged") throw new Error(`replaying the attempt that changed nothing answered "${replayed.outcome}" instead of "unchanged": ${JSON.stringify(replayed)}`);
+    expect(replayed.revision).toBe(again.revision);
+    const afterReplay = envelopeOf(await reads.import.readImportProposal({ importOperationId: first, session: SESSION, pageSize: 200 }), "the proposal after the replay").data;
+    expect(afterReplay.revision).toBe(byFirst.revision);
+    // The attempt that changed nothing is recorded as such, stating the import it found: that record is what
+    // the read above resolved the caller's own identity through.
+    const entries = await ledgerEntriesFor(repeated);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.["outcome"]).toBe("unchanged");
+    expect(entries[0]?.["result"]).toEqual({ importOperationId: first });
+    // An identity that names neither a proposal nor an attempt is still refused, and the refusal states nothing
+    // about what was asked for beyond the code every unreachable identity answers.
+    const unrecorded = await reads.import.readImportProposal({ importOperationId: newOperationId(), session: SESSION, pageSize: 200 });
+    if (unrecorded.kind !== "denied") throw new Error(`an identity that names no import answered "${unrecorded.kind}" instead of a refusal: ${JSON.stringify(unrecorded)}`);
+    expect(unrecorded.denied.reasonCode).toBe("no-permission");
+    expect(Object.keys(unrecorded.denied).sort()).toEqual(["operationId", "outcome", "reasonCode"]);
+  });
 });

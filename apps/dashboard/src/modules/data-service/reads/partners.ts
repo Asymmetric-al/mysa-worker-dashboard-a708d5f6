@@ -12,6 +12,7 @@ import { SUPPORT_BASIS, type GiftRow, type SupportProjection } from "@/modules/s
 import { clampPageSize, runReport, type CurrencySummary, type PeriodState, type ReportPeriod, type ReportScope } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
 import { parseCivilDate, serialiseCivilDate, todayInZone, type CivilDate } from "@/modules/time/civil";
+import { REFERRAL_SOURCE_ZONE } from "@/modules/time/window";
 import { assertScope, canView, outcomeOfRefusal, resolveSession, type AuthorizationTarget, type ResolvedSession, type SessionSource } from "../authorize";
 import {
   buildEnvelope,
@@ -159,7 +160,15 @@ export interface PartnerSupportHistory {
   readonly outage?: { readonly system: string; readonly reference: string; readonly guidance: string };
 }
 /** What one partner read carries for the record body. */
-export type PartnerDetailData = { readonly partner: PartnerRecord; readonly relationshipContext: readonly PartnerRelationship[]; readonly openTasks: readonly TaskRecord[]; readonly supportHistory?: PartnerSupportHistory };
+export type PartnerDetailData = { readonly partner: PartnerRecord; readonly relationshipContext: readonly PartnerRelationship[]; readonly openTasks: readonly TaskRecord[]; readonly supportHistory?: PartnerSupportHistory } & {
+  /**
+   * The accepted source zone an introduction recorded against this record is read in. The referral
+   * window rules own the value, and the surface that records an introduction states the zone from this
+   * read rather than assuming one: a date is unreadable without the zone it is known in, and a zone a
+   * component chose would be a second declaration of the rule.
+   */
+  readonly referralSourceZone: string;
+};
 /** What the private read carries for one record: the worker's own preparation and note bodies. */
 export type PartnerPrivateData = { readonly notes: readonly PrivateNoteRecord[]; readonly preparation?: { readonly partnerId: string; readonly archived: boolean } };
 type FacetValueCandidate = { readonly id: string; readonly label: string };
@@ -496,15 +505,6 @@ function rowWithin(row: GiftRow, period: { readonly from: CivilDate; readonly to
   const day = row.originalGiftOn;
   if (day === undefined) return false;
   return Temporal.PlainDate.compare(day, period.from) >= 0 && Temporal.PlainDate.compare(day, period.to) <= 0;
-}
-function partnerSummaryOf(snapshot: GivingSnapshot, partnerId: string, currency: string, scope: Scope): CurrencySummary | undefined {
-  const rows = giftRowsOfPartner(snapshot, partnerId);
-  try {
-    const result = runReport({ reportId: GIVING_REPORT_ID, scope: reportScopeOf(scope), period: { kind: "explicit", from: snapshot.period.from, to: snapshot.period.to }, currency: { kind: "one", currency }, partner: { kind: "partner", partnerId } }, { ...snapshot.projection, gifts: rows });
-    return result.summary[0];
-  } catch {
-    return undefined;
-  }
 }
 // The whole-dataset facts the roster, its facets and its saved views read
 interface TaskFacts {
@@ -1067,6 +1067,8 @@ export async function readSavedViews(source?: SessionSource): Promise<ReadResult
 }
 // readPartner: the one record body
 const ONLY_PREPARATION_ARCHIVED = "Only the worker's own private preparation is archived or restored. A shared operational record is neither, and this action changes nothing on it.";
+/** The one condition an introduction is recorded under: it names a shared partner record, so the worker's own private preparation carries none. The `recordIntroduction` command re-checks it, so this states the advisory condition rather than granting it. */
+const ONLY_SHARED_RECORDS_TAKE_AN_INTRODUCTION = "An introduction is recorded against a shared partner record. This record is the worker's own private preparation, so it carries no introduction.";
 /** Reads one partner record for the record body: identity, the contact methods this caller may use, restrictions, relationship context, open work and the authorised support history — stated with the source it could not read when that source is reported unavailable. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readPartner(partnerId: string, query: PartnerGivingSelection = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<PartnerDetailData>>> {
   const outcome = await readContext("readPartner", source);
@@ -1084,9 +1086,20 @@ export async function readPartner(partnerId: string, query: PartnerGivingSelecti
     const giving = givingSnapshotOf(context, query);
     if (giving.kind === "ready") {
       const { snapshot } = giving;
+      // One report over this partner's rows states every currency the record gave in, because the engine's `summary` is already grouped by currency: asking it once per currency would run the whole engine again and re-derive the same totals once per currency. This record body calls the one giving computation twice in total — once in `givingSnapshotOf` for the period, coverage and currency set, and once here for its own figures — however many currencies the partner gave in.
+      const rows = giftRowsOfPartner(snapshot, record.partnerId);
+      let perCurrency: readonly CurrencySummary[] = [];
+      try {
+        perCurrency = runReport({ reportId: GIVING_REPORT_ID, scope: reportScopeOf(context.scope), period: { kind: "explicit", from: snapshot.period.from, to: snapshot.period.to }, currency: { kind: "all" }, partner: { kind: "partner", partnerId: record.partnerId } }, { ...snapshot.projection, gifts: rows }).summary;
+      } catch {
+        // A record whose rows the engine refuses states no figure at all: every figure carries the engine's own answer, and no total is derived here to stand in for one.
+        perCurrency = [];
+      }
+      const summariesByCurrency = new Map<string, CurrencySummary>();
+      for (const entry of perCurrency) summariesByCurrency.set(entry.currency, entry);
       const figures: PartnerSupportFigure[] = [];
       for (const currency of currenciesOfPartner(snapshot, record.partnerId)) {
-        const summary = partnerSummaryOf(snapshot, record.partnerId, currency, context.scope);
+        const summary = summariesByCurrency.get(currency);
         if (summary === undefined) continue;
         const path = `supportHistory.figures.${currency}.received`;
         valueStates[path] = recordedStateOf(summary.received.valueState);
@@ -1125,17 +1138,23 @@ export async function readPartner(partnerId: string, query: PartnerGivingSelecti
         { name: "archivePreparation", available: false, reason: ONLY_PREPARATION_ARCHIVED },
         { name: "restorePreparation", available: false, reason: ONLY_PREPARATION_ARCHIVED },
       ];
+  // An introduction names a shared partner record, so this record's own audience is the whole condition the
+  // advisory list states; the command re-checks it, and no other referral rule is decided by this read.
+  const introductionAction: ReadAction = record.audience === "shared" ? { name: "recordIntroduction", available: true } : { name: "recordIntroduction", available: false, reason: ONLY_SHARED_RECORDS_TAKE_AN_INTRODUCTION };
   const data: PartnerDetailData = {
     // A contact method this caller may not use is absent rather than shown blank: the restriction records on the same record state why it may not be used, and a value that is not offered cannot be copied out of a list.
     partner: { ...record, contactMethods: record.contactMethods.filter((method) => method.permitted) },
     relationshipContext,
     openTasks,
+    // The zone an introduction recorded against this record is read in: the referral rules state it once,
+    // and this read reports it beside the record so no surface has to choose one of its own.
+    referralSourceZone: REFERRAL_SOURCE_ZONE,
     ...(supportHistory === undefined ? {} : { supportHistory }),
   };
   return envelopeOf(context, data, record.revision, {
     coverage,
     valueStates,
-    actions: [{ name: "saveContactEdits", available: true }, { name: "savePrivateNote", available: true }, { name: "logInteraction", available: true }, { name: "createTask", available: true }, { name: "setFavourite", available: true }, { name: "setTag", available: true }, ...preparationActions],
+    actions: [{ name: "saveContactEdits", available: true }, { name: "savePrivateNote", available: true }, { name: "logInteraction", available: true }, { name: "createTask", available: true }, { name: "setFavourite", available: true }, { name: "setTag", available: true }, introductionAction, ...preparationActions],
   });
 }
 // readPrivatePreparation: the worker's own preparation and note bodies

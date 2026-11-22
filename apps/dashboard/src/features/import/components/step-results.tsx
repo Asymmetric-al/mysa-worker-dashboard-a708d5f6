@@ -27,9 +27,15 @@
  * **Nothing here is accepted before the service says so.** The rows are the receipt of an operation that
  * already ran; this file starts no change of its own, and every outcome it can show — including a
  * cancellation — is the shared operation receipt rather than a message this family wrote.
+ *
+ * **Why the identity and its address are stated here.** This step's own lead says the result is read back by
+ * its identity, so the identity is rendered rather than left to the address bar: a worker whose
+ * acknowledgement was lost needs a receipt they can keep. The copy control only accelerates that — the
+ * address it copies is printed beside it and stays selectable, so a browser that refuses the clipboard
+ * loses nothing.
  */
 import Link from "next/link";
-import { useEffect, useRef, type ReactElement } from "react";
+import { useEffect, useRef, useState, type ReactElement } from "react";
 import { PaginationBar } from "@/components/pagination-bar";
 import { ScrollRegion } from "@/components/scroll-region";
 import SimulationLabel from "@/components/simulation-label";
@@ -39,7 +45,7 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import type { ImportRowState } from "@/modules/data-service/envelope";
 import type { ImportProposalRowRoute, ImportRowWindow } from "@/modules/data-service/reads/import";
 import type { RowResultCopyEntry } from "../copy";
-import { IMPORT_SIMULATION_EFFECT, JOURNEY_COPY, RESULTS_COPY, RESULT_STATE_HEADINGS, ROW_RESULT_COPY, TABLE_LABELS, chosenFileSize, resultCorrectionStatement, resultPartnerLinkLabel, resultStoppableRowSentence, resultWindowSentence, reviewDecisionLabel } from "../copy";
+import { IMPORT_SIMULATION_EFFECT, JOURNEY_COPY, RESULTS_COPY, RESULT_STATE_HEADINGS, ROW_RESULT_COPY, TABLE_LABELS, chosenFileSize, importReceiptHref, resultCorrectionStatement, resultPartnerLinkLabel, resultStoppableRowSentence, resultWindowSentence, reviewDecisionLabel } from "../copy";
 import { IMPORT_ROW_RESULT_STATES } from "@/modules/import/receipt";
 import { StopImportReview, type ImportStopControl } from "./step-review";
 /** The destination of one row that became or extended a contact. */
@@ -95,12 +101,12 @@ function rowResultCopyOf(state: ImportRowState | null): RowResultCopyEntry | nul
   }
   return Object.hasOwn(ROW_RESULT_COPY, state) ? ROW_RESULT_COPY[state] : null;
 }
-function FactRow({ label, value }: { readonly label: string; readonly value: string }): ReactElement {
+function FactRow({ label, value, mono = false }: { readonly label: string; readonly value: string; readonly mono?: boolean }): ReactElement {
   return (
     <div className="flex min-w-0 flex-wrap gap-x-1">
       <dt className="text-muted-foreground">{label}:</dt>
       <dd className="min-w-0 wrap-anywhere">
-        <bdi>{value}</bdi>
+        <bdi className={mono === true ? "font-mono" : undefined}>{value}</bdi>
       </dd>
     </div>
   );
@@ -156,6 +162,34 @@ export default function StepResults({ results, onPageChange, onPageSizeChange, s
     focusedOperation.current = results.importOperationId;
     target.focus();
   }, [results.importOperationId]);
+  // The one receipt address this step states, built from the operation it shows: the link, the printed address and
+  // the copy control all read this value, so none of them can end up naming a different operation.
+  const receiptHref = importReceiptHref(results.importOperationId);
+  // The answer names the operation it was given for, so an import started after this one never inherits its
+  // announcement: the live region only ever states what the copy control did for the identity on screen.
+  const [receiptCopy, setReceiptCopy] = useState<{ readonly operationId: string; readonly result: "copied" | "unavailable" } | null>(null);
+  const receiptAnnouncement = receiptCopy === null || receiptCopy.operationId !== results.importOperationId ? "" : receiptCopy.result === "copied" ? RESULTS_COPY.copyReceiptCopied : RESULTS_COPY.copyReceiptUnavailable;
+  /**
+   * Copies the receipt address. The clipboard may be absent, or may refuse the write — a permission, or a document
+   * that does not hold focus — so both answers are announced beside the address rather than thrown: the address is
+   * printed above the control, and the control only saves the work of selecting it.
+   */
+  const copyReceiptAddress = (): void => {
+    const operationId = results.importOperationId;
+    const clipboard: Clipboard | undefined = navigator.clipboard;
+    if (clipboard === undefined) {
+      setReceiptCopy({ operationId, result: "unavailable" });
+      return;
+    }
+    try {
+      void clipboard.writeText(receiptHref).then(
+        () => setReceiptCopy({ operationId, result: "copied" }),
+        () => setReceiptCopy({ operationId, result: "unavailable" }),
+      );
+    } catch {
+      setReceiptCopy({ operationId, result: "unavailable" });
+    }
+  };
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <p className="text-sm text-pretty text-muted-foreground">{RESULTS_COPY.lead}</p>
@@ -167,6 +201,27 @@ export default function StepResults({ results, onPageChange, onPageSizeChange, s
       ) : null}
       {/* The importer's simulated boundary is stated on its result as well as beside the file control. */}
       <SimulationLabel effect={IMPORT_SIMULATION_EFFECT} context="block" />
+      {/* The identity and its address come before the counts: recovering a lost acknowledgement is what this step is
+       * for, and that recovery starts from the one identity the result was read back by. */}
+      <div className="flex min-w-0 flex-col gap-1 text-sm">
+        <p className="font-medium">{RESULTS_COPY.operationHeading}</p>
+        <dl className="flex min-w-0 flex-col gap-1">
+          <FactRow label={RESULTS_COPY.operationLabels.identity} value={results.importOperationId} mono />
+          <FactRow label={RESULTS_COPY.operationLabels.receiptAddress} value={receiptHref} mono />
+        </dl>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <Link className="inline-flex min-h-6 items-center underline underline-offset-4" href={receiptHref}>
+            {RESULTS_COPY.receiptLinkLabel}
+          </Link>
+          <Button type="button" variant="outline" size="sm" className="h-auto min-h-6" onClick={copyReceiptAddress}>
+            {RESULTS_COPY.copyReceiptLabel}
+          </Button>
+        </div>
+        <p className="text-pretty text-muted-foreground">{RESULTS_COPY.receiptNote}</p>
+        <output aria-live="polite" aria-atomic="true" className="block min-h-4 text-xs text-pretty text-muted-foreground">
+          {receiptAnnouncement}
+        </output>
+      </div>
       <div className="flex min-w-0 flex-col gap-1 text-sm">
         <p className="font-medium">{RESULTS_COPY.fileHeading}</p>
         <dl className="flex min-w-0 flex-col gap-1">

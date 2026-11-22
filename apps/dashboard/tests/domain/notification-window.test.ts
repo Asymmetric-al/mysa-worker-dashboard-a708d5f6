@@ -404,7 +404,9 @@ describe("the accepted ceiling and the pinned rendition", () => {
     const intent = intentForRelease(before.notificationIntents, PUBLIC_EDITION);
     const ceiling = intent.ceilingCount;
     expect(Number.isInteger(ceiling)).toBe(true);
-    expect(ceiling).toBe(4);
+    // The seeded notice was accepted for every eligible recipient of the seeded audience: its four active
+    // memberships and the receiving reader's own, which is the membership its copy is addressed at.
+    expect(ceiling).toBe(5);
     const copiesBefore = resultForIntent(before.notificationResults, intent.intentId).recipients.length;
     acceptanceOf(await mutations.audience.signupForPurpose({ operationId: newOperationId(), scope, expectedRevision: FIRST_REVISION, payload: { publisherId: PUBLISHER_ID, purpose: PURPOSE, email: "late.reader@example.org", languagePreference: "fr" } }, SOURCE), "A reader signing up after the notice was submitted");
     const after = await storedRecords();
@@ -422,7 +424,7 @@ describe("the accepted ceiling and the pinned rendition", () => {
     expect(secondPins).toEqual(firstPins);
     const seededPins = firstPins.get(SEEDED_INTENT_ID);
     if (seededPins === undefined) throw new Error("The seeded intent records no pinned copies, so no case here could compare two intents.");
-    expect(seededPins.size).toBe(4);
+    expect(seededPins.size).toBe(5);
     const records = await storedRecords();
     const created = intentForRelease(records.notificationIntents, PUBLIC_EDITION);
     const createdPins = firstPins.get(created.intentId);

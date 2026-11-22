@@ -290,8 +290,8 @@ export async function readInitiatives(query: InitiativesQuery = {}, source?: Ses
   });
   return { kind: "envelope", envelope };
 }
-/** What one initiative's detail may ask for: a membership-state filter and a page of the working list. */
-export type InitiativeDetailQuery = { readonly memberState?: InitiativeMemberState; readonly page?: number; readonly pageSize?: number };
+/** What one initiative's detail may ask for: a membership-state filter and one page of each list it states — the working list, the Requests it recorded and the work it owns, each windowed on its own so paging one leaves the others where the reader left them. */
+export type InitiativeDetailQuery = { readonly memberState?: InitiativeMemberState; readonly page?: number; readonly pageSize?: number } & { readonly requestsPage?: number; readonly requestsPageSize?: number } & { readonly nextWorkPage?: number; readonly nextWorkPageSize?: number };
 /** Where a member's recorded stage stands against the list the source approves today. */
 export type InitiativeStageState = "admitted" | "retired" | "unrecorded";
 /** One value of the source-approved stage list, and whether the source still offers it. */
@@ -325,10 +325,14 @@ export type InitiativeHistoryRow =
   | { readonly kind: "request-response"; readonly at: string; readonly requestId: string; readonly responseKind: RequestResponseKind; readonly termsVersionRef: string; readonly respondentId: string };
 /** One page of the reviewed working list, over the whole authorised list. */
 export type InitiativeWorkingListPage = { readonly items: readonly InitiativeMemberRow[]; readonly total: number; readonly page: number; readonly pageSize: number };
+/** One page of the Requests this initiative recorded, over the whole list of them. */
+export type InitiativeRequestsPage = { readonly items: readonly InitiativeRequestRow[]; readonly total: number; readonly page: number; readonly pageSize: number };
+/** One page of the work this initiative owns, over the whole list it owns. */
+export type InitiativeNextWorkPage = { readonly items: readonly InitiativeTaskRow[]; readonly total: number; readonly page: number; readonly pageSize: number };
 /** Everything one initiative's detail presents: its overview, list, Requests, work and history. */
-export type InitiativeDetail = { readonly initiative: InitiativeRow; readonly stages: readonly InitiativeStageOption[]; readonly workingList: InitiativeWorkingListPage } & { readonly requests: { readonly items: readonly InitiativeRequestRow[]; readonly total: number } } & {
-  readonly nextWork: { readonly items: readonly InitiativeTaskRow[]; readonly total: number };
-} & { readonly history: readonly InitiativeHistoryRow[] };
+export type InitiativeDetail = { readonly initiative: InitiativeRow; readonly stages: readonly InitiativeStageOption[]; readonly workingList: InitiativeWorkingListPage } & { readonly requests: InitiativeRequestsPage } & { readonly nextWork: InitiativeNextWorkPage } & {
+  readonly history: readonly InitiativeHistoryRow[];
+};
 function stageStateOf(stage: string | null): InitiativeStageState {
   if (stage === null) return "unrecorded";
   // The one list is the source's current one, so a stage a member still carries after the source retires it reads as retired rather than as a missing value.
@@ -434,7 +438,7 @@ function initiativeActions(input: { readonly session: ResolvedSession; readonly 
     edits.allowed && closed ? { name: "reopenInitiative", available: true } : refused("reopenInitiative", "Only a closed initiative can be reopened."),
   ];
 }
-/** Reads one initiative: its overview, its reviewed working list, its Requests with the terms version each answers, the work it owns and its dated history. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
+/** Reads one initiative: its overview, the reviewed working list, its Requests with the terms version each answers, the work it owns and its dated history — each of those three lists stated as one page of its own whole result, with the window it occupies and the total it is measured against. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readInitiative(initiativeId: string, query: InitiativeDetailQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<InitiativeDetail>>> {
   const opening = await openOutreach("readInitiative", source);
   if (!opening.ok) return opening.refusal;
@@ -460,10 +464,17 @@ export async function readInitiative(initiativeId: string, query: InitiativeDeta
   const pageSize = clampPageSize(query.pageSize);
   const items = slicePage(workingList, page, pageSize);
   const requestRows = requests.map((request) => requestRowOf(request, partners));
+  // Each list is windowed on its own, over its own whole result: a Request answered on page three of the Requests leaves the working list and the owned work on the pages the reader left them on, and every total below stays the whole-result count rather than the length of the page.
+  const requestsPage = pageOf(query.requestsPage);
+  const requestsPageSize = clampPageSize(query.requestsPageSize);
+  const requestPageRows = slicePage(requestRows, requestsPage, requestsPageSize);
   const nextWork = documents.tasks
     .filter((task) => task.initiativeId === initiative.initiativeId && (task.status === "open" || task.status === "reopened"))
     .sort(compareTasksByDue)
     .map(taskRowOf);
+  const nextWorkPage = pageOf(query.nextWorkPage);
+  const nextWorkPageSize = clampPageSize(query.nextWorkPageSize);
+  const nextWorkPageRows = slicePage(nextWork, nextWorkPage, nextWorkPageSize);
   const states: Record<string, RecordedValueState> = {};
   markCount(states, "workingList.total", workingList.length);
   markCount(states, "requests.total", requestRows.length);
@@ -475,7 +486,7 @@ export async function readInitiative(initiativeId: string, query: InitiativeDeta
     markOptional(states, `${row.memberId}.stage`, row.stage !== null);
     markOptional(states, `${row.memberId}.returnedAt`, row.returnedAt !== null);
   }
-  for (const request of requestRows) {
+  for (const request of requestPageRows) {
     markOptional(states, `${request.requestId}.representedOrganizationId`, request.representedOrganizationId !== null);
     markOptional(states, `${request.requestId}.presentation`, request.presentation !== null);
     markOptional(states, `${request.requestId}.response`, request.response !== null);
@@ -488,7 +499,7 @@ export async function readInitiative(initiativeId: string, query: InitiativeDeta
       states[`${request.requestId}.recipientDisplayName`] = "value";
     }
   }
-  for (const task of nextWork) {
+  for (const task of nextWorkPageRows) {
     markOptional(states, `${task.taskId}.dueOn`, task.dueOn !== null);
     markOptional(states, `${task.taskId}.plannedTime`, task.plannedTime !== null);
   }
@@ -496,8 +507,8 @@ export async function readInitiative(initiativeId: string, query: InitiativeDeta
     initiative: initiativeRowOf(initiative, memberStatesOf(members, partners)),
     stages: stageOptionsOf(members),
     workingList: { items, total: workingList.length, page, pageSize },
-    requests: { items: requestRows, total: requestRows.length },
-    nextWork: { items: nextWork, total: nextWork.length },
+    requests: { items: requestPageRows, total: requestRows.length, page: requestsPage, pageSize: requestsPageSize },
+    nextWork: { items: nextWorkPageRows, total: nextWork.length, page: nextWorkPage, pageSize: nextWorkPageSize },
     history: historyOf(initiative.initiativeId, members, requests),
   };
   const envelope = buildEnvelope({

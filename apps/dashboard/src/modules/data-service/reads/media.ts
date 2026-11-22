@@ -1,14 +1,14 @@
 /** Scoped rendition serving: the one read of the data service's "Attach media" job. */
-// A rendition's bytes must arrive with the rendition: the media module's serving decision receives them from its caller, the store publishes JSON documents only, and no module in `@/modules/media` opens a file. Resolving the record's reference is therefore this read's one piece of custody, delegated to the store
+// A rendition's bytes must arrive with the rendition: the media module's serving decision decides on the size this read probes from the store's custody, the store publishes JSON documents only, and no module in `@/modules/media` opens a file. The bytes themselves are read here, and only the window that decision admitted, after it has admitted it. Resolving the record's reference is therefore this read's one piece of custody, delegated to the store
 // module that owns the tree those bytes live in.
 import { logger } from "@/lib/logger";
 import { redactDenial } from "@/lib/redaction";
 import { assertNever } from "@/lib/result";
 import { isDirectlyReadable } from "@/modules/content/reach";
 import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
-import type { MediaOriginalReference, MediaRendition } from "@/modules/media/asset";
-import { assertReadable, sliceRenditionBytes, type ByteRange, type MediaServingState } from "@/modules/media/serve";
-import { readMediaBytes } from "@/modules/store/media";
+import type { MediaOriginalReference } from "@/modules/media/asset";
+import { assertReadable, type ByteRange, type MediaServingState, type MediaSizedRendition } from "@/modules/media/serve";
+import { readMediaBytes, statMediaBytes, type MediaByteWindow } from "@/modules/store/media";
 import { instantAt } from "@/modules/time/clock";
 import { canView, type ResolvedSession, type SessionSource } from "../authorize";
 import { buildEnvelope, type MediaAssetKind, type MediaAssetRecord, type MediaAssetRenditionPurpose, type MediaAssetRenditionRecord, type ReadAction, type ReadEnvelope, type Scope } from "../envelope";
@@ -55,10 +55,10 @@ export async function readMediaAsset(input: MediaAssetReadInput, source?: Sessio
   if (purpose === undefined) return refused();
   const rendition = asset.renditions.find((record) => record.purpose === purpose);
   if (rendition === undefined) return unavailableBytes(bytesSourceOf(asset), MISSING_RENDITION_GUIDANCE);
-  // The bytes come from the store's media custody, which refuses any reference naming a file outside its own data tree — the application's `public/` directory included. A refused reference and a read failure are the same answer here: an unavailable source, never a zero-length body.
-  const bytes = await readMediaBytes(rendition.bytesRef);
-  if (bytes === undefined) return unavailableBytes(bytesSourceOf(asset), UNAVAILABLE_GUIDANCE);
-  const serving = assertReadable(asset.assetId, preparedRendition(asset, rendition, bytes), {
+  // The bytes come from the store's media custody, which refuses any reference naming a file outside its own data tree — the application's `public/` directory included. Its size is probed first, because the serving decision below is made on that count rather than on the bytes: a refused or unsatisfiable request costs one file-size lookup and never reads the file's contents. A refused reference and a failed probe are the same answer here: an unavailable source, never a zero-length body.
+  const totalBytes = await statMediaBytes(rendition.bytesRef);
+  if (totalBytes === undefined) return unavailableBytes(bytesSourceOf(asset), UNAVAILABLE_GUIDANCE);
+  const serving = assertReadable(asset.assetId, sizedRendition(asset, rendition, totalBytes), {
     allowed: true,
     scope: authority.scope,
     assetState: authority.state,
@@ -68,18 +68,12 @@ export async function readMediaAsset(input: MediaAssetReadInput, source?: Sessio
     rangeHeader: input.rangeHeader ?? null,
   });
   switch (serving.kind) {
-    case "readable":
-      return renditionAnswer(session, asset, authority.scope, {
-        kind: asset.kind,
-        renditionId: serving.renditionId,
-        purpose: serving.purpose,
-        mimeType: serving.mimeType,
-        contentLength: serving.contentLength,
-        range: serving.byteRange,
-        bytes: sliceRenditionBytes(bytes, serving.byteRange),
-        status: serving.status,
-        headers: serving.headers,
-      });
+    case "readable": {
+      // Only the window the decision admitted is read, and only once it has admitted it: a 206 asks for its own range and a 200 for the whole rendition, so the I/O a response pays is the body it carries.
+      const bytes = await readMediaBytes(rendition.bytesRef, admittedWindow(serving.byteRange, totalBytes));
+      if (bytes === undefined) return unavailableBytes(bytesSourceOf(asset), UNAVAILABLE_GUIDANCE);
+      return renditionAnswer(session, asset, authority.scope, { kind: asset.kind, renditionId: serving.renditionId, purpose: serving.purpose, mimeType: serving.mimeType, contentLength: serving.contentLength, range: serving.byteRange, bytes, status: serving.status, headers: serving.headers });
+    }
     case "rangeNotSatisfiable":
       // The reader may have this entity; the window simply names none of it. The status and the headers carry the entity's size, and the body is empty by definition, so nothing is truncated and no size is disclosed that the caller was not already authorised to learn.
       return renditionAnswer(session, asset, authority.scope, { kind: asset.kind, renditionId: rendition.renditionId, purpose: rendition.purpose, mimeType: rendition.mimeType, contentLength: 0, range: null, bytes: NO_BYTES, status: serving.status, headers: serving.headers });
@@ -141,8 +135,13 @@ function renditionAnswer(session: ResolvedSession, asset: MediaAssetRecord, scop
 function requestedPurpose(asset: MediaAssetRecord, segment: string): MediaAssetRenditionPurpose | undefined {
   return KIND_PURPOSES[asset.kind].find((candidate) => candidate === segment) ?? asset.renditions.find((record) => record.renditionId === segment)?.purpose;
 }
-function preparedRendition(asset: MediaAssetRecord, record: MediaAssetRenditionRecord, bytes: Uint8Array): MediaRendition {
-  return { assetId: asset.assetId, renditionId: record.renditionId, purpose: record.purpose, mimeType: record.mimeType, bytes };
+/** The rendition as the serving decision sees it: the record's own identity with the size custody reported for its bytes, and never the bytes themselves. */
+function sizedRendition(asset: MediaAssetRecord, record: MediaAssetRenditionRecord, byteLength: number): MediaSizedRendition {
+  return { assetId: asset.assetId, renditionId: record.renditionId, purpose: record.purpose, mimeType: record.mimeType, byteLength };
+}
+/** The bytes one serving decision admitted: its own range when it named one, and the whole rendition otherwise. */
+function admittedWindow(byteRange: ByteRange | null, totalBytes: number): MediaByteWindow {
+  return byteRange === null ? { start: 0, end: totalBytes - 1 } : { start: byteRange.start, end: byteRange.end };
 }
 function bytesSourceOf(asset: MediaAssetRecord): MediaOriginalReference {
   return { system: MEDIA_SOURCE_SYSTEM, reference: asset.assetId };

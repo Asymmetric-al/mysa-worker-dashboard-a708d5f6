@@ -22,24 +22,38 @@
  *   `baseline`, whose `continuationSetting` is off, and the scenario `continuation-on` is the world in
  *   which an ordinarily expired cycle offers its single continuation. Settings carries no control for it,
  *   so the setting is switched the way the application owns it — through the development control — and the
- *   offer is then read where the application publishes it: the envelope's `actions` and each row's
- *   `continuation` eligibility.
+ *   offer is then read where the application publishes it: the envelope's `actions`, each row's
+ *   `continuation` eligibility, and the Continue action the cycle's own page composes from both.
  *
- * **Why the two referral writes are driven through the application's own routes, and what that proves.**
- * The seed carries no window that crosses a daylight-saving transition, so the gap case is recorded here:
- * `POST /api/referrals` with the original date `2026-08-23` in `America/Santiago`, whose New window ends
- * at the first valid instant after a midnight that does not exist. And an expired cycle is answered by
- * `readReferral` in the narrow permitted projection whichever route reached it — the projection that
- * carries identity, source reference, status and permitted dates and no control of its own — so Continue
- * is submitted through `POST /api/referrals/continue`, the browser-facing transport of the one named
- * mutation, and its outcome is then read off the durable surfaces a person returns to: the lists, the
- * successor's own record and the figures that must not have moved.
+ * **How the two referral writes are driven, and what that proves.** Both are performed through the
+ * surfaces that own them rather than through their handlers. An introduction is recorded on the partner's
+ * own record at `/partners/[partnerId]`, where the family's introduction form is composed behind the
+ * `recordIntroduction` that record's read admits: the form states the accepted source zone, the source
+ * reference and the entry time from that read, takes the date the introduction happened and the precision
+ * it is known to, and its review step is where the introduction is confirmed. A continuation is pressed on
+ * the expired cycle's own page at `/partners/referrals/[referralId]`, where one Continue action is
+ * composed beside the permitted history only while the envelope publishes `continueReferral` and the
+ * worker-continuation setting is on. Every outcome is then read off the durable surfaces a person returns
+ * to: the referral lists, the successor's own record and the figures that must not have moved.
  *
- * **What a fresh acceptance reports, and how the elapsed-second endpoint is proven.** `accepted` reports
- * the identifiers it created and changed, and no stored result; the stored result — the successor, its
- * endpoint and the elapsed seconds it was counted in — is what a replay of the *same* attempt answers. So
- * the arithmetic is proven by replaying the attempt identity, which is exactly the recovery the release
- * promises, and no figure is recomputed here.
+ * **The three legs that stay on the route the controls submit to, and why.** Each one says so where it
+ * happens. The seed carries no window across a midnight that does not exist, and the composed form states
+ * the one accepted source zone the referral rules own instead of offering a zone to type, so the
+ * daylight-saving gap case is recorded over `POST /api/referrals` with its date in `America/Santiago`. With
+ * the worker-continuation setting off, the surface composes no Continue action at all — which is the
+ * absence the criterion asks for, and leaves nothing to press — so the capability refusal is submitted over
+ * `POST /api/referrals/continue`, the route that action uses. And a racing *second* Continue can only come
+ * from a client holding a read taken before the acceptance, which neither a review step that settles its
+ * own attempt nor a read that withdraws `continueReferral` once the cycle is consumed can produce; the race
+ * is exercised over that same route, with the interface's own answer — no second offer on a fresh read —
+ * asserted beside it. No other referral write here is posted by this file.
+ *
+ * **What a fresh acceptance reports, and how the elapsed-second endpoint is proven.** The control's own
+ * answer reports the identifiers the acceptance created and changed, and no stored result; the stored
+ * result — the successor, its endpoint and the elapsed seconds it was counted in — is what a replay of the
+ * *same* attempt answers. So the arithmetic is proven by replaying the attempt identity the review step
+ * minted, read from the request the control itself sent: that replay is the recovery the release promises
+ * and not a second user-facing step, and no figure is recomputed here.
  */
 import type { Locator, Page } from "@playwright/test";
 
@@ -58,12 +72,15 @@ test.beforeEach(async ({ request }) => {
 /** The referral lists: the surface the three lists share. */
 const REFERRALS_PATH = "/partners/referrals";
 
+/** The roster's own address, which one partner's record hangs off. */
+const PARTNER_PATH = "/partners";
+
 /** The detail route one cycle is read at, which is the same body the list opens. */
 function referralDetailPath(referralId: string): string {
   return `${REFERRALS_PATH}/${encodeURIComponent(referralId)}`;
 }
 
-/** The lists' read and the one parameter that names a single cycle on the same route. */
+/** The lists' read, the one parameter that names a single cycle on the same route, and the route an introduction is recorded on. */
 const REFERRALS_READ_PATH = "/api/referrals";
 
 function referralListReadPath(list: "active" | "incomplete-date" | "expired", search = ""): string {
@@ -78,7 +95,7 @@ function referralDetailReadPath(referralId: string): string {
   return `${REFERRALS_READ_PATH}?referralId=${encodeURIComponent(referralId)}`;
 }
 
-/** The development control's one address, the settings surface, and the record a continuation must leave alone. */
+/** The development control's one address, the settings surface, and the route the Continue action submits to. */
 const DEV_CONTROL_PATH = "/api/dev";
 const SETTINGS_PATH = "/settings";
 const CONTINUE_PATH = "/api/referrals/continue";
@@ -139,8 +156,33 @@ const CALENDAR_DAY_COUNTERFACTUAL = "2026-11-09T01:00:00Z";
 /** The identifier the service derives for a cycle's single successor: the predecessor's id, suffixed. */
 const CONTINUED_CYCLE_ID = `${EXPIRED_CYCLE.referralId}-continued`;
 
-/** The introduction recorded for the daylight-saving case: one date, one precision, one declared zone. */
-const DST_INTRODUCTION = { date: "2026-08-23", zone: "America/Santiago", sourceReference: { system: "crm", reference: "intro-dst-gap-shift" } } as const;
+/**
+ * The introduction this file records through the composed journey on the partner the daylight-saving case
+ * introduces.
+ *
+ * D is day one, so a fourteen-day window opened on 18 October 2026 includes 31 October and ends at the
+ * first instant of 1 November in the accepted source zone. Daylight saving in `Europe/London` ends on
+ * 25 October, so the window crosses the change: the resolved end is local midnight, an hour later than the
+ * same span counted as `14 × 86,400` seconds from the instant the window opened would reach. No seed entry
+ * names it, so the identifier of the cycle it creates is read off the list that cycle appears in.
+ */
+const COMPOSED_INTRODUCTION = {
+  partnerId: "partner-kenji-nakamura",
+  displayName: "Kenji Nakamura",
+  date: "2026-10-18",
+  lastIncludedOn: "2026-10-31",
+  nominalWording: "Active through 31 October 2026",
+  windowStart: "2026-10-17T23:00:00Z",
+  endpoint: "2026-11-01T00:00:00Z",
+  /** Where the same span would reach if the window were counted in elapsed seconds from its start: still 31 October locally. */
+  elapsedCounterfactual: "2026-10-31T23:00:00Z",
+  zone: "Europe/London",
+  /** The instant the clock stands at while the introduction is recorded: inside the window it opens. */
+  insideWindow: "2026-10-25T12:00:00Z",
+} as const;
+
+/** The introduction recorded for the daylight-saving gap case: the partner, the date, the precision, and the zone whose midnight does not exist that day. */
+const DST_INTRODUCTION = { partnerId: "partner-kenji-nakamura", date: "2026-08-23", zone: "America/Santiago", sourceReference: { system: "crm", reference: "intro-dst-gap-shift" } } as const;
 
 /**
  * What the gap at local midnight resolves to. `America/Santiago` starts daylight saving at 00:00 on
@@ -158,17 +200,23 @@ const DST_LAST_SECOND_INSIDE = "2026-09-06T03:59:59Z";
 const OTHER_DISPLAY_ZONE = "Asia/Tokyo";
 
 /**
- * The family's own words, quoted from `features/referrals/copy.ts` and `features/coaching/copy.ts`'s sibling
- * modules rather than imported: a spec asserts what the interface says, so it states the sentence it
+ * The interface's own words, quoted from `features/referrals/copy.ts` and the shared receipt's outcome
+ * headings rather than imported: a spec asserts what the interface says, so it states the sentence it
  * expects to read and fails when the wording a person sees changes.
  */
 const COPY = {
   introductionHeading: "Original introduction",
+  recordIntroductionHeading: "Record an introduction",
+  saveIntroductionLabel: "Save introduction",
+  acceptedReceiptHeading: "Saved",
+  sourceZoneLabel: "Time zone this date is known in",
+  sourceReferenceLabel: "Source reference",
   introducedOnLabel: "Original introduction date",
   precisionLabel: "How precisely is this date known?",
   entryTimeLabel: "Entered in this application",
   entryTimeNote: "Entry time is never shown as the introduction date, and a late entry does not start the window again.",
   noDeadline: "Without a known introduction date there is no deadline, no Active or Expired judgement and no Continue action; this referral is shown exactly as far as its evidence carries.",
+  precisionDateLabel: "Known date",
   precisionUnknownLabel: "Unknown",
   precisionUnknownHint: "No date is established for this introduction, so none is stored and none is implied.",
   precisionApproximateLabel: "Approximate",
@@ -186,6 +234,8 @@ const COPY = {
   endpointResolvedOnce: "The end is resolved once and kept, so changing where you are or how dates are displayed does not move it.",
   continueHeading: "Continue is not offered",
   continueLabel: "Continue this referral",
+  continueConfirmTitle: "Continue this referral?",
+  cycleTerm: "Cycle",
   continueNotExpired: "This referral's window has not ended, so there is nothing to continue.",
   continueNoPrecision: "The introduction date is not precise enough to have had a window, so there is nothing to continue.",
   continueSettingOff: "Worker continuation is off, so an ordinarily expired referral offers no Continue action.",
@@ -353,7 +403,7 @@ async function switchScenario(page: Page, scenarioId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The referral reads and the two named changes
+// The referral reads, the composed controls, and the attempts the controls submit
 // ---------------------------------------------------------------------------------------------
 
 /** One cycle's detail, read from the caller's own scope, with its envelope as the assertions compare it. */
@@ -379,35 +429,128 @@ interface ReportedOutcome {
   readonly outcome: string;
 }
 
-/**
- * Submits the one named continuation for a cycle, through the browser-facing route the application serves
- * it on, and reports whichever of the eight outcomes answered.
- *
- * The attempt identity is the caller's: replaying it is what recovers an acknowledgement that was lost, so
- * it is passed in rather than minted here.
- */
-async function submitContinue(page: Page, envelope: JsonRecord, referralId: string, operationId: string): Promise<ReportedOutcome> {
-  const scope = fieldAt(envelope, "scope");
-  if (!isRecord(scope)) {
-    throw new Error(`The read of ${referralId} carried no scope, so the change it would authorise has no authority to present: ${JSON.stringify(envelope).slice(0, 400)}`);
+/** Whether an answer is the continuation the composed Continue action submits: the one route it posts to, and no other write. */
+function isContinueAttempt(requestUrl: string, method: string): boolean {
+  if (method !== "POST") {
+    return false;
   }
-  const answer = await page.request.post(CONTINUE_PATH, { data: { operationId, scope, expectedRevision: stringAt(envelope, ["revision"], "The cycle's revision"), payload: { referralId } } });
-  const body = await jsonOf(answer, `POST ${CONTINUE_PATH}`);
-  if (!isRecord(body)) {
-    throw new Error(`POST ${CONTINUE_PATH} did not answer an object: ${JSON.stringify(body).slice(0, 400)}`);
+  try {
+    return new URL(requestUrl).pathname === CONTINUE_PATH;
+  } catch {
+    // A body this module cannot read as an address is not the attempt this file is waiting for.
+    return false;
   }
-  return { body, outcome: outcomeOf(body) };
 }
 
 /**
- * Records one original introduction date through the application's own route, and answers the identifier
- * the service derived for the cycle it created.
+ * Submits one continuation over the route the Continue action itself submits to, stated exactly as the
+ * caller writes it, and reports whichever of the eight outcomes answered.
  *
- * The two facts a window is counted from — the date and the zone it is known in — are the whole payload:
- * every other value a cycle carries is resolved by the service from them, which is why the gap case below
- * proves anything at all.
+ * The body is the caller's whole statement — the attempt identity, the scope, the revision presented and
+ * the one cycle it names — so a replay re-sends exactly what the action sent, and a racing attempt is
+ * stated the way a racing client would state one. No fresh continuation travels this way: the acceptance
+ * is pressed through the composed control, and what is posted here is that attempt replayed, or a race no
+ * composed surface can produce.
  */
-async function recordIntroduction(page: Page, payload: JsonRecord): Promise<string> {
+async function submitContinueAttempt(page: Page, body: JsonRecord): Promise<ReportedOutcome> {
+  const answer = await page.request.post(CONTINUE_PATH, { data: body });
+  const answered = await jsonOf(answer, `POST ${CONTINUE_PATH}`);
+  if (!isRecord(answered)) {
+    throw new Error(`POST ${CONTINUE_PATH} did not answer an object: ${JSON.stringify(answered).slice(0, 400)}`);
+  }
+  return { body: answered, outcome: outcomeOf(answered) };
+}
+
+/** One continuation stated as the action states it: the attempt's identity, the scope it runs under, the revision it presents and the one cycle it names. */
+function continueAttemptBody(input: { readonly operationId: string; readonly scope: unknown; readonly expectedRevision: string; readonly referralId: string }): JsonRecord {
+  return { operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: { referralId: input.referralId } };
+}
+
+/** One continuation stated from a cycle read, which is the statement a client makes: the scope and the revision that read published, and the cycle it names. */
+function continueAttemptFrom(envelope: JsonRecord, referralId: string, operationId: string): JsonRecord {
+  const scope = fieldAt(envelope, "scope");
+  if (!isRecord(scope)) {
+    throw new Error(`The read of ${referralId} carried no scope, so a continuation for it has no authority to present: ${JSON.stringify(envelope).slice(0, 400)}`);
+  }
+  return continueAttemptBody({ operationId, scope, expectedRevision: stringAt(envelope, ["revision"], "The cycle's revision"), referralId });
+}
+
+/** The partner record read one introduction is recorded against, which is where the form's own stated facts come from. */
+function partnerRecordReadPath(partnerId: string): string {
+  return `/api/partners/${encodeURIComponent(partnerId)}?job=record`;
+}
+
+/** One partner record as its own read answers it: the source it was answered with, the accepted source zone an introduction is read in, and the revision it holds. */
+async function readPartnerRecord(page: Page, partnerId: string): Promise<JsonRecord> {
+  const answer = await page.request.get(partnerRecordReadPath(partnerId));
+  return envelopeOf(await jsonOf(answer, `GET ${partnerRecordReadPath(partnerId)}`), "The partner's own record");
+}
+
+/** The one row of one referral list that states one partner's introduction on one date, refusing anything but exactly one. */
+function rowForIntroduction(list: JsonRecord, displayName: string, introducedOn: string): JsonRecord {
+  const rows = arrayAt(list, ["data", "items"], "The list's rows").filter((row): row is JsonRecord => isRecord(row) && fieldAt(row, "partnerDisplayName") === displayName && fieldAt(row, "originalIntroductionOn") === introducedOn);
+  const [only, ...others] = rows;
+  if (only === undefined || others.length > 0) {
+    throw new Error(`The introduction stated for ${displayName} on ${introducedOn} is one row of the list in ${String(rows.length)} of them, so the cycle it created cannot be identified: ${JSON.stringify(rows).slice(0, 400)}`);
+  }
+  return only;
+}
+
+/**
+ * Records one original introduction through the composed journey on the partner's own record, and answers
+ * the cycle it created, read off the list that cycle appears in.
+ *
+ * The journey is the interface's own. The record's page composes the family's introduction form behind the
+ * `recordIntroduction` its read admits; the form states the accepted source zone, the source reference and
+ * the entry time from that read rather than from anything typed here; it takes the date the introduction
+ * happened and the precision that date is known to; and its review step is where the introduction is
+ * confirmed. Nothing about the result is invented either: the cycle is the row the active list states for
+ * this partner and date, which the receipt's own `Created` fact is then asserted against.
+ */
+async function recordIntroductionThroughTheRecord(page: Page, introduction: { readonly partnerId: string; readonly displayName: string; readonly date: string }): Promise<string> {
+  const record = await readPartnerRecord(page, introduction.partnerId);
+  const zone = stringAt(record, ["data", "referralSourceZone"], "The accepted source zone an introduction to this record is read in");
+  const source = fieldAt(record, "source");
+  if (!isRecord(source)) {
+    throw new Error(`The record read of ${introduction.partnerId} carried no source, so the reference the form states could not be checked: ${JSON.stringify(record).slice(0, 400)}`);
+  }
+  await page.goto(`${PARTNER_PATH}/${encodeURIComponent(introduction.partnerId)}`);
+  await expect(page.getByRole("heading", { name: introduction.displayName, level: 1 })).toBeVisible();
+  const form = page.locator('[data-slot="referral-introduction-form"]');
+  await expect(form.getByRole("heading", { name: COPY.introductionHeading })).toBeVisible();
+  // The zone and the source reference are the read's own facts, stated beside the date they qualify: the
+  // form offers no zone to type, so the window this introduction opens is counted in the zone the referral
+  // rules declare rather than in one chosen here.
+  await expect(form.getByText(COPY.sourceZoneLabel).first()).toBeVisible();
+  await expect(form.getByText(zone, { exact: true }).first()).toBeVisible();
+  await expect(form.getByText(COPY.sourceReferenceLabel).first()).toBeVisible();
+  await expect(form.getByText(stringAt(source, ["reference"], "The source reference the record read states"), { exact: true }).first()).toBeVisible();
+  await expect(form.getByText(COPY.entryTimeNote)).toBeVisible();
+  // The two facts the form takes: the date the introduction happened, and how precisely that date is known.
+  await form.getByLabel(COPY.introducedOnLabel).fill(introduction.date);
+  await form.getByRole("radio", { name: COPY.precisionDateLabel }).click();
+  // The review step states the introduction it is about to record, before it is confirmed.
+  const review = form.locator('[data-slot="action-review"]');
+  await expect(review.getByRole("heading", { name: COPY.recordIntroductionHeading })).toBeVisible();
+  await expect(review.getByText(introduction.date, { exact: true })).toBeVisible();
+  await expect(review.getByText(COPY.precisionDateLabel, { exact: true }).first()).toBeVisible();
+  await expect(review.getByText(zone, { exact: true }).first()).toBeVisible();
+  await review.getByRole("button", { name: COPY.saveIntroductionLabel, exact: true }).click();
+  // The receipt is the durable record of the attempt, and it names the cycle the introduction created.
+  const receipt = review.locator('[data-slot="action-review-result"]');
+  await expect(receipt).toHaveAttribute("data-outcome", "accepted");
+  await expect(receipt.getByRole("heading", { name: COPY.acceptedReceiptHeading })).toBeVisible();
+  const created = stringAt(rowForIntroduction(await readReferralList(page, "active"), introduction.displayName, introduction.date), ["referralId"], "The cycle the introduction created");
+  await expect(receipt.getByText(created, { exact: true })).toBeVisible();
+  return created;
+}
+
+/**
+ * Records one introduction over the route the composed form submits to, for the one case the form cannot
+ * state: a date read in a zone whose local midnight does not exist, which no composed form offers because
+ * it states the single accepted source zone the referral rules own.
+ */
+async function recordIntroductionInZone(page: Page, payload: JsonRecord): Promise<string> {
   const list = await readReferralList(page, "active");
   const scope = fieldAt(list, "scope");
   if (!isRecord(scope)) {
@@ -616,14 +759,58 @@ test("the seeded date-only cycle is Active until its exclusive endpoint and Expi
 });
 
 // ---------------------------------------------------------------------------------------------
-// The daylight-saving case: a midday that does not exist, and a resolved end that stays put
+// The daylight-saving cases: one introduction recorded through the composed form, and one midnight that
+// does not exist
 // ---------------------------------------------------------------------------------------------
 
 test("a New window across a daylight-saving transition ends at the first valid instant after the gap, and that end does not move", async ({ page }) => {
+  // The date-only introduction, recorded through the composed journey on the partner's own record. The
+  // window it opens crosses the end of daylight saving in the accepted source zone, so the end it resolves
+  // is the first instant of the day after the last included date rather than a fixed span of hours.
+  await setClock(page, COMPOSED_INTRODUCTION.insideWindow);
+  const composedId = await recordIntroductionThroughTheRecord(page, COMPOSED_INTRODUCTION);
+
+  const composed = await readReferral(page, composedId);
+  const composedDeadline = ["data", "referral", "deadline"] as const;
+  expect(fieldAt(composed, "data", "referral", "datePrecision")).toBe("date");
+  expect(fieldAt(composed, "data", "referral", "originalIntroductionOn")).toBe(COMPOSED_INTRODUCTION.date);
+  expect(fieldAt(composed, "data", "referral", "sourceZone")).toBe(COMPOSED_INTRODUCTION.zone);
+  // A recorded introduction is a first cycle on its own date: not a continuation, and not a second copy.
+  expect(fieldAt(composed, "data", "referral", "cycleIndex")).toBe(0);
+  expect(fieldAt(composed, "data", "referral", "predecessorId")).toBeNull();
+  expect(fieldAt(composed, "data", "referral", "windowStart")).toBe(COMPOSED_INTRODUCTION.windowStart);
+  expect(fieldAt(composed, ...composedDeadline, "end")).toBe(COMPOSED_INTRODUCTION.endpoint);
+  expect(fieldAt(composed, ...composedDeadline, "nominal", "lastIncludedOn")).toBe(COMPOSED_INTRODUCTION.lastIncludedOn);
+  expect(fieldAt(composed, ...composedDeadline, "nominal", "wording")).toBe(COMPOSED_INTRODUCTION.nominalWording);
+  // Every midnight this zone keeps exists, so the wording and the instant agree; what the two assertions
+  // below separate is the resolved end from the same span counted as elapsed seconds from the window's start.
+  expect(fieldAt(composed, ...composedDeadline, "nominal", "resolution")).toBe("aligned");
+  expect(fieldAt(composed, ...composedDeadline, "nominal", "disagreesWithResolved")).toBe(false);
+  expect(fieldAt(composed, ...composedDeadline, "end"), "A calendar-day window ends at local midnight, not a fixed span of hours after its start").not.toBe(COMPOSED_INTRODUCTION.elapsedCounterfactual);
+
+  // The cycle's own route states the same window, and the list a person returns to states the cycle.
+  await page.goto(referralDetailPath(composedId));
+  await expectStatusWord(page.locator('[data-slot="referral-detail-status"]'), COPY.statusActive);
+  const composedPanel = page.locator('[data-slot="referral-window-panel"]');
+  await expect(composedPanel.getByRole("heading", { name: COPY.newWindow })).toBeVisible();
+  await expect(composedPanel.getByText(COMPOSED_INTRODUCTION.nominalWording)).toBeVisible();
+  await expect(composedPanel.getByText(`The introduction date, ${COMPOSED_INTRODUCTION.date}, is day one.`)).toBeVisible();
+  await expect(composedPanel.getByText(`The last date the window includes is ${COMPOSED_INTRODUCTION.lastIncludedOn}.`)).toBeVisible();
+  await expect(composedPanel.getByText(COMPOSED_INTRODUCTION.endpoint, { exact: true }).first()).toBeVisible();
+  await expect(composedPanel.getByText(COMPOSED_INTRODUCTION.zone, { exact: true }).first()).toBeVisible();
+  await page.goto(`${REFERRALS_PATH}?list=active&search=${encodeURIComponent(COMPOSED_INTRODUCTION.displayName)}`);
+  const activeList = page.locator('[data-slot="referral-list"]');
+  // The seeded cycle for this partner is on the same list, so the row is found by the cycle the recording
+  // created rather than by the partner's name alone: exactly one row names it, and it is this partner's.
+  const composedRow = activeList.locator(`a[href*="${composedId}"]`);
+  await expect(composedRow).toHaveCount(1);
+  await expect(composedRow).toHaveText(COMPOSED_INTRODUCTION.displayName);
+
+  // The gap case: a date read in a zone whose local midnight does not exist that day, which the composed
+  // form cannot state because it fixes the one accepted source zone the referral rules own. This one
+  // recording travels over the route that form submits to, and its outcome is read off the same surfaces.
   await setClock(page, DST_INSIDE_WINDOW);
-  // The introduction is recorded through the application's own route: one original date, its precision and
-  // the zone it is known in. Everything else the window is counted from is resolved by the service.
-  const referralId = await recordIntroduction(page, { partnerId: "partner-kenji-nakamura", originalIntroductionOn: DST_INTRODUCTION.date, datePrecision: "date", sourceZone: DST_INTRODUCTION.zone, sourceReference: DST_INTRODUCTION.sourceReference });
+  const referralId = await recordIntroductionInZone(page, { partnerId: DST_INTRODUCTION.partnerId, originalIntroductionOn: DST_INTRODUCTION.date, datePrecision: "date", sourceZone: DST_INTRODUCTION.zone, sourceReference: DST_INTRODUCTION.sourceReference });
 
   const detail = await readReferral(page, referralId);
   const deadline = ["data", "referral", "deadline"] as const;
@@ -737,8 +924,10 @@ test("the permitted Expired history carries identity, source reference, status a
   await expect(list.getByText(countCaption(COPY.expiredHistoryHeading, 0))).toBeVisible();
   expect(await listTotal(await readReferralList(page, "expired", HIDDEN_EMAIL))).toBe(0);
 
-  // One expired cycle's own route answers the same narrow projection, and no control of any kind is offered
-  // on it: a permission over history never reopens the record, and it never offers an action.
+  // One expired cycle's own route answers the same narrow projection. That projection carries no control of
+  // its own, and the one continuation an eligible cycle can hold is composed beside it only where the
+  // worker-continuation setting admits it — which in this world, with the setting off, is nowhere, so this
+  // page offers no control at all.
   await page.goto(referralDetailPath(EXPIRED_CYCLE.referralId));
   await expect(page.getByRole("heading", { name: COPY.expiredHistoryHeading, level: 2 })).toBeVisible();
   await expect(page.getByText(COPY.expiredPermission)).toBeVisible();
@@ -775,9 +964,10 @@ test("Continue is absent while the worker-continuation setting is off, and the s
   expect(actionNames(off)).toEqual([]);
   expect(actionOffered(off, "continueReferral")).toBe(false);
 
-  // A submission in this world is refused as a capability the session does not hold, and the refusal names
-  // the capability and nothing about the cycle.
-  const refused = await submitContinue(page, off, EXPIRED_CYCLE.referralId, newAttemptId());
+  // Nothing is on offer in this world to press, so the refusal is submitted over the route the Continue
+  // action itself uses, and it is refused as a capability the session does not hold — naming the capability
+  // and nothing about the cycle.
+  const refused = await submitContinueAttempt(page, continueAttemptFrom(off, EXPIRED_CYCLE.referralId, newAttemptId()));
   expect(refused.outcome).toBe("denied");
   expect(fieldAt(refused.body, "reasonCode")).toBe("capability-absent");
   expect(Object.keys(refused.body).sort()).toEqual(["operationId", "outcome", "reasonCode"]);
@@ -803,6 +993,15 @@ test("Continue is absent while the worker-continuation setting is off, and the s
   expect(fieldAt(on, "data", "referral", "continuation", "reason")).toBeNull();
   expect(actionOffered(on, "continueReferral")).toBe(true);
   expect(actionOffered(await readReferralList(page, "expired"), "continueReferral")).toBe(true);
+
+  // And the offer is on the cycle's own page, which is where a person meets it: one Continue action, and no
+  // statement that it is withheld. With the setting off the same page composed no action at all, so the
+  // absence the list states is the absence this page states too.
+  await page.goto(referralDetailPath(EXPIRED_CYCLE.referralId));
+  const continueButton = page.getByRole("button", { name: COPY.continueLabel });
+  await expect(continueButton).toHaveCount(1);
+  await expect(continueButton).toBeVisible();
+  await expect(page.locator('[data-slot="continue-referral-unavailable"]')).toHaveCount(0);
 
   // The offer is eligibility, not the setting alone: a cycle whose window has not ended is still not
   // continuable, and its surface states that reason in its own words.
@@ -830,18 +1029,49 @@ test("a continued window ends in elapsed seconds, and a racing second Continue y
   expect(fieldAt(cycle, "data", "referral", "status", "status")).toBe("expired");
   expect(fieldAt(cycle, "data", "referral", "continuation", "available")).toBe(true);
 
-  // One attempt, one identity: the acknowledgement is recovered by replaying this, never by a new attempt.
-  const attemptId = newAttemptId();
-  const accepted = await submitContinue(page, cycle, EXPIRED_CYCLE.referralId, attemptId);
-  expect(accepted.outcome).toBe("accepted");
-  expect(fieldAt(accepted.body, "created")).toEqual([CONTINUED_CYCLE_ID]);
-  expect(fieldAt(accepted.body, "changed")).toEqual([EXPIRED_CYCLE.referralId]);
+  // The continuation is pressed on the expired cycle's own page: the action its read publishes is the
+  // control, and the review step that precedes the write names the one cycle it acts on.
+  await page.goto(referralDetailPath(EXPIRED_CYCLE.referralId));
+  const continueButton = page.getByRole("button", { name: COPY.continueLabel });
+  await expect(continueButton).toBeVisible();
+  await continueButton.click();
+  const confirmStep = page.getByRole("alertdialog");
+  await expect(confirmStep).toBeVisible();
+  await expect(confirmStep).toContainText(COPY.continueConfirmTitle);
+  await expect(confirmStep.getByText(`This continues ${COPY.cycleTerm} 0, the cycle whose window has ended`)).toBeVisible();
+  await expect(confirmStep.getByText(EXPIRED_CYCLE.referralId, { exact: true }).first()).toBeVisible();
 
-  // The stored result is what the same attempt answers when it is replayed: the successor, the instant its
-  // window ends, and the elapsed seconds that window is counted in. Thirty days of elapsed seconds is
-  // 2,592,000 of them, and the instant they reach is 09 November at 00:00 UTC — not the calendar-day
-  // reading of the same day, which would have crossed the end of daylight saving an hour later.
-  const replayed = await submitContinue(page, cycle, EXPIRED_CYCLE.referralId, attemptId);
+  // One press, one attempt: the request the control sends is the whole statement of it, and the answer it
+  // receives is the outcome — the identifiers the acceptance created and changed, exactly as the read then
+  // reports them.
+  const [attemptRequest, attemptAnswer] = await Promise.all([
+    page.waitForRequest((request) => isContinueAttempt(request.url(), request.method())),
+    page.waitForResponse((answer) => isContinueAttempt(answer.url(), answer.request().method())),
+    confirmStep.getByRole("button", { name: COPY.continueLabel, exact: true }).click(),
+  ]);
+  const attempt: unknown = await attemptRequest.postDataJSON();
+  if (!isRecord(attempt)) {
+    throw new Error(`The Continue action posted a body this file cannot read, so the attempt it made cannot be replayed: ${JSON.stringify(attempt).slice(0, 400)}`);
+  }
+  const accepted = await jsonOf(attemptAnswer, "The continuation the control submitted");
+  expect(outcomeOf(accepted)).toBe("accepted");
+  expect(fieldAt(accepted, "created")).toEqual([CONTINUED_CYCLE_ID]);
+  expect(fieldAt(accepted, "changed")).toEqual([EXPIRED_CYCLE.referralId]);
+
+  // The offer is withdrawn the moment the cycle is consumed: the same route, read again, composes no second
+  // Continue, and the read states the one successor the acceptance created.
+  await expect(page.getByRole("button", { name: COPY.continueLabel })).toHaveCount(0);
+  const consumed = await readReferral(page, EXPIRED_CYCLE.referralId);
+  expect(fieldAt(consumed, "data", "referral", "continuation", "cycle", "consumed")).toBe(true);
+  expect(fieldAt(consumed, "data", "referral", "continuation", "cycle", "successorId")).toBe(CONTINUED_CYCLE_ID);
+
+  // The stored result is what the same attempt answers when it is replayed, and the replay re-sends exactly
+  // the body the control sent — its identity, its scope and the revision it presented. Replaying a settled
+  // attempt is the recovery the release promises and not a second user-facing step, which is why this one
+  // request travels the route the control itself uses. Thirty days of elapsed seconds is 2,592,000 of them,
+  // and the instant they reach is 09 November at 00:00 UTC — not the calendar-day reading of the same day,
+  // which would have crossed the end of daylight saving an hour later.
+  const replayed = await submitContinueAttempt(page, attempt);
   expect(replayed.outcome).toBe("alreadyAccepted");
   expect(fieldAt(replayed.body, "result", "successorId")).toBe(CONTINUED_CYCLE_ID);
   expect(fieldAt(replayed.body, "result", "windowEnd")).toBe(CONTINUATION_ENDPOINT);
@@ -849,13 +1079,15 @@ test("a continued window ends in elapsed seconds, and a racing second Continue y
   expect(fieldAt(replayed.body, "result", "windowEnd")).not.toBe(CALENDAR_DAY_COUNTERFACTUAL);
   expect(fieldAt(replayed.body, "created")).toEqual([CONTINUED_CYCLE_ID]);
 
-  // Two racing attempts, each stated the way a racing client would state one: the first presents the
-  // revision it read before the acceptance and is refused as a conflict; the second re-reads the cycle and
-  // is told nothing changed. Neither opens a second window.
-  const stale = await submitContinue(page, cycle, EXPIRED_CYCLE.referralId, newAttemptId());
+  // Two racing attempts, each stated the way a racing client would state one. A second client is the only
+  // source of a fresh Continue once the cycle is consumed — the review step settles the attempt it made and
+  // the read withdraws the offer, both asserted above — so the race travels the route the control uses: the
+  // first presents the revision it read before the acceptance and is refused as a conflict; the second
+  // re-reads the cycle and is told nothing changed. Neither opens a second window.
+  const stale = await submitContinueAttempt(page, continueAttemptFrom(cycle, EXPIRED_CYCLE.referralId, newAttemptId()));
   expect(stale.outcome).toBe("conflict");
   const current = await readReferral(page, EXPIRED_CYCLE.referralId);
-  const raced = await submitContinue(page, current, EXPIRED_CYCLE.referralId, newAttemptId());
+  const raced = await submitContinueAttempt(page, continueAttemptFrom(current, EXPIRED_CYCLE.referralId, newAttemptId()));
   expect(raced.outcome).toBe("unchanged");
 
   // Exactly one successor, in each list that could show one.

@@ -14,7 +14,7 @@
 import Link from "next/link";
 import { useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import ActionReview from "@/components/action-review";
-import DraftStatus, { LIFECYCLE_STATUS, lifecycleOf } from "@/components/draft-status";
+import DraftStatus, { LIFECYCLE_STATUS, lifecycleOf, variantRecordOf } from "@/components/draft-status";
 import LocaleSwitcher, { type LocaleEdition } from "@/components/locale-switcher";
 import { StateNotice, type NoticeHeadingLevel } from "@/components/state-notice";
 import StatusBadge, { REACH_STATUS } from "@/components/status-badge";
@@ -23,13 +23,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import VariantSwitcher, { AUDIENCE_WORDS, type VariantTab } from "@/components/variant-switcher";
 import { cn } from "@/lib/cn";
-import type { ContentVariant, Release, VariantAudience } from "@/modules/content/variant";
+import type { Release, VariantAudience } from "@/modules/content/variant";
 import type { MutationInput, ReadAction, ReadEnvelope, Scope } from "@/modules/data-service/envelope";
 import { LOCALE_DISPLAY_NAMES, AUDIENCE_LABELS, DRAFT_VS_RELEASED, REVIEW_ROUND_NOTE, VARIANT_AXIS_NOTE, WITHDRAWAL_WORDING } from "../copy/updates-copy";
 import { useCandidate, useVariantOverview, type UpdateCandidateData, type VariantOverviewData, type VariantOverviewReadResult } from "../hooks/use-update-queries";
 import { useRestoreRevisionAsDraft, useSubmitForReview, useWithdrawLocale, useWithdrawUpdate } from "../hooks/use-update-mutations";
+import type { SubmissionNotifyMode } from "../schemas/draft";
 import type { RestoreRevisionAsDraftPayload } from "../schemas/review";
 import type { WithdrawLocalePayload, WithdrawUpdatePayload } from "../schemas/withdraw";
+import { DEFAULT_SUBMISSION_RELEASE_MODE, SubmissionReleaseMode } from "./submission-release-mode";
 
 // ------------------------------------------------------------------------------------------------
 // The shapes this surface reads, taken from the reads themselves
@@ -140,7 +142,10 @@ const PERMITS_WITHHELD = "withheld";
 
 const REVIEW_OFFER = {
   heading: "Editions waiting for a release",
-  intro: "A frozen candidate is answered by one review step and is not a release, so these editions are listed here for " + "their reviewer rather than shown as published.",
+  intro:
+    "An edition is listed here while it holds a frozen candidate that is not yet the revision it publishes: a " +
+    "candidate still waiting for its one review step, and a candidate its review has approved and no release has " +
+    "taken up yet. A candidate is not a release, so none of these editions is shown as published.",
   none: "No edition of this Update holds a frozen candidate waiting for a release.",
   link: "Open the review",
   countNoun: "editions awaiting a release",
@@ -170,20 +175,6 @@ const ROOT_CLASS = "flex min-w-0 flex-col gap-6";
 // ------------------------------------------------------------------------------------------------
 // Small readings of the records, and nothing that computes a state
 // ------------------------------------------------------------------------------------------------
-
-/** The edition's own record as the lifecycle vocabulary reads it: the three pointers and its audience and language, nothing added. */
-function variantRecordOf(documentId: string, edition: EditionView): ContentVariant {
-  return {
-    variantId: edition.variantId,
-    documentId,
-    audience: edition.audience,
-    locale: edition.locale,
-    // Absent pointers are omitted rather than set to `undefined`, so the record states exactly what the envelope stated.
-    ...(edition.draftRevisionId === null ? {} : { draftRevisionId: edition.draftRevisionId }),
-    ...(edition.candidateId === null ? {} : { candidateId: edition.candidateId }),
-    ...(edition.releaseHeadId === null ? {} : { releaseHeadId: edition.releaseHeadId }),
-  };
-}
 
 /** An instant as the read states it: the exact ISO text, shown unchanged because formatting one needs a display zone this surface has no authority over. */
 function instantTextOf(value: unknown): string {
@@ -336,7 +327,17 @@ interface ReviewStepProps {
 /** One review step at a time, for the write the worker chose. Each branch is its own component, so choosing another write starts with a review that holds no earlier attempt. */
 function ReviewStep({ scope, intent, submitForReview, restoreRevision, withdrawLocale, withdrawUpdate, checkResult, onClose, headingLevel }: ReviewStepProps): ReactElement | null {
   const stepHeading: 3 | 4 = headingLevel === 2 ? 3 : 4;
-  const submitInput = useMemo<ReviewInput<SubmitReviewPayload> | null>(() => (intent !== null && intent.kind === "submit-for-review" ? { scope, expectedRevision: intent.expectedRevision, payload: { variantId: intent.variantId, revisionId: intent.revisionId } } : null), [scope, intent]);
+  // The release mode chosen for the submission on screen, kept with the intent it was chosen for: a choice made for one
+  // edition is never read as the choice made for another, and every submission starts at publish-only.
+  const [modeChoice, setModeChoice] = useState<{ readonly intent: ReviewIntent; readonly mode: SubmissionNotifyMode } | null>(null);
+  const releaseMode: SubmissionNotifyMode = modeChoice !== null && modeChoice.intent === intent ? modeChoice.mode : DEFAULT_SUBMISSION_RELEASE_MODE;
+  const chooseReleaseMode = (mode: SubmissionNotifyMode): void => {
+    if (intent !== null) setModeChoice({ intent, mode });
+  };
+  const submitInput = useMemo<ReviewInput<SubmitReviewPayload> | null>(
+    () => (intent !== null && intent.kind === "submit-for-review" ? { scope, expectedRevision: intent.expectedRevision, payload: { variantId: intent.variantId, revisionId: intent.revisionId, notifyMode: releaseMode } } : null),
+    [scope, intent, releaseMode],
+  );
   const restoreInput = useMemo<ReviewInput<RestoreRevisionAsDraftPayload> | null>(() => (intent !== null && intent.kind === "restore-revision" ? { scope, expectedRevision: intent.expectedRevision, payload: { revisionId: intent.revisionId } } : null), [scope, intent]);
   const localeInput = useMemo<ReviewInput<WithdrawLocalePayload> | null>(() => (intent !== null && intent.kind === "withdraw-locale" ? { scope, expectedRevision: intent.expectedRevision, payload: { variantId: intent.variantId, locale: intent.localeTag } } : null), [scope, intent]);
   const updateInput = useMemo<ReviewInput<WithdrawUpdatePayload> | null>(() => (intent !== null && intent.kind === "withdraw-update" ? { scope, expectedRevision: intent.expectedRevision, payload: { documentId: intent.documentId } } : null), [scope, intent]);
@@ -358,6 +359,7 @@ function ReviewStep({ scope, intent, submitForReview, restoreRevision, withdrawL
               <p>{REVIEW_ROUND_NOTE.furtherRoundIsNewSubmission}</p>
               <p>{REVIEW_ROUND_NOTE.approvalIsPerVariant}</p>
               <p>{REVIEW_ROUND_NOTE.reviewerCannotAddNotify}</p>
+              <SubmissionReleaseMode value={releaseMode} onChange={chooseReleaseMode} />
             </div>
           }
           confirmLabel={REVIEW_COPY.submit.confirm}
@@ -717,6 +719,8 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
     if (target !== undefined) setChosenVariantId(target.variantId);
   };
   const awaiting: readonly string[] = data.awaitingRelease;
+  // The read names the editions waiting for a release; this surface lists exactly those it also holds a candidate
+  // identity for, in the read's own order, so the region and its badge state the same set.
   const awaitingEditions = editions.filter((edition) => edition.candidateId !== null && awaiting.includes(edition.variantId));
   const canWithdrawUpdate = editions.some((edition) => edition.headRelease !== null && edition.headRelease.withdrawnAt === undefined);
   const reviewCandidateAction = availabilityOf(envelope.actions, "review-candidate");

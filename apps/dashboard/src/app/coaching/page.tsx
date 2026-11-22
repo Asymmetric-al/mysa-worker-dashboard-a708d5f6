@@ -5,7 +5,7 @@ import type { ReactElement } from "react";
 import StateNotice from "@/components/state-notice";
 import { buttonVariants } from "@/components/ui/button";
 import PreparationSurface, { type PreparationSurfaceProps } from "@/features/coaching/components/preparation-surface";
-import type { CoachingGrantView, GrantDurationView, ModuleRead, SharingOutcome } from "@/features/coaching/components/sharing-summary";
+import type { CoachingGrantView, FinancialRange, GrantDurationView, ModuleRead, SharingOutcome } from "@/features/coaching/components/sharing-summary";
 import { COACHING_COPY } from "@/features/coaching/copy";
 import { cn } from "@/lib/cn";
 import { reads } from "@/modules/data-service";
@@ -64,9 +64,17 @@ function grantViewOf(relationship: CoachingRelationship): CoachingGrantView {
     modules,
     duration: durationViewOf(relationship.duration),
     shareCutoff: { instant: relationship.duration.cutoffInstant ?? relationship.duration.boundInstant ?? "", zone: relationship.duration.frozenZone ?? "", sourceLimitWins: relationship.duration.boundedBy === "source" },
-    financialRange: null,
+    // The range this relationship's own record states, passed through as the read projected it: the period, the one
+    // currency and the figure a coach reads for it, or no range at all when the record states none.
+    financialRange: financialRangeOf(relationship),
     outcomes: { delivery: outcomeOf(relationship.outcomes.invitationIssued), identityVerification: outcomeOf(relationship.outcomes.identityVerified), acceptance: outcomeOf(relationship.outcomes.accepted), access: outcomeOf(relationship.outcomes.accessLive) },
   };
+}
+
+/** One relationship's reviewed range in the summary's own shape, with nothing derived here: the read computed the figure. */
+function financialRangeOf(relationship: CoachingRelationship): FinancialRange | null {
+  const range = relationship.financialRange;
+  return range === null ? null : { from: range.from, to: range.to, currency: range.currency, money: range.money, valueState: range.valueState };
 }
 /** The worker's coaching overview. */
 export default async function CoachingPage(): Promise<ReactElement> {

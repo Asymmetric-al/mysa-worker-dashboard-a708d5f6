@@ -71,14 +71,36 @@ const initiativeDetailQuerySchema = z.strictObject({
   memberState: z.enum(INITIATIVE_MEMBER_STATES, { error: READ_MESSAGES.memberStateInvalid }).optional(),
   page: z.coerce.number({ error: READ_MESSAGES.pageInvalid }).int({ error: READ_MESSAGES.pageInvalid }).min(1, { error: READ_MESSAGES.pageInvalid }).optional(),
   pageSize: z.coerce.number({ error: READ_MESSAGES.pageSizeInvalid }).int({ error: READ_MESSAGES.pageSizeInvalid }).min(1, { error: READ_MESSAGES.pageSizeInvalid }).optional(),
+  // Each of the initiative's three lists carries its own window, so a page of Requests never moves the working list or the work the initiative owns. The 50-row default and the 200-row ceiling belong to the read on every one of them, so nothing here defaults, caps or slices.
+  requestsPage: z.coerce.number({ error: READ_MESSAGES.pageInvalid }).int({ error: READ_MESSAGES.pageInvalid }).min(1, { error: READ_MESSAGES.pageInvalid }).optional(),
+  requestsPageSize: z.coerce.number({ error: READ_MESSAGES.pageSizeInvalid }).int({ error: READ_MESSAGES.pageSizeInvalid }).min(1, { error: READ_MESSAGES.pageSizeInvalid }).optional(),
+  nextWorkPage: z.coerce.number({ error: READ_MESSAGES.pageInvalid }).int({ error: READ_MESSAGES.pageInvalid }).min(1, { error: READ_MESSAGES.pageInvalid }).optional(),
+  nextWorkPageSize: z.coerce.number({ error: READ_MESSAGES.pageSizeInvalid }).int({ error: READ_MESSAGES.pageSizeInvalid }).min(1, { error: READ_MESSAGES.pageSizeInvalid }).optional(),
 });
 type InitiativeDetailQueryParams = z.output<typeof initiativeDetailQuerySchema>;
 function rawInitiativeDetailParams(search: URLSearchParams): Record<string, unknown> {
-  return { initiativeId: search.get(INITIATIVE_ID_PARAM) ?? undefined, memberState: search.get("memberState") ?? undefined, page: search.get("page") ?? undefined, pageSize: search.get("pageSize") ?? undefined };
+  return {
+    initiativeId: search.get(INITIATIVE_ID_PARAM) ?? undefined,
+    memberState: search.get("memberState") ?? undefined,
+    page: search.get("page") ?? undefined,
+    pageSize: search.get("pageSize") ?? undefined,
+    requestsPage: search.get("requestsPage") ?? undefined,
+    requestsPageSize: search.get("requestsPageSize") ?? undefined,
+    nextWorkPage: search.get("nextWorkPage") ?? undefined,
+    nextWorkPageSize: search.get("nextWorkPageSize") ?? undefined,
+  };
 }
-/** The narrowing and page the detail read is asked for, on the same rule the list follows: every value was admitted before it arrived here. */
+/** The narrowing and the three page windows the detail read is asked for, on the same rule the list follows: every value was admitted before it arrived here. */
 function initiativeDetailQueryOf(params: InitiativeDetailQueryParams): InitiativeDetailQuery {
-  return { ...(params.memberState === undefined ? {} : { memberState: params.memberState }), ...(params.page === undefined ? {} : { page: params.page }), ...(params.pageSize === undefined ? {} : { pageSize: params.pageSize }) };
+  return {
+    ...(params.memberState === undefined ? {} : { memberState: params.memberState }),
+    ...(params.page === undefined ? {} : { page: params.page }),
+    ...(params.pageSize === undefined ? {} : { pageSize: params.pageSize }),
+    ...(params.requestsPage === undefined ? {} : { requestsPage: params.requestsPage }),
+    ...(params.requestsPageSize === undefined ? {} : { requestsPageSize: params.requestsPageSize }),
+    ...(params.nextWorkPage === undefined ? {} : { nextWorkPage: params.nextWorkPage }),
+    ...(params.nextWorkPageSize === undefined ? {} : { nextWorkPageSize: params.nextWorkPageSize }),
+  };
 }
 /** One page of initiatives as the request asked for it, or the one initiative the request named: the read's envelope, or the read's own `denied` or `unavailable` refusal. A query the read does not admit is `invalid` at the field that carries it. */
 export async function GET(request: Request): Promise<Response> {

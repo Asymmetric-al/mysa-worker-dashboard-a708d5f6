@@ -16,13 +16,23 @@
  * container, so this file holds no transport, mints no operation identity and applies nothing: recording a
  * decision is not an acceptance, and the copy says so beside the control that records it.
  *
- * **Why a decision is four visible choices rather than one dropdown.** A decision's consequence is the
- * part a worker must read before taking it — a new private entry copies nothing into a shared record, a
- * reuse attaches to a contact without merging anything into it, a skip creates nothing — so all four are
- * rendered with the sentence that states what each one does and leaves alone. A choice the domain has
- * already reported as unavailable for a row (no contact was proposed, so there is nothing to attach the
- * row to) stays visible and disabled with that reason attached, rather than disappearing from the list.
- * Nothing is pre-selected: a decision the worker never took is never shown as one.
+ * **Why a decision is four visible choices rather than one dropdown.** All four are rendered on every row:
+ * their consequences are what a worker weighs — a new private entry copies nothing into a shared record, a
+ * reuse attaches to a contact without merging anything into it, a skip creates nothing — and the sentences
+ * stating what each one does and leaves alone sit together in that row's own disclosure, referenced by the
+ * choice each one explains. A choice the domain has already reported as unavailable for a row (no contact
+ * was proposed, so there is nothing to attach the row to) stays visible and disabled with that reason
+ * attached, rather than disappearing from the list. Nothing is pre-selected: a decision the worker never
+ * took is never shown as one.
+ *
+ * **One row, one disclosure.** A row states only what deciding about it needs — its number, the value that
+ * names it, the domain's verdict, what is recorded about it and its decision control — and every fact the
+ * read derived that is long enough to bury those (the values it would supply beside a proposed contact's
+ * existing ones, the problems, the kept cells, the restrictions, the proposed contacts, the look-alike
+ * signal and each decision's consequence) is stated once, inside one `details`/`summary` pair in the same
+ * row. The disclosure is the browser's own: keyboard operable, named by its row, in the DOM whether or not
+ * it is open, and never a second copy of anything the row states outside it. Folding that material away is
+ * what keeps 25 rows reviewable in one window, and it changes nothing about what the row says.
  *
  * **One table, one card.** From `md` upwards the rows are one table inside the family's single scroll
  * port; below it each row is a card carrying the same material and the same controls. The two branches are
@@ -57,7 +67,23 @@ import type { ImportProposalRowReview, ImportProposalView, ImportRowWindow } fro
 import { IMPORT_DECISION_KINDS, type ImportCellCorrectionInput, type ImportDecisionInput, type ImportDecisionKind } from "@/modules/import/decide";
 import { IMPORT_MAX_CELL_CODE_POINTS } from "@/modules/import/parse";
 import type { CancelPayload } from "../schemas/acceptance";
-import { DECISION_COPY, JOURNEY_COPY, REVIEW_COPY, REVIEW_VERDICT_WORDS, TABLE_LABELS, reviewCandidateLabel, reviewCorrectionLabel, reviewDecisionLabel, reviewDecisionPendingLabel, reviewDecisionSubmitLabel, reviewSkipReasonLabel, reviewWindowSentence } from "../copy";
+import {
+  DECISION_COPY,
+  JOURNEY_COPY,
+  REVIEW_COPY,
+  REVIEW_DUPLICATE_WORD,
+  REVIEW_VERDICT_WORDS,
+  TABLE_LABELS,
+  reviewCandidateLabel,
+  reviewCorrectionLabel,
+  reviewDecisionLabel,
+  reviewDecisionPendingLabel,
+  reviewDecisionSubmitLabel,
+  reviewDuplicateLookingSentence,
+  reviewMaterialSummaryLabel,
+  reviewSkipReasonLabel,
+  reviewWindowSentence,
+} from "../copy";
 // The four kinds this step offers, in the order the domain declares them
 const DECISION_ORDER: readonly ImportDecisionKind[] = IMPORT_DECISION_KINDS;
 const isDecisionKind = (value: unknown): value is ImportDecisionKind => typeof value === "string" && IMPORT_DECISION_KINDS.some((kind) => kind === value);
@@ -79,6 +105,8 @@ const ROW_COPY = {
   alreadyRecorded: (rowNumber: number): string => `This decision is already recorded for row ${String(rowNumber)}. Change the choice or one of its values to record a different decision.`,
   /** Said where a row's review material could not be derived, so no cell is left blank in its place. */
   materialMissing: (rowNumber: number): string => `The values, problems, kept cells, restrictions and proposed contacts of row ${String(rowNumber)} were not derived, so none of them is shown as if it were empty.`,
+  /** Said where a row supplies no name-bearing value, so the cell that names the row states that instead of staying blank. */
+  noName: "This row supplies no name",
 } as const;
 
 /** The cancellation the stop control submits, with the transport that performs it and what to do once it settles. */
@@ -283,18 +311,27 @@ function correctableOf(review: ImportProposalRowReview | null): ImportProposalRo
   return review.issues.filter((issue) => issue.columnNumber !== null);
 }
 
-// The identifying value a row's card is headed by: the first name-bearing cell the domain mapped for it,
-// taken exactly as the file supplied it. It is presentation only and never an identity: two rows may carry
-// the same text and remain two rows.
-const IDENTIFYING_FIELDS: readonly string[] = ["display-name", "name-given", "name-organization", "name-family"];
+// The identifying value a row states: the name the row supplies, taken exactly as the file wrote it. A display name or an
+// organization name stands alone, and a given and a family name are joined because either part on its own names nobody —
+// so the two rows of one person are headed alike here as well. It is presentation only and never an identity: two rows
+// may carry the same text and remain two rows.
+const IDENTIFYING_FORMS: readonly (readonly string[])[] = [["display-name"], ["name-organization"], ["name-given", "name-family"]];
 function identifyingValueOf(review: ImportProposalRowReview | null): string | null {
   if (review === null) {
     return null;
   }
-  for (const fieldId of IDENTIFYING_FIELDS) {
-    const cell = review.mappedCells.find((candidate) => candidate.fieldId === fieldId);
-    if (cell !== undefined && cell.value.trim() !== "") {
-      return cell.value;
+  for (const form of IDENTIFYING_FORMS) {
+    const parts: string[] = [];
+    for (const fieldId of form) {
+      const cell = review.mappedCells.find((candidate) => candidate.fieldId === fieldId);
+      const value = cell === undefined ? "" : cell.value.trim();
+      if (value === "") {
+        break;
+      }
+      parts.push(value);
+    }
+    if (parts.length === form.length) {
+      return parts.join(" ");
     }
   }
   return null;
@@ -443,7 +480,7 @@ function RowSection({ label, children }: { readonly label: string; readonly chil
   );
 }
 
-/** Everything the read derived about one row, stacked: the card presentation's body. */
+/** Everything the read derived about one row, stacked: the body of that row's disclosure, in both presentations. */
 function RowMaterialSections({ review }: { readonly review: ImportProposalRowReview }): ReactElement {
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -466,9 +503,63 @@ function RowMaterialSections({ review }: { readonly review: ImportProposalRowRev
   );
 }
 
+/**
+ * Everything one row's material says that is too long to sit beside its controls, and what each of the four
+ * decisions would do, behind the browser's own disclosure control.
+ *
+ * A `details`/`summary` pair is that control: it is keyboard operable, it states whether it is open, its content
+ * stays in the DOM of the row it belongs to, and it adds neither a second table row per row nor a scroll region
+ * inside one. The summary names its row, so no row's material is hidden behind one of many unnamed controls, and
+ * every decision's consequence carries the id the choice that explains it points at.
+ */
+function RowMaterialDisclosure({ rowNumber, branch, review }: { readonly rowNumber: number; readonly branch: Branch; readonly review: ImportProposalRowReview | null }): ReactElement {
+  const duplicateLooking = review?.duplicateLooking ?? null;
+  const reuseOffered = review !== null && review.suggestions.length > 0;
+  return (
+    <details className="min-w-0">
+      <summary className="min-h-target text-sm font-medium text-pretty">{reviewMaterialSummaryLabel(rowNumber)}</summary>
+      <div className="flex min-w-0 flex-col gap-3 pt-2">
+        {review === null ? null : <RowMaterialSections review={review} />}
+        {duplicateLooking === null ? null : (
+          <RowSection label={REVIEW_DUPLICATE_WORD}>
+            <p className="text-pretty">{reviewDuplicateLookingSentence(duplicateLooking)}</p>
+          </RowSection>
+        )}
+        <RowSection label={REVIEW_COPY.decisionsHeading}>
+          <div className="flex flex-col gap-2">
+            <ul className="flex flex-col gap-2">
+              {DECISION_ORDER.map((kind) => (
+                <li key={kind}>
+                  <span className="text-sm font-medium">{DECISION_COPY[kind].label}</span>
+                  <span id={decisionConsequenceId(branch, rowNumber, kind)} className="block text-sm text-pretty text-muted-foreground">
+                    {DECISION_COPY[kind].consequence}
+                  </span>
+                  {kind === "reuse" && !reuseOffered ? (
+                    // Why this row's reuse choice is disabled, stated with the choice it belongs to rather than above it.
+                    <span id={decisionReuseReasonId(branch, rowNumber)} className="block text-sm text-pretty text-muted-foreground">
+                      {REVIEW_COPY.empty.suggestions}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            <p className="text-sm text-pretty text-muted-foreground">{REVIEW_COPY.decisionNote}</p>
+          </div>
+        </RowSection>
+      </div>
+    </details>
+  );
+}
+
 // One row's controls
 const decisionFieldName = (branch: Branch, rowNumber: number): string => `decision-${branch}-${String(rowNumber)}`;
 const decisionOptionId = (branch: Branch, rowNumber: number, kind: ImportDecisionKind): string => `${fieldControlId(decisionFieldName(branch, rowNumber))}-option-${kind}`;
+// Where one option's consequence is stated: inside the row's disclosure, so the choice refers to the sentence that
+// explains it and the two are read together without the sentence taking the choice's place in the row.
+const decisionConsequenceId = (branch: Branch, rowNumber: number, kind: ImportDecisionKind): string => `${decisionOptionId(branch, rowNumber, kind)}-consequence`;
+// Where the reason a row offers no contact to reuse is stated: the reuse choice's own description, stated once in the row's
+// disclosure beside the consequence of reusing, so a disabled choice explains itself without a line of prose above every row.
+const decisionReuseReasonId = (branch: Branch, rowNumber: number): string => `${fieldControlId(decisionFieldName(branch, rowNumber))}-reuse-reason`;
 interface DecisionControlProps {
   readonly rowNumber: number;
   readonly branch: Branch;
@@ -482,10 +573,11 @@ interface DecisionControlProps {
 /**
  * One row's decision, its members and the control that records it.
  *
- * All four decisions are always rendered, each with the sentence stating what it does and leaves alone. A
- * decision the domain has reported as unavailable for this row is disabled — never omitted — with the
- * domain's finding attached through `aria-describedby`, so the reason is reachable at the control rather
- * than only visible further down the row.
+ * All four decisions are always rendered, and the sentence stating what each one does and leaves alone is the
+ * description the choice carries: it is stated in the row's disclosure, so the consequence is reachable from the
+ * control without holding the row's choices apart on four blocks of prose. A decision the domain has reported as
+ * unavailable for this row is disabled — never omitted — with the domain's finding attached the same way, so the
+ * reason a choice cannot be taken is reachable at that choice.
  */
 function DecisionControl({ rowNumber, branch, review, draft, recorded, pending, onDraft, onRecord }: DecisionControlProps): ReactElement {
   const suggestions = review === null ? [] : review.suggestions;
@@ -495,16 +587,19 @@ function DecisionControl({ rowNumber, branch, review, draft, recorded, pending, 
   const offersCorrections = chosen === "create" || chosen === "reuse";
   const candidate = suggestions[Number(draft.candidate)];
   const reuseOffered = suggestions.length > 0;
-  const reuseReasonId = `${fieldControlId(decisionFieldName(branch, rowNumber))}-reuse-reason`;
+  const reuseReasonId = decisionReuseReasonId(branch, rowNumber);
   const needsChoiceId = `${fieldControlId(decisionFieldName(branch, rowNumber))}-choice-needed`;
   const recordedId = `${fieldControlId(decisionFieldName(branch, rowNumber))}-already-recorded`;
   const alreadyRecorded = decision !== null && sameDecision(decision, recorded);
   const blockedHintId = alreadyRecorded ? recordedId : decision === null ? needsChoiceId : undefined;
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <FormFieldGroup legend={reviewDecisionLabel(rowNumber)} name={decisionFieldName(branch, rowNumber)} description={chosen === null ? undefined : DECISION_COPY[chosen].description}>
+      <FormFieldGroup legend={reviewDecisionLabel(rowNumber)} name={decisionFieldName(branch, rowNumber)} description={chosen === null ? undefined : DECISION_COPY[chosen].description} hideLegend>
         {(group) => (
+          // Two columns of short choices rather than four lines of prose: each consequence is stated once in the row's
+          // disclosure and referenced by the choice it explains, so the four choices stay one glance on one screen.
           <RadioGroup
+            className="grid-cols-2 gap-2"
             value={chosen}
             aria-labelledby={group.legendId}
             aria-describedby={group.describedBy}
@@ -518,30 +613,22 @@ function DecisionControl({ rowNumber, branch, review, draft, recorded, pending, 
           >
             {DECISION_ORDER.map((kind) => {
               const optionId = decisionOptionId(branch, rowNumber, kind);
-              const consequenceId = `${optionId}-consequence`;
+              const consequenceId = decisionConsequenceId(branch, rowNumber, kind);
               // Only a reuse can be unavailable to a row: a row nothing was proposed for has nothing to
               // attach itself to. Creating, skipping and leaving undecided stay available on every row.
               const unavailable = kind === "reuse" && !reuseOffered;
               return (
-                <label key={kind} htmlFor={optionId} className="flex min-h-target items-start gap-3 py-1">
+                <label key={kind} htmlFor={optionId} className="flex min-h-target items-start gap-2">
                   <RadioGroupItem id={optionId} value={kind} disabled={pending || unavailable} aria-describedby={unavailable ? `${consequenceId} ${reuseReasonId}` : consequenceId} className="mt-0.5" />
-                  <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className="text-sm font-medium">{DECISION_COPY[kind].label}</span>
-                    <span id={consequenceId} className="text-sm text-pretty text-muted-foreground">
-                      {DECISION_COPY[kind].consequence}
-                    </span>
-                  </span>
+                  <span className="min-w-0 text-sm font-medium">{DECISION_COPY[kind].label}</span>
                 </label>
               );
             })}
           </RadioGroup>
         )}
       </FormFieldGroup>
-      {reuseOffered ? null : (
-        <p id={reuseReasonId} className="text-sm text-pretty text-muted-foreground">
-          {REVIEW_COPY.empty.suggestions}
-        </p>
-      )}
+      {/* The reason a row offers no contact to reuse is stated with the reuse choice inside the row's disclosure, which the
+       * choice points at through `reuseReasonId`: it is attached to the choice rather than repeated above the group. */}
       {chosen === "reuse" && reuseOffered ? (
         <FormField label={reviewCandidateLabel(rowNumber)} name={`candidate-${branch}-${String(rowNumber)}`} description={candidate === undefined ? undefined : candidate.message}>
           {({ id, describedBy }) => (
@@ -610,29 +697,32 @@ function DecisionControl({ rowNumber, branch, review, draft, recorded, pending, 
           )}
         </FormField>
       ) : null}
-      <p className="text-sm text-pretty text-muted-foreground">{REVIEW_COPY.decisionNote}</p>
-      <Button
-        type="button"
-        className="w-fit"
-        disabled={pending || decision === null || alreadyRecorded}
-        aria-describedby={blockedHintId}
-        onClick={() => {
-          if (decision !== null) {
-            onRecord(rowNumber, decision);
-          }
-        }}
-      >
-        {pending ? reviewDecisionPendingLabel(rowNumber) : reviewDecisionSubmitLabel(rowNumber)}
-      </Button>
-      {alreadyRecorded ? (
-        <p id={recordedId} className="text-sm text-pretty text-muted-foreground">
-          {ROW_COPY.alreadyRecorded(rowNumber)}
-        </p>
-      ) : decision === null ? (
-        <p id={needsChoiceId} className="text-sm text-pretty text-muted-foreground">
-          {ROW_COPY.chooseFirst}
-        </p>
-      ) : null}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <Button
+          type="button"
+          className="w-fit"
+          disabled={pending || decision === null || alreadyRecorded}
+          aria-describedby={blockedHintId}
+          onClick={() => {
+            if (decision !== null) {
+              onRecord(rowNumber, decision);
+            }
+          }}
+        >
+          {pending ? reviewDecisionPendingLabel(rowNumber) : reviewDecisionSubmitLabel(rowNumber)}
+        </Button>
+        {alreadyRecorded ? (
+          <p id={recordedId} className="min-w-0 text-sm text-pretty text-muted-foreground">
+            {ROW_COPY.alreadyRecorded(rowNumber)}
+          </p>
+        ) : decision === null ? (
+          // The reason the control is unavailable stays attached to it as its description while taking no line of the row:
+          // the four choices sit directly above, so the row states the rule once and keeps every row one screen high.
+          <p id={needsChoiceId} className="sr-only">
+            {ROW_COPY.chooseFirst}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -665,13 +755,20 @@ function firstDecisionControl(rowNumber: number): HTMLElement | null {
 
 /**
  * The domain's verdict about one row, as words a badge carries: a verdict is never colour alone, and a row
- * whose review material was not derived states that instead of showing an empty or a ready verdict.
+ * whose review material was not derived states that instead of showing an empty or a ready verdict. The
+ * look-alike signal stands beside it as a second worded badge, because a row of this file resembling another
+ * row of the same file is neither a verdict nor a decision: the verdict stays the one validation graded.
  */
 function RowVerdict({ review, rowNumber }: { readonly review: ImportProposalRowReview | null; readonly rowNumber: number }): ReactElement {
   if (review === null) {
     return <StateNotice kind="unavailable" headingLevel={4} title={REVIEW_COPY.material.heading} description={ROW_COPY.materialMissing(rowNumber)} />;
   }
-  return <Badge variant={review.verdict === "ready" ? "secondary" : "destructive"}>{REVIEW_VERDICT_WORDS[review.verdict]}</Badge>;
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <Badge variant={review.verdict === "ready" ? "secondary" : "destructive"}>{REVIEW_VERDICT_WORDS[review.verdict]}</Badge>
+      {review.duplicateLooking === null ? null : <Badge variant="outline">{REVIEW_DUPLICATE_WORD}</Badge>}
+    </div>
+  );
 }
 
 /**
@@ -802,28 +899,38 @@ export default function StepReview({ proposal, decisions, window, onPageChange, 
                * `scroll-padding` that keeps a focused control out from under the sticky shell, and at a
                * narrow width the table is not displayed at all rather than scrolled inside it. */}
               <ScrollRegion label={TABLE_LABELS.review} className="hidden md:block" aria-busy={tableBusy ? true : undefined}>
-                <Table>
+                {/* A fixed table layout, so opening one row's disclosure re-wraps that row's own material instead of
+                 * redistributing every column: the five widths below are the whole of the table's width at any state. */}
+                <Table className="table-fixed">
                   <TableCaption className="sr-only">{TABLE_LABELS.review}</TableCaption>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead scope="col">{REVIEW_COPY.column.row}</TableHead>
-                      <TableHead scope="col">{REVIEW_COPY.column.verdict}</TableHead>
-                      <TableHead scope="col">{REVIEW_COPY.column.recordedDecision}</TableHead>
-                      <TableHead scope="col">{REVIEW_COPY.column.suppliedValues}</TableHead>
-                      <TableHead scope="col">{REVIEW_COPY.column.problems}</TableHead>
-                      <TableHead scope="col">{REVIEW_COPY.column.keptCells}</TableHead>
-                      <TableHead scope="col">{REVIEW_COPY.column.restrictions}</TableHead>
-                      <TableHead scope="col">{REVIEW_COPY.column.suggestions}</TableHead>
+                      <TableHead scope="col" className="w-[11%]">
+                        {REVIEW_COPY.column.row}
+                      </TableHead>
+                      <TableHead scope="col" className="w-[14%]">
+                        {REVIEW_COPY.column.verdict}
+                      </TableHead>
+                      <TableHead scope="col" className="w-[13%]">
+                        {REVIEW_COPY.column.recordedDecision}
+                      </TableHead>
+                      <TableHead scope="col" className="w-[20%]">
+                        {REVIEW_COPY.column.material}
+                      </TableHead>
                       <TableHead scope="col">{REVIEW_COPY.column.decision}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {view.rows.map((row) => {
                       const review = reviewFor(row.rowNumber);
+                      const identifying = identifyingValueOf(review);
                       return (
                         <TableRow key={row.rowNumber}>
                           <TableHead scope="row" className="whitespace-normal align-top">
-                            Row <bdi>{String(row.rowNumber)}</bdi>
+                            <span className="block">
+                              Row <bdi>{String(row.rowNumber)}</bdi>
+                            </span>
+                            {identifying === null ? <span className="block text-muted-foreground">{ROW_COPY.noName}</span> : <bdi className="block text-muted-foreground wrap-anywhere">{identifying}</bdi>}
                           </TableHead>
                           <TableCell className="whitespace-normal align-top">
                             <RowVerdict review={review} rowNumber={row.rowNumber} />
@@ -831,11 +938,9 @@ export default function StepReview({ proposal, decisions, window, onPageChange, 
                           <TableCell className="whitespace-normal align-top">
                             <RowDecisionStatus decisionLabel={row.decisionLabel} decided={row.decision !== "unresolved"} />
                           </TableCell>
-                          <TableCell className="whitespace-normal align-top">{review === null ? null : <RowSuppliedValues review={review} />}</TableCell>
-                          <TableCell className="whitespace-normal align-top">{review === null ? null : <RowIssues review={review} />}</TableCell>
-                          <TableCell className="whitespace-normal align-top">{review === null ? null : <RowKeptCells review={review} />}</TableCell>
-                          <TableCell className="whitespace-normal align-top">{review === null ? null : <RowRestrictions review={review} />}</TableCell>
-                          <TableCell className="whitespace-normal align-top">{review === null ? null : <RowSuggestions review={review} />}</TableCell>
+                          <TableCell className="whitespace-normal align-top">
+                            <RowMaterialDisclosure rowNumber={row.rowNumber} branch="table" review={review} />
+                          </TableCell>
                           <TableCell className="whitespace-normal align-top">
                             <DecisionControl rowNumber={row.rowNumber} branch="table" review={review} draft={draftFor(row.rowNumber)} recorded={decisions[row.rowNumber]} pending={decidingRowNumber === row.rowNumber} onDraft={setDraft} onRecord={onDecide} />
                           </TableCell>
@@ -858,12 +963,12 @@ export default function StepReview({ proposal, decisions, window, onPageChange, 
                           <CardTitle>
                             Row <bdi>{String(row.rowNumber)}</bdi>
                           </CardTitle>
-                          <CardDescription>{identifying === null ? REVIEW_COPY.empty.suppliedValues : <bdi className="wrap-anywhere">{identifying}</bdi>}</CardDescription>
+                          <CardDescription>{identifying === null ? ROW_COPY.noName : <bdi className="wrap-anywhere">{identifying}</bdi>}</CardDescription>
                         </CardHeader>
                         <CardContent className="flex min-w-0 flex-col gap-3">
                           <RowVerdict review={review} rowNumber={row.rowNumber} />
-                          {review === null ? null : <RowMaterialSections review={review} />}
                           <RowDecisionStatus decisionLabel={row.decisionLabel} decided={row.decision !== "unresolved"} />
+                          <RowMaterialDisclosure rowNumber={row.rowNumber} branch="card" review={review} />
                           <DecisionControl rowNumber={row.rowNumber} branch="card" review={review} draft={draftFor(row.rowNumber)} recorded={decisions[row.rowNumber]} pending={decidingRowNumber === row.rowNumber} onDraft={setDraft} onRecord={onDecide} />
                         </CardContent>
                       </Card>

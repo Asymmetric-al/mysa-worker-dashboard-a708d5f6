@@ -340,6 +340,36 @@ describe("a candidate freezes the exact revision", () => {
     expect(editionOf(await overviewOf(control), edition).draftRevisionId).toBe(restoredId);
   });
 });
+describe("a release consumes the frozen candidate it answers", () => {
+  it("leaves an edition with no submission once the revision its candidate froze is published, and a candidate again when a newer revision is frozen beside that release", async () => {
+    const edition = await createEdition(control, { locale: "ro" });
+    const frozen = await saveDraftText(control, edition, ["Proiect românesc pentru tineret."]);
+    const candidateId = await submitEdition(control, edition, frozen);
+    expect(candidateId).toBe(frozen);
+    acceptedOutcome(await mutations.updates.approveCandidate(control.sessionId, attempt({ candidateId }, await editionRevision(control, edition), control.scope)));
+    const released = acceptedOutcome(await publishEditions(control, [{ variantId: edition }]));
+    expect(itemFor(itemsOf(released), edition).state).toBe("released");
+    const published = editionOf(await overviewOf(control), edition);
+    expect(published.headRelease?.revisionId).toBe(frozen);
+    expect(releasedView(await releaseOf(control, edition)).release.revisionId).toBe(frozen);
+    // The release published the very revision the candidate froze, so the edition holds no submission afterwards.
+    // The lifecycle word every author surface derives from these pointers is therefore the publication — a live
+    // release at the head and no candidate — instead of the candidate word a retained pointer produced.
+    expect(published.candidateId).toBeNull();
+    // Nothing is left to review, so the edition offers no review step and no longer counts as awaiting one.
+    expect((await candidateOf(control, edition)).status).toBe("none");
+    // A newer revision frozen beside that publication is a submission again, because the release answered the
+    // revision before it and not this one: only a release of the candidate's own revision consumes it.
+    const newer = await saveDraftText(control, edition, ["Proiect românesc, a doua versiune."]);
+    expect(newer).not.toBe(frozen);
+    expect(await submitEdition(control, edition, newer)).toBe(newer);
+    const resubmitted = editionOf(await overviewOf(control), edition);
+    expect(resubmitted.candidateId).toBe(newer);
+    expect(resubmitted.headRelease?.revisionId).toBe(frozen);
+    expect(releasedView(await releaseOf(control, edition)).release.revisionId).toBe(frozen);
+    expect(frozenCandidate(await candidateOf(control, edition)).candidate.revisionId).toBe(newer);
+  });
+});
 describe("one edition cannot advance or overwrite another", () => {
   it("edits English without moving the French release head or the Arabic draft", async () => {
     const before = await overviewOf(control);

@@ -435,9 +435,10 @@ test("the example file is mapped, reviewed, decided and accepted, and its receip
   await expect(subscribedColumn).toContainText("Subscribed");
   await expect(subscribedColumn).toContainText("Not mapped");
   await expect(mappingGrid.getByLabel("Field for column 10")).toHaveCount(0);
-  // The vocabulary a column may supply is the contact fields and nothing else: no field on this surface can
-  // be read as consent, subscription or permission for any publisher or purpose.
-  await expect(page.getByRole("option", { name: /consent|subscri|permission|opt.?in/iu })).toHaveCount(0);
+  // The vocabulary a column may supply is the contact fields and nothing else: no field this mapping surface
+  // offers can be read as consent, subscription or permission for any publisher or purpose. Scoped to the
+  // mapping grid, because the shell's development persona control is not a field a column can supply.
+  await expect(mappingGrid.getByRole("option", { name: /consent|subscri|permission|opt.?in/iu })).toHaveCount(0);
   await confirmSuggestedMapping(page);
 
   // Step 3 — Validate and review. Every row of the file is stated once, its verdict is the domain's, and the

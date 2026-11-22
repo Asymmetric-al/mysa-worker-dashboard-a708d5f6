@@ -27,6 +27,18 @@ export const NO_PERCENTAGE: Readonly<Record<NoPercentageReason | "default", stri
   "incompatible-measure": "No percentage is shown because the goal and the figure it would be compared with measure " + "different things. Received gifts, recurring collection outcomes, commitments, monthly-equivalent " + "support and the goal are five measures and are never divided by one another.",
   default: "No percentage is shown, because a percentage needs a compatible numerator and a positive, known " + "denominator. Where both exist the figure is shown exactly as it was computed, so a valid 120% " + "reads 120% and is never capped at 100%; where they do not exist, nothing stands in its place.",
 };
+/** The goal form's currency choice, offered only where the read reports more than one currency for the subject: the option that states nothing is chosen from the set yet, the review's wording for an unchosen currency, and what the amount's precision follows. */
+export const GOAL_CURRENCY_CHOICE: { readonly unset: string; readonly unchosen: string; readonly awaitingCurrency: string; readonly guidance: string } = {
+  unset: "Choose a currency",
+  unchosen: "a currency you have not chosen yet",
+  awaitingCurrency: "Choose the currency first: the amount is written at the precision that currency states, so the amount's precision is not stated until one is chosen.",
+  guidance: "The source reports this subject in more than one currency, so the goal is stated in one of them. Choose it here: the amount then takes that currency's precision, and no currency is assumed in its place.",
+};
+/** What the goal form states when the read reports no currency it holds an exact minor-unit precision for. */
+export const GOAL_CURRENCY_UNSTATED: { readonly title: string; readonly body: string } = {
+  title: "No currency is stated for this goal",
+  body: "The source behind this subject reports no currency this application holds a minor-unit precision " + "for, so an amount here could not be written exactly. No currency is substituted in its place and no " + "exponent is assumed, so no goal can be set on this surface until the source states one.",
+};
 export const BUCKET_MEANING: Readonly<Record<RecurringBucket, string>> = {
   received: "The source holds a settled collection for this occurrence, so it is cash evidence of what " + "arrived and not a promise of what was committed.",
   processing: "The source reports the collection in flight. No cash is counted for it while it is in flight, " + "and its outcome is still open.",

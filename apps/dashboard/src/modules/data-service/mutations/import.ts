@@ -8,7 +8,7 @@ import { createDecisionSet, fingerprintOf, recordDecision, summariseDecisions } 
 import type { ImportDecisionInput, ImportDecisionRefusal, ImportDecisionSet, ImportDecisionSummary, ImportFileFingerprint, ImportRecordedCorrection, ImportRowDecision as RecordedRowDecision } from "@/modules/import/decide";
 import { IMPORT_FIELD_IDS, confirmMapping, suggestMapping, type ImportConfirmedMapping, type ImportFieldAssignment, type ImportFieldId, type ImportIgnoredColumn, type ImportMappingDecision } from "@/modules/import/map";
 import { checkLimits, parseCsv, IMPORT_MAX_DATA_ROWS, type ImportRefusal, type ParsedCsvFile } from "@/modules/import/parse";
-import { buildReceipt, cancelUnacceptedRows, readStoredReceipt, type ImportReceipt, type ImportRowApplication } from "@/modules/import/receipt";
+import { buildReceipt, cancelUnacceptedRows, canonicalJson, readStoredReceipt, type ImportReceipt, type ImportRowApplication } from "@/modules/import/receipt";
 import { validateRows, type ImportMatchCandidate, type ImportMatchReference, type ImportValidatedRow } from "@/modules/import/validate";
 import { now } from "@/modules/time/clock";
 import { canEdit, outcomeOfRefusal, resolveSession, type ResolvedSession, type ScopeDecision, type SessionSource } from "../authorize";
@@ -500,6 +500,14 @@ function carriedFingerprintRefusal(carried: string, current: ImportFileFingerpri
 function stateUnavailable(): ImportMutationRefusal {
   return { kind: "unavailable", reference: IMPORT_SOURCE_REFERENCE, guidance: STATE_UNAVAILABLE_GUIDANCE };
 }
+/**
+ * The content of one proposal in a canonical form, with its revision left out: a proposal that describes the same
+ * file under the same mapping and the same decisions has nothing to change but the number it would advance, so two
+ * proposals that differ only by their revision are the same proposal.
+ */
+function proposalContentOf(record: ImportProposalRecord): string {
+  return canonicalJson({ ...record, revision: null });
+}
 const NOT_CHANGED: { readonly changed: false } = { changed: false };
 
 const NO_TARGET: CurrentTarget = { kind: "absent" };
@@ -586,6 +594,11 @@ export async function proposeImport(input: MutationInput<ProposeImportPayload>, 
         processedAt: null,
       });
       const review: ImportReviewRecord = { importOperationId, scope: input.scope, fileName: payload.fileName, byteLength: admitted.file.byteLength, text, headers: [...file.headers], rowCount: file.dataRowCount, columnCount: file.columnCount, mapping, decisions, processedAt: null, cancelledAt: null, receipt: null };
+      // The same file, mapped the same way, with the same decisions recorded: the proposal and the review this attempt would write are the two records already stored, so the payload produces no change. No review is written and no revision advances, and the answer is `unchanged` under this attempt's own id, stating the revision the proposal is at because nothing moved it. `accepted` would instead advance the revision and report the earlier proposal's identity as what this attempt created, so the id the caller minted would name no proposal and its read-back would be refused as denied.
+      // The answer states the import this attempt found, which the runner records under the attempt's own id in the same transaction. That entry is what keeps the review it found reachable by the identity this caller minted: a caller that lost the review it was shown holds that identity and nothing else.
+      if (previous !== null && proposalContentOf(proposal) === proposalContentOf(previous.proposal) && canonicalJson(review) === canonicalJson(previous.review)) {
+        return { changed: false, revision: previous.proposal.revision, result: { importOperationId: previous.proposal.importOperationId } };
+      }
       const supersededId = open === null ? null : open.review.importOperationId;
       const dropped = (candidate: { readonly importOperationId: string }): boolean => candidate.importOperationId === importOperationId || candidate.importOperationId === supersededId;
       context.docs.state = stateAfter(state, { proposals: [...state.proposals.filter((entry) => !dropped(entry)), proposal], reviews: [...state.reviews.filter((entry) => !dropped(entry)), review] });

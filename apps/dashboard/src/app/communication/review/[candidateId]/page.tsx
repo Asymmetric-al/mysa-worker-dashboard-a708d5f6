@@ -24,10 +24,8 @@ const UNAVAILABLE_DESCRIPTION = "The records behind this candidate could not be 
 const UNRENDERABLE_TITLE = "The frozen revision cannot be shown";
 const UNRENDERABLE_DESCRIPTION = "This edition's frozen revision cannot be read as the content profile requires, so no reviewer can " + "be asked to approve it. Nothing has been approved, nothing has been released, and the revision " + "keeps its identity until the author submits one that can be shown.";
 const NO_CANDIDATES: readonly CandidateView[] = [];
-/** Whether the author asked for notices alongside the release, read from the mode the submission fixed: it is the store's answer, never a constant, so a submission that asked to notify is not reported as a publish-only one. */
-function notifyRequestedOf(data: ReviewableCandidate): boolean {
-  return data.review.notifyMode === "publish-and-notify";
-}
+/** The release mode that asks for notices, in the vocabulary the review record stores rather than the family's client spelling: this route states only what it read. */
+const NOTIFY_NOW_RELEASE_MODE = "publish-and-notify" satisfies ReviewableCandidate["review"]["notifyMode"];
 /** The empty identity a surface with no frozen candidate carries: no decision is offered, so none is named. */
 const NO_CANDIDATE_ID = "";
 // The envelope, mapped onto the panel's view of one candidate
@@ -43,6 +41,7 @@ function candidateViewOf(data: ReviewableCandidate): CandidateView {
     mediaRenditions: data.placements.flatMap((placement) => placement.renditions.map((rendition) => ({ purpose: rendition.purpose, url: rendition.path }))),
     lifecycle: lifecycleOf(data.variant, data.headRelease ?? undefined),
     decisionRecord: data.review.recorded,
+    reviewedByAuthor: data.review.reviewedByAuthor,
   };
 }
 /** Answers for a read member this file does not handle. */
@@ -63,12 +62,13 @@ function surfaceOf(envelope: CandidateEnvelope): ReactElement {
           expectedRevision={envelope.revision}
           // A frozen candidate exists because the author submitted it for review, so review is the path this edition is on: the panel offers its one decision rather than claiming none is required.
           policyRequiresReview
-          notifyRequestedByAuthor={notifyRequestedOf(data)}
+          // The mode that submission recorded, read from the candidate's own review record: the panel states the notice it asked for, and never a choice this route made up.
+          notifyRequestedByAuthor={data.review.notifyMode === NOTIFY_NOW_RELEASE_MODE}
           headingLevel={PAGE_HEADING_LEVEL}
         />
       );
     case "none":
-      // The edition is readable and holds no frozen candidate. The panel states exactly that, offers no decision, and no identity is named for one. With no submission there is no mode to state, so the panel is told the author asked for none rather than a mode invented here.
+      // The edition is readable and holds no frozen candidate. The panel states exactly that, offers no decision, and no identity is named for one. No submission exists, so no notice was asked for: the publish-only default is the whole of what this arm can truthfully state.
       return <UpdateReviewSurface candidates={NO_CANDIDATES} activeVariantId={data.variant.variantId} candidateId={NO_CANDIDATE_ID} scope={envelope.scope} expectedRevision={envelope.revision} policyRequiresReview={false} notifyRequestedByAuthor={false} headingLevel={PAGE_HEADING_LEVEL} />;
     case "invalid":
       // The revision exists and its body cannot be shown. Offering a decision on a body no reviewer can read would be an approval of something unseen, so the surface reports the condition instead.
