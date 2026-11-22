@@ -15,6 +15,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
 import { mediaStateReason, type MediaPreparationState } from "@/modules/media/asset";
+import { ADMITTED_IMAGE_FORMATS, ADMITTED_VIDEO_PROFILES, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH } from "@/modules/media/profile";
 // The two kinds, the descriptor and the transport shapes, declared structurally in the payload shapes the content family's schemas validate: no schema, scope or revision appears here, because only the feature knows those.
 export type MediaPickerKind = "image" | "video";
 export type MediaProbe = { readonly width?: number; readonly height?: number; readonly durationSeconds?: number };
@@ -38,11 +39,11 @@ export type MediaPickerProps = {
   readonly onSettled?: (outcome: MediaPickerOutcome) => void;
   readonly className?: string;
 };
-// Published limits, disclosed before the work begins: `@/modules/media/image` and `@/modules/media/video` enforce the real numbers on the bytes, and this display-only mirror departs from the ban on copies of dependency source so the ceiling is visible before a file is chosen.
+// Published limits, disclosed before the work begins, stated from the one declaration rather than mirrored here: the numbers and the admitted families come from the decoder-free media profile that the browser-side schema and the native pipelines read too, so the ceiling a person is shown is the ceiling the bytes are measured against, and no limit is stated twice.
 const MEBIBYTE = 1024 * 1024;
-const IMAGE_LIMITS = Object.freeze({ bytes: 10 * MEBIBYTE, edgePx: 8_000, formats: "JPEG, PNG or a still WebP image" });
-const VIDEO_LIMITS = Object.freeze({ bytes: 100 * MEBIBYTE, durationS: 180, width: 1_920, height: 1_080, formats: "MP4 with H.264 video and AAC audio, or WebM with VP8 or VP9 video and Vorbis or Opus audio" });
-const ACCEPT_HINT: Readonly<Record<MediaPickerKind, string>> = Object.freeze({ image: "image/jpeg,image/png,image/webp", video: "video/mp4,video/webm" });
+const IMAGE_LIMITS = Object.freeze({ bytes: IMAGE_MAX_BYTES, edgePx: IMAGE_MAX_EDGE_PX, formats: "JPEG, PNG or a still WebP image" });
+const VIDEO_LIMITS = Object.freeze({ bytes: VIDEO_MAX_BYTES, durationS: VIDEO_MAX_DURATION_S, width: VIDEO_MAX_WIDTH, height: VIDEO_MAX_HEIGHT, formats: "MP4 with H.264 video and AAC audio, or WebM with VP8 or VP9 video and Vorbis or Opus audio" });
+const ACCEPT_HINT: Readonly<Record<MediaPickerKind, string>> = Object.freeze({ image: ADMITTED_IMAGE_FORMATS.map((format) => `image/${format}`).join(","), video: ADMITTED_VIDEO_PROFILES.map((profile) => `video/${profile.container}`).join(",") });
 const VIDEO_PROBE_TIMEOUT_MS = 15_000;
 const COUNT_FORMAT = new Intl.NumberFormat("en-US");
 const FIELD_LABELS: Readonly<Record<string, string>> = Object.freeze({

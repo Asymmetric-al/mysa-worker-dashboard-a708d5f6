@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { mediaStateReason, type MediaAcceptanceSuccess, type MediaAssetScope } from "@/modules/media/asset";
-import { ADMITTED_IMAGE_FORMATS, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX } from "@/modules/media/image";
-import { ADMITTED_VIDEO_PROFILES, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH } from "@/modules/media/video";
+import type { MediaAcceptanceSuccess, MediaAssetScope } from "@/modules/media/asset";
+// The profile limits and the preparation words come from the pure profile module rather than from the
+// pipelines: this schema runs in the browser before a file is chosen, and the pipelines' decoders are
+// native modules the browser cannot load.
+import { ADMITTED_IMAGE_FORMATS, ADMITTED_VIDEO_PROFILES, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH, mediaStateReason } from "@/modules/media/profile";
 import { contentIdSchema, localeTagSchema } from "./draft";
 export const PLACEMENT_TEXT_MAX_CHARS = 4_000;
 const BYTES_PER_MEBIBYTE = 1024 * 1024;

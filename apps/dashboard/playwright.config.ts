@@ -5,7 +5,9 @@
  * This file also owns everything a spec needs before it reads — the seeded personas it can act as, the
  * reset that restores their world, and the accessibility audit criterion 20 runs — because the suite is
  * exactly the specs under `e2e/` and what they share is part of the runner rather than a twenty-first
- * spec, a global setup module or a committed session file.
+ * spec or a committed session file. The one thing that belongs before the suite rather than before each
+ * spec is `e2e/route-warmup.ts`, wired below as `globalSetup`: the development compiler has to have seen
+ * every route once before the first journey opens one, which no per-spec fixture can arrange.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -350,6 +352,12 @@ export { expect };
 export default defineConfig({
   testDir: "./e2e",
   outputDir: "test-results",
+  // The development server compiles a route on its first request, and answers it by reloading or
+  // re-rendering the document it just returned. A journey whose first navigation is also that route's
+  // first compile therefore races the compiler: the page reloads under it, its in-flight requests are
+  // aborted, and the assertion reads a document that no longer exists. Every route is asked for once
+  // here, before the first test, so the journeys start against a server that has built them all.
+  globalSetup: "./e2e/route-warmup.ts",
   // One stateful synthetic store carries the scenario, the clock offset and the armed failure plan, so
   // two specs beside each other would race on all three and the determinism the journeys claim would be
   // false. Serial execution is what makes the browser tests evidence.

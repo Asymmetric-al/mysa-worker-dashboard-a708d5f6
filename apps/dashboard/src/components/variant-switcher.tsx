@@ -125,15 +125,20 @@ export function VariantSwitcher({ family, variants, activeVariantId, onSelect, l
               <TabsTrigger
                 key={edition.variantId}
                 value={edition.variantId}
-                // The visible label is the audience chip, the endonym and the lifecycle word; the accessible name states the same three parts as one sentence, so a screen-reader user never confuses two editions of the same document.
-                aria-label={spokenNameOf(edition)}
+                // The accessible name is the one sentence naming all three parts, and the chips beside it are hidden from
+                // the accessibility tree. A name taken from the chips alone flattens to "PublicEnglishPublished" — no word
+                // breaks for a screen reader — while an `aria-label` beside them states a sentence the visible text does
+                // not contain, which is the Label in Name failure (WCAG 2.5.3) this arrangement avoids.
                 className="min-w-0 flex-none items-start whitespace-normal"
               >
-                <StatusBadge label={AUDIENCE_WORDS[edition.audience].label} tone={AUDIENCE_WORDS[edition.audience].tone} />
-                <bdi lang={edition.locale.tag} className="min-w-0 text-start wrap-anywhere">
-                  {languageEndonymOf(edition.locale.tag)}
-                </bdi>
-                <span className="min-w-0 text-start text-muted-foreground wrap-anywhere">{lifecycleWordOf(edition.lifecycle)}</span>
+                <span className="sr-only">{spokenNameOf(edition)}</span>
+                <span aria-hidden="true" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <StatusBadge label={AUDIENCE_WORDS[edition.audience].label} tone={AUDIENCE_WORDS[edition.audience].tone} />
+                  <bdi lang={edition.locale.tag} className="min-w-0 text-start wrap-anywhere">
+                    {languageEndonymOf(edition.locale.tag)}
+                  </bdi>
+                  <span className="min-w-0 text-start text-muted-foreground wrap-anywhere">{lifecycleWordOf(edition.lifecycle)}</span>
+                </span>
               </TabsTrigger>
             ))}
           </TabsList>

@@ -1,14 +1,10 @@
 import sharp, { type Metadata } from "sharp";
-/** Largest admitted image file in bytes: a file of exactly 10 MiB is admitted, and one byte more is refused before any decoder sees it. */
-export const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
-/** Largest admitted edge in pixels, measured after EXIF orientation is applied; exactly 8,000 is admitted. */
-export const IMAGE_MAX_EDGE_PX = 8000;
-/** Longest edge of the display rendition in pixels; an image already smaller than this is never enlarged. */
-export const IMAGE_DISPLAY_MAX_EDGE_PX = 2000;
-/** The still-image families this pipeline admits. */
-export const ADMITTED_IMAGE_FORMATS = ["jpeg", "png", "webp"] as const;
-export type AdmittedImageFormat = (typeof ADMITTED_IMAGE_FORMATS)[number];
-export type AdmittedImageMimeType = "image/png" | "image/jpeg" | "image/webp";
+import { ADMITTED_IMAGE_FORMATS, IMAGE_DISPLAY_MAX_EDGE_PX, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX, type AdmittedImageFormat, type AdmittedImageMimeType } from "./profile";
+
+// The image profile is declared once in `./profile`, which a browser surface may state; these re-exports
+// keep this module's own surface exactly as its consumers already use it.
+export { ADMITTED_IMAGE_FORMATS, IMAGE_DISPLAY_MAX_EDGE_PX, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX };
+export type { AdmittedImageFormat, AdmittedImageMimeType };
 const MIME_TYPES: Record<AdmittedImageFormat, AdmittedImageMimeType> = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
 const DECODE_PIXEL_LIMIT = IMAGE_MAX_EDGE_PX * IMAGE_MAX_EDGE_PX;
 const JPEG_QUALITY = 82;

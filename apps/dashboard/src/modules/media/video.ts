@@ -1,24 +1,14 @@
 /** Video admission and preparation for the media module. */
 import { ALL_FORMATS, BufferSource, BufferTarget, Conversion, Input, Mp4InputFormat, Mp4OutputFormat, Output, UnsupportedInputFormatError, WebMInputFormat, WebMOutputFormat, type DiscardedTrack, type InputFormat, type MetadataTags, type Rotation } from "mediabunny";
-/** Largest accepted upload in bytes; a file of exactly this size is accepted. */
-export const VIDEO_MAX_BYTES = 100 * 1024 * 1024;
-/** Longest accepted duration in seconds, taken from the container; exactly this duration is accepted. */
-export const VIDEO_MAX_DURATION_S = 180;
-/** Widest accepted display width in pixels, measured after rotation. */
-export const VIDEO_MAX_WIDTH = 1920;
-/** Tallest accepted display height in pixels, measured after rotation. */
-export const VIDEO_MAX_HEIGHT = 1080;
-/** The admitted container-to-codec pairs; a file outside these pairs is refused. */
-export const ADMITTED_VIDEO_PROFILES = [
-  { container: "mp4", video: ["avc"], audio: ["aac"] },
-  { container: "webm", video: ["vp8", "vp9"], audio: ["vorbis", "opus"] },
-] as const;
+import { ADMITTED_VIDEO_PROFILES, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH, type AdmittedAudioCodec, type AdmittedContainer, type AdmittedVideoCodec, type AdmittedVideoProfile } from "./profile";
+
+// The video profile is declared once in `./profile`, which a browser surface may state; these re-exports
+// keep this module's own surface exactly as its consumers already use it.
+export { ADMITTED_VIDEO_PROFILES, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH };
+export type { AdmittedAudioCodec, AdmittedContainer, AdmittedVideoCodec, AdmittedVideoProfile };
+
 const [MP4_PROFILE, WEBM_PROFILE] = ADMITTED_VIDEO_PROFILES;
 const ADMITTED_BY_CONTAINER = { mp4: MP4_PROFILE, webm: WEBM_PROFILE } as const;
-export type AdmittedVideoProfile = (typeof ADMITTED_VIDEO_PROFILES)[number];
-export type AdmittedContainer = AdmittedVideoProfile["container"];
-export type AdmittedVideoCodec = AdmittedVideoProfile["video"][number];
-export type AdmittedAudioCodec = AdmittedVideoProfile["audio"][number];
 export type VideoRefusalCode = "not-a-video" | "unsupported-container" | "unsupported-video-codec" | "unsupported-audio-codec" | "too-large-bytes" | "too-long-duration" | "too-large-dimensions" | "no-video-track" | "undecodable" | "tags-residual" | "remux-unsupported";
 export type VideoRefusal = { readonly ok: false; readonly code: VideoRefusalCode; readonly message: string; readonly action?: string };
 export type VideoProfileCheck = { readonly container: AdmittedContainer; readonly codec: AdmittedVideoCodec; readonly durationS: number; readonly width: number; readonly height: number };

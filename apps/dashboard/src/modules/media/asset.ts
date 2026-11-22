@@ -2,9 +2,12 @@
 import { fileTypeFromBuffer, type FileTypeResult } from "file-type";
 import { prepareDisplayImage, type AdmittedImageFormat, type ImagePreparationRefusal } from "./image";
 import { inspectVideo, preparePlaybackRendition, type AdmittedContainer, type AdmittedVideoCodec, type VideoProfileCheck, type VideoRefusal } from "./video";
-/** The six states one media placement can be in, and the only ones. */
-export type MediaPreparationState = "selected" | "preparing" | "ready" | "rejected" | "cancelled" | "unavailable";
-export const MEDIA_PREPARATION_STATES: readonly MediaPreparationState[] = ["selected", "preparing", "ready", "rejected", "cancelled", "unavailable"];
+import { MEDIA_PREPARATION_STATES, mediaStateReason, type MediaPreparationState, type MediaStateReason } from "./profile";
+
+// The preparation vocabulary and the words each state carries are declared once in `./profile`, which a
+// browser surface may state; these re-exports keep this module's own surface exactly as it already was.
+export { MEDIA_PREPARATION_STATES, mediaStateReason };
+export type { MediaPreparationState, MediaStateReason };
 export const RENDITION_PURPOSES = ["display", "playback", "poster", "captions", "transcript"] as const;
 export type MediaRenditionPurpose = (typeof RENDITION_PURPOSES)[number];
 export type MediaAncillaryRenditionPurpose = "poster" | "captions" | "transcript";
@@ -154,30 +157,6 @@ function prepareTextRendition(input: PrepareRenditionInput, purpose: MediaAncill
     if (!hasCuePayload(lines)) return refuse(code, "The caption track carries no cue with text, so it was not accepted.", "Add at least one cue with its text to the caption track and choose the file again.");
   }
   return { state: "ready", assetId: input.assetId, rendition: { assetId: input.assetId, renditionId: renditionIdFor(input.assetId, purpose, input.variant), purpose, mimeType: isWebVtt ? WEBVTT_MIME_TYPE : PLAIN_TEXT_MIME_TYPE, bytes: encodeUtf8(text) } };
-}
-export type MediaStateReason = { readonly label: string; readonly action?: string };
-const REJECTED_WITHOUT_REFUSAL: MediaStateReason = { label: "This file was not accepted.", action: "Choose a different file." };
-const CANCELLED_REASON: MediaStateReason = { label: "The upload was cancelled; nothing was added and the rest of the draft is unchanged.", action: "Choose the file again when you are ready." };
-const UNAVAILABLE_REASON: MediaStateReason = { label: "This media file is unavailable, so it cannot be shown or played right now.", action: "Try again, or replace the placement with another file." };
-export function mediaStateReason(state: MediaPreparationState, refusal?: MediaRefusal): MediaStateReason {
-  switch (state) {
-    case "selected":
-      return { label: "Selected; this file has not been checked yet." };
-    case "preparing":
-      return { label: "Checking this file with the local media pipeline." };
-    case "ready":
-      return { label: "Ready." };
-    case "rejected": {
-      if (refusal === undefined) return REJECTED_WITHOUT_REFUSAL;
-      return refusal.action === undefined ? { label: refusal.message } : { label: refusal.message, action: refusal.action };
-    }
-    case "cancelled":
-      return CANCELLED_REASON;
-    case "unavailable":
-      return UNAVAILABLE_REASON;
-  }
-  // A caller outside the type system can pass a state this module does not know: nothing is known about such a placement, and the honest answer is the unavailable reason rather than an invented one.
-  return UNAVAILABLE_REASON;
 }
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 const UTF8_ENCODER = new TextEncoder();
