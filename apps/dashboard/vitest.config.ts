@@ -13,7 +13,10 @@ export default defineConfig({
     // the file and its directory to reach the disk, so a single test can legitimately spend seconds inside it
     // while the machine is busy. The runner's 5 s default therefore expired on a test whose work had not failed.
     testTimeout: 30_000,
-    hookTimeout: 30_000,
+    // The hooks that reset the whole store lay every seeded session and every media byte down again, so they do
+    // that same fsync-heavy work and must not expire only because the machine is busy. The runner's 10 s default
+    // is far below what one of those resets can cost while the machine is loaded.
+    hookTimeout: 120_000,
     include: ["tests/domain/**/*.test.ts", "tests/integration/**/*.test.ts"],
     // `e2e/` is excluded because Playwright owns it; the other two are build and dependency output.
     exclude: ["e2e/**", "node_modules/**", ".next/**"],
