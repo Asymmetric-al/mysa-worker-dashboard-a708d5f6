@@ -81,7 +81,7 @@ export interface SeededPersona {
  * runner puts that session id in the cookie, and the application resolves the rest.
  */
 export const SEEDED_PERSONAS: Readonly<Record<PersonaName, SeededPersona>> = {
-  "new-worker": { sessionId: "new-worker", resetSessionId: "new-worker", label: "New worker", kind: "worker", description: "A worker with no gifts, goal, subscription or integration, starting from a private contact and a task." },
+  "new-worker": { sessionId: "new-worker", resetSessionId: "new-worker", label: "New worker", kind: "worker", description: "A worker with no gifts, goal, subscription or integration, starting from a private contact, a task and an Update whose first draft is unwritten." },
   "established-worker": { sessionId: "established-worker", resetSessionId: "established-worker", label: "Established worker", kind: "worker", description: "A worker with years of support, recurring gifts, partners, drafts and pages, across two ministries." },
   "second-worker": { sessionId: "second-worker", resetSessionId: "second-worker", label: "Second worker", kind: "worker", description: "A worker in another organization, whose scope shares nothing with the first." },
   fundraiser: { sessionId: "deputized-fundraiser", resetSessionId: "deputized-fundraiser", label: "Deputized fundraiser", kind: "worker", description: "Someone deputized to act inside one admitted ministry, and nowhere else." },

@@ -139,7 +139,7 @@ function buildSession(sessionId: string, persona: PersonaId, label: string, desc
 }
 /** Every seeded session, in the order the development panel lists them. */
 export const SEEDED_SESSIONS: readonly SeededSession[] = deepFreeze([
-  buildSession("new-worker", "new-worker", "New worker", "No gifts, goal, subscription or integration: one private contact and one task to start from.", PRINCIPAL_NEW_WORKER, [HARBOUR_YOUTH], { selectedContext: HARBOUR_YOUTH, workspace: "new-worker" }),
+  buildSession("new-worker", "new-worker", "New worker", "No gifts, goal, subscription or integration: one private contact, one task and one Update waiting for its first draft.", PRINCIPAL_NEW_WORKER, [HARBOUR_YOUTH], { selectedContext: HARBOUR_YOUTH, workspace: "new-worker" }),
   buildSession("established-worker", "established-worker", "Established worker", "Years of gifts, recurring support, partners, drafts and pages, across two ministries.", PRINCIPAL_ESTABLISHED, HARBOUR_BOTH, { selectedContext: HARBOUR_YOUTH, workspace: "established-worker" }),
   // The second ministry selected: the support source is available and holds no goal, which is the
   // "no goal" state a surface must render differently from "no percentage" and from an unavailable source.
@@ -429,7 +429,13 @@ function stateDocument(session: SeededSession, families: WorkspaceFamilies): Ses
 function newWorkerWorkspace(session: SeededSession): SessionStateDocument {
   const partners: readonly PartnerRecord[] = [buildPartner("partner-nw-ada-quinn", "private-preparation", "Ada Quinn (met on Sunday)", { audience: "private", contactMethods: [contactMethod("email", "ada.quinn@example.org")], tags: ["first-contact"] })];
   const tasks: readonly TaskRecord[] = [buildTask("task-nw-first-follow-up", "Send Ada a first note", session.principalId, { category: "Care", dueOn: "2026-11-24", partnerId: "partner-nw-ada-quinn", note: "Ask how she heard about the ministry before adding her to anything." })];
-  return stateDocument(session, { partners, tasks });
+  // A canonical Update exists, because this build creates one outside the application's own surfaces: without a
+  // document there is no edition to write, and a worker's first useful session could not save the first draft.
+  const contentDocuments: readonly ContentDocumentRecord[] = [{ documentId: "doc-update-first-note", family: "update", kind: "update", sourceSubject: source("content", "update-first-note"), siteId: "site-harbour", givingBinding: null, managedFields: ["title"], revision: INITIAL_REVISION }];
+  // Its one public English edition carries no draft, no candidate and no release, so the state a first session
+  // reaches is the worker writing and saving that draft: nothing here is published, reviewed or announced.
+  const contentVariants: readonly ContentVariantRecord[] = [buildContentVariant("variant-update-first-note-public-en", "doc-update-first-note", "public", "en", "ltr")];
+  return stateDocument(session, { partners, tasks, contentDocuments, contentVariants });
 }
 function secondWorkerWorkspace(session: SeededSession): SessionStateDocument {
   const partners: readonly PartnerRecord[] = [
