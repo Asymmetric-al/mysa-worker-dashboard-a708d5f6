@@ -425,22 +425,21 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
     setTouched(false);
     // The draft is emptied, so re-opening an intent is a deliberate new attempt rather than a silent repeat of the last one.
     setDraft((current) => ({ ...EMPTY_DRAFT, direction: current.direction }));
+    // The selection is released when the worker leaves this attempt, never the moment a change is accepted:
+    // the host renders this bar only while rows are selected, so releasing them on acceptance unmounts the
+    // receipt that is the only record of what the action did to each row. Dismissing the result, cancelling
+    // and closing the panel are the three ways to leave, and each of them releases these rows.
+    onClearSelection();
   };
   const dismissResult = (): void => {
     setSettledOutcome(null);
     closePanel();
   };
   const handleSettled = (outcome: MutationOutcome): void => {
+    // The receipt outlives the selection it describes: a row the action changed keeps its row in the result
+    // until the worker dismisses it, and a row left as it was or excluded stays selected so it can be acted
+    // on again. `closePanel` releases the selection once the record has been read.
     setSettledOutcome(outcome);
-    const applied = outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted";
-    const items = itemsOf(outcome);
-    const anyRetained = items.some((item) => rowKeepsSelection(item.state));
-    // A change every row accepted releases the selection, which the host performs; a row left as it was — or one this
-    // intent could not act on in the first place — keeps the selection so the worker can act on it again. An answer
-    // that reported no row at all releases nothing, because there is no per-row result to justify it.
-    if (applied && items.length > 0 && !anyRetained && excludedCount === 0) {
-      onClearSelection();
-    }
   };
   const perRowNotes = (
     <>

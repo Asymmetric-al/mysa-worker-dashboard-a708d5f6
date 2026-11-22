@@ -30,6 +30,8 @@ import type { MutationOutcome } from "@/modules/data-service/outcome";
 // Type-only, like every data-service import in a browser component: the series view and the read's own
 // parameter are taken from the service without loading the modules that produce them.
 import type { reads } from "@/modules/data-service";
+import { parseCivilDate, type CivilDate } from "@/modules/time/civil";
+import type { DisclosedMonthDayResolution } from "@/modules/time/recurrence";
 import { MISSED_PLAN_RESOLUTION_LABELS, MISSED_PLAN_RESOLUTION_ORDER, ONE_SUCCESSOR_NOTE, PAUSED_NOTE, PLAN_NEEDS_REVIEW_EXPLANATION, PLAN_NEEDS_REVIEW_HEADING, SERIES_STATE_LABELS, SKIPPED_MEANS_NOT_PERFORMED_NOTE, STOPPED_NOTE } from "../copy/missed-dates";
 import {
   DAY_OF_MONTH_LABEL,
@@ -54,6 +56,9 @@ import { useSeriesMutations } from "../hooks/use-series-mutations";
 import { useTaskMutations } from "../hooks/use-task-mutations";
 // The one plan-review surface, mounted by this body: its resolutions are applied to the single date the read names.
 import PlanNeedsReviewPanel, { type PlanNeedsReviewFacts } from "./plan-needs-review-panel";
+// The one next-dates preview, mounted by this body: it states the next three dates the rule produces and the
+// month-day resolution each one needed, from the facts the read already computed rather than from a second walk.
+import SeriesPreview, { type SeriesPreviewReading } from "./series-preview";
 
 // ---------------------------------------------------------------------------------------------
 // Contracts, derived from the read rather than restated
@@ -97,6 +102,8 @@ const STOP_LABEL = "Stop";
 const CANCEL_LABEL = "Cancel";
 const OCCURRENCE_GROUP_LEGEND = "This date";
 const SERIES_GROUP_LEGEND = "The series";
+const PREVIEW_GROUP_LEGEND = "The rule and its next dates";
+const PREVIEW_GROUP_NOTE = "These dates are what this plan's rule produces next, judged in the plan's own planning timezone rather than in the one this browser displays. Only the date marked actionable can be answered on this page: the others are previews, and nothing happens on them until they become the next date. Where the rule asked for a day a month does not have, the date shown is that month's final day and the resolution is stated beside it.";
 const OCCURRENCE_ABSENT_HEADING = "No date on this series is waiting for an answer";
 const OCCURRENCE_ABSENT_BODY = "Only one date is actionable at a time, and this series has none right now. A preview date is not a date to complete or skip, so nothing is offered here for it.";
 const COMPOSER_ACTION_LABEL = "Add this work as a one-off task";
@@ -186,9 +193,9 @@ function fieldErrorOf(errors: FieldErrorLookup | null, path: string): readonly s
   return errors.byField[path];
 }
 
-/** The aria wiring every control under a `FormField` carries, so its description, invalid state and required state are never dropped. */
-function controlAria(field: FormFieldControl): { readonly "aria-describedby": string | undefined; readonly "aria-invalid": true | undefined; readonly "aria-required": true | undefined } {
-  return { "aria-describedby": field.describedBy, "aria-invalid": field.invalid ? true : undefined, "aria-required": field.required ? true : undefined };
+/** The aria wiring every control under a `FormField` carries, so its label, its description, its invalid state and its required state are never dropped. The label is associated through `id`, which is what makes the field readable by its own name. */
+function controlAria(field: FormFieldControl): { readonly id: string; readonly "aria-describedby": string | undefined; readonly "aria-invalid": true | undefined; readonly "aria-required": true | undefined } {
+  return { id: field.id, "aria-describedby": field.describedBy, "aria-invalid": field.invalid ? true : undefined, "aria-required": field.required ? true : undefined };
 }
 
 /** A calendar date as stored, displayed from the value the envelope supplied rather than recomputed. */
@@ -209,6 +216,37 @@ function plannedTimeFieldValue(occurrence: SeriesOccurrence): string {
   if (PLANNED_INPUT_PATTERN.test(stored)) return stored;
   if (!CLOCK_PATTERN.test(stored) || occurrence.dueOn === null) return "";
   return `${occurrence.dueOn}T${stored}`;
+}
+
+/**
+ * The preview this body shows, built from the facts the read already decided: the dates the rule produces next,
+ * the one date the series admits an answer for, and any month-day resolution the rule's own walk disclosed.
+ *
+ * `null` when there is nothing to state as a running plan — a paused or stopped series, a rule whose end it has
+ * reached, or a stored date this runtime's calendar cannot read. Nothing is invented in that case: the state
+ * section below states the plan's condition in its own words rather than showing a date no rule produced.
+ */
+function previewReadingOf(series: SeriesView): SeriesPreviewReading | null {
+  if (series.preview.status !== "preview") return null;
+  const current = series.currentOccurrence;
+  const actionableId = series.actionableOccurrenceId;
+  // The actionable date is the one the read names, and a preview renders a date as answerable only when it is that one: a preview date carries no identifier here, so it can never be shown as the date to answer.
+  if (actionableId === null || current === null || current.taskId !== actionableId || current.dueOn === null) return null;
+  const actionableDueOn = parseCivilDate(current.dueOn);
+  if (actionableDueOn.status !== "parsed") return null;
+  const dates: CivilDate[] = [];
+  for (const stored of series.preview.dates) {
+    const parsed = parseCivilDate(stored);
+    if (parsed.status !== "parsed") return null;
+    dates.push(parsed.date);
+  }
+  const monthDayResolutions: DisclosedMonthDayResolution[] = [];
+  for (const resolution of series.preview.monthDayResolutions) {
+    const parsed = parseCivilDate(resolution.dueOn);
+    if (parsed.status !== "parsed") return null;
+    monthDayResolutions.push({ dueOn: parsed.date, requestedDay: resolution.requestedDay, resolvedDay: resolution.resolvedDay });
+  }
+  return { status: "preview", dates, actionableOccurrenceId: actionableId, actionableDueOn: actionableDueOn.date, monthDayResolutions };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -913,6 +951,12 @@ export function SeriesStateControls({ scope, seriesId, revision, state, actions,
 export interface OccurrenceActionsProps {
   /** One series read's envelope: the scope, revision and actions the service published with the series. */
   readonly envelope: SeriesReadEnvelope;
+  /**
+   * The interface locale this browser chose, supplied by the route's locale boundary because a feature may not
+   * reach another feature's provider, and this body's route is where the viewer's preferences are read. It formats
+   * the preview's dates only: it never decides which date a rule produces, and it is never the plan's own zone.
+   */
+  readonly displayLocale: string;
   /** The explicit boundary a prospective revision takes effect from. Defaults to the read's own planning-zone today, never a date computed here. */
   readonly effectiveFrom?: string | null;
   readonly onCheckResult?: (() => void) | undefined;
@@ -921,13 +965,16 @@ export interface OccurrenceActionsProps {
   readonly className?: string;
 }
 
-/** The series detail body: the shared record body, the occurrence group and the series-state group, in that order. */
-export default function OccurrenceActions({ envelope, effectiveFrom = null, onCheckResult, onOpenComposer, className }: OccurrenceActionsProps): ReactElement {
+/** The series detail body: the shared record body, the plan's own preview, the plan review, the occurrence group and the series-state group, in that order. */
+export default function OccurrenceActions({ envelope, displayLocale, effectiveFrom = null, onCheckResult, onOpenComposer, className }: OccurrenceActionsProps): ReactElement {
   const series = envelope.data;
   const boundary = effectiveFrom ?? series.today;
   const planReview = series.planReview;
   const needsReview = planReview.state === "needs-review";
   const missedId = useId();
+  const previewHeadingId = useId();
+  // The dates the rule produces next, from the read's own walk. A plan that admits no date previews nothing, so the section is absent rather than empty.
+  const previewReading = previewReadingOf(series);
   // The next date the read reports its rule produces, in the stored form the read used: this body names the date the
   // review's "Move the next date forward" refers to without computing or formatting one of its own.
   const nextNominalDate = series.preview.status === "preview" ? series.preview.dates.at(0) : undefined;
@@ -948,6 +995,17 @@ export default function OccurrenceActions({ envelope, effectiveFrom = null, onCh
       sections={{
         openTasks: (
           <div className="flex min-w-0 flex-col gap-4">
+            {previewReading === null ? null : (
+              // The plan's own rule and the dates it produces next, stated before any action is offered: a preview
+              // date is not a date to answer, and the read has already decided which one is.
+              <section aria-labelledby={previewHeadingId} data-slot="series-plan-preview" className="flex min-w-0 flex-col gap-2">
+                <h3 id={previewHeadingId} className="font-heading text-base font-medium">
+                  {PREVIEW_GROUP_LEGEND}
+                </h3>
+                <SeriesPreview state={series.state} profile={series.rule.profile} planningTimeZone={series.rule.planningTimeZone} reading={previewReading} displayLocale={displayLocale} />
+                <p className="text-sm text-pretty text-muted-foreground">{PREVIEW_GROUP_NOTE}</p>
+              </section>
+            )}
             {needsReview && series.actionableOccurrenceId !== null ? (
               // The plan's own review is the one surface that applies a resolution, and it applies it to the single date
               // the read names as awaiting an answer — so it is mounted here, where that date and this body's authority

@@ -26,6 +26,14 @@
  * the service did not acknowledge is never a silent loss. It is also the only thing that debounces a draft save: an
  * editor surface reports every change through `notifyChange` and lets this hook decide when a save is due, because two
  * timers would make one pause produce two attempts under two identities.
+ *
+ * What every attempt states, and why it is stated here rather than by the caller: a draft save replaces the draft's
+ * media placements with the list it carries, so an attempt that carried prose alone would erase every image and video
+ * the worker had placed. The hook therefore states the list it was rendered with on every attempt, and a placement the
+ * surface has just added is passed to `notifyChange`, which is also how that surface learns the outcome of the attempt
+ * that placed it. A write this hook did not make — a placement it removed itself — is recorded through
+ * `adoptConfirmedRevision`, so the next attempt compares against the revision the service now holds instead of a
+ * superseded one.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { scopeKey } from "@/components/context-switch-guard";
@@ -33,6 +41,7 @@ import { assertNever } from "@/lib/result";
 import type { ContentDocumentJson as ContentDocument } from "@/modules/content/document";
 import type { Scope } from "@/modules/data-service";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
+import type { SaveDraftPayload } from "../schemas/draft";
 import { useSaveDraft } from "./use-update-mutations";
 
 // ---------------------------------------------------------------------------------------------
@@ -208,6 +217,13 @@ function sameBody(left: ContentDocument, right: ContentDocument): boolean {
 /** A record revision as a write states it and as the service confirms it: the edition record's revision, never a number derived here. */
 export type Revision = string;
 
+/**
+ * One media placement as a save states it: the registered asset and the rendition this draft places it for. It is taken
+ * from the payload the write validates, so a change to that schema reaches every caller of this option as a compile
+ * error rather than as a save the service silently reads differently.
+ */
+export type DraftPlacementRef = NonNullable<SaveDraftPayload["mediaPlacements"]>[number];
+
 /** What this hook needs from the editor that owns the prose. */
 export type DraftRecoveryOptions = {
   readonly scope: Scope;
@@ -216,6 +232,14 @@ export type DraftRecoveryOptions = {
   readonly initialRevision: Revision;
   /** The text the editor started from: acknowledged by the read, so it is never mirrored and never sent until the worker changes it. */
   readonly initialBody?: ContentDocument;
+  /**
+   * The placements this draft holds, as its last read reported them.
+   *
+   * A save replaces what the draft holds with the list it states, so an attempt that stated prose alone would erase
+   * every image and video the worker had placed. Every attempt therefore carries the current list, and a placement the
+   * worker has just added is passed to `notifyChange` because the read that would report it has not answered yet.
+   */
+  readonly placements?: readonly DraftPlacementRef[];
   readonly debounceMs?: number;
 };
 
@@ -229,7 +253,20 @@ export interface DraftRecovery {
   readonly keptBody: ContentDocument | null;
   /** Text this browser still holds from an attempt this editor is not showing — what a surface offers after a reload, labelled as existing only in this browser. Adopting it is that surface's own action, and it begins a normal change. */
   readonly localRecovery: { readonly present: boolean; readonly body: ContentDocument | null };
-  notifyChange: (body: ContentDocument) => void;
+  /**
+   * Reports one change: it is held, mirrored, shown as unsaved, and scheduled for the next pause.
+   *
+   * Answers with the one outcome the attempt carrying this text settles on, so the surface that reported the change
+   * states the service's own answer instead of guessing one. A refusal resolves with that refusal and changes nothing
+   * further, so the text stays exactly as typed and the worker decides what happens next.
+   */
+  notifyChange: (body: ContentDocument, placements?: readonly DraftPlacementRef[]) => Promise<MutationOutcome>;
+  /**
+   * Records a revision a write outside this hook confirmed, such as a placement this surface removed itself, so the
+   * next attempt compares against the record as it now stands rather than against a revision already superseded. It is
+   * ignored while an attempt is in flight, because that attempt's own answer decides the chain.
+   */
+  adoptConfirmedRevision: (revision: Revision) => void;
   /** Resubmits the text that was kept: against the revision the service said the record now stands at when the answer was a conflict, and otherwise under the attempt's own identity so a replay returns its stored result. */
   retrySameWork: () => void;
   /** Removes this browser's copy of unacknowledged text. It touches no record and never removes the text on screen. */
@@ -276,7 +313,7 @@ function settlementOf(outcome: MutationOutcome): Settlement {
 // ---------------------------------------------------------------------------------------------
 
 /** The latest options this hook was rendered with, read by the timer and the settled answer rather than captured when they were created. */
-type SaveContext = RecoveryContext & { readonly scope: Scope; readonly initialRevision: Revision; readonly debounceMs: number };
+type SaveContext = RecoveryContext & { readonly scope: Scope; readonly initialRevision: Revision; readonly placements: readonly DraftPlacementRef[] | undefined; readonly debounceMs: number };
 
 /** Everything this hook reports, held as one value so a status, its answer, the kept text and the browser copy always change together. */
 type Snapshot = {
@@ -292,10 +329,10 @@ type Snapshot = {
  * the worker's text whenever the service did not acknowledge it — surfacing `accepted`, `alreadyAccepted`, `unchanged`,
  * `conflict`, `invalid`, `unavailable`, `denied` or `unknown` exactly as the service stated it.
  */
-export function useDraftRecovery({ scope, variantId, initialRevision, initialBody, debounceMs = DEFAULT_DEBOUNCE_MS }: DraftRecoveryOptions): DraftRecovery {
+export function useDraftRecovery({ scope, variantId, initialRevision, initialBody, placements, debounceMs = DEFAULT_DEBOUNCE_MS }: DraftRecoveryOptions): DraftRecovery {
   const { submit: submitDraft } = useSaveDraft();
   const scopeKeyText = JSON.stringify(scopeKey(scope));
-  const context: SaveContext = { scope, variantId, scopeKeyText, initialRevision, debounceMs };
+  const context: SaveContext = { scope, variantId, scopeKeyText, initialRevision, placements, debounceMs };
   const contextRef = useRef<SaveContext>(context);
   const initialBodyRef = useRef<ContentDocument | undefined>(initialBody);
   const acknowledgedRef = useRef<Revision>(initialRevision);
@@ -304,12 +341,24 @@ export function useDraftRecovery({ scope, variantId, initialRevision, initialBod
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlightRef = useRef(false);
   const mountedRef = useRef(true);
+  // The placements one caller-reported change must state, so a placement the worker has just added travels with the save
+  // that reports it rather than waiting for a read that has not answered yet. Consumed by the attempt that follows it.
+  const placementsOverrideRef = useRef<readonly DraftPlacementRef[] | null>(null);
+  // The surfaces waiting on the attempt that carries their change, resolved with the one outcome the service stated.
+  const waitersRef = useRef<Array<(outcome: MutationOutcome) => void>>([]);
   const [snapshot, setSnapshot] = useState<Snapshot>({ state: "idle", outcome: null, acknowledgedRevision: initialRevision, heldBody: null, mirrorBody: null });
 
   /** Applies one change to the reported value, and does nothing once the editor has gone: a late answer never repaints an unmounted surface. */
   const patch = useCallback((changes: Partial<Snapshot>): void => {
     if (!mountedRef.current) return;
     setSnapshot((previous) => ({ ...previous, ...changes }));
+  }, []);
+
+  /** Hands the settled answer to every surface waiting on it, once: a resumed attempt notifies the callers of the change it actually carries. */
+  const settleWaiters = useCallback((outcome: MutationOutcome): void => {
+    const waiters = waitersRef.current;
+    waitersRef.current = [];
+    for (const resolve of waiters) resolve(outcome);
   }, []);
 
   /** The revision the next attempt compares against: the last one the service confirmed. */
@@ -324,9 +373,9 @@ export function useDraftRecovery({ scope, variantId, initialRevision, initialBod
   }, []);
 
   useEffect(() => {
-    contextRef.current = { scope, variantId, scopeKeyText, initialRevision, debounceMs };
+    contextRef.current = { scope, variantId, scopeKeyText, initialRevision, placements, debounceMs };
     initialBodyRef.current = initialBody;
-  }, [scope, variantId, scopeKeyText, initialRevision, debounceMs, initialBody]);
+  }, [scope, variantId, scopeKeyText, initialRevision, placements, debounceMs, initialBody]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -359,14 +408,25 @@ export function useDraftRecovery({ scope, variantId, initialRevision, initialBod
       let expectedRevision = reference ?? referenceRevision();
       for (;;) {
         const held = heldRef.current;
-        if (held === null || inFlightRef.current || !belongsHere(held, contextRef.current)) return;
+        // Nothing left to send: an edition this editor has left is answered by whatever carries its text next, and a body
+        // this hook already sent is answered by the answer that cleared it, so no surface waits on a settled attempt.
+        if (held === null || !belongsHere(held, contextRef.current)) {
+          if (lastSettledRef.current !== null) settleWaiters(lastSettledRef.current);
+          return;
+        }
+        // A second attempt never starts while one is in flight: that attempt settles the callers who arrived meanwhile.
+        if (inFlightRef.current) return;
         const { body } = held;
+        // The placements one caller reported travel with the attempt that reports them. Every other attempt states the list
+        // the surface rendered from, so a save never erases an image or a video the worker placed.
+        const statedPlacements = placementsOverrideRef.current ?? contextRef.current.placements;
+        placementsOverrideRef.current = null;
         inFlightRef.current = true;
         patch({ state: "saving", outcome: null, heldBody: body, mirrorBody: null });
         // The reviewed step answers every attempt with one of the eight outcomes and never rejects, so this loop has no
         // catch: a rejection here would be a defect in that step rather than a result to present. The reset below runs
         // either way, so a fault can never leave the editor unable to save again.
-        const outcome = await submitDraft({ scope: contextRef.current.scope, expectedRevision, payload: { variantId: held.variantId, body } }).finally(() => {
+        const outcome = await submitDraft({ scope: contextRef.current.scope, expectedRevision, payload: { variantId: held.variantId, body, ...(statedPlacements === undefined ? {} : { mediaPlacements: [...statedPlacements] }) } }).finally(() => {
           inFlightRef.current = false;
         });
         lastSettledRef.current = outcome;
@@ -380,6 +440,7 @@ export function useDraftRecovery({ scope, variantId, initialRevision, initialBod
           heldRef.current = null;
           removeMirrorEntry();
           patch({ state: "saved", outcome, acknowledgedRevision: acknowledgedRef.current, heldBody: null, mirrorBody: null });
+          settleWaiters(outcome);
           return;
         }
         if (settlement.state === "saved") {
@@ -391,16 +452,23 @@ export function useDraftRecovery({ scope, variantId, initialRevision, initialBod
         // A refusal, an outage, a conflict or an uncertain answer keeps the text exactly as typed and stops here: what
         // happens next is the worker's decision, which is why nothing below offers to re-send on its own.
         patch({ state: settlement.state, outcome, acknowledgedRevision: acknowledgedRef.current, heldBody: newest === null ? null : newest.body, mirrorBody: null });
+        settleWaiters(outcome);
         return;
       }
     },
-    [clearTimer, patch, referenceRevision, submitDraft],
+    [clearTimer, patch, referenceRevision, settleWaiters, submitDraft],
   );
 
-  /** Reports one change: it is held, mirrored, shown as unsaved, and scheduled for the next pause. */
+  /**
+   * Reports one change: it is held, mirrored, shown as unsaved, and scheduled for the next pause.
+   *
+   * `placements` states the media this change asks the draft to hold, for a caller that has just placed or removed
+   * something the read has not reported yet; omitted, the attempt states the list this hook was rendered with.
+   */
   const notifyChange = useCallback(
-    (body: ContentDocument): void => {
+    (body: ContentDocument, placedAs?: readonly DraftPlacementRef[]): Promise<MutationOutcome> => {
       const { scopeKeyText: currentScopeKey, variantId: currentVariantId, debounceMs: currentDebounceMs } = contextRef.current;
+      if (placedAs !== undefined) placementsOverrideRef.current = placedAs;
       heldRef.current = { body, scopeKeyText: currentScopeKey, variantId: currentVariantId };
       writeMirrorEntry({ version: MIRROR_VERSION, scopeKey: currentScopeKey, variantId: currentVariantId, body, expectedRevision: referenceRevision() });
       // The last answer described the text it answered, so it stops describing what is now on screen. The conflict
@@ -409,12 +477,26 @@ export function useDraftRecovery({ scope, variantId, initialRevision, initialBod
       // until a later page life reads the entry with this text nowhere on screen.
       patch({ state: "unsaved", outcome: null, heldBody: body, mirrorBody: null });
       clearTimer();
+      const settled = new Promise<MutationOutcome>((resolve) => {
+        waitersRef.current.push(resolve);
+      });
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
         void send();
       }, currentDebounceMs);
+      return settled;
     },
     [clearTimer, patch, referenceRevision, send],
+  );
+
+  /** Records a revision a write outside this hook confirmed, so the next attempt compares against the record as it now stands. */
+  const adoptConfirmedRevision = useCallback(
+    (revision: Revision): void => {
+      if (inFlightRef.current) return;
+      acknowledgedRef.current = revision;
+      patch({ acknowledgedRevision: revision });
+    },
+    [patch],
   );
 
   const retrySameWork = useCallback((): void => {
@@ -443,6 +525,7 @@ export function useDraftRecovery({ scope, variantId, initialRevision, initialBod
     keptBody: keepsUnacknowledgedText(snapshot.state) ? snapshot.heldBody : null,
     localRecovery: { present: snapshot.mirrorBody !== null, body: snapshot.mirrorBody },
     notifyChange,
+    adoptConfirmedRevision,
     retrySameWork,
     discardLocalRecovery,
   };

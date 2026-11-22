@@ -88,6 +88,15 @@ function decisionSignature(decision: ImportDecisionInput): string {
       return JSON.stringify(["unresolved"]);
   }
 }
+/**
+ * What a confirmed mapping states about each field, independent of the order the assignments were listed in.
+ * Two mappings with the same signature make every row supply exactly the same values, so a decision recorded
+ * against a row still applies; a different signature means the file would be read differently from now on.
+ */
+function mappingSignature(mapping: ImportConfirmedMapping): string {
+  const assignments = mapping.assignments.map((assignment) => `${assignment.fieldId}:${assignment.columnIndex}`).sort();
+  return JSON.stringify([mapping.columnCount, assignments]);
+}
 function reviewedSnapshotKey(decisions: Readonly<Record<number, ImportDecisionInput>>): string {
   const rowNumbers = Object.keys(decisions)
     .map((key) => Number(key))
@@ -105,8 +114,19 @@ function reduceJourney(state: JourneyState, action: JourneyAction): JourneyState
   switch (action.type) {
     case "file-chosen":
       return settleStep({ ...EMPTY_JOURNEY, step: state.step, file: action.selection, proposalOperationId: action.operationId });
-    case "mapping-confirmed":
+    case "mapping-confirmed": {
+      // Re-confirming the mapping the journey already holds changes nothing a row would supply, and the proposal
+      // it replays is the same operation, so the decisions already recorded against those rows stay valid. The
+      // stepper's own route back to this step must not make the worker record them again (WCAG 3.3.7), and the
+      // acknowledgement of a finished import is kept so that reopening this step returns to that receipt rather
+      // than presenting an accepted import as one that has not been accepted. A different mapping supplies
+      // different values, so it starts the review afresh instead of carrying decisions about values it no longer has.
+      const keepsRecordedWork = state.mapping !== undefined && mappingSignature(state.mapping) === mappingSignature(action.mapping);
+      if (keepsRecordedWork) {
+        return settleStep({ ...state, mapping: action.mapping, proposalOperationId: action.operationId });
+      }
       return settleStep({ ...state, mapping: action.mapping, proposalOperationId: action.operationId, decisions: {}, decisionOperationIds: {}, acknowledged: false });
+    }
     case "decision-recorded":
       return settleStep({ ...state, decisions: { ...state.decisions, [action.rowNumber]: action.decision }, decisionOperationIds: { ...state.decisionOperationIds, [action.rowNumber]: action.operationId }, acknowledged: false });
     case "acknowledged":

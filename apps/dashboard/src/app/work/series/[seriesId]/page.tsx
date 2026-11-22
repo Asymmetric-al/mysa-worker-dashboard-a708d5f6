@@ -3,8 +3,10 @@
  * repeats by, the one occurrence it admits, the plan review several missed dates open, and pause, resume or stop.
  *
  * **What this file is.** Composition, nothing else. It reads `reads.series.readSeries` once and hands the one
- * envelope to the family's own record body, which owns the occurrence group, the *Plan needs review* statement,
- * the this-occurrence and this-and-future revisions and the state controls. This route restates none of it: no
+ * envelope to the family's own record body — composed on the client through this route's locale boundary, so the
+ * preview's dates are formatted in the locale the browser chose — which owns the next-dates preview, the occurrence
+ * group, the *Plan needs review* statement, the this-occurrence and this-and-future revisions and the state
+ * controls. This route restates none of it: no
  * date, rule, count or review decision is derived here, because the read already computed each one and a second
  * answer on this page could only disagree with the envelope it was handed.
  *
@@ -22,9 +24,11 @@ import type { Metadata } from "next";
 import type { ReactElement } from "react";
 
 import { StateNotice } from "@/components/state-notice";
-import OccurrenceActions from "@/features/work/components/occurrence-actions";
 import { assertNever } from "@/lib/result";
 import { reads } from "@/modules/data-service";
+// The family's record body, composed on the client behind this route's locale boundary so its next-dates preview
+// formats dates in the locale this browser chose.
+import SeriesPlanView from "./series-plan-view";
 
 // ---------------------------------------------------------------------------------------------
 // Fixed values
@@ -66,7 +70,7 @@ export default async function WorkSeriesPage({ params }: WorkSeriesPageProps): P
   const result = await reads.series.readSeries({ seriesId });
   switch (result.kind) {
     case "envelope":
-      return <OccurrenceActions envelope={result.envelope} />;
+      return <SeriesPlanView envelope={result.envelope} />;
     case "denied":
       // The closed reason code is the whole answer: no title, count or date travels with it.
       return (

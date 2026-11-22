@@ -19,6 +19,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactElement } from "react";
 
+import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { StateNotice } from "@/components/state-notice";
 import Agenda from "@/features/work/components/agenda";
 import { partnerLabelsOf } from "@/features/work/copy/partner-labels";
@@ -46,10 +47,14 @@ const PAGE_TITLE = "Agenda";
 /** The document title: the surface, and nothing that would duplicate the template's suffix. */
 export const metadata: Metadata = { title: PAGE_TITLE };
 
-/** This surface's own address, which a retry re-requests, and the lists one level beside it. */
+/** This surface's own address, which a retry re-requests. */
 const AGENDA_HREF = "/work/agenda";
 
+/** The lists, which is where a task is created, edited, dated, completed, reopened and cancelled. */
 const WORK_HREF = "/work";
+
+/** The return path's own word for the lists: the crumb reads the same here as the sidebar entry it returns to. */
+const WORK_CRUMB = "Work";
 
 /** The zone every date on this page is judged in, stated on the page rather than assumed silently. */
 const DISPLAY_TIME_ZONE = REPORT_DEFAULT_TIME_ZONE;
@@ -65,7 +70,6 @@ const FIRST_PAGE = 0;
 const PAGE_COPY = {
   lede: "The open dated work of this context, grouped by the day each task is due, with the plan a meeting states and the records a task is linked to. Undated work is read on the lists, never here, and a task is completed, reopened, edited or cancelled there.",
   zone: `Every day on this page is judged in ${DISPLAY_TIME_ZONE}, because a server render cannot know the display time zone this browser chose in Settings, and a day is never stated in a zone nobody chose.`,
-  listsLink: "Read the five task lists",
   denied: {
     title: "The dated agenda is not available in this context",
     body: "This session may not read the tasks of the context it is working in, so no day, row or count is stated here — a refusal is not an empty agenda. Another context, if this session holds one, can be chosen from the shell.",
@@ -103,14 +107,25 @@ export default async function WorkAgendaPage(): Promise<ReactElement> {
   const partnerLabels = partnerLabelsOf(partners.kind === "envelope" ? partners.envelope.data.rows : []);
   return (
     <div className="flex min-w-0 flex-col gap-6 text-start">
+      {/* The return path: the lists this agenda sits beside, then this page. It is a navigation landmark of its
+          own, so the way back to where a task is created, dated and completed never depends on the browser's own
+          back control, and it is present in every arm because it states no record. */}
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink render={<Link href={WORK_HREF} />}>{WORK_CRUMB}</BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>{PAGE_TITLE}</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
       <div className="flex min-w-0 flex-col gap-2">
         {/* The one h1 on this page: every day below opens at level two. */}
         <h1 className="text-2xl font-semibold text-pretty wrap-anywhere">{PAGE_TITLE}</h1>
         <p className="max-w-prose text-sm text-pretty text-muted-foreground">{PAGE_COPY.lede}</p>
         <p className="max-w-prose text-sm text-pretty text-muted-foreground">{PAGE_COPY.zone}</p>
-        <p className="text-sm">
-          <Link href={WORK_HREF}>{PAGE_COPY.listsLink}</Link>
-        </p>
       </div>
       {agenda.kind === "envelope" ? <Agenda scope={agenda.envelope.scope} envelope={agenda.envelope} partnerLabels={partnerLabels} /> : <AgendaNotice result={agenda} />}
     </div>
