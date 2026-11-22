@@ -20,6 +20,7 @@
  * invalidation re-reads instead of leaving a stale envelope on screen. A refusal and an outage are rendered as the
  * answers they are — never as an empty builder and never as a zero.
  */
+import Link from "next/link";
 import { useId, useState, type ReactElement } from "react";
 import { lifecycleOf } from "@/components/draft-status";
 import { StateNotice } from "@/components/state-notice";
@@ -127,6 +128,24 @@ function otherEditionDescription(composedLocale: string, openLocale: string): st
 
 function openComposedDraftLabel(composedLocale: string): string {
   return `Work on the ${composedLocale} draft`;
+}
+
+/** Where one Page's builder lives. The route `src/app/pages/[pageId]` owns the address. */
+const BUILDER_PATH_PREFIX = "/pages/";
+
+/** Where one language edition's own preview lives. The route `src/app/pages/[pageId]/[locale]/preview` owns the address. */
+const EDITION_PREVIEW_SUFFIX = "/preview";
+
+/**
+ * The address of the open edition's own preview page.
+ *
+ * The preview beside the outline is the same read this address serves, so the two can never disagree: both render the
+ * one renderer's output for the revision on screen. The link exists because the edition's own preview is a destination
+ * in its own right — the reading view at full width — and a route the shell offers nowhere else would be reachable only
+ * by a typed address, which is not a destination a person can find.
+ */
+function editionPreviewPathOf(documentId: string, locale: string): string {
+  return `${BUILDER_PATH_PREFIX}${encodeURIComponent(documentId)}/${encodeURIComponent(locale)}${EDITION_PREVIEW_SUFFIX}`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -300,6 +319,8 @@ const PANE_GRID_CLASS = "grid min-w-0 gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax
 const SECTION_CLASS = "flex min-w-0 flex-col gap-4";
 const HEADING_CLASS = "font-heading text-lg font-medium text-pretty wrap-anywhere";
 const NOTE_CLASS = "text-sm text-pretty text-muted-foreground wrap-anywhere";
+/** A 24x24 CSS px minimum target (WCAG 2.5.8), focusable with the shared ring, and wrapping rather than overflowing. */
+const PREVIEW_LINK_CLASS = "inline-flex min-h-6 w-fit max-w-full min-w-0 items-center text-start text-sm font-medium underline-offset-4 text-pretty wrap-anywhere hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const SWITCHER_CLASS = "flex min-w-0 flex-wrap items-center gap-2";
 const TOGGLED_CLASS = "min-h-target max-w-full whitespace-normal";
 
@@ -607,6 +628,14 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
             )}
           </section>
           <section data-pane="preview" className={paneClass("preview", selection.pane)}>
+            {activeLocale === "" ? null : (
+              <div className="flex min-w-0 flex-col gap-1">
+                <Link href={editionPreviewPathOf(documentId, activeLocale)} className={PREVIEW_LINK_CLASS}>
+                  {copy.builder.openEditionPreview}
+                </Link>
+                <p className={NOTE_CLASS}>{copy.builder.openEditionPreviewNote}</p>
+              </div>
+            )}
             {previewView === undefined ? <StateNotice kind="loading" headingLevel={2} title={PREVIEW_LOADING_TITLE} description={PREVIEW_LOADING_DESCRIPTION} /> : <PagePreviewFrame layout="builder" preview={previewView} givingBinding={givingView?.data} />}
           </section>
         </div>

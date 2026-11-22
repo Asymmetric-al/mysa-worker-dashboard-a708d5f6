@@ -61,6 +61,8 @@ const BUILDER_COPY = {
   outline: "Sections",
   fields: "Section fields",
   preview: "Preview",
+  openEditionPreview: "Open this edition's preview",
+  openEditionPreviewNote: "The preview beside it is the exact revision on screen. This link opens that same edition on its own page, where it can be read at full width.",
   selectSection: "Choose a section in the outline to change its fields.",
   moveUp: "Move up",
   moveDown: "Move down",
