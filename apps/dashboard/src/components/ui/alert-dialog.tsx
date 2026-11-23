@@ -28,11 +28,7 @@ const ALERT_DIALOG_HEADER_CLASS =
   "grid grid-rows-[auto_1fr] place-items-center gap-1.5 text-center has-data-[slot=alert-dialog-media]:grid-rows-[auto_auto_1fr] has-data-[slot=alert-dialog-media]:gap-x-6 sm:group-data-[size=default]/alert-dialog-content:place-items-start sm:group-data-[size=default]/alert-dialog-content:text-start sm:group-data-[size=default]/alert-dialog-content:has-data-[slot=alert-dialog-media]:grid-rows-[auto_1fr]";
 const AlertDialogHeader = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="alert-dialog-header" className={cn(ALERT_DIALOG_HEADER_CLASS, className)} {...props} />;
 const AlertDialogFooter = ({ className, ...props }: React.ComponentProps<"div">) => (
-  <div
-    data-slot="alert-dialog-footer"
-    className={cn("flex flex-col-reverse gap-2 group-data-[size=sm]/alert-dialog-content:grid group-data-[size=sm]/alert-dialog-content:grid-cols-2 max-sm:*:h-auto max-sm:*:min-w-0 max-sm:*:whitespace-normal max-sm:*:min-h-9 max-sm:*:py-2 sm:flex-row sm:justify-end", className)}
-    {...props}
-  />
+  <div data-slot="alert-dialog-footer" className={cn("flex flex-col-reverse gap-2 group-data-[size=sm]/alert-dialog-content:grid group-data-[size=sm]/alert-dialog-content:grid-cols-2 max-sm:*:h-auto max-sm:*:min-w-0 max-sm:*:whitespace-normal sm:flex-row sm:justify-end", className)} {...props} />
 );
 const AlertDialogMedia = ({ className, ...props }: React.ComponentProps<"div">) => (
   <div data-slot="alert-dialog-media" className={cn("mb-2 inline-flex size-16 items-center justify-center rounded-full bg-muted sm:group-data-[size=default]/alert-dialog-content:row-span-2 *:[svg:not([class*='size-'])]:size-8", className)} {...props} />

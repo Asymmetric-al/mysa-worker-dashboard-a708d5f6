@@ -3,7 +3,7 @@ import { useForm } from "@tanstack/react-form";
 import { useCallback, useId, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
 import type { ZodError } from "zod";
 import { intentKeyOf, useReviewedMutation } from "@/components/action-review";
-import { fieldErrorsFromInvalid, FormErrorSummary, FormField, type FieldErrorLookup } from "@/components/form-field";
+import { civilDateConvention, fieldErrorsFromInvalid, FormErrorSummary, FormField, type FieldErrorLookup } from "@/components/form-field";
 import OperationResult from "@/components/operation-result";
 import StateNotice from "@/components/state-notice";
 import { Badge } from "@/components/ui/badge";
@@ -81,6 +81,8 @@ const TEXT_FIELDS: readonly { readonly name: TaskTextKey; readonly label: string
   { name: FIELD_NAMES.category, label: CATEGORY_LABEL, description: DESCRIPTIONS.category, mark: "optional", type: "text", className: "w-full sm:max-w-72", autoComplete: "off" },
 ];
 const blankToUndefined = (value: string): string | undefined => (value.trim() === "" ? undefined : value);
+/** The same emptiness read the other way: on an edit an emptied member is sent as null, which is the one form the handler reads as "clear this field". */
+const blankToNull = (value: string): string | null => (value.trim() === "" ? null : value);
 function admittedLinkOf(record: TaskRecord | null, admitted: ReadonlySet<string>): string {
   if (record === null) return "";
   const candidates: string[] = [];
@@ -107,9 +109,22 @@ function planMembersOf(values: TaskFormValues): { readonly plannedTime?: string;
   const zone = values.timeZone.trim();
   return time === "" && zone === "" ? {} : { ...(time === "" ? {} : { plannedTime: time }), ...(zone === "" ? {} : { timeZone: zone }) };
 }
-function composePayload(values: TaskFormValues, taskId: string | null): TaskPayload {
-  const members = { title: values.title, kind: values.kind, category: blankToUndefined(values.category), dueOn: blankToUndefined(values.dueOn), note: blankToUndefined(values.note), ...linkMembers(values.link), ...planMembersOf(values) };
-  return taskId === null ? { operation: "createTask", ...members } : { operation: "editTask", taskId, ...members };
+/** The plan members an edit states: a null clears the schedule the record holds, so choosing Task, or leaving a meeting with no time and no zone, removes the stored plan rather than restating it. */
+function editedPlanMembersOf(values: TaskFormValues): { readonly plannedTime: string | null; readonly timeZone: string | null } {
+  if (values.kind !== "meeting") return { plannedTime: null, timeZone: null };
+  return { plannedTime: blankToNull(values.plannedTime), timeZone: blankToNull(values.timeZone) };
+}
+/** The link members an edit states: the chosen link, plus a null for the link the control displayed and the worker therefore replaced. A link this read never admitted was never on screen, so it is left untouched rather than cleared unseen. */
+function editedLinkMembersOf(values: TaskFormValues, shownLink: string): { readonly partnerId?: string | null; readonly initiativeId?: string | null } {
+  const chosen = linkMembers(values.link);
+  const shown = linkMembers(shownLink);
+  const memberOf = (name: "partnerId" | "initiativeId"): string | null | undefined => (chosen[name] === undefined ? (shown[name] === undefined ? undefined : null) : chosen[name]);
+  return { partnerId: memberOf("partnerId"), initiativeId: memberOf("initiativeId") };
+}
+/** The edit payload states every optional member, an emptied one as null, because the handler reads an absent member as "leave the stored value" and only an explicit null as "clear it". A create keeps omitting an empty member, where absence already means "not given". */
+function composePayload(values: TaskFormValues, taskId: string | null, shownLink: string): TaskPayload {
+  if (taskId === null) return { operation: "createTask", title: values.title, kind: values.kind, category: blankToUndefined(values.category), dueOn: blankToUndefined(values.dueOn), note: blankToUndefined(values.note), ...linkMembers(values.link), ...planMembersOf(values) };
+  return { operation: "editTask", taskId, title: values.title, kind: values.kind, category: blankToNull(values.category), dueOn: blankToNull(values.dueOn), note: blankToNull(values.note), ...editedLinkMembersOf(values, shownLink), ...editedPlanMembersOf(values) };
 }
 function parsePayload(payload: TaskPayload): { readonly parsed: TaskPayload } | { readonly refused: ZodError } {
   const checked = payload.operation === "editTask" ? editTaskSchema.safeParse(payload) : createTaskSchema.safeParse(payload);
@@ -129,6 +144,8 @@ function defaultsOf(record: TaskRecord | null, link: string, initialValues: Task
   };
 }
 const HEADING_TAG: Readonly<Record<2 | 3, "h2" | "h3">> = { 2: "h2", 3: "h3" };
+/** The one type scale's heading utility per level, so this composer states the level it lands at with the same measure on every surface. */
+const HEADING_SCALE: Readonly<Record<2 | 3, string>> = { 2: "type-section-title", 3: "type-subsection-title" };
 function PlanDisclosure({ value, timeZone }: { readonly value: string; readonly timeZone: string }): ReactElement | null {
   const day = value.slice(0, 10);
   const clock = plannedClockOf(value);
@@ -192,7 +209,8 @@ function LinkGroup({ label, choices }: { readonly label: string; readonly choice
   const initiatives: readonly TaskLinkChoice[] = admitted === null ? [] : admitted.initiatives;
   const linkable = partners.length > 0 || initiatives.length > 0;
   const linkUnavailable = linkChoices === undefined || linkChoices === null || linkChoices.status !== "unavailable" ? null : linkChoices;
-  const form = useForm({ defaultValues: defaultsOf(record, admittedLinkOf(record, new Set<string>([...partners.map((choice) => choice.value), ...initiatives.map((choice) => choice.value)])), initialValues) });
+  const shownLink = admittedLinkOf(record, new Set<string>([...partners.map((choice) => choice.value), ...initiatives.map((choice) => choice.value)])); // The one link this composer can display for the record, so an edit clears only a link the worker was shown.
+  const form = useForm({ defaultValues: defaultsOf(record, shownLink, initialValues) });
   const zoneChoices = useMemo(() => [...new Set([defaultTimeZone ?? "", ...timeZoneChoices].map((stated) => stated.trim()).filter((zone) => zone !== ""))], [defaultTimeZone, timeZoneChoices]);
   const { createTask, editTask } = useTaskMutations(scope);
   const submitTask = useCallback(
@@ -246,7 +264,7 @@ function LinkGroup({ label, choices }: { readonly label: string; readonly choice
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     if (pending) return;
-    const checked = parsePayload(composePayload(form.state.values, taskId));
+    const checked = parsePayload(composePayload(form.state.values, taskId, shownLink));
     if ("refused" in checked) {
       setRefusal(refusalLookupOf(checked.refused));
       return;
@@ -257,10 +275,10 @@ function LinkGroup({ label, choices }: { readonly label: string; readonly choice
   return (
     <section dir={dir} aria-labelledby={headingId} aria-busy={pending ? true : undefined} data-slot="task-composer" data-mode={props.mode} className={cn("flex min-w-0 flex-col gap-5", className)}>
       <div className="flex min-w-0 flex-col gap-1">
-        <Heading id={headingId} className="font-heading text-lg font-medium">
+        <Heading id={headingId} className={HEADING_SCALE[headingLevel]}>
           {editing ? HEADINGS.edit : HEADINGS.create}
         </Heading>
-        <p className="text-sm text-pretty text-muted-foreground">{"A task needs only a title. Everything else is optional, and saving it changes this task alone."}</p>
+        <p className="type-supporting text-pretty">{"A task needs only a title. Everything else is optional, and saving it changes this task alone."}</p>
       </div>
       {editing ? <PrivateTagsDisclosure tags={tags} /> : null}
       {linkUnavailable === null ? null : <StateNotice kind="unavailable" title="The records a task can link to could not be read" description={linkUnavailable.guidance} source={linkUnavailable.source} headingLevel={4} />}
@@ -268,7 +286,7 @@ function LinkGroup({ label, choices }: { readonly label: string; readonly choice
         {refusal === null || refusal.count === 0 ? null : <FormErrorSummary errors={refusal} labels={FIELD_LABELS} order={FIELD_ORDER} headingLevel={receiptHeadingLevel} />}
         <form.Subscribe selector={(state) => state.values}>
           {(values) => {
-            const payload = composePayload(values, taskId);
+            const payload = composePayload(values, taskId, shownLink);
             const receipt = reviewedIntent !== null && reviewedIntent === intentKeyOf({ scope, expectedRevision, payload }) ? outcome : null;
             const applied = receipt !== null && (receipt.outcome === "accepted" || receipt.outcome === "alreadyAccepted" || receipt.outcome === "unchanged");
             const linkError = refusal === null ? undefined : [...(refusal.byField.partnerId ?? []), ...(refusal.byField.initiativeId ?? [])];
@@ -276,7 +294,7 @@ function LinkGroup({ label, choices }: { readonly label: string; readonly choice
             return (
               <div className="flex min-w-0 flex-col gap-5">
                 {textFields}
-                <FormTextField name={FIELD_NAMES.dueOn} label={DUE_DATE_LABEL} description={DESCRIPTIONS.dueOn} mark="optional" announcesRequired={false} type="date" className="w-full sm:max-w-60" errors={refusal} value={values.dueOn} onValueChange={changeDueOn} />
+                <FormTextField name={FIELD_NAMES.dueOn} label={DUE_DATE_LABEL} description={`${DESCRIPTIONS.dueOn} ${civilDateConvention(values.dueOn)}`} mark="optional" announcesRequired={false} type="date" className="w-full sm:max-w-60" errors={refusal} value={values.dueOn} onValueChange={changeDueOn} />
                 <FormChoiceGroup name={FIELD_NAMES.kind} legend={LABELS.kind} description={PLANNED_VERSUS_HELD_NOTE} errors={refusal} value={values.kind} options={KIND_OPTIONS} onValueChange={changeKind} idPrefix={optionIdPrefix} />
                 {values.kind === "meeting" ? (
                   <div className="flex min-w-0 flex-col gap-4">

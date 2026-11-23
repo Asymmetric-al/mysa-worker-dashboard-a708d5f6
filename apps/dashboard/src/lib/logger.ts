@@ -11,11 +11,14 @@ const MAX_OUTCOME_LENGTH = 40;
 const MAX_JOB_LENGTH = 64;
 const MAX_SYSTEM_LENGTH = 32;
 const MAX_REFERENCE_LENGTH = 128;
+/** The marker a field carries when the value it held is outside the bound this line states for it: the attempt stays attributable rather than the whole line disappearing. */
+const REDACTED = "redacted";
 const isBoundedIdentifier = (value: unknown, maxLength: number): value is string => typeof value === "string" && value.length > 0 && value.length <= maxLength;
 const isBoundedDuration = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
-const isScope = (value: LogScope): boolean =>
-  typeof value === "object" && value !== null && isBoundedIdentifier(value.organizationId, MAX_SCOPE_ID_LENGTH) && isBoundedIdentifier(value.ministryId, MAX_SCOPE_ID_LENGTH) && isBoundedIdentifier(value.supportSubjectId, MAX_SCOPE_ID_LENGTH) && isBoundedIdentifier(value.principalId, MAX_SCOPE_ID_LENGTH);
-const isMutationEntry = (entry: MutationLogEntry): boolean => typeof entry === "object" && entry !== null && isBoundedIdentifier(entry.operationId, MAX_OPERATION_ID_LENGTH) && isScope(entry.scope) && isBoundedIdentifier(entry.outcome, MAX_OUTCOME_LENGTH) && isBoundedDuration(entry.elapsedMs);
+const boundedIdentifier = (value: unknown, maxLength: number): string => (isBoundedIdentifier(value, maxLength) ? value : REDACTED);
+const boundedDuration = (value: unknown): number => (isBoundedDuration(value) ? value : 0);
+/** The scope a diagnostic states when the attempt established no authority: all four members say so, because a caller that could not name the context must never leave it to be read as one it held. */
+export const UNSTATED_SCOPE: LogScope = Object.freeze({ organizationId: "unstated", ministryId: "unstated", supportSubjectId: "unstated", principalId: "unstated" });
 const isSourceUnavailableEntry = (entry: SourceUnavailableLogEntry): boolean =>
   typeof entry === "object" && entry !== null && isBoundedIdentifier(entry.job, MAX_JOB_LENGTH) && typeof entry.source === "object" && entry.source !== null && isBoundedIdentifier(entry.source.system, MAX_SYSTEM_LENGTH) && isBoundedIdentifier(entry.source.reference, MAX_REFERENCE_LENGTH);
 function writeDiagnosticLine(record: Record<string, unknown>): void {
@@ -27,9 +30,19 @@ function writeDiagnosticLine(record: Record<string, unknown>): void {
 export const logger = {
   mutation: (entry: MutationLogEntry): void => {
     try {
-      if (!isMutationEntry(entry)) return;
-      // Each field is copied out of the entry in a fixed order, so a caller that passes extra properties cannot widen the line and its key order is stable.
-      writeDiagnosticLine({ kind: "mutation", operationId: entry.operationId, scope: { organizationId: entry.scope.organizationId, ministryId: entry.scope.ministryId, supportSubjectId: entry.scope.supportSubjectId, principalId: entry.scope.principalId }, outcome: entry.outcome, elapsedMs: entry.elapsedMs });
+      // Each field is copied out of the entry in a fixed order, so a caller that passes extra properties cannot widen the line and its key order is stable. A field outside its bound states a fixed marker instead of the line being dropped: a diagnostic never disappears because of what it was asked to describe.
+      writeDiagnosticLine({
+        kind: "mutation",
+        operationId: boundedIdentifier(entry.operationId, MAX_OPERATION_ID_LENGTH),
+        scope: {
+          organizationId: boundedIdentifier(entry.scope.organizationId, MAX_SCOPE_ID_LENGTH),
+          ministryId: boundedIdentifier(entry.scope.ministryId, MAX_SCOPE_ID_LENGTH),
+          supportSubjectId: boundedIdentifier(entry.scope.supportSubjectId, MAX_SCOPE_ID_LENGTH),
+          principalId: boundedIdentifier(entry.scope.principalId, MAX_SCOPE_ID_LENGTH),
+        },
+        outcome: boundedIdentifier(entry.outcome, MAX_OUTCOME_LENGTH),
+        elapsedMs: boundedDuration(entry.elapsedMs),
+      });
     } catch {
       // Diagnostics must not break the operation they describe.
     }

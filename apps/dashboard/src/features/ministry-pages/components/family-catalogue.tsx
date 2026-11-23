@@ -85,10 +85,10 @@ export function FamilyCatalogue({ family, catalogue, scope, document: pageDocume
   const selectSeat = (sectionType: CatalogueSectionType, seat: number): void => setSeats((current) => ({ ...current, [sectionType]: seat }));
   return (
     <section aria-labelledby={headingId} data-slot="family-catalogue" data-family={family} className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
-      <Card size="sm">
+      <Card>
         <CardHeader>
           <CardTitle>
-            <h2 id={headingId} className="wrap-anywhere">
+            <h2 id={headingId} className="type-section-title wrap-anywhere">
               <bdi>{familyCopy.catalogueLabel}</bdi>
             </h2>
           </CardTitle>
@@ -136,7 +136,7 @@ export function FamilyCatalogue({ family, catalogue, scope, document: pageDocume
             </div>
           ) : null}
           {catalogue.sections.length === 0 ? (
-            <p className="text-sm text-pretty text-muted-foreground">{"This family's catalogue listed no section types, so there is nothing to compose here. No type is invented in their place."}</p>
+            <p className="type-supporting text-pretty">{"This family's catalogue listed no section types, so there is nothing to compose here. No type is invented in their place."}</p>
           ) : (
             <ul className="flex min-w-0 flex-col gap-4">
               {catalogue.sections.map((entry) => {
@@ -146,12 +146,12 @@ export function FamilyCatalogue({ family, catalogue, scope, document: pageDocume
                 return (
                   <li key={entry.key} data-section-type={entry.key} data-managed={entry.managed ? "true" : undefined} className="flex min-w-0 flex-col gap-2 border-b border-border pb-4 last:border-b-0 last:pb-0">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <h3 className="font-heading text-sm font-medium wrap-anywhere">
+                      <h3 className="type-subsection-title wrap-anywhere">
                         <bdi>{entryCopy.label}</bdi>
                       </h3>
                       {entry.managed ? <Badge variant="secondary">{copy.lockReasons.lockedReadOnlyLabel}</Badge> : null}
                     </div>
-                    <p className="text-sm text-pretty text-muted-foreground wrap-anywhere">
+                    <p className="type-supporting text-pretty wrap-anywhere">
                       <bdi>{entryCopy.description}</bdi>
                     </p>
                     {entry.managed ? (
@@ -169,7 +169,7 @@ export function FamilyCatalogue({ family, catalogue, scope, document: pageDocume
                               <bdi>{entryCopy.label}</bdi>
                             </span>
                           </Label>
-                          <NativeSelect id={selectId} size="sm" value={String(seat)} onChange={(event) => selectSeat(entry.key, Number(event.target.value))}>
+                          <NativeSelect id={selectId} value={String(seat)} onChange={(event) => selectSeat(entry.key, Number(event.target.value))}>
                             {positions.map((position) => (
                               <NativeSelectOption key={position} value={String(position)}>
                                 {copy.builder.positionOption(position)}
@@ -177,7 +177,7 @@ export function FamilyCatalogue({ family, catalogue, scope, document: pageDocume
                             ))}
                           </NativeSelect>
                         </div>
-                        <Button type="button" variant="outline" size="sm" onClick={() => choose(entry.key, seat)}>
+                        <Button type="button" variant="outline" onClick={() => choose(entry.key, seat)}>
                           {copy.catalogue.addSectionLabel}
                           <span className="sr-only">
                             {": "}

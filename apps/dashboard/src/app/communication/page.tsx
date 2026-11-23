@@ -1,8 +1,10 @@
+import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import UpdatesList from "@/features/updates/components/updates-list";
 import { rosterOf } from "@/features/updates/roster";
 import { reads } from "@/modules/data-service";
 import { ReadNotices, paramOf, wireFormOf, type ReadNoticeCopy, type SearchParams } from "../page-frame";
+export const metadata: Metadata = { title: "Updates" };
 type RosterRead = typeof reads.updates.findContentDocuments;
 type RosterResult = Awaited<ReturnType<RosterRead>>;
 type RosterWithoutEnvelope = Exclude<RosterResult, { readonly kind: "envelope" }>;

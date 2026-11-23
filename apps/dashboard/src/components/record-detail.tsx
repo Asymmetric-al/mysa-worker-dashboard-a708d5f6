@@ -36,13 +36,14 @@ const SKIP_TO_SECTIONS_LABEL = "Skip to the record's sections";
 const LOADING_SECTION_BLOCKS = 3;
 const LOADING_LINE_WIDTHS = ["w-full", "w-5/6", "w-2/3"] as const;
 export type RecordDetailLayout = "page" | "panel" | "sheet";
-type LayoutChrome = { readonly surface: string; readonly headingLevel: 1 | 2; readonly headingSize: string; readonly avatarSize: "default" | "lg"; readonly cardSize: "default" | "sm"; readonly actionBar: string };
+type LayoutChrome = { readonly surface: string; readonly headingLevel: 1 | 2; readonly headingScale: string; readonly sectionScale: string; readonly avatarSize: "default" | "lg"; readonly cardSize: "default" | "sm"; readonly actionBar: string };
 const STATIC_ACTION_BAR = "flex flex-wrap items-center gap-2";
 const STICKY_ACTION_BAR = "sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-border bg-background/95 py-2 backdrop-blur-sm";
 const LAYOUT_CHROME: Readonly<Record<RecordDetailLayout, LayoutChrome>> = {
-  page: { surface: "mx-auto flex w-full max-w-4xl flex-col gap-4 py-6", headingLevel: 1, headingSize: "text-xl", avatarSize: "lg", cardSize: "default", actionBar: STATIC_ACTION_BAR },
-  panel: { surface: "flex w-full flex-col gap-4 py-4", headingLevel: 2, headingSize: "text-lg", avatarSize: "default", cardSize: "sm", actionBar: STICKY_ACTION_BAR },
-  sheet: { surface: "flex w-full flex-col gap-4 py-3", headingLevel: 2, headingSize: "text-lg", avatarSize: "default", cardSize: "sm", actionBar: STICKY_ACTION_BAR },
+  // The record's own heading takes the scale of the level it is rendered at, so the same record body states the page title on its own route and a section title inside the side panel and the phone sheet.
+  page: { surface: "flex w-full flex-col gap-4 py-6", headingLevel: 1, headingScale: "type-page-title", sectionScale: "type-section-title", avatarSize: "lg", cardSize: "default", actionBar: STATIC_ACTION_BAR },
+  panel: { surface: "flex w-full flex-col gap-4 py-4", headingLevel: 2, headingScale: "type-section-title", sectionScale: "type-subsection-title", avatarSize: "default", cardSize: "sm", actionBar: STICKY_ACTION_BAR },
+  sheet: { surface: "flex w-full flex-col gap-4 py-3", headingLevel: 2, headingScale: "type-section-title", sectionScale: "type-subsection-title", avatarSize: "default", cardSize: "sm", actionBar: STICKY_ACTION_BAR },
 };
 /** Where the worker returns to, and the list context that will still be filtered when they do. */
 export type RecordDetailBreadcrumbEntry = { readonly label: string; readonly href: string };
@@ -91,7 +92,7 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
   return (
     <article aria-busy={isLoading ? true : undefined} aria-labelledby={identityHeadingId} className={cn(chrome.surface, className)}>
       {showsSkipLink ? (
-        <a href={`#${sectionsRegionId}`} className="sr-only rounded-md px-2 py-1 text-sm focus-visible:not-sr-only focus-visible:bg-background">
+        <a href={`#${sectionsRegionId}`} className="sr-only rounded-md px-2 py-1 text-sm focus-visible:not-sr-only focus-visible:inline-flex focus-visible:min-h-6 focus-visible:items-center focus-visible:bg-background">
           {SKIP_TO_SECTIONS_LABEL}
         </a>
       ) : null}
@@ -102,7 +103,9 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
               <Fragment key={entry.href}>
                 {index > 0 ? <BreadcrumbSeparator /> : null}
                 <BreadcrumbItem>
-                  <BreadcrumbLink render={<Link href={entry.href} />}>{entry.label}</BreadcrumbLink>
+                  <BreadcrumbLink className="inline-link" render={<Link href={entry.href} />}>
+                    {entry.label}
+                  </BreadcrumbLink>
                 </BreadcrumbItem>
               </Fragment>
             ))}
@@ -118,7 +121,7 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
             </Avatar>
             <div className="flex min-w-0 flex-col gap-1">
               <CardTitle>
-                <IdentityHeading id={identityHeadingId} className={cn("font-heading font-medium text-balance", chrome.headingSize)}>
+                <IdentityHeading id={identityHeadingId} className={cn(chrome.headingScale, "text-balance")}>
                   <bdi>{identity.displayName}</bdi>
                 </IdentityHeading>
               </CardTitle>
@@ -161,12 +164,12 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
                 {index > 0 ? <Separator /> : null}
                 <section aria-labelledby={headingId} className="flex flex-col gap-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <SectionHeading id={headingId} className="font-heading text-base font-medium">
+                    <SectionHeading id={headingId} className={chrome.sectionScale}>
                       {RECORD_DETAIL_SECTION_TITLES[section]}
                     </SectionHeading>
                     {section === "privateNotes" ? <StatusBadge label={PRIVATE_NOTE_AUDIENCE_LABEL} tone="muted" /> : null}
                   </div>
-                  {description === undefined ? null : <p className="text-sm text-muted-foreground">{description}</p>}
+                  {description === undefined ? null : <p className="type-supporting">{description}</p>}
                   {sections[section]}
                 </section>
               </Fragment>

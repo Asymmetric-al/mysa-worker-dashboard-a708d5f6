@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import { mutationInputSchema, mutations, outcomeFromError, reads, refusedRead, toResponse } from "@/modules/data-service";
 import { jsonBodyOf, mutate, refusalIdentityGiven } from "../handler";
 import { readResponse } from "../read";
@@ -68,12 +69,12 @@ function parseBody(raw: unknown, operationId: string): ParsedBody {
   return { kind: "ready", body: raw };
 }
 /** Answers with the worker's coaching overview — private preparation as its own record class, and every relationship's state, its five independent module switches, its duration and its separate outcomes — inside the read's envelope. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
-export async function GET(request: NextRequest): Promise<Response> {
+async function readCoachingOverview(request: NextRequest): Promise<Response> {
   const refused = scopeSelectionRefusal(request);
   return refused ?? readResponse(READ_ATTEMPT_ID, () => reads.coaching.readCoachingOverview());
 }
 /** Issues one coaching invitation — the coach named by identifier, the organization and ministry it is made in, all five modules unselected and the duration it runs for — and answers with exactly one of `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function POST(request: NextRequest): Promise<Response> {
+async function issueInvitation(request: NextRequest): Promise<Response> {
   const raw = await jsonBodyOf(request);
   const operationId = refusalIdentityOf(raw);
   const parsed = parseBody(raw, operationId);
@@ -82,3 +83,4 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!invitation.success) return toResponse(outcomeFromError(operationId, invitation.error));
   return mutate(invitation.data.operationId, () => mutations.coaching.inviteCoach(invitation.data));
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readCoachingOverview, POST: issueInvitation });

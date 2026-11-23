@@ -22,7 +22,7 @@ export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageCh
   const currentPage = clampPage(page, pageCount);
   const firstRow = totalCount === 0 ? 0 : (currentPage - 1) * currentPageSize + 1;
   const lastRow = Math.min(currentPage * currentPageSize, totalCount);
-  const countText = totalCount === 0 ? `No ${itemNoun}` : `Showing ${countFormat.format(firstRow)}\u2013${countFormat.format(lastRow)} of ${countFormat.format(totalCount)} ${itemNoun}`;
+  const countText = totalCount === 0 ? `Showing 0 of 0 ${itemNoun}` : `Showing ${countFormat.format(firstRow)}\u2013${countFormat.format(lastRow)} of ${countFormat.format(totalCount)} ${itemNoun}`;
   function requestPage(requested: number): void {
     if (disabled) return;
     const nextPage = clampPage(requested, pageCount);
@@ -45,20 +45,18 @@ export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageCh
         {disabled ? <span className="sr-only"> Updating results.</span> : null}
       </output>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        {totalCount > 0 ? (
-          <div className="flex items-center gap-2">
-            <Label htmlFor={pageSizeFieldId} className="text-muted-foreground">
-              Rows per page
-            </Label>
-            <NativeSelect id={pageSizeFieldId} size="sm" className="w-20" value={String(currentPageSize)} disabled={disabled} onChange={(event) => requestPageSize(Number(event.currentTarget.value))}>
-              {options.map((option) => (
-                <NativeSelectOption key={option} value={String(option)}>
-                  {countFormat.format(option)}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </div>
-        ) : null}
+        <div className="flex items-center gap-2">
+          <Label htmlFor={pageSizeFieldId} className="text-muted-foreground">
+            Rows per page
+          </Label>
+          <NativeSelect id={pageSizeFieldId} className="w-20" value={String(currentPageSize)} disabled={disabled} onChange={(event) => requestPageSize(Number(event.currentTarget.value))}>
+            {options.map((option) => (
+              <NativeSelectOption key={option} value={String(option)}>
+                {countFormat.format(option)}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </div>
         {pageCount > 1 ? (
           <Pagination aria-label={`Pagination, ${itemNoun}`} aria-busy={disabled || undefined} className="mx-0 w-auto">
             <PaginationContent className="flex-wrap justify-center">

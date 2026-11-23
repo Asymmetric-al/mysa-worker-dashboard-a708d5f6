@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, type ReactElement } from "react";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import type { reads } from "@/modules/data-service";
 import type { ValueState } from "@/modules/data-service/envelope";
@@ -19,7 +19,7 @@ type ProgressView = NonNullable<TargetProgressProps["progress"]>;
 type RecordedPeriodView = ProgressView["recorded"][number];
 type ComparisonRowView = NonNullable<TargetProgressProps["comparison"]>[number];
 export type TargetsSurfaceProps = { readonly envelope: TargetsEnvelope; readonly locale: string; readonly selectedTargetId?: string; readonly className?: string };
-const PICKER_CLASS = "h-auto min-h-8 max-w-full whitespace-normal py-1.5 text-start";
+const PICKER_CLASS = cn(BUTTON_WRAP_CLASS, "text-start");
 const NO_BOUND_VERSION = "";
 const CLOSED_PERIOD_STATE: Readonly<Record<WirePeriod["state"], ClosedPeriodState>> = { active: "recorded", unplaced: "recorded", "zero-recorded": "zero-recorded", paused: "paused", ended: "ended", unavailable: "unavailable", "no-target": "unavailable" };
 function civilDateOf(stored: string): CivilDate {
@@ -92,7 +92,9 @@ const TargetPicker = ({ targets, selectedIndex }: { readonly targets: readonly W
     <ul className="flex flex-wrap gap-2">
       {targets.map((target, index) => (
         <li key={target.targetId} className="min-w-0">
-          <Link {...{ href: `/coaching/targets?target=${encodeURIComponent(target.targetId)}`, "aria-current": index === selectedIndex ? "page" : undefined, className: cn(buttonVariants({ variant: index === selectedIndex ? "secondary" : "outline", size: "sm" }), PICKER_CLASS) }}>{targetLinkTextOf(target)}</Link>
+          <Link {...{ href: `/coaching/targets?target=${encodeURIComponent(target.targetId)}`, "aria-current": index === selectedIndex ? "page" : undefined, "data-slot": "button", className: cn(buttonVariants({ variant: index === selectedIndex ? "secondary" : "outline", size: "sm" }), PICKER_CLASS) }}>
+            {targetLinkTextOf(target)}
+          </Link>
         </li>
       ))}
     </ul>

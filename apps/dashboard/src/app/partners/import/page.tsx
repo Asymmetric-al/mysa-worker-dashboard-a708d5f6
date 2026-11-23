@@ -24,7 +24,7 @@ export default async function ImportPage({ searchParams }: { readonly searchPara
     case "refused":
       return (
         <div className={ADMISSION_COLUMN_CLASS}>
-          <h1 className="text-2xl font-semibold text-balance">{JOURNEY_COPY.heading}</h1>
+          <h1 className="type-page-title text-balance">{JOURNEY_COPY.heading}</h1>
           <FormErrorSummary errors={fieldErrorsFromInvalid(admission.refused)} title={JOURNEY_COPY.readRefused.title} description={JOURNEY_COPY.readRefused.lead} />
         </div>
       );
@@ -34,8 +34,8 @@ export default async function ImportPage({ searchParams }: { readonly searchPara
       return (
         <div className="flex min-w-0 flex-col gap-6 text-start">
           <header className="flex min-w-0 flex-col gap-1">
-            <h1 className="text-2xl font-semibold text-balance">{JOURNEY_COPY.heading}</h1>
-            <p className="text-pretty text-muted-foreground">{JOURNEY_COPY.lead}</p>
+            <h1 className="type-page-title text-balance">{JOURNEY_COPY.heading}</h1>
+            <p className="type-supporting text-pretty">{JOURNEY_COPY.lead}</p>
           </header>
           <ImportJourney scope={admission.envelope.scope} expectedRevision={admission.envelope.revision} {...(initialOperationId === undefined ? {} : { initialOperationId })} />
         </div>

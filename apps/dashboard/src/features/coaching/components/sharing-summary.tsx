@@ -35,7 +35,9 @@ export type CoachingGrantView = {
   readonly financialRange: FinancialRange | null;
   readonly outcomes: SharingOutcomeSet;
 };
-export type SharingSummaryProps = { readonly grant: CoachingGrantView | null; readonly locale: string; readonly unavailable?: { readonly source: SourceReference } | null; readonly className?: string };
+/** The disclosures a composing surface states elsewhere in the same relationship's section: the module list where that relationship's own module controls render, and the reviewed range where its range review card renders. A flag left out is a disclosure this summary states itself, so a surface that composes only this summary reads exactly as it did. */
+export type StatedElsewhere = { readonly modules?: boolean; readonly financialRange?: boolean };
+export type SharingSummaryProps = { readonly grant: CoachingGrantView | null; readonly locale: string; readonly unavailable?: { readonly source: SourceReference } | null; readonly statedElsewhere?: StatedElsewhere; readonly className?: string };
 const SHARING_ROUTE = "/coaching/sharing";
 const SECTION_TITLES = { relationship: "This coaching relationship", outcomes: "Where the invitation stands", modules: "What your coach can read", duration: "Duration and closing instant" } as const;
 export const OUTCOME_STAGE_NAME: Readonly<Record<SharingOutcomeId, string>> = { delivery: "Invitation", "identity-verification": "Identity", "deliberate-acceptance": "Acceptance", "active-access": "Access" };
@@ -131,7 +133,7 @@ export const Fact = ({ term, children }: { readonly term: string; readonly child
 );
 const Section = ({ id, title, children }: { readonly id: string; readonly title: string; readonly children: ReactNode }): ReactElement => (
   <section aria-labelledby={id} className="flex min-w-0 flex-col gap-3">
-    <h3 {...{ id, className: "text-sm font-semibold" }}>{title}</h3>
+    <h3 {...{ id, className: "type-subsection-title" }}>{title}</h3>
     {children}
   </section>
 );
@@ -158,12 +160,12 @@ export function ModuleReadStateNotice({ readState, source = null, headingLevel =
   return <StatementAlert icon={icon} label={copy.label} sentence={copy.description} />;
 }
 function ModuleStatement({ readState }: { readonly readState: ModuleReadState | null | undefined }): ReactElement {
-  if (readState === undefined) return <p className="text-sm text-pretty text-muted-foreground">{"This module is switched off, so your coach cannot read it."}</p>;
-  if (readState === null) return <p className="text-sm text-pretty text-muted-foreground">{MODULE_COMPLETE_COPY.description}</p>;
-  if (readState === "empty") return <p className="text-sm text-pretty text-muted-foreground">{MODULE_READ_STATE_COPY.empty.description}</p>;
+  if (readState === undefined) return <p className="type-supporting text-pretty">{"This module is switched off, so your coach cannot read it."}</p>;
+  if (readState === null) return <p className="type-supporting text-pretty">{MODULE_COMPLETE_COPY.description}</p>;
+  if (readState === "empty") return <p className="type-supporting text-pretty">{MODULE_READ_STATE_COPY.empty.description}</p>;
   return <ModuleReadStateNotice readState={readState} />;
 }
-export function SharingSummary({ grant, locale, unavailable, className }: SharingSummaryProps): ReactElement {
+export function SharingSummary({ grant, locale, unavailable, statedElsewhere, className }: SharingSummaryProps): ReactElement {
   const headingId = useId(); // The summary's own identity, minted per instance: a worker can hold several relationships, and each one's summary is a separately labelled region rather than a second element answering to the same ids.
   const heading = COACHING_COPY.sharing.heading;
   if (unavailable !== undefined && unavailable !== null) return <StateNotice kind="unavailable" headingLevel={2} title={heading} description={COACHING_COPY.sharing.unavailable} source={unavailable.source} className={className} />;
@@ -175,6 +177,9 @@ export function SharingSummary({ grant, locale, unavailable, className }: Sharin
   const cutoffInstant = grant.shareCutoff.instant.trim();
   const duration = durationStatementOf(grant.duration);
   const modulesByKey = new Map<ModuleKey, ModuleReadState | null>(grant.modules.map((module) => [module.key, module.readState]));
+  // Which disclosures this summary states: one a surface renders in a card of its own beside this summary is left to that card, so a single relationship never states the same five modules or the same reviewed range twice. Every other fact — the relationship, the four outcomes, the duration and the closing instant — is stated here and nowhere else.
+  const statesModules = statedElsewhere?.modules !== true;
+  const statesRange = statedElsewhere?.financialRange !== true;
   return (
     <section aria-labelledby={headingId} className={cn("min-w-0", className)}>
       <Panel
@@ -183,10 +188,10 @@ export function SharingSummary({ grant, locale, unavailable, className }: Sharin
         description={COACHING_COPY.sharing.purpose}
         action={<StatusBadge label={lifecycle.label} tone={statusBadgeProps(COACHING_STATUS, grant.state).tone} srPrefix="Lifecycle" />}
         contentClassName="flex min-w-0 flex-col gap-5"
-        footer={<Link {...{ href: SHARING_ROUTE, className: buttonVariants({ variant: "outline", size: "sm" }) }}>Manage what you share</Link>}
+        footer={<Link {...{ href: SHARING_ROUTE, "data-slot": "button", className: buttonVariants({ variant: "outline", size: "sm" }) }}>Manage what you share</Link>}
       >
         <Section id={`${headingId}-relationship`} title={SECTION_TITLES.relationship}>
-          <p className="text-sm text-pretty text-muted-foreground">{lifecycle.description}</p>
+          <p className="type-supporting text-pretty">{lifecycle.description}</p>
           <dl className="flex flex-col gap-2 text-sm">
             <div className="flex flex-col gap-0.5">
               <dt className="font-medium">Source</dt>
@@ -215,53 +220,57 @@ export function SharingSummary({ grant, locale, unavailable, className }: Sharin
               const state = grant.outcomes[OUTCOME_STATE_FIELD[entry.id]];
               return (
                 <li key={entry.id} className="flex min-w-0 flex-col gap-1.5">
-                  <p className="flex flex-wrap items-baseline gap-2 text-sm">
+                  <p className="flex flex-wrap items-baseline gap-2 type-body">
                     <span className="font-medium">{OUTCOME_STAGE_NAME[entry.id]}</span>
                     <StatusBadge label={outcomeWord(entry, state)} tone={OUTCOME_TONE[state]} />
                   </p>
-                  <p className="text-sm text-pretty text-muted-foreground">{entry.description}</p>
+                  <p className="type-supporting text-pretty">{entry.description}</p>
                   {entry.id === "delivery" ? <SimulationLabel effect="mail-submission" /> : null}
                 </li>
               );
             })}
           </ul>
         </Section>
-        <Separator />
-        <Section id={`${headingId}-modules`} title={SECTION_TITLES.modules}>
-          <ul className="flex min-w-0 flex-col gap-4">
-            {MODULE_KEYS.map((key) => {
-              const readState = modulesByKey.get(key);
-              const word = moduleWordAndTone(readState);
-              return (
-                <li key={key} className="flex min-w-0 flex-col gap-1.5">
-                  <p className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
-                    <span className="font-medium">
-                      <bdi>{MODULE_COPY[key].name}</bdi>
-                    </span>
-                    <StatusBadge label={word.label} tone={word.tone} />
-                  </p>
-                  <p className="text-sm text-pretty text-muted-foreground">{MODULE_COPY[key].description}</p>
-                  <ModuleStatement readState={readState} />
-                </li>
-              );
-            })}
-          </ul>
-        </Section>
+        {statesModules ? (
+          <>
+            <Separator />
+            <Section id={`${headingId}-modules`} title={SECTION_TITLES.modules}>
+              <ul className="flex min-w-0 flex-col gap-4">
+                {MODULE_KEYS.map((key) => {
+                  const readState = modulesByKey.get(key);
+                  const word = moduleWordAndTone(readState);
+                  return (
+                    <li key={key} className="flex min-w-0 flex-col gap-1.5">
+                      <p className="flex flex-wrap items-baseline justify-between gap-2 type-body">
+                        <span className="font-medium">
+                          <bdi>{MODULE_COPY[key].name}</bdi>
+                        </span>
+                        <StatusBadge label={word.label} tone={word.tone} />
+                      </p>
+                      <p className="type-supporting text-pretty">{MODULE_COPY[key].description}</p>
+                      <ModuleStatement readState={readState} />
+                    </li>
+                  );
+                })}
+              </ul>
+            </Section>
+          </>
+        ) : null}
         <Separator />
         <Section id={`${headingId}-duration`} title={SECTION_TITLES.duration}>
-          <p className="flex flex-wrap items-baseline gap-2 text-sm">
+          <p className="flex flex-wrap items-baseline gap-2 type-body">
             <span className="font-medium">Duration</span>
             <span>{duration.value}</span>
           </p>
-          <p className="text-sm text-pretty text-muted-foreground">{duration.sentence}</p>
+          <p className="type-supporting text-pretty">{duration.sentence}</p>
           {cutoffInstant.length === 0 ? (
-            <p className="text-sm text-pretty text-muted-foreground">{grant.duration.kind === "ongoing" ? CUTOFF_ABSENT_ONGOING_SENTENCE : CUTOFF_ABSENT_SENTENCE}</p>
+            <p className="type-supporting text-pretty">{grant.duration.kind === "ongoing" ? CUTOFF_ABSENT_ONGOING_SENTENCE : CUTOFF_ABSENT_SENTENCE}</p>
           ) : (
             <>
-              <p className="text-sm text-pretty">
+              <p className="type-body text-pretty">
                 Closes at <bdi className="mono-identifier">{cutoffInstant}</bdi> in <bdi className="mono-identifier">{grant.shareCutoff.zone}</bdi>.
               </p>
-              <p className="text-sm text-pretty text-muted-foreground">
+              <p className="type-supporting text-pretty">
                 {duration.dayShown && !grant.shareCutoff.sourceLimitWins ? `It is the first instant of the civil day after the Share-through date, expressed in that zone. ` : ""}
                 {"That instant is the exclusive end of the share: a read at it is already outside the window, so the last moment that stays readable is the one before it."} {"It was frozen when this episode began, so a later travel, display-timezone or settings change cannot move it."}
               </p>
@@ -275,38 +284,42 @@ export function SharingSummary({ grant, locale, unavailable, className }: Sharin
             </>
           )}
         </Section>
-        <Separator />
-        <Section id={`${headingId}-range`} title={FINANCIAL_RANGE_COPY.heading}>
-          <p className="text-sm text-pretty text-muted-foreground">{FINANCIAL_RANGE_COPY.purpose}</p>
-          {range === null ? (
-            <p className="text-sm text-pretty text-muted-foreground">{"You did not review and share a financial range with this coach, so this grant carries no support figure. Sharing a range is a separate decision from sharing targets, check-ins or task summaries."}</p>
-          ) : (
-            <>
-              <dl className="flex flex-col gap-1 text-sm">
-                <Fact term="Period">
-                  <bdi>{`${range.from} – ${range.to}`}</bdi>
-                </Fact>
-                <Fact term="Figure">
-                  <span className="tabular-figures" title={range.formatting.accessibleLabel}>
-                    <bdi>{range.formatting.text}</bdi>
-                    {range.formatting.accessibleLabel === range.formatting.text ? null : <span className="sr-only">{range.formatting.accessibleLabel}</span>}
-                  </span>
-                  {carriesDigits(range.state) ? null : (
-                    <span className="mono-identifier ms-1">
-                      <bdi>{range.currency}</bdi>
-                    </span>
-                  )}
-                </Fact>
-                <Fact term="Basis">
-                  <bdi className="mono-identifier">{SUPPORT_BASIS}</bdi>
-                </Fact>
-              </dl>
-              <p className="text-sm text-pretty text-muted-foreground">{BASIS_DESCRIPTION}</p>
-              <p className="text-sm text-pretty text-muted-foreground">{FINANCIAL_RANGE_COPY.exclusions}</p>
-              {range.problem === null ? null : <StatementAlert icon={<TriangleAlertIcon aria-hidden="true" />} label={"This range cannot be shown as reviewed"} sentence={range.problem} />}
-            </>
-          )}
-        </Section>
+        {statesRange ? (
+          <>
+            <Separator />
+            <Section id={`${headingId}-range`} title={FINANCIAL_RANGE_COPY.heading}>
+              <p className="type-supporting text-pretty">{FINANCIAL_RANGE_COPY.purpose}</p>
+              {range === null ? (
+                <p className="type-supporting text-pretty">{"You did not review and share a financial range with this coach, so this grant carries no support figure. Sharing a range is a separate decision from sharing targets, check-ins or task summaries."}</p>
+              ) : (
+                <>
+                  <dl className="flex flex-col gap-1 text-sm">
+                    <Fact term="Period">
+                      <bdi>{`${range.from} – ${range.to}`}</bdi>
+                    </Fact>
+                    <Fact term="Figure">
+                      <span className="tabular-figures" title={range.formatting.accessibleLabel}>
+                        <bdi>{range.formatting.text}</bdi>
+                        {range.formatting.accessibleLabel === range.formatting.text ? null : <span className="sr-only">{range.formatting.accessibleLabel}</span>}
+                      </span>
+                      {carriesDigits(range.state) ? null : (
+                        <span className="mono-identifier ms-1">
+                          <bdi>{range.currency}</bdi>
+                        </span>
+                      )}
+                    </Fact>
+                    <Fact term="Basis">
+                      <bdi className="mono-identifier">{SUPPORT_BASIS}</bdi>
+                    </Fact>
+                  </dl>
+                  <p className="type-supporting text-pretty">{BASIS_DESCRIPTION}</p>
+                  <p className="type-supporting text-pretty">{FINANCIAL_RANGE_COPY.exclusions}</p>
+                  {range.problem === null ? null : <StatementAlert icon={<TriangleAlertIcon aria-hidden="true" />} label={"This range cannot be shown as reviewed"} sentence={range.problem} />}
+                </>
+              )}
+            </Section>
+          </>
+        ) : null}
       </Panel>
     </section>
   );

@@ -42,7 +42,15 @@ const ATTACHMENT_OMISSION = "No attachment of any kind: no document, no calendar
 const POSTER_HEADING = "The poster this notice carries";
 const POSTER_STATEMENT = "This is a still image from the video the linked edition carries. No player is embedded in the " + "notice, nothing starts on its own, and the video, its caption tracks and its transcript are served " + "only at the link.";
 const POSTER_ALT_FALLBACK = "Poster image for the video in the linked edition";
-const RENDERED_MESSAGE = cn("min-w-0 text-sm leading-relaxed break-words [overflow-wrap:anywhere]", "[&_p]:mb-3 [&_p:last-child]:mb-0", "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4", "[&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg");
+const RENDERED_MESSAGE = cn(
+  "min-w-0 type-body break-words [overflow-wrap:anywhere]",
+  "[&_p]:mb-3 [&_p:last-child]:mb-0",
+  "[&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:type-section-title [&_h2:first-child]:mt-0",
+  "[&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:type-subsection-title",
+  "[&_h4]:mt-4 [&_h4]:mb-2 [&_h4]:type-group-title",
+  "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4",
+  "[&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg",
+);
 const PANEL_CLASS = "rounded-lg focus-visible:ring-[3px] focus-visible:ring-ring";
 type NoticeDirection = Notice["pinned"]["locale"]["direction"];
 type NoticeBodies = { readonly html: string; readonly text: string };
@@ -97,7 +105,7 @@ function MessageBodies({ bodies, direction, lang }: MessageBodiesProps): ReactEl
   const hasHtml = bodies.html.length > 0;
   const hasText = bodies.text.length > 0;
   const htmlRendering = <RenderedContent html={bodies.html} direction={direction} lang={lang} className={RENDERED_MESSAGE} />;
-  const textRendering = <pre className="min-w-0 font-mono text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{bodies.text}</pre>;
+  const textRendering = <pre className="min-w-0 font-mono type-body whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{bodies.text}</pre>;
   if (!hasHtml && !hasText) return <MissingRendering which="both" />;
   if (hasHtml && hasText) {
     return (

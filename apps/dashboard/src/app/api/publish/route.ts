@@ -3,6 +3,7 @@ import { z } from "zod";
 import { mutationInputSchema, mutations, type MutationInput, type MutationOutcome } from "@/modules/data-service";
 import { sessionIdOf } from "../session-cookie";
 import { writeRoute } from "../handler";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const RECORD_REFERENCE_MAX_CHARS = 160;
@@ -35,8 +36,9 @@ function releasePayloadOf(payload: PublishPayload): ServicePublishPayload {
   };
 }
 /** Releases the selected variants of an approved candidate: a body that is not JSON, and a body carrying a reach decision, a content edit, a send instruction or an identity claim, are both refused before the service is reached, so nothing is released. */
-export const POST = (request: NextRequest): Promise<Response> =>
+const publishVariants = (request: NextRequest): Promise<Response> =>
   writeRoute(request, publishRequestSchema, (input): Promise<MutationOutcome> => {
     const release: MutationInput<ServicePublishPayload> = { ...input, payload: releasePayloadOf(input.payload) };
     return mutations.updates.publishVariants(sessionIdOf(request), release);
   });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: publishVariants });

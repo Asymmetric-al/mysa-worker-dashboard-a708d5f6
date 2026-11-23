@@ -11,11 +11,12 @@ import { buildNotice, type Notice, type PinnedRendition as NoticePinnedRendition
 import { isListedPublicly, reachMetadata, withdrawEdition, type ReachMetadata, type Tombstone } from "@/modules/content/reach";
 import { renderToHtml, type RenderMediaPlacement, type RenderRendition, type RenderRenditions } from "@/modules/content/render";
 import type { ContentDocument, Release } from "@/modules/content/variant";
+import { scenarioMediaServing } from "@/modules/dev-runtime/scenario";
 import { readSession } from "@/modules/store/repository";
 import { clampPageSize } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
 import { confirmationDeadline, notificationDeadline } from "@/modules/time/window";
-import { assertScope, canReadProtected, readResultOfRefusal, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
+import { assertScope, canReadProtected, readResultOfRefusal, recordRefusalOutage, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
 import {
   buildEnvelope,
   contentDocumentRecordSchema,
@@ -101,7 +102,8 @@ export type ReceivingEdition = { readonly documentId: string; readonly variantId
   readonly href: string;
 };
 export type ReceivingListView = { readonly editions: readonly ReceivingEdition[]; readonly languagePreference: string | null; readonly page: PageWindow };
-export type MediaReference = { readonly assetId: string; readonly renditionId: string; readonly purpose: string; readonly path: string };
+// One rendition of one asset as a reading surface receives it. `state` is the media source's own answer for this session's scenario, so a surface states an unreadable rendition as unavailable rather than linking to bytes the serving route refuses.
+export type MediaReference = { readonly assetId: string; readonly renditionId: string; readonly purpose: string; readonly path: string; readonly state: "served" | "unavailable" };
 export type GivingPlacement = { readonly state: "available"; readonly designation: SourceReference; readonly label: string; readonly simulated: string } | { readonly state: "giving-unavailable" };
 export type ReceivingPostView = { readonly state: "rendered" | "language-unavailable"; readonly documentId: string; readonly variantId: string | null } & { readonly releaseId: string | null; readonly audience: ContentAudience | null; readonly requestedLocale: string } & {
   readonly servedLocale: ContentLocale | null;
@@ -152,7 +154,10 @@ async function loadWorld(sessionId: string): Promise<{ readonly ok: true; readon
 /** Resolves the session this read acts for and the two worlds it may answer from — the caller's own, and the published world the reader crossing reaches — or the read's own refusal. */
 export async function resolveWorlds(job: string, source?: SessionSource): Promise<WorldResolution> {
   const resolved = await resolveSession(source);
-  if (!resolved.ok) return { ok: false, result: readResultOfRefusal(resolved.refusal) };
+  if (!resolved.ok) {
+    recordRefusalOutage(job, resolved.refusal);
+    return { ok: false, result: readResultOfRefusal(resolved.refusal) };
+  }
   const { session } = resolved;
   const own = await loadWorld(session.sessionId);
   if (!own.ok) return { ok: false, result: storeUnavailableRead(job, own.reference, STORE_READ_GUIDANCE) };
@@ -210,12 +215,16 @@ type EnvelopeFields<T> = { readonly source: Parameters<typeof buildEnvelope>[0][
 function respond<T>(scope: Scope, at: Temporal.Instant, fields: EnvelopeFields<T>): ReadResult<ReadEnvelope<T>> {
   return answerOf(scope, at.toString(), { data: fields.data, source: fields.source, revision: fields.revision, coverage: { from: null, to: fields.to === undefined ? at.toString() : fields.to, state: "complete" }, valueStates: fields.valueStates, actions: fields.actions });
 }
+/** The state a rendition count is stated in: a source that is down states `unavailable`, because an unreadable rendition set is never a number. */
+const renditionCountState = (serving: "served" | "unavailable", count: number): RecordedValueState => (serving === "served" ? countState(count) : "unavailable");
 type RenderingMedia = { readonly placements: readonly RenderMediaPlacement[]; readonly renditions: RenderRenditions; readonly references: readonly MediaReference[] };
-function renderingMediaOf(revision: StoredRevision, assets: readonly MediaAssetRecord[]): RenderingMedia {
+/** One revision's media as a rendering surface receives it. While the scenario's media source is down no rendition address reaches the renderer, so the single renderer states each placement's own text alternative and caption in the place of a player it cannot make loadable, and every rendition is still named to the surface with `state: "unavailable"` so the surface can say so and offer a retry. */
+function renderingMediaOf(revision: StoredRevision, assets: readonly MediaAssetRecord[], serving: "served" | "unavailable"): RenderingMedia {
   const byId = new Map(assets.map((asset) => [asset.assetId, asset] as const));
   const placementList: RenderMediaPlacement[] = [];
   const renditions: Record<string, RenderRendition> = {};
   const references: MediaReference[] = [];
+  const readable = serving === "served";
   for (const placement of [...revision.mediaPlacements].sort((left, right) => left.position - right.position)) {
     const asset = byId.get(placement.assetId);
     if (asset === undefined) {
@@ -229,25 +238,25 @@ function renderingMediaOf(revision: StoredRevision, assets: readonly MediaAssetR
     const captionRendition = captions === undefined ? undefined : asset.renditions.find((rendition) => rendition.renditionId === captions.renditionId);
     if (main !== undefined) {
       const path = renditionPath(asset.assetId, main.renditionId);
-      renditions[placement.placementId] = { src: path, purpose: main.purpose === "playback" ? "playback" : "display" };
-      references.push({ assetId: asset.assetId, renditionId: main.renditionId, purpose: main.purpose, path });
+      if (readable) renditions[placement.placementId] = { src: path, purpose: main.purpose === "playback" ? "playback" : "display" };
+      references.push({ assetId: asset.assetId, renditionId: main.renditionId, purpose: main.purpose, path, state: serving });
     }
     if (poster !== undefined) {
       const path = renditionPath(asset.assetId, poster.renditionId);
-      renditions[`${placement.placementId}:poster`] = { src: path, purpose: "poster" };
-      references.push({ assetId: asset.assetId, renditionId: poster.renditionId, purpose: poster.purpose, path });
+      if (readable) renditions[`${placement.placementId}:poster`] = { src: path, purpose: "poster" };
+      references.push({ assetId: asset.assetId, renditionId: poster.renditionId, purpose: poster.purpose, path, state: serving });
     }
     if (captionRendition !== undefined && captions !== undefined) {
       const path = renditionPath(asset.assetId, captionRendition.renditionId);
-      renditions[`${placement.placementId}:captions`] = { src: path, purpose: "captions" };
-      references.push({ assetId: asset.assetId, renditionId: captionRendition.renditionId, purpose: captionRendition.purpose, path });
+      if (readable) renditions[`${placement.placementId}:captions`] = { src: path, purpose: "captions" };
+      references.push({ assetId: asset.assetId, renditionId: captionRendition.renditionId, purpose: captionRendition.purpose, path, state: serving });
     }
     // The transcript is the video's own admitted rendition, keyed like the poster and the caption track and supplied to the renderer under a key of its own, so the reading alternative points at the address this read authorised.
     if (transcript !== undefined) {
       const transcriptKey = `${placement.placementId}:transcript`;
       const path = renditionPath(asset.assetId, transcript.renditionId);
-      renditions[transcriptKey] = { src: path, purpose: "transcript" };
-      references.push({ assetId: asset.assetId, renditionId: transcript.renditionId, purpose: transcript.purpose, path });
+      if (readable) renditions[transcriptKey] = { src: path, purpose: "transcript" };
+      references.push({ assetId: asset.assetId, renditionId: transcript.renditionId, purpose: transcript.purpose, path, state: serving });
     }
     placementList.push({
       placementId: placement.placementId,
@@ -263,8 +272,8 @@ function renderingMediaOf(revision: StoredRevision, assets: readonly MediaAssetR
   return { placements: placementList, renditions, references };
 }
 type RevisionRendering = { readonly ok: true; readonly html: string; readonly media: RenderingMedia } | { readonly ok: false; readonly reason: string };
-function renderingOf(revision: StoredRevision, assets: readonly MediaAssetRecord[]): RevisionRendering {
-  const media = renderingMediaOf(revision, assets);
+function renderingOf(revision: StoredRevision, assets: readonly MediaAssetRecord[], serving: "served" | "unavailable"): RevisionRendering {
+  const media = renderingMediaOf(revision, assets, serving);
   const rendered = renderToHtml(revision.body, { placements: media.placements, renditions: media.renditions });
   return rendered.status === "invalid" ? { ok: false, reason: "The edition's content does not satisfy the content profile this build renders." } : { ok: true, html: rendered.html, media };
 }
@@ -461,7 +470,7 @@ export async function readInbox(query: InboxQuery = {}, source?: SessionSource):
     const pinned: NoticePinnedRendition = { variantId: release.variantId, releaseId: release.releaseId, revisionId: release.revisionId, audience: release.audience, locale: resolved.domain.locale, renditionId: copy.renditionId, checksum: resolved.revision.contentChecksum };
     const notice = buildNotice({ publisher: { displayName: UNNAMED_PUBLISHER }, purpose: intent.purpose, pinned, sender: NOTICE_SENDER, link: href });
     const protectedNotice = release.audience === "approved-supporter";
-    const rendered = protectedNotice ? undefined : renderingOf(resolved.revision, published.state.mediaAssets);
+    const rendered = protectedNotice ? undefined : renderingOf(resolved.revision, published.state.mediaAssets, scenarioMediaServing(session.scenarioId));
     const reading: InboxReading = rendered === undefined ? { state: "link-only", href } : rendered.ok ? { state: "rendered", href, title: resolved.revision.sharePresentation.title, html: rendered.html } : { state: "unavailable", href, reason: rendered.reason };
     messages.push({
       messageId: `${result.sendResultId}:${copy.recipientId}`,
@@ -608,7 +617,8 @@ export async function readReceivingList(query: ReceivingListQuery = {}, source?:
       reach: record.reach,
       title: resolved.revision.sharePresentation.title,
       description: resolved.revision.sharePresentation.description,
-      href: `${updateHref(resolved.document.documentId)}?locale=${encodeURIComponent(resolved.domain.locale.tag)}`,
+      // The row's address names the edition itself, not only its document and language: two editions of one Update differ in audience or locale, so a variant-identified address opens exactly the edition the row lists.
+      href: `${updateHref(resolved.document.documentId)}?variant=${encodeURIComponent(record.variantId)}&locale=${encodeURIComponent(resolved.domain.locale.tag)}`,
     });
   }
   editions.sort((left, right) => {
@@ -627,7 +637,7 @@ export async function readReceivingList(query: ReceivingListQuery = {}, source?:
   const actions = [readAction("readEdition", editions.length > 0, "No edition is available to this reader at this instant; an edition published later appears here without changing this reader's entitlements.")];
   return respond(scope, at, { data, source: { system: "published-releases", reference: "updates" }, revision: collectionRevision(editions.map((edition) => `${edition.releaseId}@${edition.reach}`)), valueStates, actions });
 }
-export type ReceivingPostQuery = { readonly updateId: string; readonly locale?: string };
+export type ReceivingPostQuery = { readonly updateId: string; readonly locale?: string; readonly variant?: string };
 /** The unserved half of a post view: no edition is served, so every edition and rendition field states none. */
 const UNSERVED_POST_FIELDS: Omit<ReceivingPostView, "state" | "documentId" | "requestedLocale" | "simulated"> = { variantId: null, releaseId: null, audience: null, servedLocale: null, fallbackOccurred: false, publishedAt: null, title: null, html: null, renditions: [] };
 /** One Update at its exact post, re-authorised on every open. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
@@ -638,7 +648,12 @@ export async function readReceivingPost(query: ReceivingPostQuery, source?: Sess
   const document = published.state.contentDocuments.find((candidate) => candidate.documentId === query.updateId && candidate.family === "update");
   if (document === undefined) return deniedRead("no-permission");
   const grantHeld = grantHeldFor(session, scope, own, published);
-  const editions = editionsOf(document.documentId, published.state).filter((edition) => releaseStillServes(edition.domain));
+  const admitted = editionsOf(document.documentId, published.state).filter((edition) => releaseStillServes(edition.domain));
+  // A pinned address names one edition, so the pin narrows the candidates before the language chooses among them: the reader's language still selects within that edition rather than across its siblings.
+  const pinned = (query.variant ?? "").trim();
+  const editions = pinned.length === 0 ? admitted : admitted.filter((edition) => edition.record.variantId === pinned && (edition.record.audience === "public" || grantHeld));
+  // A pin that leaves no edition this reader may open answers exactly as an address naming no Update does — unknown, in another scope, withdrawn, superseded, or protected without the grant — because naming which would state that the edition exists.
+  if (pinned.length > 0 && editions.length === 0) return deniedRead("no-permission");
   const preference = languagePreferenceOf(session, own, published);
   const requestedLocale = requestedLocaleOf(query.locale, preference, editions);
   const resolution = resolveEditionFor({ document, editions, requestedLocale, grantHeld });
@@ -648,7 +663,8 @@ export async function readReceivingPost(query: ReceivingPostQuery, source?: Sess
     return respond(scope, at, { data: unavailableData, source: { system: "published-releases", reference: document.documentId }, revision: collectionRevision(editions.map((edition) => edition.record.releaseId)), valueStates: { requestedLocale: textState(requestedLocale) }, actions: [] });
   }
   const served = resolution;
-  const rendered = renderingOf(served.edition.revision, published.state.mediaAssets);
+  const serving = scenarioMediaServing(session.scenarioId);
+  const rendered = renderingOf(served.edition.revision, published.state.mediaAssets, serving);
   if (!rendered.ok) return sourceUnavailableRead({ job: "readReceivingPost", source: { system: "content-render", reference: "unrenderable-edition" }, guidance: STORE_READ_GUIDANCE });
   const data: ReceivingPostView = {
     state: "rendered",
@@ -665,7 +681,7 @@ export async function readReceivingPost(query: ReceivingPostQuery, source?: Sess
     renditions: rendered.media.references,
     simulated: [SIMULATED_PUBLICATION_REACH],
   };
-  const valueStates = { title: textState(data.title), "servedLocale.tag": textState(served.locale.tag), publishedAt: textState(data.publishedAt), renditions: countState(data.renditions.length) };
+  const valueStates = { title: textState(data.title), "servedLocale.tag": textState(served.locale.tag), publishedAt: textState(data.publishedAt), renditions: renditionCountState(serving, data.renditions.length) };
   return respond(scope, at, { data, source: { system: "published-releases", reference: document.documentId }, revision: served.edition.record.revision, valueStates, actions: [{ name: "followLink", available: true }] });
 }
 export type DiscoveryIndexQuery = { readonly page?: number; readonly pageSize?: number };
@@ -722,7 +738,8 @@ export async function readReceivingPage(query: ReceivingPageQuery, source?: Sess
   const served = resolution;
   const edition = served.edition;
   if (edition.record.reach === "not-public") return deniedRead("no-permission");
-  const rendered = renderingOf(edition.revision, published.state.mediaAssets);
+  const serving = scenarioMediaServing(session.scenarioId);
+  const rendered = renderingOf(edition.revision, published.state.mediaAssets, serving);
   if (!rendered.ok) return sourceUnavailableRead({ job: "readReceivingPage", source: { system: "content-render", reference: "unrenderable-edition" }, guidance: STORE_READ_GUIDANCE });
   const giving: GivingPlacement = document.givingBinding === null ? { state: "giving-unavailable" } : { state: "available", designation: document.givingBinding.designation, label: document.givingBinding.label, simulated: SIMULATED_GIVING_DESTINATION };
   const data: ReceivingPageView = {
@@ -743,7 +760,7 @@ export async function readReceivingPage(query: ReceivingPageQuery, source?: Sess
     tombstone: null,
     simulated: [SIMULATED_PUBLICATION_REACH, SIMULATED_GIVING_DESTINATION],
   };
-  const valueStates = { title: textState(data.title), "servedLocale.tag": textState(served.locale.tag), renditions: countState(data.renditions.length), "giving.state": textState(giving.state) };
+  const valueStates = { title: textState(data.title), "servedLocale.tag": textState(served.locale.tag), renditions: renditionCountState(serving, data.renditions.length), "giving.state": textState(giving.state) };
   return respond(scope, at, { data, source: { system: "published-releases", reference: document.documentId }, revision: edition.record.revision, valueStates, actions: [] });
 }
 function retryReason(state: SendOutcomeState, withinUsefulness: boolean): string {

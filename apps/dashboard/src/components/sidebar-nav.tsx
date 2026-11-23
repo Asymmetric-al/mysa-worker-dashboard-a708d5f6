@@ -40,6 +40,8 @@ export const PRIMARY_NAV: readonly NavItem[] = [
       { href: "/communication/delivery", label: "Delivery" },
       { href: "/communication/inbox", label: "Inbox" },
       { href: "/preview", label: "Receiving preview" },
+      { href: "/preview/pages", label: "Published pages" },
+      { href: "/preview/preferences", label: "Your preferences" },
     ],
   },
   { href: "/pages", label: "Pages", icon: LayoutTemplateIcon },

@@ -120,7 +120,7 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
     selectedMessage === undefined ? null : (
       <section id={readerRegionId} ref={readerRef} tabIndex={-1} aria-labelledby={readerHeadingId} data-slot="inbox-reader" className="flex min-w-0 flex-col gap-3">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <h3 id={readerHeadingId} className="font-heading text-base font-semibold text-pretty wrap-anywhere">
+          <h3 id={readerHeadingId} className="type-subsection-title text-pretty wrap-anywhere">
             {"The message as it was produced for this recipient"}
           </h3>
           <Button type="button" variant="outline" size="sm" onClick={closeReader} className="max-w-full whitespace-normal">
@@ -249,13 +249,13 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
   return (
     <section data-slot="inbox-list" aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-1">
-        <h2 id={headingId} className="font-heading text-xl font-semibold text-pretty wrap-anywhere">
+        <h2 id={headingId} className="type-section-title text-pretty wrap-anywhere">
           {INBOX_HEADING}
         </h2>
-        <p className="max-w-prose text-sm text-muted-foreground text-pretty wrap-anywhere">{SURFACE_INTRO}</p>
+        <p className="max-w-prose type-supporting text-pretty wrap-anywhere">{SURFACE_INTRO}</p>
       </div>
       <SimulationLabel effect={INBOX_SIMULATION_EFFECT} />
-      <p className="max-w-prose text-sm text-muted-foreground text-pretty wrap-anywhere">{ONE_COPY_STATEMENT}</p>
+      <p className="max-w-prose type-supporting text-pretty wrap-anywhere">{ONE_COPY_STATEMENT}</p>
       {content}
     </section>
   );

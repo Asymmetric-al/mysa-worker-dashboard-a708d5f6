@@ -249,7 +249,7 @@ test("an Update is composed with an image, previewed, reviewed once and released
   await page.goto(deliveryPath(SEEDED_NOTICE_INTENT));
   const delivery = page.locator('[data-slot="delivery-results"]');
   await expect(delivery).toBeVisible();
-  await expect(page.locator('[data-slot="delivery-row"]')).toHaveCount(SEEDED_NOTICE_RECIPIENTS);
+  await expect(delivery.locator("table tbody tr")).toHaveCount(SEEDED_NOTICE_RECIPIENTS);
   await expect(delivery).not.toContainText(releaseId);
   await page.goto(editorPath(PUBLIC_ENGLISH_EDITION));
   const reloadedProse = proseOf(page);
@@ -403,7 +403,7 @@ test("an edition whose author chose Publish and notify now is released through t
   const heldRows = fieldAt(recordedNotice.body, "data", "rows");
   const heldCount = Array.isArray(heldRows) ? heldRows.length : 0;
   expect(heldCount, "The notice served at least one eligible recipient, so its outcomes are recorded rows rather than none").toBeGreaterThan(0);
-  await expect(page.locator('[data-slot="delivery-row"]'), "The screen renders one row for each outcome the record holds").toHaveCount(heldCount);
+  await expect(delivery.locator("table tbody tr"), "The screen renders one row for each outcome the record holds").toHaveCount(heldCount);
   await expect(delivery.getByText(MAIL_SIMULATION, { exact: true }).first(), "Acceptance is neither delivery nor reading, and the simulated boundary is labelled where the outcomes are read").toBeVisible();
   const noticeBlock = delivery.locator('[data-slot="delivery-notice"]');
   await expect(noticeBlock, "Exactly one notice accompanies this publication's outcomes; --- the message itself, in both renderings the one notice presentation carries --------------").toHaveCount(1);

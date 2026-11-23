@@ -5,7 +5,7 @@ import ActionReview, { type ActionReviewProps, type MutationSubmit, type ReviewH
 import { DraftStatus, LIFECYCLE_STATUS, type ContentLifecycleState } from "@/components/draft-status";
 import FormField, { fieldErrorsFromInvalid, FormFieldGroup, type FieldErrorLookup } from "@/components/form-field";
 import StatusBadge, { type StatusBadgeSpec } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -27,7 +27,16 @@ type PerVariantItem = NonNullable<Extract<SettledOutcome, { readonly outcome: "a
 export type ReleaseVariantView = { readonly variantId: string; readonly locale: string; readonly lifecycle: ContentLifecycleState; readonly candidateId?: string; readonly revisionId?: string; readonly releaseHeadId?: string };
 type ReleaseCandidate = { readonly variantId: string; readonly locale: string; readonly candidateId: string };
 /** The scope every write states, so the service checks that authority instead of inferring it. */
-export type ReleaseControlsProps = { readonly scope: PageScope; readonly documentId: string; readonly expectedRevision: string; readonly variants: readonly ReleaseVariantView[]; readonly selectedVariantIds: readonly string[]; readonly onSelectionChange: (variantIds: string[]) => void; readonly className?: string };
+export type ReleaseControlsProps = {
+  readonly scope: PageScope;
+  readonly documentId: string;
+  readonly expectedRevision: string;
+  /* The Page record's own revision: the two withdrawal steps validate that record, while the review steps validate the edition `expectedRevision` states. */ readonly documentRevision: string;
+  readonly variants: readonly ReleaseVariantView[];
+  readonly selectedVariantIds: readonly string[];
+  readonly onSelectionChange: (variantIds: string[]) => void;
+  readonly className?: string;
+};
 type EditionPanelKind = "submit" | "changes" | "withdraw";
 type EditionPanel = { readonly kind: EditionPanelKind; readonly variantId: string };
 const PANEL_HEADING_LEVEL: ReviewHeadingLevel = 3;
@@ -94,7 +103,7 @@ const SUBMIT_STEP: EditionStepCopy = {
   title: copy.release.submitForReview,
   confirmLabel: copy.release.submitForReview,
   description: (locale) => (
-    <p className="text-sm text-pretty">
+    <p className="type-supporting text-pretty">
       <EditionName locale={locale} /> — {copy.release.submitForReviewNote}
     </p>
   ),
@@ -105,16 +114,16 @@ const WITHDRAW_STEP: EditionStepCopy = {
   consequential: true,
   description: (locale) => (
     <div className="flex min-w-0 flex-col gap-2">
-      <p className="text-sm text-pretty">
+      <p className="type-supporting text-pretty">
         <EditionName locale={locale} /> — {LIFECYCLE_STATUS.withdrawn.explanation}
       </p>
-      <p className="text-sm text-pretty text-muted-foreground">{copy.editions.editionIndependenceNote}</p>
+      <p className="type-supporting text-pretty">{copy.editions.editionIndependenceNote}</p>
     </div>
   ),
   consequence: () => (
     <div className="flex min-w-0 flex-col gap-2">
-      <p>{LIFECYCLE_STATUS.withdrawn.explanation}</p>
-      <p className="text-muted-foreground">{copy.editions.editionIndependenceNote}</p>
+      <p className="type-supporting">{LIFECYCLE_STATUS.withdrawn.explanation}</p>
+      <p className="type-supporting">{copy.editions.editionIndependenceNote}</p>
     </div>
   ),
 };
@@ -146,7 +155,7 @@ function EditionRow({ edition, selected, onSelectedChange, onOpenPanel }: { read
       {offered.length === 0 ? null : (
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           {offered.map((step) => (
-            <Button key={step.kind} type="button" variant={step.variant} size="sm" className={"h-auto min-h-6 py-1.5 whitespace-normal"} onClick={() => onOpenPanel({ kind: step.kind, variantId: edition.variantId })}>
+            <Button key={step.kind} type="button" variant={step.variant} size="sm" className={BUTTON_WRAP_CLASS} onClick={() => onOpenPanel({ kind: step.kind, variantId: edition.variantId })}>
               {step.label}
             </Button>
           ))}
@@ -189,7 +198,7 @@ function RequestChangesCard({ scope, expectedRevision, edition, submit, onClose 
       <ReviewedAction<ChangesPayload>
         title={copy.release.requestChanges}
         description={
-          <p className="text-sm text-pretty">
+          <p className="type-supporting text-pretty">
             <EditionName locale={edition.locale} /> — {copy.review.reviewDoesNotRelease}
           </p>
         }
@@ -217,7 +226,7 @@ function PublishCard({ scope, expectedRevision, documentId, publishable, exclude
       title={copy.release.publish}
       description={
         <div className="flex min-w-0 flex-col gap-2">
-          <p>{copy.release.publishNote}</p>
+          <p className="type-supporting">{copy.release.publishNote}</p>
           {publishable.length === 0 ? null : (
             <div className="flex min-w-0 flex-col gap-1">
               <p className="font-medium">{copy.editions.heading}</p>
@@ -250,13 +259,13 @@ function WithdrawPageCard({ scope, expectedRevision, documentId, editionCount, s
       title={copy.release.withdrawPage}
       description={
         <div className="flex min-w-0 flex-col gap-2">
-          <p className="text-sm text-pretty">{copy.release.withdrawConfirm(editionCount)}</p> <p className="text-sm text-pretty text-muted-foreground">{LIFECYCLE_STATUS.withdrawn.explanation}</p>
+          <p className="type-supporting text-pretty">{copy.release.withdrawConfirm(editionCount)}</p> <p className="type-supporting text-pretty">{LIFECYCLE_STATUS.withdrawn.explanation}</p>
         </div>
       }
       confirmLabel={copy.release.withdrawPage}
       consequence={
         <div className="flex min-w-0 flex-col gap-2">
-          <p>{copy.release.withdrawConfirm(editionCount)}</p> <p className="text-muted-foreground">{LIFECYCLE_STATUS.withdrawn.explanation}</p>
+          <p className="type-supporting">{copy.release.withdrawConfirm(editionCount)}</p> <p className="type-supporting">{LIFECYCLE_STATUS.withdrawn.explanation}</p>
         </div>
       }
       consequential
@@ -271,10 +280,10 @@ function ReleaseResults({ items, variants }: { readonly items: readonly PerVaria
   if (items.length === 0) return null;
   return (
     <section aria-labelledby={headingId} data-slot="release-variant-results" className="flex min-w-0 flex-col gap-2">
-      <h3 id={headingId} className="text-sm font-medium">
+      <h3 id={headingId} className="type-subsection-title">
         {copy.release.perVariantResultHeading}
       </h3>
-      <p className="text-sm text-pretty text-muted-foreground">{copy.release.perVariantResultNote}</p>
+      <p className="type-supporting text-pretty">{copy.release.perVariantResultNote}</p>
       <ul className="flex min-w-0 flex-col gap-2">
         {items.map((item, index) => {
           const reason = (item.reason ?? "").trim();
@@ -285,9 +294,9 @@ function ReleaseResults({ items, variants }: { readonly items: readonly PerVaria
                 <bdi className="text-sm font-medium">{variants.find((variant) => variant.variantId === item.targetId)?.locale ?? item.targetId}</bdi>
                 <StatusBadge {...releaseStateBadge(item.state)} srPrefix={copy.release.perVariantResultHeading} />
               </p>
-              {releaseStateMeaning(item.state) === null ? null : <p className="text-sm text-pretty wrap-anywhere">{releaseStateMeaning(item.state)}</p>}
-              {item.state === "failed-prior-good-head" ? <p className="text-sm text-pretty text-muted-foreground wrap-anywhere">{copy.release.priorGoodHeadPreserved}</p> : null}
-              {reason === "" ? null : <p className="text-sm text-pretty text-muted-foreground wrap-anywhere">{reason}</p>}
+              {releaseStateMeaning(item.state) === null ? null : <p className="type-supporting text-pretty wrap-anywhere">{releaseStateMeaning(item.state)}</p>}
+              {item.state === "failed-prior-good-head" ? <p className="type-supporting text-pretty wrap-anywhere">{copy.release.priorGoodHeadPreserved}</p> : null}
+              {reason === "" ? null : <p className="type-supporting text-pretty wrap-anywhere">{reason}</p>}
             </li>
           );
         })}
@@ -296,7 +305,7 @@ function ReleaseResults({ items, variants }: { readonly items: readonly PerVaria
   );
 }
 /** The Page's release and withdrawal controls: the editions it holds, the steps each one is offered, and the two Page-wide steps. */
-export function ReleaseControls({ scope, documentId, expectedRevision, variants, selectedVariantIds, onSelectionChange, className }: ReleaseControlsProps): ReactElement {
+export function ReleaseControls({ scope, documentId, expectedRevision, documentRevision, variants, selectedVariantIds, onSelectionChange, className }: ReleaseControlsProps): ReactElement {
   const submitForReview = useSubmitPageForReview();
   const requestChanges = useRequestPageChanges();
   const withdrawLocale = useWithdrawPageLocale();
@@ -340,7 +349,7 @@ export function ReleaseControls({ scope, documentId, expectedRevision, variants,
       <FormFieldGroup legend={copy.editions.heading} name="release-editions" description={copy.editions.editionIndependenceNote}>
         {() =>
           variants.length === 0 ? (
-            <p className="text-sm text-pretty text-muted-foreground">{copy.states.emptyEditions}</p>
+            <p className="type-supporting text-pretty">{copy.states.emptyEditions}</p>
           ) : (
             <ul className="flex min-w-0 flex-col gap-3">
               {variants.map((variant) => (
@@ -358,7 +367,7 @@ export function ReleaseControls({ scope, documentId, expectedRevision, variants,
           {openPanel.kind === "withdraw" ? (
             <EditionStepCard<WithdrawLocalePayload>
               scope={scope}
-              expectedRevision={expectedRevision}
+              expectedRevision={documentRevision}
               edition={openEdition}
               words={WITHDRAW_STEP}
               input={{ payload: { variantId: openEdition.variantId } }}
@@ -379,7 +388,7 @@ export function ReleaseControls({ scope, documentId, expectedRevision, variants,
       {liveEditionCount === 0 ? null : (
         <>
           <Separator />
-          <WithdrawPageCard scope={scope} expectedRevision={expectedRevision} documentId={documentId} editionCount={liveEditionCount} submit={(input) => withdrawPage.mutateAsync({ ...input, documentId })} />
+          <WithdrawPageCard scope={scope} expectedRevision={documentRevision} documentId={documentId} editionCount={liveEditionCount} submit={(input) => withdrawPage.mutateAsync({ ...input, documentId })} />
         </>
       )}
     </div>

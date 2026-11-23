@@ -61,6 +61,8 @@ export type SeriesEditorProps =
   | (SeriesEditorCommonProps & { readonly mode: "edit-this-and-future"; readonly current: SeriesEditorCurrent; readonly seriesId: string; readonly effectiveFrom: string; readonly state: SeriesState; readonly actions: readonly ReadAction[] });
 const EMPTY_ACTIONS: readonly ReadAction[] = [];
 const HEADING_TAG: Readonly<Record<2 | 3 | 4, "h2" | "h3" | "h4">> = { 2: "h2", 3: "h3", 4: "h4" };
+/** The one type scale's heading utility per level, so the editor's own title states the level it is rendered at with the same measure on every surface. */
+const HEADING_SCALE: Readonly<Record<2 | 3 | 4, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const END_KIND_ORDER = ["on-date", "after-count", "ongoing-personal-policy"] as const satisfies readonly SeriesEnd["kind"][];
 const INTERVAL_UNIT_OF_PROFILE: Readonly<Record<RepeatProfile, "weeks" | "months" | null>> = { none: null, weekly: null, everyNWeeks: "weeks", monthlyOnDay: null, everyNMonths: "months" };
 const DEFAULT_PROFILE: RepeatProfile = "weekly";
@@ -158,7 +160,7 @@ function defaultsOf(current: SeriesEditorCurrent | null, admittedEndKinds: reado
     endCount: stated.endCount ?? (end?.kind === "after-count" ? String(end.count) : ""),
   };
 }
-const RuleFact = factFrame({ rowClassName: "flex min-w-0 flex-col gap-0.5", termClassName: "text-sm text-muted-foreground", valueClassName: "min-w-0 text-sm wrap-anywhere" });
+const RuleFact = factFrame({ rowClassName: "flex min-w-0 flex-col gap-0.5", termClassName: "type-supporting", valueClassName: "min-w-0 type-body wrap-anywhere" });
 function EndFacts({ end }: { readonly end: SeriesEndFacts }): ReactElement {
   if (end.kind === "ongoing-personal-policy") return <span>{END_CONDITION_LABELS["ongoing-personal-policy"]}</span>;
   const stated = end.kind === "on-date" ? { label: END_DATE_LABEL, value: <StatedDate value={end.on} className="tabular-figures" /> } : { label: END_COUNT_LABEL, value: <bdi className="tabular-figures">{String(end.count)}</bdi> };
@@ -177,10 +179,10 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
   return (
     <section aria-labelledby={headingId} data-slot="series-current-rule" className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-muted/40 p-3">
       <div className="flex min-w-0 flex-col gap-1">
-        <h4 id={headingId} className="font-heading text-sm font-medium">
+        <h4 id={headingId} className="type-group-title">
           {HEADINGS.currentRule}
         </h4>
-        <p className="text-sm text-pretty">
+        <p className="type-body text-pretty">
           <span className="font-medium">{REPEAT_PROFILE_LABELS[rule.profile]}</span>
           <span className="text-muted-foreground">{` — ${REPEAT_PROFILE_DESCRIPTIONS[rule.profile]}`}</span>
         </p>
@@ -210,9 +212,9 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
           <StatedDate value={effectiveFrom} className="tabular-figures" />
         </RuleFact>
       </dl>
-      <p className="text-sm text-pretty text-muted-foreground">{"The dates before that boundary keep the rule they were planned under, and completed history is untouched."}</p>
-      <p className="text-sm text-pretty text-muted-foreground">{"Completed dates are never rewritten by this change: a revision only shapes the dates from the boundary onward."}</p>
-      <p className="text-sm text-pretty text-muted-foreground">{"The first due date belongs to the plan itself, so a prospective revision keeps it: only the rule from the boundary onward changes."}</p>
+      <p className="type-supporting text-pretty">{"The dates before that boundary keep the rule they were planned under, and completed history is untouched."}</p>
+      <p className="type-supporting text-pretty">{"Completed dates are never rewritten by this change: a revision only shapes the dates from the boundary onward."}</p>
+      <p className="type-supporting text-pretty">{"The first due date belongs to the plan itself, so a prospective revision keeps it: only the rule from the boundary onward changes."}</p>
     </section>
   );
 }
@@ -289,10 +291,10 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
   return (
     <section dir={dir} aria-labelledby={headingId} aria-busy={pending ? true : undefined} data-slot="series-editor" data-mode={props.mode} className={cn("flex min-w-0 flex-col gap-5", className)}>
       <div className="flex min-w-0 flex-col gap-1">
-        <Heading id={headingId} className="font-heading text-lg font-medium">
+        <Heading id={headingId} className={HEADING_SCALE[headingLevel]}>
           {revising ? HEADINGS.revise : HEADINGS.create}
         </Heading>
-        <p className="text-sm text-pretty text-muted-foreground">{revising ? HELP.revise : HELP.create}</p>
+        <p className="type-supporting text-pretty">{revising ? HELP.revise : HELP.create}</p>
       </div>
       {current === null ? null : <CurrentRule current={current} effectiveFrom={effectiveFrom} />}
       {stopped ? (
@@ -341,7 +343,7 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
                   {receipt === null || receipt.outcome === "invalid" ? null : (
                     <FormReceipt outcome={receipt} heading={revising ? HEADINGS.receiptRevise : HEADINGS.receiptCreate} headingLevel={receiptHeadingLevel} dataSlot="series-editor-result" fieldLabels={FIELD_LABELS} onCheckResult={onCheckResult} onRetrySameWork={retryReceipt} onReapply={reapplyReceipt} />
                   )}
-                  {pending ? <output className="block text-sm text-muted-foreground">{"Working: nothing else is submitted while this change is in flight."}</output> : null}
+                  {pending ? <output className="block type-supporting">{"Working: nothing else is submitted while this change is in flight."}</output> : null}
                   <FormFooter pending={pending} applied={applied} submitLabel={revising ? "Apply this revision" : "Create plan"} onCancel={onCancel} onDismiss={onCancel} />
                 </div>
               );
@@ -353,9 +355,9 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
         <>
           <Separator />
           <div className="flex min-w-0 flex-col gap-1">
-            <p className="text-sm font-medium">{"Paused and stopped are not the same:"}</p>
-            <p className="text-sm text-pretty text-muted-foreground">{PAUSED_NOTE}</p>
-            <p className="text-sm text-pretty text-muted-foreground">{STOPPED_NOTE}</p>
+            <p className="type-group-title">{"Paused and stopped are not the same:"}</p>
+            <p className="type-supporting text-pretty">{PAUSED_NOTE}</p>
+            <p className="type-supporting text-pretty">{STOPPED_NOTE}</p>
           </div>
           <SeriesStateControls scope={scope} seriesId={editFacts.seriesId} revision={expectedRevision} state={editFacts.state} actions={admittedActions} onCheckResult={onCheckResult} headingLevel={headingLevel} />
         </>

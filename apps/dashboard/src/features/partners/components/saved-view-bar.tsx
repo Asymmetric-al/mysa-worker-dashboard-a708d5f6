@@ -8,7 +8,7 @@ import OperationResult from "@/components/operation-result";
 import StateNotice from "@/components/state-notice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -90,14 +90,17 @@ function sameSelection(left: Readonly<Record<string, readonly string[]>>, right:
     return theirs !== undefined && mine.length === theirs.length && mine.every((value) => theirs.includes(value));
   });
 }
+/** Whether the ordering on screen is the one the view states: a view that states none leaves the list's ordering as it found it, so it claims nothing about it. */
+const sameStoredSort = (stored: SavedViewQueryState["sort"], applied: RosterQueryState["sort"]): boolean => stored === undefined || (applied !== null && applied.field === stored.field && applied.direction === stored.direction);
+/** Whether the choices on screen are the choices this view stores, member by member: the search, the selection, the stored ordering and the stored page size, each compared only where the view states one — a view that stores no ordering or size says nothing about it, so the badge never claims an ordering the list does not show. */
 function viewIsInUse(view: SavedViewQueryState, query: RosterQueryState): boolean {
-  if (view.search.trim() !== query.search.trim() || !sameSelection(view.applied, query.facets)) return false;
+  if (view.search.trim() !== query.search.trim() || !sameSelection(view.applied, query.facets) || !sameStoredSort(view.sort, query.sort)) return false;
+  if (view.pageSize !== undefined && view.pageSize !== query.pageSize) return false;
   return view.columnVisibility === undefined || Object.entries(view.columnVisibility).every(([columnId, visible]) => query.columnVisibility[columnId] === visible);
 }
 const SAVED_VIEW_PART_COPY = { filter: "Filter", value: (facet: string): string => `Value in the ${facet} filter`, column: "Column", pageSize: "Rows per page" } as const;
 const SAVED_VIEW_BAR_COPY = { trigger: "Saved views", triggerName: (repairCount: number): string => (repairCount === 0 ? "Saved views" : `Saved views, ${String(repairCount)} needs repair`), apply: "Apply", cancel: "Cancel" } as const;
 const RECEIPT_HEADING_LEVEL = 3;
-const SAVED_VIEW_ROUTE_SEGMENT = "roster";
 const SAVE_FIELD_LABELS: Readonly<Record<string, string>> = { name: "View name", viewId: "View", queryState: "Stored choices", "queryState.search": "Search text", "queryState.applied": "Selected filters", "queryState.pageSize": "Rows per page" };
 const RENAME_FIELD_LABELS: Readonly<Record<string, string>> = { name: "View name", viewId: "View" };
 const DELETE_FIELD_LABELS: Readonly<Record<string, string>> = { viewId: "View" };
@@ -118,7 +121,7 @@ function OutcomeReceipt({ operation, viewName, outcome, onCheckResult, onRetrySa
   const denied = outcome.outcome === "denied";
   return (
     <>
-      <p className="text-sm font-medium text-muted-foreground">
+      <p className="type-group-title text-muted-foreground">
         {denied ? label : `${label}: `}
         {denied ? null : <bdi className="wrap-anywhere">{viewName}</bdi>}
       </p>
@@ -223,9 +226,9 @@ const envelopeOf = <T,>(result: ReadResult<ReadEnvelope<T>> | undefined): ReadEn
 export default function SavedViewBar({ scope, admittedColumnKeys, initialResult, className }: SavedViewBarProps): ReactElement {
   // This bar composes the same roster query for the state and the views it stores, so it is a second observer of that one cache entry: without the seed its own mount would turn the route's answer back into the identical read the seed exists to avoid.
   const roster = useRosterQuery(scope, admittedColumnKeys === undefined ? {} : { admittedColumnKeys }, initialResult);
-  const saveView = useSaveView(SAVED_VIEW_ROUTE_SEGMENT);
-  const renameView = useRenameView(SAVED_VIEW_ROUTE_SEGMENT);
-  const deleteView = useDeleteView(SAVED_VIEW_ROUTE_SEGMENT);
+  const saveView = useSaveView();
+  const renameView = useRenameView();
+  const deleteView = useDeleteView();
   const [panel, setPanel] = useState<NamePanel | null>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<SavedViewDefinition | null>(null);
@@ -241,7 +244,7 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
   const savedViewsResult = roster.savedViews.data;
   const savedViews = envelopeOf(savedViewsResult);
   const facetsEnvelope = envelopeOf(roster.facets.data);
-  const descriptors = buildPartnerFacetDescriptors(facetsEnvelope, { applied: roster.query.facets });
+  const descriptors = buildPartnerFacetDescriptors(facetsEnvelope);
   const driftKnown = facetsEnvelope !== null;
   const saveAction = savedViews === null ? undefined : savedViews.actions.find((action) => action.name === "saveView");
   const canWrite = saveAction !== undefined && saveAction.available;
@@ -344,10 +347,10 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-80 max-w-[calc(100vw-2rem)]">
               <DropdownMenuLabel className="text-sm text-foreground">{SAVED_VIEW_BAR_COPY.trigger}</DropdownMenuLabel>
-              <p className="px-3 pb-2 text-xs leading-snug text-muted-foreground">{SAVED_VIEW_COPY.leavesRecordsAlone.body}</p>
-              {entries.length > 0 ? null : <p className="px-3 pb-2 text-xs leading-snug text-muted-foreground">No view is stored for this roster yet. Save the choices on screen to keep them.</p>}
+              <p className="px-3 pb-2 type-supporting">{SAVED_VIEW_COPY.leavesRecordsAlone.body}</p>
+              {entries.length > 0 ? null : <p className="px-3 pb-2 type-supporting">No view is stored for this roster yet. Save the choices on screen to keep them.</p>}
               {entries.length > 0 && !driftKnown ? (
-                <p id={driftNoteId} className="px-3 pb-2 text-xs leading-snug text-muted-foreground">
+                <p id={driftNoteId} className="px-3 pb-2 type-supporting">
                   The filters this context offers have not been read, so a stored view cannot be checked against them and is not applied until they are.
                 </p>
               ) : null}
@@ -373,7 +376,7 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
                   Save current view
                 </DropdownMenuItem>
               ) : (
-                <p className="px-3 py-2 text-xs leading-snug text-muted-foreground">{withheldReason === "" ? "This context admits reading a stored view and not changing one, so no view is saved, renamed or deleted here." : withheldReason}</p>
+                <p className="px-3 py-2 type-supporting">{withheldReason === "" ? "This context admits reading a stored view and not changing one, so no view is saved, renamed or deleted here." : withheldReason}</p>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -400,7 +403,7 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
             </AlertTitle>
             <AlertDescription>
               <p>{SAVED_VIEW_COPY.drift.body}</p>
-              <p className="mt-2 font-medium text-foreground">Unavailable in this context now:</p>
+              <p className="mt-2 type-group-title text-foreground">Unavailable in this context now:</p>
               <ul className="mt-1 flex list-disc flex-col gap-1 ps-5">
                 {unavailablePartsOf(drift).map((part) => (
                   <li key={part}>
@@ -409,10 +412,10 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
                 ))}
               </ul>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button type="button" size="sm" variant="secondary" className="h-auto min-h-8 whitespace-normal" disabled={busy || view.revision === undefined} onClick={() => void saveExisting(view, "repair", drift.repaired)}>
+                <Button type="button" size="sm" variant="secondary" className={BUTTON_WRAP_CLASS} disabled={busy || view.revision === undefined} onClick={() => void saveExisting(view, "repair", drift.repaired)}>
                   {SAVED_VIEW_COPY.repair.title}
                 </Button>
-                <Button type="button" size="sm" variant="outline" className="h-auto min-h-8 whitespace-normal" disabled={busy || view.revision === undefined} onClick={() => startDelete(view)}>
+                <Button type="button" size="sm" variant="outline" className={BUTTON_WRAP_CLASS} disabled={busy || view.revision === undefined} onClick={() => startDelete(view)}>
                   {SAVED_VIEW_COPY.delete.title}
                 </Button>
               </div>
@@ -437,7 +440,7 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
             cancelLabel={SAVED_VIEW_BAR_COPY.cancel}
             onCancel={() => setDeleteTarget(null)}
             description={
-              <p className="text-pretty">
+              <p className="type-supporting text-pretty">
                 {SAVED_VIEW_COPY.delete.body} The view named <bdi>{deleteTarget.name}</bdi> is the only thing removed, and no saved-view action brings a deleted view back.
               </p>
             }

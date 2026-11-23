@@ -208,6 +208,8 @@ export interface ReportComparison {
   readonly equalElapsed: boolean;
   readonly perCurrency: readonly { readonly currency: string; readonly currentMinor: MinorUnits; readonly baselineMinor: MinorUnits; readonly differenceMinor: MinorUnits; readonly direction: "increase" | "decrease" | "unchanged"; readonly valueState: ValueState }[];
   readonly contributorDeltas: readonly ContributorDelta[];
+  /** Every contributor change the comparison counted in each currency, before the stated list is bounded. */
+  readonly contributorDeltaCounts: Readonly<Record<string, number>>;
   readonly reconciles: boolean;
 }
 export interface Snapshot {
@@ -223,6 +225,17 @@ export interface Snapshot {
 }
 /** The window a paged collection serves: the page the read answered with, the row count served, and how many pages the whole result fills. */
 export type PageWindow = { readonly index: number; readonly size: number; readonly totalPages: number };
+/** One designation the whole filtered result carries, with the state the count of its rows is stated in. */
+export type DesignationFacetValue = { readonly designation: string } & StatedCount;
+/** One attribution the whole filtered result carries: a partner's own reference, or the kind when no partner is named, with the state the count of its rows is stated in. */
+export type AttributionFacetValue = { readonly attribution: GiftAttribution } & StatedCount;
+/** The values the whole filtered result contains, stated so a filter offers every value that result holds rather than the values one page happens to show. */
+export interface ReportFacets {
+  readonly designations: readonly DesignationFacetValue[];
+  readonly attributions: readonly AttributionFacetValue[];
+}
+/** The result of a run that requested the facet projection: the same figures every surface reads, with the values the ledger's filters can offer. */
+export type FacetsReportResult = ReportResult & { readonly facets: ReportFacets };
 export interface ReportResult {
   readonly snapshot: Snapshot;
   readonly summary: readonly CurrencySummary[];
@@ -233,6 +246,7 @@ export interface ReportResult {
   readonly comparison?: ReportComparison;
   readonly matrix?: Matrix;
   readonly goal?: GoalProgress;
+  readonly facets?: ReportFacets;
   readonly valueStates: Readonly<Record<string, ValueState>>;
 }
 type PeriodRange = { readonly from: CivilDate; readonly to: CivilDate };
@@ -241,7 +255,12 @@ type MonthBucket = { readonly start: CivilDate; readonly end: CivilDate };
 type Windowed<T> = { readonly items: readonly T[]; readonly page?: PageWindow };
 /** How many pages a whole-result count fills at a stated row count; a result that matched nothing fills none. */
 const totalPagesOf = (total: number, size: number): number => (total === 0 ? 0 : Math.ceil(total / size));
-export function runReport(query: ReportQuery, projection: SupportProjection): ReportResult {
+/** The sections one computation builds: the equal-elapsed comparison a report renders, and the facet values the gifts ledger's filters offer. A member is built only when its caller asks for it, so a surface that renders neither pays for neither. */
+export type ReportSections = { readonly comparison?: boolean; readonly facets?: boolean };
+/** The one report computation: it filters, sums, buckets, compares and pages the whole authorised result, and builds only the sections its trailing request states a caller renders. The plain signature is declared last so `ReturnType<typeof runReport>` stays the result every surface reads; only the gifts ledger asks for the facet projection, so every other report, the CSV writer and the print model read the same result they read before. */
+export function runReport(query: ReportQuery, projection: SupportProjection, sections: ReportSections & { readonly facets: true }): FacetsReportResult;
+export function runReport(query: ReportQuery, projection: SupportProjection, sections?: ReportSections): ReportResult;
+export function runReport(query: ReportQuery, projection: SupportProjection, sections: ReportSections = {}): ReportResult {
   assertQueryGate(query);
   assertSingleBasis(projection);
   const basis: SupportBasis = SUPPORT_BASIS;
@@ -249,7 +268,9 @@ export function runReport(query: ReportQuery, projection: SupportProjection): Re
   const timeZone = query.timeZone ?? REPORT_DEFAULT_TIME_ZONE;
   const today = civilTodayIn(timeZone, asOf);
   const period = resolvePeriod(query.period, today);
-  const baseline = needsComparison(query.reportId) ? precedingEqualElapsed(period) : undefined;
+  // A read whose surface renders no comparison asks for its projection without one: the preceding window is never resolved, no row is measured against it and no per-contributor delta is built for a caller that would show none. The default states the equal-elapsed comparison every report read renders.
+  const withComparison = needsComparison(query.reportId) && sections.comparison !== false;
+  const baseline = withComparison ? precedingEqualElapsed(period) : undefined;
   const searchTerm = query.search === undefined ? undefined : query.search.toLowerCase(); // One filtering pass over every authorised row, then one de-duplication at the grain. Both artifacts below are derived from this same set, so a filter can never apply to one surface and not another.
   const prepared = prepareRows(deduplicateAtGrain(projection.gifts.filter((row) => matchesNonDateFilters(row, query, searchTerm))), period.from);
   const current = sortPreparedRows(
@@ -267,8 +288,11 @@ export function runReport(query: ReportQuery, projection: SupportProjection): Re
   const comparison = baseline === undefined ? undefined : buildComparison({ period, baseline, coverage: projection.coverage, current, baselineRows });
   const matrix = query.reportId === "partner-month-matrix" ? buildMatrix({ query, buckets, currencies, rows: current, coverage: projection.coverage }) : undefined;
   const goal = projection.goal === undefined ? undefined : buildGoal(projection.goal, summary, query.currency, projection.coverage);
+  // The facet values are counted over the same matched rows the summary and the total come from, before the page window, and only for a caller that asks for them: a page of rows never limits the values a filter can name.
+  const facets = sections.facets === true ? buildFacets(current, projection.coverage) : undefined;
+  const snapshotCurrencies = statedCurrenciesOf(query.reportId, currencies, comparison);
   return {
-    snapshot: { query, scope: query.scope, basis, currencies, period: { from: period.from, to: period.to, state: period.state }, coverage: projection.coverage, asOf: projection.asOf, lastSourceUpdate: projection.lastSourceUpdate, source: projection.source },
+    snapshot: { query, scope: query.scope, basis, currencies: snapshotCurrencies, period: { from: period.from, to: period.to, state: period.state }, coverage: projection.coverage, asOf: projection.asOf, lastSourceUpdate: projection.lastSourceUpdate, source: projection.source },
     summary,
     series,
     rows,
@@ -277,6 +301,7 @@ export function runReport(query: ReportQuery, projection: SupportProjection): Re
     ...(comparison === undefined ? {} : { comparison }),
     ...(matrix === undefined ? {} : { matrix }),
     ...(goal === undefined ? {} : { goal }),
+    ...(facets === undefined ? {} : { facets }),
     valueStates: collectValueStates({ summary, series, rows, ...(comparison === undefined ? {} : { comparison }) }),
   };
 }
@@ -434,6 +459,11 @@ function currenciesOf(rows: readonly PreparedRow[], selection: CurrencySelection
   if (selection.kind === "one") codes.add(selection.currency);
   return [...codes].sort(compareIdentifiers);
 }
+/** The currencies the snapshot states: a report states the partition it sums, and the period comparison also states the partition of the earlier period it sets against it, so a currency that appears only in that earlier period is stated rather than left out of the fact the surface prints beside its figures (AAP 0.8.8 — every surface says what the result covers). */
+function statedCurrenciesOf(reportId: ReportId, currencies: readonly string[], comparison: ReportComparison | undefined): readonly string[] {
+  if (reportId !== "period-comparison" || comparison === undefined) return currencies;
+  return [...new Set([...currencies, ...comparison.perCurrency.map((entry) => entry.currency)])].sort(compareIdentifiers);
+}
 function summarise(rows: readonly PreparedRow[], currencies: readonly string[], coverage: Coverage): readonly CurrencySummary[] {
   const aggregates = new Map<string, CurrencyAggregate>();
   for (const { row } of rows) {
@@ -493,14 +523,18 @@ function buildSeries(rows: readonly PreparedRow[], buckets: readonly MonthBucket
   }
   return points;
 }
-/** The items a stated page window covers, taken from the whole collection: no page states the whole collection, and a stated page serves only its own rows. */
+/** The items a stated page window covers, taken from the whole collection: no page states the whole collection, a stated page serves only its own rows, and an index past the pages the collection fills is clamped onto the last one, so the window never states a page the result does not have. */
 function windowRows<T>(items: readonly T[], page: ReportQuery["page"]): Windowed<T> {
   if (page === undefined) return { items };
   const size = clampPageSize(page.size);
-  const start = page.index * size;
-  return { items: items.slice(start, start + size), page: { index: page.index, size, totalPages: totalPagesOf(items.length, size) } };
+  const totalPages = totalPagesOf(items.length, size);
+  const index = totalPages === 0 ? 0 : Math.min(Math.max(0, page.index), totalPages - 1);
+  const start = index * size;
+  return { items: items.slice(start, start + size), page: { index, size, totalPages } };
 }
 type ComparisonInput = { readonly period: PeriodRange; readonly baseline: PeriodRange; readonly coverage: Coverage; readonly current: readonly PreparedRow[]; readonly baselineRows: readonly PreparedRow[] };
+/** How many contributor changes of one currency a comparison states: the whole count and the reconciliation are computed over every change, while only the largest are stated, because an unbounded list made one report page tens of megabytes. */
+export const CONTRIBUTOR_DELTA_LIMIT = 25;
 function buildComparison(input: ComparisonInput): ReportComparison {
   const current = sumKnownByCurrency(input.current);
   const baseline = sumKnownByCurrency(input.baselineRows);
@@ -511,14 +545,15 @@ function buildComparison(input: ComparisonInput): ReportComparison {
     const difference = addMinor(currentMoney, negateMinor(baselineMoney));
     return { currency, currentMinor: currentMoney.minorUnits, baselineMinor: baselineMoney.minorUnits, differenceMinor: difference.minorUnits, direction: directionOf(difference.minorUnits), valueState: comparisonValueState(currentMoney, baselineMoney, input.coverage) };
   });
-  const contributorDeltas = buildContributorDeltas(input.current, input.baselineRows);
+  const everyDelta = buildContributorDeltas(input.current, input.baselineRows); // The whole set stays the basis of the stated count and of the reconciliation; only the list the document carries is bounded.
   return {
     current: { from: input.period.from, to: input.period.to },
     baseline: { from: input.baseline.from, to: input.baseline.to },
     equalElapsed: daysInclusive(input.period.from, input.period.to) === daysInclusive(input.baseline.from, input.baseline.to),
     perCurrency,
-    contributorDeltas,
-    reconciles: reconciles(perCurrency, contributorDeltas),
+    contributorDeltas: statedContributorDeltas(everyDelta),
+    contributorDeltaCounts: contributorDeltaCountsOf(everyDelta),
+    reconciles: reconciles(perCurrency, everyDelta),
   };
 }
 function sumKnownByCurrency(rows: readonly PreparedRow[]): Map<string, Money> {
@@ -579,6 +614,33 @@ function compareContributorDeltas(left: ContributorDelta, right: ContributorDelt
   const rightKind = right.attribution?.kind ?? "partner";
   const byKind = ATTRIBUTION_ORDER.indexOf(leftKind) - ATTRIBUTION_ORDER.indexOf(rightKind);
   return byKind !== 0 ? byKind : compareIdentifiers(left.partnerId ?? "", right.partnerId ?? "");
+}
+/** The whole number of contributor changes the comparison counted in each currency, whatever the stated list holds, so a surface can state how many changes it is not listing. */
+function contributorDeltaCountsOf(deltas: readonly ContributorDelta[]): Readonly<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  for (const delta of deltas) counts[delta.currency] = (counts[delta.currency] ?? 0) + 1;
+  return counts;
+}
+/** The contributor changes a comparison states: in each currency the largest by absolute minor units, ties broken the way the report's own order breaks them, with every stated change returned in that same order so a bounded list still ranks nobody. */
+function statedContributorDeltas(deltas: readonly ContributorDelta[]): readonly ContributorDelta[] {
+  const byCurrency = new Map<string, ContributorDelta[]>();
+  for (const delta of deltas) {
+    const listed = byCurrency.get(delta.currency);
+    if (listed === undefined) byCurrency.set(delta.currency, [delta]);
+    else listed.push(delta);
+  }
+  const stated: ContributorDelta[] = [];
+  for (const listed of byCurrency.values()) stated.push(...largestContributorDeltas(listed));
+  return stated.sort(compareContributorDeltas);
+}
+/** One currency's stated contributor changes: every change when the currency holds no more than the limit, otherwise the largest by absolute minor units taken from a list already in the report's own order, so equal sizes keep it. */
+function largestContributorDeltas(deltas: readonly ContributorDelta[]): readonly ContributorDelta[] {
+  if (deltas.length <= CONTRIBUTOR_DELTA_LIMIT) return deltas;
+  return [...deltas].sort(compareContributorMagnitude).slice(0, CONTRIBUTOR_DELTA_LIMIT);
+}
+function compareContributorMagnitude(left: ContributorDelta, right: ContributorDelta): number {
+  const bySize = Math.abs(right.minorUnits) - Math.abs(left.minorUnits);
+  return bySize === 0 ? compareContributorDeltas(left, right) : bySize;
 }
 function reconciles(perCurrency: ReportComparison["perCurrency"], deltas: readonly ContributorDelta[]): boolean {
   for (const entry of perCurrency) {
@@ -701,4 +763,19 @@ function collectValueStates(input: ValueStateInput): Readonly<Record<string, Val
     }
   }
   return states;
+}
+type AttributionCount = { readonly attribution: GiftAttribution; count: number };
+/** The values one filtered result holds, counted over the same rows its summary is computed from: a designation its rows carry and an attribution they name, each with the state its count is stated in. */
+function buildFacets(rows: readonly PreparedRow[], coverage: Coverage): ReportFacets {
+  const designations = new Map<string, number>();
+  const attributions = new Map<string, AttributionCount>();
+  for (const { row } of rows) {
+    if (row.designation !== undefined) designations.set(row.designation, (designations.get(row.designation) ?? 0) + 1);
+    const counted = forKey(attributions, attributionKey(row.attribution), () => ({ attribution: row.attribution, count: 0 }));
+    counted.count += 1;
+  }
+  return {
+    designations: [...designations.entries()].sort(([left], [right]) => compareIdentifiers(left, right)).map(([designation, count]) => ({ designation, ...statedCount(count, coverage) })),
+    attributions: [...attributions.values()].sort((left, right) => compareAttributions(left.attribution, right.attribution)).map((counted) => ({ attribution: counted.attribution, ...statedCount(counted.count, coverage) })),
+  };
 }

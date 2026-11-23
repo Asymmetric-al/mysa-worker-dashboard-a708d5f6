@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import type { SourceReference } from "@/lib/ids";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse } from "@/modules/data-service";
 import type { ImportCellCorrectionInput, ImportCreateDecisionInput, ImportDecisionKind, ImportReuseDecisionInput, ImportSkipDecisionInput, ImportUnresolvedDecisionInput } from "@/modules/import/decide";
@@ -32,10 +33,11 @@ const rowDecisionPayloadSchema: z.ZodType<RowDecisionPayload> = z.discriminatedU
 const rowDecisionRequestSchema = mutationInputSchema(rowDecisionPayloadSchema);
 const UNREADABLE_BODY = new z.ZodError([{ code: "custom", path: ["payload"], message: "The request body must be valid JSON: the four-field envelope and the row decision are both read from it, so a body that cannot be decoded states no decision about any row." }]);
 /** Records one import row's decision; answers with exactly one of the service's eight outcomes. */
-export async function POST(request: Request): Promise<Response> {
+async function recordRowDecision(request: Request): Promise<Response> {
   const body = await jsonBodyOf(request);
   if (body === undefined) return toResponse(outcomeFromError(UNIDENTIFIED_ATTEMPT, UNREADABLE_BODY));
   const parsed = rowDecisionRequestSchema.safeParse(body);
   if (!parsed.success) return toResponse(outcomeFromError(operationIdentityOf(body), parsed.error));
   return mutate(parsed.data.operationId, () => mutations.import.setRowDecision(parsed.data));
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: recordRowDecision });

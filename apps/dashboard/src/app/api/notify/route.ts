@@ -5,6 +5,7 @@ import { sessionIdOf } from "../session-cookie";
 import { writeRoute } from "../handler";
 import { readGrammar, readRoute } from "../read";
 import { wholePageParameter } from "../paging";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const MESSAGES = {
@@ -42,6 +43,7 @@ const noticeSchema = z.strictObject(
 );
 const notifyRequestSchema = mutationInputSchema(noticeSchema);
 /** Reads the per-recipient results of one notification intent, each recipient's one pinned rendition included: a name this read does not admit is refused at the field path that carries it. */
-export const GET = readRoute(readGrammar(sendResultQuerySchema, rawSendResultParams), (params) => reads.audience.readSendResult(params));
+const readSendResult = readRoute(readGrammar(sendResultQuerySchema, rawSendResultParams), (params) => reads.audience.readSendResult(params));
 /** Submits one deliberate notice for one published edition: who is eligible, which single rendition each of them is pinned to, how long the notice stays useful and how a repeated attempt is recognised are all the service's to decide at command time. */
-export const POST = (request: NextRequest): Promise<Response> => writeRoute(request, notifyRequestSchema, (input) => mutations.updates.requestNotification(sessionIdOf(request), input));
+const requestNotice = (request: NextRequest): Promise<Response> => writeRoute(request, notifyRequestSchema, (input) => mutations.updates.requestNotification(sessionIdOf(request), input));
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readSendResult, POST: requestNotice });

@@ -23,7 +23,7 @@ export function GivingDesignation({ binding, layout = "panel", className }: Givi
       <div data-slot="giving-designation" data-giving-state="unavailable" data-giving-cause={binding.cause} data-layout={layout} className={cn("flex flex-col gap-2 text-start", className)}>
         <Alert>
           <AlertTitle>
-            <h3 className="font-medium">{copy.giving.title}</h3>
+            <h3 className="type-subsection-title">{copy.giving.title}</h3>
           </AlertTitle>
           <AlertDescription>{unavailableDescription()}</AlertDescription>
         </Alert>
@@ -49,7 +49,7 @@ export function GivingDesignation({ binding, layout = "panel", className }: Givi
           <bdi className="mono-identifier wrap-anywhere">{formatSourceReference(binding.designationRef)}</bdi>
         </p>
         {purpose === "" ? null : (
-          <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">
+          <p className="type-supporting text-pretty wrap-anywhere">
             <bdi>{purpose}</bdi>
           </p>
         )}

@@ -58,6 +58,7 @@ const PICKER_COPY = {
 } as const;
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 type MemberPickerHeadingLevel = keyof typeof HEADING_TAG;
+const HEADING_SCALE: Readonly<Record<MemberPickerHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 type ResultWordVariant = "default" | "secondary" | "outline" | "destructive";
 type ResultWord = { readonly label: string; readonly variant: ResultWordVariant };
 const RESULT_WORDS: Readonly<Record<PerItemResultState, ResultWord>> = {
@@ -226,7 +227,7 @@ export default function MemberPicker({ initiativeId, candidates, scope, expected
   return (
     <section aria-labelledby={headingId} data-slot="member-picker" className={cn("flex min-w-0 flex-col gap-3", className)}>
       <div className="flex min-w-0 flex-col gap-1">
-        <Heading id={headingId} className="font-heading text-base font-medium text-pretty">
+        <Heading id={headingId} className={cn(HEADING_SCALE[headingLevel], "text-pretty")}>
           {PICKER_COPY.heading}
         </Heading>
         <p className="text-sm text-pretty text-muted-foreground">{MEMBERSHIP_RULES_COPY.explicitSelectionOnly}</p>

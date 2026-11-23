@@ -59,7 +59,7 @@ function ExpiredReferralHistorySection({ items, searchEmpty, dir, headingLevel }
     <ul className="flex min-w-0 flex-col gap-4">
       {items.map((referral) => (
         <li key={referral.referralId} className="flex min-w-0 flex-col gap-2">
-          <h3 className="font-heading text-base font-medium text-pretty wrap-anywhere">
+          <h3 className="type-subsection-title text-pretty wrap-anywhere">
             <bdi>{referral.partnerDisplayName}</bdi>
           </h3>
           <ExpiredReferralHistory referral={referral} headingLevel={4} dir={dir} />
@@ -76,7 +76,7 @@ function ViewSwitcher({ current, hrefOf }: { readonly current: ReferralView; rea
           const isCurrent = view === current;
           return (
             <li key={view} className="min-w-0">
-              <Link href={hrefOf(view)} aria-current={isCurrent ? "page" : undefined} className={cn(buttonVariants({ variant: isCurrent ? "secondary" : "ghost", size: "sm" }), "max-w-full whitespace-normal")}>
+              <Link href={hrefOf(view)} aria-current={isCurrent ? "page" : undefined} data-slot="button" className={cn(buttonVariants({ variant: isCurrent ? "secondary" : "ghost", size: "sm" }), "max-w-full whitespace-normal")}>
                 <bdi>{LIST_COPY.views[view].heading}</bdi>
               </Link>
             </li>
@@ -144,7 +144,7 @@ export function ReferralList({ scope, initialResult, dir, className }: ReferralL
         enableSorting: false,
         enableHiding: false,
         cell: (context) => (
-          <Link href={detailHref(context.row.original.referralId)} className="rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+          <Link href={detailHref(context.row.original.referralId)} className="inline-flex min-h-6 items-center rounded-sm font-medium inline-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
             <bdi>{context.row.original.partnerDisplayName}</bdi>
           </Link>
         ),
@@ -230,8 +230,8 @@ export function ReferralList({ scope, initialResult, dir, className }: ReferralL
     <div data-slot="referral-list" {...(dir === undefined ? {} : { dir })} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <ViewSwitcher current={query.list} hrefOf={hrefOf} />
       <div className="flex min-w-0 flex-col gap-1">
-        <h2 className="font-heading text-xl font-semibold text-pretty wrap-anywhere">{LIST_COPY.views[query.list].heading}</h2>
-        <p className="max-w-prose text-sm text-muted-foreground text-pretty wrap-anywhere">{LIST_COPY.views[query.list].explanation}</p>
+        <h2 className="type-section-title text-pretty wrap-anywhere">{LIST_COPY.views[query.list].heading}</h2>
+        <p className="type-supporting max-w-prose text-pretty wrap-anywhere">{LIST_COPY.views[query.list].explanation}</p>
       </div>
       <QueryToolbar label={LIST_COPY.search.label} search={{ value: query.search, onChange: handleSearchChange, placeholder: LIST_COPY.search.placeholder }} facets={NO_FACETS} applied={NO_APPLIED_FILTERS} onAppliedChange={handleAppliedChange} pending={referrals.isFetching} />
       <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{LIST_COPY.search.hint}</p>

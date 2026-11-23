@@ -102,8 +102,8 @@ const CLOCK_ROW_CLASS = "flex min-w-0 flex-wrap items-end gap-2";
 const CLOCK_FIELD_CLASS = "flex min-w-0 flex-col gap-2";
 const CLOCK_INPUT_CLASS = "w-24 sm:w-28";
 const CLOCK_SELECT_CLASS = "w-full sm:w-auto";
-const CLOCK_HINT_CLASS = "text-sm text-pretty text-muted-foreground";
-const CLOCK_ERROR_CLASS = "text-sm text-pretty text-destructive";
+const CLOCK_HINT_CLASS = "type-supporting text-pretty";
+const CLOCK_ERROR_CLASS = "type-body text-pretty text-destructive";
 const OFFSET_HINT = "Units are elapsed time: a day here is 24 hours, and no unit on this panel is a calendar day. A negative offset places the instant before the seed.";
 const ADVANCE_HINT = "Advancing moves the instant forward by elapsed time only. 24 hours reaches the notification deadline exactly; 168 hours reaches the confirmation deadline exactly, which is where both are refused.";
 const chooseClockUnit = (value: string, select: (unit: ClockUnitId) => void): void => {
@@ -247,10 +247,10 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
   return (
     <section data-slot="dev-panel" aria-labelledby={titleId} aria-describedby={introId} aria-busy={busy ? true : undefined} className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 id={titleId} className="text-lg font-semibold text-pretty">
+        <h2 id={titleId} className="type-section-title text-pretty">
           Development runtime
         </h2>
-        <p id={introId} className="text-sm text-pretty text-muted-foreground">
+        <p id={introId} className="type-supporting text-pretty">
           The scenario, the clock, one armed failure and the reset for this development session. These are development controls: the namespaced development route refuses them on the server outside a development session, so hiding this panel is not what protects them. The Development data label stays visible beside it,
           and nothing here is a production feature.
         </p>
@@ -258,12 +258,12 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
       {plan.armed && plan.mode !== null && plan.target !== null ? (
         <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 p-3">
           <Badge variant="outline">Armed</Badge>
-          <p className="min-w-0 flex-1 text-sm text-pretty">
+          <p className="min-w-0 flex-1 type-supporting text-pretty">
             {plan.modeLabel} is armed on <bdi className="mono-identifier wrap-anywhere">{plan.target.name}</bdi>, so any request to that {plan.target.kind} answers with the injected outcome. Disarm it before you judge any other behaviour.
           </p>
         </div>
       ) : null}
-      {busy ? <output className="block text-sm text-pretty text-muted-foreground">{PENDING_SENTENCE}</output> : null}
+      {busy ? <output className="block type-supporting text-pretty">{PENDING_SENTENCE}</output> : null}
       {result === null ? null : (
         <div data-slot="dev-panel-result" data-action={result.action} className="min-w-0">
           <OperationResult outcome={result.outcome} heading={receiptHeading ?? undefined} headingLevel={3} onRetrySameWork={receiptRetry} />
@@ -272,16 +272,16 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
-            <h3>Scenario</h3>
+            <h3 className="type-subsection-title">Scenario</h3>
           </CardTitle>
           <CardDescription>The seeded world this session runs in. A scenario decides which source is unavailable, so a demonstration proves something; switching it loads a different world and changes no record on its own.</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
-          <div className="flex min-w-0 flex-col gap-1 text-sm text-pretty">
-            <p>
+          <div className="flex min-w-0 flex-col gap-1 text-pretty">
+            <p className="type-body">
               Running now: <span className="font-medium">{scenario.label}</span> <bdi className="mono-identifier wrap-anywhere text-muted-foreground">{scenario.id}</bdi>
             </p>
-            <p className="text-muted-foreground">{scenario.description}</p>
+            <p className="type-supporting">{scenario.description}</p>
           </div>
           <div className="flex min-w-0 flex-col gap-2">
             <Label htmlFor={scenarioSelectId}>Switch to</Label>
@@ -297,7 +297,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
                 Switch scenario
               </Button>
             </div>
-            <p id={scenarioHintId} className="text-sm text-pretty text-muted-foreground">
+            <p id={scenarioHintId} className="type-supporting text-pretty">
               {chosenScenario !== undefined && scenarioChangePending ? `This session runs ${scenario.label} now. Switching loads ${chosenScenario.label}: ${chosenScenario.description}` : "Choosing a scenario changes nothing until you switch to it."}
             </p>
           </div>
@@ -306,7 +306,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
-            <h3>Clock</h3>
+            <h3 className="type-subsection-title">Clock</h3>
           </CardTitle>
           <CardDescription>The scenario instant every boundary is measured against. It is an offset from one fixed seed instant rather than a second clock, and the only ways to move it are on this panel.</CardDescription>
         </CardHeader>
@@ -333,8 +333,8 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
               </dd>
             </div>
           </dl>
-          <p className="text-sm text-pretty text-muted-foreground">{CLOCK_BOUNDARY_SENTENCE}</p>
-          <p className="text-sm text-pretty text-muted-foreground">{CLOCK_IMMEDIATE_SENTENCE}</p>
+          <p className="type-supporting text-pretty">{CLOCK_BOUNDARY_SENTENCE}</p>
+          <p className="type-supporting text-pretty">{CLOCK_IMMEDIATE_SENTENCE}</p>
           <Separator />
           <ClockField legend="Set the offset from the seed instant" field="Offset" idBase={offsetBase} value={offsetValue} unit={offsetUnit} error={offsetError} hint={OFFSET_HINT} action="Set the clock offset" onChange={setOffsetValue} onUnit={setOffsetUnit} onAction={applyClockOffset} disabled={busy} />
           <ClockField legend="Advance the clock" field="Advance by" idBase={advanceBase} minimum={1} value={advanceValue} unit={advanceUnit} error={advanceError} hint={ADVANCE_HINT} action="Advance the clock" onChange={setAdvanceValue} onUnit={setAdvanceUnit} onAction={advanceClock} disabled={busy} />
@@ -343,7 +343,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
-            <h3>Failure plan</h3>
+            <h3 className="type-subsection-title">Failure plan</h3>
           </CardTitle>
           <CardDescription>One simulated failure, injected into one named read or mutation. Exactly one plan is active at a time, so a demonstration cannot confuse which failure it is watching.</CardDescription>
         </CardHeader>
@@ -357,25 +357,25 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
                 <span className="text-sm text-muted-foreground">({plan.target.kind})</span>
               </div>
               {plan.armedAt === null ? null : (
-                <p className="text-sm text-pretty">
+                <p className="type-body text-pretty">
                   Armed at {armedWords === null ? null : `${armedWords}. `}
                   <bdi className="mono-identifier wrap-anywhere">{plan.armedAt}</bdi>
                 </p>
               )}
-              <p className="text-sm text-pretty">{plan.effect}</p>
-              <p className="text-sm text-pretty text-muted-foreground">{plan.recoveryLesson}</p>
+              <p className="type-supporting text-pretty">{plan.effect}</p>
+              <p className="type-supporting text-pretty">{plan.recoveryLesson}</p>
               <div className="flex min-w-0 flex-col gap-2">
                 <div>
                   <Button type="button" variant="destructive" disabled={busy} onClick={disarmFailure}>
                     Disarm this failure
                   </Button>
                 </div>
-                <p className="text-sm text-pretty text-muted-foreground">{ARMED_DISARM_SENTENCE}</p>
+                <p className="type-supporting text-pretty">{ARMED_DISARM_SENTENCE}</p>
               </div>
             </div>
           ) : (
             <>
-              <p className="text-sm text-pretty text-muted-foreground">{DISARMED_SENTENCE}</p>
+              <p className="type-supporting text-pretty">{DISARMED_SENTENCE}</p>
               <fieldset className="flex min-w-0 flex-col gap-4">
                 <legend className="text-sm font-medium">Failure to arm</legend>
                 <fieldset className="flex min-w-0 flex-col gap-2">
@@ -403,7 +403,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
                 <fieldset className="flex min-w-0 flex-col gap-2">
                   <legend className="text-sm text-muted-foreground">Call to inject it into</legend>
                   {eligibleTargets.length === 0 ? (
-                    <p className="text-sm text-pretty text-muted-foreground">No call in this release demonstrates {MODE_LABEL[mode]}.</p>
+                    <p className="type-supporting text-pretty">No call in this release demonstrates {MODE_LABEL[mode]}.</p>
                   ) : (
                     <>
                       <RadioGroup
@@ -427,7 +427,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
                         })}
                       </RadioGroup>
                       {chosenTarget === undefined ? null : (
-                        <p id={targetHintId} className="text-sm text-pretty text-muted-foreground">
+                        <p id={targetHintId} className="type-supporting text-pretty">
                           {chosenTarget.note}
                         </p>
                       )}
@@ -445,17 +445,17 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
         </CardContent>
       </Card>
       {devState.reset.available ? (
-        <ActionReview title="Reset the development data" headingLevel={3} consequential confirmLabel="Reset and re-seed" input={reset.input} submit={reset.submit} description={<p>{RESET_DESCRIPTION}</p>} consequence={<p>{RESET_CONSEQUENCE}</p>} />
+        <ActionReview title="Reset the development data" headingLevel={3} consequential confirmLabel="Reset and re-seed" input={reset.input} submit={reset.submit} description={<p className="type-supporting">{RESET_DESCRIPTION}</p>} consequence={<p className="type-supporting">{RESET_CONSEQUENCE}</p>} />
       ) : (
         <Card className="min-w-0">
           <CardHeader>
             <CardTitle>
-              <h3>Reset</h3>
+              <h3 className="type-subsection-title">Reset</h3>
             </CardTitle>
             <CardDescription>A deterministic reset is not available in this session, so no control is offered that could not be honoured.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-pretty text-muted-foreground">{devState.reset.statement}</p>
+            <p className="type-supporting text-pretty">{devState.reset.statement}</p>
           </CardContent>
         </Card>
       )}

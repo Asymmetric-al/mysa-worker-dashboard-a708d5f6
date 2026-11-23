@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import { assertNever } from "@/lib/result";
 import { mutationInputSchema, mutations, toResponse } from "@/modules/data-service";
 import { invalid } from "@/modules/data-service/outcome";
@@ -32,7 +33,7 @@ function refusalIdentityOf(raw: unknown): string {
 }
 const refusal = (operationId: string, error: z.ZodError): Response => toResponse(invalid({ operationId, fields: error }));
 /** Applies exactly one named coaching-grant change and answers with one of the eight outcomes: `accepted`, `alreadyAccepted` for a replay of the same operationId, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function POST(request: Request): Promise<Response> {
+async function changeGrant(request: Request): Promise<Response> {
   const raw = await jsonBodyOf(request);
   const operationId = refusalIdentityOf(raw);
   const verb = verbRead.safeParse(raw);
@@ -63,3 +64,4 @@ export async function POST(request: Request): Promise<Response> {
       return assertNever(verb.data.payload.operation, "Unhandled coaching grant mutation");
   }
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: changeGrant });

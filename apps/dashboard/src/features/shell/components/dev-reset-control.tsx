@@ -16,10 +16,10 @@ export type DevResetControlProps = { readonly scope: Scope; readonly expectedRev
   const [input] = useState<ResetInput>(() => ({ scope, expectedRevision, payload: {} }));
   const consequence = (
     <>
-      <p>{RESET_COPY.irreversibleNote}</p>
-      <p>{RESET_COPY.sameAsCommandNote}</p>
+      <p className="type-supporting">{RESET_COPY.irreversibleNote}</p>
+      <p className="type-supporting">{RESET_COPY.sameAsCommandNote}</p>
     </>
   );
-  return <ActionReview title={RESET_COPY.title} headingLevel={2} consequential description={<p>{RESET_COPY.body}</p>} consequence={consequence} confirmLabel={RESET_COPY.confirmLabel} cancelLabel={RESET_COPY.cancelLabel} input={input} submit={submit} onSettled={rereadServerRender} />;
+  return <ActionReview title={RESET_COPY.title} headingLevel={2} consequential description={<p className="type-supporting">{RESET_COPY.body}</p>} consequence={consequence} confirmLabel={RESET_COPY.confirmLabel} cancelLabel={RESET_COPY.cancelLabel} input={input} submit={submit} onSettled={rereadServerRender} />;
 }
 export default DevResetControl;

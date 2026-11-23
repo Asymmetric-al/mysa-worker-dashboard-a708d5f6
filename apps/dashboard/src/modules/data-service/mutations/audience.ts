@@ -208,7 +208,7 @@ function applyUnsubscribe(context: MutationContext, payload: UnsubscribePayload,
 type AudienceSpec<R extends MutationResult> = { readonly authorize?: (session: ResolvedSession) => ScopeDecision; readonly readCurrent?: (documents: MutationContext["docs"], session: ResolvedSession) => CurrentTarget; readonly apply: (context: MutationContext, session: ResolvedSession) => ApplyResult<R> };
 const OWN_RECORD_ADMITTED: (session: ResolvedSession) => ScopeDecision = () => ({ ok: true });
 async function runAudienceMutation<P, R extends MutationResult>(input: MutationInput<P>, source: SessionSource | undefined, schema: z.ZodType<P>, name: MutationName, spec: AudienceSpec<R>): Promise<MutationOutcome> {
-  const opening = await openMutation(input, source);
+  const opening = await openMutation(name, input, source);
   if (!opening.ok) return opening.outcome;
   const { session } = opening;
   return runMutation<P, R>({

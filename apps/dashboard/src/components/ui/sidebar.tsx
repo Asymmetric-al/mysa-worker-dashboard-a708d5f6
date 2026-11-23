@@ -138,8 +138,9 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
     </Button>
   );
 }
-const SidebarSeparator = ({ className, ...props }: React.ComponentProps<typeof Separator>) => <Separator data-slot="sidebar-separator" data-sidebar="separator" className={cn("mx-2 w-auto bg-sidebar-border", className)} {...props} />;
-const SidebarContent = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="sidebar-content" data-sidebar="content" className={cn("no-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-auto [--radius:var(--radius-xl)] group-data-[collapsible=icon]:overflow-hidden", className)} {...props} />;
+// The design-system separator widens itself to the whole content box, so the horizontal margins it carries here would land outside that box; the cap subtracts them from the drawn width, which is what keeps the rail's scroll content free of an overflow it hides behind `no-scrollbar`.
+const SidebarSeparator = ({ className, ...props }: React.ComponentProps<typeof Separator>) => <Separator data-slot="sidebar-separator" data-sidebar="separator" className={cn("mx-2 w-auto max-w-[calc(100%-1rem)] bg-sidebar-border", className)} {...props} />;
+const SidebarContent = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="sidebar-content" data-sidebar="content" className={cn("no-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden", className)} {...props} />;
 const SidebarGroup = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="sidebar-group" data-sidebar="group" className={cn("relative flex w-full min-w-0 flex-col p-2", className)} {...props} />;
 const SidebarGroupContent = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="sidebar-group-content" data-sidebar="group-content" className={cn("w-full text-sm", className)} {...props} />;
 const SidebarMenu = ({ className, ...props }: React.ComponentProps<"ul">) => <ul data-slot="sidebar-menu" data-sidebar="menu" className={cn("flex w-full min-w-0 flex-col gap-1", className)} {...props} />;

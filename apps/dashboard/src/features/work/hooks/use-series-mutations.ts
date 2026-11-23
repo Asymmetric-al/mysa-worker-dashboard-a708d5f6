@@ -37,7 +37,7 @@ function useSeriesChange<P extends object>(scope: Scope, mutation: SeriesMutatio
     },
   });
 }
-/** Builds the eight series mutations as the browser transports for `/api/work/series`, each returning exactly one outcome. */ export function useSeriesMutations(scope: Scope): SeriesMutationTransports {
+/** Builds the eight series mutations as the browser transports for `/api/series`, each returning exactly one outcome. */ export function useSeriesMutations(scope: Scope): SeriesMutationTransports {
   const createSeries = useSeriesChange<CreateSeriesPayload>(scope, "createSeries");
   const editOccurrence = useSeriesChange<EditOccurrencePayload>(scope, "editOccurrence");
   const editThisAndFuture = useSeriesChange<EditThisAndFuturePayload>(scope, "editThisAndFuture");

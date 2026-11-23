@@ -2,7 +2,7 @@
 import { useCallback, useId, useState, type FormEvent, type ReactElement, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
 import ActionReview from "@/components/action-review";
-import FormField, { fieldErrorsFromInvalid, FormErrorSummary, type FieldErrorLookup } from "@/components/form-field";
+import FormField, { civilDateConvention, fieldErrorsFromInvalid, FormErrorSummary, type FieldErrorLookup } from "@/components/form-field";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ type RequestedMoney = NonNullable<RequestRow["terms"]["money"]>;
 const FALLBACK_LOCALE = "en-GB";
 const HEADING_TAG = { 3: "h3", 4: "h4" } as const;
 type RequestPresentationHeadingLevel = keyof typeof HEADING_TAG;
+const HEADING_SCALE: Readonly<Record<RequestPresentationHeadingLevel, string>> = { 3: "type-subsection-title", 4: "type-group-title" };
 const NESTED_HEADING_LEVEL = 4;
 const NestedHeading = HEADING_TAG[NESTED_HEADING_LEVEL];
 const PRESENT_ACTION = "presentRequest";
@@ -139,7 +140,7 @@ function RecordedFacts({ request, presentation }: { readonly request: RequestRow
         <p className="text-sm text-pretty">{standing.statement}</p>
       ) : (
         <div className="flex min-w-0 flex-col gap-1 border-s-2 border-border ps-3">
-          <NestedHeading className="font-heading text-sm font-medium text-pretty">{standing.heading}</NestedHeading>
+          <NestedHeading className={cn(HEADING_SCALE[NESTED_HEADING_LEVEL], "text-pretty")}>{standing.heading}</NestedHeading>
           <p className="text-sm text-pretty">{standing.statement}</p>
           <p className="text-xs text-pretty text-muted-foreground">{SURFACE_COPY.earlierVersionPreserved}</p>
         </div>
@@ -300,7 +301,7 @@ function PresentAction({ initiativeId, request, scope, valueStates, presentActio
           {errors === null || errors.count === 0 ? null : <FormErrorSummary errors={errors} labels={FIELD_LABELS} order={FIELD_ORDER} headingLevel={NESTED_HEADING_LEVEL} />}
           <form.Field name={PRESENTED_ON_FIELD}>
             {(field) => (
-              <FormField name={PRESENTED_ON_FIELD} label={PRESENTATION_COPY.presentedOnLabel} description={SURFACE_COPY.presentedOnDescription} error={errors?.byField[PRESENTED_ON_FIELD]} required>
+              <FormField name={PRESENTED_ON_FIELD} label={PRESENTATION_COPY.presentedOnLabel} description={`${SURFACE_COPY.presentedOnDescription} ${civilDateConvention(field.state.value)}`} error={errors?.byField[PRESENTED_ON_FIELD]} required>
                 {(control) => <Input {...valuePropsOf(field, control)} name={PRESENTED_ON_FIELD} type="date" required={control.required} />}
               </FormField>
             )}
@@ -335,7 +336,7 @@ export default function RequestPresentation({ initiativeId, request, envelope, o
   return (
     <section aria-labelledby={headingId} data-slot="request-presentation" data-state={presentation === null ? "unpresented" : "presented"} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-1">
-        <Heading id={headingId} className="font-heading text-base font-medium text-pretty">
+        <Heading id={headingId} className={cn(HEADING_SCALE[headingLevel], "text-pretty")}>
           {SURFACE_COPY.heading}
         </Heading>
         <p className="text-sm text-pretty text-muted-foreground">{SURFACE_COPY.intro}</p>

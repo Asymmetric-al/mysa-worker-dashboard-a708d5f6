@@ -14,7 +14,7 @@ export const SIMULATION_LABELS = Object.freeze({
 } as const satisfies Record<SimulatedEffect, string>);
 export type SimulationLabelContext = "inline" | "block";
 export type SimulationLabelProps = Omit<ComponentPropsWithoutRef<"div">, "children" | "style" | "role" | "hidden" | "aria-hidden" | "aria-live" | "aria-atomic" | "dangerouslySetInnerHTML"> & { effect: SimulatedEffect; context?: SimulationLabelContext };
-const INLINE_SURFACE = "flex w-fit max-w-full items-start gap-2 rounded-md border border-border bg-background px-2.5 " + "py-1.5 text-start text-sm text-muted-foreground text-pretty wrap-anywhere";
+const INLINE_SURFACE = "flex w-fit max-w-full items-start gap-2 rounded-md border border-border bg-background px-2.5 " + "py-1.5 type-supporting text-start text-pretty wrap-anywhere";
 const INLINE_ICON = "mt-0.5 size-4 shrink-0";
 const BLOCK_ICON = "size-4 shrink-0";
 function labelFor(effect: SimulatedEffect): string {

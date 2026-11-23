@@ -1,9 +1,11 @@
+import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import { StateNotice } from "@/components/state-notice";
 import MembershipTable from "@/features/audience/components/membership-table";
 import { NOT_CONSENT_STATEMENT, PURPOSE_LABEL } from "@/features/audience/copy/membership";
 import { reads } from "@/modules/data-service";
 import { firstValueOf, type SearchParams } from "../../page-frame";
+export const metadata: Metadata = { title: "Audience" };
 type AudienceRead = typeof reads.audience.readAudience;
 type AudienceResult = Awaited<ReturnType<AudienceRead>>;
 type AudienceQueryInput = NonNullable<Parameters<AudienceRead>[0]>;
@@ -51,16 +53,16 @@ export default async function CommunicationAudiencePage({ searchParams }: { read
   return (
     <section aria-labelledby={HEADING_ID} className="flex min-w-0 flex-col gap-6 text-start">
       <div className="flex min-w-0 flex-col gap-2">
-        <h1 id={HEADING_ID} className="text-2xl font-semibold text-pretty wrap-anywhere">
+        <h1 id={HEADING_ID} className="type-page-title text-pretty wrap-anywhere">
           {PAGE_COPY.heading}
         </h1>
-        <p className="max-w-prose text-sm text-pretty text-muted-foreground">{PAGE_COPY.lede}</p>
+        <p className="max-w-prose type-supporting text-pretty">{PAGE_COPY.lede}</p>
       </div>
       {result.kind === "envelope" ? (
         <MembershipTable envelope={result.envelope} scope={result.envelope.scope} locale={INTERFACE_LOCALE} />
       ) : (
         <>
-          <p className="max-w-prose text-pretty text-sm text-muted-foreground">{NOT_CONSENT_STATEMENT}</p>
+          <p className="max-w-prose text-pretty type-supporting">{NOT_CONSENT_STATEMENT}</p>
           <AudienceNotice result={result} />
         </>
       )}

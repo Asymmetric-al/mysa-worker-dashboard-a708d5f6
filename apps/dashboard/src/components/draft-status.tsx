@@ -83,9 +83,15 @@ function staleDetail(since: string | undefined, locale: string | undefined): Rea
   }
   return null;
 }
-export type DraftStatusProps = { readonly state: ContentLifecycleState; readonly staleSince?: string; readonly staleLocale?: string; readonly className?: string };
-/** The lifecycle indicator: the state word, the concrete staleness detail when there is one, and the sentence saying what the state permits. */
-export function DraftStatus({ state, staleSince, staleLocale, className }: DraftStatusProps): ReactNode {
+export type DraftStatusProps = {
+  readonly state: ContentLifecycleState;
+  readonly staleSince?: string;
+  readonly staleLocale?: string;
+  /** Whether this surface states the sentence saying what the state permits: a row that states those sentences once under its table turns it off, so no row repeats them. */ readonly explanation?: boolean;
+  readonly className?: string;
+};
+/** The lifecycle indicator: the state word, the concrete staleness detail when there is one, and — unless a dense surface states the sentences once elsewhere — the sentence saying what the state permits. */
+export function DraftStatus({ state, staleSince, staleLocale, explanation = true, className }: DraftStatusProps): ReactNode {
   const spec = specFor(state);
   const detail = staleDetail(staleSince, staleLocale);
   return (
@@ -94,7 +100,7 @@ export function DraftStatus({ state, staleSince, staleLocale, className }: Draft
         <StatusBadge label={spec.label} tone={spec.tone} srPrefix="Status" />
         {detail === null ? null : <span className="text-xs text-muted-foreground text-pretty wrap-anywhere">{detail}</span>}
       </span>
-      <p className="text-start text-sm text-muted-foreground text-pretty wrap-anywhere">{spec.explanation}</p>
+      {explanation ? <p className="type-supporting text-start text-pretty wrap-anywhere">{spec.explanation}</p> : null}
     </div>
   );
 }

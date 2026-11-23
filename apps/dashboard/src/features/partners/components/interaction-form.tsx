@@ -4,7 +4,7 @@ import { useId, useState, type FormEvent, type ReactElement } from "react";
 import type { ZodError } from "zod";
 import { useAttemptedMutation } from "@/components/attempt";
 import { ChoiceGroup, type ChoiceWording } from "@/components/choice-group";
-import FormField, { FormErrorSummary, FormFieldGroup, fieldErrorsFromInvalid, type FieldErrorLookup } from "@/components/form-field";
+import FormField, { civilDateConvention, FormErrorSummary, FormFieldGroup, fieldErrorsFromInvalid, type FieldErrorLookup } from "@/components/form-field";
 import OperationResult from "@/components/operation-result";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,9 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
-import type { MutationInput, Scope } from "@/modules/data-service/envelope";
-import { UNIDENTIFIED_ATTEMPT, invalid, isOutcome, type MutationOutcome } from "@/modules/data-service/outcome";
+import { useOutcomeMutation } from "@/lib/read-transport";
+import type { Scope } from "@/modules/data-service/envelope";
+import { UNIDENTIFIED_ATTEMPT, invalid, type MutationOutcome } from "@/modules/data-service/outcome";
 import { AUDIENCE_LABEL_COPY, INTERACTION_COPY, PRIVATE_RECORD_COPY } from "../copy/privacy";
 import { useLogInteraction } from "../hooks/use-partner-mutations";
 import { INTERACTION_KINDS, INTERACTION_PRECISIONS, logInteractionPayloadSchema, nextTaskPayloadSchema, type InteractionKind, type InteractionPrecision, type LogInteractionPayload, type NextTaskPayload } from "../schemas/interaction";
@@ -38,6 +39,10 @@ const TASK_DUE_LABEL = "Due on";
 const TASK_DUE_DESCRIPTION = "A calendar date with no time of day and no zone behind it. Leave it empty for undated work.";
 const TASK_LINK_LEGEND = "Linked record";
 const UNCONFIRMED_NOTE = "The last attempt's result is not confirmed. Check it with the operation identity in the receipt rather than submitting the same work again, because a second attempt could record the contact twice.";
+const TASKS_ENDPOINT = "/api/tasks";
+const TASK_READ_JOBS = ["tasks", "agenda", "series"] as const;
+const FOLLOW_UP_OFFLINE_GUIDANCE =
+  "This device reported no connection, so the follow-up task's request did not leave from here. Reconnect and save this same follow-up again: it keeps this attempt's identity, so a request that had already arrived is answered with its original result rather than creating the task twice.";
 const INTERACTION_KIND_LABELS: Readonly<Record<InteractionKind, string>> = { conversation: "A conversation", visit: "A visit", call: "A phone call", meeting: "A meeting", "written-exchange": "A written exchange", other: "Something else" };
 const PRECISION_WORDING: Readonly<Record<InteractionPrecision, ChoiceWording>> = {
   date: { label: INTERACTION_COPY.precisionDate.title, hint: INTERACTION_COPY.precisionDate.body },
@@ -58,16 +63,6 @@ const TASK_FIELD_LABELS: Readonly<Record<string, string | undefined>> = { title:
 const CLEARED_BY_EDIT: ReadonlySet<MutationOutcome["outcome"]> = new Set<MutationOutcome["outcome"]>(["invalid", "conflict", "denied", "unavailable"]);
 const refusalOf = (error: ZodError): FieldErrorLookup => fieldErrorsFromInvalid(invalid({ operationId: UNIDENTIFIED_ATTEMPT, fields: error }));
 const finishesEntry = (outcome: MutationOutcome): outcome is Extract<MutationOutcome, { readonly outcome: "accepted" | "alreadyAccepted" }> => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted";
-async function postTask(body: MutationInput<NextTaskPayload>): Promise<MutationOutcome> {
-  let answered: unknown;
-  try {
-    const response = await fetch("/api/tasks", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, credentials: "same-origin", body: JSON.stringify(body) });
-    answered = await response.json();
-  } catch {
-    return { outcome: "unknown", operationId: body.operationId };
-  }
-  return isOutcome(answered) ? answered : { outcome: "unknown", operationId: body.operationId };
-}
 function notify(handler: ((outcome: MutationOutcome) => void) | undefined, outcome: MutationOutcome): void {
   try {
     handler?.(outcome);
@@ -147,9 +142,13 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
     }
     notify(onSettled, outcome);
   });
-  const task = useAttemptedMutation<NextTaskPayload>(postTask, (outcome: MutationOutcome): void => {
-    if (finishesEntry(outcome)) clearTaskEntry();
-  });
+  const followUpTask = useOutcomeMutation<NextTaskPayload>({ url: TASKS_ENDPOINT, jobs: TASK_READ_JOBS, offlineGuidance: FOLLOW_UP_OFFLINE_GUIDANCE }); // The application's one browser change transport, so the task is reported `unavailable` rather than `unknown` when the device never sent it and its acceptance refreshes the task reads every other task write refreshes.
+  const task = useAttemptedMutation<NextTaskPayload>(
+    (input) => followUpTask.mutateAsync(input),
+    (outcome: MutationOutcome): void => {
+      if (finishesEntry(outcome)) clearTaskEntry();
+    },
+  );
   const pending = interaction.pending || task.pending;
   const unconfirmed = interaction.outcome !== null && interaction.outcome.outcome === "unknown";
   const interactionErrors = interactionRefusal ?? interaction.fieldErrors;
@@ -205,10 +204,10 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
   return (
     <section data-slot="interaction-form" dir={dir} aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 id={headingId} className="font-heading text-lg font-medium text-pretty">
+        <h2 id={headingId} className="type-section-title text-pretty">
           Log an interaction
         </h2>
-        <p className="text-sm text-pretty text-muted-foreground">An interaction records something that actually happened, so this entry states a contact the worker made rather than something the application inferred.</p>
+        <p className="type-supporting text-pretty">An interaction records something that actually happened, so this entry states a contact the worker made rather than something the application inferred.</p>
       </div>
       <Alert data-slot="interaction-scope" className="min-w-0">
         <AlertTitle>{INTERACTION_COPY.whatCounts.title}</AlertTitle>
@@ -281,24 +280,26 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
                 )}
               </FormFieldGroup>
               {values.precision === "unknown" ? (
-                <p className="text-sm text-pretty text-muted-foreground">No date is recorded, because the day is not known. Nothing is guessed to stand in for it, and no deadline is derived from this entry.</p>
+                <p className="type-supporting text-pretty">No date is recorded, because the day is not known. Nothing is guessed to stand in for it, and no deadline is derived from this entry.</p>
               ) : (
                 <div className="flex min-w-0 flex-col gap-2">
-                  <form.Field name="date">{(field) => <TextField field={field} name="occurredOn.date" label={DATE_LABEL} description={DATE_DESCRIPTION} error={interactionErrors?.byField["occurredOn.date"]} required type="date" onEdit={editedInteraction} className="w-full sm:max-w-60" />}</form.Field>
-                  {values.precision === "approximate" ? <p className="text-sm text-pretty text-muted-foreground">Recorded as approximate: the day is known only roughly, so the entry says so instead of implying a precision it does not have.</p> : null}
+                  <form.Field name="date">
+                    {(field) => <TextField field={field} name="occurredOn.date" label={DATE_LABEL} description={`${DATE_DESCRIPTION} ${civilDateConvention(field.state.value)}`} error={interactionErrors?.byField["occurredOn.date"]} required type="date" onEdit={editedInteraction} className="w-full sm:max-w-60" />}
+                  </form.Field>
+                  {values.precision === "approximate" ? <p className="type-supporting text-pretty">Recorded as approximate: the day is known only roughly, so the entry says so instead of implying a precision it does not have.</p> : null}
                 </div>
               )}
               <form.Field name="outcome">{(field) => <TextAreaField field={field} name="outcome" label={OUTCOME_LABEL} description={OUTCOME_DESCRIPTION} error={interactionErrors?.byField.outcome} required rows={3} onEdit={editedInteraction} />}</form.Field>
               <Separator />
               <div className="flex min-w-0 flex-col gap-4">
                 <div className="flex min-w-0 flex-col gap-1">
-                  <h3 className="font-heading text-base font-medium text-pretty">Who took part</h3>
-                  <p className="text-sm text-pretty text-muted-foreground">The contact this interaction is recorded against always takes part. Anyone else is chosen from the records this context can read, so a participant names a record rather than a typed name.</p>
+                  <h3 className="type-subsection-title text-pretty">Who took part</h3>
+                  <p className="type-supporting text-pretty">The contact this interaction is recorded against always takes part. Anyone else is chosen from the records this context can read, so a participant names a record rather than a typed name.</p>
                 </div>
                 <FormFieldGroup legend={SUBJECT_LEGEND} name="participants.0" error={interactionErrors?.byField["participants.0"]} className="rounded-xl border border-border p-4">
                   {() => (
                     <div className="flex min-w-0 flex-col gap-3">
-                      <p className="flex min-w-0 flex-col gap-1 text-sm">
+                      <p className="flex min-w-0 flex-col gap-1 type-body">
                         {subject === null ? null : <bdi className="min-w-0 font-medium break-words">{subject.displayName}</bdi>}
                         <bdi className="mono-identifier min-w-0 break-words text-xs text-muted-foreground">{subject === null ? partnerId : partnerSelectionRef(subject)}</bdi>
                         <span className="text-pretty text-muted-foreground">Always a participant of this interaction, so it has no remove control: the entry is recorded against exactly one record.</span>
@@ -334,7 +335,7 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
                             {() => (
                               <div className="flex min-w-0 flex-col gap-3">
                                 <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-                                  <p className="flex min-w-0 flex-col gap-1 text-sm">
+                                  <p className="flex min-w-0 flex-col gap-1 type-body">
                                     <bdi className="min-w-0 font-medium break-words">{selection.displayName}</bdi>
                                     <bdi className="mono-identifier min-w-0 break-words text-xs text-muted-foreground">{reference}</bdi>
                                   </p>
@@ -355,8 +356,8 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
               <Separator />
               <div className="flex min-w-0 flex-col gap-4">
                 <div className="flex min-w-0 flex-col gap-1">
-                  <h3 className="font-heading text-base font-medium text-pretty">{TASK_HEADING}</h3>
-                  <p className="text-sm text-pretty text-muted-foreground">A follow-up task is separate work. It is saved as its own change under its own identity, and completing it later proves nothing about contact, support or a promise.</p>
+                  <h3 className="type-subsection-title text-pretty">{TASK_HEADING}</h3>
+                  <p className="type-supporting text-pretty">A follow-up task is separate work. It is saved as its own change under its own identity, and completing it later proves nothing about contact, support or a promise.</p>
                 </div>
                 <FormFieldGroup legend="Do you want a follow-up task?" name="task-intent" description="A task is optional. Leaving it out saves the interaction alone.">
                   {(group) => (
@@ -381,7 +382,9 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
                   <div className="flex min-w-0 flex-col gap-4">
                     {taskRefusal === null ? null : <FormErrorSummary errors={taskRefusal} labels={TASK_FIELD_LABELS} order={["title", "dueOn", "partnerId"] as const} headingLevel={4} />}
                     <form.Field name="taskTitle">{(field) => <TextField field={field} name="title" label={TASK_TITLE_LABEL} description={TASK_TITLE_DESCRIPTION} error={taskErrors?.byField.title} required onEdit={editedTask} className="w-full sm:max-w-96" />}</form.Field>
-                    <form.Field name="taskDueOn">{(field) => <TextField field={field} name="dueOn" label={TASK_DUE_LABEL} description={TASK_DUE_DESCRIPTION} error={taskErrors?.byField.dueOn} optionalHint type="date" onEdit={editedTask} className="w-full sm:max-w-60" />}</form.Field>
+                    <form.Field name="taskDueOn">
+                      {(field) => <TextField field={field} name="dueOn" label={TASK_DUE_LABEL} description={`${TASK_DUE_DESCRIPTION} ${civilDateConvention(field.state.value)}`} error={taskErrors?.byField.dueOn} optionalHint type="date" onEdit={editedTask} className="w-full sm:max-w-60" />}
+                    </form.Field>
                     <FormFieldGroup legend={TASK_LINK_LEGEND} name="partnerId" description="A task may name the contact this interaction is recorded against, or stand on its own." error={taskErrors?.byField.partnerId}>
                       {(group) => (
                         <form.Field name="taskLink">
@@ -409,7 +412,7 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
                             {task.pending ? "Saving the follow-up task" : "Save the follow-up task"}
                           </Button>
                         </div>
-                        <p className="text-sm text-pretty text-muted-foreground">The interaction above is already recorded, so this saves the task by itself and sends nothing about the interaction again.</p>
+                        <p className="type-supporting text-pretty">The interaction above is already recorded, so this saves the task by itself and sends nothing about the interaction again.</p>
                       </div>
                     ) : null}
                   </div>
@@ -427,7 +430,7 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
                     </Button>
                   </div>
                 )}
-                <p className="text-sm text-pretty text-muted-foreground">{unconfirmed ? UNCONFIRMED_NOTE : "The interaction is saved first. A follow-up task is then saved as a separate change with its own identity, so a task that fails never re-sends the interaction."}</p>
+                <p className="type-supporting text-pretty">{unconfirmed ? UNCONFIRMED_NOTE : "The interaction is saved first. A follow-up task is then saved as a separate change with its own identity, so a task that fails never re-sends the interaction."}</p>
               </div>
             </>
           )}

@@ -4,6 +4,7 @@ import { PRESENTATION_CHOICES } from "@/modules/content/document";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse, type MutationInput, type MutationOutcome } from "@/modules/data-service";
 import { PAGE_PRESET_IDS, PAGE_SECTION_TYPES } from "@/modules/data-service/envelope";
 import { claimedWriteRoute, type ClaimedWrite } from "../../handler";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const MESSAGES = {
@@ -92,4 +93,5 @@ const SECTION_ROUTES = {
   applyPreset: sectionRoute(applyPresetRequestSchema, (sessionId, input) => mutations.pages.applyPreset(sessionId, input)),
 } satisfies Record<SectionOperation, SectionRoute>;
 /** Makes exactly one of the six named section changes, chosen by `payload.operation`, and answers with one of `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid` … */
-export const POST = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, operationClaimSchema, (claim) => claim.payload.operation, SECTION_ROUTES);
+const changeSection = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, operationClaimSchema, (claim) => claim.payload.operation, SECTION_ROUTES);
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: changeSection });

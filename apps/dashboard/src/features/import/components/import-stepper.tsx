@@ -1,5 +1,5 @@
 "use client";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { STEPS, stepAnnouncement, type ImportStepId } from "../copy";
 type ImportStepperProps = { readonly current: ImportStepId; readonly completed: readonly ImportStepId[]; readonly onReopen: (step: ImportStepId) => void };
@@ -24,7 +24,7 @@ export default function ImportStepper({ current, completed, onReopen }: ImportSt
                   <span className="font-normal text-muted-foreground"> (current step)</span>
                 </span>
               ) : !isCurrent && completed.includes(step.id) ? (
-                <Button type="button" variant="ghost" size="sm" className="h-auto min-h-8 max-w-full shrink whitespace-normal py-1.5 underline underline-offset-4" aria-label={step.reopenLabel} onClick={() => onReopen(step.id)}>
+                <Button type="button" variant="ghost" size="sm" className={`${BUTTON_WRAP_CLASS} shrink underline underline-offset-4`} aria-label={step.reopenLabel} onClick={() => onReopen(step.id)}>
                   {step.title}
                 </Button>
               ) : (

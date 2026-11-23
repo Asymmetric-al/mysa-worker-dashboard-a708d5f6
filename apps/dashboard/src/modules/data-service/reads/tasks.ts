@@ -142,7 +142,7 @@ function listActions(selectableOnPage: boolean): readonly ReadAction[] {
 }
 /** Reads one of the five task lists for the session's selected context. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function listTasks(query: TaskListQuery, source?: SessionSource): Promise<ReadResult<ReadEnvelope<TaskListData>>> {
-  const opening = await openRead({ source, unselectedReason: "no-membership" });
+  const opening = await openRead({ job: "listTasks", source, unselectedReason: "no-membership" });
   if (!opening.ok) return opening.result;
   const today = todayForRead("listTasks", query.displayTimeZone, opening.instant);
   if (today.status === "unavailable") return today.result;
@@ -180,7 +180,7 @@ function groupByDay(rows: readonly TaskListRow[]): readonly AgendaDay[] {
 }
 /** Reads the dated agenda for the session's selected context. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readAgenda(query: AgendaQuery, source?: SessionSource): Promise<ReadResult<ReadEnvelope<AgendaData>>> {
-  const opening = await openRead({ source, unselectedReason: "no-membership" });
+  const opening = await openRead({ job: "readAgenda", source, unselectedReason: "no-membership" });
   if (!opening.ok) return opening.result;
   const today = todayForRead("readAgenda", query.displayTimeZone, opening.instant);
   if (today.status === "unavailable") return today.result;
@@ -296,7 +296,7 @@ function seriesActions(options: { readonly mayChangeSeries: boolean; readonly ma
 }
 /** Reads one recurring series for the session's selected context. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readSeries(query: SeriesReadQuery, source?: SessionSource): Promise<ReadResult<ReadEnvelope<SeriesReading>>> {
-  const opening = await openRead({ source, unselectedReason: "no-membership" });
+  const opening = await openRead({ job: "readSeries", source, unselectedReason: "no-membership" });
   if (!opening.ok) return opening.result;
   const stored = await readWork({ session: opening.session, job: "readSeries", schema: storedWorkSchema });
   if (stored.status === "unavailable") return stored.result;

@@ -173,7 +173,7 @@ function OwnedWorkItem({ work }: { readonly work: OwnedWorkRow }): ReactElement 
 }
 const ClosingStatements = ({ headingId }: { readonly headingId: string }): ReactElement => (
   <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
-    <h3 id={headingId} className="text-sm font-semibold text-pretty">
+    <h3 id={headingId} className="type-subsection-title text-pretty">
       What closing does, and what it does not do
     </h3>
     <ul className="flex min-w-0 flex-col gap-1.5 text-sm text-pretty text-muted-foreground">
@@ -298,20 +298,20 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
           <Separator />
           <section aria-labelledby={workHeadingId} className="flex min-w-0 flex-col gap-2">
             <div className="flex min-w-0 flex-wrap items-baseline gap-2">
-              <h3 id={workHeadingId} className="text-base font-medium text-pretty break-words">
+              <h3 id={workHeadingId} className="type-subsection-title text-pretty break-words">
                 {view.name}
               </h3>
               <Badge variant={view.state === "closed" ? "secondary" : "outline"}>{INITIATIVE_STATE_COPY[view.state].label}</Badge>
             </div>
-            <p className="text-sm text-pretty text-muted-foreground">{INITIATIVE_STATE_COPY[view.state].description}</p>
+            <p className="type-supporting text-pretty">{INITIATIVE_STATE_COPY[view.state].description}</p>
             {view.preservedDisposition === null ? null : (
-              <p className="text-sm text-pretty text-muted-foreground">
+              <p className="type-supporting text-pretty">
                 {view.lifecycle === "reopened" ? `This initiative was closed before and reopened, and the disposition recorded then is kept: “${dispositionFallback(view.preservedDisposition)}”.` : `The closure recorded states “${dispositionFallback(view.preservedDisposition)}”.`}
               </p>
             )}
-            <h4 className="text-sm font-medium">{INITIATIVE_COPY.nextWorkHeading}</h4>
+            <h4 className="type-group-title">{INITIATIVE_COPY.nextWorkHeading}</h4>
             {view.ownedWork.length === 0 ? (
-              <p className="text-sm text-pretty text-muted-foreground">{NO_OWNED_WORK_BODY}</p>
+              <p className="type-supporting text-pretty">{NO_OWNED_WORK_BODY}</p>
             ) : (
               <ul className="flex min-w-0 flex-col gap-2">
                 {view.ownedWork.map((work) => (
@@ -480,7 +480,7 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
                 headingLevel={3}
               />
               {settlement === null ? null : (
-                <p data-slot="close-settlement" data-outcome={settled?.outcome} className="text-sm text-pretty text-muted-foreground">
+                <p data-slot="close-settlement" data-outcome={settled?.outcome} className="type-supporting text-pretty">
                   {settlement.note}
                 </p>
               )}

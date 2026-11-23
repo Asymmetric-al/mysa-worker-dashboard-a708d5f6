@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useId, useState, type ReactElement, type ReactNode } from "react";
 import ActionReview from "@/components/action-review";
 import { ChoiceGroup } from "@/components/choice-group";
-import FormField, { fieldErrorsFromInvalid, FormFieldGroup } from "@/components/form-field";
+import FormField, { civilDateConvention, fieldErrorsFromInvalid, FormFieldGroup } from "@/components/form-field";
 import { Fact } from "@/components/fact";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -97,10 +97,10 @@ export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, s
   return (
     <section dir={dir} aria-labelledby={headingId} data-slot="referral-introduction-form" className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 id={headingId} className="font-heading text-lg font-medium">
+        <h2 id={headingId} className="type-section-title">
           {INTRODUCED_BY_COPY.sectionHeading}
         </h2>
-        <p className="text-sm text-pretty text-muted-foreground">{INTRODUCED_BY_COPY.formHelp}</p>
+        <p className="type-supporting text-pretty">{INTRODUCED_BY_COPY.formHelp}</p>
       </div>
       <form.Subscribe selector={(state) => state.values}>
         {(values) => {
@@ -109,7 +109,7 @@ export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, s
           const dateHelp = dateIsKnown ? INTRODUCED_BY_COPY.originalIntroductionOnHelp : `${INTRODUCED_BY_COPY.originalIntroductionOnHelp} ${INTRODUCED_BY_COPY.unknownClearsDateNote}`;
           return (
             <div className="flex min-w-0 flex-col gap-6">
-              <FormField name={DATE_FIELD} label={INTRODUCED_BY_COPY.originalIntroductionOnLabel} description={dateHelp} error={fieldErrors?.byField[DATE_FIELD]} required={dateIsKnown}>
+              <FormField name={DATE_FIELD} label={INTRODUCED_BY_COPY.originalIntroductionOnLabel} description={`${dateHelp} ${civilDateConvention(values[DATE_FIELD])}`} error={fieldErrors?.byField[DATE_FIELD]} required={dateIsKnown}>
                 {(control) => (
                   <form.Field name={DATE_FIELD}>
                     {(dateField) => (

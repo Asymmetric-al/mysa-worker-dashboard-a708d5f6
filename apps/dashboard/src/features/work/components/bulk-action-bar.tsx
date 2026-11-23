@@ -4,10 +4,10 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactElement, type Re
 import type { ZodError } from "zod";
 import ActionReview, { mayReplay, type ActionReviewSelection, type MutationSubmit } from "@/components/action-review";
 import { FactList, type FactSpec } from "@/components/fact-list";
-import { fieldMessagesOf } from "@/components/form-field";
+import { civilDateConvention, fieldMessagesOf } from "@/components/form-field";
 import { OperationResult, OUTCOME_HEADINGS, PerItemResults } from "@/components/operation-result";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import SectionCard from "@/components/section-card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -46,9 +46,8 @@ export type BulkActionBarProps = { readonly scope: Scope; readonly expectedRevis
 const ROW_NOUN = { one: "row", many: "rows" } as const;
 const SECTION_CLASS = "flex min-w-0 flex-col gap-3";
 const FIELD_STACK_CLASS = "flex min-w-0 flex-col gap-3";
-const NOTE_CLASS = "text-sm text-pretty text-muted-foreground";
-const CONTROL_CLASS = "h-auto min-h-9 max-w-full py-2 whitespace-normal text-pretty";
-const SMALL_CONTROL_CLASS = "h-auto min-h-8 max-w-full py-1.5 whitespace-normal text-pretty";
+const NOTE_CLASS = "type-supporting text-pretty";
+const CONTROL_CLASS = `${BUTTON_WRAP_CLASS} text-pretty`;
 const TAG_FIELD_LABEL = "Private tag";
 const TAG_FIELD_DESCRIPTION = `Only you see this tag. Up to ${String(PRIVATE_TAG_MAX_LENGTH)} characters.`;
 const FOLLOW_UP_LABELS = { title: "Title", category: "Category", dueOn: "Due date", note: "Note" } as const;
@@ -168,7 +167,7 @@ function FieldInput({ id, label, description, error, value, type = "text", onCha
       )}
       <Input id={id} type={type} value={value} className="max-w-full" aria-describedby={describedBy === "" ? undefined : describedBy} aria-invalid={error === undefined ? undefined : true} onChange={(event) => onChange(event.target.value)} onBlur={onBlur} />
       {error === undefined ? null : (
-        <p id={errorId} className="text-sm text-pretty text-destructive">
+        <p id={errorId} className="type-body text-pretty text-destructive">
           {error}
         </p>
       )}
@@ -321,7 +320,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
   });
   const closedReasons = BULK_INTENTS.filter((entry) => eligibleIds[entry].length === 0).map((entry) => (
     <div key={entry} id={`${reasonIdPrefix}-${entry}`} className="flex min-w-0 flex-col gap-1">
-      <p className="text-sm text-pretty">
+      <p className="type-body text-pretty">
         <span className="font-medium">{BULK_INTENT_LABELS[entry]}</span>
         {` — ${CLOSED_INTENT_REASONS[entry]}`}
       </p>
@@ -336,14 +335,14 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
   return (
     <section data-slot="bulk-action-bar" aria-busy={pending ? true : undefined} aria-labelledby={rowsSelected ? regionTitleId : undefined} className={className === undefined ? SECTION_CLASS : `${SECTION_CLASS} ${className}`}>
       {rowsSelected ? (
-        <SectionCard title="Bulk actions" headingId={regionTitleId} headingClassName="text-sm font-medium" cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-3">
-          <p aria-live="polite" className="text-sm text-pretty">
+        <SectionCard title="Bulk actions" headingId={regionTitleId} cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-3">
+          <p aria-live="polite" className="type-body text-pretty">
             {BULK_SELECTION_COUNT_TEMPLATE.replace("{count}", String(selectedTasks.length))}
           </p>
           <p className={NOTE_CLASS}>{BULK_SELECTION_SCOPE_NOTE}</p>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             {intentControls}
-            <Button type="button" variant="ghost" size="sm" className={SMALL_CONTROL_CLASS} disabled={pending} onClick={onClearSelection}>
+            <Button type="button" variant="ghost" size="sm" className={CONTROL_CLASS} disabled={pending} onClick={onClearSelection}>
               {"Clear selection"}
             </Button>
           </div>
@@ -354,11 +353,11 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
       {panelOpen && intent !== null ? (
         <section aria-labelledby={panelTitleId} className="flex min-w-0 flex-col gap-3">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <h3 id={panelTitleId} className="min-w-0 text-sm font-medium">
+            <h3 id={panelTitleId} className="type-subsection-title min-w-0">
               {panelTitle}
             </h3>
             {recoveryHeld ? null : (
-              <Button type="button" variant="ghost" size="sm" className={SMALL_CONTROL_CLASS} disabled={pending} onClick={closePanel}>
+              <Button type="button" variant="ghost" size="sm" className={CONTROL_CLASS} disabled={pending} onClick={closePanel}>
                 {"Close"}
               </Button>
             )}
@@ -375,7 +374,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
               <FieldInput id={`${fieldIdPrefix}-title`} label={FOLLOW_UP_LABELS.title} error={fieldError("template.title")} value={draft.followUpTitle} onChange={(value) => updateDraft("followUpTitle", value)} onBlur={markTouched} />
               <div className="grid min-w-0 gap-3 sm:grid-cols-2">
                 <FieldInput id={`${fieldIdPrefix}-category`} label={FOLLOW_UP_LABELS.category} error={fieldError("template.category")} value={draft.followUpCategory} onChange={(value) => updateDraft("followUpCategory", value)} onBlur={markTouched} />
-                <FieldInput id={`${fieldIdPrefix}-due`} label={FOLLOW_UP_LABELS.dueOn} error={fieldError("template.dueOn")} value={draft.followUpDueOn} type="date" onChange={(value) => updateDraft("followUpDueOn", value)} onBlur={markTouched} />
+                <FieldInput id={`${fieldIdPrefix}-due`} label={FOLLOW_UP_LABELS.dueOn} description={civilDateConvention(draft.followUpDueOn)} error={fieldError("template.dueOn")} value={draft.followUpDueOn} type="date" onChange={(value) => updateDraft("followUpDueOn", value)} onBlur={markTouched} />
               </div>
               <FieldInput id={`${fieldIdPrefix}-note`} label={FOLLOW_UP_LABELS.note} error={fieldError("template.note")} value={draft.followUpNote} onChange={(value) => updateDraft("followUpNote", value)} onBlur={markTouched} />
             </div>
@@ -410,7 +409,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
           <OperationResult outcome={settledOutcome} headingLevel={3} onCheckResult={settledOutcome.outcome === "unknown" ? onCheckResult : undefined} />
           <SettledRows outcome={settledOutcome} rows={settledRows} />
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" size="sm" className={SMALL_CONTROL_CLASS} onClick={dismissResult}>
+            <Button type="button" variant="outline" size="sm" className={CONTROL_CLASS} onClick={dismissResult}>
               {"Dismiss the result"}
             </Button>
           </div>

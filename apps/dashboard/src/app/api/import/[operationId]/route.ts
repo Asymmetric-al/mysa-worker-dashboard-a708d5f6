@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import { isNonEmptyString } from "@/lib/guards";
 import { isReadResult, outcomeFromError, reads, refusedRead, toResponse } from "@/modules/data-service";
 export const runtime = "nodejs";
@@ -33,7 +34,7 @@ function admitPaging(search: URLSearchParams): PagingAdmission {
   return issues.length === 0 ? { ok: true, window: stated } : { ok: false, issues };
 }
 /** Answers the proposal or the receipt this operation identity names, in the one read envelope, or the read's own `denied`, `unavailable` or `refused` — the refusal stating the identity or the window this read does not accept. */
-export async function GET(request: Request, context: { params: Promise<ImportOperationParams> }): Promise<Response> {
+async function readImportReceipt(request: Request, context: { params: Promise<ImportOperationParams> }): Promise<Response> {
   let operationId: string = UNIDENTIFIED_OPERATION;
   try {
     const named: unknown = (await context.params).operationId;
@@ -50,3 +51,4 @@ export async function GET(request: Request, context: { params: Promise<ImportOpe
     return toResponse(outcomeFromError(operationId, error));
   }
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readImportReceipt });

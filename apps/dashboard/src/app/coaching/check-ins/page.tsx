@@ -35,23 +35,31 @@ function positiveIntegerOf(stated: string | undefined): number | undefined {
   const parsed = Number(stated);
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
+/** One saved revision as the editor reads it: the captured questions with the answer written beside each, and the answers that belong to no question, which hold no position and are kept rather than dropped. */
 function bodyOf(questions: readonly CheckInQuestionView[], answers: readonly CheckInAnswerView[]): CheckInBody {
   const ordered = [...questions].sort((one, two) => one.order - two.order);
   const answerFor = new Map<number, string>();
+  const unassignedAnswers: string[] = [];
   for (const answer of answers) {
-    if (answer.questionOrder === null || answerFor.has(answer.questionOrder)) continue;
+    if (answer.questionOrder === null) {
+      unassignedAnswers.push(answer.text);
+      continue;
+    }
+    if (answerFor.has(answer.questionOrder)) continue;
     answerFor.set(answer.questionOrder, answer.text);
   }
-  return { questions: ordered.map((question) => question.wording), answers: ordered.map((question) => answerFor.get(question.order) ?? "") };
+  return { questions: ordered.map((question) => question.wording), answers: ordered.map((question) => answerFor.get(question.order) ?? ""), unassignedAnswers };
 }
-function editorInputsOf(row: CheckInRow | null): Pick<CheckInEditorProps, "captured" | "revisions" | "checkInId"> {
-  if (row === null) return { captured: null, revisions: { draft: null, shared: null }, checkInId: null };
+/** The editor's inputs, carrying the revision the editor's four writes present: the revision of the check-in they change, which is the row's own, because the collection's revision the list displays is never what the service compares a record's change against. A page with no check-in has no record to compare, and a save there creates one. */
+function editorInputsOf(row: CheckInRow | null, collectionRevision: string): Pick<CheckInEditorProps, "captured" | "revisions" | "checkInId" | "expectedRevision"> {
+  if (row === null) return { captured: null, revisions: { draft: null, shared: null }, checkInId: null, expectedRevision: collectionRevision };
   const { privateDraft: draft, shared } = row;
   const capture = draft ?? shared;
   return {
     captured: capture === null ? null : { questions: [...capture.questions].sort((one, two) => one.order - two.order).map((question) => ({ id: `${row.checkInId}-question-${String(question.order)}`, wording: question.wording, order: question.order })), capturedAt: capture.questionsCapturedAt },
     revisions: { draft: draft === null ? null : { revisionId: draft.revisionId, body: bodyOf(draft.questions, draft.answers) }, shared: shared === null ? null : { revisionId: shared.revisionId, body: bodyOf(shared.questions, shared.answers), sharedAt: shared.sharedAt, withdrawnAt: shared.withdrawnAt } },
     checkInId: row.checkInId,
+    expectedRevision: row.revision,
   };
 }
 function duePrecisionOf(precision: string): TaskShareListEntry["duePrecision"] {
@@ -109,13 +117,13 @@ export default async function CheckInsPage({ searchParams }: { readonly searchPa
   const [checkIns, taskShares] = await Promise.all([reads.coaching.readCheckIns(query), reads.coaching.readTaskShares(query)]);
   const initialQuery = { sort: [], page: addressPage, pageSize: addressPageSize ?? DEFAULT_PAGE_SIZE, columnVisibility: {} };
   const rows = checkIns.kind === "envelope" ? checkIns.envelope.data.checkIns : NO_CHECK_INS;
-  const editorInputs = editorInputsOf(rows.at(0) ?? null);
   let checkInRegion: ReactElement;
   if (checkIns.kind === "envelope") {
+    const editorInputs = editorInputsOf(rows.at(0) ?? null, checkIns.envelope.revision);
     checkInRegion = (
       <>
         <CheckInList initialQuery={initialQuery} scope={checkIns.envelope.scope} locale={INTERFACE_LOCALE} />
-        <CheckInEditor {...editorInputs} scope={checkIns.envelope.scope} expectedRevision={checkIns.envelope.revision} locale={INTERFACE_LOCALE} />
+        <CheckInEditor {...editorInputs} scope={checkIns.envelope.scope} locale={INTERFACE_LOCALE} />
       </>
     );
   } else {
@@ -136,7 +144,7 @@ export default async function CheckInsPage({ searchParams }: { readonly searchPa
   }
   return (
     <div className="flex min-w-0 flex-col gap-6 text-start">
-      <h1 className="text-2xl font-semibold text-pretty wrap-anywhere">{PAGE_TITLE}</h1>
+      <h1 className="type-page-title text-pretty wrap-anywhere">{PAGE_TITLE}</h1>
       {checkInRegion}
       {shareRegion}
     </div>

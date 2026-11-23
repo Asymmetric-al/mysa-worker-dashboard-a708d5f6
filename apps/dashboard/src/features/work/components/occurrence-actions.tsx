@@ -20,7 +20,24 @@ import type { MutationInput, ReadAction, Scope } from "@/modules/data-service/en
 import type { MutationOutcome, reads } from "@/modules/data-service";
 import { parseCivilDate, type CivilDate } from "@/modules/time/civil";
 import type { DisclosedMonthDayResolution } from "@/modules/time/recurrence";
-import { MISSED_PLAN_RESOLUTION_LABELS, MISSED_PLAN_RESOLUTION_ORDER, ONE_SUCCESSOR_NOTE, PAUSED_NOTE, PLAN_NEEDS_REVIEW_EXPLANATION, PLAN_NEEDS_REVIEW_HEADING, SERIES_STATE_LABELS, SKIPPED_MEANS_NOT_PERFORMED_NOTE, STOPPED_NOTE } from "../copy/missed-dates";
+import {
+  MISSED_PLAN_RESOLUTION_LABELS,
+  MISSED_PLAN_RESOLUTION_ORDER,
+  ONE_SUCCESSOR_NOTE,
+  PAUSED_NOTE,
+  PLAN_NEEDS_REVIEW_EXPLANATION,
+  PLAN_NEEDS_REVIEW_HEADING,
+  SERIES_STATE_LABELS,
+  SKIPPED_MEANS_NOT_PERFORMED_NOTE,
+  STOPPED_NOTE,
+  STOP_REVIEW_CHOICE_SENTENCE,
+  STOP_REVIEW_NOT_RESUMABLE_SENTENCE,
+  UNFINISHED_WORK_HINTS,
+  UNFINISHED_WORK_LABELS,
+  UNFINISHED_WORK_LEGEND,
+  UNFINISHED_WORK_VALUES,
+  type UnfinishedWork,
+} from "../copy/missed-dates";
 import {
   DAY_OF_MONTH_LABEL,
   END_CONDITION_LABELS,
@@ -37,6 +54,7 @@ import {
   REPEAT_PROFILE_LABELS,
   REPEAT_PROFILE_ORDER,
   SINGLE_ACTIONABLE_OCCURRENCE_NOTE,
+  repeatRuleLabel,
 } from "../copy/repeat-profiles";
 import { CATEGORY_LABEL, COMPLETION_MEANS_NOTHING_NOTE, DUE_DATE_LABEL, PLANNED_VERSUS_HELD_NOTE, TASK_KIND_LABELS, TASK_STATUS_LABELS, UNDATED_LABEL } from "../copy/task-status";
 import { editOccurrenceSchema, skipOccurrenceSchema, type EditOccurrencePayload, type SkipOccurrencePayload } from "../schemas/occurrence";
@@ -47,7 +65,7 @@ import { SelectItem } from "@/components/ui/select";
 import { prospectiveRevisionBoundary } from "../series-revision-boundary";
 import { useTaskMutations } from "../hooks/use-task-mutations";
 import PlanNeedsReviewPanel, { type PlanNeedsReviewFacts } from "./plan-needs-review-panel";
-import { BoundField, FormReceipt, FormSelectField, FormStyledSelectField, refusalLookupOf, type TextSpec } from "./reviewed-form";
+import { BoundField, FormChoiceGroup, FormReceipt, FormSelectField, FormStyledSelectField, refusalLookupOf, type TextSpec } from "./reviewed-form";
 import SeriesPreview, { type SeriesPreviewReading } from "./series-preview";
 import { StatedInstant } from "./stated-instant";
 type SeriesReadEnvelope = Extract<Awaited<ReturnType<typeof reads.series.readSeries>>, { readonly kind: "envelope" }>["envelope"];
@@ -67,6 +85,8 @@ const PREVIEW_DATES_NOTE =
   "These dates are what this plan's rule produces next, judged in the plan's own planning timezone rather than in the one this browser displays. Only the date marked actionable can be answered on this page: the others are previews, and nothing happens on them until they become the next date. Where the rule asked for a day a month does not have, the date shown is that month's final day and the resolution is stated beside it.";
 const SERIES_STATE_TONES: Readonly<Record<SeriesStateName, StatusTone>> = { active: "positive", paused: "caution", stopped: "neutral" };
 const GROUP_HEADING_TAG: Readonly<Record<SeriesGroupHeadingLevel, "h2" | "h3" | "h4">> = { 2: "h2", 3: "h3", 4: "h4" };
+/** The one type scale's heading utility per level, so a group heading states the level its caller renders it at with the same measure on every surface. */
+const GROUP_HEADING_SCALE: Readonly<Record<SeriesGroupHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const COMMANDS = {
   complete: { label: "Complete", receiptHeading: "Completing this date" },
   skip: { label: "Skip", receiptHeading: "Skipping this date" },
@@ -88,7 +108,8 @@ const EFFECTIVE_BOUNDARY_LABEL = "Takes effect from";
 const OCCURRENCE_FORM = { heading: "Change this date", note: "This change applies to the date below and to nothing else: its kind stays as it is, and the rule that produces the following dates is not altered." } as const;
 const REVISION_FORM = { heading: "Revise the plan from the boundary", note: "The revision applies from the boundary stated above. Every date before it, and every completed date, keeps the rule it was planned under." } as const;
 const FORM_REFUSAL = { title: "Check the details of this change", description: "Nothing was sent: correct the fields named here and submit the change again." } as const;
-const SERIES_COMMAND_FIELD_LABELS: Readonly<Record<string, string | undefined>> = { seriesId: "Series", unfinishedWork: "Unfinished work" };
+const SERIES_COMMAND_FIELD_LABELS: Readonly<Record<string, string | undefined>> = { seriesId: "Series", unfinishedWork: UNFINISHED_WORK_LEGEND };
+const UNFINISHED_WORK_OPTIONS: readonly { readonly value: string; readonly label: string; readonly hint?: string }[] = UNFINISHED_WORK_VALUES.map((value) => ({ value, label: UNFINISHED_WORK_LABELS[value], hint: UNFINISHED_WORK_HINTS[value] }));
 const OCCURRENCE_FIELD_LABELS: Readonly<Record<string, string | undefined>> = { occurrenceId: "The date", title: "Title", category: CATEGORY_LABEL, dueOn: "Due date", kind: "Kind", plannedTime: PLANNED_TIME_PREFIX, timeZone: PLANNING_TIME_ZONE_LABEL, note: "Note" };
 const REVISION_FIELD_LABELS: Readonly<Record<string, string | undefined>> = {
   seriesId: "Series",
@@ -142,7 +163,7 @@ const previewReadingOf = (series: SeriesView): SeriesPreviewReading | null => {
   return { status: "preview", dates, actionableOccurrenceId: actionableId, actionableDueOn: actionableDueOn.date, monthDayResolutions };
 };
 type CommandVariant = "default" | "outline" | "secondary" | "ghost" | "destructive";
-type CommandConfirmation = { readonly title: string; readonly description: ReactNode; readonly confirmLabel: string };
+type CommandConfirmation = { readonly title: string; readonly description: ReactNode; readonly confirmLabel: string; readonly controls?: ReactNode };
 interface ReviewedCommandProps<P extends object> {
   readonly label: string;
   readonly variant?: CommandVariant;
@@ -180,6 +201,7 @@ function ReviewedCommand<P extends object>({ label, variant = "outline", receipt
                 <AlertDialogTitle>{confirmation.title}</AlertDialogTitle>
                 <AlertDialogDescription className="flex flex-col gap-2">{confirmation.description}</AlertDialogDescription>
               </AlertDialogHeader>
+              {confirmation.controls === undefined ? null : confirmation.controls}
               <AlertDialogFooter>
                 <AlertDialogCancel>{COMMANDS.cancel.label}</AlertDialogCancel>
                 <AlertDialogAction confirmVariant="destructive" onClick={confirm}>
@@ -189,12 +211,12 @@ function ReviewedCommand<P extends object>({ label, variant = "outline", receipt
             </AlertDialogContent>
           </AlertDialog>
         )}
-        <p id={narrationId} className="min-w-0 flex-1 basis-56 text-sm text-pretty text-muted-foreground">
+        <p id={narrationId} className="min-w-0 flex-1 basis-56 type-supporting text-pretty">
           {narration}
         </p>
       </div>
-      {withheldReason === null ? null : <p className="text-sm text-pretty text-muted-foreground">{withheldReason}</p>}
-      {pending ? <output className="block text-sm text-muted-foreground">{`${label}: working. Nothing else is submitted while this one is in flight.`}</output> : null}
+      {withheldReason === null ? null : <p className="type-supporting text-pretty">{withheldReason}</p>}
+      {pending ? <output className="block type-supporting">{`${label}: working. Nothing else is submitted while this one is in flight.`}</output> : null}
       {outcome === null ? null : <FormReceipt outcome={outcome} heading={receiptHeading} headingLevel={4} dataSlot="occurrence-command-result" onCheckResult={onCheckOf(outcome, onCheckResult)} onRetrySameWork={replayOf(outcome, retry)} onReapply={reapplyOf(outcome, reapply)} fieldLabels={fieldLabels} />}
     </div>
   );
@@ -214,7 +236,7 @@ function ReviewedCommand<P extends object>({ label, variant = "outline", receipt
     { term: FIRST_DUE_DATE_LABEL, value: <StatedInstant iso={rule.firstDueOn} className="tabular-figures" /> },
     { term: END_OF_SERIES_LABEL, value: <SeriesEndValue end={rule.end} /> },
   ];
-  return <FactList className="flex min-w-0 flex-col gap-1.5 text-sm sm:flex-row sm:gap-x-6" facts={facts} />;
+  return <FactList className="flex min-w-0 flex-col gap-1.5 type-body sm:flex-row sm:gap-x-6" facts={facts} />;
 }
 function OccurrenceFacts({ occurrence }: { readonly occurrence: SeriesOccurrence }): ReactElement {
   const category = occurrence.category?.trim() ?? "";
@@ -234,14 +256,14 @@ function OccurrenceFacts({ occurrence }: { readonly occurrence: SeriesOccurrence
                   <bdi className="tabular-figures">{plannedTime}</bdi>
                   {occurrence.timeZone === null ? null : <bdi className="min-w-0 text-muted-foreground">{occurrence.timeZone}</bdi>}
                 </span>
-                <span className="text-sm text-pretty text-muted-foreground">{PLANNED_VERSUS_HELD_NOTE}</span>
+                <span className="type-supporting text-pretty">{PLANNED_VERSUS_HELD_NOTE}</span>
               </>
             ),
           },
         ]),
     ...(category === "" ? [] : [{ term: CATEGORY_LABEL, valueClassName: "min-w-0 wrap-anywhere", value: <bdi>{category}</bdi> }]),
   ];
-  return <FactList className="flex min-w-0 flex-col gap-1.5 text-sm" facts={facts} />;
+  return <FactList className="flex min-w-0 flex-col gap-1.5 type-body" facts={facts} />;
 }
 interface CommandFormProps<Text extends string, Draft extends Readonly<Record<Text, string>>, Payload extends object> {
   readonly slot: string;
@@ -280,12 +302,12 @@ function CommandForm<Text extends string, Draft extends Readonly<Record<Text, st
     <Card size="sm" data-slot={slot} aria-busy={pending ? true : undefined} className="min-w-0">
       <CardHeader>
         <CardTitle>
-          <h4 className="font-heading text-sm font-medium">{heading}</h4>
+          <h4 className="type-group-title">{heading}</h4>
         </CardTitle>
       </CardHeader>
       <CardContent>
         <form noValidate className="flex min-w-0 flex-col gap-3" onSubmit={submitDraft}>
-          <p className="text-sm text-pretty text-muted-foreground">{note}</p>
+          <p className="type-supporting text-pretty">{note}</p>
           {preamble}
           <FormErrorSummary errors={shown} labels={fieldLabels} order={fieldOrder} title={FORM_REFUSAL.title} description={FORM_REFUSAL.description} headingLevel={4} />
           {children(draft, edit, shown, update)}
@@ -293,7 +315,7 @@ function CommandForm<Text extends string, Draft extends Readonly<Record<Text, st
             <Button {...{ type: "submit", size: "sm", disabled: pending, className: COMMAND_BUTTON_CLASS }}>{applyLabel}</Button>
             <Button {...{ type: "button", variant: "outline", size: "sm", className: COMMAND_BUTTON_CLASS, onClick: onClose }}>{COMMANDS.cancel.label}</Button>
           </div>
-          {pending ? <output className="block text-sm text-muted-foreground">{`${applyLabel}: working. Nothing else is submitted while this one is in flight.`}</output> : null}
+          {pending ? <output className="block type-supporting">{`${applyLabel}: working. Nothing else is submitted while this one is in flight.`}</output> : null}
           {outcome === null ? null : <FormReceipt outcome={outcome} heading={receiptHeading} headingLevel={4} dataSlot="occurrence-command-result" onCheckResult={onCheckOf(outcome, onCheckResult)} onRetrySameWork={replayOf(outcome, retry)} onReapply={reapplyOf(outcome, reapply)} fieldLabels={fieldLabels} />}
         </form>
       </CardContent>
@@ -384,11 +406,11 @@ function FutureRevisionForm({ scope, series, revision, effectiveFrom, onClose, o
       note={REVISION_FORM.note}
       preamble={
         <>
-          <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
+          <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
             <span className="text-muted-foreground">{EFFECTIVE_BOUNDARY_LABEL}</span>
             <StatedInstant iso={effectiveFrom} className="tabular-figures" />
           </p>
-          <p className="text-sm text-pretty text-muted-foreground">{"This is a prospective revision: the dates before that boundary keep the rule they were planned under, and completed history is untouched."}</p>
+          <p className="type-supporting text-pretty">{"This is a prospective revision: the dates before that boundary keep the rule they were planned under, and completed history is untouched."}</p>
         </>
       }
       applyLabel={COMMANDS.applyRevision.label}
@@ -428,7 +450,7 @@ function FutureRevisionForm({ scope, series, revision, effectiveFrom, onClose, o
               </SelectItem>
             ))}
           </FormStyledSelectField>
-          <p className="text-sm text-pretty text-muted-foreground">{REPEAT_PROFILE_DESCRIPTIONS[values.profile]}</p>
+          <p className="type-supporting text-pretty">{REPEAT_PROFILE_DESCRIPTIONS[values.profile]}</p>
           {REPEAT_PROFILE_FIELDS[values.profile].includes("interval") ? <BoundField spec={REVISION_FIELDS.interval} values={values} errors={errors} onEdit={edit} /> : null}
           {REPEAT_PROFILE_FIELDS[values.profile].includes("dayOfMonth") ? <BoundField spec={REVISION_FIELDS.dayOfMonth} values={values} errors={errors} onEdit={edit} /> : null}
           <FormSelectField {...{ name: "end", label: END_OF_SERIES_LABEL, mark: "required", errors, value: values.endKind, onValueChange: (endKind) => update({ endKind: admittedOf(END_KIND_ORDER, endKind, "on-date") }) }}>
@@ -450,7 +472,7 @@ function GroupHeading({ heading, headingId, label, badge }: { readonly heading: 
   const Heading = GROUP_HEADING_TAG[heading];
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
-      <Heading {...{ id: headingId, className: "font-heading text-base font-medium" }}>{label}</Heading>
+      <Heading {...{ id: headingId, className: GROUP_HEADING_SCALE[heading] }}>{label}</Heading>
       {badge}
     </div>
   );
@@ -490,7 +512,7 @@ function OccurrenceCommands({ scope, series, revision, actions, effectiveFrom, o
         {onOpenComposer === undefined ? null : (
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
             <Button {...{ type: "button", variant: "outline", size: "sm", className: COMMAND_BUTTON_CLASS, onClick: onOpenComposer }}>{COMMANDS.composer.label}</Button>
-            <p className="min-w-0 flex-1 basis-56 text-sm text-pretty text-muted-foreground">{"That creates an ordinary task rather than a date on this series, so this plan stays exactly as it is."}</p>
+            <p className="min-w-0 flex-1 basis-56 type-supporting text-pretty">{"That creates an ordinary task rather than a date on this series, so this plan stays exactly as it is."}</p>
           </div>
         )}
       </section>
@@ -516,7 +538,7 @@ function OccurrenceCommands({ scope, series, revision, actions, effectiveFrom, o
   return (
     <section aria-labelledby={headingId} data-slot="occurrence-actions" data-occurrence="actionable" className="flex min-w-0 flex-col gap-3">
       <GroupHeading heading={3} headingId={headingId} label={GROUP_LEGENDS.occurrence} badge={<StatusBadge label={TASK_STATUS_LABELS[actionable.status]} tone="info" srPrefix="Date status" />} />
-      <p className="min-w-0 text-sm font-medium text-pretty wrap-anywhere">
+      <p className="min-w-0 type-group-title text-pretty wrap-anywhere">
         <bdi>{actionable.title}</bdi>{" "}
       </p>
       <OccurrenceFacts occurrence={actionable} />
@@ -530,9 +552,9 @@ function OccurrenceCommands({ scope, series, revision, actions, effectiveFrom, o
           <div key={toggle.key} className="flex min-w-0 flex-col gap-2">
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
               <Button {...{ ref: toggleRef, type: "button", variant: "outline", size: "sm", className: COMMAND_BUTTON_CLASS, disabled: toggleReason !== null, "aria-expanded": editing === toggle.key, "aria-controls": editing === toggle.key ? formId : undefined, onClick: onToggle }}>{toggle.label}</Button>
-              <p className="min-w-0 flex-1 basis-56 text-sm text-pretty text-muted-foreground">{toggle.narration}</p>
+              <p className="min-w-0 flex-1 basis-56 type-supporting text-pretty">{toggle.narration}</p>
             </div>
-            {toggleReason === null ? null : <p className="text-sm text-pretty text-muted-foreground">{toggleReason}</p>}
+            {toggleReason === null ? null : <p className="type-supporting text-pretty">{toggleReason}</p>}
           </div>
         );
       })}
@@ -540,7 +562,7 @@ function OccurrenceCommands({ scope, series, revision, actions, effectiveFrom, o
         {editing === "occurrence" ? <OccurrenceEditForm scope={scope} occurrence={actionable} onClose={() => closeEditing(occurrenceToggleRef)} onCheckResult={onCheckResult} /> : null}
         {editing === "future" && effectiveFrom !== null ? <FutureRevisionForm scope={scope} series={series} revision={revision} effectiveFrom={effectiveFrom} onClose={() => closeEditing(futureToggleRef)} onCheckResult={onCheckResult} /> : null}
       </div>
-      <p className="text-sm text-pretty text-muted-foreground">{ONE_SUCCESSOR_NOTE}</p>
+      <p className="type-supporting text-pretty">{ONE_SUCCESSOR_NOTE}</p>
     </section>
   );
 }
@@ -556,6 +578,7 @@ export type SeriesStateControlsProps = {
 }; /** The one implementation of pause, resume and stop, so the series detail surface and the series editor share it rather than each writing their own. */
 export function SeriesStateControls({ scope, seriesId, revision, state, actions, onCheckResult, headingLevel = 3, className }: SeriesStateControlsProps): ReactElement {
   const headingId = useId();
+  const unfinishedWorkIdPrefix = useId();
   const { pauseSeries, resumeSeries, stopSeries } = useSeriesMutations(scope);
   const active = state === "active";
   const paused = state === "paused";
@@ -563,21 +586,26 @@ export function SeriesStateControls({ scope, seriesId, revision, state, actions,
   const stateSentence = paused ? PAUSED_NOTE : stopped ? STOPPED_NOTE : SINGLE_ACTIONABLE_OCCURRENCE_NOTE;
   const pauseInput = { scope, expectedRevision: revision, payload: pauseSeriesSchema.parse({ seriesId }) };
   const resumeInput = { scope, expectedRevision: revision, payload: resumeSeriesSchema.parse({ seriesId }) };
-  const stopInput = { scope, expectedRevision: revision, payload: stopSeriesSchema.parse({ seriesId }) };
+  // Stopping states what becomes of the dates it leaves behind, so the two fates are both reachable here rather than one
+  // being decided by the service's default. The selection starts at the fate the schema itself defaults to, which is the
+  // same `keep` the service applies when the field is absent.
+  const [unfinishedWork, setUnfinishedWork] = useState<UnfinishedWork>(() => stopSeriesSchema.parse({ seriesId }).unfinishedWork);
+  const stopInput = { scope, expectedRevision: revision, payload: stopSeriesSchema.parse({ seriesId, unfinishedWork }) };
   const stopConfirmation = {
     title: "Stop this series?",
     confirmLabel: COMMANDS.stopConfirm.label,
     description: (
       <>
-        <span>{"Stopping admits no further dates. Every date already on the series stays exactly where it is, unfinished: stopping completes nothing on your behalf and records no contact."}</span>
-        <span>{"A stopped series is not paused and cannot be resumed, so plan anything still needed after this as new work."}</span>
+        <span>{STOP_REVIEW_CHOICE_SENTENCE}</span>
+        <span>{STOP_REVIEW_NOT_RESUMABLE_SENTENCE}</span>
       </>
     ),
+    controls: <FormChoiceGroup name="unfinishedWork" legend={UNFINISHED_WORK_LEGEND} errors={null} value={unfinishedWork} options={UNFINISHED_WORK_OPTIONS} onValueChange={(value) => setUnfinishedWork(admittedOf(UNFINISHED_WORK_VALUES, value, unfinishedWork))} idPrefix={unfinishedWorkIdPrefix} />,
   };
   return (
     <section aria-labelledby={headingId} data-slot="series-state-controls" data-series-state={state} className={cn("flex min-w-0 flex-col gap-3", className)}>
       <GroupHeading heading={headingLevel} headingId={headingId} label={GROUP_LEGENDS.series} badge={<StatusBadge label={SERIES_STATE_LABELS[state]} tone={SERIES_STATE_TONES[state]} srPrefix={SERIES_STATUS_SR_PREFIX} />} />
-      <p className="text-sm text-pretty text-muted-foreground">{stateSentence}</p>
+      <p className="type-supporting text-pretty">{stateSentence}</p>
       <div className="flex min-w-0 flex-col gap-3">
         <ReviewedCommand<PauseSeriesPayload> {...COMMANDS.pause} input={pauseInput} submit={pauseSeries.mutateAsync} admitted={active} withheldReason={active ? withheldReasonFor(actions, "pauseSeries") : null} onCheckResult={onCheckResult} fieldLabels={SERIES_COMMAND_FIELD_LABELS} />
         <ReviewedCommand<ResumeSeriesPayload> {...COMMANDS.resume} input={resumeInput} submit={resumeSeries.mutateAsync} admitted={paused} withheldReason={paused ? withheldReasonFor(actions, "resumeSeries") : null} onCheckResult={onCheckResult} fieldLabels={SERIES_COMMAND_FIELD_LABELS} />
@@ -606,21 +634,21 @@ export default function OccurrenceActions({ envelope, displayLocale, effectiveFr
   const nextNominalDate = series.preview.status === "preview" ? series.preview.dates.at(0) : undefined;
   const planReviewFacts: PlanNeedsReviewFacts = { state: series.state, revision: envelope.revision, planNeedsReview: needsReview, missedDateCount: series.planReview.missedDateCount, nextNominalDate: nextNominalDate === undefined ? null : { iso: nextNominalDate, display: nextNominalDate } };
   const reviewPanel = reviewPanelOccurrenceId === null ? null : <PlanNeedsReviewPanel scope={envelope.scope} occurrenceId={reviewPanelOccurrenceId} facts={planReviewFacts} seriesTitle={series.title} headingLevel={3} onResolved={holdReviewReceipt} onDismiss={needsReview ? undefined : releaseReviewReceipt} />;
-  const identity = { displayName: series.title, secondaryName: REPEAT_PROFILE_LABELS[series.rule.profile], kind: "Repeating task", reference: envelope.source };
+  const identity = { displayName: series.title, secondaryName: repeatRuleLabel(series.rule), kind: "Repeating task", reference: envelope.source };
   const status = <StatusBadge label={SERIES_STATE_LABELS[series.state]} tone={SERIES_STATE_TONES[series.state]} srPrefix={SERIES_STATUS_SR_PREFIX} />;
   const sections: RecordDetailSectionSlots = {
     openTasks: (
       <div className="flex min-w-0 flex-col gap-4">
         {/* The plan's own rule, stated before the dates it produces: what the plan is comes before what it produces next. */}
         <section aria-labelledby={ruleHeadingId} data-slot="series-plan-rule" className="flex min-w-0 flex-col gap-2">
-          <h3 {...{ id: ruleHeadingId, className: "font-heading text-base font-medium" }}>{PLAN_RULE_HEADING}</h3>
+          <h3 {...{ id: ruleHeadingId, className: "type-subsection-title" }}>{PLAN_RULE_HEADING}</h3>
           <PlanRuleFacts rule={series.rule} />
         </section>
         {previewReading === null ? null : (
           <section aria-labelledby={previewHeadingId} data-slot="series-plan-preview" className="flex min-w-0 flex-col gap-2">
-            <h3 {...{ id: previewHeadingId, className: "font-heading text-base font-medium" }}>{GROUP_LEGENDS.preview}</h3>
-            <SeriesPreview state={series.state} profile={series.rule.profile} planningTimeZone={series.rule.planningTimeZone} reading={previewReading} displayLocale={displayLocale} />
-            <p className="text-sm text-pretty text-muted-foreground">{PREVIEW_DATES_NOTE}</p>
+            <h3 {...{ id: previewHeadingId, className: "type-subsection-title" }}>{GROUP_LEGENDS.preview}</h3>
+            <SeriesPreview state={series.state} rule={series.rule} planningTimeZone={series.rule.planningTimeZone} reading={previewReading} displayLocale={displayLocale} />
+            <p className="type-supporting text-pretty">{PREVIEW_DATES_NOTE}</p>
           </section>
         )}
         {reviewPanel}

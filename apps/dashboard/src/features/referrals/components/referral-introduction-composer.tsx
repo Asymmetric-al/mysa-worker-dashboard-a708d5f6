@@ -88,10 +88,10 @@ export function ReferralIntroductionComposer({ scope, expectedRevision, candidat
   return (
     <section id={COMPOSER_SECTION_ID} aria-labelledby={headingId} data-slot="referral-introduction-composer" className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 id={headingId} className="font-heading text-xl font-semibold text-pretty wrap-anywhere">
+        <h2 id={headingId} className="type-section-title text-pretty wrap-anywhere">
           {COMPOSER_COPY.heading}
         </h2>
-        <p className="max-w-prose text-sm text-muted-foreground text-pretty wrap-anywhere">{COMPOSER_COPY.help}</p>
+        <p className="type-supporting max-w-prose text-pretty wrap-anywhere">{COMPOSER_COPY.help}</p>
       </div>
       {candidates.state === "unavailable" ? (
         // The source did not answer, so no partner is offered: an empty picker would read as "nobody is eligible", which is a statement about the roster this read never made.
@@ -141,7 +141,7 @@ export function ReferralIntroductionComposer({ scope, expectedRevision, candidat
             </FormField>
           ))}
           {selected === undefined || !referenceParsed.success || !zoneParsed.success ? (
-            <p className="max-w-prose text-sm text-muted-foreground text-pretty wrap-anywhere">{stillNeededSentence(needed)}</p>
+            <p className="type-supporting max-w-prose text-pretty wrap-anywhere">{stillNeededSentence(needed)}</p>
           ) : (
             // The form's own review and receipt belong to the partner it records, so a different partner starts a fresh form rather than inheriting an answer recorded about someone else.
             <ReferralIntroductionForm key={selected.partnerId} scope={scope} partnerId={selected.partnerId} expectedRevision={expectedRevision} sourceReference={referenceParsed.data} sourceZone={zoneParsed.data} />

@@ -13,7 +13,17 @@ export const ONE_SUCCESSOR_NOTE = "Completing or skipping an occurrence admits a
 export const SKIPPED_MEANS_NOT_PERFORMED_NOTE = "A skipped occurrence was not performed: skipping is not completing, and it records no contact.";
 export const SERIES_STATE_LABELS: Record<SeriesState, string> = { active: "Active", paused: "Paused", stopped: "Stopped" };
 export const PAUSED_NOTE = "While the series is paused no new dates are admitted, and pausing completes nothing: the plan is held rather than closed, and it can be resumed.";
-export const STOPPED_NOTE = "A stopped series admits no further dates, and its unfinished work stays exactly where it is.";
+export const UNFINISHED_WORK_VALUES = ["keep", "cancel"] as const;
+export type UnfinishedWork = (typeof UNFINISHED_WORK_VALUES)[number];
+export const UNFINISHED_WORK_LEGEND = "Unfinished work";
+export const UNFINISHED_WORK_LABELS: Record<UnfinishedWork, string> = { keep: "Keep the unfinished dates", cancel: "Cancel the unfinished dates" };
+export const UNFINISHED_WORK_HINTS: Record<UnfinishedWork, string> = {
+  keep: "The dates stay exactly where they are, as ordinary work: this series admits no further dates, and every date it already holds keeps the state it is in now.",
+  cancel: "Every date still awaiting an answer is cancelled with the series. Completed history is untouched, and nothing is recorded as contact.",
+};
+export const STOP_REVIEW_CHOICE_SENTENCE = "Stopping admits no further dates, and it completes nothing on your behalf: what happens to the dates already on the series is the choice below, and stopping records no contact either way.";
+export const STOP_REVIEW_NOT_RESUMABLE_SENTENCE = "A stopped series is not paused and cannot be resumed, so plan anything still needed after this as new work.";
+export const STOPPED_NOTE = "A stopped series admits no further dates, and stopping completed none of the dates it left behind: each unfinished date is either kept as ordinary work or cancelled with the series, exactly as the stop recorded it.";
 export const STALE_SERIES_ACTION_MESSAGE = "This series was stopped after your change started, so nothing from that change was applied.";
 export const STALE_SERIES_ACTION_RECOVERY = "Open the series to see its current state, then decide what the work needs now.";
 export const MISSED_PLAN_RESOLUTION_REQUIRED_MESSAGE = "Choose how the plan continues — one of the three resolutions — before you apply the change.";

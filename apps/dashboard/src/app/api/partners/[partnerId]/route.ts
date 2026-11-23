@@ -1,6 +1,7 @@
 import { reads, refusedRead, toResponse } from "@/modules/data-service";
 import { pagingParamsOf, pagingQuerySchema } from "../../paging";
 import { READ_ATTEMPT, readResponse } from "../../read";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const RECORD_READ_JOB = "record";
@@ -13,7 +14,7 @@ const FIRST_PAGE = 1;
 type PartnerRecordParams = { readonly partnerId: string };
 const activityWindowOf = (page: number | undefined, pageSize: number | undefined) => (page === undefined && pageSize === undefined ? undefined : { index: (page ?? FIRST_PAGE) - FIRST_PAGE, ...(pageSize === undefined ? {} : { size: pageSize }) });
 /** Answers the read the request names — the record's shared facts, the caller's own private preparation, or the activity that actually happened — or, when it names none, the record body folded into one envelope by the service's own record read. */
-export async function GET(request: Request, context: { params: Promise<PartnerRecordParams> }): Promise<Response> {
+async function readPartnerRecord(request: Request, context: { params: Promise<PartnerRecordParams> }): Promise<Response> {
   const { partnerId } = await context.params;
   const search = new URL(request.url).searchParams;
   const job = search.get("job");
@@ -28,3 +29,4 @@ export async function GET(request: Request, context: { params: Promise<PartnerRe
   if (job === RECORD_READ_JOB) return readResponse(READ_ATTEMPT, () => reads.partners.readPartner(partnerId));
   return readResponse(READ_ATTEMPT, () => reads.partners.readPartnerRecord(partnerId));
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readPartnerRecord });

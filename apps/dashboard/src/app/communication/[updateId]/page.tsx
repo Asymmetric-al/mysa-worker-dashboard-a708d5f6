@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import { lifecycleOf, variantRecordOf } from "@/components/draft-status";
 import StateNotice from "@/components/state-notice";
@@ -8,19 +9,27 @@ import { assertNever } from "@/lib/result";
 import type { ExclusionReason } from "@/modules/audience/resolve";
 import type { Release } from "@/modules/content/variant";
 import { reads } from "@/modules/data-service";
-import { wireFormOf } from "../../page-frame";
+import { PageColumn, PageHeading, pageRefusalOf, wireFormOf, type ReadNoticeCopy, type ReadRefusal } from "../../page-frame";
+export const metadata: Metadata = { title: "Update" };
 type OverviewEnvelope = Extract<Awaited<ReturnType<typeof reads.updates.readVariantOverview>>, { readonly kind: "envelope" }>["envelope"];
 const PAGE_LEDE = "Every edition of this Update, each with its own saved draft, its frozen candidate and its published revision. " + "A release is what a reader is served; a notice is a separate outcome again, and no edition is ever summarised " + "into one status for the whole Update.";
 const SURFACE_HEADING_LEVEL = 2;
 /** The level the release review occupies: a second section under the same `h1`, beside the matrix rather than inside it, because releasing is not one of the matrix's per-edition writes and the review opens its own blocks below itself. */
 const PUBLISH_HEADING_LEVEL = 2;
-const NOTICE_HEADING_LEVEL = 1;
+/** The page's own title, stated by the heading block above the matrix and kept whenever the read answers with a refusal, so no refusal arm leaves a notice standing in for the page's heading. */
+const PAGE_TITLE = "Update";
+/** The level a notice nests at beneath that title: the page keeps its heading and the refusal is stated under it. */
+const NESTED_NOTICE_LEVEL = 2;
+const DENIED_TITLE = "These editions are not available in this session";
 const DENIED_DESCRIPTION = "This session may not read this Update's editions in the context it is working in, so no edition, revision, " + "candidate, language or count is stated here. A refusal is not an Update with no editions.";
+const UNAVAILABLE_TITLE = "The editions could not be read";
 const UNAVAILABLE_FALLBACK = "The source holding this Update could not be read, so nothing is stated in place of its editions. Retry the same " + "read: an outage is never presented as an Update with no editions.";
 const REFUSED_TITLE = "This overview's request was refused";
 const REFUSED_DESCRIPTION = "The address this page asked the read to resolve is not one the read admits, so nothing was read and nothing is " + "shown in its place. Opening an Update from the Updates list states the address the read does admit.";
 const NOT_AN_UPDATE_TITLE = "This address does not name an Update";
 const NOT_AN_UPDATE_DESCRIPTION = "The document this address names is a Page rather than an Update, so it is not shown here under Update wording. " + "A Page is composed, previewed and released from its own route, where its locale editions and its give " + "placement are stated.";
+/** The page's words for each arm of the one read it makes, so a refusal states what could not be read in the page's own terms. */
+const NOTICE_COPY: ReadNoticeCopy = { headingLevel: NESTED_NOTICE_LEVEL, denied: { title: DENIED_TITLE, body: DENIED_DESCRIPTION }, unavailable: { title: UNAVAILABLE_TITLE }, refused: { title: REFUSED_TITLE, body: REFUSED_DESCRIPTION } };
 const ROOT_CLASS = "flex min-w-0 flex-col gap-6 text-start";
 type OverviewSurfaceProps = { readonly envelope: OverviewEnvelope; /** The recipient ceiling the audience read stated for this publisher, or why it stated none. */ readonly ceiling: PublishAudienceCeiling | undefined };
 /** One edition of this Update as the matrix read states it, so the review's rows are the matrix's own facts. */
@@ -83,19 +92,26 @@ const OverviewSurface = ({ envelope, ceiling }: OverviewSurfaceProps): ReactElem
   return (
     <div className={ROOT_CLASS}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h1 className="text-2xl font-semibold text-pretty wrap-anywhere">{"Update"}</h1>
-        <p className="max-w-prose text-sm text-pretty text-muted-foreground">{PAGE_LEDE}</p>
+        <h1 className="type-page-title text-pretty wrap-anywhere">{PAGE_TITLE}</h1>
+        <p className="max-w-prose type-supporting text-pretty">{PAGE_LEDE}</p>
       </div>
       <VariantOverview scope={envelope.scope} documentId={documentId} initialResult={{ kind: "envelope", envelope: wireFormOf(envelope) }} headingLevel={SURFACE_HEADING_LEVEL} />
       <PublishReview scope={envelope.scope} documentId={documentId} expectedRevision={envelope.revision} editions={envelope.data.editions.map((edition) => publishEditionOf(documentId, edition))} {...(ceiling === undefined ? {} : { ceiling })} headingLevel={PUBLISH_HEADING_LEVEL} />
     </div>
   );
 };
-function unavailableNotice(source: OverviewEnvelope["source"], guidance: string): ReactElement {
+/** An outage behind this Update, stated under the page's own title: the service's guidance is the sentence unless it stated none, and the page's own words stand in only then. */
+function unavailableRefusal(result: ReadRefusal, guidance: string): ReactElement {
   const stated = guidance.trim();
-  return <StateNotice kind="unavailable" headingLevel={NOTICE_HEADING_LEVEL} title="The editions could not be read" description={stated === "" ? UNAVAILABLE_FALLBACK : stated} source={source} className={ROOT_CLASS} />;
+  return pageRefusalOf(result, stated === "" ? { ...NOTICE_COPY, unavailable: { title: UNAVAILABLE_TITLE, body: UNAVAILABLE_FALLBACK } } : NOTICE_COPY, 6, { title: PAGE_TITLE });
 }
-const refusedNotice = (title: string, description: string): ReactElement => <StateNotice kind="refused" headingLevel={NOTICE_HEADING_LEVEL} title={title} description={description} className={ROOT_CLASS} />;
+/** A request this route does not serve — a document of another family — stated under the page's own title rather than as a heading of its own, because the route keeps one heading and states the refusal beneath it. */
+const routeRefusal = (title: string, description: string): ReactElement => (
+  <PageColumn>
+    <PageHeading title={PAGE_TITLE} />
+    <StateNotice kind="refused" headingLevel={NESTED_NOTICE_LEVEL} title={title} description={description} />
+  </PageColumn>
+);
 /** The variant overview and status of one Update: one read, one envelope, and an honest notice in place of the matrix when the read does not answer with one. */
 export default async function CommunicationUpdateOverviewPage({ params }: { readonly params: Promise<{ updateId: string }> }): Promise<ReactElement> {
   const { updateId } = await params;
@@ -103,15 +119,15 @@ export default async function CommunicationUpdateOverviewPage({ params }: { read
   switch (result.kind) {
     case "envelope": {
       // An Update's matrix is this family's surface, so a document of another family is a request this route does not serve rather than one it renders under Update wording. The comparison is a routing decision on a fact the read states; it derives no lifecycle and carries no authority, which stays with the read.
-      if (result.envelope.data.document.family !== "update") return refusedNotice(NOT_AN_UPDATE_TITLE, NOT_AN_UPDATE_DESCRIPTION);
+      if (result.envelope.data.document.family !== "update") return routeRefusal(NOT_AN_UPDATE_TITLE, NOT_AN_UPDATE_DESCRIPTION);
       return <OverviewSurface envelope={result.envelope} ceiling={await ceilingOf()} />; // The ceiling is read only for an Update this route serves, and it is the service's own audience read rather than a request to this application's handler: the same counts the audience screen shows, under this scope.
     }
     case "denied":
-      return <StateNotice kind="denied" headingLevel={NOTICE_HEADING_LEVEL} title="These editions are not available in this session" description={DENIED_DESCRIPTION} reasonCode={result.denied.reasonCode} className={ROOT_CLASS} />;
+      return pageRefusalOf(result, NOTICE_COPY, 6, { title: PAGE_TITLE });
     case "unavailable":
-      return unavailableNotice(result.unavailable.source, result.unavailable.guidance);
+      return unavailableRefusal(result, result.unavailable.guidance);
     case "refused":
-      return refusedNotice(REFUSED_TITLE, REFUSED_DESCRIPTION);
+      return pageRefusalOf(result, NOTICE_COPY, 6, { title: PAGE_TITLE });
     default:
       return assertNever(result, "Unhandled variant overview read result");
   }

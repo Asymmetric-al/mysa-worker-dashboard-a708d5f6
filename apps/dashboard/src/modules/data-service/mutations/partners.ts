@@ -121,7 +121,7 @@ type PartnerSpec<P, R extends MutationResult> = {
   readonly apply: (context: MutationContext, payload: P, scope: Scope) => ApplyResult<R>;
 };
 async function runPartnerMutation<P, R extends MutationResult>(input: MutationInput<P>, source: SessionSource | undefined, spec: PartnerSpec<P, R>): Promise<MutationOutcome> {
-  const opening = await openMutation(input, source);
+  const opening = await openMutation(spec.name, input, source);
   if (!opening.ok) return opening.outcome;
   const payload = (): P => payloadOf(spec.schema, input);
   return runMutation<P, R>({

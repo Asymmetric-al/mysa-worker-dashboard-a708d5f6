@@ -16,8 +16,8 @@ import type { MutationInput, ReadEnvelope, Scope, ValueState } from "@/modules/d
 import type { MutationOutcome } from "@/modules/data-service/outcome";
 import { exponentOf, UNKNOWN_CURRENCY } from "@/modules/money/currency";
 import { SUPPORT_BASIS } from "@/modules/support/basis";
-import { formatPercentageBasisPoints, GOAL_CAPABILITY, type GoalProgress, type GoalProgressState } from "@/modules/support/goal";
-import { EMPTY_STATES, GOAL_CURRENCY_CHOICE, GOAL_CURRENCY_UNSTATED, MEASURE_LABELS, NO_PERCENTAGE, type NoPercentageReason } from "../copy";
+import { GOAL_CAPABILITY, type GoalProgress, type GoalProgressState } from "@/modules/support/goal";
+import { EMPTY_STATES, GOAL_CURRENCY_CHOICE, GOAL_CURRENCY_UNSTATED, MEASURE_LABELS, NO_PERCENTAGE, VALUE_STATE_MEANING, type NoPercentageReason } from "../copy";
 import { useGoal, type GoalEnvelope } from "../hooks/use-goal";
 import { useSaveGoal, type GoalSaveFormPayload } from "../hooks/use-save-goal";
 import { goalSavePayloadSchema } from "../schemas";
@@ -41,11 +41,22 @@ function goalEnvelopeOf(candidate: ReadEnvelope<unknown> | undefined): GoalEnvel
   return typeof data === "object" && data !== null && "goal" in data && "progress" in data && "percentage" in data && "period" in data && "measure" in data && "canEditGoal" in data ? (candidate as GoalEnvelope) : undefined;
 }
 const goalAmountStateOf = (envelope: GoalEnvelope): ValueState => envelope.valueStates["goal.amount"] ?? "unknown";
-type ProgressPresentation = { readonly figure: string | null; readonly sentence: string };
+const goalPercentageStateOf = (envelope: GoalEnvelope): ValueState => envelope.valueStates["goal.percentage"] ?? "unknown";
+type StatedPercentageState = Exclude<ValueState, "unknown" | "withheld" | "unavailable">;
+type ProgressFigure = { readonly text: string; readonly label: string; readonly note: string };
+type ProgressPresentation = { readonly figure: ProgressFigure | null; readonly sentence: string };
+const INCOMPLETE_MARKER = " (incomplete)";
+const PARTIAL_COVERAGE_CLAUSE = " The source holds only part of that period, so the numerator of this percentage covers only the part it holds, and the figure is not a percentage of the whole period.";
+const statesPercentage = (state: ValueState): state is StatedPercentageState => state === "value" || state === "zero" || state === "incomplete-subtotal";
+const percentageFigureOf = (percentage: string, state: StatedPercentageState): ProgressFigure => {
+  const text = state === "incomplete-subtotal" ? `${percentage}${INCOMPLETE_MARKER}` : percentage;
+  const note = VALUE_STATE_MEANING[state];
+  return { text, label: `${text}. ${note}`, note };
+};
 const absentPercentageReason = (goal: GoalFigure | null): NoPercentageReason => (goal === null ? "no-goal" : goal.amount.minorUnits === 0 ? "zero-denominator" : "unknown-denominator");
-function progressPresentation(progress: GoalProgress, goal: GoalFigure | null, measureLabel: string, from: string, to: string): ProgressPresentation {
-  const basisPoints = progress.percentageBasisPoints;
-  const figure = (progress.state === "value" || progress.state === "zero") && basisPoints !== null ? formatPercentageBasisPoints(basisPoints) : null;
+function progressPresentation(progress: GoalProgress, goal: GoalFigure | null, measureLabel: string, from: string, to: string, percentage: string | null, percentageState: ValueState): ProgressPresentation {
+  const figure = (progress.state === "value" || progress.state === "zero") && percentage !== null && statesPercentage(percentageState) ? percentageFigureOf(percentage, percentageState) : null;
+  const partialCoverage = percentageState === "incomplete-subtotal" ? PARTIAL_COVERAGE_CLAUSE : "";
   const stated: Readonly<Record<Exclude<GoalProgressState, "value" | "zero">, string>> = {
     "no-goal": NO_PERCENTAGE["no-goal"],
     "no-percentage": NO_PERCENTAGE[absentPercentageReason(goal)],
@@ -57,11 +68,11 @@ function progressPresentation(progress: GoalProgress, goal: GoalFigure | null, m
   // A state that asserts a percentage but carries none is never explained away with an invented figure, so it falls back to the sentence that says why no percentage is shown.
   const sentence =
     progress.state === "zero"
-      ? `No received support is recorded over ${from} to ${to}, so the goal is 0% met. That is a recorded zero and not an unknown figure.`
+      ? `No received support is recorded over ${from} to ${to}, so the goal is 0% met. That is a recorded zero and not an unknown figure.${partialCoverage}`
       : progress.state === "value"
-        ? figure === null
+        ? figure === null || percentage === null
           ? NO_PERCENTAGE.default
-          : `The goal is ${figure} met over ${from} to ${to} on the ${measureLabel} measure. A figure above 100% is stated exactly as it was computed and is never capped.`
+          : `The goal is ${percentage} met over ${from} to ${to} on the ${measureLabel} measure.${partialCoverage} A figure above 100% is stated exactly as it was computed and is never capped.`
         : stated[progress.state];
   return { figure, sentence };
 }
@@ -162,7 +173,7 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
   ];
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <p className="text-sm text-pretty text-muted-foreground">
+      <p className="type-supporting text-pretty">
         Saved against <bdi>{measureLabel}</bdi>: this release sets a goal against one measure only, so the form states the measure and offers no choice of another.
       </p>
       {errors === null || errors.count === 0 ? null : <FormErrorSummary errors={errors} labels={FORM_LABELS} order={FORM_FIELD_ORDER} headingLevel={3} />}
@@ -204,7 +215,7 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
         </FormField>
       ))}
       {choosingCurrency ? null : (
-        <p className="text-sm text-muted-foreground">
+        <p className="type-supporting">
           The currency is <bdi>{currency}</bdi> and is not a free choice: it is the currency this support subject reports in, so the amount inherits a precision the source states rather than one this form assumes.
         </p>
       )}
@@ -250,14 +261,16 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
   const measureLabel = MEASURE_LABELS[data.measure];
   const editAction = actions.find((action) => action.name === GOAL_CAPABILITY);
   const canEdit = data.canEditGoal;
-  const progress = progressPresentation(data.progress, goal, measureLabel, data.period.from, data.period.to);
+  const progress = progressPresentation(data.progress, goal, measureLabel, data.period.from, data.period.to, data.percentage, goalPercentageStateOf(envelope));
   const showForm = canEdit && editing;
   return (
     <section aria-labelledby={titleId} dir={dir} className={cn("min-w-0", className)}>
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
-            <h2 id={titleId}>Support goal</h2>
+            <h2 id={titleId} className="type-section-title">
+              Support goal
+            </h2>
           </CardTitle>
           <CardDescription>{"One target, set against received gifts on the one named basis this application measures. Changing the goal changes only the goal: no gift, commitment, earlier report or public progress is written, and no message is sent."}</CardDescription>
           {canEdit && !showForm ? (
@@ -271,24 +284,27 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
         <CardContent className="flex min-w-0 flex-col gap-6">
           {goal === null ? (
             <div className="flex min-w-0 flex-col gap-2">
-              <p className="text-base font-medium">{EMPTY_STATES.goal.title}</p>
-              <p className="text-sm text-pretty text-muted-foreground">{EMPTY_STATES.goal.body}</p>
+              <p className="type-subsection-title">{EMPTY_STATES.goal.title}</p>
+              <p className="type-supporting text-pretty">{EMPTY_STATES.goal.body}</p>
             </div>
           ) : (
             <GoalFacts goal={goal} locale={locale} measureLabel={measureLabel} valueState={goalAmountStateOf(envelope)} />
           )}
           <div className="flex min-w-0 flex-col gap-2">
-            <h3 className="text-sm font-medium">Progress</h3>
+            <h3 className="type-subsection-title">Progress</h3>
             {progress.figure === null ? null : (
               <p className="flex flex-wrap items-baseline gap-x-2">
-                <bdi className="tabular-figures text-2xl font-semibold tracking-tight">{progress.figure}</bdi>
+                <span title={progress.figure.label}>
+                  <bdi className="tabular-figures text-2xl font-semibold tracking-tight">{progress.figure.text}</bdi>
+                  <span className="sr-only">{`. ${progress.figure.note}`}</span>
+                </span>
                 <span className="text-sm text-muted-foreground">of the goal</span>
               </p>
             )}
-            <p className="text-sm text-pretty text-muted-foreground">{progress.sentence}</p>
+            <p className="type-supporting text-pretty">{progress.sentence}</p>
           </div>
           <SnapshotStatement basis={SUPPORT_BASIS} currencies={[goal === null ? envelope.coverage.currency : goal.amount.currency]} period={{ from: data.period.from, to: data.period.to }} coverage={envelope.coverage} asOf={envelope.asOf} isCurrentPeriod={data.period.state === "in-progress"} locale={locale} />
-          {canEdit ? null : <p className="text-sm text-pretty text-muted-foreground">{editAction?.reason ?? "This read states no goal-editing capability, so the goal is read-only here: no edit control is offered and a save would be refused."}</p>}
+          {canEdit ? null : <p className="type-supporting text-pretty">{editAction?.reason ?? "This read states no goal-editing capability, so the goal is read-only here: no edit control is offered and a save would be refused."}</p>}
           {showForm ? (
             <>
               <Separator />

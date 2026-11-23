@@ -106,7 +106,7 @@ const WindowPager = ({ window, itemNoun, disabled, onPage, onPageSize }: { reado
 function OwnedWorkRow({ task, valueStates }: { readonly task: InitiativeTaskRow; readonly valueStates: InitiativeEnvelope["valueStates"] }): ReactElement {
   return (
     <li className="flex min-w-0 flex-col gap-1 border-b border-border pb-2 last:border-b-0 last:pb-0">
-      <Link href={WORK_ROUTE} className="block min-w-0 py-0.5 text-sm font-medium text-pretty wrap-anywhere underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+      <Link href={WORK_ROUTE} className="block min-w-0 py-0.5 text-sm font-medium text-pretty wrap-anywhere inline-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
         <bdi>{task.title}</bdi>
         <span className="sr-only">{` — ${WORK_LINK_SUFFIX}`}</span>
       </Link>
@@ -133,15 +133,15 @@ function OverviewPanel({ envelope, onRequestClose, onRequestReopen, onWindowChan
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <InitiativeHeader envelope={envelope} onRequestClose={onRequestClose} onRequestReopen={onRequestReopen} />
-      <Card size="sm">
+      <Card>
         <CardHeader>
           <CardTitle>
-            <h2 className="font-heading text-base font-medium text-pretty">{INITIATIVE_COPY.nextWorkHeading}</h2>
+            <h2 className="type-section-title text-pretty">{INITIATIVE_COPY.nextWorkHeading}</h2>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-3">
-          <p className="text-sm text-pretty text-muted-foreground">{NEXT_WORK_LISTED_NOTE}</p>
-          <p className="text-sm text-pretty text-muted-foreground">{NEXT_WORK_OWNERSHIP_NOTE}</p>
+          <p className="type-supporting text-pretty">{NEXT_WORK_LISTED_NOTE}</p>
+          <p className="type-supporting text-pretty">{NEXT_WORK_OWNERSHIP_NOTE}</p>
           {nextWork.total === 0 ? (
             <StateNotice kind="empty" headingLevel={3} title={NEXT_WORK_EMPTY_TITLE} description={NEXT_WORK_EMPTY_BODY} action={{ label: NEXT_WORK_EMPTY_ACTION, href: WORK_ROUTE }} />
           ) : (
@@ -172,8 +172,8 @@ function RequestsPanel({ initiativeId, envelope, onChanged, onWindowChange, isFe
   const draftWithheldReason = draftAction === undefined ? DRAFT_REQUEST_ABSENT_BODY : (draftAction.reason ?? DRAFT_REQUEST_ABSENT_BODY);
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <h2 className="font-heading text-base font-medium text-pretty">{INITIATIVE_COPY.requestsHeading}</h2>
-      <p className="text-sm text-pretty text-muted-foreground">{REQUESTS_ORDER_NOTE}</p>
+      <h2 className="type-section-title text-pretty">{INITIATIVE_COPY.requestsHeading}</h2>
+      <p className="type-supporting text-pretty">{REQUESTS_ORDER_NOTE}</p>
       {draftAdmitted ? (
         <div className="flex min-w-0 flex-col gap-2">
           <div>
@@ -210,7 +210,7 @@ function RequestsPanel({ initiativeId, envelope, onChanged, onWindowChange, isFe
 type ResultsPanelProps = { readonly initiativeId: string; readonly resultsEnvelope: NonNullable<InitiativeResultsProps["initialEnvelope"]> | undefined };
 const ResultsPanel = ({ initiativeId, resultsEnvelope }: ResultsPanelProps): ReactElement => (
   <div className="flex min-w-0 flex-col gap-4">
-    <h2 className="font-heading text-base font-medium text-pretty">{RESULTS_SECTION_TITLE}</h2>
+    <h2 className="type-section-title text-pretty">{RESULTS_SECTION_TITLE}</h2>
     {resultsEnvelope === undefined ? <StateNotice kind="unavailable" headingLevel={3} title={STATE_NOTICE_COPY.unavailable.title} description={RESULTS_NOT_READ_BODY} /> : <InitiativeResults initiativeId={initiativeId} initialEnvelope={resultsEnvelope} />}
   </div>
 );
@@ -224,7 +224,7 @@ const historySentenceOf = (entry: InitiativeHistoryRow): string => {
 const HistoryEntry = ({ entry }: { readonly entry: InitiativeHistoryRow }): ReactElement => (
   <li className="flex min-w-0 flex-col gap-1 border-b border-border pb-2 last:border-b-0 last:pb-0">
     <RecordedInstant value={entry.at} className="text-sm" />
-    <p className="text-sm text-pretty">{historySentenceOf(entry)}</p>
+    <p className="type-body text-pretty">{historySentenceOf(entry)}</p>
     <dl className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
       {entry.kind === "member-state" ? (
         <>
@@ -245,12 +245,12 @@ function HistoryPanel({ envelope }: { readonly envelope: InitiativeEnvelope }): 
   const { initiative, history } = envelope.data;
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <h2 className="font-heading text-base font-medium text-pretty">{INITIATIVE_COPY.historyHeading}</h2>
+      <h2 className="type-section-title text-pretty">{INITIATIVE_COPY.historyHeading}</h2>
       {initiative.state === "closed" || initiative.closureDisposition !== null ? (
-        <Card size="sm">
+        <Card>
           <CardHeader>
             <CardTitle>
-              <h3 className="font-heading text-base font-medium text-pretty">{CLOSURE_COPY.closeHeading}</h3>
+              <h3 className="type-subsection-title text-pretty">{CLOSURE_COPY.closeHeading}</h3>
             </CardTitle>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-col gap-2">
@@ -259,11 +259,11 @@ function HistoryPanel({ envelope }: { readonly envelope: InitiativeEnvelope }): 
               <TermFact term={CLOSURE_COPY.dispositionLabel} value={initiative.closureDisposition === null ? NOT_RECORDED_WORD : <bdi>{dispositionFallback(initiative.closureDisposition)}</bdi>} />
             </dl>
             <p className="text-xs text-pretty text-muted-foreground">{INITIATIVE_STATE_COPY[initiative.state].description}</p>
-            {initiative.lifecycle === "reopened" ? <p className="text-sm text-pretty text-muted-foreground">{CLOSURE_COPY.historyPreservedNote}</p> : null}
+            {initiative.lifecycle === "reopened" ? <p className="type-supporting text-pretty">{CLOSURE_COPY.historyPreservedNote}</p> : null}
           </CardContent>
         </Card>
       ) : null}
-      <p className="text-sm text-pretty text-muted-foreground">{HISTORY_ORDER_NOTE}</p>
+      <p className="type-supporting text-pretty">{HISTORY_ORDER_NOTE}</p>
       {history.length === 0 ? (
         <StateNotice kind="empty" headingLevel={3} title={HISTORY_EMPTY_TITLE} description={HISTORY_EMPTY_BODY} />
       ) : (
@@ -294,7 +294,7 @@ export default function InitiativeDetail({ envelope, candidates, resultsEnvelope
   const [dialog, setDialog] = useState<"close" | "reopen" | null>(null);
   const queryClient = useQueryClient();
   // The window each paged list of this record is read with, seeded from the window the server's own answer states: each list keeps its own page, so paging the Requests leaves the working list and the owned work where the reader left them, and the window is the read's own parameter rather than a slice of an answer held here.
-  const seededWindow: InitiativeReadWindow = { requestsPage: envelope.data.requests.page, requestsPageSize: envelope.data.requests.pageSize, nextWorkPage: envelope.data.nextWork.page, nextWorkPageSize: envelope.data.nextWork.pageSize };
+  const seededWindow: InitiativeReadWindow = { page: envelope.data.workingList.page, pageSize: envelope.data.workingList.pageSize, requestsPage: envelope.data.requests.page, requestsPageSize: envelope.data.requests.pageSize, nextWorkPage: envelope.data.nextWork.page, nextWorkPageSize: envelope.data.nextWork.pageSize };
   const [listWindow, setListWindow] = useState<InitiativeReadWindow>(() => ({ ...seededWindow }));
   const changeWindow = useCallback((change: InitiativeReadWindow): void => setListWindow((held) => ({ ...held, ...change })), []);
   const reread = useCallback((): void => void invalidateInitiativeReads(queryClient, envelope.scope), [queryClient, envelope.scope]);
@@ -331,7 +331,7 @@ export default function InitiativeDetail({ envelope, candidates, resultsEnvelope
           <OverviewPanel envelope={current} onRequestClose={() => setDialog("close")} onRequestReopen={() => setDialog("reopen")} onWindowChange={changeWindow} isFetching={query.isFetching} />
         </TabsContent>
         <TabsContent value="working-list" aria-label={TAB_COPY["working-list"].panel} className="min-w-0">
-          <WorkingList initiativeId={initiativeId} envelope={current} candidates={candidates ?? CANDIDATES_NOT_SUPPLIED} onChanged={reread} readWindow={listWindow} headingLevel={2} />
+          <WorkingList initiativeId={initiativeId} envelope={current} candidates={candidates ?? CANDIDATES_NOT_SUPPLIED} onChanged={reread} readWindow={listWindow} onWindowChange={changeWindow} headingLevel={2} />
         </TabsContent>
         <TabsContent value="requests" aria-label={TAB_COPY.requests.panel} className="min-w-0">
           <RequestsPanel initiativeId={initiativeId} envelope={current} onChanged={reread} onWindowChange={changeWindow} isFetching={query.isFetching} />

@@ -12,7 +12,7 @@ import { cn } from "@/lib/cn";
 import { destinationProblemOf } from "@/lib/destination";
 export type MessageDirection = "ltr" | "rtl";
 const RENDERED_PROSE = cn(
-  "text-sm leading-relaxed break-words [&_p]:mb-3 [&_p:last-child]:mb-0 [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:font-heading [&_h2]:text-base [&_h2]:font-medium [&_h2:first-child]:mt-0 [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:font-heading [&_h3]:text-sm [&_h3]:font-medium [&_h4]:mt-4 [&_h4]:mb-2 [&_h4]:font-heading [&_h4]:text-sm [&_h4]:font-medium [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:ps-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:ps-5 [&_li]:mb-1 [&_blockquote]:my-3 [&_blockquote]:border-s-2 [&_blockquote]:border-border [&_blockquote]:ps-3 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4 [&_strong]:font-semibold [&_em]:italic [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:text-xs [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_hr]:my-4 [&_hr]:border-border [&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg",
+  "type-body break-words [&_p]:mb-3 [&_p:last-child]:mb-0 [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:type-section-title [&_h2:first-child]:mt-0 [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:type-subsection-title [&_h4]:mt-4 [&_h4]:mb-2 [&_h4]:type-group-title [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:ps-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:ps-5 [&_li]:mb-1 [&_blockquote]:my-3 [&_blockquote]:border-s-2 [&_blockquote]:border-border [&_blockquote]:ps-3 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4 [&_strong]:font-semibold [&_em]:italic [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:text-xs [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_hr]:my-4 [&_hr]:border-border [&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg",
 );
 export type ServerHtmlProps = { readonly html: string; readonly direction: MessageDirection; readonly lang?: string; readonly className?: string };
 export const ServerHtml = ({ html, direction, lang, className }: ServerHtmlProps): ReactElement | null => (html.trim().length === 0 ? null : <RenderedContent html={html} direction={direction} lang={lang} className={cn(RENDERED_PROSE, className)} />);
@@ -82,7 +82,7 @@ export function MessageReader({ sender, subject, asOfLabel, audienceLabel, audie
                       <ServerHtml html={html} direction={direction} lang={languageTag} />
                     </TabsContent>
                     <TabsContent value="plain" className="rounded-lg focus-visible:ring-[3px] focus-visible:ring-ring">
-                      <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed">{plainText}</pre>
+                      <pre className="whitespace-pre-wrap break-words type-body">{plainText}</pre>
                     </TabsContent>
                   </div>
                 </DirectionProvider>
@@ -99,18 +99,18 @@ function ProtectedNotice({ href }: { readonly href?: string }): ReactElement {
   return (
     <div className="flex flex-col gap-2">
       <p className="font-medium">{PROTECTED_NOTICE_COPY.heading}</p>
-      <p className="text-muted-foreground">{PROTECTED_NOTICE_COPY.description}</p>
+      <p className="type-supporting">{PROTECTED_NOTICE_COPY.description}</p>
       {destinationProblemOf(link) === undefined ? (
         <>
           <p>
-            <a className="font-medium text-primary underline underline-offset-4" href={link}>
+            <a className="inline-flex min-h-6 items-center font-medium text-primary inline-link" href={link}>
               {"Open the protected Update"}
             </a>
           </p>
-          <p className="text-muted-foreground">{PROTECTED_NOTICE_COPY.linkStatement}</p>
+          <p className="type-supporting">{PROTECTED_NOTICE_COPY.linkStatement}</p>
         </>
       ) : null}
-      <p className="text-muted-foreground">{PROTECTED_NOTICE_COPY.absenceStatement}</p>
+      <p className="type-supporting">{PROTECTED_NOTICE_COPY.absenceStatement}</p>
     </div>
   );
 }

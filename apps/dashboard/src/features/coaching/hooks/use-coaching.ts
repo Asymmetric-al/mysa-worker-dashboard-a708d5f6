@@ -24,7 +24,7 @@ function readUrl(endpoint: string, query: Readonly<Record<string, string | numbe
 type CoachingRead<Params> = { readonly job: string; readonly url: (params: Params) => string; readonly admits: (data: Record<string, unknown>) => boolean };
 function useCoachingRead<Data, Params>(scope: Scope, read: CoachingRead<Params>, params: Params): UseQueryResult<ReadResult<ReadEnvelope<Data>>, Error> {
   const queryKey = params === undefined ? [...scopeKey(scope), read.job] : [...scopeKey(scope), read.job, params];
-  return useQuery({ queryKey, queryFn: ({ signal }) => fetchRead<Data>({ url: read.url(params), admits: (data: unknown): boolean => isRecord(data) && read.admits(data), signal }), retry: false });
+  return useQuery({ queryKey, queryFn: () => fetchRead<Data>({ url: read.url(params), admits: (data: unknown): boolean => isRecord(data) && read.admits(data) }), retry: false });
 }
 const CHECK_INS_READ: CoachingRead<CheckInsQuery> = { job: COACHING_JOB_KEYS.checkIns, url: (params) => readUrl("/api/coaching/checkins", params), admits: (data) => Array.isArray(data.checkIns) && isRecord(data.limits) && isRecord(data.page) };
 const PORTFOLIO_READ: CoachingRead<undefined> = { job: COACHING_JOB_KEYS.coachPortfolio, url: () => readUrl("/api/coaching/subjects", { view: "portfolio" }), admits: (data) => Array.isArray(data.subjects) && typeof data.holdsNoSubjects === "boolean" };

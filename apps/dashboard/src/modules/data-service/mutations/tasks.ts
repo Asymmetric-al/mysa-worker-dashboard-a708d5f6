@@ -213,7 +213,7 @@ function authorizesOwnWork(session: ResolvedSession, scope: Scope, kind: "task" 
 }
 type WorkHooks<P, R extends MutationResult> = { readonly readCurrent?: (documents: MutationContext["docs"], payload: P) => CurrentTarget; readonly apply: (context: MutationContext, payload: P) => ApplyResult<R> };
 async function runWorkMutation<P, R extends MutationResult>(input: MutationInput<P>, options: TaskMutationOptions | undefined, schema: z.ZodType<P>, name: MutationName, kind: "task" | "series", hooks: WorkHooks<P, R>): Promise<MutationOutcome> {
-  const opening = await openMutation(input, options?.sessionId === undefined ? undefined : { sessionId: options.sessionId });
+  const opening = await openMutation(name, input, options?.sessionId === undefined ? undefined : { sessionId: options.sessionId });
   if (!opening.ok) return opening.outcome;
   const parsed = (): P => schema.parse(input.payload);
   return runMutation<P, R>({

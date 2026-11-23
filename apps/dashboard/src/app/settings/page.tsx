@@ -42,9 +42,9 @@ export default async function SettingsPage(): Promise<ReactElement> {
   const developmentState = development.kind === "envelope" ? development.envelope.data : null;
   return (
     <PageColumn>
-      <h1 className="text-2xl font-semibold text-pretty wrap-anywhere">{PAGE_TITLE}</h1>
+      <h1 className="type-page-title text-pretty wrap-anywhere">{PAGE_TITLE}</h1>
       <SettingsPreferencePanel />
-      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{COPY.displayTimeZone}</p>
+      <p className="type-supporting text-pretty wrap-anywhere">{COPY.displayTimeZone}</p>
       <SettingsSourceStatusPanel envelope={sourceStatus} devState={developmentState} retryHref={SELF_HREF} />
       <ResetSection development={development} />
     </PageColumn>

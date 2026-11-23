@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { logger, type LogScope } from "@/lib/logger";
+import { UNSTATED_SCOPE, logger, type LogScope } from "@/lib/logger";
 import { failureFor, failurePlanOfDocument } from "@/modules/dev-runtime/failures";
 import type { SessionDocumentKey, SessionDocuments } from "@/modules/store/paths";
 import { transact } from "@/modules/store/repository";
 import { now } from "@/modules/time/clock";
-import { assertScopeUnder, assertScopeUnchangedUnder, outcomeOfRefusal, resolveSession, type ResolvedSession, type ScopeAuthority, type ScopeDecision, type SessionResolution, type SessionSource } from "./authorize";
+import { assertScopeUnder, assertScopeUnchangedUnder, outcomeOfRefusal, recordRefusalOutage, resolveSession, type ResolvedSession, type ScopeAuthority, type ScopeDecision, type SessionResolution, type SessionSource } from "./authorize";
 import { mutationInputSchema, operationRecordSchema, type MutationInput, type OperationRecord, type Scope } from "./envelope";
 import { LOCAL_STORE_SYSTEM, UNIDENTIFIED_ATTEMPT, accepted, alreadyAccepted, conflict, denied, invalid, outcomeFromError, unavailable, unchanged, unknown, type DeniedOutcome, type FieldMessages, type MutationOutcome, type MutationResult, type PerItemResult, type UnavailableOutcome } from "./outcome";
+// The intent digest gained the mutation's name without a format change here: a stored record whose digest was taken without it answers `changed-intent` for the attempt that produced it, which is a refusal a caller can act on, whereas a new format version would make an older ledger unreadable and lose the record of what it already accepted.
 export const OPERATION_LEDGER_VERSION = 1;
 export type OperationLedger = { readonly version: number; readonly records: Readonly<Record<string, OperationRecord>> };
 export const emptyLedger = (): OperationLedger => ({ version: OPERATION_LEDGER_VERSION, records: {} });
@@ -99,9 +100,9 @@ function canonicalJson(value: unknown): string {
       return `<unsupported:${typeof value}>`;
   }
 }
-/** The intent of one attempt, as a SHA-256 hex digest: what the attempt asks for, in the context it claims. */
-export function intentHash(scope: Scope, payload: unknown): string {
-  return createHash("sha256").update(canonicalJson({ scope, payload }), "utf8").digest("hex");
+/** The intent of one attempt, as a SHA-256 hex digest: what the attempt asks for, by which named mutation, in the context it claims. The name is part of the intent because a transport strips its wire discriminant before dispatch, so two mutations of one path can present the same residual payload. */
+export function intentHash(name: MutationName, scope: Scope, payload: unknown): string {
+  return createHash("sha256").update(canonicalJson({ name, scope, payload }), "utf8").digest("hex");
 }
 export type MutationName = string;
 export type CurrentTarget = { readonly kind: "record"; readonly revision: string; readonly value: unknown } | { readonly kind: "absent" };
@@ -114,6 +115,8 @@ export type ApplyResult<R extends MutationResult> =
   | { readonly changed: true; readonly revision: string; readonly result: R; readonly created?: readonly string[]; readonly changedIds?: readonly string[]; readonly items?: readonly PerItemResult[]; readonly scope?: Scope };
 export interface MutationPlan<P, R extends MutationResult> {
   readonly sessionId: string;
+  /** The session whose documents this change writes, when a seat's records live in the world it was seated in; the attempt still acts only as `sessionId`'s own identity. */
+  readonly recordsSessionId?: string;
   readonly input: MutationInput<P>;
   readonly schema: z.ZodType<P>;
   readonly name: MutationName;
@@ -141,12 +144,14 @@ export function attemptIdOf(input: unknown): string {
 /** The payload a mutation's own schema admits, read where an apply body needs the parsed value rather than the request's raw one. */
 export const payloadOf = <S extends z.ZodType>(schema: S, input: { readonly payload: unknown }): z.output<S> => schema.parse(input.payload);
 export type MutationOpening = { readonly ok: true; readonly sessionId: string; readonly session: ResolvedSession } | { readonly ok: false; readonly outcome: MutationOutcome };
-/** The opening every mutation shares: the session an attempt acts for is established before it validates, and a request scope that cannot yield one is refused rather than given an identity. */
-export async function openMutation(input: unknown, source?: SessionSource): Promise<MutationOpening> {
+/** The opening every mutation shares: the session an attempt acts for is established before it validates, and a request scope that cannot yield one is refused rather than given an identity, with a store fault that refused it named to the diagnostic stream under the mutation's own name. */
+export async function openMutation(job: MutationName, input: unknown, source?: SessionSource): Promise<MutationOpening> {
   const operationId = attemptIdOf(input);
   try {
     const resolution = await resolveSession(source);
-    return resolution.ok ? { ok: true, sessionId: resolution.session.sessionId, session: resolution.session } : { ok: false, outcome: outcomeOfRefusal(resolution.refusal, operationId) };
+    if (resolution.ok) return { ok: true, sessionId: resolution.session.sessionId, session: resolution.session };
+    recordRefusalOutage(job, resolution.refusal);
+    return { ok: false, outcome: outcomeOfRefusal(resolution.refusal, operationId) };
   } catch {
     return { ok: false, outcome: denied({ operationId, reasonCode: "session-unavailable" }) };
   }
@@ -171,18 +176,11 @@ export function refuseInvalid(operationId: string, fields: FieldMessages | z.Zod
 export function refuseUnavailable(input: { readonly operationId: string; readonly reference: string; readonly guidance: string }): never {
   return refuse(unavailable({ operationId: input.operationId, source: { system: LOCAL_STORE_SYSTEM, reference: input.reference }, guidance: input.guidance }));
 }
-function claimedScope(input: unknown): LogScope | undefined {
-  if (typeof input !== "object" || input === null) return undefined;
-  const scope: unknown = Reflect.get(input, "scope");
-  if (typeof scope !== "object" || scope === null) return undefined;
-  const organizationId: unknown = Reflect.get(scope, "organizationId");
-  const ministryId: unknown = Reflect.get(scope, "ministryId");
-  const supportSubjectId: unknown = Reflect.get(scope, "supportSubjectId");
-  const principalId: unknown = Reflect.get(scope, "principalId");
-  if (typeof organizationId !== "string" || organizationId.length === 0 || typeof ministryId !== "string" || ministryId.length === 0 || typeof supportSubjectId !== "string" || supportSubjectId.length === 0 || typeof principalId !== "string" || principalId.length === 0) return undefined;
-  return { organizationId, ministryId, supportSubjectId, principalId };
+/** The diagnostic scope one attempt is reported under: the selected context of the session that authorised it, never the scope the request claimed, so the line states the authority the attempt actually ran under. A session that has established no selection states that, rather than a context the attempt never held. */
+function sessionScopeOf(session: ResolvedSession): LogScope {
+  const selected = session.selected;
+  return selected === null ? UNSTATED_SCOPE : { organizationId: selected.organizationId, ministryId: selected.ministryId, supportSubjectId: selected.supportSubjectId, principalId: session.principalId };
 }
-const diagnosticScopeFor = (claimed: LogScope, session: ResolvedSession): LogScope => ({ ...claimed, principalId: session.principalId });
 type SessionForMutation = { readonly ok: true; readonly session: ResolvedSession } | { readonly ok: false; readonly outcome: DeniedOutcome | UnavailableOutcome };
 async function sessionForMutation(sessionId: string, operationId: string): Promise<SessionForMutation> {
   let fromRequest: SessionResolution | undefined;
@@ -207,10 +205,11 @@ const MUTATION_WRITE_SET = ["meta", "operations", "state"] as const satisfies re
 export async function runMutation<P, R extends MutationResult>(plan: MutationPlan<P, R>): Promise<MutationOutcome> {
   const startedAt = performance.now();
   const operationId = attemptIdOf(plan.input);
-  let diagnosticScope = claimedScope(plan.input);
+  // Every attempt is reported, including one refused before a session was established: until the session resolves, the line states that no authority was established rather than a context the attempt never held.
+  let diagnosticScope: LogScope = UNSTATED_SCOPE;
   const report = (outcome: MutationOutcome): MutationOutcome => {
     const elapsedMs = performance.now() - startedAt;
-    if (diagnosticScope !== undefined && !(plan.diagnosticPass === "probe" && outcome.outcome === "unchanged")) logger.mutation({ operationId, scope: diagnosticScope, outcome: outcome.outcome, elapsedMs });
+    if (!(plan.diagnosticPass === "probe" && outcome.outcome === "unchanged")) logger.mutation({ operationId, scope: diagnosticScope, outcome: outcome.outcome, elapsedMs });
     if (outcome.outcome === "unavailable") logger.sourceUnavailable({ job: plan.name, source: outcome.source });
     return outcome;
   };
@@ -219,19 +218,19 @@ export async function runMutation<P, R extends MutationResult>(plan: MutationPla
   const parsedPayload = plan.schema.safeParse(envelope.data.payload);
   if (!parsedPayload.success) return report(invalid({ operationId, fields: parsedPayload.error }));
   const input: MutationInput<P> = { ...envelope.data, payload: parsedPayload.data };
-  diagnosticScope = input.scope;
   const authority = await sessionForMutation(plan.sessionId, operationId);
   if (!authority.ok) return report(authority.outcome);
   const session = authority.session;
-  diagnosticScope = diagnosticScopeFor(diagnosticScope, session);
+  // From here on the attempt is reported under the authority it holds, not the scope the request claimed.
+  diagnosticScope = sessionScopeOf(session);
   const scopeAuthority = plan.scopeAuthority ?? "membership";
   const scopeDecision = assertScopeUnder(session, input.scope, scopeAuthority);
   if (!scopeDecision.ok) return report(denied({ operationId, reasonCode: scopeDecision.denial.reasonCode }));
   const permission = plan.authorize(session);
   if (!permission.ok) return report(denied({ operationId, reasonCode: permission.denial.reasonCode }));
-  const intent = intentHash(input.scope, input.payload);
+  const intent = intentHash(plan.name, input.scope, input.payload);
   try {
-    const outcome = await transact<MutationOutcome>(plan.sessionId, MUTATION_WRITE_SET, async (docs) => {
+    const outcome = await transact<MutationOutcome>(plan.recordsSessionId ?? plan.sessionId, MUTATION_WRITE_SET, async (docs) => {
       const armed = failureFor(failurePlanOfDocument(docs.meta), "mutation", plan.name);
       if (armed === "denied") return denied({ operationId, reasonCode: "no-permission" });
       const ledger = readLedger(docs.operations);

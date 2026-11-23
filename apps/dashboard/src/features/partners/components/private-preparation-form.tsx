@@ -70,18 +70,18 @@ function CreatedPrivateRecord({ partnerRef }: { readonly partnerRef: string }): 
   const route = `/partners/${encodeURIComponent(partnerRef)}`;
   return (
     <div data-slot="created-private-record" className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-4 text-sm">
-      <p className="font-medium text-foreground">Created: one private preparation record</p>
-      <p className="text-pretty">{CREATED_BODY}</p>
-      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+      <p className="type-group-title text-foreground">Created: one private preparation record</p>
+      <p className="type-supporting text-pretty">{CREATED_BODY}</p>
+      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
         <span className="text-muted-foreground">Its reference is</span>
         <bdi className="mono-identifier wrap-anywhere">{partnerRef}</bdi>
       </p>
-      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
         <span className="text-muted-foreground">Its page is</span>
         <bdi className="mono-identifier wrap-anywhere">{route}</bdi>
       </p>
       <p className="min-w-0">
-        <Link href={route} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "min-h-target max-w-full whitespace-normal")}>
+        <Link href={route} data-slot="button" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "min-h-target max-w-full whitespace-normal")}>
           Open the private contact
         </Link>
       </p>
@@ -96,7 +96,7 @@ function OutcomeRegion({ outcome, fieldLabels, createdReference, onReapply, onRe
   return (
     <div data-slot="private-preparation-outcome" data-outcome={outcome.outcome} className="flex min-w-0 flex-col gap-3">
       <OperationResult outcome={outcome} headingLevel={RECEIPT_HEADING_LEVEL} fieldLabels={outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" ? undefined : fieldLabels} onReapply={outcome.outcome === "conflict" ? () => onReapply(outcome.currentRevision) : undefined} />
-      {created ? createdReference === null ? <p className="text-sm text-pretty text-muted-foreground">The result did not state the new record's reference, so the partner roster is where to find it.</p> : <CreatedPrivateRecord partnerRef={createdReference} /> : null}
+      {created ? createdReference === null ? <p className="type-supporting text-pretty">The result did not state the new record's reference, so the partner roster is where to find it.</p> : <CreatedPrivateRecord partnerRef={createdReference} /> : null}
     </div>
   );
 }
@@ -140,10 +140,10 @@ export default function PrivatePreparationForm({ scope, expectedRevision, initia
   return (
     <section dir={dir} aria-labelledby={headingId} data-slot="private-preparation-form" className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 id={headingId} className="font-heading text-lg font-medium">
+        <h2 id={headingId} className="type-section-title">
           {SECTION_HEADING}
         </h2>
-        <p className="text-sm text-pretty text-muted-foreground">A name is the only thing this needs. Everything else is optional, and you can add or change it later.</p>
+        <p className="type-supporting text-pretty">A name is the only thing this needs. Everything else is optional, and you can add or change it later.</p>
       </div>
       <Alert className="min-w-0">
         <AlertTitle>{PRIVATE_RECORD_COPY.preparationIsPrivate.title}</AlertTitle>
@@ -158,10 +158,10 @@ export default function PrivatePreparationForm({ scope, expectedRevision, initia
         <form.Field name={NOTE_FIELD}>{(field) => <TextAreaField field={field} name={NOTE_FIELD} label={NOTE_LABEL} description={NOTE_DESCRIPTION} error={fieldErrors?.byField[NOTE_FIELD]} optionalHint rows={4} onEdit={clearSettledRefusal} className="w-full" />}</form.Field>
         <div className="flex min-w-0 flex-col gap-4">
           <div className="flex min-w-0 flex-col gap-1">
-            <h3 id={methodsHeadingId} className="font-heading text-base font-medium">
+            <h3 id={methodsHeadingId} className="type-subsection-title">
               {METHODS_LEGEND}
             </h3>
-            <p className="text-sm text-pretty text-muted-foreground">{METHODS_HELP}</p>
+            <p className="type-supporting text-pretty">{METHODS_HELP}</p>
           </div>
           <form.Subscribe selector={(state) => state.values.contactMethods}>
             {(methods) => (
@@ -190,7 +190,7 @@ export default function PrivatePreparationForm({ scope, expectedRevision, initia
               </Button>
             </div>
           )}
-          <p id={actionNoteId} className="text-sm text-pretty text-muted-foreground">
+          <p id={actionNoteId} className="type-supporting text-pretty">
             {unconfirmed ? UNCONFIRMED_NOTE : createdReference === null ? ACTION_NOTE : RESUBMIT_NOTE}
           </p>
         </div>

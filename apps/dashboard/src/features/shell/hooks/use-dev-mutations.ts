@@ -27,6 +27,15 @@ function intentKeyOf(intent: DevIntent): string {
   const { action, scope, expectedRevision, payload } = intent;
   return [action, scope.organizationId, scope.ministryId, scope.supportSubjectId, scope.principalId, expectedRevision, payloadFields(payload)].join("|");
 }
+// A scenario change, a reset or a clock change alters what every read in the context means, so every entry in the
+// scope is re-read and the rendered tree is asked again, where the other controls touch one entry. A boundary is
+// evaluated against the scenario clock at the moment it is read, so an advance moves the as-of of every envelope and
+// every judgement built on it — a referral's expiry, a series' missed dates, a coaching cutoff, a notification
+// window — and only a fresh read and a fresh render state the answer at the instant now in force. A failure plan
+// arms the fate of named mutations and faults and leaves what every read says as it was, so it is not one of these.
+function changesWhatEveryReadMeans(action: DevTransportAction): boolean {
+  return action === "setScenario" || action === "resetSeed" || action === "setClock" || action === "advanceClock";
+}
 export interface DevMutationTransports {
   readonly onSetScenario: (scenarioId: string) => Promise<MutationOutcome>;
   readonly onSetClock: (offsetMilliseconds: number) => Promise<MutationOutcome>;
@@ -66,14 +75,15 @@ export interface DevMutationTransports {
         return;
       }
       if (!(outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted")) return;
+      const everyReadIsStale = changesWhatEveryReadMeans(action);
       try {
-        if (action === "setScenario" || action === "resetSeed") {
+        if (everyReadIsStale) {
           await queryClient.invalidateQueries({ queryKey: scopeKey(scope) });
         } else {
           await queryClient.invalidateQueries({ queryKey: devStateQueryKey(scope) });
         }
       } catch {}
-      if (action === "setScenario" || action === "resetSeed") refreshOnceFor(outcome.operationId);
+      if (everyReadIsStale) refreshOnceFor(outcome.operationId);
     },
     [queryClient, refreshOnceFor, scope],
   );

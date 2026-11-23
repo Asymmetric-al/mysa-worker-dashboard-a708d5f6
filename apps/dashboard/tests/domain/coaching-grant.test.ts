@@ -141,7 +141,17 @@ const boundedCutoff = (result: ReturnType<typeof shareCutoff>, label: string): T
 function contextFor(role: CoachingActorRole, principalId: string, overrides: { readonly ministryId?: string; readonly availability?: SubjectAvailability; readonly hold?: PermissionHold } = {}): CoachingAccessContext {
   return { actor: { role, principalId }, organizationId: seeded.organizationId, ministryId: overrides.ministryId ?? seeded.ministryId, subjectAvailability: overrides.availability ?? "available", permissionHold: overrides.hold ?? "none" };
 }
-const resolvedSessionOf = (principalId: string): ResolvedSession => ({ sessionId: `domain-coaching-grant-${principalId}`, principalId: principalId as ResolvedSession["principalId"], sessionState: "signed-in", admittedMemberships: [], selected: null, capabilities: [], scenarioId: "baseline", clockOffsetMs: 0 });
+const resolvedSessionOf = (principalId: string): ResolvedSession => ({
+  sessionId: `domain-coaching-grant-${principalId}`,
+  principalId: principalId as ResolvedSession["principalId"],
+  sessionState: "signed-in",
+  admittedMemberships: [],
+  selected: null,
+  capabilities: [],
+  scenarioId: "baseline",
+  clockOffsetMs: 0,
+  coachingRecordsSessionId: null,
+});
 function storedGrantOf(overrides: { readonly state?: CoachingGrantRecord["state"]; readonly modules?: readonly ModuleKey[]; readonly cutoffInstant?: string | null } = {}): CoachingGrantRecord {
   const cutoffInstant = overrides.cutoffInstant === undefined ? "2026-12-31T00:00:00Z" : overrides.cutoffInstant;
   return {

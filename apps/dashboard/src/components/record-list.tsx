@@ -58,6 +58,10 @@ export type RecordListProps<TRow extends RowData> = {
   pageSizeOptions?: readonly number[];
   hasActiveFilters?: boolean;
   onClearFilters?: () => void;
+  /** Whether the surface around this list already offers the one column-visibility control for the same column state: the list then renders no control of its own, so one list never states two controls for one concern. Left off, the list shows its own control. */
+  suppressColumnVisibilityMenu?: boolean;
+  /** A surface's own notice for a result no filter narrows and an empty collection, replacing this list's generic one where the surface knows what an empty collection means for its own records; the first action it offers belongs inside it. */
+  emptyState?: ReactNode;
   stickyOffset?: string;
   maxHeight?: string;
   className?: string;
@@ -193,6 +197,8 @@ export function RecordList<TRow extends RowData>({
   pageSizeOptions,
   hasActiveFilters = false,
   onClearFilters,
+  suppressColumnVisibilityMenu = false,
+  emptyState,
   stickyOffset,
   maxHeight,
   className,
@@ -292,14 +298,17 @@ export function RecordList<TRow extends RowData>({
     <StateNotice
       kind="empty"
       title={`No ${itemNoun} match these filters`}
-      description="The filters and search on this surface are narrowing the result, so this is not an empty collection. Clearing them shows every record the current scope permits."
+      description="The filters and search on this surface are narrowing the result, so what you see is the part of the collection they select. Clearing them returns this surface to the view it opens with."
       action={onClearFilters === undefined ? undefined : { label: "Clear filters", onClick: onClearFilters }}
     />
   ) : (
     <div className="flex flex-col items-center gap-4">
-      <StateNotice kind="empty" title={`No ${itemNoun} yet`} />
+      {emptyState ?? <StateNotice kind="empty" title={`No ${itemNoun} yet`} />}
       {emptyAction}
     </div>
+  );
+  const pager = (
+    <PaginationBar total={table.getRowCount()} page={pagination.pageIndex + 1} pageSize={pagination.pageSize} pageSizeOptions={pageSizeOptions} onPageChange={(page) => commitQuery({ page })} onPageSizeChange={(nextPageSize) => commitQuery({ pageSize: nextPageSize })} itemNoun={itemNoun} disabled={isLoading} />
   );
   return (
     <div data-slot="record-list" className={cn("flex flex-col gap-3", className)}>
@@ -308,7 +317,7 @@ export function RecordList<TRow extends RowData>({
         <>
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <output className="text-sm text-muted-foreground">{selectionSummary}</output>
-            {visibilityItems.length > 0 ? <ColumnVisibilityMenu tableLabel={label} items={visibilityItems} visibleCount={visibleDataColumnCount} onToggle={handleToggleColumn} onShowAll={handleShowAllColumns} /> : null}
+            {visibilityItems.length > 0 && !suppressColumnVisibilityMenu ? <ColumnVisibilityMenu tableLabel={label} items={visibilityItems} visibleCount={visibleDataColumnCount} onToggle={handleToggleColumn} onShowAll={handleShowAllColumns} /> : null}
           </div>
           <ScrollRegion label={`${label}, scrollable`} stickyOffset={resolvedStickyOffset} maxHeight={maxHeight} aria-busy={isLoading ? true : undefined}>
             <Table>
@@ -391,10 +400,13 @@ export function RecordList<TRow extends RowData>({
               </TableBody>
             </Table>
           </ScrollRegion>
-          <PaginationBar total={table.getRowCount()} page={pagination.pageIndex + 1} pageSize={pagination.pageSize} pageSizeOptions={pageSizeOptions} onPageChange={(page) => commitQuery({ page })} onPageSizeChange={(nextPageSize) => commitQuery({ pageSize: nextPageSize })} itemNoun={itemNoun} disabled={isLoading} />
+          {pager}
         </>
       ) : (
-        emptyNotice
+        <>
+          {emptyNotice}
+          {pager}
+        </>
       )}
     </div>
   );

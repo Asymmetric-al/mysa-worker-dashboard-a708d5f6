@@ -191,6 +191,11 @@ const PREVIEW_COPY = {
   authorisedAs: "Access is checked for the reader named here",
   recheckedOnOpen: "Access is checked again every time the preview or the edition is opened.",
   exactRevisionNote: "The preview shows the exact revision named above as it renders, not a later draft of it.",
+  mediaRetryLabel: "Read this preview again",
+  unreadyMediaHeading: "Media in this preview",
+  unreadyMediaTitle: { image: "This image is unavailable", video: "This video is unavailable" },
+  unreadyMediaFallback: "The revision still names this placement, and the source could not serve it, so it is stated as unavailable rather than omitted or replaced.",
+  unreadyMediaNote: "That placement's alternative text and caption stand in its place, and no other image or video is substituted for it.",
 } as const;
 /** Every word this family shows, in one place. */
 export const copy = {

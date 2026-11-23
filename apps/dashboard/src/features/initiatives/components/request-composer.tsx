@@ -24,6 +24,7 @@ type WorkingListMember = InitiativeDetailEnvelope["data"]["workingList"]["items"
 const TERMS_SHAPES = ["financial", "non-financial"] as const;
 type TermsShape = (typeof TERMS_SHAPES)[number];
 const HEADING_TAG = { 3: "h3", 4: "h4" } as const;
+const HEADING_SCALE: Readonly<Record<keyof typeof HEADING_TAG, string>> = { 3: "type-subsection-title", 4: "type-group-title" };
 const CHILD_HEADING_LEVEL = 4;
 /** The level of this section's heading, so the composing page keeps one outline. */
 export type RequestComposerProps = { readonly initiativeId: string; readonly envelope: InitiativeDetailEnvelope; readonly onDrafted?: (outcome: MutationOutcome) => void; readonly onCheckResult?: () => void; readonly locale?: string; readonly headingLevel?: 3 | 4; readonly className?: string };
@@ -206,7 +207,7 @@ export default function RequestComposer({ initiativeId, envelope, onDrafted, onC
   return (
     <section aria-labelledby={headingId} data-slot="request-composer" className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <Heading id={headingId} className="font-heading text-lg font-medium text-pretty">
+        <Heading id={headingId} className={cn(HEADING_SCALE[headingLevel], "text-pretty")}>
           {SURFACE_COPY.heading}
         </Heading>
         <p className="text-sm text-pretty text-muted-foreground">{SURFACE_COPY.intro}</p>

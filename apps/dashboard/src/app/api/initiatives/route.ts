@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import { mutationInputSchema, mutations, reads, refusedRead, toResponse } from "@/modules/data-service";
 import { writeRoute } from "../handler";
 import { READ_ATTEMPT, readResponse } from "../read";
@@ -60,7 +61,7 @@ const rawInitiativeDetailParams = (search: URLSearchParams): Record<string, unkn
   nextWorkPageSize: search.get("nextWorkPageSize") ?? undefined,
 });
 /** One page of initiatives as the request asked for it, or the one initiative the request named: the read's envelope, or the read's own `denied` or `unavailable` refusal, with a query the read does not admit answered `invalid` at the field that carries it. */
-export async function GET(request: Request): Promise<Response> {
+async function readInitiatives(request: Request): Promise<Response> {
   const search = new URL(request.url).searchParams;
   if (!search.has(INITIATIVE_ID_PARAM)) {
     const list = initiativeListQuerySchema.safeParse(rawInitiativeListParams(search));
@@ -72,4 +73,5 @@ export async function GET(request: Request): Promise<Response> {
   return readResponse(READ_ATTEMPT, () => reads.outreach.readInitiative(initiativeId, narrowing));
 }
 /** Creates one initiative in the ministry this session is acting in. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const POST = (request: Request): Promise<Response> => writeRoute(request, createInitiativeRequestSchema, mutations.outreach.createInitiative);
+const createInitiative = (request: Request): Promise<Response> => writeRoute(request, createInitiativeRequestSchema, mutations.outreach.createInitiative);
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readInitiatives, POST: createInitiative });

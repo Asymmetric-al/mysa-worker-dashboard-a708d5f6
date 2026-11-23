@@ -125,9 +125,9 @@ const QUERY: ReportQuery = {
 };
 const receivedSupportReport = (): ReportResult => runReport(QUERY, PROJECTION);
 describe("the writer neutralises every cell of a real result", () => {
-  it("neutralises the trigger-leading cells and leaves ordinary rows intact", () => {
+  it("neutralises the trigger-leading cells and leaves ordinary rows intact", async () => {
     const result = receivedSupportReport();
-    const document = toCsv(result);
+    const document = await toCsv(result);
     expect(result.rows).toHaveLength(2);
     expect(document).toContain('"\t=SUM(A1)-cmd"');
     expect(document).not.toContain('"=SUM(A1)-cmd"');
@@ -137,17 +137,17 @@ describe("the writer neutralises every cell of a real result", () => {
     expect(document).not.toContain('"\t000123"');
     for (const needle of ['"General Fund"', '"gift-row-0002"']) expect(document).toContain(needle);
   });
-  it("leaves no field in the document opening with a formula trigger", () => {
-    const document = toCsv(receivedSupportReport());
+  it("leaves no field in the document opening with a formula trigger", async () => {
+    const document = await toCsv(receivedSupportReport());
     for (const expected of [QUOTED_FIELD_OPENING_WITH_TRIGGER, /(?:^|,|\r\n)[=+\-@\uFF1D\uFF0B\uFF0D\uFF20]/]) expect(document).not.toMatch(expected);
   });
-  it("writes no byte-order mark", () => {
-    const document = toCsv(receivedSupportReport());
+  it("writes no byte-order mark", async () => {
+    const document = await toCsv(receivedSupportReport());
     const bytes = Buffer.from(document, "utf8");
     expect([bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])), document.codePointAt(0)]).toEqual([false, 0x22]);
   });
-  it("keeps the neutralising tab in the data, the residual A8 discloses", () => {
-    const document = toCsv(receivedSupportReport());
+  it("keeps the neutralising tab in the data, the residual A8 discloses", async () => {
+    const document = await toCsv(receivedSupportReport());
     const [neutralised] = /"\t=SUM\(A1\)-cmd"/.exec(document) ?? [];
     expect(neutralised).toBeDefined();
     expect(fieldText(neutralised ?? "")).toBe("\t=SUM(A1)-cmd");

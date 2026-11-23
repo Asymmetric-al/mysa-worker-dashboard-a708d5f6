@@ -94,10 +94,10 @@ export default function InitiativeHeader({ envelope, onRequestClose, onRequestRe
     { label: CLOSURE_COPY.reopenHeading, action: reopenAction },
   ]);
   return (
-    <Card size="sm">
+    <Card>
       <CardHeader>
         <CardTitle>
-          <h2 className="font-heading text-lg font-medium text-pretty break-words">{initiative.name}</h2>
+          <h2 className="type-section-title text-pretty break-words">{initiative.name}</h2>
         </CardTitle>
         <CardDescription className="text-pretty break-words">
           <span className="sr-only">{`${INITIATIVE_COPY.purposeLabel}: `}</span>
@@ -115,11 +115,11 @@ export default function InitiativeHeader({ envelope, onRequestClose, onRequestRe
         </dl>
         {showsClosureNotes ? (
           <div className="flex flex-col gap-1.5 text-sm text-pretty text-muted-foreground">
-            {closed && ownsUnfinishedWork ? <p>{CLOSURE_COPY.handoffNote}</p> : null} {reopened ? <p>{CLOSURE_COPY.historyPreservedNote}</p> : null}
+            {closed && ownsUnfinishedWork ? <p className="type-supporting">{CLOSURE_COPY.handoffNote}</p> : null} {reopened ? <p className="type-supporting">{CLOSURE_COPY.historyPreservedNote}</p> : null}
           </div>
         ) : null}
         <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold">{INITIATIVE_COPY.membersHeading}</h3>
+          <h3 className="type-subsection-title">{INITIATIVE_COPY.membersHeading}</h3>
           <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-3">
             {MEMBERSHIP_STATES.map((state) => (
               <MembershipCount key={state} state={state} count={initiative.memberStates[state]} />

@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import { isDevelopment, isRecord } from "@/lib/guards";
+import { logger, UNSTATED_SCOPE, type LogScope } from "@/lib/logger";
 import { SESSION_COOKIE, SESSION_COOKIE_GRANT } from "@/lib/session-cookie";
 import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse, type MutationInput, type MutationOutcome, type ReadResult } from "@/modules/data-service";
 import { accepted, denied, invalid, unchanged, unavailable } from "@/modules/data-service/outcome";
@@ -21,6 +23,8 @@ type SetFailurePlanPayloadWire = Parameters<typeof mutations.dev.setFailurePlan>
 type ArmingFailurePlanPayloadWire = Exclude<SetFailurePlanPayloadWire, { plan: null }>;
 type FailureModeWire = ArmingFailurePlanPayloadWire["mode"];
 type FailureTargetNameWire = ArmingFailurePlanPayloadWire["target"]["name"];
+/** What a persona switch reports once it has settled: the outcome it answers with, and the authority the caller's own read established, which is what its diagnostic line states. */
+type PersonaSwitch = { readonly outcome: MutationOutcome; readonly authority: LogScope };
 function serviceWord<Word extends string>(): z.ZodType<Word> {
   return z.custom<Word>((value) => typeof value === "string" && value.trim().length > 0 && value.length <= WIRE_TEXT_LIMIT, `This field is a non-empty name of at most ${String(WIRE_TEXT_LIMIT)} characters.`);
 }
@@ -74,28 +78,42 @@ function refusalOverRead(read: Exclude<ReadResult<unknown>, { readonly kind: "en
       return invalid({ operationId, fields: read.refused.fields });
   }
 }
-/** Switches the seeded session this browser acts as and answers `accepted` with the persona, the session and the principal now in force, `unchanged` when the browser already acts as that session, or the refusal a read gave: `denied` outside a development build or for a session that cannot be established, `invalid` for a persona this session's roster does not list, `unavailable` when the session that would act cannot be read. */
-async function selectPersona(operationId: string, personaId: string): Promise<MutationOutcome> {
+/** Switches the seeded session this browser acts as and answers `accepted` with the persona, the session and the principal now in force, `unchanged` when the browser already acts as that session, or the refusal a read gave: `denied` outside a development build or for a session that cannot be established, `invalid` for a persona this session's roster does not list, `unavailable` when the session that would act cannot be read. The switch is diagnosed: the line it writes states the authority that authorised it — the scope the caller's own read established, the session acting now — rather than the identity the grant then makes this browser act as. */
+async function selectPersona(operationId: string, personaId: string): Promise<PersonaSwitch> {
   // The caller's own development read is what authorises this switch and what lists the personas it may name, so a build without development controls, or a session that establishes nothing, keeps answering its own refusal instead of being switched by a request it would refuse to read.
   const caller = await reads.dev.readDevState();
-  if (caller.kind !== "envelope") return refusalOverRead(caller, operationId);
-  if (!caller.envelope.data.personaCatalogue.personas.some((persona) => persona.id === personaId)) return invalid({ operationId, fields: { "payload.personaId": [PERSONA_NOT_LISTED_MESSAGE] } });
+  if (caller.kind !== "envelope") return { outcome: refusalOverRead(caller, operationId), authority: UNSTATED_SCOPE };
+  // Every answer below is reported under the authority the caller's own read established: a scope read off the request would state a context the switch never held.
+  const authority: LogScope = caller.envelope.scope;
+  if (!caller.envelope.data.personaCatalogue.personas.some((persona) => persona.id === personaId)) return { outcome: invalid({ operationId, fields: { "payload.personaId": [PERSONA_NOT_LISTED_MESSAGE] } }), authority };
   const seeded = isPersonaId(personaId) ? SEEDED_PERSONAS[personaId] : undefined;
-  if (seeded === undefined || !isSeededSessionId(seeded.defaultSessionId)) return invalid({ operationId, fields: { "payload.personaId": [PERSONA_UNSEEDED_MESSAGE] } });
+  if (seeded === undefined || !isSeededSessionId(seeded.defaultSessionId)) return { outcome: invalid({ operationId, fields: { "payload.personaId": [PERSONA_UNSEEDED_MESSAGE] } }), authority };
   const jar = await cookies();
   const alreadyActs = jar.get(SESSION_COOKIE)?.value === seeded.defaultSessionId;
   // The session that will act is read before the cookie is granted, so the outcome reports the revision the document in force afterwards carries, and a persona whose document the store does not hold answers `unavailable` rather than sending this browser to a session nothing can resolve.
   const acting = alreadyActs ? caller : await reads.dev.readDevState({ sessionId: seeded.defaultSessionId });
-  if (acting.kind !== "envelope") return refusalOverRead(acting, operationId);
+  if (acting.kind !== "envelope") return { outcome: refusalOverRead(acting, operationId), authority };
   jar.set(SESSION_COOKIE, seeded.defaultSessionId, SESSION_COOKIE_GRANT); // Switching the identity is the cookie's own fact: the store keeps no "current identity" record, so the grant belongs to the transport that owns the cookie and no `mutations.dev.*` call stores it (AAP 0.3.2).
-  if (alreadyActs) return unchanged({ operationId, revision: acting.envelope.revision });
+  if (alreadyActs) return { outcome: unchanged({ operationId, revision: acting.envelope.revision }), authority };
   // The seed names several sessions after the persona that acts in them, so the persona's identifier and the session's can be one value: the outcome lists each distinct identifier once, because a receipt lists identifiers and a repeated one would be a duplicate entry rather than a second fact.
-  return accepted({ operationId, revision: acting.envelope.revision, changed: [...new Set<string>([seeded.id, seeded.defaultSessionId, seeded.principalId])] });
+  return { outcome: accepted({ operationId, revision: acting.envelope.revision, changed: [...new Set<string>([seeded.id, seeded.defaultSessionId, seeded.principalId])] }), authority };
+}
+/** Switches this browser's persona through {@link selectPersona} and writes the one mutation line the attempt earns, so the control that changes which identity every later read answers for is attributable in the stream whatever its outcome: a throw becomes the outcome this transport answers with, reported under the scope no read established. */
+async function selectPersonaDiagnosed(operationId: string, personaId: string): Promise<MutationOutcome> {
+  const startedAt = performance.now(); // Taken before any await, so the line reports the whole attempt rather than the part of it after its first read.
+  let switched: PersonaSwitch;
+  try {
+    switched = await selectPersona(operationId, personaId);
+  } catch (error) {
+    switched = { outcome: outcomeFromError(operationId, error), authority: UNSTATED_SCOPE };
+  }
+  logger.mutation({ operationId, scope: switched.authority, outcome: switched.outcome.outcome, elapsedMs: performance.now() - startedAt });
+  return switched.outcome;
 }
 /** Reports this session's development runtime — the scenario, the clock offset and the instant it derives, the one armed failure plan, the advertised modes and named targets, the seeded state and the reset control. */
-export const GET = (): Promise<Response> => (isDevelopment() ? readResponse(READ_ATTEMPT, () => reads.dev.readDevState()) : Promise.resolve(toResponse(developmentDenial())));
+const readDevState = (): Promise<Response> => (isDevelopment() ? readResponse(READ_ATTEMPT, () => reads.dev.readDevState()) : Promise.resolve(toResponse(developmentDenial())));
 /** Operates exactly one of the six named development controls — the five the service mutates this session's runtime with, and the persona switch this transport grants from the cookie it owns — and answers with one of the closed outcomes: `accepted`, `alreadyAccepted` for a replay of the same `operationId` with the same intent, `unchanged` when the payload would change nothing, and otherwise the refusal that names what to correct. */
-export async function POST(request: Request): Promise<Response> {
+async function operateDevControl(request: Request): Promise<Response> {
   if (!isDevelopment()) return toResponse(developmentDenial());
   const body = await jsonBodyOf(request);
   const operationId = refusalIdentityOf(body);
@@ -121,6 +139,7 @@ export async function POST(request: Request): Promise<Response> {
     case "resetSeed":
       return reset.success ? mutate(operationId, () => mutations.dev.resetSeed(reset.data)) : toResponse(outcomeFromError(operationId, reset.error));
     case "selectPersona":
-      return persona.success ? mutate(operationId, () => selectPersona(operationId, persona.data.payload.personaId)) : toResponse(outcomeFromError(operationId, persona.error));
+      return persona.success ? mutate(operationId, () => selectPersonaDiagnosed(operationId, persona.data.payload.personaId)) : toResponse(outcomeFromError(operationId, persona.error));
   }
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readDevState, POST: operateDevControl });

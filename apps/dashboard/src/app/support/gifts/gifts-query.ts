@@ -40,8 +40,8 @@ function periodOf(stated: SearchParams): GiftsQueryInput["period"] {
   const preset = paramOf(stated, GIFTS_PARAM.period);
   return preset === undefined ? undefined : { kind: "preset", preset };
 }
-function amountRangeOf(stated: SearchParams, currency: string | undefined): GiftsQueryInput["amountRange"] {
-  if (currency === undefined) return undefined;
+/** The amount range the address states, carried exactly as stated whether or not it names a currency: the read refuses a range with no single currency in its own words, and a reader that dropped the bounds would hand back the whole result to be presented under a filter that was never applied. */
+function amountRangeOf(stated: SearchParams): GiftsQueryInput["amountRange"] {
   const minMinor = minorUnitsOf(paramOf(stated, GIFTS_PARAM.amountMin));
   const maxMinor = minorUnitsOf(paramOf(stated, GIFTS_PARAM.amountMax));
   return minMinor === undefined || maxMinor === undefined ? undefined : { minMinor, maxMinor };
@@ -68,7 +68,7 @@ export function statedPageOf(stated: SearchParams): GiftsQueryInput["page"] {
 export function giftQueryOf(stated: SearchParams, page: GiftsQueryInput["page"]): GiftsQueryInput {
   const period = periodOf(stated);
   const currency = paramOf(stated, GIFTS_PARAM.currency);
-  const amountRange = amountRangeOf(stated, currency);
+  const amountRange = amountRangeOf(stated);
   const partner = partnerOf(stated);
   const sort = sortOf(stated);
   const designation = paramOf(stated, GIFTS_PARAM.designation);

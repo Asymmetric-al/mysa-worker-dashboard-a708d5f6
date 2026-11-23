@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import { lifecycleOf } from "@/components/draft-status";
 import type { CandidateView } from "@/components/review-panel";
@@ -5,6 +6,7 @@ import StateNotice from "@/components/state-notice";
 import { UpdateReviewSurface } from "@/features/updates/components/review-surface";
 import { reads } from "@/modules/data-service";
 import { ReadNotices, type ReadNoticeCopy } from "../../../page-frame";
+export const metadata: Metadata = { title: "Review" };
 type CandidateEnvelope = Extract<Awaited<ReturnType<typeof reads.updates.readCandidate>>, { kind: "envelope" }>["envelope"];
 type CandidateData = CandidateEnvelope["data"];
 type ReviewableCandidate = Extract<CandidateData, { status: "reviewable" }>;

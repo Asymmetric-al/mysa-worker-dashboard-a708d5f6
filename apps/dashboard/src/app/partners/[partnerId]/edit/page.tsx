@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactElement } from "react";
 import StateNotice from "@/components/state-notice";
@@ -11,6 +12,7 @@ const DETAIL_COPY = SURFACE_STATE_COPY["partner-detail"];
 const RETURN_LABEL = "Return to this record";
 const PAGE_COLUMN = "flex min-w-0 flex-col gap-6 text-start";
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Edit partner" };
 const recordHref = (partnerId: string): string => `${ROSTER_HREF}/${encodeURIComponent(partnerId)}`;
 const editHref = (partnerId: string): string => `${recordHref(partnerId)}${"/edit"}`;
 function editAdmission(actions: readonly ReadAction[]): { readonly admitted: boolean; readonly reason: string | null } {
@@ -39,10 +41,10 @@ export default async function PartnerEditPage({ params }: { readonly params: Pro
   return (
     <div className={PAGE_COLUMN}>
       <div className="flex min-w-0 flex-col gap-3">
-        <h1 className="text-2xl font-semibold text-pretty wrap-anywhere">
+        <h1 className="type-page-title text-pretty wrap-anywhere">
           {"Edit"} <bdi>{displayName}</bdi>
         </h1>
-        <Link href={recordHref(partnerId)} className={`${buttonVariants({ variant: "outline", size: "sm" })} ${"min-h-target max-w-full self-start whitespace-normal"}`}>
+        <Link href={recordHref(partnerId)} data-slot="button" className={`${buttonVariants({ variant: "outline", size: "sm" })} ${"min-h-target max-w-full self-start whitespace-normal"}`}>
           {RETURN_LABEL}
         </Link>
       </div>

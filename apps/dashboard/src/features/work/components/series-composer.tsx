@@ -40,10 +40,10 @@ export interface SeriesComposerProps {
   return (
     <section data-slot="work-series-composer" aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-3", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 id={headingId} className="font-heading text-lg font-medium text-pretty">
+        <h2 id={headingId} className="type-section-title text-pretty">
           {CREATE_PLAN_HEADING}
         </h2>
-        <p className="max-w-prose text-sm text-pretty text-muted-foreground">{CREATE_PLAN_NOTE}</p>
+        <p className="max-w-prose type-supporting text-pretty">{CREATE_PLAN_NOTE}</p>
       </div>
       {open ? (
         // The ongoing-personal-series policy is admitted on the basis the plan's own this-and-future form uses: no read

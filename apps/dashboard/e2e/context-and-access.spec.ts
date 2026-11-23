@@ -217,7 +217,10 @@ test.describe("criterion 19 — context and access", () => {
     const session = await get(page, "the unauthorised reader's admission state", "/api/session"); // A reader is signed in as its own principal and holds no ministry context: it acts on records it owns, never inside a worker's context, and no context is fabricated for it.
     expect(session.response.status(), "the reader's own admission state is readable to it").toBe(200);
     expect(fieldAt(parseJson(session.body), "data", "context"), "no ministry context is invented for a reader").toBeNull();
-    expectNoOwnerValue(session, ownerOnlyValues(values));
+    expectNoOwnerValue(
+      session,
+      ownerOnlyValues(values).filter((value) => value !== READING_SCOPE_IDENTIFIER), // The scope the admission statement carries is the authority its own read ran under, not a record of the owner's: the same session's preferences read states that same scope.
+    );
     await expectEveryCallRefused(page, values);
   });
   for (const refused of REFUSED_SESSIONS) {

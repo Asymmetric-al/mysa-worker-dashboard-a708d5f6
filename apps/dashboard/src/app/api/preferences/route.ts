@@ -2,6 +2,7 @@ import { z } from "zod";
 import { mutationInputSchema, mutations, reads } from "@/modules/data-service";
 import { writeRoute } from "../handler";
 import { readGrammar, readRoute } from "../read";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const MESSAGES = {
@@ -25,9 +26,10 @@ const preferenceQuerySchema = z.record(z.string(), z.string()).superRefine((clai
   for (const name of Object.keys(claimed)) ctx.addIssue({ code: "custom", message: MESSAGES.unadmittedParameter, path: [name] });
 });
 /** Answers with the reader's own Off or Immediate choice, reading language, membership state and proof state as four separate facts inside the one read envelope, and confirms nothing. */
-export const GET = readRoute(
+const readPreferences = readRoute(
   readGrammar(preferenceQuerySchema, (search) => Object.fromEntries(search)),
   () => reads.audience.readPreferences(),
 );
 /** Records the caller's Off or Immediate choice, plus a reading language when the body states one, and answers with exactly one of the service's eight outcomes. */
-export const POST = (request: Request): Promise<Response> => writeRoute(request, preferenceBodySchema, mutations.audience.setPreference);
+const savePreference = (request: Request): Promise<Response> => writeRoute(request, preferenceBodySchema, mutations.audience.setPreference);
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readPreferences, POST: savePreference });

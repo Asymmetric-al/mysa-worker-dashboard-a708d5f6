@@ -5,11 +5,9 @@ import { fetchReadOrOutage, handlerSource } from "@/lib/read-transport";
 import type { ReadEnvelope, Scope, reads } from "@/modules/data-service";
 import { sameScope } from "@/modules/data-service/envelope";
 import { unavailable, type ReadResult } from "@/modules/data-service/outcome";
-export const UPDATES_READ_JOBS = ["roster", "variant-overview", "draft", "candidate", "release", "preview", "share-presentation", "send-result"] as const;
+export const UPDATES_READ_JOBS = ["roster", "variant-overview", "draft", "candidate", "release", "share-presentation", "send-result"] as const;
 export type UpdatesReadJob = (typeof UPDATES_READ_JOBS)[number];
-export const UPDATES_READ_ENDPOINTS = { roster: "/api/updates", "variant-overview": "/api/updates", draft: "/api/drafts", candidate: "/api/review", release: "/api/variants", preview: "/api/pages/preview", "share-presentation": "/api/variants", "send-result": "/api/notify" } as const satisfies Readonly<
-  Record<UpdatesReadJob, string>
->;
+export const UPDATES_READ_ENDPOINTS = { roster: "/api/updates", "variant-overview": "/api/updates", draft: "/api/drafts", candidate: "/api/review", release: "/api/variants", "share-presentation": "/api/variants", "send-result": "/api/notify" } as const satisfies Readonly<Record<UpdatesReadJob, string>>;
 const READ_VIEW: Partial<Record<UpdatesReadJob, string>> = { draft: "draft", release: "release", "share-presentation": "share" };
 const UPDATES_STALE_TIME_MS = 30_000;
 const UPDATES_STALE_TIME_CEILING_MS = 10_000;
@@ -21,7 +19,6 @@ const TRANSPORT_GUIDANCE: Readonly<Record<UpdatesReadJob, string>> = {
   draft: "This edition's draft could not be read, so the editor has no revision, no autosave token and no media placement to restore. Retry the same read: an outage is never presented as an empty draft.",
   candidate: "The frozen candidate could not be read, so this review has no exact revision to approve or return. Retry the same read: a candidate is never inferred from the draft that now stands.",
   release: "The release standing at this edition's head could not be read, so the surface states nothing about what is published. Retry the same read: an outage is neither a withdrawal nor a released revision.",
-  preview: "The preview could not be read, so this edition has no exact, authorised rendering to show. Retry the same read: a preview is authorised per request and never falls back to newer content or to another edition.",
   "share-presentation": "The notice's recipient ceiling and per-edition presentation could not be read, so no notice may be submitted from this screen. Retry the same read: the ceiling it returns is the number the review shows, and it is never estimated here.",
   "send-result": "The per-recipient results of this notice could not be read, so this screen states no acceptance, failure or unknown outcome for anyone. Retry the same read: an outage is not a send that failed and not one that succeeded.",
 };
@@ -45,7 +42,7 @@ export type UpdatesQueryOptions<T> = { readonly initialData?: ReadResult<ReadEnv
 export const updateQueryKey = (scope: Scope, job: UpdatesReadJob, params: QueryParams = {}): ScopedQueryKey => queryKey(scope, job, params);
 const isObjectBody = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value);
 const outage = <TPayload>(job: UpdatesReadJob): ReadResult<ReadEnvelope<TPayload>> => ({ kind: "unavailable", unavailable: unavailable({ operationId: READ_ATTEMPT, source: handlerSource(UPDATES_READ_ENDPOINTS[job]), guidance: TRANSPORT_GUIDANCE[job] }) });
-const readThrough = <TPayload>(job: UpdatesReadJob, url: string, signal: AbortSignal): Promise<ReadResult<ReadEnvelope<TPayload>>> => fetchReadOrOutage<TPayload>({ url, admits: isObjectBody, source: handlerSource(UPDATES_READ_ENDPOINTS[job]), guidance: TRANSPORT_GUIDANCE[job], signal });
+const readThrough = <TPayload>(job: UpdatesReadJob, url: string): Promise<ReadResult<ReadEnvelope<TPayload>>> => fetchReadOrOutage<TPayload>({ url, admits: isObjectBody, source: handlerSource(UPDATES_READ_ENDPOINTS[job]), guidance: TRANSPORT_GUIDANCE[job] });
 function urlWith(endpoint: string, params: Readonly<Record<string, JsonParam>>): string {
   const query = new URLSearchParams();
   for (const [name, value] of Object.entries(params)) query.set(name, String(value));
@@ -81,15 +78,7 @@ function useUpdatesRead<T>(options: UpdatesQueryOptions<T>, scope: Scope, job: U
   const params = statedParams(asked);
   const enabled = Object.values(params).every((value) => value !== "");
   const url = urlOf(job, params);
-  const query = useQuery<ReadResult<ReadEnvelope<T>>, never>({
-    queryKey: updateQueryKey(scope, job, params),
-    queryFn: ({ signal }) => (enabled ? readThrough<T>(job, url, signal) : Promise.resolve(outage<T>(job))),
-    enabled,
-    retry: false,
-    staleTime,
-    ...seedOf(options),
-    refetchOnMount: options.initialData === undefined,
-  });
+  const query = useQuery<ReadResult<ReadEnvelope<T>>, never>({ queryKey: updateQueryKey(scope, job, params), queryFn: () => (enabled ? readThrough<T>(job, url) : Promise.resolve(outage<T>(job))), enabled, retry: false, staleTime, ...seedOf(options), refetchOnMount: options.initialData === undefined });
   return queryStateOf(query, scope);
 }
 /** A page of listed rows, one row per edition; both numbers are left unstated by a surface that pages nothing, which asks for the whole collection the read holds. The service keeps its own 50-row default and 200-row ceiling, so nothing is clamped here. */

@@ -7,7 +7,7 @@ import SidePanel from "@/components/side-panel";
 import { StateNotice, type StateNoticeProps } from "@/components/state-notice";
 import StatusBadge, { valueStateWord } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { useIsMobile } from "@/components/ui/use-mobile";
 import { cn } from "@/lib/cn";
 import type { ContactMethodKind, PartnerKind, ReadEnvelope, RecordAudience, Scope, ValueState } from "@/modules/data-service/envelope";
@@ -98,7 +98,7 @@ function NameCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
   const displayName = row.partner.displayName.trim();
   return (
     <span className="flex min-w-0 flex-col gap-1">
-      <Link href={partnerHref(row.partner.partnerId)} className="min-w-0 rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+      <Link href={partnerHref(row.partner.partnerId)} className="inline-flex min-h-6 min-w-0 items-center rounded-sm font-medium inline-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
         {displayName === "" ? <bdi className="mono-identifier">{row.partner.partnerId}</bdi> : <bdi className="text-pretty wrap-anywhere">{displayName}</bdi>}
       </Link>
       {row.partner.audience === "private" ? <StatusBadge label="Private record" tone="caution" /> : null}
@@ -180,7 +180,7 @@ const rosterColumns = (admitted: readonly PartnerColumn[], states: RecordedState
 const partnerRowId = (row: PartnerRosterRow): string => row.partner.partnerId;
 const partnerRowLabel = (row: PartnerRosterRow): string => nameOf(row);
 const OpenRecordAction = ({ row }: { readonly row: PartnerRosterRow }): ReactElement => (
-  <Link href={partnerHref(row.partner.partnerId)} aria-label={ROSTER_COPY.openRecord(nameOf(row))} className={cn(buttonVariants({ variant: "ghost", size: "icon-xs" }))}>
+  <Link href={partnerHref(row.partner.partnerId)} aria-label={ROSTER_COPY.openRecord(nameOf(row))} data-slot="button" className={cn(buttonVariants({ variant: "ghost", size: "icon-xs" }))}>
     <ChevronRightIcon aria-hidden="true" />
   </Link>
 );
@@ -204,7 +204,7 @@ function OpenBesideAction({ row, onOpen }: { readonly row: PartnerRosterRow; rea
 function ImportFirstAction(): ReactElement {
   return (
     <div className="flex max-w-prose flex-col items-center gap-2">
-      <Link href="/partners/import" className={cn(buttonVariants({ variant: "outline" }), "h-auto max-w-full whitespace-normal")}>
+      <Link href="/partners/import" data-slot="button" className={cn(buttonVariants({ variant: "outline" }), BUTTON_WRAP_CLASS)}>
         Import a contact list
       </Link>
       <p className="text-center text-xs text-pretty text-muted-foreground">A contact list is imported into this ministry and reviewed row by row before anything is accepted.</p>
@@ -308,6 +308,7 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
             pageSizeOptions={PAGE_SIZE_OPTIONS}
             hasActiveFilters={hasActiveFilters}
             onClearFilters={clearFilters}
+            suppressColumnVisibilityMenu
             isLoading={roster.roster.isPlaceholderData}
           />
         );

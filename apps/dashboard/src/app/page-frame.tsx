@@ -25,9 +25,9 @@ export type PageHeadingContent = { readonly title: string; readonly paragraphs?:
 /** The heading block a page opens with: the one `h1` of the route and the sentences that state what the surface holds. */
 export const PageHeading = ({ title, paragraphs }: PageHeadingContent): ReactElement => (
   <div className="flex min-w-0 flex-col gap-2">
-    <h1 className="text-2xl font-semibold text-pretty wrap-anywhere">{title}</h1>
+    <h1 className="type-page-title text-pretty wrap-anywhere">{title}</h1>
     {(paragraphs ?? []).map((paragraph) => (
-      <p key={paragraph} className="max-w-prose text-sm text-pretty text-muted-foreground">
+      <p key={paragraph} className="type-supporting max-w-prose text-pretty">
         {paragraph}
       </p>
     ))}
@@ -36,7 +36,7 @@ export const PageHeading = ({ title, paragraphs }: PageHeadingContent): ReactEle
 /** The frame a route surface opens with: the section that names itself by the route's one `h1`, that heading, and the column the surface lays out in. A surface whose reading direction is the content's own states it here, so the whole frame — not only its text — reads in that direction. */
 export const PageSurface = ({ headingId, title, dir, children }: { readonly headingId: string; readonly title: string; readonly dir?: string; readonly children: ReactNode }): ReactElement => (
   <section aria-labelledby={headingId} {...(dir === undefined ? {} : { dir })} className="flex min-w-0 flex-col gap-6 text-start">
-    <h1 id={headingId} className="text-2xl font-semibold text-pretty wrap-anywhere">
+    <h1 id={headingId} className="type-page-title text-pretty wrap-anywhere">
       {title}
     </h1>
     {children}
@@ -44,10 +44,13 @@ export const PageSurface = ({ headingId, title, dir, children }: { readonly head
 );
 /** The frame a page states around its own surface: its words for the three refusal arms, the heading block it opens with, and the column gaps its content and its refusal lay out at. */
 export type PageFrame = { readonly notice: ReadNoticeCopy; readonly heading?: PageHeadingContent; readonly gap?: 4 | 6; readonly refusalGap?: 4 | 6 };
-/** A read that produced no envelope, stated inside the page column the route would have rendered its content in, so a refusal is never an empty surface. */
-export const pageRefusalOf = (failure: ReadRefusal, copy: ReadNoticeCopy, gap: 4 | 6 = 6): ReactElement => (
+/** The level a refusal nests at inside a page that states its own title: the heading the page keeps, with the refusal stated beneath it. */
+const NESTED_NOTICE_LEVEL: NoticeHeadingLevel = 2;
+/** A read that produced no envelope, stated inside the page column the route would have rendered its content in, so a refusal is never an empty surface. A route that states its own page title keeps it on a refusal too, with the notice beneath it; a route whose title is the record it could not read states the notice's own title as the page heading, at the page-title scale. */
+export const pageRefusalOf = (failure: ReadRefusal, copy: ReadNoticeCopy, gap: 4 | 6 = 6, heading?: PageHeadingContent): ReactElement => (
   <PageColumn gap={gap}>
-    <ReadNotices failure={failure} copy={copy} />
+    {heading === undefined ? null : <PageHeading title={heading.title} paragraphs={heading.paragraphs} />}
+    <ReadNotices failure={failure} copy={heading === undefined ? copy : { ...copy, headingLevel: NESTED_NOTICE_LEVEL }} />
   </PageColumn>
 );
 /** An envelope a read answered with, exactly as the page's own success branch receives it. */
@@ -55,7 +58,7 @@ export type AnsweredEnvelope<Envelope> = Extract<ReadResult<Envelope>, { readonl
 /** The one page frame: one service read, the heading block, and the page's own surface rendered from the envelope that read answered with — or, where it answered with none, the page's own words for that refusal. */
 export async function readPageOf<Envelope>(read: () => Promise<ReadResult<Envelope>>, frame: PageFrame, surface: (answered: AnsweredEnvelope<Envelope>) => ReactNode): Promise<ReactElement> {
   const result = await read();
-  if (result.kind !== "envelope") return pageRefusalOf(result, frame.notice, frame.refusalGap ?? frame.gap);
+  if (result.kind !== "envelope") return pageRefusalOf(result, frame.notice, frame.refusalGap ?? frame.gap, frame.heading);
   return (
     <PageColumn gap={frame.gap}>
       {frame.heading === undefined ? null : <PageHeading title={frame.heading.title} paragraphs={frame.heading.paragraphs} />}

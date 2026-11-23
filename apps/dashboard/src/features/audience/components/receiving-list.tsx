@@ -7,7 +7,7 @@ import LocaleSwitcher, { type LocaleEdition } from "@/components/locale-switcher
 import SimulationLabel from "@/components/simulation-label";
 import StateNotice, { type NoticeHeadingLevel } from "@/components/state-notice";
 import StatusBadge, { VALUE_STATE_WORDS } from "@/components/status-badge";
-import VariantSwitcher, { AUDIENCE_WORDS, type VariantTab } from "@/components/variant-switcher";
+import { AUDIENCE_WORDS } from "@/components/variant-switcher";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +15,6 @@ import { cn } from "@/lib/cn";
 import { countFormatOf } from "@/lib/count-format";
 import { languageNameOf } from "@/lib/language-name";
 import type { ContentLocale } from "@/modules/content/locale";
-import type { VariantAudience, VariantFamily } from "@/modules/content/variant";
 import type { Scope, ValueState } from "@/modules/data-service/envelope";
 import type { ReadResult } from "@/modules/data-service/outcome";
 import { RECEIVING_LIST_COPY, RECEIVING_POST_COPY, RECEIVING_SIMULATION_EFFECT } from "../copy/receiving";
@@ -32,22 +31,20 @@ type ContentDirection = ContentLocale["direction"];
   readonly initialEnvelope: ReadResult<ReceivingListEnvelope>;
   readonly persona: ReceivingPersonaView;
   readonly params?: ReceivingListRequest;
-  readonly activeAudience?: VariantAudience;
-  readonly onSelectAudience?: (audience: VariantAudience) => void;
   readonly onDirectionChange?: (direction: ContentDirection) => void;
   readonly headingLevel?: NoticeHeadingLevel;
   readonly className?: string;
 }
 const ITEM_NOUN_SINGULAR = "edition";
 const FIRST_PAGE = 1;
-const UPDATE_FAMILY = "update" as const satisfies VariantFamily;
-const RECEIVED_EDITION_LIFECYCLE = "released" as const;
 const PREVIEWING_AS = "Previewing as";
 const UNTITLED_EDITION = "Untitled Update";
 const REFUSED_DESCRIPTION = "The address asked for something this view does not read, so nothing was read and no list stands in its place. Correct the request and open it again: once it is one this view admits, the read runs unchanged.";
 const NO_EDITIONS: readonly ReceivingEditionView[] = [];
 const NO_REQUEST: ReceivingListRequest = Object.freeze({});
 const HEADING_TAG: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4">> = { 1: "h1", 2: "h2", 3: "h3", 4: "h4" };
+/** The one type scale's heading utility for each level, so this surface's heading takes the measure of the level the composing page gives it rather than one fixed size. */
+const HEADING_SCALE: Readonly<Record<NoticeHeadingLevel, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const NESTED_HEADING: Readonly<Record<NoticeHeadingLevel, NoticeHeadingLevel>> = { 1: 2, 2: 3, 3: 4, 4: 4 };
 const normaliseTag = (tag: string): string => tag.trim().toLowerCase();
 function titleOf(edition: ReceivingEditionView): string {
@@ -62,12 +59,6 @@ function localeEditionsOf(editions: readonly ReceivingEditionView[]): readonly L
   }
   return [...locales.values()];
 }
-function audienceTabsOf(editions: readonly ReceivingEditionView[]): readonly VariantTab[] {
-  const tabs = new Map<VariantAudience, VariantTab>();
-  for (const edition of editions) if (!tabs.has(edition.audience)) tabs.set(edition.audience, { variantId: edition.variantId, audience: edition.audience, locale: edition.locale, lifecycle: RECEIVED_EDITION_LIFECYCLE });
-  return [...tabs.values()];
-}
-const activeTabId = (tabs: readonly VariantTab[], activeAudience: VariantAudience | undefined): string => (activeAudience === undefined ? (tabs.length === 1 ? (tabs[0]?.variantId ?? "") : "") : (tabs.find((candidate) => candidate.audience === activeAudience)?.variantId ?? ""));
 const servedTagOf = (locales: readonly LocaleEdition[], requestedTag: string): string => {
   const wanted = normaliseTag(requestedTag);
   return (wanted === "" ? undefined : locales.find((locale) => normaliseTag(locale.tag) === wanted)?.tag) ?? locales[0]?.tag ?? "";
@@ -85,7 +76,7 @@ function searchFor(request: ReceivingListRequest, next: { readonly locale?: stri
 function Heading({ id, level, children }: { readonly id: string; readonly level: NoticeHeadingLevel; readonly children: ReactNode }): ReactElement {
   const Tag = HEADING_TAG[level];
   return (
-    <Tag id={id} className="font-heading text-lg font-medium text-pretty wrap-anywhere">
+    <Tag id={id} className={cn(HEADING_SCALE[level], "text-pretty wrap-anywhere")}>
       {children}
     </Tag>
   );
@@ -95,17 +86,17 @@ function PageWindowLine({ page, state, locale }: PageWindowLineProps): ReactElem
   if (state !== undefined && state !== "value") {
     const word = VALUE_STATE_WORDS[state];
     return (
-      <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+      <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 type-supporting">
         <StatusBadge label={word.label} tone={word.tone} srPrefix="Edition count" />
         <span className="text-muted-foreground text-pretty wrap-anywhere">The read did not state how many editions this list holds, so no count is shown here and none is derived from the editions on screen.</span>
       </p>
     );
   }
   const total = page.total;
-  if (total === 0) return <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{`No ${ITEM_NOUN_SINGULAR}`}</p>;
+  if (total === 0) return <p className="type-supporting text-pretty wrap-anywhere">{`No ${ITEM_NOUN_SINGULAR}`}</p>;
   const format = countFormatOf(locale);
   const last = Math.min(page.page * page.pageSize, total);
-  return <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{`Showing ${format.format((page.page - FIRST_PAGE) * page.pageSize + 1)}\u2013${format.format(last)} of ${format.format(total)} ${total === 1 ? ITEM_NOUN_SINGULAR : "editions"}`}</p>;
+  return <p className="type-supporting text-pretty wrap-anywhere">{`Showing ${format.format((page.page - FIRST_PAGE) * page.pageSize + 1)}\u2013${format.format(last)} of ${format.format(total)} ${total === 1 ? ITEM_NOUN_SINGULAR : "editions"}`}</p>;
 }
 type EditionRowProps = { readonly edition: ReceivingEditionView; readonly requestedTag: string };
 function EditionRow({ edition, requestedTag }: EditionRowProps): ReactElement {
@@ -118,7 +109,7 @@ function EditionRow({ edition, requestedTag }: EditionRowProps): ReactElement {
       <Card size="sm" className="min-w-0">
         <CardHeader className="min-w-0">
           <CardTitle className="min-w-0 text-start text-pretty wrap-anywhere">
-            <Link href={edition.href} className="inline-flex min-h-6 max-w-full items-center break-words text-start underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+            <Link href={edition.href} className="inline-link inline-flex min-h-6 max-w-full items-center break-words text-start hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
               <bdi>{titleOf(edition)}</bdi>
             </Link>
           </CardTitle>
@@ -141,7 +132,7 @@ function EditionRow({ edition, requestedTag }: EditionRowProps): ReactElement {
     </li>
   );
 }
-/** The reading list a person is shown: */ export function ReceivingList({ scope, locale, initialEnvelope, persona, params, activeAudience, onSelectAudience, onDirectionChange, headingLevel = 2, className }: ReceivingListProps): ReactElement {
+/** The reading list a person is shown: */ export function ReceivingList({ scope, locale, initialEnvelope, persona, params, onDirectionChange, headingLevel = 2, className }: ReceivingListProps): ReactElement {
   const router = useRouter();
   const pathname = usePathname();
   const headingId = useId();
@@ -151,8 +142,6 @@ function EditionRow({ edition, requestedTag }: EditionRowProps): ReactElement {
   const editions = envelope === undefined ? NO_EDITIONS : envelope.data.editions;
   const requestedTag = (request.locale ?? envelope?.data.languagePreference ?? "").trim();
   const localeEditions = localeEditionsOf(editions);
-  const audienceTabs = audienceTabsOf(editions);
-  const activeVariantId = activeTabId(audienceTabs, activeAudience);
   const noticeLevel = NESTED_HEADING[headingLevel];
   const personaLabel = persona.label.trim() === "" ? persona.id : persona.label.trim();
   const addressFor = (next: { readonly locale?: string; readonly page?: number }): string => {
@@ -163,15 +152,6 @@ function EditionRow({ edition, requestedTag }: EditionRowProps): ReactElement {
   const requestLocale = (tag: string): void => {
     if (normaliseTag(tag) === normaliseTag(requestedTag)) return;
     requestRoute({ locale: tag, page: FIRST_PAGE });
-  };
-  const requestAudience = (variantId: string): void => {
-    const tab = audienceTabs.find((candidate) => candidate.variantId === variantId);
-    if (tab === undefined) return;
-    if (onSelectAudience !== undefined) {
-      onSelectAudience(tab.audience);
-      return;
-    }
-    refresh();
   };
   const page = envelope?.data.page;
   const renderEditions = (): ReactNode => {
@@ -184,10 +164,7 @@ function EditionRow({ edition, requestedTag }: EditionRowProps): ReactElement {
     }
     return (
       <div className="flex min-w-0 flex-col gap-4">
-        <div className="flex min-w-0 flex-col gap-4">
-          <VariantSwitcher family={UPDATE_FAMILY} variants={audienceTabs} activeVariantId={activeVariantId} onSelect={requestAudience} label="Audience this preview shows" />
-          <LocaleSwitcher locales={localeEditions} requested={requestedTag} served={servedTagOf(localeEditions, requestedTag)} onRequest={requestLocale} onDirectionChange={onDirectionChange} label="Reading language" />
-        </div>
+        <LocaleSwitcher locales={localeEditions} requested={requestedTag} served={servedTagOf(localeEditions, requestedTag)} onRequest={requestLocale} onDirectionChange={onDirectionChange} label="Reading language" />
         <ul className="flex min-w-0 flex-col gap-3">
           {editions.map((edition) => (
             <EditionRow key={`${edition.releaseId}:${edition.variantId}`} edition={edition} requestedTag={requestedTag} />
@@ -198,7 +175,7 @@ function EditionRow({ edition, requestedTag }: EditionRowProps): ReactElement {
           {page !== undefined && page.pageCount > 1 ? (
             <nav aria-label="Pages of this reading list" className="flex min-w-0 flex-wrap items-center gap-2">
               {[...(page.page > FIRST_PAGE ? [{ label: "Previous page", page: page.page - 1 }] : []), ...(page.page < page.pageCount ? [{ label: "Next page", page: page.page + 1 }] : [])].map((link) => (
-                <Link key={link.label} href={addressFor({ page: link.page })} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "min-h-6 whitespace-normal")}>
+                <Link key={link.label} href={addressFor({ page: link.page })} data-slot="button" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "min-h-6 whitespace-normal")}>
                   {link.label}
                 </Link>
               ))}
@@ -214,7 +191,7 @@ function EditionRow({ edition, requestedTag }: EditionRowProps): ReactElement {
         <Heading id={headingId} level={headingLevel}>
           {RECEIVING_LIST_COPY.heading}
         </Heading>
-        <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{RECEIVING_LIST_COPY.description}</p>
+        <p className="type-supporting text-pretty wrap-anywhere">{RECEIVING_LIST_COPY.description}</p>
         <Alert variant="default" role={undefined}>
           <EyeIcon aria-hidden="true" focusable="false" />
           <AlertTitle className="text-pretty wrap-anywhere">{`${PREVIEWING_AS} ${personaLabel}`}</AlertTitle>

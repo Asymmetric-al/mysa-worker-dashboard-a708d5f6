@@ -31,6 +31,19 @@ const uploadBytesSchema = z.strictObject({
   bytesBase64: z.string({ error: "Choose a file to upload." }).min(1, "Choose a file to upload."),
   name: z.string({ error: "State the file's name as text, or leave it out." }).min(1, "State the file's name as text, or leave it out.").max(UPLOAD_NAME_MAX_CHARS, `A file name holds at most ${UPLOAD_NAME_MAX_CHARS} characters.`).optional(),
 });
+const draftTargetFields = { draftRevisionId: opaqueReference(RECORD_REFERENCE_MESSAGE).optional(), variantId: opaqueReference(RECORD_REFERENCE_MESSAGE).optional() } as const;
+function refuseMissingDraftTarget(payload: { readonly draftRevisionId?: string; readonly variantId?: string }, ctx: z.RefinementCtx): void {
+  if (payload.draftRevisionId !== undefined || payload.variantId !== undefined) return;
+  ctx.addIssue({ code: "custom", path: ["draftRevisionId"], message: "Open the page's draft first: a section change names the draft revision it edits." });
+}
+const sectionPlacementSchema = z
+  .strictObject({
+    ...draftTargetFields,
+    sectionElement: z.string({ error: "State the section this media is placed in." }).trim().min(1, "State the section this media is placed in."),
+    position: z.int({ error: "State the position this placement takes as a whole number." }).nonnegative("A position is zero or more, counting from the first placement.").optional(),
+  })
+  .superRefine(refuseMissingDraftTarget)
+  .optional();
 export const registerMediaAssetPayloadSchema: z.ZodType<ServiceRegisterMediaAssetPayload> = z
   .strictObject({
     kind: z.enum(KINDS, { error: "Choose whether this file is an image or a video." }),
@@ -55,6 +68,7 @@ export const registerMediaAssetPayloadSchema: z.ZodType<ServiceRegisterMediaAsse
       })
       .optional(),
     transcript: z.strictObject({ text: z.string({ error: "State the transcript, or leave it out." }).min(1, "State the transcript, or leave it out.") }).optional(),
+    sectionPlacement: sectionPlacementSchema,
   })
   .superRefine((payload, ctx) => {
     if (payload.kind === "image" && (payload.altText ?? payload.placement?.altText) === undefined) ctx.addIssue({ code: "custom", path: ["altText"], message: "An image needs alternative text describing what it shows before it can be placed, so describe it and choose the file again." });
@@ -64,11 +78,6 @@ export const registerMediaAssetPayloadSchema: z.ZodType<ServiceRegisterMediaAsse
 export const registerMediaAssetInputSchema = mutationInputSchema(registerMediaAssetPayloadSchema);
 export type Placement = z.infer<typeof placementSchema>;
 export type RegisterMediaAssetPayload = z.infer<typeof registerMediaAssetPayloadSchema>;
-const draftTargetFields = { draftRevisionId: opaqueReference(RECORD_REFERENCE_MESSAGE).optional(), variantId: opaqueReference(RECORD_REFERENCE_MESSAGE).optional() } as const;
-function refuseMissingDraftTarget(payload: { readonly draftRevisionId?: string; readonly variantId?: string }, ctx: z.RefinementCtx): void {
-  if (payload.draftRevisionId !== undefined || payload.variantId !== undefined) return;
-  ctx.addIssue({ code: "custom", path: ["draftRevisionId"], message: "Open the page's draft first: a section change names the draft revision it edits." });
-}
 const placementTargetPayloadSchema: z.ZodType<ServicePlacementTargetPayload> = z
   .strictObject({ ...draftTargetFields, placementId: opaqueReference(RECORD_REFERENCE_MESSAGE), assetId: opaqueReference("Use the prepared asset, not a file path or a link.").optional(), placement: placementSchema.optional() })
   .superRefine(refuseMissingDraftTarget);

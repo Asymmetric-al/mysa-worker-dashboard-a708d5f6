@@ -106,8 +106,8 @@ function useSettledTerm(value: string, delayMs: number): string {
 }
 /** The picker's own bounded read of the roster: the first matches of the settled term, beside the whole-result count they are a page of. It is asked for the shared record class, so neither its rows nor its count includes a record this control could never offer. */
 function usePartnerPickerPage(scope: Scope, term: string, enabled: boolean) {
-  // The roster's own grammar resolves a page size to the window its surface serves, so the size this bounded control reads is stated here rather than left to that window.
-  const request = useMemo<RosterRequestParams>(() => ({ ...rosterRequestParams({ search: term, facets: SHARED_RECORD_FACET_SELECTION, sort: null, page: 1, pageSize: PICKER_PAGE_SIZE, columnVisibility: {} }), pageSize: PICKER_PAGE_SIZE }), [term]);
+  // The roster's own grammar resolves a page size to the window its surface serves, so the size this bounded control reads is stated here rather than left to that window. It states no giving scope: this control offers records, and reads no figure over a currency or a period.
+  const request = useMemo<RosterRequestParams>(() => ({ ...rosterRequestParams({ search: term, facets: SHARED_RECORD_FACET_SELECTION, sort: null, page: 1, pageSize: PICKER_PAGE_SIZE, columnVisibility: {}, currency: null, period: null, timeZone: null }), pageSize: PICKER_PAGE_SIZE }), [term]);
   const url = useMemo(() => pickerReadUrl(request), [request]);
   const resolved = scopeIsResolved(scope);
   // Every variable the read is asked with is in the key, the facet selection included, so a page read for one record class is never served from an entry asked for another.

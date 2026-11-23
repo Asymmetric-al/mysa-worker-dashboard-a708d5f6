@@ -3,7 +3,7 @@ import Link from "next/link";
 import { CircleAlertIcon, CloudOffIcon, LanguagesIcon, ShieldAlertIcon, SquarePenIcon, TriangleAlertIcon } from "lucide-react";
 import { useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -45,25 +45,24 @@ const DEFAULT_LOADING_LINES = 3;
 type AlertNoticeKind = Exclude<NoticeKind, "empty" | "loading">;
 type AlertContent = { readonly icon: ReactElement; readonly body: ReactNode };
 type AlertContentInput = { readonly kind: AlertNoticeKind; readonly description: string | undefined; readonly source: SourceReference | undefined; readonly retry: NoticeRetry | undefined; readonly operationId: string | undefined; readonly coverage: Coverage | undefined; readonly reasonCode: DenialReason | undefined };
+/** The scale each notice heading takes, so a notice states the document outline it lands in: a notice that is the page's own heading reads at the page-title scale, and one beneath a page title or inside a section reads at its level's scale. */
+const NOTICE_HEADING_CLASS: Readonly<Record<NoticeHeadingLevel, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 function NoticeHeading({ level, children }: { readonly level: NoticeHeadingLevel; readonly children: ReactNode }): ReactElement {
   const Tag = NOTICE_HEADING_TAG[level];
-  return <Tag>{children}</Tag>;
+  return <Tag className={NOTICE_HEADING_CLASS[level]}>{children}</Tag>;
 }
-const NOTICE_CONTROL_CLASS = "h-auto max-w-full whitespace-normal";
-const NOTICE_CONTROL_HEIGHT: Readonly<Record<"default" | "sm", string>> = { default: "min-h-9 py-2", sm: "min-h-8 py-1.5" };
 type NoticeButtonProps = { readonly action: NoticeAction; readonly variant: "default" | "outline"; readonly size: "default" | "sm"; readonly pending: boolean; readonly onRun: (() => void) | undefined };
 function NoticeButton({ action, variant, size, pending, onRun }: NoticeButtonProps): ReactElement | null {
-  const controlClass = cn(NOTICE_CONTROL_CLASS, NOTICE_CONTROL_HEIGHT[size]);
   if (action.href !== undefined) {
     return (
-      <Link href={action.href} className={cn(buttonVariants({ variant, size }), controlClass)}>
+      <Link href={action.href} data-slot="button" className={cn(buttonVariants({ variant, size }), BUTTON_WRAP_CLASS)}>
         {action.label}
       </Link>
     );
   }
   if (onRun === undefined) return null;
   return (
-    <Button type="button" variant={variant} size={size} disabled={pending} onClick={onRun} className={controlClass}>
+    <Button type="button" variant={variant} size={size} disabled={pending} onClick={onRun} className={BUTTON_WRAP_CLASS}>
       {pending ? <Spinner /> : null}
       {action.label}
     </Button>
@@ -231,12 +230,15 @@ export function StateNotice({ kind, title, description, action, source, retry, o
   const busy = pending ? true : undefined;
   if (kind === "empty") {
     return (
-      <Empty ref={regionRef} role="alert" aria-busy={busy} tabIndex={-1} className={cn("p-6 sm:p-12", className)}>
+      // `jsx-a11y/prefer-tag-over-role` is suppressed for this region and only this region: the frame is the design-system `Empty` element, whose tag this component does not own, and the tag the rule prefers (`output`) admits only phrasing content, which the notice's heading and description are not.
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
+      <Empty ref={regionRef} role="status" aria-busy={busy} tabIndex={-1} className={cn("border border-dashed border-border p-6 sm:p-12", className)}>
         <EmptyHeader>
           <EmptyTitle>
             <NoticeHeading level={headingLevel}>{title}</NoticeHeading>
           </EmptyTitle>
-          {description === undefined ? null : <EmptyDescription>{description}</EmptyDescription>}
+          {/* The one body measure at this composition point: the design system's empty-state description states a relaxed leading of its own, and every 14px paragraph in the product reads at the body measure instead. */}
+          {description === undefined ? null : <EmptyDescription className="text-sm font-normal">{description}</EmptyDescription>}
         </EmptyHeader>
         {action === undefined ? null : (
           <EmptyContent>
@@ -254,7 +256,7 @@ export function StateNotice({ kind, title, description, action, source, retry, o
           <Spinner />
           <span>{title}</span>
         </p>
-        {description === undefined ? null : <p className="text-sm text-muted-foreground">{description}</p>}
+        {description === undefined ? null : <p className="type-supporting">{description}</p>}
         <div aria-hidden="true" className="flex flex-col gap-2">
           {Array.from({ length: lines }, (_, line) => (
             <Skeleton key={line} className={cn("h-4 rounded-md", LOADING_LINE_WIDTHS[line % LOADING_LINE_WIDTHS.length])} />

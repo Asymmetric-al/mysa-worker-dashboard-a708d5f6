@@ -17,6 +17,8 @@ import { useApplyPagePreset } from "../hooks/page-mutations";
 import type { applyPresetPayload } from "../schemas/preset";
 const HEADING_LEVEL: ReviewHeadingLevel = 3;
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
+/** The one type scale's heading utility per level, so this chooser states the level it lands at with the same measure on every surface. */
+const HEADING_SCALE: Readonly<Record<keyof typeof HEADING_TAG, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const RADIO_GROUP_LIMIT = 3;
 const FACT_ROW_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2";
 const FACT_TERM_CLASS = "text-muted-foreground";
@@ -138,10 +140,12 @@ export function PresetChooser({ family, presets, baseVariantId, locale, expected
   const applyWithheld = withheld === null ? null : <WithheldNotice id={withheldId} body={SURFACE_COPY.unavailable[withheld]} offersButton={!showsReview} />;
   return (
     <section data-slot="preset-chooser" data-family={family} data-preset-count={String(offers.length)} data-selected-preset={selectedPresetId ?? undefined} data-withheld={withheld ?? undefined} aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-4", className)}>
-      <Card size="sm">
+      <Card>
         <CardHeader>
           <CardTitle>
-            <Heading id={headingId}>{copy.preset.heading}</Heading>
+            <Heading id={headingId} className={HEADING_SCALE[HEADING_LEVEL]}>
+              {copy.preset.heading}
+            </Heading>
           </CardTitle>
           <CardDescription className="flex min-w-0 flex-wrap items-baseline gap-x-2">
             <bdi>{copy.families[family].label}</bdi>
@@ -156,7 +160,7 @@ export function PresetChooser({ family, presets, baseVariantId, locale, expected
             <>
               {offers.length <= RADIO_GROUP_LIMIT ? (
                 <div className="flex min-w-0 flex-col gap-2">
-                  <p id={questionId} className="text-sm font-medium text-pretty">
+                  <p id={questionId} className="type-group-title text-pretty">
                     {SURFACE_COPY.choiceQuestion}
                   </p>
                   <RadioGroup
@@ -175,7 +179,7 @@ export function PresetChooser({ family, presets, baseVariantId, locale, expected
                         <label key={offer.preset.presetId} htmlFor={optionId} className={"flex min-h-target min-w-0 items-start gap-3 py-1"}>
                           <RadioGroupItem id={optionId} value={offer.preset.presetId} className="mt-0.5" />
                           <span className={"flex min-w-0 flex-col items-start gap-0.5"}>
-                            <bdi className={"text-sm font-medium text-pretty wrap-anywhere"}>{presetLabel(offer)}</bdi>
+                            <bdi className={"type-group-title text-pretty wrap-anywhere"}>{presetLabel(offer)}</bdi>
                             <Badge variant="outline">{SURFACE_COPY.partCount(offer.sections.length)}</Badge>
                           </span>
                         </label>
@@ -199,7 +203,7 @@ export function PresetChooser({ family, presets, baseVariantId, locale, expected
                 <>
                   <Separator />
                   <section id={proposalId} aria-labelledby={proposalHeadingId} className="flex min-w-0 flex-col gap-2">
-                    <p id={proposalHeadingId} className="text-sm font-medium">
+                    <p id={proposalHeadingId} className="type-group-title">
                       {SURFACE_COPY.proposalHeading}
                     </p>
                     <ProposalList offer={chosen} />

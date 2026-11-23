@@ -6,7 +6,7 @@ import { failureFor, failurePlanOfDocument } from "@/modules/dev-runtime/failure
 import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
 import { minorUnitsOf } from "@/modules/money/amount";
 import { SUPPORT_BASIS, type GiftRow, type SupportProjection } from "@/modules/support/basis";
-import { clampPageSize, runReport, type CurrencySummary, type PeriodState, type ReportPeriod, type ReportScope } from "@/modules/support/report";
+import { PAGE_SIZE_CAP, clampPageSize, runReport, type CurrencySummary, type PeriodState, type ReportPeriod, type ReportScope } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
 import { serialiseCivilDate, todayInZone, type CivilDate } from "@/modules/time/civil";
 import { REFERRAL_SOURCE_ZONE } from "@/modules/time/window";
@@ -106,7 +106,7 @@ export interface PartnerRosterPage {
   readonly appliedPeriod: { readonly from: string; readonly to: string } | null;
   readonly facets: readonly PartnerFacet[];
 }
-export type PartnerSavedViewQuery = { readonly search: string; readonly applied: Readonly<Record<string, readonly string[]>>; readonly columnVisibility?: Readonly<Record<string, boolean>> };
+export type PartnerSavedViewQuery = { readonly search: string; readonly applied: Readonly<Record<string, readonly string[]>>; readonly columnVisibility?: Readonly<Record<string, boolean>>; readonly sort?: { readonly field: string; readonly direction: PartnerSortDirection }; readonly pageSize?: number };
 export type PartnerSavedViewDrift = { readonly drifted: boolean; readonly missing: readonly string[] };
 export type PartnerSavedView = { readonly id: string; readonly name: string; readonly query: PartnerSavedViewQuery; readonly ownerPrincipalId: string; readonly revision: string; readonly drift: PartnerSavedViewDrift };
 export type PartnerRelationship = { readonly label: string; readonly counterpart?: { readonly partnerId: string; readonly kind: PartnerKind; readonly displayName: string; readonly href?: string }; readonly detail?: string };
@@ -130,7 +130,13 @@ type StoredPartnerRecord = z.infer<typeof storedPartnerRecordSchema>;
 const storedSavedViewSchema = z.object({
   viewId: z.string().min(1),
   name: z.string().min(1),
-  query: z.object({ search: z.string(), applied: z.record(z.string().min(1), z.array(z.string().min(1))), columnVisibility: z.record(z.string().min(1), z.boolean()).optional() }),
+  query: z.object({
+    search: z.string(),
+    applied: z.record(z.string().min(1), z.array(z.string().min(1))),
+    columnVisibility: z.record(z.string().min(1), z.boolean()).optional(),
+    sort: z.object({ field: z.string().min(1), direction: z.enum(PARTNER_SORT_DIRECTIONS) }).optional(),
+    pageSize: z.int().min(1).max(PAGE_SIZE_CAP).optional(),
+  }),
   ownerPrincipalId: principalIdSchema,
   revision: recordRevisionSchema,
 });
@@ -165,7 +171,7 @@ interface PartnerReadContext {
 type ContextOutcome = { readonly ok: true; readonly context: PartnerReadContext } | { readonly ok: false; readonly result: ReadResult<never> };
 const PARTNER_SOURCE: SourceReference = Object.freeze({ system: LOCAL_STORE_SYSTEM, reference: PARTNERS_SOURCE_REFERENCE });
 async function readContext(job: string, source?: SessionSource): Promise<ContextOutcome> {
-  const opened = await openRead({ source, unselectedReason: "not-admitted", sessionFaultReason: "session-unavailable" });
+  const opened = await openRead({ job, source, unselectedReason: "not-admitted", sessionFaultReason: "session-unavailable" });
   if (!opened.ok) return { ok: false, result: opened.result };
   const stored = await readStoreDocument({ session: opened.session, job, source: PARTNER_SOURCE, guidance: STORE_UNAVAILABLE_GUIDANCE });
   if (!stored.ok) return { ok: false, result: stored.result };
@@ -713,7 +719,13 @@ export async function readSavedViews(source?: SessionSource): Promise<ReadResult
     views.push({
       id: stored.viewId,
       name: stored.name,
-      query: { search: stored.query.search, applied: stored.query.applied, ...(stored.query.columnVisibility === undefined ? {} : { columnVisibility: stored.query.columnVisibility }) },
+      query: {
+        search: stored.query.search,
+        applied: stored.query.applied,
+        ...(stored.query.columnVisibility === undefined ? {} : { columnVisibility: stored.query.columnVisibility }),
+        ...(stored.query.sort === undefined ? {} : { sort: { field: stored.query.sort.field, direction: stored.query.sort.direction } }),
+        ...(stored.query.pageSize === undefined ? {} : { pageSize: stored.query.pageSize }),
+      },
       ownerPrincipalId: stored.ownerPrincipalId,
       revision: stored.revision,
       drift: driftOf(stored, facets),

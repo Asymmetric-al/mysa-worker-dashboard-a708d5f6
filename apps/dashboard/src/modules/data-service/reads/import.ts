@@ -24,7 +24,7 @@ import {
 import { readSession } from "@/modules/store/repository";
 import { clampPageSize } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
-import { assertScope, readResultOfRefusal, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
+import { assertScope, readResultOfRefusal, recordRefusalOutage, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
 import {
   IMPORT_ROW_DECISIONS,
   importProposalRecordSchema,
@@ -148,9 +148,12 @@ export interface ImportReceiptView {
 }
 export type ReadImportReceiptInput = ImportPagingInput & ImportRowFilter & { readonly session?: SessionSource };
 type ScopeResolution = { readonly ok: true; readonly session: ResolvedSession; readonly scope: Scope } | { readonly ok: false; readonly result: ReadResult<never> };
-async function resolveReadScope(source: SessionSource | undefined): Promise<ScopeResolution> {
+async function resolveReadScope(job: string, source: SessionSource | undefined): Promise<ScopeResolution> {
   const resolution = await resolveSession(source);
-  if (!resolution.ok) return { ok: false, result: readResultOfRefusal(resolution.refusal) };
+  if (!resolution.ok) {
+    recordRefusalOutage(job, resolution.refusal);
+    return { ok: false, result: readResultOfRefusal(resolution.refusal) };
+  }
   const { session } = resolution;
   if (session.selected === null) return { ok: false, result: deniedRead("not-admitted") };
   const decision = assertScope(session, session.selected);
@@ -424,18 +427,22 @@ function receiptActions(receipt: ImportReceipt): readonly ReadAction[] {
   if (receipt.cancellation !== null) return [{ name: "cancelImport", available: false, reason: "This import was already cancelled, and the rows it stopped stay stopped. Nothing is recalled, and no row is applied again from this receipt." }];
   return receipt.counts.total - receipt.counts.accepted - receipt.counts.alreadyAccepted > 0 ? [{ name: "cancelImport", available: true }] : [{ name: "cancelImport", available: false, reason: "Every row of this file was accepted, so there is nothing left for a cancellation to stop and nothing to recall." }];
 }
-function findStoredReceipt(value: unknown, importOperationId: string, depth = 0): ImportReceiptRead | null {
+/** The first contact-import receipt a recorded result carries, read under the import operation identity the receipt itself states: an attempt records its receipt in its own ledger entry, and that receipt names the import it belongs to rather than the attempt that ran it. */
+function findStoredReceipt(value: unknown, depth = 0): ImportReceiptRead | null {
   if (depth > RECEIPT_SEARCH_DEPTH || value === null || value === undefined) return null;
-  if (isRecord(value) && value["receiptFormat"] === IMPORT_RECEIPT_FORMAT) return readStoredReceipt(value, importOperationId);
+  if (isRecord(value) && value["receiptFormat"] === IMPORT_RECEIPT_FORMAT) {
+    const identity = value["importOperationId"];
+    return readStoredReceipt(value, typeof identity === "string" ? identity : "");
+  }
   for (const child of Array.isArray(value) ? value : isRecord(value) ? Object.values(value) : []) {
-    const found = findStoredReceipt(child, importOperationId, depth + 1);
+    const found = findStoredReceipt(child, depth + 1);
     if (found !== null) return found;
   }
   return null;
 }
 /** Reads the import proposal the caller is reviewing: the chosen file with every displayed limit and its measured value, the mapping column by column, the decision recorded about each row, the decisions it holds, the stored record itself and the review material re-derived from the file that record holds. Answers `envelope`, or the read's own refusal: `unavailable` when the records cannot be read, `refused` when the query this read was asked to serve is the fault. */
 export async function readImportProposal(input: ReadImportProposalInput = {}): Promise<ReadResult<ReadEnvelope<ImportProposalView>>> {
-  const resolved = await resolveReadScope(input.session);
+  const resolved = await resolveReadScope("readImportProposal", input.session);
   if (!resolved.ok) return resolved.result;
   const { session, scope } = resolved;
   const documents = await readImportDocuments(session.sessionId);
@@ -501,7 +508,7 @@ export async function readImportProposal(input: ReadImportProposalInput = {}): P
 }
 /** Reads the recoverable receipt of one import acceptance by its operation identity: what became of each data row, where to go next, and the counts those results add up to. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readImportReceipt(importOperationId: string, input: ReadImportReceiptInput = {}): Promise<ReadResult<ReadEnvelope<ImportReceiptView>>> {
-  const resolved = await resolveReadScope(input.session);
+  const resolved = await resolveReadScope("readImportReceipt", input.session);
   if (!resolved.ok) return resolved.result;
   const { session, scope } = resolved;
   if (importOperationId.length === 0) return deniedRead("no-permission");
@@ -509,12 +516,22 @@ export async function readImportReceipt(importOperationId: string, input: ReadIm
   if (documents === undefined) return storeUnavailableRead("read-import-receipt", importOperationId, "The store could not be read for this session, so this import operation's receipt cannot be shown. Try again once the store answers; reading a receipt applies nothing, so nothing changed.");
   if (documents.entries === null)
     return storeUnavailableRead("read-import-receipt", importOperationId, "This session's operation ledger cannot be read as this build records it, so this receipt cannot be shown rather than shown as empty. Do not repeat the import: the rows it already applied are recorded, and this read applies nothing.");
+  if (documents.reviews === null)
+    return storeUnavailableRead("read-import-receipt", importOperationId, "This session's import reviews cannot be read as this build records them, so this receipt cannot be shown rather than shown as empty. Do not repeat the import: the rows it already applied are recorded, and this read applies nothing.");
   const ownedEntries = documents.entries.filter((candidate) => candidate.operationId === importOperationId && sameScope(candidate.scope, scope));
-  if (ownedEntries.length === 0) return deniedRead("no-permission");
+  const ownedReview = documents.reviews.find((candidate) => candidate.importOperationId === importOperationId && sameScope(candidate.scope, scope)) ?? null;
+  // The import an identity names: the import itself, when its review is recorded under that identity, or the import an attempt recorded — the identity a receipt or a proposal it stored states. An identity that names neither answers exactly as one that never existed, so no other import is ever reachable through it.
+  const importId = ownedReview === null ? foundImportIdOf(ownedEntries[0], scope) : ownedReview.importOperationId;
+  if (importId === null) return deniedRead("no-permission");
+  // An attempt's own evidence first: the receipt recorded in its ledger entry, which reports the state at the moment it ran, so a later cancellation never rewrites what an acceptance did. Then the import's own record, which is the review keyed by the import operation identity and therefore states the import as it now stands, cancellation included.
   let stored: ImportReceiptRead | null = null;
   for (const entry of ownedEntries) {
-    stored = findStoredReceipt(entry.result, importOperationId);
+    stored = findStoredReceipt(entry.result);
     if (stored !== null) break;
+  }
+  if (stored === null || stored.kind === "not-found") {
+    const importReview = ownedReview ?? documents.reviews.find((candidate) => candidate.importOperationId === importId && sameScope(candidate.scope, scope)) ?? null;
+    stored = importReview === null ? null : readStoredReceipt(importReview.receipt, importId);
   }
   if (stored === null || stored.kind === "not-found") return deniedRead("no-permission");
   if (stored.kind === "unavailable") return storeUnavailableRead("read-import-receipt", importOperationId, stored.reason);
@@ -525,6 +542,8 @@ export async function readImportReceipt(importOperationId: string, input: ReadIm
     input,
   );
   const cancellation = receipt.cancellation;
+  // The one mutation this view offers is the cancellation of the import, and the revision such a mutation must present is the import record's: the receipt's own revision strings together its format, its file fingerprint and the state it reports, which is not a concurrency token any write accepts.
+  const importRecord = documents.proposals?.find((candidate) => candidate.importOperationId === importId) ?? null;
   const view: ImportReceiptView = {
     importOperationId: receipt.importOperationId,
     processedAt: receipt.processedAt,
@@ -540,5 +559,12 @@ export async function readImportReceipt(importOperationId: string, input: ReadIm
     cancelled: cancellation !== null,
     cancellation: cancellation === null ? null : { cancelledAt: cancellation.cancelledAt, acceptedRowsRetained: cancellation.acceptedRowsRetained, stoppedRows: cancellation.stoppedRows },
   };
-  return answerOf(scope, instantAt(session.clockOffsetMs).toString(), { data: view, source: { system: LOCAL_STORE_SYSTEM, reference: receipt.importOperationId }, revision: view.revision, coverage: IMPORT_COVERAGE, valueStates: receiptValueStates(receipt, summary, paged.window), actions: receiptActions(receipt) });
+  return answerOf(scope, instantAt(session.clockOffsetMs).toString(), {
+    data: view,
+    source: { system: LOCAL_STORE_SYSTEM, reference: receipt.importOperationId },
+    revision: importRecord === null ? view.revision : importRecord.revision,
+    coverage: IMPORT_COVERAGE,
+    valueStates: receiptValueStates(receipt, summary, paged.window),
+    actions: receiptActions(receipt),
+  });
 }

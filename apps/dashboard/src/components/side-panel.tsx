@@ -14,7 +14,8 @@ export type SidePanelChrome = { readonly open: boolean; readonly onOpenChange: (
 export type SidePanelProps = SidePanelChrome & (SidePanelDetailBody | SidePanelOwnBody);
 const DESKTOP_SURFACE_CLASS = "flex w-full min-w-0 shrink-0 flex-col border-s border-border bg-card text-card-foreground lg:sticky lg:top-0 lg:max-h-dvh lg:w-96 lg:self-start";
 const DESKTOP_HEADER_CLASS = "flex items-start justify-between gap-2 border-b border-border px-4 py-3";
-const DESKTOP_HEADING_CLASS = "min-w-0 break-words font-heading text-sm font-medium text-muted-foreground";
+// The one documented departure from the level scale: a panel header labels the panel's own chrome rather than a section of the page, so it takes the group-title scale in the muted ink instead of a section title's measure.
+const DESKTOP_HEADING_CLASS = "min-w-0 break-words type-group-title text-muted-foreground";
 const DESKTOP_BODY_CLASS = "min-h-0 flex-1 overflow-y-auto overflow-x-clip px-4";
 const PHONE_SURFACE_CLASS = "max-h-dvh p-0";
 const PHONE_HEADER_CLASS = "gap-1.5 border-b border-border py-3 ps-4 pe-14";

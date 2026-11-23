@@ -140,6 +140,18 @@ export const LIMIT_COPY: LimitCopy = {
     return `The description is ${codePoints} characters long and the limit is ` + `${TASK_SUMMARY_MAX_CODE_POINTS}. Nothing was dropped: bring it within the limit and review ` + "it again before it is shared.";
   },
 };
+export type TargetPlanRefusals = { readonly measureUnknown: string; readonly quantityNotANumber: string; readonly quantityNotWhole: string; readonly quantityBelowOne: string; readonly periodUnknown: string; readonly calendarDateNotADay: string; readonly privateLabelEmpty: string; readonly targetNotNamed: string };
+/** What a target plan refuses and why, in the words the field shows: each sentence names the field, the requirement it broke and what is accepted instead, so no validator's own wording reaches a worker. The date sentence is shared by every date this feature validates, so it states the one format they all use rather than this form's field name. */
+export const TARGET_PLAN_REFUSALS: TargetPlanRefusals = {
+  measureUnknown: "What to count is one of four measures — calls made, personal messages, conversations or meetings held — and this entry is none of them. Choose one of the four and save again.",
+  quantityNotANumber: "How many in each period is a whole number you type, and this entry holds no number at all. An empty entry is refused rather than read as zero: type the count you want and save again.",
+  quantityNotWhole: "How many in each period counts whole things, so a fraction is refused rather than rounded into a number you did not type. Type a whole number and save again.",
+  quantityBelowOne: "How many in each period is one or more, so a count of zero or below is refused. Type a count of at least one and save again.",
+  periodUnknown: "Period is weekly, monthly or a one-off custom period, and this entry is none of the three. Choose one of them and save again.",
+  calendarDateNotADay: "Every date here is a real calendar day written YYYY-MM-DD — 2026-09-12 is one — and this entry is not: check the day, the month and the year and save again.",
+  privateLabelEmpty: "Your name for this target is a name you type, and an empty one is refused rather than filled in for you. Name the target in your own words and save again.",
+  targetNotNamed: "This change belongs to one target, so reload the targets and choose the target again.",
+};
 export type FinancialRangeCopy = { readonly heading: string; readonly purpose: string; readonly basisStatement: string; readonly rangeStatement: string; readonly exclusions: string; readonly measuresNote: string; readonly measures: Readonly<Record<SupportMeasure, string>>; readonly unavailable: string };
 export const FINANCIAL_RANGE_COPY: FinancialRangeCopy = {
   heading: "Financial range you shared",

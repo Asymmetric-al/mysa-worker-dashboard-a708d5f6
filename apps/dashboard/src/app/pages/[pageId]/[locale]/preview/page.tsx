@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PagePreviewFrame, type PagePreviewView } from "@/features/ministry-pages/components/page-preview-frame";
+import { copy } from "@/features/ministry-pages/copy";
 import { reads } from "@/modules/data-service";
 import { PageSurface } from "../../../../page-frame";
 export const dynamic = "force-dynamic";
@@ -12,6 +13,8 @@ type GivingReadResult = Awaited<ReturnType<typeof reads.pages.readGivingBinding>
 type GivingBinding = Extract<GivingReadResult, { kind: "envelope" }>["envelope"]["data"]["binding"];
 const normalisedTag = (tag: string): string => tag.trim().toLowerCase();
 const primarySubtag = (tag: string): string => normalisedTag(tag).split("-")[0] ?? "";
+/** This edition's own preview address, which answers the same exact revision again: the retry a route surface offers without holding a read of its own. */
+const previewAddressOf = (pageId: string, locale: string): string => `/pages/${encodeURIComponent(pageId)}/${encodeURIComponent(locale)}/preview`;
 function editionOfLocale(editions: readonly LocaleEdition[], locale: string): LocaleEdition | undefined {
   const requested = normalisedTag(locale);
   if (requested.length === 0) return undefined;
@@ -42,7 +45,18 @@ async function previewViewOf(pageId: string, locales: LocaleEditionsResult): Pro
     if (giving.kind !== "envelope") return refusalOutcome(giving);
     const served = normalisedTag(data.locale.tag);
     return {
-      view: { status: "authorised", variantId: data.variantId, revisionId: data.revision.revisionId, servedLocale: data.locale.tag, ...(normalisedTag(requestedLocale) === served ? {} : { requestedLocale }), direction: data.locale.direction, html: data.renderedHtml, inert: true, givingAction: "none" },
+      view: {
+        status: "authorised",
+        variantId: data.variantId,
+        revisionId: data.revision.revisionId,
+        servedLocale: data.locale.tag,
+        ...(normalisedTag(requestedLocale) === served ? {} : { requestedLocale }),
+        direction: data.locale.direction,
+        html: data.renderedHtml,
+        unreadyMedia: data.unreadyMedia,
+        inert: true,
+        givingAction: "none",
+      },
       givingBinding: giving.envelope.data.binding,
     };
   }
@@ -56,7 +70,7 @@ export default async function PageLocalePreviewRoute({ params }: { params: Promi
   const preview = await previewViewOf(pageId, locales);
   return (
     <PageSurface headingId="page-locale-preview-heading" title={SURFACE_TITLE}>
-      <PagePreviewFrame layout="route" preview={preview.view} givingBinding={preview.givingBinding} />
+      <PagePreviewFrame layout="route" preview={preview.view} givingBinding={preview.givingBinding} retry={{ label: copy.preview.mediaRetryLabel, href: previewAddressOf(pageId, locale) }} />
     </PageSurface>
   );
 }

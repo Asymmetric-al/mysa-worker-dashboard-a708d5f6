@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from "react";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { EditorContent, useEditor, useEditorState, type Editor, type JSONContent } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
@@ -15,18 +15,16 @@ import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
-import { ADMITTED_HEADING_LEVELS, CONTENT_PROFILE_VERSION, admittedPasteDecision, checksum, parseDocument, type ContentBlockNode, type ContentDirection, type ContentDocumentJson, type ContentSection, type DocumentIssue, type PasteDecision } from "@/modules/content/document";
-import { ROOT_FIELD_KEY, type ConflictOutcome, type DeniedOutcome, type FieldMessages, type InvalidOutcome, type MutationOutcome, type UnavailableOutcome, type UnknownOutcome } from "@/modules/data-service/outcome";
-const AUTOSAVE_DELAY_MS = 600;
-const LIST_LIMIT = 4;
+import { ADMITTED_HEADING_LEVELS, CONTENT_PROFILE_VERSION, admittedPasteDecision, parseDocument, type ContentBlockNode, type ContentDirection, type ContentDocumentJson, type ContentSection, type PasteDecision } from "@/modules/content/document";
 const PREVIEW_LIMIT = 600;
 const PASTE_NOTICE = "Images and video are added with the toolbar buttons, so they are prepared, placed and saved with the content. Nothing was inserted here.";
 const EDITOR_PROSE_CLASS = cn(
   "min-h-40 w-full px-3 py-2.5 text-sm leading-6 text-foreground outline-none",
   "[&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
-  "[&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:text-lg [&_h2]:leading-snug [&_h2]:font-semibold",
-  "[&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:text-base [&_h3]:font-semibold",
-  "[&_h4]:mt-3 [&_h4]:mb-1.5 [&_h4]:text-sm [&_h4]:font-semibold",
+  // Document headings inside the editor take the one type scale, so what is authored reads at the size the preview and the released edition render at.
+  "[&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:type-section-title",
+  "[&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:type-subsection-title",
+  "[&_h4]:mt-3 [&_h4]:mb-1.5 [&_h4]:type-group-title",
   "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:ps-6",
   "[&_ol]:my-2 [&_ol]:list-decimal [&_ol]:ps-6",
   "[&_li]:my-0.5",
@@ -34,30 +32,15 @@ const EDITOR_PROSE_CLASS = cn(
   "[&_pre]:my-3 [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_pre]:font-mono [&_pre]:text-xs [&_pre]:whitespace-pre-wrap [&_pre]:break-words",
   "[&_code]:rounded-sm [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs",
   "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
-  "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-3",
+  "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4",
 );
 const HEADING_PRESENTATION: Readonly<Record<(typeof ADMITTED_HEADING_LEVELS)[number], { readonly label: string; readonly Icon: typeof Heading2 }>> = { 2: { label: "Heading 2", Icon: Heading2 }, 3: { label: "Heading 3", Icon: Heading3 }, 4: { label: "Heading 4", Icon: Heading4 } };
 /** The accessible name of the editing region is also the region's own name. */
-export type ProseEditorProps = {
-  readonly initialDocument: ContentDocumentJson;
-  readonly expectedRevision: number;
-  readonly direction: ContentDirection;
-  readonly label: string;
-  readonly onSave: (document: ContentDocumentJson, expectedRevision: number) => Promise<MutationOutcome>;
-  readonly onRequestMedia?: () => void;
-  readonly readOnly?: boolean;
-};
-type SaveFailureKind = "conflict" | "denied" | "invalid" | "unavailable" | "unknown" | "unreadable";
-type SaveFailure = { readonly kind: SaveFailureKind; readonly message: string; readonly details: readonly string[]; readonly operationId: string | null; readonly halts: boolean; readonly tone: "default" | "destructive"; readonly retry: "check-result" | "save-again" | null };
-type SaveState = { readonly status: "idle" } | { readonly status: "saving" } | { readonly status: "saved" } | ({ readonly status: "failed" } & SaveFailure);
-type SaveAttempt = { readonly document: ContentDocumentJson; readonly revision: number; readonly digest: string };
+export type ProseEditorProps = { readonly initialDocument: ContentDocumentJson; readonly direction: ContentDirection; readonly label: string; readonly onChange: (document: ContentDocumentJson) => void; readonly onRequestMedia?: () => void; readonly readOnly?: boolean };
 type PendingPaste = { readonly json: unknown; readonly text: string; readonly preview: string; readonly previewTruncated: boolean; readonly dropped: readonly string[]; readonly blocks: number; readonly from: number; readonly to: number };
 const toEditorContent = (nodes: readonly ContentBlockNode[]): JSONContent[] => JSON.parse(JSON.stringify(nodes)) as JSONContent[];
-const buildDocument = (editor: Editor, direction: ContentDirection, sections: readonly ContentSection[]): unknown => ({ type: "doc", profileVersion: CONTENT_PROFILE_VERSION, direction, content: editor.getJSON().content ?? [], sections });
-function advanceRevision(current: number, revision: string): number {
-  const parsed = Number(revision);
-  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : current + 1;
-}
+/** The document as the editor holds it now. The service validates it through the content profile on save, so this reports the authored document and passes no judgement on it. */
+const buildDocument = (editor: Editor, direction: ContentDirection, sections: readonly ContentSection[]): ContentDocumentJson => ({ type: "doc", profileVersion: CONTENT_PROFILE_VERSION, direction, content: (editor.getJSON().content ?? []) as readonly ContentBlockNode[], sections });
 function headingLevelOf(value: string): (typeof ADMITTED_HEADING_LEVELS)[number] | undefined {
   const parsed = Number(value);
   return ADMITTED_HEADING_LEVELS.find((level) => level === parsed);
@@ -81,54 +64,6 @@ function plainTextBlocks(text: string): JSONContent[] {
     .replace(/\r\n?/gu, "\n")
     .split("\n")
     .map((line) => (line === "" ? { type: "paragraph" } : { type: "paragraph", content: [{ type: "text", text: line }] }));
-}
-function fieldMessages(fields: FieldMessages): string[] {
-  const lines: string[] = [];
-  for (const [path, messages] of Object.entries(fields)) {
-    for (const message of messages) {
-      if (lines.length === LIST_LIMIT) {
-        lines.push("There are more problems than these; fix these first.");
-        return lines;
-      }
-      lines.push(path === ROOT_FIELD_KEY ? message : `${path}: ${message}`);
-    }
-  }
-  return lines;
-}
-type SaveFailureShape = { readonly halts: boolean; readonly tone: "default" | "destructive"; readonly retry?: SaveFailure["retry"]; readonly operationId?: string };
-const refusalOf = (kind: SaveFailureKind, message: string, details: readonly string[], shape: SaveFailureShape): SaveFailure => ({ kind, message, details, operationId: shape.operationId ?? null, halts: shape.halts, tone: shape.tone, retry: shape.retry ?? null });
-function describeFailure(outcome: ConflictOutcome | DeniedOutcome | InvalidOutcome | UnavailableOutcome | UnknownOutcome, attemptRevision: number): SaveFailure {
-  switch (outcome.outcome) {
-    case "conflict":
-      return refusalOf(
-        "conflict",
-        "A newer version is on the record, so this text was not saved over it.",
-        [
-          outcome.reason === "changed-intent" ? "This save reused an earlier attempt's identity with different text, so it was refused instead of applied twice." : `The record now stands at revision ${outcome.currentRevision}; this editor started from revision ${attemptRevision}.`,
-          "Your text is still in this editor and nothing was overwritten. Compare it with the saved version before you apply it again.",
-        ],
-        { halts: true, tone: "destructive" },
-      );
-    case "denied":
-      return refusalOf("denied", "You do not have permission to change this content.", ["Your text is still in this editor and nothing was saved."], { halts: true, tone: "destructive" });
-    case "invalid": {
-      const lines = fieldMessages(outcome.fields);
-      return refusalOf("invalid", "This text cannot be saved yet.", lines.length > 0 ? lines : ["The content did not pass the profile's checks."], { halts: false, tone: "destructive" });
-    }
-    case "unavailable":
-      return refusalOf("unavailable", `The ${outcome.source.system} source could not be read, so nothing was saved.`, [outcome.guidance, "Your text is still in this editor."], { halts: false, tone: "default", retry: "save-again" });
-    case "unknown":
-      return refusalOf("unknown", "This save may or may not have been applied, and its result is not known.", ["Your text is still in this editor. Check the result of the same attempt rather than saving it again under a new one, so a second effect can never be created."], {
-        halts: true,
-        tone: "default",
-        retry: "check-result",
-        operationId: outcome.operationId,
-      });
-  }
-}
-function unreadableFailure(issues: readonly DocumentIssue[]): SaveFailure {
-  const lines = issues.slice(0, LIST_LIMIT).map((issue) => (issue.path === "" ? issue.message : `${issue.path}: ${issue.message}`));
-  return refusalOf("unreadable", "This text cannot be saved yet.", lines.length > 0 ? lines : ["The content did not pass the profile's checks."], { halts: false, tone: "destructive" });
 }
 type ToolbarControlProps = { readonly label: string; readonly icon: ReactNode; readonly onSelect: () => void; readonly pressed?: boolean; readonly disabled?: boolean };
 function ToolbarControl({ label, icon, onSelect, pressed, disabled }: ToolbarControlProps) {
@@ -307,94 +242,18 @@ function LinkDestinationDialog({ open, href, error, onHrefChange, onApply, onCan
     </EditorDialog>
   );
 }
-/** The single editing surface for Update prose and Page section prose. */
-export function ProseEditor({ initialDocument, expectedRevision, direction, label, onSave, onRequestMedia, readOnly = false }: ProseEditorProps) {
+/**
+ * The single editing surface for Update prose and Page section prose. It edits the document and reports every change through `onChange`; the surface that owns the draft owns the autosave, its save state and its recovery, so exactly one place states whether this text is saved.
+ */
+export function ProseEditor({ initialDocument, direction, label, onChange, onRequestMedia, readOnly = false }: ProseEditorProps) {
   const labelId = useId();
-  const [saveState, setSaveState] = useState<SaveState>({ status: "idle" });
   const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null);
   const [contentIssue, setContentIssue] = useState<string | null>(null);
   const [mediaPasteNotice, setMediaPasteNotice] = useState(false);
   const [linkDraft, setLinkDraft] = useState<{ open: boolean; href: string; error: string | null }>({ open: false, href: "", error: null });
   const editorRef = useRef<Editor | null>(null);
-  const revisionRef = useRef(expectedRevision);
-  const attemptRef = useRef<SaveAttempt | null>(null);
-  const inFlightRef = useRef(false);
-  const queuedRef = useRef(false);
-  const haltedRef = useRef(false);
-  const timerRef = useRef<number | null>(null);
-  const mountedRef = useRef(true);
   const sectionsRef = useRef(initialDocument.sections);
-  const propsRef = useRef({ direction, readOnly, onSave });
-  const savedDigestRef = useRef<string | null>(null);
-  if (savedDigestRef.current === null) savedDigestRef.current = checksum(initialDocument);
-  const submit = useCallback(async (attempt: SaveAttempt): Promise<boolean> => {
-    if (inFlightRef.current) {
-      queuedRef.current = true;
-      return false;
-    }
-    inFlightRef.current = true;
-    attemptRef.current = attempt;
-    setSaveState({ status: "saving" });
-    let outcome: MutationOutcome | null = null;
-    try {
-      outcome = await propsRef.current.onSave(attempt.document, attempt.revision);
-    } catch {
-      outcome = null;
-    }
-    inFlightRef.current = false;
-    if (!mountedRef.current) return false;
-    if (outcome === null) {
-      setSaveState({ status: "failed", ...refusalOf("unavailable", "The save did not complete, and its result is not known here.", ["Your text is still in this editor.", "Saving again sends the text that is here now, against the revision it was read at."], { halts: false, tone: "default", retry: "save-again" }) });
-      return false;
-    }
-    if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") {
-      savedDigestRef.current = attempt.digest;
-      revisionRef.current = advanceRevision(attempt.revision, outcome.revision);
-      haltedRef.current = false;
-      setSaveState({ status: "saved" });
-      return true;
-    }
-    const failure = describeFailure(outcome, attempt.revision);
-    haltedRef.current = failure.halts;
-    setSaveState({ status: "failed", ...failure });
-    return false;
-  }, []);
-  const flushRef = useRef<() => Promise<void>>(async () => {});
-  const flush = useCallback(async (): Promise<void> => {
-    const current = editorRef.current;
-    if (current === null || current.isDestroyed) return;
-    const props = propsRef.current;
-    if (props.readOnly || haltedRef.current) return;
-    if (inFlightRef.current) {
-      queuedRef.current = true;
-      return;
-    }
-    const parsed = parseDocument(buildDocument(current, props.direction, sectionsRef.current));
-    if (parsed.status === "invalid") {
-      setSaveState({ status: "failed", ...unreadableFailure(parsed.issues) });
-      return;
-    }
-    const digest = checksum(parsed.document);
-    if (digest === savedDigestRef.current) {
-      setSaveState((state) => (state.status === "failed" ? state : { status: "saved" }));
-      return;
-    }
-    const saved = await submit({ document: parsed.document, revision: revisionRef.current, digest });
-    const queued = queuedRef.current;
-    queuedRef.current = false;
-    if (saved && queued) await flushRef.current();
-  }, [submit]);
-  useEffect(() => {
-    flushRef.current = flush;
-  }, [flush]);
-  const scheduleSave = useCallback(() => {
-    if (propsRef.current.readOnly || haltedRef.current) return;
-    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => {
-      timerRef.current = null;
-      void flushRef.current();
-    }, AUTOSAVE_DELAY_MS);
-  }, []);
+  const propsRef = useRef({ direction, readOnly, onChange });
   const editor = useEditor({
     immediatelyRender: false,
     editable: !readOnly,
@@ -438,10 +297,9 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
   });
   useEffect(() => {
     editorRef.current = editor;
-    propsRef.current = { direction, readOnly, onSave };
+    propsRef.current = { direction, readOnly, onChange };
     sectionsRef.current = initialDocument.sections;
-    revisionRef.current = expectedRevision;
-  }, [editor, direction, onSave, initialDocument, readOnly, expectedRevision]);
+  }, [editor, direction, onChange, initialDocument, readOnly]);
   useEffect(() => {
     if (editor === null) return;
     editor.setEditable(!readOnly);
@@ -449,30 +307,16 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
   }, [editor, readOnly]);
   useEffect(() => {
     if (editor === null) return;
-    const handleUpdate = () => scheduleSave();
-    const handleBlur = () => {
-      if (timerRef.current === null) return;
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-      void flushRef.current();
+    const handleUpdate = (): void => {
+      const props = propsRef.current;
+      if (props.readOnly) return;
+      props.onChange(buildDocument(editor, props.direction, sectionsRef.current));
     };
     editor.on("update", handleUpdate);
-    editor.on("blur", handleBlur);
     return () => {
       editor.off("update", handleUpdate);
-      editor.off("blur", handleBlur);
     };
-  }, [editor, scheduleSave]);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-  }, []);
+  }, [editor]);
   function applyPendingPaste(decision: PasteDecision) {
     const pending = pendingPaste;
     const current = editorRef.current;
@@ -512,22 +356,6 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
     current.chain().focus().extendMarkRange("link").setLink({ href }).run();
     setLinkDraft({ open: false, href: "", error: null });
   }
-  async function saveAgain() {
-    haltedRef.current = false;
-    await flushRef.current();
-  }
-  async function checkResult() {
-    const attempt = attemptRef.current;
-    haltedRef.current = false;
-    if (attempt === null) {
-      await flushRef.current();
-      return;
-    }
-    const saved = await submit(attempt);
-    if (saved) await flushRef.current();
-  }
-  const statusText = saveState.status === "saving" ? "Saving…" : saveState.status === "saved" ? "Saved" : saveState.status === "failed" ? "Not saved — the text in this editor is the only copy." : "";
-  const retryMode = saveState.status === "failed" ? saveState.retry : null;
   // The editor states the direction to the provider as well as the section, so the portalled toolbar and dialogs it opens follow the edition's direction rather than the page's.
   return (
     <DirectionProvider direction={direction}>
@@ -543,41 +371,12 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
         <div className={cn("min-h-40 min-w-0 rounded-lg border border-input bg-input/30 motion-safe:transition-colors", "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring", readOnly && "border-transparent bg-transparent")}>
           <EditorContent editor={editor} />
         </div>
-        {readOnly ? null : (
-          <output aria-live="polite" className="block min-h-4 text-xs text-muted-foreground">
-            {statusText}
-          </output>
-        )}
         {contentIssue === null ? null : (
           <NoticeAlert {...{ variant: "destructive", icon: true, title: "Some content could not be read", dismissLabel: "Dismiss the content message", onDismiss: () => setContentIssue(null) }}>
             <p>{contentIssue}</p>
             <p>The rest of the text is here and can still be edited.</p>
           </NoticeAlert>
         )}
-        {saveState.status === "failed" ? (
-          <Alert variant={saveState.tone}>
-            <CircleAlert aria-hidden="true" />
-            <AlertTitle>Not saved</AlertTitle>
-            <AlertDescription>
-              <p>{saveState.message}</p>
-              <ul className="list-disc ps-5">
-                {saveState.details.map((detail) => (
-                  <li key={detail}>{detail}</li>
-                ))}
-              </ul>
-              {saveState.operationId === null ? null : (
-                <p>
-                  Attempt <bdi className="mono-identifier break-all">{saveState.operationId}</bdi>
-                </p>
-              )}
-            </AlertDescription>
-            {retryMode === null ? null : (
-              <AlertAction>
-                <Button {...{ type: "button", variant: "outline", size: "sm", onClick: () => void (retryMode === "check-result" ? checkResult() : saveAgain()) }}>{retryMode === "check-result" ? "Check the result" : "Save again"}</Button>
-              </AlertAction>
-            )}
-          </Alert>
-        ) : null}
         {mediaPasteNotice ? <NoticeAlert {...{ title: "A file was pasted", dismissLabel: "Dismiss the paste message", onDismiss: () => setMediaPasteNotice(false) }}>{PASTE_NOTICE}</NoticeAlert> : null}
         <PasteDecisionDialog pending={pendingPaste} onChoose={applyPendingPaste} />
         <LinkDestinationDialog open={linkDraft.open} href={linkDraft.href} error={linkDraft.error} onHrefChange={(href) => setLinkDraft((draft) => ({ ...draft, href, error: null }))} onApply={applyLink} onCancel={() => setLinkDraft({ open: false, href: "", error: null })} />

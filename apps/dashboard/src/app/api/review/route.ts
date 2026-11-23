@@ -6,6 +6,7 @@ import { mutationInputSchema, mutations, reads, type MutationInput, type Mutatio
 import { sessionIdOf } from "../session-cookie";
 import { writeRoute } from "../handler";
 import { readGrammar, readRoute } from "../read";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const REFERENCE_MAX_CHARS = 160;
@@ -58,9 +59,10 @@ async function runReview(sessionId: string, input: ReviewRequest): Promise<Mutat
   }
 }
 /** The frozen candidate one edition holds under review, with the single review step and the per-variant approval the service decides. */
-export const GET = readRoute(
+const readCandidateReview = readRoute(
   readGrammar(reviewQuerySchema, (search) => ({ variantId: search.get("variantId") ?? "" })),
   (query) => reads.updates.readCandidate({ variantId: query.variantId }),
 );
 /** One review step, named by `payload.operation`: a body that is not JSON, a field this path does not admit or an unknown step is refused before anything is read or written, under the operation identity the caller sent. */
-export const POST = (request: NextRequest): Promise<Response> => writeRoute(request, reviewRequestBodySchema, (input) => runReview(sessionIdOf(request), input));
+const takeReviewStep = (request: NextRequest): Promise<Response> => writeRoute(request, reviewRequestBodySchema, (input) => runReview(sessionIdOf(request), input));
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readCandidateReview, POST: takeReviewStep });

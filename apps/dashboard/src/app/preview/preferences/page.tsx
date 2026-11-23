@@ -70,7 +70,7 @@ export default async function ReaderPreferencesPage(): Promise<ReactElement> {
   const result = await reads.audience.readPreferences();
   return (
     <PageSurface headingId="reader-preferences-heading" title={PAGE_TITLE}>
-      <p className="max-w-prose text-sm text-pretty text-muted-foreground">
+      <p className="max-w-prose type-supporting text-pretty">
         {"Four separate facts are stated here: your Off or Immediate choice for this publisher's Update email, the language you read it in, the proof that the address that membership is set for is yours, and turning those notices off. Each is changed on its own, and choosing one never decides another."}
       </p>
       <PreferencesBody result={result} />

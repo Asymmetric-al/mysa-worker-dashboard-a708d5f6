@@ -5,15 +5,15 @@ import StatusBadge, { type StatusTone } from "@/components/status-badge";
 import { cn } from "@/lib/cn";
 import type { SourceReference } from "@/lib/ids";
 import { serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
-import type { DisclosedMonthDayResolution, RepeatProfile, SeriesState } from "@/modules/time/recurrence";
+import type { DisclosedMonthDayResolution, SeriesState } from "@/modules/time/recurrence";
 import { PAUSED_NOTE, SERIES_STATE_LABELS, STOPPED_NOTE } from "../copy/missed-dates";
-import { LAST_DAY_OF_MONTH_RESOLUTION_TEMPLATE, NEXT_DATES_PREVIEW_HEADING, PLANNING_TIME_ZONE_LABEL, REPEAT_PROFILE_DESCRIPTIONS, REPEAT_PROFILE_LABELS, SINGLE_ACTIONABLE_OCCURRENCE_NOTE } from "../copy/repeat-profiles";
+import { LAST_DAY_OF_MONTH_RESOLUTION_TEMPLATE, NEXT_DATES_PREVIEW_HEADING, PLANNING_TIME_ZONE_LABEL, REPEAT_PROFILE_DESCRIPTIONS, SINGLE_ACTIONABLE_OCCURRENCE_NOTE, repeatRuleLabel, type RepeatRuleFacts } from "../copy/repeat-profiles";
 import { StatedInstant } from "./stated-instant";
 export type SeriesPreviewReading =
   | { readonly status: "preview"; readonly dates: readonly CivilDate[]; readonly actionableOccurrenceId: string; readonly actionableDueOn: CivilDate; readonly monthDayResolutions: readonly DisclosedMonthDayResolution[] }
   | { readonly status: "unavailable"; readonly source?: SourceReference; readonly retry?: NoticeRetry }
   | { readonly status: "unknown"; readonly operationId: string; readonly retry?: NoticeRetry };
-export type SeriesPreviewProps = { readonly state: SeriesState; readonly profile: RepeatProfile; readonly planningTimeZone: string; readonly reading: SeriesPreviewReading; readonly displayLocale: string; readonly className?: string };
+export type SeriesPreviewProps = { readonly state: SeriesState; readonly rule: RepeatRuleFacts; readonly planningTimeZone: string; readonly reading: SeriesPreviewReading; readonly displayLocale: string; readonly className?: string };
 const SERIES_STATE_TONES: Readonly<Record<SeriesState, StatusTone>> = { active: "positive", paused: "caution", stopped: "neutral" };
 const MAX_PREVIEWED_DATES = 3;
 const DATE_DISPLAY_FORMAT: Intl.DateTimeFormatOptions = { dateStyle: "medium" };
@@ -32,7 +32,7 @@ function resolutionSentence(resolution: DisclosedMonthDayResolution, displayLoca
   const { requestedDay, dueOn } = resolution;
   return LAST_DAY_OF_MONTH_RESOLUTION_TEMPLATE.replace("{day}", String(requestedDay)).replace("{month}", monthNameOf(dueOn, displayLocale));
 }
-export default function SeriesPreview({ state, profile, planningTimeZone, reading, displayLocale, className }: SeriesPreviewProps): ReactElement {
+export default function SeriesPreview({ state, rule, planningTimeZone, reading, displayLocale, className }: SeriesPreviewProps): ReactElement {
   const previewLabelId = useId();
   if (reading.status === "unavailable")
     return <StateNotice kind="unavailable" title="The next dates could not be read" description="This series is still here; the dates its rule produces are not shown because the data behind them could not be read, so nothing stands in for them." source={reading.source} retry={reading.retry} className={className} />;
@@ -49,10 +49,10 @@ export default function SeriesPreview({ state, profile, planningTimeZone, readin
   return (
     <div className={cn("flex flex-col gap-3", className)}>
       <div className="flex flex-wrap items-center gap-2">
-        <p className="text-sm font-medium">{REPEAT_PROFILE_LABELS[profile]}</p>
+        <p className="text-sm font-medium">{repeatRuleLabel(rule)}</p>
         <StatusBadge label={SERIES_STATE_LABELS[state]} tone={SERIES_STATE_TONES[state]} srPrefix="Series status" />
       </div>
-      <p className="text-sm text-muted-foreground">{REPEAT_PROFILE_DESCRIPTIONS[profile]}</p>
+      <p className="text-sm text-muted-foreground">{REPEAT_PROFILE_DESCRIPTIONS[rule.profile]}</p>
       {state === "paused" ? <p className="text-sm text-muted-foreground">{PAUSED_NOTE}</p> : null}
       {stopped ? (
         <p className="text-sm">{STOPPED_NOTE}</p>

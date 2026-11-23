@@ -66,7 +66,7 @@ function StateStatement({ state }: { readonly state: BanneredState }): ReactElem
   return (
     <div className="flex min-w-0 flex-col items-start gap-1">
       <Badge variant={STATE_BADGE_VARIANT[state]}>{copy.label}</Badge>
-      <p className="text-sm text-balance text-muted-foreground">{copy.description}</p>
+      <p className="type-supporting text-balance">{copy.description}</p>
     </div>
   );
 }
@@ -92,6 +92,7 @@ function ProgressFigure({ progress, locale }: { readonly progress: Progress; rea
       asOf={progress.asOf}
       table={table}
       locale={locale}
+      reference={{ value: progress.quantity, label: `Target ${quantity}` }}
     />
   );
 }
@@ -107,7 +108,7 @@ const ComparisonRegion = ({ rows }: { readonly rows: ReadonlyArray<ComparisonRow
               <p className="text-sm font-medium">{MEASURE_COPY[row.measure].label}</p>
               {reading.word === null ? null : <Badge variant="outline">{reading.word}</Badge>}
             </div>
-            <p className="text-sm">
+            <p className="type-body">
               {reading.showsFigure ? (
                 <>
                   Recorded <bdi className="tabular-figures">{String(row.recorded)}</bdi> against a target of <bdi className="tabular-figures">{String(row.target)}</bdi>.
@@ -118,13 +119,13 @@ const ComparisonRegion = ({ rows }: { readonly rows: ReadonlyArray<ComparisonRow
                 </>
               )}
             </p>
-            <p className="text-sm text-balance text-muted-foreground">{MEASURE_COPY[row.measure].hint}</p>
-            {reading.sentence === null ? null : <p className="text-sm text-balance text-muted-foreground">{reading.sentence}</p>}
+            <p className="type-supporting text-balance">{MEASURE_COPY[row.measure].hint}</p>
+            {reading.sentence === null ? null : <p className="type-supporting text-balance">{reading.sentence}</p>}
           </li>
         );
       })}
     </ul>
-    <p className="text-sm text-balance text-muted-foreground">{"These four are stated separately and are never added together, ranked or turned into a score: none of them measures effort, and no worker is compared with another."}</p>
+    <p className="type-supporting text-balance">{"These four are stated separately and are never added together, ranked or turned into a score: none of them measures effort, and no worker is compared with another."}</p>
   </Panel>
 );
 export default function TargetProgress({ progress, comparison, locale, className }: TargetProgressProps): ReactElement {

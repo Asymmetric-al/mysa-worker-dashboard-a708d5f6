@@ -2,6 +2,7 @@ import { ZodError, z } from "zod";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse } from "@/modules/data-service";
 import { sessionIdOf } from "../session-cookie";
 import { UNIDENTIFIED_ATTEMPT, claimedBodyRoute, dispatch, type ClaimedWrite } from "../handler";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type SessionRequest = Parameters<typeof sessionIdOf>[0];
@@ -42,8 +43,9 @@ const WITHDRAW_WRITES = {
   withdrawLocale: (raw, { operationId, sessionId }) => dispatch(withdrawLocaleBodySchema, raw, operationId, "operation", (input) => mutations.updates.withdrawLocale(sessionId, input)),
 } satisfies Readonly<Record<WithdrawOperation, ClaimedWrite>>;
 /** Withdraws every released edition of one Update, or exactly one language edition of it, in the ministry this session is acting in: `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function POST(request: SessionRequest): Promise<Response> {
+async function withdrawUpdate(request: SessionRequest): Promise<Response> {
   const read = await boundedBodyOf(request);
   if (!read.read) return unreadableBody(read.message);
   return claimedBodyRoute(request, read.body, discriminantSchema, (claim) => claim.payload.operation, WITHDRAW_WRITES);
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: withdrawUpdate });

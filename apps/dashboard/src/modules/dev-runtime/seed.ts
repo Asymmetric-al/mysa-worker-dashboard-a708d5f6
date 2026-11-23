@@ -93,7 +93,7 @@ const HARBOUR_YOUTH: AdmittedMembership = { organizationId: ORGANIZATION_HARBOUR
 const HARBOUR_STUDENTS: AdmittedMembership = { organizationId: ORGANIZATION_HARBOUR, ministryId: MINISTRY_STUDENTS, supportSubjectId: SUPPORT_SUBJECT_STUDENTS, organizationLabel: "Harbour Community Church", ministryLabel: "Students Ministry" };
 const HARBOUR_BOTH: readonly AdmittedMembership[] = [HARBOUR_YOUTH, HARBOUR_STUDENTS];
 const RIVERBEND_OUTREACH: AdmittedMembership = { organizationId: ORGANIZATION_RIVERBEND, ministryId: MINISTRY_OUTREACH, supportSubjectId: SUPPORT_SUBJECT_OUTREACH, organizationLabel: "Riverbend Chapel", ministryLabel: "Outreach" };
-export type SeededWorkspace = "new-worker" | "established-worker" | "established-worker-partial-release" | "students-ministry" | "second-worker" | "coach" | "subscriber" | "reader-approved-supporter" | "empty";
+export type SeededWorkspace = "new-worker" | "established-worker" | "established-worker-partial-release" | "students-ministry" | "second-worker" | "subscriber" | "reader-approved-supporter" | "empty";
 export type SeededContext = { readonly organizationId: OrganizationId; readonly ministryId: MinistryId; readonly supportSubjectId: SupportSubjectId };
 export type PersonaId = "new-worker" | "established-worker" | "second-worker" | "fundraiser" | "coach" | "reviewer" | "reader-public" | "reader-approved-supporter" | "reader-unauthorized" | "subscriber";
 const PERSONA_ROSTER_ORDER: readonly PersonaId[] = Object.freeze(["new-worker", "established-worker", "second-worker", "fundraiser", "reviewer", "coach", "reader-public", "reader-approved-supporter", "reader-unauthorized", "subscriber"]);
@@ -112,11 +112,13 @@ export interface SeededSession {
   readonly scenarioId: ScenarioId;
   readonly selectedContext: SeededContext | null;
   readonly workspace: SeededWorkspace;
+  /** The session whose documents hold this seat's coaching records, or null when they are its own; a coach seat names the worker whose shared records it reads. */
+  readonly coachingRecordsSessionId: string | null;
   readonly documents?: SeededSessionDocuments;
 }
 export type SeededSessionDocuments = { readonly state: SessionStateDocument; readonly operations: OperationLedgerDocument; readonly meta: SessionMetaDocument };
 export type SeededSessionWithDocuments = SeededSession & { readonly documents: SeededSessionDocuments };
-type SeededSessionOverrides = Pick<SeededSession, "sessionState" | "scenarioId" | "selectedContext" | "workspace">;
+type SeededSessionOverrides = Pick<SeededSession, "sessionState" | "scenarioId" | "selectedContext" | "workspace" | "coachingRecordsSessionId">;
 const buildSession = (sessionId: string, persona: PersonaId, label: string, description: string, principalId: PrincipalId, admittedMemberships: readonly AdmittedMembership[], overrides: Partial<SeededSessionOverrides> = {}): SeededSession => ({
   sessionId,
   persona,
@@ -128,6 +130,7 @@ const buildSession = (sessionId: string, persona: PersonaId, label: string, desc
   scenarioId: DEFAULT_SCENARIO_ID,
   selectedContext: null,
   workspace: "empty",
+  coachingRecordsSessionId: null,
   ...overrides,
 });
 const establishedSession = (sessionId: string, label: string, description: string, overrides: Partial<SeededSessionOverrides> = {}): SeededSession =>
@@ -138,7 +141,7 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = deepFreeze([
   buildSession("established-worker-students", "established-worker", "Established worker — students ministry", "The same worker with the students ministry selected: an available support source carrying no goal.", PRINCIPAL_ESTABLISHED, HARBOUR_BOTH, { selectedContext: HARBOUR_STUDENTS, workspace: "students-ministry" }),
   buildSession("second-worker", "second-worker", "Second worker", "Another ministry entirely: the isolation proof, holding none of the first scope's records.", PRINCIPAL_SECOND, [RIVERBEND_OUTREACH], { selectedContext: RIVERBEND_OUTREACH, workspace: "second-worker" }),
   buildSession("deputized-fundraiser", "fundraiser", "Deputized fundraiser", "Acting inside one admitted ministry, among the shared records and their own private work.", PRINCIPAL_DEPUTIZED, [HARBOUR_YOUTH], { selectedContext: HARBOUR_YOUTH, workspace: "established-worker" }),
-  buildSession("coach", "coach", "Coach", "Read-only access to exactly the modules and periods the worker has shared.", PRINCIPAL_COACH, [], { workspace: "coach" }),
+  buildSession("coach", "coach", "Coach", "Read-only access to exactly the modules and periods the worker has shared.", PRINCIPAL_COACH, [], { workspace: "empty", coachingRecordsSessionId: "established-worker" }),
   buildSession("content-reviewer", "reviewer", "Content reviewer", "Approves frozen content candidates, and only candidates.", PRINCIPAL_REVIEWER, [HARBOUR_YOUTH], { selectedContext: HARBOUR_YOUTH, workspace: "established-worker" }),
   // A reader is admitted by the persona it previews, not by a ministry membership, so its session carries no admitted membership and has chosen no context; the one exception is the record the reader itself owns — the approved-supporter reader's membership, which its own preference controls write and which the publisher's world also holds as the copy a receiving read reaches across.
   buildSession("reader-public", "reader-public", "Public reader", "A public reader in the receiving preview, admitted to the public edition only.", PRINCIPAL_READER_PUBLIC, [], {}),
@@ -151,7 +154,11 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = deepFreeze([
   buildSession("session-expired", "established-worker", "Session state — expired", "An expired session, offered a way back in rather than a blank page.", PRINCIPAL_EXPIRED, [HARBOUR_YOUTH], { sessionState: "expired" }),
   establishedSession("established-worker-media-unavailable", "Established worker — media unavailable", "One placement's source is down: the poster and text alternative stay, the prose is intact, retry is offered.", { scenarioId: "media-unavailable" }),
   establishedSession("established-worker-coaching-unavailable", "Established worker — coaching module unavailable", "One admitted coaching module's source is down, and the other admitted modules stay usable.", { scenarioId: "coaching-module-unavailable" }),
-  buildSession("coach-coaching-module-unavailable", "coach", "Coach — coaching module unavailable", "One admitted coaching module's source is down, and the other admitted modules stay usable.", PRINCIPAL_COACH, [], { scenarioId: "coaching-module-unavailable", workspace: "coach" }),
+  buildSession("coach-coaching-module-unavailable", "coach", "Coach — coaching module unavailable", "One admitted coaching module's source is down, and the other admitted modules stay usable.", PRINCIPAL_COACH, [], {
+    scenarioId: "coaching-module-unavailable",
+    workspace: "empty",
+    coachingRecordsSessionId: "established-worker-coaching-unavailable",
+  }),
   establishedSession("established-worker-continuation-on", "Established worker — continuation on", "Worker continuation is on, so an ordinarily expired referral cycle offers its single Continue action.", { scenarioId: "continuation-on" }),
   establishedSession("established-worker-continuation-off", "Established worker — continuation off", "Worker continuation is explicitly off, so the same expired cycle offers no Continue action at all.", { scenarioId: "continuation-off" }),
   establishedSession("established-worker-partial-release", "Established worker — partial release failure", "One variant of a submission released while its sibling failed, and the sibling's prior-good head was kept.", { scenarioId: "partial-release-failure", workspace: "established-worker-partial-release" }),
@@ -752,7 +759,6 @@ function studentsMinistryWorkspace(session: SeededSession): SessionStateDocument
   const tasks: readonly TaskRecord[] = [buildTask("task-students-term-plan", "Plan the students' term programme", session.principalId, { category: "Planning", dueOn: "2026-11-27", partnerId: "partner-students-holy-trinity" })];
   return stateDocument(session, { partners, gifts, supportProjection, tasks });
 }
-const coachWorkspace = (session: SeededSession): SessionStateDocument => stateDocument(session, { ...coachingShare(), supportProjection: harbourSupportProjection(), gifts: harbourGifts(), commitments: harbourCommitments() });
 function subscriberWorkspace(session: SeededSession): SessionStateDocument {
   const memberships: readonly MembershipRecord[] = [
     buildMembership(session.principalId, "subscriber@example.org", "awaiting-proof", { displayName: "Subscriber", acceptedAt: "2026-11-16T12:00:00Z", confirmationDeadline: membershipConfirmationDeadline(Temporal.Instant.from("2026-11-16T12:00:00Z")), languagePreference: "en" }),
@@ -769,7 +775,6 @@ const WORKSPACE_BUILDERS: Readonly<Record<SeededWorkspace, (session: SeededSessi
   "established-worker-partial-release": partialReleaseWorkspace,
   "students-ministry": studentsMinistryWorkspace,
   "second-worker": secondWorkerWorkspace,
-  coach: coachWorkspace,
   subscriber: subscriberWorkspace,
   "reader-approved-supporter": approvedSupporterWorkspace,
   empty: (session) => stateDocument(session, {}),
@@ -787,6 +792,7 @@ function buildSessionDocuments(session: SeededSession): SeededSessionDocuments {
       capabilities: CAPABILITIES_BY_PERSONA[session.persona],
       personas: seededPersonaRoster(),
       selectedContext: selected === null ? null : { organizationId: selected.organizationId, ministryId: selected.ministryId, supportSubjectId: selected.supportSubjectId },
+      coachingRecordsSessionId: session.coachingRecordsSessionId,
     }),
     state: seedWorkspace(session),
     operations: EMPTY_OPERATION_LEDGER,

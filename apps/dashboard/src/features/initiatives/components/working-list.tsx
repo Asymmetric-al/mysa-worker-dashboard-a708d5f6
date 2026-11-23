@@ -35,6 +35,8 @@ const SECTION_HEADING_TAG = { 2: "h2", 3: "h3" } as const;
 const GROUP_HEADING_TAG = { 2: "h3", 3: "h4" } as const;
 const GROUP_HEADING_LEVEL = { 2: 3, 3: 4 } as const;
 type WorkingListHeadingLevel = keyof typeof SECTION_HEADING_TAG;
+const SECTION_HEADING_SCALE: Readonly<Record<WorkingListHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title" };
+const GROUP_HEADING_SCALE: Readonly<Record<WorkingListHeadingLevel, string>> = { 2: "type-subsection-title", 3: "type-group-title" };
 const NO_SORT: RecordListQueryState["sort"] = [];
 const NO_COLUMNS_HIDDEN: RecordListQueryState["columnVisibility"] = {};
 const WORKING_LIST_COPY = {
@@ -421,7 +423,7 @@ function ClosureControl({ initiativeId, envelope, closeAction, reopenAction, lev
   const offersReopen = reopenAction?.available === true;
   return (
     <section aria-labelledby={headingId} data-slot="working-list-closure" className="flex min-w-0 flex-col gap-3">
-      <Heading id={headingId} className="font-heading text-base font-medium text-pretty">
+      <Heading id={headingId} className={cn(GROUP_HEADING_SCALE[level], "text-pretty")}>
         {WORKING_LIST_COPY.closureHeading}
       </Heading>
       <div className="flex min-w-0 flex-col gap-1 text-sm text-pretty text-muted-foreground">
@@ -453,10 +455,11 @@ interface WorkingListBodyProps {
   readonly envelope: ReadEnvelope<InitiativeDetail>;
   readonly candidates: readonly MemberCandidate[] | MemberCandidates;
   readonly onChanged: ((outcome: MutationOutcome) => void) | undefined;
+  readonly onWindowChange: ((change: InitiativeReadWindow) => void) | undefined;
   readonly onCheckResult: () => void;
   readonly level: WorkingListHeadingLevel;
 }
-function WorkingListBody({ initiativeId, envelope, candidates, onChanged, onCheckResult, level }: WorkingListBodyProps): ReactElement {
+function WorkingListBody({ initiativeId, envelope, candidates, onChanged, onWindowChange, onCheckResult, level }: WorkingListBodyProps): ReactElement {
   const { data, valueStates, scope, revision, actions } = envelope;
   const [review, setReview] = useState<MemberReview | null>(null);
   const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(NO_COLUMNS_HIDDEN);
@@ -480,6 +483,8 @@ function WorkingListBody({ initiativeId, envelope, candidates, onChanged, onChec
   const listLabel = `${INITIATIVE_COPY.membersHeading} for ${data.initiative.name}, ${WORKING_LIST_COPY.listSuffix}`;
   function handleQueryStateChange(next: RecordListQueryState): void {
     if (next.columnVisibility !== columnVisibility) setColumnVisibility(next.columnVisibility);
+    // The read's own `page`/`pageSize` are what a pager change states: this list is one page of its whole result, so the window the read is asked under moves rather than a slice of the answer held here.
+    if (next.page !== data.workingList.page || next.pageSize !== data.workingList.pageSize) onWindowChange?.({ page: next.page, pageSize: next.pageSize });
   }
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -528,11 +533,12 @@ export type WorkingListProps = {
   readonly candidates: readonly MemberCandidate[] | MemberCandidates;
   readonly onChanged?: (outcome: MutationOutcome) => void;
   readonly readWindow?: InitiativeReadWindow;
+  readonly onWindowChange?: (change: InitiativeReadWindow) => void;
   readonly headingLevel?: WorkingListHeadingLevel;
   readonly className?: string;
 };
 /** The reviewed working list of one initiative. */
-export default function WorkingList({ initiativeId, envelope, candidates, onChanged, readWindow, headingLevel = 3, className }: WorkingListProps): ReactElement {
+export default function WorkingList({ initiativeId, envelope, candidates, onChanged, readWindow, onWindowChange, headingLevel = 3, className }: WorkingListProps): ReactElement {
   const headingId = useId();
   // The composing detail read's window travels here so this section re-reads the same record under the same window — one cache entry for one read — rather than a second entry of the same initiative whose own lists sit on a different page.
   const query = useInitiative<InitiativeDetail>(initiativeId, envelope, readWindow);
@@ -544,11 +550,11 @@ export default function WorkingList({ initiativeId, envelope, candidates, onChan
   const Heading = SECTION_HEADING_TAG[headingLevel];
   return (
     <section aria-labelledby={headingId} data-slot="working-list" className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
-      <Heading id={headingId} className="font-heading text-lg font-medium text-pretty">
+      <Heading id={headingId} className={cn(SECTION_HEADING_SCALE[headingLevel], "text-pretty")}>
         {INITIATIVE_COPY.membersHeading}
       </Heading>
       {refusal === undefined ? (
-        <WorkingListBody initiativeId={initiativeId} envelope={current} candidates={candidates} onChanged={onChanged} onCheckResult={checkResult} level={headingLevel} />
+        <WorkingListBody initiativeId={initiativeId} envelope={current} candidates={candidates} onChanged={onChanged} onWindowChange={onWindowChange} onCheckResult={checkResult} level={headingLevel} />
       ) : refusal.kind === "denied" ? (
         <StateNotice kind="denied" headingLevel={headingLevel} title={STATE_NOTICE_COPY.denied.title} description={STATE_NOTICE_COPY.denied.body} reasonCode={refusal.denied.reasonCode} />
       ) : refusal.kind === "refused" ? (

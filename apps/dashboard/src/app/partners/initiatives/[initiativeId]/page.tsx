@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import type { NoticeAction } from "@/components/state-notice";
 import InitiativeDetail, { type InitiativeDetailProps } from "@/features/initiatives/components/initiative-detail";
@@ -6,6 +7,7 @@ import { isSharedRecord } from "@/features/partners/record-class";
 import { reads } from "@/modules/data-service";
 import { ReadNotices, type ReadNoticeCopy } from "../../../page-frame";
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Initiative" };
 const INITIATIVES_ROUTE = "/partners/initiatives";
 const NOTICE_HEADING_LEVEL = 1;
 const BACK_TO_LIST: NoticeAction = { label: INITIATIVE_COPY.listHeading, href: INITIATIVES_ROUTE };

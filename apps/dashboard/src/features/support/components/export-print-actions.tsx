@@ -4,7 +4,7 @@ import { Fragment, useCallback, useId, type ReactElement } from "react";
 import { refusalSummary } from "@/components/form-field";
 import StateNotice from "@/components/state-notice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import SectionCard from "@/components/section-card";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
@@ -83,7 +83,7 @@ function FileReceipt(props: FileReceiptProps): ReactElement {
             <p className="text-pretty">{ELSEWHERE_STATEMENT}</p>
             <p className="text-pretty">{ELSEWHERE_RECOVERY}</p>
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" size="sm" className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal" onClick={props.onReexport}>
+              <Button type="button" variant="outline" size="sm" className={BUTTON_WRAP_CLASS} onClick={props.onReexport}>
                 {RETRY_LABEL}
               </Button>
             </div>

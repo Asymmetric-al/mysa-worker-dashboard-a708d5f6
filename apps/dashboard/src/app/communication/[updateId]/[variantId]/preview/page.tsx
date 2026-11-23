@@ -1,7 +1,9 @@
+import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import StateNotice from "@/components/state-notice";
 import { PreviewFrame } from "@/features/updates/components/preview-frame";
 import { reads, type DenialReason } from "@/modules/data-service";
+export const metadata: Metadata = { title: "Preview" };
 type OverviewResult = Awaited<ReturnType<typeof reads.updates.readVariantOverview>>;
 type Editions = Extract<OverviewResult, { kind: "envelope" }>["envelope"]["data"]["editions"];
 type Edition = Editions[number];

@@ -4,7 +4,7 @@ import RenderedContent from "@/components/rendered-content";
 import SimulationLabel from "@/components/simulation-label";
 import { StateNotice, type NoticeHeadingLevel, type NoticeRetry } from "@/components/state-notice";
 import { NOTICE_HEADING_TAG, nestedNoticeHeadingLevel } from "@/lib/notice-heading";
-import StatusBadge, { type StatusTone } from "@/components/status-badge";
+import StatusBadge from "@/components/status-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -52,8 +52,10 @@ export type PreviewFrameProps = {
   readonly className?: string;
 };
 const PREVIEW_HEADING = "Preview";
-const HEADING_CLASS = "font-heading text-lg font-medium text-pretty";
-const NOTE_CLASS = "min-w-0 text-sm text-muted-foreground text-pretty wrap-anywhere";
+/** The one type scale's heading utility for each level, so this surface's headings take the measure of the level they are given rather than one fixed size. */
+const HEADING_SCALE: Readonly<Record<NoticeHeadingLevel, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
+const HEADING_WRAP_CLASS = "text-pretty";
+const NOTE_CLASS = "min-w-0 type-supporting text-pretty wrap-anywhere";
 const IDENTITY_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-muted-foreground";
 const IDENTITY_PAIR_CLASS = "flex min-w-0 items-baseline gap-1.5 wrap-anywhere";
 const FIELD_LABELS = { revision: "Revision", language: "Language" } as const;
@@ -62,7 +64,6 @@ const AUDIENCE_PREFIX = "Audience";
 const RETRY_LABEL = "Try reading this preview again";
 const MEDIA_RETRY_LABEL = "Try loading this media again";
 const DIRECTION_WORDS: Readonly<Record<PreviewDirection, string>> = { ltr: "left to right", rtl: "right to left" };
-const AUDIENCE_TONES: Readonly<Record<keyof typeof AUDIENCE_LABELS, StatusTone>> = { public: "neutral", "approved-supporter": "info" };
 const EXACT_REVISION_NOTE = "This is the exact revision this preview acknowledged: the markup below is the one renderer's output for it. A later draft edit cannot change what is shown here, and a preview never follows the edition forward to a newer revision.";
 const LANGUAGE_NOTE = "A preview shows an edition in the language it is written in and never re-renders it in another, so no fallback is disclosed or concealed here.";
 const INERT_STATEMENT =
@@ -77,11 +78,11 @@ const TRANSCRIPT_CONTEXT = "for";
 const TRANSCRIPT_NOTE = "Each transcript is the video's own admitted rendition, requested from the address this read named, and that request is authorised again when it is made.";
 const TRANSCRIPT_WITHOUT_NAME = "the video in this revision";
 const PREVIEW_PROSE = cn(
-  "min-w-0 text-sm leading-relaxed break-words",
+  "min-w-0 type-body break-words",
   "[&_p]:mb-3 [&_p:last-child]:mb-0",
-  "[&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:font-heading [&_h2]:text-lg [&_h2]:font-medium [&_h2:first-child]:mt-0",
-  "[&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:font-heading [&_h3]:text-base [&_h3]:font-medium",
-  "[&_h4]:mt-4 [&_h4]:mb-2 [&_h4]:font-heading [&_h4]:text-sm [&_h4]:font-medium",
+  "[&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:type-section-title [&_h2:first-child]:mt-0",
+  "[&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:type-subsection-title",
+  "[&_h4]:mt-4 [&_h4]:mb-2 [&_h4]:type-group-title",
   "[&_ul]:mb-3 [&_ul]:list-disc [&_ul]:ps-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:ps-5 [&_li]:mb-1",
   "[&_blockquote]:my-3 [&_blockquote]:border-s-2 [&_blockquote]:border-border [&_blockquote]:ps-3",
   "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4",
@@ -95,9 +96,9 @@ const PREVIEW_PROSE = cn(
   "[&_video]:h-auto [&_video]:w-full [&_video]:max-w-full [&_video]:rounded-lg",
   "[&_figcaption]:text-xs [&_figcaption]:text-muted-foreground",
 );
-function Heading({ level, className, children }: { readonly level: NoticeHeadingLevel; readonly className: string; readonly children: ReactNode }): ReactElement {
+function Heading({ level, className, children }: { readonly level: NoticeHeadingLevel; readonly className?: string; readonly children: ReactNode }): ReactElement {
   const Tag = NOTICE_HEADING_TAG[level];
-  return <Tag className={className}>{children}</Tag>;
+  return <Tag className={cn(HEADING_SCALE[level], className)}>{children}</Tag>;
 }
 const IdentityPair = ({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement => (
   <div className={IDENTITY_PAIR_CLASS}>
@@ -153,19 +154,19 @@ function MediaNotes({ preview, headingLevel, onRetry }: MediaNotesProps): ReactE
   if (transcripts.length === 0 && unready.length === 0) return null;
   return (
     <section aria-label={MEDIA_HEADING} data-slot="preview-media" className="flex min-w-0 flex-col gap-3">
-      <Heading {...{ level: headingLevel, className: "text-sm font-medium" }}>{MEDIA_HEADING}</Heading>
+      <Heading {...{ level: headingLevel }}>{MEDIA_HEADING}</Heading>
       {transcripts.length === 0 ? null : (
         <div className="flex min-w-0 flex-col gap-1">
           <ul className="flex min-w-0 list-none flex-col gap-1 p-0 text-sm">
             {transcripts.map((transcript) => (
               <li key={transcript.key} className="min-w-0 wrap-anywhere">
-                <a href={transcript.href} className="text-primary underline underline-offset-4">
+                <a href={transcript.href} className="inline-flex min-h-6 items-center text-primary inline-link">
                   {TRANSCRIPT_LINK_LABEL} {TRANSCRIPT_CONTEXT} <bdi>{transcript.label}</bdi>
                 </a>
               </li>
             ))}
           </ul>
-          <p className={cn(NOTE_CLASS, "text-xs")}>{TRANSCRIPT_NOTE}</p>
+          <p className="min-w-0 text-xs text-muted-foreground text-pretty wrap-anywhere">{TRANSCRIPT_NOTE}</p>
         </div>
       )}
       {unready.map((placement) => (
@@ -212,7 +213,7 @@ function AuthorisedPreview({ preview, requestedLocale, headingLevel, locales, on
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <StatusBadge label={audience.label} tone={AUDIENCE_TONES[preview.audience]} srPrefix={AUDIENCE_PREFIX} />
+        <StatusBadge label={audience.label} tone={audience.tone} srPrefix={AUDIENCE_PREFIX} />
         {kindLabel === undefined ? null : <Badge variant="outline">{kindLabel}</Badge>}
       </div>
       <p className={NOTE_CLASS}>{audience.whoReceives}</p>
@@ -318,7 +319,7 @@ export function PreviewFrame({ preview, requestedLocale, locales, onRequestLocal
       data-preview-direction={preview.status === "authorised" ? preview.locale.direction : undefined}
       className={cn("flex min-w-0 flex-col gap-4 text-start", className)}
     >
-      <Heading {...{ level: headingLevel, className: HEADING_CLASS }}>{PREVIEW_HEADING}</Heading>
+      <Heading {...{ level: headingLevel, className: HEADING_WRAP_CLASS }}>{PREVIEW_HEADING}</Heading>
       <PreviewBody preview={preview} headingLevel={nestedNoticeHeadingLevel(headingLevel)} requestedLocale={requestedLocale} locales={locales} onRequestLocale={onRequestLocale} onRetry={onRetry} />
     </section>
   );

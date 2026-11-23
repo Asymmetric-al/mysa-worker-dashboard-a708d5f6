@@ -6,7 +6,7 @@ import { fieldErrorsFromInvalid, FormField, type FieldErrorLookup } from "@/comp
 import { OperationResult, PerItemResults, type PerItemColumn } from "@/components/operation-result";
 import StateNotice from "@/components/state-notice";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,9 +38,10 @@ type TagSubmit = (input: Omit<MutationInput<SetTagPayload>, "operationId">) => P
 type FavouriteSubmit = (input: Omit<MutationInput<SetFavouritePayload>, "operationId">) => Promise<MutationOutcome>;
 type RecordSubmits = { readonly setTag: TagSubmit; readonly setFavourite: FavouriteSubmit };
 const PANEL_CLASS = "flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3";
-const SENTENCE_CLASS = "text-sm text-pretty text-muted-foreground";
+const SENTENCE_CLASS = "type-supporting text-pretty";
+/** The one type scale's heading utility per level, so this surface states the level it lands at with the same measure on every route. */
+const HEADING_SCALE: Readonly<Record<ReviewHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const CONTROL_ROW_CLASS = "flex min-w-0 flex-wrap items-center gap-2";
-const TARGET_MIN_CLASS = "h-auto max-h-none min-h-6 max-w-full whitespace-normal";
 const ROW_COLUMNS: readonly PerItemColumn[] = [{ key: "revision", label: "Revision" }];
 const recordsNoun = (count: number): string => (count === 1 ? "record" : "records");
 const ROW_ALREADY_APPLIED = "This record's change was already applied under the same request, so nothing was applied twice and its revision did not advance.";
@@ -127,10 +128,10 @@ function TagEntry({ text, onTextChange, pending, error, suggestions, onApply }: 
         {(field) => (
           <div className={CONTROL_ROW_CLASS}>
             <Input id={field.id} value={text} autoComplete="off" aria-describedby={field.describedBy} aria-invalid={field.invalid ? true : undefined} onChange={(event) => onTextChange(event.target.value)} className="min-w-0 flex-1 basis-40" />
-            <Button type="button" className={TARGET_MIN_CLASS} disabled={pending || typed === ""} onClick={() => onApply(typed, true)}>
+            <Button type="button" className={BUTTON_WRAP_CLASS} disabled={pending || typed === ""} onClick={() => onApply(typed, true)}>
               {FILING_COPY.addLabel}
             </Button>
-            <Button type="button" variant="outline" className={TARGET_MIN_CLASS} disabled={pending || typed === ""} onClick={() => onApply(typed, false)}>
+            <Button type="button" variant="outline" className={BUTTON_WRAP_CLASS} disabled={pending || typed === ""} onClick={() => onApply(typed, false)}>
               {FILING_COPY.removeLabel}
             </Button>
           </div>
@@ -144,7 +145,7 @@ function SelectedRecordList({ records }: { readonly records: readonly PartnerFil
   const headingId = useId();
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <p id={headingId} className="text-sm font-medium">
+      <p id={headingId} className="type-group-title">
         {"Selected records"}: <bdi className="tabular-figures font-medium text-foreground">{String(records.length)}</bdi> {recordsNoun(records.length)}
       </p>
       <ul aria-labelledby={headingId} className="flex min-w-0 flex-col gap-1 text-sm">
@@ -189,7 +190,7 @@ function SingleRecordFiling({ scope, record, tagSuggestions, onSettled, onCheckR
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <section aria-labelledby={tagsHeadingId} data-slot="record-tags" className={PANEL_CLASS}>
-        <p id={tagsHeadingId} className="text-sm font-medium">
+        <p id={tagsHeadingId} className="type-group-title">
           Tags on this record
         </p>
         {currentTags.length === 0 ? (
@@ -201,7 +202,7 @@ function SingleRecordFiling({ scope, record, tagSuggestions, onSettled, onCheckR
                 <Badge variant="secondary">
                   <bdi className="min-w-0 wrap-anywhere">{held}</bdi>
                 </Badge>
-                <Button type="button" variant="ghost" size="xs" className={TARGET_MIN_CLASS} disabled={tagAttempt.pending} aria-label={FILING_COPY.removeTagFromRecord(held)} onClick={() => fileTag(held, false)}>
+                <Button type="button" variant="ghost" size="xs" className={BUTTON_WRAP_CLASS} disabled={tagAttempt.pending} aria-label={FILING_COPY.removeTagFromRecord(held)} onClick={() => fileTag(held, false)}>
                   {FILING_COPY.removeLabel}
                 </Button>
               </li>
@@ -221,7 +222,7 @@ function SingleRecordFiling({ scope, record, tagSuggestions, onSettled, onCheckR
             aria-labelledby={favouriteLabelId}
             aria-describedby={favouriteHintId}
           />
-          <span id={favouriteLabelId} className="text-sm font-medium">
+          <span id={favouriteLabelId} className="type-group-title">
             {FILING_COPY.favouriteLabel}
           </span>
         </Label>
@@ -339,12 +340,12 @@ function SelectionFiling({ scope, records, tagSuggestions, onSettled, onCheckRes
       </section>
       <Separator />
       <section data-slot="selection-favourite" className={PANEL_CLASS}>
-        <p className="text-sm font-medium">{FILING_COPY.favouriteLabel}</p>
+        <p className="type-group-title">{FILING_COPY.favouriteLabel}</p>
         <div className={CONTROL_ROW_CLASS}>
-          <Button type="button" variant="outline" className={TARGET_MIN_CLASS} disabled={pending} onClick={() => author({ kind: "favourite", favourite: true })}>
+          <Button type="button" variant="outline" className={BUTTON_WRAP_CLASS} disabled={pending} onClick={() => author({ kind: "favourite", favourite: true })}>
             {FILING_COPY.favouriteOnLabel}
           </Button>
-          <Button type="button" variant="outline" className={TARGET_MIN_CLASS} disabled={pending} onClick={() => author({ kind: "favourite", favourite: false })}>
+          <Button type="button" variant="outline" className={BUTTON_WRAP_CLASS} disabled={pending} onClick={() => author({ kind: "favourite", favourite: false })}>
             {FILING_COPY.favouriteOffLabel}
           </Button>
         </div>
@@ -434,7 +435,7 @@ export function TagAndFavouriteActions({ scope, target, tagSuggestions = [], onS
   return (
     <section aria-labelledby={headingId} data-slot="tag-and-favourite-actions" data-mode={onlyRecord === undefined ? "selection" : "record"} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-1">
-        <Heading id={headingId} className="text-sm font-medium">
+        <Heading id={headingId} className={HEADING_SCALE[headingLevel]}>
           Tags and favourite
         </Heading>
         <p className={SENTENCE_CLASS}>A tag is your own filing label on this record. It is not an audience, a consent, a stage or a segment, and filing the record changes nothing else about it: no notice is sent, no gift is recorded and no task is created.</p>

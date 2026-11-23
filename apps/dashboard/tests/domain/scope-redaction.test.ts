@@ -60,6 +60,10 @@ beforeAll(async () => {
     seededWorlds.set(fixture.sessionId, row.documents);
     await resetSession(fixture.sessionId, row.documents);
   }
+  // A coach is admitted to the worker's shared coaching records without becoming the worker, so its seat names this file's own worker session and reads that world's record: the coach's own document holds no coaching family at all, which is what makes the read below proof rather than a copy.
+  const seatedCoach = { ...worldOf(COACH), meta: { ...worldOf(COACH).meta, coachingRecordsSessionId: WORKER } };
+  seededWorlds.set(COACH, seatedCoach);
+  await resetSession(COACH, seatedCoach);
   // The outage fixture: the commit marker exists and the rest of the document set does not, which is the state a store that lost a write is genuinely in, so the resolver and every read answer with the outage rather than with an empty result or a denial.
   const outage = required(bySeedId.get(DEFAULT_SESSION_ID), `seeded session "${DEFAULT_SESSION_ID}"`);
   seededWorlds.set(OUTAGE_SESSION, outage.documents);
@@ -263,10 +267,10 @@ describe("a private record stays private", () => {
     }
   });
   it("shows a coach no private label, no private note and no financial module it was not granted", async () => {
-    const activeGrant = stateOf(COACH).coachingGrants.find((record) => record.state === "active");
+    const activeGrant = stateOf(WORKER).coachingGrants.find((record) => record.state === "active"); // The record the coach addresses is the worker's own, so the grant and the private labels the coach must not disclose are read from that world.
     const grant = required(activeGrant, "active coaching grant");
     const subject = expectEnvelope(await reads.coach.readCoachSubject({ grantId: grant.grantId }, sourceOf(COACH)), "the coach's subject read");
-    const labels = stateOf(COACH)
+    const labels = stateOf(WORKER)
       .coachingTargets.map((target) => target.privateLabel)
       .filter((label) => label.length > 0);
     expect(labels.length).toBeGreaterThan(0);

@@ -1,6 +1,7 @@
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { isDevelopment } from "@/lib/guards";
+import { logger } from "@/lib/logger";
 import { redactDenial } from "@/lib/redaction";
 import { SESSION_COOKIE, readSessionId } from "@/lib/session-cookie";
 import { isExcludedSourceMembership, type AudiencePurpose, type MembershipRecord } from "@/modules/audience/membership";
@@ -18,7 +19,11 @@ export interface ResolvedSession {
   readonly capabilities: readonly string[];
   readonly scenarioId: string;
   readonly clockOffsetMs: number;
+  /** The session whose documents hold this seat's coaching records, or null when they are its own. */
+  readonly coachingRecordsSessionId: string | null;
 }
+/** A seat's coaching records may live in the world it is seated in, so the session to address is that world when one is named and the seat itself otherwise. */
+export const coachingRecordsSessionIdOf = (session: ResolvedSession): string => session.coachingRecordsSessionId ?? session.sessionId;
 export type SessionResolution = { readonly ok: true; readonly session: ResolvedSession } | { readonly ok: false; readonly refusal: SessionRefusal };
 export type SessionRefusal = { readonly kind: "denied"; readonly denied: DeniedOutcome } | { readonly kind: "unavailable"; readonly unavailable: UnavailableOutcome };
 export type SessionSource = { readonly sessionId: string };
@@ -28,6 +33,10 @@ export const sessionDenial = (reason: DenialReason): SessionRefusal => ({ kind: 
 const refusedSession = (reason: DenialReason): SessionResolution => ({ ok: false, refusal: sessionDenial(reason) });
 export const readResultOfRefusal = <T>(refusal: SessionRefusal): ReadResult<T> => (refusal.kind === "denied" ? { kind: "denied", denied: refusal.denied } : { kind: "unavailable", unavailable: refusal.unavailable });
 export const outcomeOfRefusal = (refusal: SessionRefusal, operationId: string): DeniedOutcome | UnavailableOutcome => (refusal.kind === "denied" ? denied({ operationId, reasonCode: refusal.denied.reasonCode }) : unavailable({ operationId, source: refusal.unavailable.source, guidance: refusal.unavailable.guidance }));
+/** States the source an outage could not be read from when the session resolution refused the job before it could read its own document, so every `unavailable` names its source; a fault the job maps itself is reported by that job. */
+export function recordRefusalOutage(job: string, refusal: SessionRefusal): void {
+  if (refusal.kind === "unavailable") logger.sourceUnavailable({ job, source: refusal.unavailable.source });
+}
 const SESSION_GATE_REASONS: Readonly<Record<Exclude<SessionState, "signed-in">, DenialReason>> = { unavailable: "session-unavailable", expired: "session-expired", denied: "not-admitted", "no-access": "not-admitted" };
 function sessionGate(session: ResolvedSession): DeniedOutcome | undefined {
   const { sessionState } = session;
@@ -41,6 +50,11 @@ const storedSessionMetaSchema = z.object({
   admittedMemberships: z.array(admittedMembershipSchema),
   selectedContext: z.object({ organizationId: organizationIdSchema, ministryId: ministryIdSchema, supportSubjectId: supportSubjectIdSchema }).nullable(),
   capabilities: z.array(z.string().min(1)).default([]),
+  coachingRecordsSessionId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/u)
+    .nullable()
+    .default(null),
 });
 type StoredSessionMeta = z.infer<typeof storedSessionMetaSchema>;
 function selectedScope(session: { readonly principalId: PrincipalId; readonly selectedContext: StoredSessionMeta["selectedContext"] }): Scope | null {
@@ -48,8 +62,8 @@ function selectedScope(session: { readonly principalId: PrincipalId; readonly se
   return selectedContext === null ? null : { organizationId: selectedContext.organizationId, ministryId: selectedContext.ministryId, supportSubjectId: selectedContext.supportSubjectId, principalId: session.principalId };
 }
 function resolvedSession(sessionId: string, meta: StoredSessionMeta): ResolvedSession {
-  const { principalId, sessionState, admittedMemberships, capabilities, scenarioId, clockOffsetMs } = meta;
-  return { sessionId, principalId, sessionState, admittedMemberships, selected: selectedScope({ principalId: meta.principalId, selectedContext: meta.selectedContext }), capabilities, scenarioId, clockOffsetMs };
+  const { principalId, sessionState, admittedMemberships, capabilities, scenarioId, clockOffsetMs, coachingRecordsSessionId } = meta;
+  return { sessionId, principalId, sessionState, admittedMemberships, selected: selectedScope({ principalId: meta.principalId, selectedContext: meta.selectedContext }), capabilities, scenarioId, clockOffsetMs, coachingRecordsSessionId };
 }
 async function requestSessionId(): Promise<string | undefined> {
   const { cookies } = await import("next/headers");

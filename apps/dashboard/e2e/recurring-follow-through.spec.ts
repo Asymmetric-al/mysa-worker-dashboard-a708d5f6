@@ -12,7 +12,7 @@ const TASK_LIST_PATH = `/api/tasks?list=all&displayTimeZone=${encodeURIComponent
 const TASK_PAGE_SIZE = 200; // How many rows that read admits on one page, mirrored from the documented cap so a truncated answer is refused rather than counted.
 const PLAN_REVIEW_HEADING = "Plan needs review";
 const CLOSED_PROFILES = ["Does not repeat", "Weekly", "Every N weeks", "Monthly on day N", "Every N months on day N"];
-const FUTURE_PLAN = { title: "QA smoke repeated plan", firstDue: "2027-01-31", endOn: "2027-06-30", profile: "Monthly on day N", revisedProfile: "Every N months on day N" } as const; // The plan this file creates through that section: a monthly rule whose first due date is still ahead of the scenario's today, which is the case a prospective revision has to be presented a boundary for.
+const FUTURE_PLAN = { title: "QA smoke repeated plan", firstDue: "2027-01-31", endOn: "2027-06-30", profile: "Monthly on day N", ruleLabel: "Monthly on day 31", revisedProfile: "Every N months on day N", revisedRuleLabel: "Every 2 months on day 15" } as const; // The plan this file creates through that section: a monthly rule whose first due date is still ahead of the scenario's today, which is the case a prospective revision has to be presented a boundary for. The profile names are what the closed chooser states; the rule labels are what the plan itself states, with the rule's own numbers.
 const AWAITING_ACTION: ReadonlySet<string> = new Set<string>(["open", "reopened"]);
 type PlanSnapshot = { readonly revision: string; readonly scope: JsonRecord; readonly data: JsonRecord }; // One plan's read, as the envelope the surface is rendered from: its revision, its facts and the actions it published.
 async function readPlan(page: Page, seriesId: string): Promise<PlanSnapshot> {
@@ -279,8 +279,8 @@ test("a plan created with a future first due date is revised from its own bounda
   await revisionForm.getByRole("spinbutton", { name: "Day of the month", exact: true }).fill("15");
   await revisionForm.getByRole("button", { name: "Apply this revision", exact: true }).click();
   await expect(revisionForm.locator('[data-slot="occurrence-command-result"]'), "The change applies: the boundary the form stated is one this plan's rule can be revised from").toHaveAttribute("data-outcome", "accepted");
-  await expect(previewSection(page).getByText(FUTURE_PLAN.revisedProfile, { exact: true }), "The plan re-reads in place: the rule on screen is the revised one, its dates are the ones that rule produces, and no document was loaded to show them").toBeVisible();
-  await expect(previewSection(page).getByText(FUTURE_PLAN.profile, { exact: true }), "The rule on screen is the one the change applied").toHaveCount(0);
+  await expect(previewSection(page).getByText(FUTURE_PLAN.revisedRuleLabel, { exact: true }), "The plan re-reads in place: the rule on screen is the revised one, stated with its own numbers, and no document was loaded to show it").toBeVisible();
+  await expect(previewSection(page).getByText(FUTURE_PLAN.ruleLabel, { exact: true }), "The rule on screen is the one the change applied").toHaveCount(0);
   await expect(nextDates(page).locator('time[datetime="2027-03-15"]'), "The dates stated are the ones the revised rule produces").toBeVisible();
   expect(await page.evaluate(() => (globalThis as unknown as RevisionMarkerHost).revisionBoundaryMarker ?? null), "The revised rule arrives by re-reading this page, not by loading it again").toBe(REVISION_MARKER_VALUE);
   expect(await page.evaluate(() => performance.getEntriesByType("navigation").length), "No document was loaded to show the revised rule").toBe(navigationsBefore);
@@ -325,8 +325,15 @@ test("a paused plan admits no date, a resumed one does, and an action captured b
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   const dialog = page.getByRole("alertdialog");
   await expect(dialog).toBeVisible();
-  for (const said of ["Stopping admits no further dates. Every date already on the series stays exactly where it is, unfinished: stopping completes nothing on your behalf and records no contact.", "A stopped series is not paused and cannot be resumed, so plan anything still needed after this as new work."])
+  for (const said of [
+    "Stopping admits no further dates, and it completes nothing on your behalf: what happens to the dates already on the series is the choice below, and stopping records no contact either way.",
+    "A stopped series is not paused and cannot be resumed, so plan anything still needed after this as new work.",
+  ])
     await expect(dialog).toContainText(said);
+  const unfinishedWork = dialog.getByRole("radiogroup", { name: "Unfinished work", exact: true });
+  await expect(unfinishedWork.getByRole("radio"), "The stop review states the fate of the unfinished dates, and both fates are reachable from it rather than one being left to the handler's default").toHaveCount(2);
+  for (const [index, option] of ["Keep the unfinished dates", "Cancel the unfinished dates"].entries()) await expect(unfinishedWork.getByRole("radio").nth(index)).toHaveAccessibleName(option);
+  await expect(unfinishedWork.getByRole("radio", { name: "Keep the unfinished dates", exact: true }), "The review preselects the fate the handler would have applied, so a worker who changes nothing stops the series exactly as before").toBeChecked();
   await dialog.getByRole("button", { name: "Stop the series", exact: true }).click();
   await expect(commandReceipt(page, "Stop")).toHaveAttribute("data-outcome", "accepted");
   await openPlan(page, MONTH_END_SERIES, MONTH_END_TITLE);

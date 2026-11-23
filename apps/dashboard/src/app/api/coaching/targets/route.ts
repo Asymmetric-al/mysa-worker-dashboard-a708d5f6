@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import { mutationInputSchema, mutations, reads } from "@/modules/data-service";
 import { pagingParamsOf, pagingQuerySchema } from "../../paging";
 import { claimedWriteRoute, claimedWrites } from "../../handler";
@@ -26,7 +27,7 @@ type TargetOperation = (typeof TARGET_OPERATIONS)[number];
 const targetListQuerySchema = pagingQuerySchema({ page: MESSAGES.pageInvalid, pageSize: MESSAGES.pageSizeInvalid });
 const discriminantSchema = z.object({ payload: z.object({ operation: z.enum(TARGET_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.bodyNotJson });
 /** One page of the worker's targets, each with its versions and its measured periods. */
-export const GET = readRoute(readGrammar(targetListQuerySchema, pagingParamsOf), (query) => reads.coaching.readTargets(query), READ_ATTEMPT);
+const readTargets = readRoute(readGrammar(targetListQuerySchema, pagingParamsOf), (query) => reads.coaching.readTargets(query), READ_ATTEMPT);
 const TARGET_WRITES = claimedWrites<TargetOperation>("operation", {
   saveTarget: [saveTargetBodySchema, mutations.coaching.saveTarget],
   editTarget: [editTargetBodySchema, mutations.coaching.editTarget],
@@ -34,4 +35,5 @@ const TARGET_WRITES = claimedWrites<TargetOperation>("operation", {
   endTarget: [endTargetBodySchema, mutations.coaching.endTarget],
 });
 /** One named target mutation, selected by `payload.operation`. */
-export const POST = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, TARGET_WRITES);
+const changeTarget = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, TARGET_WRITES);
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readTargets, POST: changeTarget });

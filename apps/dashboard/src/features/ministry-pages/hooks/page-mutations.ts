@@ -24,6 +24,10 @@ function reReadPrefixes(queryClient: QueryClient, prefixes: PageMutationConfig["
 }
 /** Whether an outcome re-reads what the attempt acted on: `accepted` and `alreadyAccepted` changed the record and `unknown` may have, so each is read again; `unchanged` and every refusal are not. */
 export const reReadsAfterOutcome = (outcome: MutationOutcome): boolean => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unknown";
+/** The revision a new attempt presents on a Page record: the revision the read states, or — until that read has landed — the revision the change this view last had accepted produced, which is the same record at the same revision without waiting on the read. */
+export const openRevisionOf = (readRevision: string, attemptRevision: string | null, acceptedRevision: string | null): string => (readRevision === attemptRevision ? (acceptedRevision ?? readRevision) : readRevision);
+/** The revision an outcome states the record now stands at — `accepted`, `alreadyAccepted` and `unchanged` alike — and none for a refusal, which leaves the record where another writer left it. */
+export const settledRevisionOf = (outcome: MutationOutcome | null | undefined): string | null => (outcome !== null && outcome !== undefined && (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") ? outcome.revision : null);
 /** The family's single mutation transport: posts the four-field input to a documented handler and returns one of eight outcomes; invalidates on accepted/alreadyAccepted, re-reads on unknown. */
 export function usePageMutation<P>(config: PageMutationConfig): UseMutationResult<MutationOutcome, never, MutationInput<P>> {
   const queryClient = useQueryClient();

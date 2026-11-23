@@ -23,8 +23,7 @@ const Fact = factFrame({ rowClassName: "flex flex-wrap items-baseline gap-x-1.5"
       headingLevel={3}
       headingId={headingId}
       titleClassName={cn(secondary && "text-sm")}
-      cardSize={secondary ? "sm" : "default"}
-      cardClassName={cn(secondary && "bg-muted/40 ring-border")}
+      cardVariant={secondary ? "muted" : "default"}
       contentClassName="flex min-w-0 flex-col gap-3"
       action={REPORTS_RECEIVED_CASH[measure] ? undefined : <Badge variant="outline">Not received cash</Badge>}
       region={{ id: headingId, className: cn("min-w-0", className) }}

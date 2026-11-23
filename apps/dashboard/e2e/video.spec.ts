@@ -1,6 +1,6 @@
 /** Criterion 18 — video. */
 import type { Locator, Page, Route } from "@playwright/test";
-import { actAs, arrayAt, chooseFile, expect, fieldAt, isRecord, jsonOf, newAttemptId, numberAt, operateDevControl, outcomeOf, renditionAddressOf, requestRendition, scopeAt, SEEDED_PERSONAS, stringAt, test, type JsonRecord, type PersonaName } from "../playwright.config";
+import { actAs, arrayAt, chooseFile, expect, fieldAt, fixturePathOf, isRecord, jsonOf, newAttemptId, numberAt, operateDevControl, outcomeOf, renditionAddressOf, requestRendition, scopeAt, SEEDED_PERSONAS, stringAt, test, type JsonRecord, type PersonaName } from "../playwright.config";
 const CONTRIBUTOR_PERSONA: PersonaName = "established-worker"; // The contributor who composes the protected edition: the runner's own default persona, named here so the file states whose authority it acts under.
 const OUTSIDE_WORKER_PERSONA: PersonaName = "second-worker"; // A worker in another ministry, whose scope shares nothing with this one: the persona every direct rendition request is refused for.
 const OUTSIDE_READER_PERSONA: PersonaName = "reader-unauthorized"; // A reader holding no protected-reading grant: the persona the protected media and the protected prose are refused for.
@@ -18,6 +18,9 @@ const PUBLIC_PROSE = "Thank you for praying with us"; // A public sentence from 
 const TYPED_PROSE = "A note for the people who support this work."; // What this file types into the editor, so "the prose is untouched" is an assertion about text only this test put there.
 const TRANSCRIPT_TEXT = "Hello and welcome from the youth group."; // What this file types into the transcript field of the video it places: the text alternative a reader who cannot play it receives.
 const PLACEMENT_TEXT = { altText: "The youth group's welcome message", caption: "A short welcome for supporters", credit: "Harbour Youth", language: "en" } as const; // The credit and language the placement records, both stated by the person who placed it rather than derived from the file.
+const POSTER_FIXTURE = "poster.jpg"; // The committed poster image criterion 18 asks an uploaded video to carry.
+const CAPTIONS_FIXTURE = "sample.vtt"; // The committed WebVTT caption track criterion 18 asks an uploaded video to carry.
+const TRACK_LABEL = "English"; // The label the player's caption menu shows for the uploaded track.
 const EDITOR_NAME = "The text of this Update edition";
 const CONTAINER_REFUSAL = /which this profile does not admit/u; // The one sentence the engine reports a rejected container with, taken from the profile's own refusal rather than restated in full: the container is named and the admitted alternatives are offered.
 /** The next step the same refusal offers, which is what makes it actionable rather than merely negative. */
@@ -61,6 +64,13 @@ async function mutateDocument(page: Page, path: string, payload: JsonRecord, nam
   if (outcome !== "accepted" && outcome !== "alreadyAccepted" && outcome !== "unchanged") throw new Error(`${name} was refused, so the state this test names was never reached: ${JSON.stringify(body).slice(0, 600)}`);
   return body;
 }
+// Preparing a real MP4 is the heaviest work this application does on this device: the file is decoded, checked, re-encoded or re-muxed and
+// stored before any receipt exists, and that takes seconds rather than milliseconds on a loaded machine, so the wait for a receipt is stated
+// rather than left to the default an assertion assumes.
+const PREPARATION_TIMEOUT_MS = 120_000;
+const POLLED_CLICK_TIMEOUT_MS = 2_000; // How long one attempt to switch the media pane's list may wait for the control to answer.
+const SHOW_PLACEMENTS_TIMEOUT_MS = 30_000; // How long the video list may take to be the panel on screen, which covers a reload's own hydration.
+const SHOW_PLACEMENTS_INTERVALS_MS = [250, 500, 1_000, 2_000]; // How often the list is asked for again, so a surface still settling is not clicked in a tight loop.
 const pickerOf = (page: Page, kind: "image" | "video"): Locator => page.locator(`[data-slot="media-picker"][data-kind="${kind}"]`);
 const mediaPaneOf = (page: Page): Locator => page.locator('[data-slot="editor-media-pane"]');
 async function openEditor(page: Page): Promise<void> {
@@ -78,23 +88,50 @@ async function openPicker(page: Page, kind: "image" | "video"): Promise<Locator>
   return picker;
 }
 async function showVideoPlacements(page: Page): Promise<void> {
-  await mediaPaneOf(page).getByRole("tab", { name: "Videos", exact: true }).click(); // Shows the media pane's video list, which is the panel a video placement is stated in: the pane opens on images.
-  await expect(mediaPaneOf(page).getByRole("tabpanel", { name: "Videos", exact: true })).toBeVisible();
+  const pane = mediaPaneOf(page);
+  const videoTab = pane.getByRole("tab", { name: "Videos", exact: true }); // The media pane's video list, which is the panel a video placement is stated in: the pane opens on images.
+  const videoPanel = pane.getByRole("tabpanel", { name: "Videos", exact: true });
+  await expect(videoTab).toBeVisible();
+  // This control is clicked within moments of a full reload as well as mid-journey, and a reloaded surface answers with its server rendering
+  // before it has attached its own handlers, so a click can reach a tab that is not listening yet. The click is therefore repeated while the
+  // panel it selects is not the one on screen, and what this helper asserts is that panel rather than the click that asked for it.
+  await expect
+    .poll(
+      async () => {
+        if (await videoPanel.isVisible()) return true;
+        await videoTab.click({ timeout: POLLED_CLICK_TIMEOUT_MS }).catch(() => undefined);
+        return videoPanel.isVisible();
+      },
+      { message: "the media pane's video list is the panel on screen", timeout: SHOW_PLACEMENTS_TIMEOUT_MS, intervals: SHOW_PLACEMENTS_INTERVALS_MS },
+    )
+    .toBe(true);
 }
-type VideoPlacementInput = { readonly file: string; readonly altText?: string; readonly caption?: string; readonly credit?: string; readonly language?: string; readonly transcript?: string };
+type VideoPlacementInput = { readonly file: string; readonly altText?: string; readonly caption?: string; readonly credit?: string; readonly language?: string; readonly transcript?: string; readonly poster?: string | null; readonly captions?: string | null; readonly trackLabel?: string };
+/** The placement's caption field, told apart from the caption-track file input the video picker offers beside it. */
+const captionFieldOf = (picker: Locator): Locator => picker.getByLabel(/^Caption(?! track)/u);
 async function describePlacement(picker: Locator, input: VideoPlacementInput): Promise<void> {
   await picker.getByLabel(/^Alternative text/u).fill(input.altText ?? PLACEMENT_TEXT.altText); // The labels carry a required marker or an "(optional)" suffix, so each field is addressed by the start of the label a person reads rather than by text that would have to guess which of the two it is.
-  await picker.getByLabel(/^Caption/u).fill(input.caption ?? PLACEMENT_TEXT.caption);
+  await captionFieldOf(picker).fill(input.caption ?? PLACEMENT_TEXT.caption);
   await picker.getByLabel(/^Credit/u).fill(input.credit ?? PLACEMENT_TEXT.credit);
   await picker.getByLabel(/^Language/u).fill(input.language ?? PLACEMENT_TEXT.language);
   await picker.getByLabel(/^Transcript/u).fill(input.transcript ?? TRANSCRIPT_TEXT);
+}
+/** Attaches the poster image and the WebVTT caption track beside the video, which is what an uploaded video carries unless the case is about leaving one out. */
+async function attachTracks(picker: Locator, input: VideoPlacementInput): Promise<void> {
+  const poster = input.poster === undefined ? POSTER_FIXTURE : input.poster;
+  const captions = input.captions === undefined ? CAPTIONS_FIXTURE : input.captions;
+  if (poster !== null) await picker.getByLabel(/^Poster image/u).setInputFiles(fixturePathOf(poster));
+  if (captions === null) return;
+  await picker.getByLabel(/^Caption track/u).setInputFiles(fixturePathOf(captions));
+  await picker.getByLabel(/^Track label/u).fill(input.trackLabel ?? TRACK_LABEL);
 }
 async function placeVideo(page: Page, input: VideoPlacementInput): Promise<void> {
   const picker = await openPicker(page, "video"); // Adds one video through the picker, closes it on its durable receipt, and reports the answer the service gave.
   await chooseFile(picker, input.file);
   await describePlacement(picker, input);
+  await attachTracks(picker, input);
   await picker.getByRole("button", { name: "Add this video", exact: true }).click();
-  await expect(picker.locator('[data-slot="operation-result"]')).toHaveAttribute("data-outcome", "accepted");
+  await expect(picker.locator('[data-slot="operation-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: PREPARATION_TIMEOUT_MS });
   await picker.getByRole("button", { name: "Done", exact: true }).click();
   await expect(picker).toBeHidden();
 }
@@ -173,7 +210,11 @@ test("a chosen video is checked by its own content, prepared on this device, and
   const held = await holdNextRegistration(page);
   await chooseFile(picker, "sample-h264.mp4");
   await describePlacement(picker, { file: "sample-h264.mp4" });
-  await expect(picker.getByText("Poster", { exact: true })).toHaveCount(0); // No poster is offered for this placement: a poster is an image already registered in this draft, and this draft holds none. The picker states the absence rather than offering a choice that would resolve to nothing, and the poster a player shows is the asset's own rendition, asserted on the
+  // A video is placed with a poster image and a WebVTT caption track of its own, so both controls are offered here and the
+  // registration that follows carries what they collect: an image placement offers neither.
+  await expect(picker.getByLabel(/^Poster image/u), "A video placement offers its own poster image").toBeVisible();
+  await expect(picker.getByLabel(/^Caption track/u), "A video placement offers its own WebVTT caption track").toBeVisible();
+  await attachTracks(picker, { file: "sample-h264.mp4", trackLabel: TRACK_LABEL });
   await picker.getByRole("button", { name: "Add this video", exact: true }).click();
   await held.reached;
   await expect(picker).toHaveAttribute("data-phase", "preparing");
@@ -183,7 +224,7 @@ test("a chosen video is checked by its own content, prepared on this device, and
   await expect(picker.getByRole("button", { name: "Stop waiting", exact: true })).toBeVisible();
   held.release();
   const receipt = picker.locator('[data-slot="operation-result"]');
-  await expect(receipt).toHaveAttribute("data-outcome", "accepted");
+  await expect(receipt).toHaveAttribute("data-outcome", "accepted", { timeout: PREPARATION_TIMEOUT_MS });
   await expect(receipt, "The receipt states that one effect was applied and that it is recorded, and it repeats that this was local processing rather than production scanning").toContainText("The change was applied once");
   await expect(picker.locator('[data-simulation-context="block"][data-simulation-effect="media-preparation"]')).toContainText(LOCAL_PROCESSING);
   await picker.getByRole("button", { name: "Done", exact: true }).click();
@@ -195,12 +236,13 @@ test("a chosen video is checked by its own content, prepared on this device, and
   const placed = videos.first();
   await expect(placed).toHaveAttribute("data-state", "ready");
   await expect(placed).toContainText("Ready");
-  expect(await placementFact(placed, "Placed for")).toBe("playback, transcript");
+  const placedFor = await placementFact(placed, "Placed for");
+  for (const purpose of ["playback", "poster", "captions", "transcript"]) expect(placedFor, `the placement is placed for its ${purpose} rendition`).toContain(purpose);
   expect(await placementFact(placed, "Alternative text")).toBe(PLACEMENT_TEXT.altText);
   expect(await placementFact(placed, "Credit")).toBe(PLACEMENT_TEXT.credit);
-  expect(await placementFact(placed, "Transcript")).toBe("Present"); // The record states what this asset really carries. Registering a file sends that file's own bytes, so the asset holds the playback and transcript renditions prepared for it and a poster and caption track it does not have — and the row says "None" rather than implying media nothing would serve.
-  expect(await placementFact(placed, "Caption track")).toBe("None");
-  expect(await placementFact(placed, "Poster")).toBe("None");
+  expect(await placementFact(placed, "Transcript")).toBe("Present"); // The record states what this asset really carries: registering the chosen files sends their own bytes and text, so the asset holds the playback, poster, caption and transcript renditions prepared for it.
+  expect(await placementFact(placed, "Caption track")).toBe("Present");
+  expect(await placementFact(placed, "Poster")).toBe("Present");
   await placeVideo(page, { file: "sample-vp9.webm", altText: "A second short clip for supporters", caption: "Another welcome" });
   await showVideoPlacements(page);
   await expect(videos).toHaveCount(2);
@@ -208,7 +250,7 @@ test("a chosen video is checked by its own content, prepared on this device, and
   await chooseFile(rejecting, "sample-unsupported.mkv");
   await describePlacement(rejecting, { file: "sample-unsupported.mkv", altText: "A clip that will not be admitted" });
   await rejecting.getByRole("button", { name: "Add this video", exact: true }).click();
-  await expect(rejecting.getByText(CONTAINER_REFUSAL), "The refusal states why this content was refused and what to do instead; it is not a bare failure").toBeVisible();
+  await expect(rejecting.getByText(CONTAINER_REFUSAL), "The refusal states why this content was refused and what to do instead; it is not a bare failure").toBeVisible({ timeout: PREPARATION_TIMEOUT_MS });
   await expect(rejecting.getByText(/Upload an MP4 \(avc video with aac audio\) or a WebM \(vp8 or vp9 video/u)).toBeVisible();
   await expect(rejecting, "An invalid attempt changes nothing, so it stays on the form rather than presenting a receipt as if something had been registered").toHaveAttribute("data-phase", "described");
   await expect(rejecting.locator('[data-slot="operation-result"]')).toHaveCount(0);
@@ -229,7 +271,7 @@ test("a chosen video is checked by its own content, prepared on this device, and
   await expect(cancelledPicker.getByText("No media added", { exact: true })).toBeVisible();
   await expect(cancelledPicker.getByText(/You stopped waiting\. The request had already been sent, so its result appears here when it arrives\. Nothing in your draft was changed\./u)).toBeVisible();
   cancelling.release();
-  await expect(cancelledPicker.locator('[data-slot="operation-result"]')).toHaveAttribute("data-outcome", "accepted");
+  await expect(cancelledPicker.locator('[data-slot="operation-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: PREPARATION_TIMEOUT_MS });
   await cancelledPicker.getByRole("button", { name: "Done", exact: true }).click();
   await expect(cancelledPicker).toBeHidden();
   await page.unroute("**/api/media");

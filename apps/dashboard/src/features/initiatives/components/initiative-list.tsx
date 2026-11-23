@@ -7,7 +7,7 @@ import { RecordList, type RecordListColumnDef, type RecordListQueryState } from 
 import { refusalSummary } from "@/components/form-field";
 import { StateNotice, type NoticeHeadingLevel } from "@/components/state-notice";
 import StatusBadge, { statusBadgeProps, VALUE_STATE_WORDS } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { assertNever } from "@/lib/result";
 import type { ValueState, reads } from "@/modules/data-service";
@@ -53,7 +53,7 @@ const SURFACE_COPY = {
   loadingTitle: "Reading the initiatives",
   loadingBody: "The first answer for this view is still arriving, so nothing here is stated as an empty list or as zero.",
 } as const;
-const ROW_LINK_CLASS = "flex min-w-0 flex-col gap-0.5 rounded-sm underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+const ROW_LINK_CLASS = "flex min-w-0 flex-col gap-0.5 rounded-sm inline-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const MUTED_TEXT_CLASS = "text-muted-foreground";
 const membershipStatePath = (initiativeId: string, member: (typeof MEMBERSHIP_STATES)[number]): string => `${initiativeId}.memberStates.${member}`;
 const periodStatePath = (initiativeId: string, end: "from" | "to"): string => `${initiativeId}.period.${end}`;
@@ -127,10 +127,11 @@ function StateFigure({ state, lifecycle }: { readonly state: InitiativeState; re
   );
 }
 const HEADING_TAG: Readonly<Record<1 | 2, "h1" | "h2">> = { 1: "h1", 2: "h2" };
+const HEADING_SCALE: Readonly<Record<1 | 2, string>> = { 1: "type-page-title", 2: "type-section-title" };
 function Heading({ level, id, children }: { readonly level: 1 | 2; readonly id: string; readonly children: ReactNode }): ReactElement {
   const Tag = HEADING_TAG[level];
   return (
-    <Tag id={id} className="font-heading text-2xl font-semibold text-pretty break-words">
+    <Tag id={id} className={cn(HEADING_SCALE[level], "text-pretty break-words")}>
       {children}
     </Tag>
   );
@@ -274,11 +275,11 @@ export default function InitiativeList({ initialEnvelope, headingLevel = 2, clas
           <Heading level={headingLevel} id={headingId}>
             {INITIATIVE_COPY.listHeading}
           </Heading>
-          <p className="text-sm text-pretty text-muted-foreground">{SURFACE_COPY.intro}</p>
+          <p className="type-supporting text-pretty">{SURFACE_COPY.intro}</p>
         </div>
         <div className="flex min-w-0 flex-col items-start gap-1">
           {offersCreate ? (
-            <Button type="button" onClick={openComposer} className="h-auto max-w-full whitespace-normal">
+            <Button type="button" onClick={openComposer} className={BUTTON_WRAP_CLASS}>
               {INITIATIVE_COPY.createLabel}
             </Button>
           ) : null}

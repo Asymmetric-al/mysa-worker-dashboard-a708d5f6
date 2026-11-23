@@ -51,7 +51,7 @@ function GivePlacement({ giving }: { readonly giving: PageGiving }): ReactElemen
         <CardTitle>Giving</CardTitle>
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-2">
-        <p className="break-words">
+        <p className="type-body break-words">
           <span className="sr-only">{`${FIELD_LABELS.designate}: `}</span>
           <bdi>{giving.label}</bdi>
         </p>
@@ -69,32 +69,25 @@ function GivePlacement({ giving }: { readonly giving: PageGiving }): ReactElemen
     </Alert>
   );
 }
-type EditionMediaProps = { readonly renditions: readonly PageRendition[]; readonly html: string; readonly title: string; readonly direction: ContentLocale["direction"]; readonly languageTag: string };
-function EditionMedia({ renditions, html, title, direction, languageTag }: EditionMediaProps): ReactElement | null {
+type EditionMediaProps = { readonly renditions: readonly PageRendition[]; readonly html: string; readonly title: string; readonly direction: ContentLocale["direction"]; readonly languageTag: string; readonly onRetry: () => void };
+function EditionMedia({ renditions, html, title, direction, languageTag, onRetry }: EditionMediaProps): ReactElement | null {
   const unplaced = unplacedPlayback(renditions, html);
   if (unplaced.length === 0) return null;
   return (
     <div data-slot="public-reading-view-media" className="flex min-w-0 flex-col gap-4">
       {unplaced.map((rendition) => {
+        const name = title.length === 0 ? VIDEO_TITLE_FALLBACK : title;
+        const language = languageTag.length === 0 ? {} : { language: languageTag };
+        // A playback rendition the source cannot serve is stated as unavailable, with the retry this view re-reads with, and is given none of its own addresses: no player and no poster are offered for bytes this reading cannot fetch.
+        if (rendition.state === "unavailable") return <VideoPlayer key={rendition.renditionId} title={name} state="unavailable" direction={direction} onRetry={onRetry} {...language} />;
         const poster = ancillaryPathOf(renditions, rendition.assetId, "poster");
-        return (
-          <VideoPlayer
-            key={rendition.renditionId}
-            title={title.length === 0 ? VIDEO_TITLE_FALLBACK : title}
-            src={rendition.path}
-            {...(poster === undefined ? {} : { poster })}
-            captions={captionsOf(renditions, rendition.assetId, languageTag)}
-            state="ready"
-            direction={direction}
-            {...(languageTag.length === 0 ? {} : { language: languageTag })}
-          />
-        );
+        return <VideoPlayer key={rendition.renditionId} title={name} src={rendition.path} {...(poster === undefined ? {} : { poster })} captions={captionsOf(renditions, rendition.assetId, languageTag)} state="ready" direction={direction} {...language} />;
       })}
     </div>
   );
 }
-type ServedEditionProps = { readonly data: ReadingData; readonly served: ContentLocale };
-function ServedEdition({ data, served }: ServedEditionProps): ReactElement {
+type ServedEditionProps = { readonly data: ReadingData; readonly served: ContentLocale; readonly onRetry: () => void };
+function ServedEdition({ data, served, onRetry }: ServedEditionProps): ReactElement {
   const html = data.html ?? "";
   const title = (data.title ?? "").trim();
   const description = (data.description ?? "").trim();
@@ -109,7 +102,7 @@ function ServedEdition({ data, served }: ServedEditionProps): ReactElement {
         <div className="flex min-w-0 flex-col gap-2">
           {title.length === 0 ? null : (
             <CardTitle>
-              <h2 className="font-heading text-2xl font-semibold text-pretty wrap-anywhere">
+              <h2 className="type-section-title text-pretty wrap-anywhere">
                 <bdi>{title}</bdi>
               </h2>
             </CardTitle>
@@ -139,7 +132,7 @@ function ServedEdition({ data, served }: ServedEditionProps): ReactElement {
             <ServerHtml html={html} direction={served.direction} lang={lang} />
           </div>
         </DirectionProvider>
-        <EditionMedia renditions={data.renditions} html={html} title={title} direction={served.direction} languageTag={languageTag} />
+        <EditionMedia renditions={data.renditions} html={html} title={title} direction={served.direction} languageTag={languageTag} onRetry={onRetry} />
         {data.giving === null ? null : <GivePlacement giving={data.giving} />}
         <div data-slot="public-reading-view-footer" className="flex min-w-0 flex-col gap-2">
           <SimulationLabel effect={RECEIVING_SIMULATION_EFFECT} />
@@ -171,7 +164,7 @@ function readingOf(result: ReadResult<ReceivingPageEnvelope>, onRetry: () => voi
       ) : (data.html ?? "").trim().length === 0 ? (
         <StateNotice kind="empty" title={NOTICE_TITLES.noText} description={NO_TEXT_DESCRIPTION} headingLevel={2} />
       ) : (
-        <ServedEdition data={data} served={data.servedLocale} />
+        <ServedEdition data={data} served={data.servedLocale} onRetry={onRetry} />
       );
     }
     default: {

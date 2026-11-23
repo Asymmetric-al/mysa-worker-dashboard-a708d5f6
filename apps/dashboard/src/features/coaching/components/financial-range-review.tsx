@@ -50,13 +50,13 @@ export function FinancialRangeReview({ range, reviewedAt, reviewedByRole, locale
       <Card dir="ltr">
         <CardHeader>
           <CardTitle>
-            <h2 className="font-heading text-base font-medium">{FINANCIAL_RANGE_COPY.heading}</h2>
+            <h2 className="type-section-title">{FINANCIAL_RANGE_COPY.heading}</h2>
           </CardTitle>
           <CardDescription>{FINANCIAL_RANGE_COPY.purpose}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-start gap-2">
           <Badge variant="outline">Not shared</Badge>
-          <p className="text-sm break-words">No financial range has been shared with a coach yet. Choose the dates and review them on this page first: nothing from your support view becomes readable to a coach until you do.</p>
+          <p className="type-supporting break-words">No financial range has been shared with a coach yet. Choose the dates and review them on this page first: nothing from your support view becomes readable to a coach until you do.</p>
         </CardContent>
       </Card>
     );
@@ -69,7 +69,7 @@ export function FinancialRangeReview({ range, reviewedAt, reviewedByRole, locale
     <Card dir="ltr">
       <CardHeader>
         <CardTitle>
-          <h2 className="font-heading text-base font-medium">{FINANCIAL_RANGE_COPY.heading}</h2>
+          <h2 className="type-section-title">{FINANCIAL_RANGE_COPY.heading}</h2>
         </CardTitle>
         <CardDescription>{FINANCIAL_RANGE_COPY.purpose}</CardDescription>
       </CardHeader>
@@ -92,11 +92,11 @@ export function FinancialRangeReview({ range, reviewedAt, reviewedByRole, locale
               </>
             )}
           </p>
-          <p className="text-sm text-muted-foreground">
+          <p className="type-supporting">
             {coverageStatement(range.coverage)}
             {bounds === null ? null : <span className="block">{bounds}</span>}
           </p>
-          <p className="text-sm text-muted-foreground">
+          <p className="type-supporting">
             As of <bdi className={cn("mono-identifier", ISO_VALUE_CLASS)}>{range.asOf}</bdi>, which is when these figures were read rather than when the source last changed.
           </p>
         </figure>
@@ -128,10 +128,10 @@ export function FinancialRangeReview({ range, reviewedAt, reviewedByRole, locale
           )}
         </dl>
         <section className="flex flex-col gap-1">
-          <h3 className="font-heading text-sm font-medium">What this range measures</h3>
-          <p className="text-sm text-muted-foreground">{BASIS_DESCRIPTION}</p>
+          <h3 className="type-subsection-title">What this range measures</h3>
+          <p className="type-supporting">{BASIS_DESCRIPTION}</p>
         </section>
-        <p className="text-sm text-muted-foreground">{FINANCIAL_RANGE_COPY.rangeStatement}</p>
+        <p className="type-supporting">{FINANCIAL_RANGE_COPY.rangeStatement}</p>
         <Alert role={undefined}>
           <AlertTitle>What this range does not show</AlertTitle>
           <AlertDescription>{FINANCIAL_RANGE_COPY.exclusions}</AlertDescription>

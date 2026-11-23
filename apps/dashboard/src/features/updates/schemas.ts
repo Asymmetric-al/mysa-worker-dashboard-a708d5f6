@@ -2,8 +2,8 @@ import { z } from "zod";
 import { parseDocument } from "@/modules/content/document";
 import { variantKeyAllowed, type ContentVariant, type VariantAudience, type VariantFamily } from "@/modules/content/variant";
 import type { MediaAcceptanceSuccess, MediaAssetScope, MediaRenditionPurpose } from "@/modules/media/asset";
-import { ADMITTED_IMAGE_FORMATS, ADMITTED_VIDEO_PROFILES, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH, mediaStateReason } from "@/modules/media/profile";
-import { PUBLISH_MODE_LABELS, REVIEW_ROUND_NOTE, VARIANT_AXIS_NOTE, WITHDRAWAL_WORDING } from "./copy/updates-copy";
+import { ADMITTED_IMAGE_FORMATS, ADMITTED_VIDEO_PROFILES, IMAGE_MAX_BYTES, VIDEO_MAX_BYTES, mediaStateReason } from "@/modules/media/profile";
+import { PUBLISH_MODE_LABELS, REVIEW_ROUND_NOTE, VARIANT_AXIS_NOTE } from "./copy/updates-copy";
 export const UPDATE_FAMILY = "update" as const satisfies VariantFamily;
 export const contentIdSchema = z
   .string({ error: "This action applies to one record, so open the record again and retry." })
@@ -136,27 +136,19 @@ export const requestNotificationSchema = z.strictObject(
   { error: "A notice request carries the release it is submitted for and the ceiling you acknowledged, and nothing else " + "besides the notice a repeat names and the instant that notice was meant for, so submit it from the publish review " + "screen or the delivery results." },
 );
 export type RequestNotificationPayload = z.infer<typeof requestNotificationSchema>;
-export const WITHDRAWAL_REASON_MAX_CHARS = 500;
-export const withdrawalReasonSchema = z
-  .string({ error: "A withdrawal reason is text, so type it here rather than pasting formatted content." })
-  .trim()
-  .max(WITHDRAWAL_REASON_MAX_CHARS, `Keep the reason to ${WITHDRAWAL_REASON_MAX_CHARS} characters or fewer: it is a short note ` + "beside the withdrawal, not a record of why the edition existed.")
-  .optional()
-  .describe(`${WITHDRAWAL_WORDING.whatItDoes} ${WITHDRAWAL_WORDING.whatItDoesNotDo}`);
-export const withdrawUpdateSchema = z.strictObject({ documentId: contentIdSchema, reason: withdrawalReasonSchema });
-export const withdrawLocaleSchema = z.strictObject({ variantId: contentIdSchema, locale: localeTagSchema, reason: withdrawalReasonSchema });
+export const withdrawUpdateSchema = z.strictObject({ documentId: contentIdSchema });
+export const withdrawLocaleSchema = z.strictObject({ variantId: contentIdSchema });
 export type WithdrawUpdatePayload = z.infer<typeof withdrawUpdateSchema>;
 export type WithdrawLocalePayload = z.infer<typeof withdrawLocaleSchema>;
 export const PLACEMENT_TEXT_MAX_CHARS = 4_000;
+const CAPTION_LABEL_MAX_CHARS = 120;
 const BYTES_PER_MEBIBYTE = 1024 * 1024;
-const SECONDS_PER_MINUTE = 60;
 const REFUSAL_NEXT_STEP = mediaStateReason("rejected").action ?? "";
 const refusal = (problem: string): string => (REFUSAL_NEXT_STEP.length === 0 ? problem : `${problem} ${REFUSAL_NEXT_STEP}`);
 function formatByteLimit(bytes: number): string {
   const mebibytes = bytes / BYTES_PER_MEBIBYTE;
   return `${Number.isInteger(mebibytes) ? String(mebibytes) : mebibytes.toFixed(1)} MiB`;
 }
-const formatDurationLimit = (seconds: number): string => (seconds % SECONDS_PER_MINUTE !== 0 ? `${seconds} seconds` : seconds === SECONDS_PER_MINUTE ? "1 minute" : `${seconds / SECONDS_PER_MINUTE} minutes`);
 const admittedImageTypes = (): string => ADMITTED_IMAGE_FORMATS.map((format) => `image/${format}`).join(", ");
 const admittedVideoTypes = (): string => ADMITTED_VIDEO_PROFILES.map((profile) => `video/${profile.container}`).join(", ");
 const UNKNOWN_MEDIA_TYPE = "application/octet-stream";
@@ -165,10 +157,6 @@ const declaredMediaType = (file: File): string | null => {
   return trimmed.length === 0 || trimmed === UNKNOWN_MEDIA_TYPE ? null : trimmed;
 };
 const tooLargeBytes = (kind: MediaKind, limit: number): string => refusal(`This ${kind} is larger than the ${formatByteLimit(limit)} admitted for one ${kind}, so it was ` + `not opened.`);
-const tooLargeStill = (side: "width" | "height", measured: number): string => refusal(`This image is ${measured} pixels ${side === "width" ? "wide" : "tall"}, past the ${IMAGE_MAX_EDGE_PX}-pixel limit on one ` + `side, so it was not opened.`);
-const tooLongVideo = (): string => refusal(`This video runs longer than the ${formatDurationLimit(VIDEO_MAX_DURATION_S)} admitted for one ` + `video, so it was not opened.`);
-const unreadableDuration = (): string => refusal(`The length of this video could not be read, so it could not be checked against the ` + `${formatDurationLimit(VIDEO_MAX_DURATION_S)} admitted for one video.`);
-const tooLargeVideo = (axis: "width" | "height", measured: number): string => refusal(`This video is ${measured} pixels ${axis === "width" ? "wide" : "tall"}, past the ${axis === "width" ? VIDEO_MAX_WIDTH : VIDEO_MAX_HEIGHT} pixels admitted across that side ` + `of one video, so it was not opened.`);
 export const MEDIA_KINDS = ["image", "video"] as const satisfies readonly MediaAcceptanceSuccess<MediaAssetScope>["kind"][];
 type MediaKind = (typeof MEDIA_KINDS)[number];
 const placementTextTooLong = (field: string): string => `The ${field} is longer than the ${PLACEMENT_TEXT_MAX_CHARS} characters one placement field may ` + `hold, so shorten it.`;
@@ -178,50 +166,37 @@ const optionalPlacementText = (field: string) =>
     .trim()
     .max(PLACEMENT_TEXT_MAX_CHARS, placementTextTooLong(field))
     .optional();
+const chosenFile = (message: string) => z.custom<File>((value) => typeof File !== "undefined" && value instanceof File, { error: message });
 export const mediaPlacementSchema = z.strictObject({
   altText: z.string({ error: "Describe what this image or video shows." }).trim().min(1, "Describe what this image or video shows.").max(PLACEMENT_TEXT_MAX_CHARS, placementTextTooLong("alternative text")),
   caption: optionalPlacementText("caption"),
   credit: optionalPlacementText("credit"),
   transcript: optionalPlacementText("transcript"),
   language: localeTagSchema.optional(),
-  posterAssetId: contentIdSchema.optional(),
 });
-const mediaProbeSchema = z.strictObject({
-  width: z.number({ error: "The width the picker measured must be a number of pixels." }).positive({ error: "The width the picker measured must be more than zero pixels." }).optional(),
-  height: z.number({ error: "The height the picker measured must be a number of pixels." }).positive({ error: "The height the picker measured must be more than zero pixels." }).optional(),
-  durationSeconds: z.number({ error: "The duration the picker measured must be a number of seconds." }).positive({ error: "The duration the picker measured must be more than zero seconds." }).optional(),
+/** The poster a video carries: its own image file, prepared into a poster rendition, with the alternative text stated beside it. */
+const posterSchema = z.strictObject({ file: chosenFile("Choose the image a player shows before this video starts, or leave the poster out."), altText: optionalPlacementText("poster alternative text") });
+/** The caption track a video carries: the WebVTT file itself, in the language the placement already states for the media. */
+const captionsSchema = z.strictObject({
+  file: chosenFile("Choose the WebVTT file this video's cues are in, or leave the caption track out."),
+  language: localeTagSchema,
+  label: z.string({ error: "State the track's label as text, or leave it out." }).trim().min(1, "State the track's label as text, or leave it out.").max(CAPTION_LABEL_MAX_CHARS, `A track label holds at most ${CAPTION_LABEL_MAX_CHARS} characters, so shorten it.`).optional(),
 });
 export const registerMediaAssetSchema = z
-  .strictObject({ kind: z.enum(MEDIA_KINDS, { error: "Choose whether this file is an image or a video." }), file: z.custom<File>((value) => typeof File !== "undefined" && value instanceof File, { error: "Choose a file to upload." }), probe: mediaProbeSchema.optional(), placement: mediaPlacementSchema })
+  .strictObject({ kind: z.enum(MEDIA_KINDS, { error: "Choose whether this file is an image or a video." }), file: chosenFile("Choose a file to upload."), placement: mediaPlacementSchema, poster: posterSchema.optional(), captions: captionsSchema.optional() })
   .superRefine((payload, ctx) => {
     const refuse = (path: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path, message });
-    const { file, kind, probe } = payload;
+    const { file, kind } = payload;
     const declared = declaredMediaType(file);
     const byteLimit = kind === "image" ? IMAGE_MAX_BYTES : VIDEO_MAX_BYTES;
     if (file.size > byteLimit) refuse(["file"], tooLargeBytes(kind, byteLimit));
     const admitted = kind === "image" ? admittedImageTypes() : admittedVideoTypes();
     if (declared !== null && !declared.startsWith(`${kind}/`)) refuse(["file"], refusal(`This ${kind} placement cannot take a file the browser reports as ${declared}; choose one ` + `of ${admitted}, whose content the local pipeline then checks.`));
-    if (kind === "image") {
-      const { width, height } = probe ?? {};
-      if (width !== undefined && width > IMAGE_MAX_EDGE_PX) refuse(["probe", "width"], tooLargeStill("width", width));
-      if (height !== undefined && height > IMAGE_MAX_EDGE_PX) refuse(["probe", "height"], tooLargeStill("height", height));
-      return;
-    }
-    if (probe === undefined) {
-      refuse(["probe"], unreadableDuration());
-      return;
-    }
-    if (probe.durationSeconds === undefined) {
-      refuse(["probe", "durationSeconds"], unreadableDuration());
-    } else if (probe.durationSeconds > VIDEO_MAX_DURATION_S) {
-      refuse(["probe", "durationSeconds"], tooLongVideo());
-    }
-    if (probe.width !== undefined && probe.width > VIDEO_MAX_WIDTH) refuse(["probe", "width"], tooLargeVideo("width", probe.width));
-    if (probe.height !== undefined && probe.height > VIDEO_MAX_HEIGHT) refuse(["probe", "height"], tooLargeVideo("height", probe.height));
+    // A poster and a caption track belong to a video, and the service states the same rule in the same words.
+    if (kind === "image" && payload.poster !== undefined) refuse(["poster"], "A poster belongs to a video, so an image carries none.");
+    if (kind === "image" && payload.captions !== undefined) refuse(["captions"], "A caption track belongs to a video, so an image carries none.");
   });
-export const replacePlacementSchema = z.strictObject({ variantId: contentIdSchema, placementId: contentIdSchema, placement: mediaPlacementSchema });
 export const removePlacementSchema = z.strictObject({ variantId: contentIdSchema, placementId: contentIdSchema });
 export type MediaPlacement = z.infer<typeof mediaPlacementSchema>;
 export type RegisterMediaAssetPayload = z.infer<typeof registerMediaAssetSchema>;
-export type ReplacePlacementPayload = z.infer<typeof replacePlacementSchema>;
 export type RemovePlacementPayload = z.infer<typeof removePlacementSchema>;

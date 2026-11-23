@@ -10,7 +10,7 @@ import type { CommitmentRow } from "@/modules/support/buckets";
 import { clampPageSize } from "@/modules/support/report";
 import { parseCivilDate } from "@/modules/time/civil";
 import { instantAt } from "@/modules/time/clock";
-import { assertScope, readResultOfRefusal, resolveSession, type AccessDecision, type ResolvedSession, type SessionResolution, type SessionSource } from "../authorize";
+import { assertScope, readResultOfRefusal, recordRefusalOutage, resolveSession, type AccessDecision, type ResolvedSession, type SessionResolution, type SessionSource } from "../authorize";
 import { buildEnvelope, type CommitmentRowRecord, type Coverage, type GiftRowRecord, type ReadAction, type ReadEnvelope, type RecordedValueState, type Scope, type SupportProjectionRecord, type ValueState } from "../envelope";
 import { LOCAL_STORE_SYSTEM, denied, unavailable, type DenialReason, type ReadResult } from "../outcome";
 import { type CivilDate } from "../../time/civil";
@@ -40,8 +40,8 @@ export interface ReadAnswer<T, C extends Coverage = Coverage> {
 export function answerOf<T, C extends Coverage = Coverage>(scope: Scope, asOf: string, answer: ReadAnswer<T, C>): ReadResult<ReadEnvelope<T, C>> {
   return { kind: "envelope", envelope: buildEnvelope<T, C>({ data: answer.data, scope, source: answer.source, revision: answer.revision, asOf, coverage: answer.coverage ?? (WHOLE_COLLECTION_COVERAGE as C), valueStates: answer.valueStates ?? {}, actions: answer.actions ?? [] }) };
 }
-/** Resolves the session a read acts for and the instant its clock states. A resolver fault is answered as the session refusal the caller names, and rethrown where the caller names none. */
-export async function resolveReading(options: { readonly source?: SessionSource; readonly sessionFaultReason?: DenialReason }): Promise<OpenedSession> {
+/** Resolves the session a read acts for and the instant its clock states. A resolver fault is answered as the session refusal the caller names, and rethrown where the caller names none; a store fault that refused the read is named to the diagnostic stream under the job's own name. */
+export async function resolveReading(options: { readonly job: string; readonly source?: SessionSource; readonly sessionFaultReason?: DenialReason }): Promise<OpenedSession> {
   let resolution: SessionResolution;
   try {
     resolution = await resolveSession(options.source);
@@ -49,10 +49,12 @@ export async function resolveReading(options: { readonly source?: SessionSource;
     if (options.sessionFaultReason === undefined) throw fault;
     return { ok: false, result: deniedRead(options.sessionFaultReason) };
   }
-  return !resolution.ok ? { ok: false, result: readResultOfRefusal(resolution.refusal) } : { ok: true, session: resolution.session, instant: instantAt(resolution.session.clockOffsetMs) };
+  if (resolution.ok) return { ok: true, session: resolution.session, instant: instantAt(resolution.session.clockOffsetMs) };
+  recordRefusalOutage(options.job, resolution.refusal);
+  return { ok: false, result: readResultOfRefusal(resolution.refusal) };
 }
 /** Resolves the session, the scope it selected and its instant, then applies the one authority this job needs beyond membership in that scope. */
-export async function openRead(options: { readonly source?: SessionSource; readonly unselectedReason: DenialReason; readonly permit?: (session: ResolvedSession, scope: Scope) => AccessDecision; readonly sessionFaultReason?: DenialReason }): Promise<OpenedRead> {
+export async function openRead(options: { readonly job: string; readonly source?: SessionSource; readonly unselectedReason: DenialReason; readonly permit?: (session: ResolvedSession, scope: Scope) => AccessDecision; readonly sessionFaultReason?: DenialReason }): Promise<OpenedRead> {
   const opened = await resolveReading(options);
   if (!opened.ok) return opened;
   const { session, instant } = opened;

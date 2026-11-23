@@ -6,6 +6,7 @@ import { invalid } from "@/modules/data-service/outcome";
 import { writeRoute } from "../handler";
 import { READ_ATTEMPT, readResponse } from "../read";
 import { sessionIdOf } from "../session-cookie";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const UPDATE_FAMILY = "update" as const;
@@ -34,7 +35,7 @@ function searchValueOf(search: URLSearchParams, name: string): string | readonly
 }
 const queryOf = (search: URLSearchParams): Record<keyof VariantQuery, string | readonly string[] | undefined> => ({ view: searchValueOf(search, "view"), variantId: searchValueOf(search, "variantId") });
 /** The release standing at one edition's head, or the share presentation one edition shows, as the one read envelope. */
-export function GET(request: Request): Promise<Response> {
+function readVariants(request: Request): Promise<Response> {
   const search = new URL(request.url).searchParams;
   const selecting = EDITION_SELECTING_PARAMETERS.find((name) => search.has(name));
   if (selecting !== undefined) return Promise.resolve(toResponse(invalid({ operationId: READ_ATTEMPT, fields: { [selecting]: [EDITION_SELECTION_REFUSED] } })));
@@ -44,4 +45,5 @@ export function GET(request: Request): Promise<Response> {
   return readResponse(READ_ATTEMPT, () => (view === "release" ? reads.updates.readRelease({ variantId }) : reads.updates.readSharePresentation({ variantId })));
 }
 /** Creates one working edition of one Update — one family-permitted audience in one exact content locale, with no draft, candidate or release yet. */
-export const POST = (request: NextRequest): Promise<Response> => writeRoute(request, createVariantBodySchema, (input) => mutations.updates.createVariant(sessionIdOf(request), { ...input, payload: { ...input.payload, family: UPDATE_FAMILY } }));
+const createVariant = (request: NextRequest): Promise<Response> => writeRoute(request, createVariantBodySchema, (input) => mutations.updates.createVariant(sessionIdOf(request), { ...input, payload: { ...input.payload, family: UPDATE_FAMILY } }));
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readVariants, POST: createVariant });

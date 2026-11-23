@@ -58,7 +58,7 @@ function currenciesOf(row: CommitmentRowFigure): readonly string[] {
   if (row.fixedTotal !== null) for (const { field } of FIXED_TOTAL_FIELDS) seen.add(row.fixedTotal[field].currency);
   return [...seen];
 }
-const returnPathOf = (listQuery: CommitmentsQuery): string => `/support/commitments?${toCommitmentsParams({ showAdditionalTypes: listQuery.showAdditionalTypes, page: listQuery.page }).toString()}`;
+const returnPathOf = (listQuery: CommitmentsQuery): string => `/support/commitments?${toCommitmentsParams({ page: listQuery.page }).toString()}`;
 type PauseReading = { readonly label: string; readonly tone: StatusTone; readonly sentence: string; readonly resumeOn: string | null };
 function pauseReadingOf(pause: CommitmentRowFigure["pause"]): PauseReading {
   if (pause.state === "active") return { label: "Running", tone: "positive", sentence: "The source reports this commitment running, so no pause stands in front of the next date it states.", resumeOn: null };
@@ -68,7 +68,7 @@ function pauseReadingOf(pause: CommitmentRowFigure["pause"]): PauseReading {
 function ReturnPath({ href }: { readonly href: string }): ReactElement {
   return (
     <nav aria-label="Breadcrumb" className="min-w-0">
-      <Link href={href} aria-label="Return to the commitments list with the filters and page you came from" className="inline-flex min-h-6 max-w-full items-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground">
+      <Link href={href} aria-label="Return to the commitments list with the filters and page you came from" className="inline-link inline-flex min-h-6 max-w-full items-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground">
         <ArrowLeftIcon aria-hidden="true" className="size-4 shrink-0 rtl:-scale-x-100" />
         <span className="min-w-0 break-words">Commitments</span>
       </Link>
@@ -146,20 +146,20 @@ function OverviewCard({ row, valueStates, locale }: OverviewCardProps): ReactEle
           <AmountValue money={row.perOccurrence} valueState={valueStateAt(valueStates, perOccurrenceStatePath(row.commitmentRowId))} locale={locale} emphasis="headline" />
         </dd>
       </dl>
-      <p className="text-sm text-pretty text-muted-foreground">{"A commitment is the source's standing arrangement, not received cash: this amount is never counted as money received, and the outcome beside it states where the collection stands rather than what arrived."}</p>
+      <p className="type-supporting text-pretty">{"A commitment is the source's standing arrangement, not received cash: this amount is never counted as money received, and the outcome beside it states where the collection stands rather than what arrived."}</p>
       <Separator />
       <div className="flex min-w-0 flex-col gap-1.5">
         <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
           <span className="font-medium">{LABELS.currentOutcome}</span>
           <StatusBadge {...statusBadgeProps(BUCKET_STATUS, row.bucket)} srPrefix={LABELS.currentOutcome} className={WRAPPING_BADGE_CLASS} />
         </p>
-        <p className="text-sm text-pretty text-muted-foreground">{BUCKET_MEANING[row.bucket]}</p>
+        <p className="type-supporting text-pretty">{BUCKET_MEANING[row.bucket]}</p>
       </div>
       <Separator />
-      <p className="text-sm text-pretty">{"This page is read-only: it cannot post, retry, pause, resume or correct a payment, and no control on it changes anything at the source."}</p>
+      <p className="type-supporting text-pretty">{"This page is read-only: it cannot post, retry, pause, resume or correct a payment, and no control on it changes anything at the source."}</p>
       <Separator />
       <section aria-labelledby="commitment-dates-heading" className="flex min-w-0 flex-col gap-2">
-        <h2 id="commitment-dates-heading" className="text-sm font-semibold">
+        <h2 id="commitment-dates-heading" className="type-section-title">
           Live dates
         </h2>
         <dl className="flex min-w-0 flex-col gap-2 text-sm">
@@ -212,7 +212,7 @@ type OutcomeHistoryProps = { readonly buckets: readonly OutcomeBucketFigure[]; r
 function OutcomeHistoryCard({ buckets, total, current, locale }: OutcomeHistoryProps): ReactElement {
   return (
     <SectionCard headingId="commitment-outcome-heading" region={{ id: "commitment-outcome-heading", className: "min-w-0" }} title="Outcome history" description={OUTCOME_LEAD} contentClassName="flex min-w-0 flex-col gap-3">
-      <p className="text-sm text-muted-foreground">{`The read states ${commitmentCountText(total, locale)} in this context.`}</p>
+      <p className="type-supporting">{`The read states ${commitmentCountText(total, locale)} in this context.`}</p>
       <ul className="flex min-w-0 flex-col gap-2">
         {buckets.map((figure) => {
           const isCurrent = figure.bucket === current;
@@ -224,7 +224,7 @@ function OutcomeHistoryCard({ buckets, total, current, locale }: OutcomeHistoryP
                 <CountFigure count={figure.count} valueState={figure.valueState} locale={locale} />
                 {isCurrent ? <span className="text-xs font-medium">{"This commitment's outcome"}</span> : null}
               </div>
-              <p className="text-sm text-pretty text-muted-foreground">{BUCKET_MEANING[figure.bucket]}</p>
+              <p className="type-supporting text-pretty">{BUCKET_MEANING[figure.bucket]}</p>
             </li>
           );
         })}
@@ -270,7 +270,7 @@ function EnvelopeBody({ envelope, commitmentId, locale, returnHref }: EnvelopeBo
 type CommitmentDetailBodyProps = CommitmentDetailProps & { readonly listQuery: CommitmentsQuery };
 function CommitmentDetailBody({ scope, commitmentId, locale, dir, listQuery, className }: CommitmentDetailBodyProps): ReactElement {
   const returnHref = useMemo(() => returnPathOf(listQuery), [listQuery]);
-  const { data: answer, isError, isPending, refetch } = useCommitments({ scope, query: useMemo<CommitmentsQuery>(() => ({ showAdditionalTypes: listQuery.showAdditionalTypes, page: listQuery.page, commitmentId }), [listQuery, commitmentId]) });
+  const { data: answer, isError, isPending, refetch } = useCommitments({ scope, query: useMemo<CommitmentsQuery>(() => ({ page: listQuery.page, commitmentId }), [listQuery, commitmentId]) });
   const retry = { label: "Read this commitment again", onClick: (): void => void refetch() };
   const listAction = { label: LIST_ACTION_LABEL, href: returnHref };
   const framed = (content: ReactElement): ReactElement => (

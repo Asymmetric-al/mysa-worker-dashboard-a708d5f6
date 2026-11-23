@@ -2,6 +2,7 @@ import { z } from "zod";
 import { reads, refusedRead, toResponse } from "@/modules/data-service";
 import type { FieldMessages } from "@/modules/data-service/outcome";
 import { READ_ATTEMPT, readResponse } from "../../read";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type PreviewQuery = Parameters<typeof reads.pages.readPreview>[0];
@@ -31,7 +32,7 @@ function unsupportedFieldsOf(search: URLSearchParams): FieldMessages {
   return fields;
 }
 /** The preview this session is authorised to see, or the refusal it is entitled to: one read envelope carrying the exact acknowledged revision, or the `denied`, `unavailable` or `invalid` outcome that names why it is not shown. */
-export async function GET(request: Request): Promise<Response> {
+async function readPreview(request: Request): Promise<Response> {
   const search = new URL(request.url).searchParams;
   const unsupported = unsupportedFieldsOf(search);
   if (Object.keys(unsupported).length > 0) return toResponse(refusedRead(READ_ATTEMPT, unsupported));
@@ -39,3 +40,4 @@ export async function GET(request: Request): Promise<Response> {
   if (!query.success) return toResponse(refusedRead(READ_ATTEMPT, query.error));
   return readResponse(READ_ATTEMPT, () => reads.pages.readPreview(query.data as PreviewQuery));
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readPreview });

@@ -6,7 +6,7 @@ import DraftStatus, { LIFECYCLE_STATUS, lifecycleOf, variantRecordOf } from "@/c
 import LocaleSwitcher, { type LocaleEdition } from "@/components/locale-switcher";
 import { StateNotice, type NoticeHeadingLevel } from "@/components/state-notice";
 import StatusBadge, { REACH_STATUS } from "@/components/status-badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import VariantSwitcher, { AUDIENCE_WORDS, type VariantTab } from "@/components/variant-switcher";
@@ -30,6 +30,8 @@ type ReviewInput<P> = Omit<MutationInput<P>, "operationId">;
 type SubmitReviewPayload = Parameters<ReturnType<typeof useSubmitForReview>["submit"]>[0]["payload"];
 const HEADING = "Editions, candidates and releases";
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
+/** The one type scale's utility for each level, so every heading this surface renders takes the measure of the level it lands at rather than one fixed size. */
+const HEADING_SCALE: Readonly<Record<2 | 3 | 4, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const INTRO = `${DRAFT_VS_RELEASED.draftIsNotWhatReadersSee} ${DRAFT_VS_RELEASED.releaseIsWhatRecipientsReceive}`;
 const SIBLING_NOTE =
   "Each edition below states its own published revision, and a release attempt that fails for one edition leaves " + "every other edition's published revision standing. Nothing here is a rollback, no sibling's release is removed, " + "and the editions are never added up into one status for the whole Update.";
@@ -108,14 +110,14 @@ const READ_STATE = {
   empty: { title: "This Update has no editions yet", description: "An Update carries one edition per audience and content language, and none exists for this one yet. Nothing here can be drafted, reviewed or released until an edition exists." },
   stale: { title: "This Update is being read again", description: "The context changed since this Update was read, so the previous context's editions are not shown under the current one." },
 } as const;
-const NOTE_CLASS = "text-sm text-pretty text-muted-foreground";
-const SENTENCE_CLASS = "text-sm text-pretty";
-const FACT_LIST_CLASS = "flex min-w-0 flex-col gap-3 text-sm";
+const NOTE_CLASS = "type-supporting text-pretty";
+const SENTENCE_CLASS = "type-body text-pretty";
+const FACT_LIST_CLASS = "flex min-w-0 flex-col gap-3 type-body";
 const FACT_ROW_CLASS = "flex min-w-0 flex-col gap-1";
 const FACT_TERM_CLASS = "text-muted-foreground";
-const FACT_VALUE_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1";
+const FACT_VALUE_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 type-body";
 const IDENTIFIER_CLASS = "mono-identifier min-w-0 wrap-anywhere";
-const LINK_CLASS = cn(buttonVariants({ variant: "outline", size: "sm" }), "h-auto min-h-8 max-w-full py-1.5 whitespace-normal");
+const LINK_CLASS = cn(buttonVariants({ variant: "outline", size: "sm" }), BUTTON_WRAP_CLASS);
 const ACTION_LIST_CLASS = "flex min-w-0 flex-wrap items-center gap-2";
 const ROOT_CLASS = "flex min-w-0 flex-col gap-6";
 function instantTextOf(value: unknown): string {
@@ -188,7 +190,7 @@ export type ReviewIntent =
   | { readonly kind: "withdraw-locale"; readonly variantId: string; readonly localeTag: string; readonly expectedRevision: string; readonly audience: VariantAudience }
   | { readonly kind: "withdraw-update"; readonly documentId: string; readonly expectedRevision: string };
 const editionNameOf = (audience: VariantAudience, localeTag: string): string => `${AUDIENCE_WORDS[audience].label}, ${endonymOf(localeTag)}`;
-const StepSentences = ({ children }: { readonly children: ReactNode }): ReactElement => <div className="flex min-w-0 flex-col gap-2">{children}</div>;
+const StepSentences = ({ children }: { readonly children: ReactNode }): ReactElement => <div className="flex min-w-0 flex-col gap-2 type-supporting">{children}</div>;
 type ReviewStepProps = {
   readonly scope: Scope;
   readonly intent: ReviewIntent | null;
@@ -214,7 +216,7 @@ function ReviewStep({ scope, intent, submitForReview, restoreRevision, withdrawL
     [scope, intent, releaseMode],
   );
   const restoreInput = useMemo<ReviewInput<RestoreRevisionAsDraftPayload> | null>(() => (intent !== null && intent.kind === "restore-revision" ? { scope, expectedRevision: intent.expectedRevision, payload: { revisionId: intent.revisionId } } : null), [scope, intent]);
-  const localeInput = useMemo<ReviewInput<WithdrawLocalePayload> | null>(() => (intent !== null && intent.kind === "withdraw-locale" ? { scope, expectedRevision: intent.expectedRevision, payload: { variantId: intent.variantId, locale: intent.localeTag } } : null), [scope, intent]);
+  const localeInput = useMemo<ReviewInput<WithdrawLocalePayload> | null>(() => (intent !== null && intent.kind === "withdraw-locale" ? { scope, expectedRevision: intent.expectedRevision, payload: { variantId: intent.variantId } } : null), [scope, intent]);
   const updateInput = useMemo<ReviewInput<WithdrawUpdatePayload> | null>(() => (intent !== null && intent.kind === "withdraw-update" ? { scope, expectedRevision: intent.expectedRevision, payload: { documentId: intent.documentId } } : null), [scope, intent]);
   if (intent === null) return null;
   switch (intent.kind) {
@@ -380,7 +382,8 @@ function EditionCell({ documentId, documentRevision, edition, scope, headingLeve
   const staleSince = translation.status === "stale" ? instantTextOf(translation.sourceUpdatedAt) : "";
   const staleWords = LIFECYCLE_STATUS["stale-translation"];
   const audience = AUDIENCE_WORDS[edition.audience];
-  const Heading = HEADING_TAG[nestedLevel(headingLevel)];
+  const headingNest = nestedLevel(headingLevel);
+  const Heading = HEADING_TAG[headingNest];
   const editorHref = `/communication/${encodeURIComponent(documentId)}/${encodeURIComponent(edition.variantId)}`;
   const draftRevisionId = edition.draftRevisionId;
   const base = { variantId: edition.variantId, audience: edition.audience, localeTag: edition.locale.tag, expectedRevision: edition.recordRevision };
@@ -395,7 +398,7 @@ function EditionCell({ documentId, documentRevision, edition, scope, headingLeve
       <Card className="min-w-0">
         <CardHeader className="flex min-w-0 flex-col gap-2">
           <CardTitle>
-            <Heading id={titleId} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-base">
+            <Heading id={titleId} className={cn(HEADING_SCALE[headingNest], "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1")}>
               <StatusBadge label={audience.label} tone={audience.tone} srPrefix="Audience" />
               <bdi {...{ lang: edition.locale.tag, className: "min-w-0 wrap-anywhere" }}>{endonymOf(edition.locale.tag)}</bdi>
             </Heading>
@@ -431,13 +434,13 @@ function EditionCell({ documentId, documentRevision, edition, scope, headingLeve
           <Separator />
           <div className="flex min-w-0 flex-col gap-2">
             <div className={ACTION_LIST_CLASS}>
-              <Link {...{ href: editorHref, className: LINK_CLASS }}>{ACTION_COPY.editor}</Link>
-              {edition.draftRevisionId !== null || edition.candidateId !== null || head !== null ? <Link {...{ href: `${editorHref}/preview`, className: LINK_CLASS }}>{ACTION_COPY.preview}</Link> : <p className={NOTE_CLASS}>{ACTION_COPY.noPreview}</p>}
+              <Link {...{ href: editorHref, "data-slot": "button", className: LINK_CLASS }}>{ACTION_COPY.editor}</Link>
+              {edition.draftRevisionId !== null || edition.candidateId !== null || head !== null ? <Link {...{ href: `${editorHref}/preview`, "data-slot": "button", className: LINK_CLASS }}>{ACTION_COPY.preview}</Link> : <p className={NOTE_CLASS}>{ACTION_COPY.noPreview}</p>}
             </div>
             <div className={ACTION_LIST_CLASS}>
               {actions.map((action) =>
                 action.run === null ? null : (
-                  <Button key={action.key} type="button" variant={action.variant} size="sm" className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal" onClick={action.run}>
+                  <Button key={action.key} type="button" variant={action.variant} size="sm" className={BUTTON_WRAP_CLASS} onClick={action.run}>
                     {action.label}
                   </Button>
                 ),
@@ -522,7 +525,7 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
   return (
     <div data-slot="variant-overview" data-document-id={data.document.documentId} data-edition-count={String(editions.length)} className={cn(ROOT_CLASS, className)}>
       <header className="flex min-w-0 flex-col gap-2">
-        <Heading {...{ id: headingId, className: "text-start text-lg font-medium text-pretty" }}>{HEADING}</Heading>
+        <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-start text-pretty") }}>{HEADING}</Heading>
         <p className={NOTE_CLASS}>{INTRO}</p>
         <p className={NOTE_CLASS}>{SIBLING_NOTE}</p>
       </header>
@@ -542,7 +545,7 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
       </ul>
       <ReviewStep scope={envelope.scope} intent={intent} submitForReview={submitForReview.submit} restoreRevision={restoreRevision.submit} withdrawLocale={withdrawLocale.submit} withdrawUpdate={withdrawUpdate.submit} checkResult={checkResult} onClose={() => setIntent(null)} headingLevel={headingLevel} />
       <section aria-labelledby={`${headingId}-review`} className="flex min-w-0 flex-col gap-3">
-        <SectionHeading {...{ id: `${headingId}-review`, className: "text-start text-base font-medium text-pretty" }}>{REVIEW_OFFER.heading}</SectionHeading>
+        <SectionHeading {...{ id: `${headingId}-review`, className: cn(HEADING_SCALE[nestedLevel(headingLevel)], "text-start text-pretty") }}>{REVIEW_OFFER.heading}</SectionHeading>
         <p className={NOTE_CLASS}>{REVIEW_OFFER.intro}</p>
         <StatusBadge label={`${String(awaitingEditions.length)} ${awaitingEditions.length === 1 ? REVIEW_OFFER.singularCountNoun : REVIEW_OFFER.countNoun}`} valueState={envelope.valueStates.awaitingRelease} srPrefix="Editions" />
         {awaitingEditions.length === 0 ? (
@@ -551,8 +554,8 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
           <ul className="flex min-w-0 list-none flex-col gap-2 p-0">
             {awaitingEditions.map((edition) => (
               <li key={edition.variantId} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="min-w-0 text-sm wrap-anywhere">{editionNameOf(edition.audience, edition.locale.tag)}</span>
-                {edition.candidateId === null ? null : <Link {...{ href: `/communication/review/${encodeURIComponent(edition.candidateId)}`, className: LINK_CLASS }}>{REVIEW_OFFER.link}</Link>}
+                <span className="min-w-0 type-body wrap-anywhere">{editionNameOf(edition.audience, edition.locale.tag)}</span>
+                {edition.candidateId === null ? null : <Link {...{ href: `/communication/review/${encodeURIComponent(edition.candidateId)}`, "data-slot": "button", className: LINK_CLASS }}>{REVIEW_OFFER.link}</Link>}
               </li>
             ))}
           </ul>
@@ -562,19 +565,19 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
         {reviewCandidateAction === null || reviewCandidateAction.available ? null : <p className={NOTE_CLASS}>{reviewCandidateAction.reason ?? PERMITS_WITHHELD}</p>}
       </section>
       <section aria-labelledby={`${headingId}-withdraw`} className="flex min-w-0 flex-col gap-3">
-        <SectionHeading {...{ id: `${headingId}-withdraw`, className: "text-start text-base font-medium text-pretty" }}>{REVIEW_COPY.withdrawUpdate.title}</SectionHeading>
+        <SectionHeading {...{ id: `${headingId}-withdraw`, className: cn(HEADING_SCALE[nestedLevel(headingLevel)], "text-start text-pretty") }}>{REVIEW_COPY.withdrawUpdate.title}</SectionHeading>
         <p className={NOTE_CLASS}>{WITHDRAWAL_WORDING.whatItDoes}</p>
         <p className={NOTE_CLASS}>{WITHDRAWAL_WORDING.whatItDoesNotDo}</p>
         {editions.some((edition) => edition.headRelease !== null && edition.headRelease.withdrawnAt === undefined) ? (
           <div className={ACTION_LIST_CLASS}>
-            <Button {...{ type: "button", variant: "outline", className: "h-auto min-h-8 max-w-full py-1.5 whitespace-normal", onClick: () => setIntent({ kind: "withdraw-update", documentId: data.document.documentId, expectedRevision: data.document.recordRevision }) }}>{ACTION_COPY.withdrawUpdate}</Button>
+            <Button {...{ type: "button", variant: "outline", className: BUTTON_WRAP_CLASS, onClick: () => setIntent({ kind: "withdraw-update", documentId: data.document.documentId, expectedRevision: data.document.recordRevision }) }}>{ACTION_COPY.withdrawUpdate}</Button>
           </div>
         ) : (
           <p className={NOTE_CLASS}>{ACTION_COPY.withheldReasons.withdrawUpdate}</p>
         )}
       </section>
       <section aria-labelledby={`${headingId}-permits`} className="flex min-w-0 flex-col gap-3">
-        <SectionHeading {...{ id: `${headingId}-permits`, className: "text-start text-base font-medium text-pretty" }}>{PERMITS_HEADING}</SectionHeading>
+        <SectionHeading {...{ id: `${headingId}-permits`, className: cn(HEADING_SCALE[nestedLevel(headingLevel)], "text-start text-pretty") }}>{PERMITS_HEADING}</SectionHeading>
         <p className={NOTE_CLASS}>{PERMITS_INTRO}</p>
         <ul className="flex min-w-0 list-none flex-col gap-2 p-0">
           {envelope.actions.map((action) => (

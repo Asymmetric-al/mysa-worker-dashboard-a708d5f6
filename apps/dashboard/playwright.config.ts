@@ -889,7 +889,7 @@ export function renditionAddressOf(assetId: string, rendition: string): string {
   return `/api/media/${encodeURIComponent(assetId)}/${encodeURIComponent(rendition)}`; // The address of one rendition of one asset, as the application emits it.
 }
 export async function chooseFile(picker: Locator, file: string): Promise<void> {
-  await picker.locator('input[type="file"]').setInputFiles(fixturePathOf(file)); // Chooses one file in an open picker and waits for the picker's own description step, which is where the browser has
+  await picker.getByLabel(/^File\b/u).setInputFiles(fixturePathOf(file)); // Chooses one file in an open picker and waits for the picker's own description step, which is where the browser has. The field is addressed by its label rather than as the only file input, because a video's picker also offers a poster and a caption track beside the media file itself.
   await expect(picker).toHaveAttribute("data-phase", "described");
 }
 export function fixturePathOf(name: string): string {

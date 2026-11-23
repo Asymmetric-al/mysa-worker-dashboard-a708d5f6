@@ -65,11 +65,12 @@ import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { exponentOf } from "@/modules/money/currency";
 import { BASIS_DESCRIPTION, SUPPORT_BASIS, type SupportProjection } from "@/modules/support/basis";
 import { buildReportQuery, runReport, type ReportResult } from "@/modules/support/report";
+import type { SessionDocuments } from "@/modules/store/paths";
 import { instantAt } from "@/modules/time/clock";
 import { civilDateAt, serialiseCivilDate, todayInZone, type CivilDate } from "@/modules/time/civil";
 import { shareThroughDateOfCutoff } from "@/modules/time/window";
 import { readSession } from "../../store/repository";
-import { assertScope, canView, readResultOfRefusal, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
+import { assertScope, canView, coachingRecordsSessionIdOf, readResultOfRefusal, recordRefusalOutage, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
 import {
   buildEnvelope,
   coachingCheckInRecordSchema,
@@ -136,6 +137,16 @@ type CoachingModuleAdmissionView = { readonly module: ModuleKey; readonly until:
 type CoachingReadContext = { readonly session: ResolvedSession; readonly state: CoachingState; readonly at: Temporal.Instant };
 type CoachingLoad = { readonly ok: true; readonly context: CoachingReadContext } | { readonly ok: false; readonly result: ReadResult<never> };
 type ScopeLoad = { readonly ok: true; readonly scope: Scope } | { readonly ok: false; readonly result: ReadResult<never> };
+/** The document set one coaching seat addresses for its records: its own, or the world it was seated in, which is the worker's own record and never a copy of it. */
+async function coachingRecordsOf(session: ResolvedSession, seat: SessionDocuments): Promise<SessionDocuments | undefined> {
+  const recordsSessionId = coachingRecordsSessionIdOf(session);
+  if (recordsSessionId === session.sessionId) return seat;
+  try {
+    return await readSession(recordsSessionId);
+  } catch {
+    return undefined;
+  }
+}
 async function loadCoachingState(job: string, source?: SessionSource): Promise<CoachingLoad> {
   let resolution: Awaited<ReturnType<typeof resolveSession>>;
   try {
@@ -143,17 +154,23 @@ async function loadCoachingState(job: string, source?: SessionSource): Promise<C
   } catch {
     return { ok: false, result: deniedRead("session-unavailable") };
   }
-  if (!resolution.ok) return { ok: false, result: readResultOfRefusal(resolution.refusal) };
+  if (!resolution.ok) {
+    recordRefusalOutage(job, resolution.refusal);
+    return { ok: false, result: readResultOfRefusal(resolution.refusal) };
+  }
   const { session } = resolution;
-  let documents: Awaited<ReturnType<typeof readSession>>;
+  let seat: Awaited<ReturnType<typeof readSession>>;
   try {
-    documents = await readSession(session.sessionId);
+    seat = await readSession(session.sessionId);
   } catch {
     return { ok: false, result: storeUnavailableRead("coaching", COACHING_SOURCE_REFERENCE, "The coaching records for this session could not be read. Reload the session; nothing was changed.") };
   }
-  if (documents === undefined) return { ok: false, result: storeUnavailableRead("coaching", COACHING_SOURCE_REFERENCE, "This session holds no records yet. Reset the development data and try again.") };
-  if (failureFor(failurePlanOfDocument(documents.meta), "read", job) === "denied") return { ok: false, result: deniedRead("no-permission") };
-  const parsed = coachingStateSchema.safeParse(documents.state);
+  if (seat === undefined) return { ok: false, result: storeUnavailableRead("coaching", COACHING_SOURCE_REFERENCE, "This session holds no records yet. Reset the development data and try again.") };
+  // The seat's own document proves the session exists and carries the failure plan the development control armed on it, so the denial is judged there before any record is enumerated.
+  if (failureFor(failurePlanOfDocument(seat.meta), "read", job) === "denied") return { ok: false, result: deniedRead("no-permission") };
+  const records = await coachingRecordsOf(session, seat);
+  if (records === undefined) return { ok: false, result: storeUnavailableRead("coaching", COACHING_SOURCE_REFERENCE, "The coaching records this seat shares could not be read. Reload the session; nothing was changed.") };
+  const parsed = coachingStateSchema.safeParse(records.state);
   return !parsed.success ? { ok: false, result: storeUnavailableRead("coaching", COACHING_SOURCE_REFERENCE, "The coaching records for this session did not decode. Nothing is shown, and nothing was changed.") } : { ok: true, context: { session, state: parsed.data, at: instantAt(session.clockOffsetMs) } };
 }
 function workerScope(context: CoachingReadContext): ScopeLoad {
@@ -495,7 +512,7 @@ export async function readCoachingOverview(): Promise<ReadResult<ReadEnvelope<Co
       for (const key of selectedModules) {
         const supportSource: SupportLoad | null = isFinancialModule(key) ? supportLoad() : null;
         const subjectAvailability: SubjectAvailability = (supportSource !== null && !supportSource.ok) || moduleSourceReportedDown(session, key) ? "unavailable" : "available";
-        const decision = moduleReadState(working.value, key, accessContextOf("worker", session.principalId, scope.organizationId, ministryId, subjectAvailability), at, observationOf(key, state, supportSource));
+        const decision = moduleReadState(working.value, key, accessContextOf("worker", session.principalId, scope.organizationId, ministryId, subjectAvailability), at, observationOf(key, state, record.grantId, supportSource));
         if (!decision.ok) continue;
         admittedModules.push({ module: key, readState: decision.value });
       }
@@ -877,7 +894,7 @@ type CoachSharedCheckInView = { readonly revisionId: string; readonly questionsC
 } & { readonly questions: readonly CheckInQuestionView[]; readonly answers: readonly CheckInAnswerView[] };
 type CoachTaskSummaryView = { readonly shareId: string; readonly state: TaskShareSummaryState; readonly description: string | null; readonly dueDate: TaskDueDateView | null; readonly status: TaskStatus | null };
 type CoachGoalView = { readonly amount: Money; readonly exponent: number | null; readonly measure: string; readonly effectiveFrom: string; readonly valueState: RecordedValueState };
-type CoachReceivedFigureView = { readonly currency: string; readonly exponent: number | null; readonly minorUnits: number | null; readonly valueState: ValueState; readonly from: string; readonly to: string; readonly periodState: string };
+type CoachReceivedFigureView = { readonly currency: string; readonly exponent: number | null; readonly minorUnits: number | null; readonly valueState: ValueState; readonly from: string; readonly to: string; readonly periodState: string; readonly coverageState: Coverage["state"] };
 type CoachModuleViewBase = { readonly module: ModuleKey; readonly state: ModuleReadState | null; readonly unavailability: string | null };
 type CoachTargetsModuleView = CoachModuleViewBase & { readonly module: "targets"; readonly progress: readonly CoachTargetProgressView[] };
 type CoachCheckInsModuleView = CoachModuleViewBase & { readonly module: "check-ins"; readonly sharedCheckIns: readonly CoachSharedCheckInView[] };
@@ -918,16 +935,28 @@ function receivedFiguresOf(projection: SupportProjection, range: { readonly from
   }
   const summary = result.summary.find((entry) => entry.currency === range.currency);
   if (summary === undefined) return ok([]);
-  return ok([{ currency: summary.currency, exponent: summary.exponent ?? null, minorUnits: summary.received.minorUnits, valueState: summary.received.valueState, from: serialiseCivilDate(result.snapshot.period.from), to: serialiseCivilDate(result.snapshot.period.to), periodState: result.snapshot.period.state }]);
+  return ok([
+    {
+      currency: summary.currency,
+      exponent: summary.exponent ?? null,
+      minorUnits: summary.received.minorUnits,
+      valueState: summary.received.valueState,
+      from: serialiseCivilDate(result.snapshot.period.from),
+      to: serialiseCivilDate(result.snapshot.period.to),
+      periodState: result.snapshot.period.state,
+      coverageState: result.snapshot.coverage.state,
+    },
+  ]);
 }
-function observationOf(module: ModuleKey, state: CoachingState, support: SupportLoad | null): ModuleObservation {
+function observationOf(module: ModuleKey, state: CoachingState, grantId: string, support: SupportLoad | null): ModuleObservation {
   switch (module) {
     case "targets": {
       const presence: ModuleContentPresence = state.coachingTargets.length === 0 ? "none" : "complete";
       return { presence, withheldUntilReReviewed: false };
     }
     case "check-ins": {
-      const shared = state.coachingCheckIns.filter((checkIn) => checkIn.shared !== null && checkIn.shared.withdrawnAt === null);
+      // A check-in belongs to the relationship it was shared under, so only that relationship's own shared revisions are its content: a revision shared under another grant leaves this one with nothing recorded rather than borrowing another episode's content.
+      const shared = state.coachingCheckIns.filter((checkIn) => checkIn.grantId === grantId && checkIn.shared !== null && checkIn.shared.withdrawnAt === null);
       return { presence: shared.length === 0 ? "none" : "complete", withheldUntilReReviewed: false };
     }
     case "task-summaries": {
@@ -1017,7 +1046,7 @@ function coachModulesOf(context: CoachingReadContext, working: CoachingGrant, re
     const sourceDown = (isFinancialModule(key) && !support.ok) || moduleSourceReportedDown(session, key);
     const unavailability = sourceDown ? (support.ok ? COACHING_MODULE_SOURCE_DOWN_REASON : support.reason) : null;
     const availability: SubjectAvailability = sourceDown ? "unavailable" : "available";
-    const decision = moduleReadState(working, key, accessContextOf("coach", session.principalId, scope.organizationId, scope.ministryId, availability), at, observationOf(key, state, support));
+    const decision = moduleReadState(working, key, accessContextOf("coach", session.principalId, scope.organizationId, scope.ministryId, availability), at, observationOf(key, state, working.grantId, support));
     if (!decision.ok) continue;
     const base = { state: decision.value, unavailability };
     const index = views.length;

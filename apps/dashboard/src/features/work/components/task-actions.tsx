@@ -6,7 +6,7 @@ import { hasSettled, intentKeyOf, mayReplay, useReviewedMutation, type MutationS
 import OperationResult, { type ReceiptHeadingLevel } from "@/components/operation-result";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/cn";
 import type { MutationInput, ReadAction, Scope, TaskRecordStatus } from "@/modules/data-service/envelope";
@@ -25,7 +25,6 @@ const WORKING_SUFFIX = " — working";
 const CANCEL_CONFIRM_LABEL = "Cancel the task";
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { operation: "Action", taskId: "Task", confirmed: "Confirmation" };
 export const TASK_STATUS_TONES: Readonly<Record<TaskRecordStatus, StatusTone>> = { open: "info", completed: "positive", reopened: "caution", cancelled: "muted" };
-const CONTROL_CLASS = "h-auto min-h-8 max-w-full py-1.5 whitespace-normal";
 const ACTION_VARIANTS: Readonly<Record<TaskActionName, "default" | "outline" | "destructive">> = { completeTask: "default", reopenTask: "outline", editTask: "outline", cancelTask: "destructive" };
 const PAYLOADS: Readonly<Record<TaskTransitionName, (taskId: string) => TaskTransitionPayload>> = { completeTask: (taskId) => ({ operation: "completeTask", taskId }), reopenTask: (taskId) => ({ operation: "reopenTask", taskId }), cancelTask: (taskId) => ({ operation: "cancelTask", taskId, confirmed: true }) };
 export type TaskActionsPresentation = "row" | "body";
@@ -130,7 +129,7 @@ function sendTransition<T extends TaskTransitionPayload>(schema: ZodType<T>, run
     groupRef.current?.focus();
   }, [reset]);
   const bodyControls = facts.map(({ name, fact }) => (
-    <Button key={name} type="button" variant={ACTION_VARIANTS[name]} size="sm" disabled={!fact.available || pending} aria-busy={pending && attempt?.action === name ? true : undefined} aria-describedby={fact.available ? undefined : reasonIdOf(name)} onClick={() => startAction(name)} className={CONTROL_CLASS}>
+    <Button key={name} type="button" variant={ACTION_VARIANTS[name]} size="sm" disabled={!fact.available || pending} aria-busy={pending && attempt?.action === name ? true : undefined} aria-describedby={fact.available ? undefined : reasonIdOf(name)} onClick={() => startAction(name)} className={BUTTON_WRAP_CLASS}>
       {ACTION_LABELS[name]}
       <span className="sr-only">
         {" for "}
@@ -146,7 +145,7 @@ function sendTransition<T extends TaskTransitionPayload>(schema: ZodType<T>, run
       <div ref={resultRef} tabIndex={-1} data-slot="task-action-result" data-outcome={current.outcome} className={cn("flex min-w-0 flex-col gap-2", presentation === "row" && "w-64 max-w-full text-start whitespace-normal")}>
         <OperationResult outcome={current} headingLevel={receiptHeadingLevel} onCheckResult={receiptCheckResult} onRetrySameWork={receiptRetry} onReapply={receiptReapply} fieldLabels={FIELD_LABELS} />
         {settled ? (
-          <Button type="button" variant="outline" size="sm" onClick={dismiss} className={CONTROL_CLASS}>
+          <Button type="button" variant="outline" size="sm" onClick={dismiss} className={BUTTON_WRAP_CLASS}>
             {"Dismiss this result"}
           </Button>
         ) : null}

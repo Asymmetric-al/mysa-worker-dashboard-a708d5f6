@@ -15,6 +15,8 @@ import ImportTable from "./import-table";
 export type ImportMappingProposal = ImportProposalRecord & { readonly suggestion: ImportSuggestedMapping };
 export type StepMappingProps = { readonly proposal: ReadEnvelope<ImportMappingProposal>; readonly confirmedMapping: ImportConfirmedMapping | null; readonly onConfirm: (mapping: ImportConfirmedMapping) => void; readonly submitting: boolean; readonly fieldErrors: FieldErrorLookup | null };
 const MAPPING_HEADINGS: readonly string[] = ["Column", "Heading in the file", "Suggested field", "Field to import", "Status and reason"];
+/** The mapping table's five column widths, fixed so every row's field selector is the width stated here instead of the width its own longest option needs. Stated in scale steps rather than percentages: a narrow content column shrinks a percentage set until the headings and the selector's closed value no longer fit, where a stated width keeps both readable and leaves the table's own labelled scroll region to take the difference. */
+const MAPPING_HEADING_WIDTHS: readonly (string | undefined)[] = ["w-20", "w-40", "w-32", "w-64", "w-60"];
 type ColumnChoice = "suggestion" | "ignore" | ImportFieldId;
 const SUGGESTION_CHOICE = "suggestion" satisfies ColumnChoice;
 const IGNORE_CHOICE = "ignore" satisfies ColumnChoice;
@@ -204,7 +206,7 @@ export default function StepMapping({ proposal, confirmedMapping, onConfirm, sub
         <p className="text-sm text-muted-foreground">{MAPPING_COPY.noColumns}</p>
       ) : (
         <>
-          <ImportTable label={TABLE_LABELS.mapping} headings={MAPPING_HEADINGS} busy={submitting} className="hidden md:block">
+          <ImportTable label={TABLE_LABELS.mapping} headings={MAPPING_HEADINGS} headingWidths={MAPPING_HEADING_WIDTHS} fixed busy={submitting} className="hidden md:block">
             {views.map((view) => (
               <TableRow key={view.column.index}>
                 <TableHead scope="row" className="whitespace-normal align-top">

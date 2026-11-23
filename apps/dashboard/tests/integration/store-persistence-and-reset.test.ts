@@ -185,6 +185,16 @@ describe("the file-backed store", () => {
     expect(await documentDigests(PRIMARY_SESSION)).toEqual(digestsBeforeRefusal);
     expect(await sha256Of(paths.workload)).toBe(workloadDigestBefore);
   });
+  it("keeps the documents a transaction cannot write, so a write of one document never costs the parse of another", async () => {
+    const paths = sessionPaths(PRIMARY_SESSION); // A small workload document stands in for the generated one: what this case asserts is that a transaction which cannot write it neither drops it nor makes the next read parse it again.
+    await writeJsonAtomic(paths.workload, { header: { version: 1, sessionId: PRIMARY_SESSION, giftCount: 1 }, partners: [{ partnerId: "workload-partner" }], gifts: [{ giftId: "workload-gift-1" }] });
+    const warmed = requiredSaying(await readSession(PRIMARY_SESSION), `The session ${PRIMARY_SESSION} holds no documents, so no entry exists for a transaction to keep part of.`);
+    await transact(PRIMARY_SESSION, ["state"], (draft) => {
+      draft.state = { ...(draft.state as object), storeProbeMarker: "declared document only" };
+    });
+    const afterWrite = requiredSaying(await readSession(PRIMARY_SESSION), `The session ${PRIMARY_SESSION} was read as absent after an accepted write.`);
+    expect([afterWrite === warmed, afterWrite.workload === warmed.workload, (afterWrite.state as { readonly storeProbeMarker?: string }).storeProbeMarker]).toEqual([false, true, "declared document only"]);
+  });
   it("answers a read from the memo until the session has been idle, then drops the entry and reads the document again", async () => {
     const paths = sessionPaths(ALT_SESSION); // The rewrite below keeps the document's byte length and its pinned modification time, so the entry's signature is unchanged and the second answer can differ only because the entry was dropped.
     const pinned = new Date(Math.floor(Date.now() / 1000) * 1000);

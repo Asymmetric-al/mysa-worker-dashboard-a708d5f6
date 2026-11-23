@@ -1,6 +1,6 @@
-import { isRecord } from "@/lib/guards";
-import { newOperationId } from "@/lib/ids";
-import type { MutationInput, MutationOutcome, ReadResult } from "@/modules/data-service";
+import { isNonEmptyString, isRecord } from "@/lib/guards";
+import { READ_ATTEMPT_ID } from "@/lib/read-transport";
+import type { MutationInput, MutationOutcome, ReadEnvelope, ReadResult } from "@/modules/data-service";
 import { isOutcome } from "@/modules/data-service/outcome";
 const TRANSPORT_SYSTEM = "data-service-transport";
 const NO_RESPONSE_REFERENCE = "no-response";
@@ -30,7 +30,22 @@ export async function postMutation<P>(path: InitiativeApiPath, input: MutationIn
   if (parsed !== null && isOutcome(parsed.value)) return parsed.value;
   return { outcome: "unknown", operationId: input.operationId };
 }
-/** Reads one initiative result under the scope and query state the caller supplies, and answers with the outcomes the read produces: `{ kind: "envelope", envelope }`, a denial, the refusal of a request it does not admit, or the outage. */
+/** Whether a parsed body carries the frame every read envelope the service owns states: its `data`, the scope, source, coverage and value states it ran under, its revision and as-of instant, and its advisory actions. `data`'s own shape is never checked here: this transport is generic over `T`, so the caller owns its payload type. */
+function isEnvelopeFrame(value: unknown): value is ReadEnvelope<unknown> {
+  return (
+    isRecord(value) &&
+    "data" in value &&
+    isRecord(value.scope) &&
+    isRecord(value.source) &&
+    isNonEmptyString(value.revision) &&
+    isNonEmptyString(value.asOf) &&
+    isRecord(value.coverage) &&
+    isRecord(value.valueStates) &&
+    Array.isArray(value.actions) &&
+    value.actions.every((action: unknown) => isRecord(action) && typeof action.name === "string" && typeof action.available === "boolean")
+  );
+}
+/** Reads one initiative result under the scope and query state the caller supplies, and answers with the outcomes the read produces: `{ kind: "envelope", envelope }`, a denial, the refusal of a request it does not admit, or the outage. A status-200 body is admitted by its frame, so a body that carries none of the envelope's members is an outage rather than an envelope. */
 export async function readEnvelope<T>(path: InitiativeApiPath, params: Readonly<Record<string, string | number | undefined>>): Promise<ReadResult<T>> {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) if (value !== undefined) query.set(key, String(value));
@@ -47,7 +62,7 @@ export async function readEnvelope<T>(path: InitiativeApiPath, params: Readonly<
   const parsed = parseJson(text);
   if (parsed === null) return unreadResult(UNREADABLE_BODY_REFERENCE);
   const body: unknown = parsed.value;
-  if (status === 200) return isRecord(body) ? { kind: "envelope", envelope: body as T } : unreadResult(UNEXPECTED_BODY_REFERENCE);
+  if (status === 200) return isEnvelopeFrame(body) ? { kind: "envelope", envelope: body as T } : unreadResult(UNEXPECTED_BODY_REFERENCE);
   if (isOutcome(body)) {
     if (body.outcome === "denied") return { kind: "denied", denied: body };
     if (body.outcome === "unavailable") return { kind: "unavailable", unavailable: body };
@@ -65,4 +80,5 @@ function parseJson(text: string): ParsedBody | null {
     return null;
   }
 }
-const unreadResult = <T>(reference: string): ReadResult<T> => ({ kind: "unavailable", unavailable: { outcome: "unavailable", operationId: newOperationId(), source: { system: TRANSPORT_SYSTEM, reference }, guidance: UNREAD_RESULT_GUIDANCE } });
+/** The outage a read states when it produced none of its own outcomes: it reports the shared read attempt identity, because a read has no attempt of its own to name and its outage is the same read-level answer every other transport states. */
+const unreadResult = <T>(reference: string): ReadResult<T> => ({ kind: "unavailable", unavailable: { outcome: "unavailable", operationId: READ_ATTEMPT_ID, source: { system: TRANSPORT_SYSTEM, reference }, guidance: UNREAD_RESULT_GUIDANCE } });

@@ -1,7 +1,9 @@
+import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import { InboxList } from "@/features/audience/components/inbox-list";
 import { reads } from "@/modules/data-service";
 import { PageSurface, ReadNotices, paramOf, type ReadNoticeCopy, type SearchParams } from "../../page-frame";
+export const metadata: Metadata = { title: "Inbox" };
 const NOTICE_HEADING_LEVEL = 2;
 const NOTICE_COPY: ReadNoticeCopy = { headingLevel: NOTICE_HEADING_LEVEL, denied: { title: "This inbox is not available in this session" }, unavailable: { title: "The inbox could not be read" }, refused: { title: "The inbox request was refused" } };
 /** The interface locale the composed surface formats its counts in. */

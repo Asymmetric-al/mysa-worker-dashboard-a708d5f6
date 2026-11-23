@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import { mutationInputSchema, mutations, reads } from "@/modules/data-service";
 import { writeRoute } from "../handler";
 import { readGrammar, readRoute } from "../read";
@@ -21,9 +22,10 @@ const signupPayloadSchema = z.strictObject({
 });
 const signupRequestSchema = mutationInputSchema(signupPayloadSchema);
 /** Answers with one envelope for the publisher's audience: the four membership states, the eligible and excluded counts, every exclusion reason, and one page of members. */
-export const GET = readRoute(
+const readAudience = readRoute(
   readGrammar(audienceQuerySchema, (search) => ({ publisherId: search.get("publisherId") ?? undefined, page: search.get("page") ?? undefined, pageSize: search.get("pageSize") ?? undefined })),
   (query) => reads.audience.readAudience(query),
 );
 /** Opens one purpose-specific membership for the caller, leaves it `awaiting-proof`, and answers with whichever of the service's eight outcomes the attempt produced. */
-export const POST = (request: Request): Promise<Response> => writeRoute(request, signupRequestSchema, mutations.audience.signupForPurpose);
+const openMembership = (request: Request): Promise<Response> => writeRoute(request, signupRequestSchema, mutations.audience.signupForPurpose);
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readAudience, POST: openMembership });

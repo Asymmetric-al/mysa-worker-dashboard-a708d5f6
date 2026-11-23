@@ -224,8 +224,8 @@ function StateStatement({ state }: { readonly state: TargetState }): ReactElemen
   return (
     <div className="flex min-w-0 flex-col items-start gap-2">
       <Badge variant={state === "active" ? "secondary" : "outline"}>{copy.label}</Badge>
-      <p className="text-sm text-pretty text-muted-foreground">{copy.description}</p>
-      {statesHistoryIsKept ? <p className="text-sm text-pretty text-muted-foreground">{"Pausing and ending both keep the history: the periods that have already closed keep the version they were measured against, and no activity record is deleted."}</p> : null}
+      <p className="type-supporting text-pretty">{copy.description}</p>
+      {statesHistoryIsKept ? <p className="type-supporting text-pretty">{"Pausing and ending both keep the history: the periods that have already closed keep the version they were measured against, and no activity record is deleted."}</p> : null}
     </div>
   );
 }
@@ -289,7 +289,7 @@ const HeldAction = ({ label, reason, descriptionId }: { readonly label: string; 
     <Button type="button" variant="outline" disabled aria-describedby={descriptionId} className="min-h-target w-fit max-w-full whitespace-normal">
       {label}
     </Button>
-    <p {...{ id: descriptionId, className: "text-sm text-pretty text-muted-foreground" }}>{reason}</p>
+    <p {...{ id: descriptionId, className: "type-supporting text-pretty" }}>{reason}</p>
   </div>
 );
 export default function TargetForm({ target, scope, expectedRevision, locale, dir, onSettled, onCheckResult, className }: TargetFormProps): ReactElement {
@@ -376,7 +376,7 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
           {textField(PERIOD_END_INPUT)}
         </>
       ) : (
-        <p className="text-sm text-pretty text-muted-foreground">{NO_CUSTOM_DATES_NOTE}</p>
+        <p className="type-supporting text-pretty">{NO_CUSTOM_DATES_NOTE}</p>
       )}
       {textField(PRIVATE_LABEL_INPUT)}
       <form.Field name={HOME_PLACEMENT_FIELD}>
@@ -397,9 +397,9 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
   return (
     <section id="target-form" dir={dir} aria-labelledby={headingId} aria-busy={busy ? true : undefined} data-slot="target-form" data-interface-locale={locale} className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 {...{ id: headingId, className: "font-heading text-lg font-medium" }}>{creating ? CREATE_HEADING : EDIT_HEADING}</h2>
-        <p className="text-sm text-pretty text-muted-foreground">{PLAN_PURPOSE}</p>
-        <p className="text-sm text-pretty text-muted-foreground">{"A target is your own plan. A period with nothing recorded states a count of zero and says nothing about the effort you made at it, and it creates no commitment to anyone. Only the modules you switch on are ever readable by a coach."}</p>
+        <h2 {...{ id: headingId, className: "type-section-title" }}>{creating ? CREATE_HEADING : EDIT_HEADING}</h2>
+        <p className="type-supporting text-pretty">{PLAN_PURPOSE}</p>
+        <p className="type-supporting text-pretty">{"A target is your own plan. A period with nothing recorded states a count of zero and says nothing about the effort you made at it, and it creates no commitment to anyone. Only the modules you switch on are ever readable by a coach."}</p>
       </div>
       {target === null ? null : <StateStatement state={target.state} />}
       {ended && target !== null ? (
@@ -417,18 +417,18 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
                     {errors === null || errors.count === 0 ? null : <FormErrorSummary errors={errors} labels={FIELD_LABELS} order={FIELD_ORDER} headingLevel={4} />}
                     {planFields(values)}
                     <Separator />
-                    <p className="text-sm text-pretty text-muted-foreground">{TARGET_VERSION_GUARANTEE}</p>
+                    <p className="type-supporting text-pretty">{TARGET_VERSION_GUARANTEE}</p>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button {...{ type: "submit", disabled: busy, "aria-describedby": reviewNoteId, className: "min-h-target max-w-full whitespace-normal" }}>{creating ? "Review and save" : "Review the change"}</Button>
                     </div>
-                    <p {...{ id: reviewNoteId, className: "text-sm text-pretty text-muted-foreground" }}>{reviewing ? REVIEWING_NOTE : REVIEW_NOTE}</p>
+                    <p {...{ id: reviewNoteId, className: "type-supporting text-pretty" }}>{reviewing ? REVIEWING_NOTE : REVIEW_NOTE}</p>
                   </form>
                 </Panel>
                 {reviewing && target === null ? (
                   <ActionReview<TargetSavePayload>
                     title="Review this target"
                     description={<PlanSummary plan={plan} />}
-                    consequence={<p>{"Saving records the first version of this plan. The target counts only the activity you record, it creates no commitment and sends no reminder, and no coach can read it unless you switch the Targets module on."}</p>}
+                    consequence={<p className="type-supporting">{"Saving records the first version of this plan. The target counts only the activity you record, it creates no commitment and sends no reminder, and no coach can read it unless you switch the Targets module on."}</p>}
                     confirmLabel="Save target"
                     input={{ scope, expectedRevision, payload: plan }}
                     submit={saveTarget.mutateAsync}
@@ -442,7 +442,7 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
                   <ActionReview<TargetEditPayload>
                     title="Review this change"
                     description={<PlanComparison plan={plan} target={target} />}
-                    consequence={<p>{TARGET_VERSION_GUARANTEE}</p>}
+                    consequence={<p className="type-supporting">{TARGET_VERSION_GUARANTEE}</p>}
                     confirmLabel="Save changes"
                     input={{ scope, expectedRevision, payload: editPayloadOf(target.targetId, plan) }}
                     submit={editTarget.mutateAsync}
@@ -459,16 +459,16 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
       )}
       {target === null ? null : (
         <section aria-labelledby={lifecycleHeadingId} className="flex min-w-0 flex-col gap-3">
-          <h3 {...{ id: lifecycleHeadingId, className: "font-heading text-base font-medium" }}>{"Pause or end this target"}</h3>
-          <p className="text-sm text-pretty text-muted-foreground">{"Pausing and ending are separate changes with different effects. Pausing stops the target admitting recorded progress; ending closes it for good. Neither deletes an activity record, sends a notice or creates a task."}</p>
+          <h3 {...{ id: lifecycleHeadingId, className: "type-subsection-title" }}>{"Pause or end this target"}</h3>
+          <p className="type-supporting text-pretty">{"Pausing and ending are separate changes with different effects. Pausing stops the target admitting recorded progress; ending closes it for good. Neither deletes an activity record, sends a notice or creates a task."}</p>
           {LIFECYCLE_ACTIONS.map((action) => {
             const held = heldReasonOf(action.key, target.state);
             return held === null ? (
               <ActionReview<{ readonly targetId: string }>
                 key={action.key}
                 title={action.title}
-                description={<p>{action.description}</p>}
-                consequence={<p>{action.consequence}</p>}
+                description={<p className="type-supporting">{action.description}</p>}
+                consequence={<p className="type-supporting">{action.consequence}</p>}
                 confirmLabel={action.confirmLabel}
                 consequential
                 input={{ scope, expectedRevision, payload: { targetId: target.targetId } }}

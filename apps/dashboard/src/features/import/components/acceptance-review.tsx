@@ -27,7 +27,7 @@ export default function AcceptanceReview({ input, submit, decidedRowCount, onCan
         description={ACCEPTANCE_REVIEW_COPY.description}
         confirmLabel={ACCEPTANCE_REVIEW_COPY.confirmLabel}
         simulationEffect={IMPORT_SIMULATION_EFFECT}
-        selection={{ count: decidedRowCount, noun: ACCEPTANCE_REVIEW_COPY.selectionNoun }}
+        selection={{ count: decidedRowCount, noun: ACCEPTANCE_REVIEW_COPY.selectionNoun(decidedRowCount) }}
         input={input}
         submit={submit}
         onCancel={onCancel}

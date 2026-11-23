@@ -187,6 +187,8 @@ const selectionRefusalOf = (payload: PublishVariantsPayload): FieldErrorLookup |
   return checked.success ? null : fieldErrorsFromInvalid({ fields: messagesOfIssues(checked.error) });
 };
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
+/** The one type scale's utility for each level, so every block this review opens states its own level's measure rather than one fixed size. */
+const HEADING_SCALE: Readonly<Record<ReviewHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const instantText = (value: { toString(): string }): string => value.toString();
 function releaseRecordOf(view: PublishReleaseView): PublishRelease | undefined {
   try {
@@ -223,20 +225,20 @@ function ReleaseModeChoice({ edition, idPrefix, error }: { readonly edition: Pub
                   <RadioGroupItem id={optionId} value={option} disabled={option !== recorded} aria-label={copy.label} aria-describedby={consequenceId} className="mt-0.5" />
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="text-sm font-medium">{copy.label}</span>
-                    <span {...{ id: consequenceId, className: "text-sm text-muted-foreground text-pretty" }}>{copy.consequence}</span>
+                    <span {...{ id: consequenceId, className: "type-supporting text-pretty" }}>{copy.consequence}</span>
                   </span>
                 </label>
               );
             })}
           </RadioGroup>
-          <p {...{ "data-slot": "publish-mode-reason", className: "text-sm text-muted-foreground text-pretty wrap-anywhere" }}>{recorded === NOTIFY_NOW_MODE ? NOTIFY_DROPPED_REASON : notifyRefusalOf(edition)}</p>
+          <p {...{ "data-slot": "publish-mode-reason", className: "type-supporting text-pretty wrap-anywhere" }}>{recorded === NOTIFY_NOW_MODE ? NOTIFY_DROPPED_REASON : notifyRefusalOf(edition)}</p>
         </div>
       )}
     </FormFieldGroup>
   );
 }
 const FrozenRevisionFacts = ({ candidate }: { readonly candidate: PublishCandidateView }): ReactElement => (
-  <dl className="flex min-w-0 flex-col gap-1 text-sm">
+  <dl className="flex min-w-0 flex-col gap-1 type-body">
     {[
       { term: "Frozen revision", value: candidate.revisionId },
       { term: "Content checksum", value: candidate.contentChecksum },
@@ -261,17 +263,17 @@ function EditionRow({ edition, index, selected, disabled, refusal, onSelectedCha
       <FormFieldGroup legend={name} name={`publish-edition-${edition.variantId}`} description={candidate === null ? NO_CANDIDATE_REASON : EDITION_DESCRIPTION}>
         {({ legendId }) => (
           <div className="flex min-w-0 flex-col gap-3">
-            <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 type-supporting">
               <span className="sr-only">Language: </span>
               <bdi>{localeNameOf(edition)}</bdi>
               <span className="sr-only">Language tag: </span>
               <bdi className="mono-identifier">{edition.locale.tag}</bdi>
             </p>
             {candidate === null ? null : (
-              <p className="flex min-w-0 items-center gap-3">
+              <p className="flex min-w-0 items-center gap-3 type-body">
                 {/* The primitive renders its control beside a labelled input, so the name is stated on the control itself: every tick says which edition it selects. */}
                 <Checkbox id={`${idPrefix}-select`} checked={selected} disabled={disabled} aria-label={`Release ${name}`} aria-describedby={legendId} onCheckedChange={(checked: boolean) => onSelectedChange(checked)} />
-                <span className="text-sm text-pretty">{INCLUDE_HINT}</span>
+                <span className="text-pretty">{INCLUDE_HINT}</span>
               </p>
             )}
             <DraftStatus state={edition.lifecycle} />
@@ -290,23 +292,23 @@ function CeilingBlock({ ceiling, level }: { readonly ceiling: PublishAudienceCei
   if (ceiling.state === "denied") return <StateNotice kind="denied" headingLevel={level} title={CEILING_DENIED_TITLE} description={CEILING_DENIED_DESCRIPTION} reasonCode={ceiling.reasonCode} />;
   return (
     <section data-slot="publish-ceiling" data-state="stated" data-eligible={String(ceiling.eligible)} data-excluded={String(ceiling.excluded)} className="flex min-w-0 flex-col gap-2">
-      <Heading className="text-sm font-medium">{CEILING_HEADING}</Heading>
-      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
+      <Heading className={HEADING_SCALE[level]}>{CEILING_HEADING}</Heading>
+      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
         <span className="text-muted-foreground">{`${CEILING_ELIGIBLE_LABEL}:`}</span>
         <bdi className="tabular-figures font-medium text-foreground">{String(ceiling.eligible)}</bdi>
       </p>
       {/* Zero exclusions are stated in words rather than as a numeral: an audience nobody is excluded from and an audience whose exclusions could not be counted must never read the same, and only the first is a fact. */}
       {ceiling.excluded === 0 ? (
-        <p className="text-sm text-muted-foreground text-pretty">{CEILING_NONE_EXCLUDED}</p>
+        <p className="type-supporting text-pretty">{CEILING_NONE_EXCLUDED}</p>
       ) : (
         <>
-          <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
+          <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
             <span className="text-muted-foreground">{`${CEILING_EXCLUDED_LABEL}:`}</span>
             <bdi className="tabular-figures font-medium text-foreground">{String(ceiling.excluded)}</bdi>
           </p>
           <ul className="flex min-w-0 flex-col gap-1">
             {ceiling.excludedByReason.map((row) => (
-              <li key={row.reason} className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground text-pretty wrap-anywhere">
+              <li key={row.reason} className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-supporting text-pretty wrap-anywhere">
                 <bdi className="tabular-figures text-foreground">{String(row.count)}</bdi>
                 <span>{row.reason}</span>
               </li>
@@ -314,7 +316,7 @@ function CeilingBlock({ ceiling, level }: { readonly ceiling: PublishAudienceCei
           </ul>
         </>
       )}
-      <p className="text-sm text-muted-foreground text-pretty">{CEILING_ACKNOWLEDGEMENT}</p>
+      <p className="type-supporting text-pretty">{CEILING_ACKNOWLEDGEMENT}</p>
     </section>
   );
 }
@@ -329,17 +331,17 @@ function PublicationStanding({ release, level }: { readonly release: UpdatesQuer
   const data = result.envelope.data;
   return (
     <section data-slot="publish-standing" data-status={data.status} className="flex min-w-0 flex-col gap-1">
-      <Heading className="text-sm font-medium">{STANDING_HEADING}</Heading>
+      <Heading className={HEADING_SCALE[level]}>{STANDING_HEADING}</Heading>
       {data.status === "released" ? (
-        <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
+        <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
           <span className="text-muted-foreground">{`${STANDING_RELEASED}:`}</span>
           <bdi className="mono-identifier">{data.release.revisionId}</bdi>
           <span className="text-muted-foreground">{instantText(data.release.publishedAt)}</span>
         </p>
       ) : (
-        <p className="text-sm text-muted-foreground text-pretty">{data.status === "withdrawn" ? STANDING_WITHDRAWN : STANDING_NONE}</p>
+        <p className="type-supporting text-pretty">{data.status === "withdrawn" ? STANDING_WITHDRAWN : STANDING_NONE}</p>
       )}
-      {release.isFetching ? <p className="text-sm text-muted-foreground text-pretty">{STANDING_CHECKING}</p> : null}
+      {release.isFetching ? <p className="type-supporting text-pretty">{STANDING_CHECKING}</p> : null}
     </section>
   );
 }
@@ -347,34 +349,34 @@ function NoticeTarget({ edition, share, level }: { readonly edition: PublishEdit
   const Heading = HEADING_TAG[level];
   const result = share.result;
   const detail = (): ReactElement => {
-    if (edition === null) return <p className="text-sm text-muted-foreground text-pretty">{NOTICE_NO_NOTIFY}</p>;
+    if (edition === null) return <p className="type-supporting text-pretty">{NOTICE_NO_NOTIFY}</p>;
     if (result === undefined) return <StateNotice kind="loading" headingLevel={childLevel(level)} title={NOTICE_READING_TITLE} description={STANDING_CHECKING} loadingLines={1} />;
     if (result.kind === "denied") return <StateNotice kind="denied" headingLevel={childLevel(level)} title={NOTICE_READING_TITLE} description={NOTICE_UNREADABLE_REASON} reasonCode={result.denied.reasonCode} />;
     if (result.kind === "unavailable") return <StateNotice kind="unavailable" headingLevel={childLevel(level)} title={NOTICE_READING_TITLE} description={NOTICE_UNREADABLE_REASON} source={result.unavailable.source} />;
     if (result.kind === "refused") return <StateNotice kind="refused" headingLevel={childLevel(level)} title={NOTICE_READING_TITLE} description={NOTICE_UNREADABLE_REASON} />;
     const data = result.envelope.data;
-    if (data.status === "no-presentation") return <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{NOTICE_TARGET_NONE}</p>;
+    if (data.status === "no-presentation") return <p className="type-supporting text-pretty wrap-anywhere">{NOTICE_TARGET_NONE}</p>;
     return (
       <div className="flex min-w-0 flex-col gap-1">
         {data.status === "shareable" && data.title.trim() !== "" ? (
-          <p className="text-sm text-pretty wrap-anywhere">
+          <p className="type-body text-pretty wrap-anywhere">
             <span className="text-muted-foreground">Presents: </span>
             <bdi>{data.title}</bdi>
           </p>
         ) : null}
-        <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
+        <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
           <span className="text-muted-foreground">{`${NOTICE_TARGET_LABEL}:`}</span>
           <bdi className="mono-identifier wrap-anywhere">{data.canonicalPath}</bdi>
         </p>
-        {data.status === "withdrawn" ? <p className="text-sm text-muted-foreground text-pretty">{NOTICE_TARGET_WITHDRAWN}</p> : null}
-        {data.status === "shareable" && data.robots === "noindex" ? <p className="text-sm text-muted-foreground text-pretty">{NOTICE_TARGET_UNLISTED}</p> : null}
+        {data.status === "withdrawn" ? <p className="type-supporting text-pretty">{NOTICE_TARGET_WITHDRAWN}</p> : null}
+        {data.status === "shareable" && data.robots === "noindex" ? <p className="type-supporting text-pretty">{NOTICE_TARGET_UNLISTED}</p> : null}
       </div>
     );
   };
   return (
     <section data-slot="publish-notice" data-notice-edition={edition?.variantId ?? ""} className="flex min-w-0 flex-col gap-2">
-      <Heading className="text-sm font-medium">{NOTICE_HEADING}</Heading>
-      <p className="text-sm text-muted-foreground text-pretty">{NOTICE_INTRO}</p>
+      <Heading className={HEADING_SCALE[level]}>{NOTICE_HEADING}</Heading>
+      <p className="type-supporting text-pretty">{NOTICE_INTRO}</p>
       {detail()}
       {edition === null ? null : <SimulationLabel effect={NOTICE_SIMULATION} />}
     </section>
@@ -405,7 +407,7 @@ function ReleaseConfirmation({ selections, notifyCount, blockedReason, busy, onC
                 <span>{NOTHING_OUTSIDE}</span>
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <ul className="flex min-w-0 flex-col gap-1 text-sm">
+            <ul className="flex min-w-0 flex-col gap-1 type-body">
               {selections.map((edition) => (
                 <li key={edition.variantId} data-slot="publish-confirm-edition" data-mode={fixedModeOf(edition)} className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                   <StatusBadge label={audienceLabelOf(edition)} tone="neutral" srPrefix="Audience" />
@@ -424,8 +426,8 @@ function ReleaseConfirmation({ selections, notifyCount, blockedReason, busy, onC
         </AlertDialog>
         <SimulationLabel effect={PUBLISH_SIMULATION} />
       </div>
-      {blockedReason === null ? null : <p {...{ id: reasonId, className: "text-sm text-muted-foreground text-pretty wrap-anywhere" }}>{blockedReason}</p>}
-      {busy ? <output className="block text-sm text-muted-foreground text-pretty wrap-anywhere">{WORKING_NOTE}</output> : null}
+      {blockedReason === null ? null : <p {...{ id: reasonId, className: "type-supporting text-pretty wrap-anywhere" }}>{blockedReason}</p>}
+      {busy ? <output className="block type-supporting text-pretty wrap-anywhere">{WORKING_NOTE}</output> : null}
     </div>
   );
 }
@@ -569,7 +571,9 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
-            <Heading id={titleId}>{REVIEW_TITLE}</Heading>
+            <Heading id={titleId} className={HEADING_SCALE[headingLevel]}>
+              {REVIEW_TITLE}
+            </Heading>
           </CardTitle>
           <CardDescription>{REVIEW_INTRO}</CardDescription>
         </CardHeader>
@@ -603,9 +607,9 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
             <>
               <Separator />
               <NoticeTarget edition={noticeEdition} share={share} level={childHeading} />
-              <p className="text-sm text-muted-foreground text-pretty">{SIBLING_PROMISE}</p>
-              <p className="text-sm text-muted-foreground text-pretty">{NOTHING_OUTSIDE}</p>
-              {settled ? <p className="text-sm text-muted-foreground text-pretty">{SETTLED_NOTE}</p> : <p className="text-sm text-muted-foreground text-pretty">{REPLAY_NOTE}</p>}
+              <p className="type-supporting text-pretty">{SIBLING_PROMISE}</p>
+              <p className="type-supporting text-pretty">{NOTHING_OUTSIDE}</p>
+              {settled ? <p className="type-supporting text-pretty">{SETTLED_NOTE}</p> : <p className="type-supporting text-pretty">{REPLAY_NOTE}</p>}
               <ReleaseConfirmation selections={chosen} notifyCount={notifyEditions.length} blockedReason={blockedReason} busy={pending} onConfirm={confirmRelease} />
             </>
           )}
@@ -617,11 +621,11 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
           {withheld.length === 0 ? null : (
             <ul data-slot="publish-notice-withheld" className="flex min-w-0 flex-col gap-1">
               {withheld.map((entry) => (
-                <li key={entry.variantId} className="text-sm text-pretty wrap-anywhere">{`${WITHHELD_PREFIX} ${entry.reason}`}</li>
+                <li key={entry.variantId} className="type-body text-pretty wrap-anywhere">{`${WITHHELD_PREFIX} ${entry.reason}`}</li>
               ))}
             </ul>
           )}
-          <p className="text-sm text-muted-foreground text-pretty">{CHECK_READS}</p>
+          <p className="type-supporting text-pretty">{CHECK_READS}</p>
         </div>
       )}
     </section>

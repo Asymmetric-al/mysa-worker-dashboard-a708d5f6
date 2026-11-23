@@ -2,7 +2,7 @@
 import { FilmIcon, ImageUpIcon, TriangleAlertIcon, UploadIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ChangeEvent, type DragEvent, type ReactElement } from "react";
 import { mayReplay } from "@/components/attempt";
-import { FormField, FormFieldGroup, fieldErrorsFromInvalid, type FieldErrorLookup } from "@/components/form-field";
+import { FormField, fieldErrorsFromInvalid, type FieldErrorLookup } from "@/components/form-field";
 import { OperationResult, type OperationResultProps } from "@/components/operation-result";
 import { SimulationLabel } from "@/components/simulation-label";
 import { StateNotice } from "@/components/state-notice";
@@ -18,10 +18,13 @@ import { cn } from "@/lib/cn";
 import { ADMITTED_IMAGE_FORMATS, ADMITTED_VIDEO_PROFILES, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH, mediaStateReason, type MediaPreparationState } from "@/modules/media/profile";
 export type MediaPickerKind = "image" | "video";
 export type MediaProbe = { readonly width?: number; readonly height?: number; readonly durationSeconds?: number };
-export type MediaPlacementDescriptor = { readonly altText: string; readonly caption?: string; readonly credit?: string; readonly transcript?: string; readonly language?: string; readonly posterAssetId?: string };
+export type MediaPlacementDescriptor = { readonly altText: string; readonly caption?: string; readonly credit?: string; readonly transcript?: string; readonly language?: string };
 export type MediaPlacement = MediaPlacementDescriptor & { readonly placementId?: string };
-export type MediaRegisterInput = { readonly kind: MediaPickerKind; readonly file: File; readonly probe?: MediaProbe; readonly placement: MediaPlacementDescriptor };
-export type MediaPosterOption = { readonly assetId: string; readonly label: string };
+/** The poster image chosen beside a video: its own file, prepared into a poster rendition when the video is registered. */
+export type MediaPosterInput = { readonly file: File };
+/** The caption track chosen beside a video: the WebVTT file itself, in the language the placement states. */
+export type MediaCaptionInput = { readonly file: File; readonly language: string; readonly label?: string };
+export type MediaRegisterInput = { readonly kind: MediaPickerKind; readonly file: File; readonly placement: MediaPlacementDescriptor; readonly poster?: MediaPosterInput; readonly captions?: MediaCaptionInput };
 /** The outcome every transport answers with, taken from the one receipt that renders it. */
 export type MediaPickerOutcome = OperationResultProps["outcome"];
 export type MediaPickerProps = {
@@ -32,7 +35,6 @@ export type MediaPickerProps = {
   readonly onRegister: (input: MediaRegisterInput) => Promise<MediaPickerOutcome>;
   readonly onReplace?: (input: { readonly placementId: string } & MediaRegisterInput) => Promise<MediaPickerOutcome>;
   readonly onRemove?: (input: { readonly placementId: string }) => Promise<MediaPickerOutcome>;
-  readonly posterAssets?: readonly MediaPosterOption[];
   readonly onSettled?: (outcome: MediaPickerOutcome) => void;
   readonly className?: string;
 };
@@ -40,20 +42,21 @@ const MEBIBYTE = 1024 * 1024;
 const IMAGE_LIMITS = Object.freeze({ bytes: IMAGE_MAX_BYTES, edgePx: IMAGE_MAX_EDGE_PX, formats: "JPEG, PNG or a still WebP image" });
 const VIDEO_LIMITS = Object.freeze({ bytes: VIDEO_MAX_BYTES, durationS: VIDEO_MAX_DURATION_S, width: VIDEO_MAX_WIDTH, height: VIDEO_MAX_HEIGHT, formats: "MP4 with H.264 video and AAC audio, or WebM with VP8 or VP9 video and Vorbis or Opus audio" });
 const ACCEPT_HINT: Readonly<Record<MediaPickerKind, string>> = Object.freeze({ image: ADMITTED_IMAGE_FORMATS.map((format) => `image/${format}`).join(","), video: ADMITTED_VIDEO_PROFILES.map((profile) => `video/${profile.container}`).join(",") });
+const CAPTION_ACCEPT = ".vtt,text/vtt";
+const CAPTION_LANGUAGE_REQUIRED = "A caption track states the language its cues are in, so give the media's language before adding the track.";
 const VIDEO_PROBE_TIMEOUT_MS = 15_000;
 const COUNT_FORMAT = new Intl.NumberFormat("en-US");
 const FIELD_LABELS: Readonly<Record<string, string>> = Object.freeze({
   file: "File",
-  probe: "File details",
-  "probe.width": "Width",
-  "probe.height": "Height",
-  "probe.durationSeconds": "Length",
+  poster: "Poster image",
+  captions: "Caption track",
+  "captions.language": "Caption language",
+  "captions.label": "Track label",
   "placement.altText": "Alternative text",
   "placement.caption": "Caption",
   "placement.credit": "Credit",
   "placement.transcript": "Transcript",
   "placement.language": "Language",
-  "placement.posterAssetId": "Poster",
 });
 function formatBytes(bytes: number): string {
   const mebibytes = bytes / MEBIBYTE;
@@ -109,16 +112,15 @@ function probeVideo(file: File): Promise<MediaProbe | undefined> {
   });
 }
 const probeChosenFile = async (file: File, kind: MediaPickerKind): Promise<MediaProbe | undefined> => (kind === "image" ? probeImage(file) : probeVideo(file));
-type PlacementDraft = { readonly altText: string; readonly caption: string; readonly credit: string; readonly language: string; readonly transcript: string; readonly posterAssetId: string };
-const draftFromPlacement = (placement: MediaPlacement | undefined): PlacementDraft => ({ altText: placement?.altText ?? "", caption: placement?.caption ?? "", credit: placement?.credit ?? "", language: placement?.language ?? "", transcript: placement?.transcript ?? "", posterAssetId: placement?.posterAssetId ?? "" });
+type PlacementDraft = { readonly altText: string; readonly caption: string; readonly credit: string; readonly language: string; readonly transcript: string };
+const draftFromPlacement = (placement: MediaPlacement | undefined): PlacementDraft => ({ altText: placement?.altText ?? "", caption: placement?.caption ?? "", credit: placement?.credit ?? "", language: placement?.language ?? "", transcript: placement?.transcript ?? "" });
 function composePlacement(draft: PlacementDraft, kind: MediaPickerKind): MediaPlacementDescriptor {
   const altText = draft.altText.trim();
   const caption = draft.caption.trim();
   const credit = draft.credit.trim();
   const language = draft.language.trim();
   const transcript = draft.transcript.trim();
-  const posterAssetId = draft.posterAssetId.trim();
-  return { altText, ...(caption === "" ? {} : { caption }), ...(credit === "" ? {} : { credit }), ...(kind === "video" && transcript !== "" ? { transcript } : {}), ...(language === "" ? {} : { language }), ...(kind === "video" && posterAssetId !== "" ? { posterAssetId } : {}) };
+  return { altText, ...(caption === "" ? {} : { caption }), ...(credit === "" ? {} : { credit }), ...(kind === "video" && transcript !== "" ? { transcript } : {}), ...(language === "" ? {} : { language }) };
 }
 const MEDIA_STATE_BY_OUTCOME: Readonly<Record<MediaPickerOutcome["outcome"], MediaPreparationState | null>> = { accepted: "ready", alreadyAccepted: "ready", unchanged: "ready", invalid: "rejected", unavailable: "unavailable", conflict: null, denied: null, unknown: null };
 const mediaStateForOutcome = (outcome: MediaPickerOutcome): MediaPreparationState | null => MEDIA_STATE_BY_OUTCOME[outcome.outcome];
@@ -152,10 +154,11 @@ const PHASE_DESCRIPTION: Readonly<Record<PickerPhase["name"], (kind: MediaPicker
 };
 type FooterAction = { readonly label: string; readonly onClick?: () => void; readonly variant?: "default" | "destructive"; readonly disabled?: boolean; readonly className?: string };
 /** The single image and video picker and placement form. */
-export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, onReplace, onRemove, posterAssets, onSettled, className }: MediaPickerProps): ReactElement {
+export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, onReplace, onRemove, onSettled, className }: MediaPickerProps): ReactElement {
   const instructionsId = useId();
   const limitsId = useId();
   const altTextRef = useRef<HTMLTextAreaElement | null>(null);
+  const languageRef = useRef<HTMLInputElement | null>(null);
   const placementRef = useRef(placement);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(open);
@@ -164,6 +167,9 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
   const lastAttemptRef = useRef<"register" | "remove">("register");
   const [phase, setPhase] = useState<PickerPhase>({ name: "choosing" });
   const [file, setFile] = useState<File | null>(null);
+  const [posterFile, setPosterFile] = useState<File | null>(null);
+  const [captionFile, setCaptionFile] = useState<File | null>(null);
+  const [trackLabel, setTrackLabel] = useState("");
   const [probe, setProbe] = useState<MediaProbe | undefined>(undefined);
   const [draft, setDraft] = useState<PlacementDraft>(() => draftFromPlacement(placement));
   const [localErrors, setLocalErrors] = useState<Readonly<Record<string, readonly string[]>>>({});
@@ -173,9 +179,11 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
   const [faulted, setFaulted] = useState(false);
   const replaceId = onReplace === undefined ? undefined : placement?.placementId;
   const removeId = onRemove === undefined ? undefined : placement?.placementId;
-  const posterChoices = kind === "video" ? (posterAssets ?? []) : [];
   const clearAttempt = (): void => {
     setFile(null);
+    setPosterFile(null);
+    setCaptionFile(null);
+    setTrackLabel("");
     setProbe(undefined);
     setOutcome(null);
     setServerErrors(null);
@@ -238,13 +246,26 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
       altTextRef.current?.focus();
       return;
     }
+    // A caption track is bound to the placement's own language rather than to a second one beside it, so a track with no
+    // language is refused here, where the field that states it is on screen, instead of by the service one request later.
+    const captionTrack = kind === "video" ? captionFile : null;
+    if (captionTrack !== null && composed.language === undefined) {
+      setLocalErrors({ "placement.language": [CAPTION_LANGUAGE_REQUIRED] });
+      setPhase({ name: "described" });
+      languageRef.current?.focus();
+      return;
+    }
     setLocalErrors({});
     setFaulted(false);
     setStoppedWaiting(false);
     busyRef.current = true;
     lastAttemptRef.current = "register";
     setPhase({ name: "preparing", stage: "submitting" });
-    const input: MediaRegisterInput = { kind, file, ...(probe === undefined ? {} : { probe }), placement: composed };
+    const poster = kind === "video" && posterFile !== null ? { file: posterFile } : undefined;
+    const captionLanguage = composed.language;
+    const label = trackLabel.trim();
+    const captions = captionTrack === null || captionLanguage === undefined ? undefined : { file: captionTrack, language: captionLanguage, ...(label === "" ? {} : { label }) };
+    const input: MediaRegisterInput = { kind, file, placement: composed, ...(poster === undefined ? {} : { poster }), ...(captions === undefined ? {} : { captions }) };
     try {
       const settled = replaceId !== undefined && onReplace !== undefined ? await onReplace({ placementId: replaceId, ...input }) : await onRegister(input);
       finishAttempt(settled);
@@ -280,9 +301,13 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
     void submitPlacement();
   };
   const errorsFor = (path: string): readonly string[] | undefined => mergeMessages(localErrors[path], serverErrors?.byField[path]);
+  const clearLocalError = (path: string): void => {
+    setLocalErrors((current) => (current[path] === undefined ? current : Object.fromEntries(Object.entries(current).filter(([key]) => key !== path))));
+  };
   const update = (field: keyof PlacementDraft, value: string): void => {
     setDraft((current) => ({ ...current, [field]: value }));
     if (field === "altText" && value.trim() !== "") setLocalErrors({});
+    if (field === "language" && value.trim() !== "") clearLocalError("placement.language");
   };
   const backToChoosing = (): void => {
     attemptRef.current += 1;
@@ -293,6 +318,16 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
     const chosen = event.target.files?.[0] ?? null;
     event.target.value = "";
     void chooseFile(chosen);
+  };
+  const handlePosterInputChange = (event: ChangeEvent<HTMLInputElement>): void => {
+    setPosterFile(event.target.files?.[0] ?? null);
+    event.target.value = "";
+    clearLocalError("poster");
+  };
+  const handleCaptionInputChange = (event: ChangeEvent<HTMLInputElement>): void => {
+    setCaptionFile(event.target.files?.[0] ?? null);
+    event.target.value = "";
+    clearLocalError("captions");
   };
   const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
     event.preventDefault();
@@ -376,7 +411,7 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
     const description = kind === "image" ? `Choose a file from this device, or drop one on this field. ${IMAGE_LIMITS.formats}, no more than ${formatBytes(IMAGE_LIMITS.bytes)}.` : `Choose a file from this device, or drop one on this field. ${VIDEO_LIMITS.formats}, no more than ${formatBytes(VIDEO_LIMITS.bytes)}.`;
     return (
       <div className="flex flex-col gap-4" onDragOver={handleDragOver} onDrop={handleDrop}>
-        <FormField label="File" name="file" description={description} error={mergeMessages(errorsFor("file"), errorsFor("probe"))} required>
+        <FormField label="File" name="file" description={description} error={errorsFor("file")} required>
           {({ id, describedBy, invalid, required }) => <Input id={id} type="file" accept={ACCEPT_HINT[kind]} aria-describedby={describedBy === undefined ? limitsId : `${describedBy} ${limitsId}`} aria-invalid={invalid} aria-required={required} className="h-auto cursor-pointer py-2" onChange={handleFileInputChange} />}
         </FormField>
         <p className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -410,7 +445,6 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
       { label: "Caption", node: placement.caption === undefined ? null : <bdi>{placement.caption}</bdi>, wrap: true },
       { label: "Credit", node: placement.credit === undefined ? null : <bdi>{placement.credit}</bdi>, wrap: true },
       { label: "Language", node: placement.language === undefined ? null : <bdi>{placement.language}</bdi>, wrap: false },
-      { label: "Poster", node: placement.posterAssetId === undefined ? null : <bdi className="mono-identifier">{placement.posterAssetId}</bdi>, wrap: true },
     ].filter((row) => row.node !== null);
     return (
       <Card size="sm" data-slot="media-picker-current">
@@ -448,32 +482,48 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
           {({ id, describedBy, invalid }) => <Input id={id} value={draft.credit} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("credit", event.target.value)} />}
         </FormField>
         <FormField label="Language" name="placement.language" optionalHint description="The language this media is in, as a tag such as en or ar, or as a name. It is the media's language, never this interface's." error={errorsFor("placement.language")}>
-          {({ id, describedBy, invalid }) => <Input id={id} value={draft.language} autoComplete="off" spellCheck={false} className="font-mono" aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("language", event.target.value)} />}
+          {({ id, describedBy, invalid }) => <Input id={id} ref={languageRef} value={draft.language} autoComplete="off" spellCheck={false} className="font-mono" aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("language", event.target.value)} />}
         </FormField>
         {kind === "video" ? (
           <FormField label="Transcript" name="placement.transcript" optionalHint description="The video's words as text, for a reader who cannot play it. It is stored and shown as content, never as trusted metadata." error={errorsFor("placement.transcript")}>
             {({ id, describedBy, invalid }) => <Textarea id={id} rows={4} value={draft.transcript} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("transcript", event.target.value)} />}
           </FormField>
         ) : null}
-        {renderPosterChoices()}
+        {kind === "video" ? renderVideoTracks() : null}
       </div>
     );
   }
-  function renderPosterChoices(): ReactElement | null {
-    if (posterChoices.length === 0) return null;
+  function renderChosenTrack(chosen: File | null, what: string): ReactElement | null {
+    if (chosen === null) return null;
     return (
-      <FormFieldGroup legend="Poster" name="placement.posterAssetId" optionalHint description="An image already registered in this draft, shown before the video plays." error={errorsFor("placement.posterAssetId")}>
-        {() => (
-          <div className="flex flex-wrap gap-2">
-            <Button {...{ type: "button", size: "sm", variant: draft.posterAssetId === "" ? "default" : "outline", "aria-pressed": draft.posterAssetId === "", onClick: () => update("posterAssetId", "") }}>No poster</Button>
-            {posterChoices.map((choice) => (
-              <Button key={choice.assetId} type="button" size="sm" variant={draft.posterAssetId === choice.assetId ? "default" : "outline"} aria-pressed={draft.posterAssetId === choice.assetId} onClick={() => update("posterAssetId", choice.assetId)}>
-                <bdi>{choice.label}</bdi>
-              </Button>
-            ))}
-          </div>
+      <p className="text-sm text-muted-foreground wrap-anywhere">
+        {`${what} chosen: `}
+        <bdi className="mono-identifier">{chosen.name}</bdi>
+        {` (${formatBytes(chosen.size)})`}
+      </p>
+    );
+  }
+  function renderVideoTracks(): ReactElement {
+    return (
+      <div className="flex flex-col gap-4 rounded-lg border border-border p-3">
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-medium">What plays beside the video</p>
+          <p className="text-sm text-muted-foreground">Both of these are optional. Each is prepared by this application&rsquo;s own pipeline and served from the same asset as the video, so neither is a file on a public path.</p>
+        </div>
+        <FormField label="Poster image" name="poster" optionalHint description="The image a player shows before the video starts. It goes through the same image pipeline as a placed image, so its metadata is removed and its alternative text is the one this placement states." error={errorsFor("poster")}>
+          {({ id, describedBy, invalid }) => <Input id={id} type="file" accept={ACCEPT_HINT.image} aria-describedby={describedBy} aria-invalid={invalid} className="h-auto cursor-pointer py-2" onChange={handlePosterInputChange} />}
+        </FormField>
+        {renderChosenTrack(posterFile, "Poster image")}
+        <FormField label="Caption track (WebVTT)" name="captions" optionalHint description="The video's cues as a WebVTT file, served with the video and offered in the player's own caption menu. Its language is the video's own language, stated above." error={errorsFor("captions")}>
+          {({ id, describedBy, invalid }) => <Input id={id} type="file" accept={CAPTION_ACCEPT} aria-describedby={describedBy} aria-invalid={invalid} className="h-auto cursor-pointer py-2" onChange={handleCaptionInputChange} />}
+        </FormField>
+        {renderChosenTrack(captionFile, "Caption track")}
+        {captionFile === null ? null : (
+          <FormField label="Track label" name="captions.label" optionalHint description="What the player's caption menu calls this track, such as English. Leave it empty to use the language stated above." error={errorsFor("captions.label")}>
+            {({ id, describedBy, invalid }) => <Input id={id} value={trackLabel} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => setTrackLabel(event.target.value)} />}
+          </FormField>
         )}
-      </FormFieldGroup>
+      </div>
     );
   }
   function renderCancelled(): ReactElement {

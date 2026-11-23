@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import { reads } from "@/modules/data-service";
 import { readGrammar, readRoute } from "../../read";
 export const runtime = "nodejs";
@@ -37,4 +38,5 @@ const coachQuerySchema = z
   });
 const searchParametersOf = (search: URLSearchParams): Record<string, string> => Object.fromEntries(search);
 /** Answers with one read envelope — the coach's portfolio, or one admitted subject's shared modules — or the read's own refusal: a named subject reads as itself, otherwise `view=portfolio` was validated and the portfolio read runs, and each arm's own answer travels untouched. */
-export const GET = readRoute(readGrammar(coachQuerySchema, searchParametersOf), (query) => (query.subjectId !== undefined ? reads.coach.readCoachSubject({ grantId: query.subjectId }) : reads.coach.readCoachPortfolio()));
+const readCoachView = readRoute(readGrammar(coachQuerySchema, searchParametersOf), (query) => (query.subjectId !== undefined ? reads.coach.readCoachSubject({ grantId: query.subjectId }) : reads.coach.readCoachPortfolio()));
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readCoachView });

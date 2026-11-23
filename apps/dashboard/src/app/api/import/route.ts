@@ -1,4 +1,5 @@
 import { z, ZodError } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse } from "@/modules/data-service";
 import { IMPORT_MAX_BYTES } from "@/modules/import/parse";
 import { UNIDENTIFIED_ATTEMPT, mutate, operationIdentityOf, readRequestBody } from "../handler";
@@ -22,7 +23,7 @@ const proposeImportBodySchema = mutationInputSchema(
 );
 const isBodyObject = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value);
 /** Proposes an import from the file the body carries, and answers with exactly one of the service's eight outcomes — `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function POST(request: Request): Promise<Response> {
+async function proposeImport(request: Request): Promise<Response> {
   const body = await readRequestBody(request, MAX_REQUEST_BYTES);
   // The file limit is applied before processing (AAP 0.8.7), so a request over the ceiling is refused on the bytes that had arrived or were declared, with nothing of it parsed and nothing written. The refusal is keyed at the field that carries the file, and it names no operation identity because a body refused this early never became one.
   if (body.kind === "oversized") {
@@ -35,3 +36,4 @@ export async function POST(request: Request): Promise<Response> {
   if (!parsed.success) return toResponse(outcomeFromError(operationIdentityOf(raw), parsed.error));
   return mutate(parsed.data.operationId, () => mutations.import.proposeImport(parsed.data));
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: proposeImport });

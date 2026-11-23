@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactElement } from "react";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import PartnerRoster from "@/features/partners/components/partner-roster";
 import PrivatePreparationForm from "@/features/partners/components/private-preparation-form";
 import { parseRosterQuery, rosterQuerySearch, rosterReadQuery, type RosterQueryState } from "@/features/partners/query/roster-query";
@@ -53,7 +53,7 @@ function RosterBody({ result }: { readonly result: RosterEnvelopeRead }): ReactE
         initialResult={result}
         emptyAction={
           mayPrepare ? (
-            <Link href={`#${ADD_CONTACT_ANCHOR}`} className={cn(buttonVariants({ variant: "outline" }), "h-auto max-w-full whitespace-normal")}>
+            <Link href={`#${ADD_CONTACT_ANCHOR}`} data-slot="button" className={cn(buttonVariants({ variant: "outline" }), BUTTON_WRAP_CLASS)}>
               {PAGE_COPY.emptyAction}
             </Link>
           ) : undefined

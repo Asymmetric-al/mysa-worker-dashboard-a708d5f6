@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useId, useRef, useState, type ComponentProps, type ReactElement, type ReactNode } from "react";
+import { fieldErrorsFromInvalid } from "@/components/form-field";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,8 @@ const KEPT_WITH_COPY = "That copy lives in this tab's own storage and nowhere el
 const KEPT_WITHOUT_COPY = "The editor holds the text on screen, and this browser keeps no separate copy of it: leaving the page would lose it.";
 const LOCAL_ONLY = "This browser also keeps text from an earlier attempt that this editor is not showing. That copy exists only in this browser: the service has never acknowledged it, nobody else can see it, and it is not part of the draft record.";
 const NOT_ACKNOWLEDGED = "The service did not acknowledge this text, so nothing was saved.";
+const REFUSED_FIELD_LIMIT = 4;
+const REFUSED_FIELD_OVERFLOW = "There are more problems than these; fix these first.";
 type AutosaveWording = { readonly word: string; readonly badge: NonNullable<ComponentProps<typeof Badge>["variant"]>; readonly statement: ReactNode; readonly details: readonly ReactNode[]; readonly offers: RecoveryOffer };
 function savedStatement(revision: Revision | null, asOf: string | null): ReactNode {
   const statedRevision = revision?.trim() ?? "";
@@ -40,11 +43,22 @@ function savedStatement(revision: Revision | null, asOf: string | null): ReactNo
     </>
   );
 }
+/** The fields an `invalid` answer refused, each stated as `path: message` in the service's own words, capped so the status stays readable. */
+function refusedFieldLines(outcome: MutationOutcome | null): readonly string[] {
+  if (outcome === null || outcome.outcome !== "invalid") return [];
+  const { byField, form } = fieldErrorsFromInvalid(outcome);
+  const lines: string[] = [];
+  for (const [path, messages] of Object.entries(byField)) {
+    for (const message of messages) lines.push(`${path}: ${message}`);
+  }
+  lines.push(...form);
+  return lines.length > REFUSED_FIELD_LIMIT ? [...lines.slice(0, REFUSED_FIELD_LIMIT), REFUSED_FIELD_OVERFLOW] : lines;
+}
 function refusalDetail(outcome: MutationOutcome | null): ReactNode {
   if (outcome === null) return NOT_ACKNOWLEDGED;
   switch (outcome.outcome) {
     case "invalid":
-      return "The service refused at least one field, so nothing was saved. The editor lists the fields it refused; this line does not repeat them.";
+      return refusedFieldLines(outcome).length === 0 ? "The service refused this text, so nothing was saved, and it named no field this line can repeat." : "The service refused at least one field, so nothing was saved. Each field it refused is stated below in the service's own words.";
     case "unavailable":
       return (
         <>
@@ -106,7 +120,7 @@ function wordingOf({ state, outcome, acknowledgedRevision, acknowledgedAsOf, kee
     case "saved":
       return { word: "Saved", badge: "default", statement: savedStatement(acknowledgedRevision, acknowledgedAsOf), details: [SAVED_DETAIL, DRAFT_VS_RELEASED.draftIsNotWhatReadersSee], offers: NO_OFFER };
     case "failed-local-kept":
-      return { word: "Not saved", badge: "destructive", statement: "Not saved — your text is kept in this browser.", details: [refusalDetail(outcome), kept], offers: RETRY_ONLY };
+      return { word: "Not saved", badge: "destructive", statement: "Not saved — your text is kept in this browser.", details: [refusalDetail(outcome), ...refusedFieldLines(outcome), kept], offers: RETRY_ONLY };
     case "conflict":
       return { word: "Not saved", badge: "destructive", statement: "Not saved — the record changed; your text is kept.", details: [conflictDetail(outcome, acknowledgedRevision), CONFLICT_RETRY, kept], offers: RETRY_ONLY };
     case "unknown":

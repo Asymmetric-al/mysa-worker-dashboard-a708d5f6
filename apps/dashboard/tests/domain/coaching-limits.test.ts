@@ -121,8 +121,8 @@ type CoachModule = CoachEnvelope["data"]["modules"][number];
 type CheckInsModule = Extract<CoachModule, { readonly module: "check-ins" }>;
 type SummariesModule = Extract<CoachModule, { readonly module: "task-summaries" }>;
 async function coachSubject(): Promise<CoachEnvelope> {
-  const workerDocuments = requiredSaying(await readSession(WORKER_SESSION), `The session "${WORKER_SESSION}" holds no documents, so the coach has nothing to read`);
-  await resetSession(COACH_SESSION, { meta: world.coach.meta, operations: world.coach.operations, state: workerDocuments.state });
+  // The coach's seat names this file's own worker session as the world its coaching records live in, and carries no coaching family of its own: a read through it therefore proves the worker's accepted writes are the ones a coach sees.
+  await resetSession(COACH_SESSION, { meta: { ...world.coach.meta, coachingRecordsSessionId: WORKER_SESSION }, operations: world.coach.operations, state: world.coach.state });
   const result = expectEnvelope(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT }, COACH), "the coach's subject read");
   return result;
 }
@@ -444,6 +444,32 @@ describe("the private draft and the shared revision", () => {
     expect(states).toEqual(["private-draft", "shared", "withdrawn"]);
     expect([new Set(states).size, checkInReadState(drafted.checkIn, "unavailable")]).toEqual([3, "unavailable"]);
   });
+  it("keeps an answer that belongs to no question when a save carries a question set", async () => {
+    const questionless = "Still deciding whether to raise the appeal.";
+    const drafted = await draftWith([questionless]);
+    expect((await storedCheckIn(drafted.checkInId)).privateDraft?.answers).toEqual([{ questionOrder: null, text: questionless }]);
+    const positional = "Two good conversations and one difficult one.";
+    const saved = outcomeNamed(await saveCheckIn({ checkInId: drafted.checkInId, questions: ["How did the week go?"], answers: [positional] }, drafted.revision), "accepted", "a save carrying a question set");
+    expect(saved.revision).not.toBe(drafted.revision);
+    const stored = required((await storedCheckIn(drafted.checkInId)).privateDraft, "the private draft after a positional save");
+    // A save writes the answers that sit beside the questions it carries and keeps the ones that belong to no question, which a positional payload has nowhere to state: the answer written before the question set existed survives the save rather than being deleted to make the two lists agree.
+    expect(stored.answers).toEqual([
+      { questionOrder: 0, text: positional },
+      { questionOrder: null, text: questionless },
+    ]);
+    expect(stored.questions.map((question) => question.wording)).toEqual(["How did the week go?"]);
+  });
+  it("keeps the instant the question set was captured while a save leaves its wording and order as they stand", () => {
+    const questions = ["How did the week go?", "What would help next week?"];
+    const opened: CheckIn = { checkInId: "check-in-captured-instant", revision: 0 };
+    const first = valueOf(savePrivateDraft(opened, modulePayload(questions, ["A shorter list on Monday."]), 0, SEEDED_AT), "savePrivateDraft");
+    const later = SEEDED_AT.add({ hours: 5 });
+    const second = valueOf(savePrivateDraft(first.checkIn, modulePayload(questions, ["A longer list on Monday."]), first.checkIn.revision, later), "savePrivateDraft");
+    // A save writes the answers beside the questions it carries; it is not a new capture of the set the editor fixed when it started, so the day the surface states as the capture stays the day it was captured while the saved instant moves.
+    expect([required(second.checkIn.privateDraft, "the private draft after the second save").captured.capturedAt.toString(), second.checkIn.privateDraft?.savedAt.toString()]).toEqual([SEEDED_AT.toString(), later.toString()]);
+    const replaced = valueOf(savePrivateDraft(second.checkIn, modulePayload(["What changed this week?", "What would help next week?"], ["A longer list on Monday.", "A shorter list on Tuesday."]), second.checkIn.revision, later), "savePrivateDraft");
+    expect(required(replaced.checkIn.privateDraft, "the private draft after the question set changed").captured.capturedAt.toString()).toBe(later.toString());
+  });
 });
 async function freshWorld(): Promise<void> {
   await layDownWorkerWorld();
@@ -452,11 +478,6 @@ async function freshWorld(): Promise<void> {
 async function storedGrantState(): Promise<string> {
   const grant = (await storedState()).coachingGrants.find((candidate) => candidate.grantId === ACTIVE_GRANT);
   return required(grant, "the relationship the case closed").state;
-}
-async function coachGrantState(): Promise<string> {
-  const documents = requiredSaying(await readSession(COACH_SESSION), `The session "${COACH_SESSION}" holds no documents, so the coach's own act cannot be read back`);
-  const grant = (documents.state as SessionStateDocument).coachingGrants.find((candidate) => candidate.grantId === ACTIVE_GRANT);
-  return required(grant, "the relationship the coach left").state;
 }
 describe("withdrawal and the stop-type effects", () => {
   it("withdraws a shared check-in while an unrelated draft is invalid, and contains it from the coach read", async () => {
@@ -493,7 +514,7 @@ describe("withdrawal and the stop-type effects", () => {
     await freshWorld();
     const coach = await coachSubject();
     outcomeNamed(await mutations.coach.leaveCoaching({ operationId: newOperationId(), scope: coach.scope, expectedRevision: FIRST_REVISION, payload: { grantId: ACTIVE_GRANT } }, COACH), "accepted", "leaveCoaching");
-    effects.push(await coachGrantState());
+    effects.push(await storedGrantState()); // The coach's own departure is written to the worker's record, which is the one both identities address.
     await freshWorld();
     outcomeNamed(await mutations.coaching.revokeGrant(attempt({ grantId: ACTIVE_GRANT }, FIRST_REVISION), WORKER), "accepted", "revokeGrant");
     effects.push(await storedGrantState());

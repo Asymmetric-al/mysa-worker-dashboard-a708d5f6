@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactElement } from "react";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import PreparationSurface, { type PreparationSurfaceProps } from "@/features/coaching/components/preparation-surface";
 import type { CoachingGrantView, FinancialRange, GrantDurationView, ModuleRead, SharingOutcome } from "@/features/coaching/components/sharing-summary";
 import { COACHING_COPY } from "@/features/coaching/copy";
@@ -16,11 +16,13 @@ type RelationshipDuration = CoachingRelationship["duration"];
 type PreparationRecordView = CoachingOverview["preparation"][number];
 type PreparationView = PreparationSurfaceProps["preparation"];
 export const metadata: Metadata = { title: COACHING_COPY.overview.heading };
+/** The path this page answers on: the destination strip marks it as the destination the reader is on, and nothing else. */
+const PAGE_PATH = "/coaching";
 const DESTINATIONS = [
+  { href: PAGE_PATH, label: COACHING_COPY.overview.heading },
   { href: "/coaching/targets", label: COACHING_COPY.targets.heading },
   { href: "/coaching/coach", label: COACHING_COPY.coachPortfolio.heading },
 ] as const;
-const DESTINATION_LINK_CLASS = "h-auto min-h-8 max-w-full whitespace-normal py-1.5";
 function currentRelationshipOf(overview: CoachingOverview): CoachingRelationship | null {
   const live = overview.relationships.find((relationship) => relationship.grantId === overview.activeGrantId);
   return live ?? overview.relationships[0] ?? null;
@@ -77,13 +79,16 @@ export default async function CoachingPage(): Promise<ReactElement> {
       <PageHeading title={COACHING_COPY.overview.heading} />
       <nav aria-label="Coaching destinations" className="min-w-0">
         <ul className="flex flex-wrap gap-2">
-          {DESTINATIONS.map((destination) => (
-            <li key={destination.href} className="min-w-0">
-              <Link href={destination.href} className={cn(buttonVariants({ variant: "outline", size: "sm" }), DESTINATION_LINK_CLASS)}>
-                {destination.label}
-              </Link>
-            </li>
-          ))}
+          {DESTINATIONS.map((destination) => {
+            const current = destination.href === PAGE_PATH;
+            return (
+              <li key={destination.href} className="min-w-0">
+                <Link href={destination.href} data-slot="button" aria-current={current ? "page" : undefined} className={cn(buttonVariants({ variant: current ? "secondary" : "outline", size: "sm" }), BUTTON_WRAP_CLASS)}>
+                  {destination.label}
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       </nav>
       <PreparationSurface preparation={preparationViewOf(overview)} />

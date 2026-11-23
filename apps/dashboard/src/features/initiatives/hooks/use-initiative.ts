@@ -1,19 +1,24 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { scopeKey, type ScopeKey } from "@/components/context-switch-guard";
-import type { ReadEnvelope, ReadResult } from "@/modules/data-service";
+import type { ReadEnvelope, ReadResult, reads } from "@/modules/data-service";
 import { INITIATIVE_API, readEnvelope } from "../api-client";
 const INITIATIVE_JOB = "initiative";
+type InitiativeMemberState = NonNullable<NonNullable<Parameters<typeof reads.outreach.readInitiative>[1]>["memberState"]>;
 type InitiativeQueryKey = readonly [...ScopeKey, typeof INITIATIVE_JOB, string, string];
 export type InitiativeEnvelope<D> = Extract<ReadResult<ReadEnvelope<D>>, { readonly kind: "envelope" }>["envelope"];
 export type InitiativeQuery<D> = { readonly status: "loading"; readonly isFetching: true } | { readonly status: "ready"; readonly result: ReadResult<ReadEnvelope<D>>; readonly isFetching: boolean };
-/** The page windows a surface states for the lists one initiative's detail carries, in the read's own parameter names: each list is windowed on its own, so paging one of them never moves another. */
-export type InitiativeReadWindow = { readonly requestsPage?: number; readonly requestsPageSize?: number; readonly nextWorkPage?: number; readonly nextWorkPageSize?: number };
+/**
+ * The window a surface states for one initiative's detail read, in the read's own parameter names: the working list's own page, page size and membership-state narrowing, and one page window for each further list the detail carries. Each list is windowed on its own, so paging one of them never moves another.
+ *
+ * `WINDOW_PARAMS` enumerates every member below, so the window states every parameter the detail read accepts: a stated narrowing is never silently dropped on its way into the key or into the request.
+ */
+export type InitiativeReadWindow = { readonly page?: number; readonly pageSize?: number; readonly memberState?: InitiativeMemberState; readonly requestsPage?: number; readonly requestsPageSize?: number; readonly nextWorkPage?: number; readonly nextWorkPageSize?: number };
 // The window's members in one place, so the segment a page is keyed under and the parameters it is asked for are stated once: a request can never be keyed under one window and sent with another.
-const WINDOW_PARAMS = ["requestsPage", "requestsPageSize", "nextWorkPage", "nextWorkPageSize"] as const satisfies readonly (keyof InitiativeReadWindow)[];
-type StatedWindow = { readonly segment: string; readonly params: Readonly<Record<string, number>> };
+const WINDOW_PARAMS = ["page", "pageSize", "memberState", "requestsPage", "requestsPageSize", "nextWorkPage", "nextWorkPageSize"] as const satisfies readonly (keyof InitiativeReadWindow)[];
+type StatedWindow = { readonly segment: string; readonly params: Readonly<Record<string, string | number>> };
 function windowOf(stated: InitiativeReadWindow | undefined): StatedWindow {
-  const params: Record<string, number> = {};
+  const params: Record<string, string | number> = {};
   for (const name of WINDOW_PARAMS) {
     const value = stated?.[name];
     if (value !== undefined) params[name] = value;

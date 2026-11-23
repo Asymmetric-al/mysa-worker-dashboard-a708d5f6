@@ -9,11 +9,10 @@ type CommitmentsRead = Awaited<ReturnType<typeof reads.support.readCommitments>>
 export type CommitmentsEnvelope = Extract<CommitmentsRead, { readonly kind: "envelope" }>["envelope"];
 export type CommitmentsReadResult = CommitmentsRead;
 export type CommitmentsPage = { readonly index: number; readonly size: number };
-export type CommitmentsQuery = { readonly showAdditionalTypes: boolean; readonly commitmentId?: string; readonly page: CommitmentsPage };
+export type CommitmentsQuery = { readonly commitmentId?: string; readonly page: CommitmentsPage };
 export const DEFAULT_COMMITMENTS_PAGE_SIZE = 50;
 export const MAX_COMMITMENTS_PAGE_SIZE = 200;
-const PARAM = { pageIndex: "page.index", pageSize: "page.size", commitmentId: "commitmentId", showAdditionalTypes: "showAdditionalTypes" } as const;
-const FLAG_ON = "1";
+const PARAM = { pageIndex: "page.index", pageSize: "page.size", commitmentId: "commitmentId" } as const;
 const WHOLE_NUMBER = /^\d+$/u;
 function normalisePage(page: CommitmentsPage): CommitmentsPage {
   const index = Number.isSafeInteger(page.index) && page.index >= 0 ? page.index : 0;
@@ -25,21 +24,20 @@ function numberFrom(params: URLSearchParams, name: string): number {
   return raw === null || !WHOLE_NUMBER.test(raw) ? Number.NaN : Number.parseInt(raw, 10);
 }
 const idOrUndefined = (value: string | null | undefined): string | undefined => (value === undefined || value === null || value.length === 0 ? undefined : value);
-/** Encodes the list state as the request this hook makes: the page window, the offer as `1`/`0`, and the narrowed commitment when the detail route named one. */ export function toCommitmentsParams(query: CommitmentsQuery): URLSearchParams {
+/** Encodes the list state as the request this hook makes: the page window and the narrowed commitment when the detail route named one. */ export function toCommitmentsParams(query: CommitmentsQuery): URLSearchParams {
   const page = normalisePage(query.page);
   const params = new URLSearchParams();
   params.set(PARAM.pageIndex, String(page.index));
   params.set(PARAM.pageSize, String(page.size));
-  params.set(PARAM.showAdditionalTypes, query.showAdditionalTypes ? FLAG_ON : "0");
   const commitmentId = idOrUndefined(query.commitmentId);
   if (commitmentId !== undefined) params.set(PARAM.commitmentId, commitmentId);
   return params;
 }
-/** Reads the list state back from a URL, applying the same two page rules so a round trip through {@link toCommitmentsParams} returns an equal query. */ export function parseCommitmentsQuery(source: URLSearchParams | string): CommitmentsQuery {
+/** Reads the list state back from a URL, applying the same page rules so a round trip through {@link toCommitmentsParams} returns an equal query. */ export function parseCommitmentsQuery(source: URLSearchParams | string): CommitmentsQuery {
   const params = typeof source === "string" ? new URLSearchParams(source) : source;
   const page = normalisePage({ index: numberFrom(params, PARAM.pageIndex), size: numberFrom(params, PARAM.pageSize) });
   const commitmentId = idOrUndefined(params.get(PARAM.commitmentId));
-  return { showAdditionalTypes: params.get(PARAM.showAdditionalTypes) === FLAG_ON, page, ...(commitmentId === undefined ? {} : { commitmentId }) };
+  return { page, ...(commitmentId === undefined ? {} : { commitmentId }) };
 }
 const COMMITMENTS_ENDPOINT = "/api/support/commitments";
 const COMMITMENTS_STALE_TIME_MS = 30_000;

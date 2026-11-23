@@ -3,13 +3,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { Temporal } from "temporal-polyfill";
 import type { Coverage, GiftRowRecord, SupportGoalRecord } from "@/modules/data-service/envelope";
 import { DEFAULT_SESSION_ID, seed, type SessionStateDocument } from "@/modules/dev-runtime/seed";
+import { CSV_ALL_CURRENCIES } from "@/modules/export/csv";
 import { printModel, type PrintCell, type PrintModel, type PrintRow } from "@/modules/export/print";
 import { addMinor, minorUnitsOf, negateMinor, type Money } from "@/modules/money/amount";
 import { UNKNOWN_CURRENCY, exponentOf } from "@/modules/money/currency";
 import { formatMinor } from "@/modules/money/format";
 import { SUPPORT_BASIS, type GiftRow, type SupportProjection } from "@/modules/support/basis";
 import { GOAL_MEASURE } from "@/modules/support/goal";
-import { PAGE_SIZE_CAP, PAGE_SIZE_DEFAULT, REPORT_IDS, buildReportQuery, matrixDrilldownQuery, runReport, validateReportQuery, type CurrencySummary, type ReportQuery, type ReportResult, type SeriesPoint } from "@/modules/support/report";
+import { CONTRIBUTOR_DELTA_LIMIT, PAGE_SIZE_CAP, PAGE_SIZE_DEFAULT, REPORT_IDS, buildReportQuery, matrixDrilldownQuery, runReport, validateReportQuery, type CurrencySummary, type ReportQuery, type ReportResult, type SeriesPoint } from "@/modules/support/report";
 import { firstWhere, required, throwing } from "../helpers/answers";
 const PERIOD_FROM = "2026-01-01";
 const PERIOD_TO = "2026-11-20";
@@ -265,6 +266,16 @@ describe("count and sum agreement across every surface", () => {
     expect(run(queryOf(document, { page: { index: 2 } }), projection).rows).toHaveLength(BULK_ROW_COUNT - 2 * PAGE_SIZE_DEFAULT);
     expect(run(queryOf(document, { page: { index: 0, size: 500 } }), projection).page?.size).toBe(PAGE_SIZE_CAP);
   });
+  it("clamps a page index past the last page onto the last page's rows", () => {
+    const projection = bulkProjectionOf(document);
+    const lastPage = run(queryOf(document, { page: { index: 2 } }), projection);
+    // A stale or hand-edited address states a page the result does not have, so it is answered with the last page it does have rather than with metadata that states a page and serves none of it.
+    const pastEnd = run(queryOf(document, { page: { index: 500 } }), projection);
+    expect(pastEnd.page).toEqual({ index: 2, size: PAGE_SIZE_DEFAULT, totalPages: 3 });
+    expect([pastEnd.rows.map((row) => row.giftRowId), pastEnd.total, pastEnd.summary]).toEqual([lastPage.rows.map((row) => row.giftRowId), BULK_ROW_COUNT, lastPage.summary]);
+    const empty = run(queryOf(document, { search: "no gift states this reference", page: { index: 5 } }), projection); // A result that fills no page states page zero of none, with no rows rather than a page number it cannot have.
+    expect([empty.page, empty.rows, empty.total]).toEqual([{ index: 0, size: PAGE_SIZE_DEFAULT, totalPages: 0 }, [], 0]);
+  });
   it("keeps every whole-query value unchanged when the sort or the page changes", () => {
     const projection = bulkProjectionOf(document);
     const baseline = run(queryOf(document), projection);
@@ -336,9 +347,9 @@ describe("currencies stay partitioned", () => {
     const stated = collectCurrencies(result); // There is no exchange rate in this application, so no amount anywhere in the result is stated in a currency the partition does not name: an aggregate code would be a combined total in disguise.
     expect(stated.length).toBeGreaterThan(0);
     expect(stated.filter((code) => !result.snapshot.currencies.includes(code))).toEqual([]);
-    // The download and the printed page never name one currency beside figures stated in several. With an unknown-currency amount in the partition the answer is that the partition is not fully identified, rather than a code that would present it as complete.
+    // The download and the printed page state the query's own currency partition, the same fact the envelope's coverage states, so the file and the coverage can never describe the query differently; each row still prints its own currency code, the unknown-currency row included.
     expect(result.snapshot.currencies.length).toBeGreaterThan(1);
-    expect(printedFact(printModel(result), "currency")).toBe(UNKNOWN_CURRENCY);
+    expect(printedFact(printModel(result), "currency")).toBe(CSV_ALL_CURRENCIES);
     const usdOnly = run(queryOf(document, { currency: { kind: "one", currency: "USD" } }), projectionOf(document));
     expect([usdOnly.summary.map((entry) => entry.currency), printedFact(printModel(usdOnly), "currency")]).toEqual([["USD"], "USD"]);
   });
@@ -460,6 +471,35 @@ describe("gaps, coverage and percentages", () => {
     const usdDeltas = comparison.contributorDeltas.filter((delta) => delta.currency === "USD").map((delta) => amount("USD", delta.minorUnits)); // The contributor deltas add up to that difference exactly, so the comparison explains itself rather than gaining a fabricated balancing entry.
     expect(usdDeltas.length).toBeGreaterThan(0);
     expect(minorTotalOf(usdDeltas, "USD")).toBe(usd.differenceMinor);
+  });
+  it("bounds the contributor list one document carries, while the count and the reconciliation still cover every change", () => {
+    // Forty partners, each with one current-period gift and no earlier-period gift: forty contributor changes in one currency, which is more than the report states in one document. Every amount differs, so the fifteen smallest changes are the ones left out.
+    const giftedOn = day("2026-03-01");
+    const rows: readonly GiftRow[] = Array.from({ length: 40 }, (_unused, index) => {
+      const giftId = `gift-bounded-${String(index).padStart(2, "0")}`;
+      return {
+        giftRowId: `${giftId}-row`,
+        giftId,
+        amount: amount("USD", 1000 + index),
+        originalGiftOn: giftedOn,
+        datePrecision: "date",
+        attribution: { kind: "partner", partnerId: `partner-bounded-${String(index).padStart(2, "0")}` },
+        provenance: { system: "finance", reference: giftId },
+        entryOn: giftedOn,
+      } satisfies GiftRow;
+    });
+    const result = run(queryOf(document, { reportId: "period-comparison" }), projectionOf(document, { coverage: { from: PERIOD_FROM, to: PERIOD_TO, state: "complete" }, gifts: rows }));
+    const comparison = required(result.comparison, "the comparison the period report states");
+    const listed = comparison.contributorDeltas.filter((delta) => delta.currency === "USD");
+    const difference = firstWhere(comparison.perCurrency, "currency", "USD", "the USD entry of the comparison").differenceMinor;
+    // The stated list is bounded at the limit and holds the largest changes, in the report's own attribution order rather than a ranking, so the fifteen smallest changes are the ones the document does not carry.
+    expect([listed.length, listed.map((delta) => delta.partnerId ?? "unattributed")]).toEqual([CONTRIBUTOR_DELTA_LIMIT, Array.from({ length: CONTRIBUTOR_DELTA_LIMIT }, (_unused, index) => `partner-bounded-${String(index + 15).padStart(2, "0")}`)]);
+    // The whole count and the reconciliation are computed over every change, so a bounded list leaves the difference unexplained on this page but never false: the figure, the count and the partition still describe all forty.
+    const listedUnits = minorTotalOf(
+      listed.map((delta) => amount("USD", delta.minorUnits)),
+      "USD",
+    );
+    expect([comparison.contributorDeltaCounts["USD"], comparison.reconciles, listedUnits === difference, difference, summaryFor(result, "USD").received.minorUnits]).toEqual([40, true, false, 40780, 40780]);
   });
 });
 describe("withholding and non-derivability", () => {

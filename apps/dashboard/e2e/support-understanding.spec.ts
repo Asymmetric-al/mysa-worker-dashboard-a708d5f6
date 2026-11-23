@@ -162,7 +162,13 @@ test("the overview states five separate measures, cash first, and never one comb
   await monthlyTab.click();
   const monthlyPanel = page.getByRole("tabpanel", { name: "Monthly equivalents" });
   await expect(monthlyPanel).toBeVisible();
-  await expect(monthlyPanel.getByText(/no commitment is ever counted as cash\./u)).toBeVisible();
+  await expect(monthlyPanel.getByRole("heading", { name: "The source supplies no monthly equivalent here" }), "The panel states the measure's own absence: an empty monthly-equivalent list is not a statement that no commitment exists").toBeVisible();
+  await expect(
+    monthlyPanel.getByText(/reports \d+ commitments — its own standing count of the commitments it holds, taken over the coverage stated above rather than over this period/u),
+    "The panel states how many commitments the source does report, and states that count as the source's own standing count taken over the coverage rather than as a period subtotal",
+  ).toBeVisible();
+  await expect(monthlyPanel.getByText(/supplies no monthly equivalent for any of them/u), "The panel states that the source supplies no monthly equivalent for any of those commitments, so nothing stands in the measure's place").toBeVisible();
+  await expect(monthlyPanel.getByText(/never averaged, summed, or derived from received gifts/u), "A monthly equivalent is the qualified source's own calculation for one commitment, so the panel states that no figure here is derived from gifts or from a per-occurrence amount").toBeVisible();
   await expect(page.getByText(/Commitments, committed amounts and the goal are measures of their own/u)).toBeVisible();
   expect(await page.getByText(/total support/iu).count(), "The overview names no combined 'total support', because the five measures are never one figure.").toBe(0);
   const chart = page.locator('[data-slot="chart-figure"]').first();
@@ -192,10 +198,10 @@ test("a zero-baseline comparison states its difference and no percentage at all"
   await page.goto(`${COMPARISON_REPORT_HREF}${COMPARISON_ZERO_BASELINE_QUERY}`);
   await expect(page.getByRole("heading", { name: "Period comparison", level: 1, exact: true })).toBeVisible();
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Amounts in USD", exact: true }), "One currency is stated in this period, one is stated in the earlier period, and the difference is stated as a signed amount with the word for its direction").toBeVisible();
-  await expect(page.getByText("Increased by")).toBeVisible();
-  const difference = await page.locator("dd").filter({ hasText: "Increased by" }).first().innerText();
-  expect(requiredAmount(difference, "The comparison's difference").minorUnits, "The earlier period holds no gift, so the whole of this period's support is the increase.").toBeGreaterThan(0);
+  await expect(page.getByRole("heading", { name: "Amounts in USD", exact: true }), "One currency is stated in this period, one is stated in the earlier period, and the difference is stated as a signed amount").toBeVisible();
+  const difference = await page.locator("dt").filter({ hasText: "Difference (this period minus the earlier one)" }).first().locator("xpath=following-sibling::dd[1]").innerText(); // The difference this card states, read from the term that names its convention rather than from a direction word the signed amount already carries.
+  expect(requiredAmount(difference, "The comparison's difference").minorUnits, "The earlier period holds no gift, so the whole of this period's support is the difference.").toBeGreaterThan(0);
+  expect(difference, "The amount states the direction once: no direction word repeats it beside the figure.").not.toMatch(/Increased by|Decreased by/u);
   await expect(page.getByText(/No percentage is shown, because a percentage needs a compatible numerator and a positive, known denominator\./u), "A zero earlier period is no denominator: the surface states no percentage rather than 0% or ∞").toBeVisible();
   expect(await page.getByText("0%", { exact: true }).count(), "A zero baseline yields no percentage, so 0% is never stated for it.").toBe(0);
   expect(await page.getByText("∞", { exact: true }).count(), "A zero baseline yields no percentage, so an infinite share is never stated for it.").toBe(0);
@@ -267,6 +273,8 @@ test("a split gift counts once at its own grain and a refund is explained rather
   await expect(page.getByText(/This row records a refund or correction against another row/u)).toBeVisible();
   await expect(page.getByText(CORRECTED_GIFT_ROW_ID, { exact: true })).toBeVisible();
   await expect(page.getByText(/it is never netted into the row it corrects/u)).toBeVisible();
+  expect(await page.getByText(/whole gift that carries no allocation/u).count(), "The record states what the row is once: the correction is never also called a whole gift that carries no allocation.").toBe(0);
+  await expect(page.getByText(/This row is a correction that carries no allocation/u), "The grain section states the correction itself, so the record describes the row the same way in both sections.").toBeVisible();
   expect(requiredAmount(await page.locator('[data-slot="gift-detail"] p[data-value-state]').first().innerText(), "The refund record's amount").minorUnits, "The record states the amount the source recorded, sign included.").toBeLessThan(0);
 });
 test("the recurring outcomes stay five and stale evidence stays outside them", async ({ page }) => {
@@ -304,6 +312,10 @@ test("a goal save against a stale revision is a conflict that keeps the caller's
   expect(receiptText, "The caller's input is preserved on the receipt.").toContain("Your input, kept as you entered it");
   expect(receiptText, "The current goal's own minor units are stated beside the preserved input.").toContain(String(HARBOUR_GOAL_CURRENT_MINOR));
   expect(receiptText, "The amount the caller typed is preserved exactly as it was sent.").toContain(String(HARBOUR_GOAL_INPUT_MINOR));
+  expect(receiptText.match(/Current revision/gu)?.length ?? 0, "The receipt states one current revision and no second one, so the record's own revision field is not restated beside it.").toBe(1);
+  expect(receiptText, "The receipt lists the field this save would have changed rather than either whole record.").toContain("Fields that differ");
+  expect(receiptText, "The current value stated on the receipt carries no revision field of its own.").not.toContain('"revision"');
+  expect(receiptText, "The record's fields this save never names, such as its measure, are not restated: no raw record dump remains on the receipt.").not.toContain("received-gifts");
   await clearFailurePlan(request, SESSION.sessionId);
   await page.goto(SUPPORT_HREF);
   const statedAfter = await statedGoalFacts(goal);
@@ -389,7 +401,8 @@ test("a recorded zero, an unknown amount and an incomplete subtotal are told apa
 test("an unavailable financial source is stated as unavailable while other work continues", async ({ page, request }) => {
   await operateDevControl(request, "setScenario", { scenarioId: "financial-source-unavailable" }, SESSION.sessionId);
   await page.goto(SUPPORT_HREF);
-  await expect(page.getByRole("heading", { name: "The support overview could not be read", level: 1 }), "The surface reports the outage as its own state, with the source it could not read — never as an overview of zeroes and never as an empty period").toBeVisible();
+  await expect(page.getByRole("heading", { name: "Support", level: 1 }), "The page keeps its own title above the outage, so the notice is stated inside a named surface rather than in place of its heading").toBeVisible();
+  await expect(page.getByRole("heading", { name: "The support overview could not be read", level: 2 }), "The surface reports the outage as its own state, with the source it could not read — never as an overview of zeroes and never as an empty period").toBeVisible();
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
   expect(await page.getByText(/No gift is in this result/u).count(), "An outage is not an empty result.").toBe(0);
   expect(await page.getByText(/\b0\.00\b/u).count(), "An outage is not a zero.").toBe(0);

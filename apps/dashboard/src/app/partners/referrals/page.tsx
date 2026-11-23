@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import { ReferralIntroductionComposer, type ReferralIntroductionCandidates } from "@/features/referrals/components/referral-introduction-composer";
 import { ReferralList } from "@/features/referrals/components/referral-list";
@@ -6,6 +7,7 @@ import { DEFAULT_REFERRAL_PAGE_SIZE, DEFAULT_REFERRAL_VIEW, parseReferralListQue
 import { reads } from "@/modules/data-service";
 import { PageColumn, PageHeading, pageRefusalOf, type ReadNoticeCopy, type SearchParams } from "../../page-frame";
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: LIST_COPY.heading };
 const FIRST_PAGE = 1;
 const DEFAULT_LIST_QUERY: ReferralListQuery = { list: DEFAULT_REFERRAL_VIEW, search: "", page: FIRST_PAGE, pageSize: DEFAULT_REFERRAL_PAGE_SIZE };
 const NOTICE_COPY: ReadNoticeCopy = { headingLevel: 1, denied: { title: LIST_COPY.heading }, unavailable: { title: LIST_COPY.heading }, refused: { title: LIST_COPY.heading } };
@@ -29,7 +31,7 @@ async function introductionCandidatesOf(): Promise<ReferralIntroductionCandidate
 export default async function ReferralsPage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
   const parsed = parseReferralListQuery(await searchParams);
   const result = await reads.referrals.readReferrals(parsed.ok ? parsed.query : DEFAULT_LIST_QUERY);
-  if (result.kind !== "envelope") return pageRefusalOf(result, NOTICE_COPY, 4);
+  if (result.kind !== "envelope") return pageRefusalOf(result, NOTICE_COPY, 4, { title: LIST_COPY.heading });
   const candidates = await introductionCandidatesOf(); // The composer needs a partner to offer, so this read is made only once the list itself was readable: a refusal costs no further read.
   return (
     <PageColumn gap={4}>

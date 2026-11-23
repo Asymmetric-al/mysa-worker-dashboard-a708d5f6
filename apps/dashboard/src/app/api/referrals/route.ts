@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { logger } from "@/lib/logger";
-import { mutationInputSchema, mutations, outcomeFromError, reads, refusedRead, toResponse, type ReferralCycleRecord } from "@/modules/data-service";
+import { mutationInputSchema, mutations, reads, refusedRead, toResponse, type ReferralCycleRecord } from "@/modules/data-service";
 import { writeRoute } from "../handler";
 import { READ_ATTEMPT, readResponse } from "../read";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const MAX_REFERENCE_LENGTH = 200;
@@ -61,7 +61,7 @@ const introductionPayloadSchema = z
 const recordIntroductionBodySchema = mutationInputSchema(introductionPayloadSchema);
 const REFERRAL_ID_PARAM = "referralId";
 /** One page of one referral list, or the one cycle the request named, as one envelope either way, or the read's own `denied`/`unavailable` outcome. */
-export async function GET(request: Request): Promise<Response> {
+async function readReferrals(request: Request): Promise<Response> {
   const search = new URL(request.url).searchParams;
   const referralId = search.get(REFERRAL_ID_PARAM);
   if (referralId !== null && referralId.trim().length > 0) return readResponse(READ_ATTEMPT, () => reads.referrals.readReferral(referralId));
@@ -69,11 +69,6 @@ export async function GET(request: Request): Promise<Response> {
   if (!grammar.success) return toResponse(refusedRead(READ_ATTEMPT, grammar.error));
   return readResponse(READ_ATTEMPT, () => reads.referrals.readReferrals(grammar.data));
 }
-/** Records one cycle's original introduction date and the precision it is known to, as `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const POST = (request: Request): Promise<Response> => writeRoute(request, recordIntroductionBodySchema, recordIntroduction);
-async function recordIntroduction(input: Parameters<typeof mutations.referrals.recordIntroduction>[0]): ReturnType<typeof mutations.referrals.recordIntroduction> {
-  const startedAt = performance.now();
-  const outcome = await mutations.referrals.recordIntroduction(input).catch((error: unknown) => outcomeFromError(input.operationId, error));
-  logger.mutation({ operationId: input.operationId, scope: input.scope, outcome: outcome.outcome, elapsedMs: performance.now() - startedAt });
-  return outcome;
-}
+/** Records one cycle's original introduction date and the precision it is known to, as `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. The one diagnostic line for the attempt is written by the service's own runner, under the authority it holds. */
+const recordCycleIntroduction = (request: Request): Promise<Response> => writeRoute(request, recordIntroductionBodySchema, (input) => mutations.referrals.recordIntroduction(input));
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readReferrals, POST: recordCycleIntroduction });

@@ -8,7 +8,7 @@ import { formatSourceReference, newOperationId, type SourceReference } from "@/l
 import { isNonEmptyString, isRecord } from "@/lib/guards";
 import type { ImportRowState, MutationInput, ReadEnvelope, Scope } from "@/modules/data-service/envelope";
 import type { DenialReason, MutationOutcome, ReadResult } from "@/modules/data-service/outcome";
-import type { ImportProposalRowRoute, ImportProposalView, ImportReceiptView } from "@/modules/data-service/reads/import";
+import type { ImportProposalRowRoute, ImportProposalView, ImportReceiptCancellationView, ImportReceiptView } from "@/modules/data-service/reads/import";
 import type { ImportDecisionInput } from "@/modules/import/decide";
 import type { ImportConfirmedMapping } from "@/modules/import/map";
 import type { ImportRowResultState } from "@/modules/import/receipt";
@@ -72,7 +72,7 @@ function stateCountsOfResults(results: ImportProposalView["record"]["results"]):
   for (const result of results) counts[result.state] += 1;
   return counts;
 }
-const resultsViewOf = (source: ImportProposalView | ImportReceiptView, rows: readonly ImportResultsRow[], stoppableRows: number, stateCounts: Readonly<Record<ImportRowState, number>> | null): ImportResultsView => ({
+const resultsViewOf = (source: ImportProposalView | ImportReceiptView, rows: readonly ImportResultsRow[], stoppableRows: number, stateCounts: Readonly<Record<ImportRowState, number>> | null, cancellation: ImportReceiptCancellationView | null): ImportResultsView => ({
   importOperationId: source.importOperationId,
   file: { name: source.file.name, bytes: source.file.bytes, rowCount: source.file.rowCount, columnCount: source.file.columnCount },
   summary: { create: source.summary.create, reuse: source.summary.reuse, skip: source.summary.skip, unresolved: source.summary.unresolved, rowCount: source.summary.rowCount },
@@ -80,6 +80,7 @@ const resultsViewOf = (source: ImportProposalView | ImportReceiptView, rows: rea
   rowWindow: source.rowWindow,
   stoppableRows,
   stateCounts,
+  cancellation,
 });
 const resultsRowOf = (row: ImportProposalView["rows"][number] | ImportReceiptView["rows"][number], route: ImportProposalRowRoute | null): ImportResultsRow => ({ rowNumber: row.rowNumber, decisionLabel: row.decisionLabel, state: row.state, stateLabel: row.stateLabel, reason: row.reason, route });
 const resultsOfProposal = (view: ImportProposalView): ImportResultsView =>
@@ -88,6 +89,7 @@ const resultsOfProposal = (view: ImportProposalView): ImportResultsView =>
     view.rows.map((row) => resultsRowOf(row, row.route)),
     stoppableRowCount(view),
     stateCountsOfResults(view.record.results),
+    null, // A proposal states what acceptance would do; the cancellation it records is stated on the receipt, which the same operation answers once it has been stopped.
   );
 const resultsOfReceipt = (view: ImportReceiptView): ImportResultsView => {
   const stateCounts: Record<ImportRowResultState, number> = { accepted: view.counts.accepted, "already-accepted": view.counts.alreadyAccepted, skipped: view.counts.skipped, "needs-review": view.counts.needsReview, failed: view.counts.failed };
@@ -96,6 +98,7 @@ const resultsOfReceipt = (view: ImportReceiptView): ImportResultsView => {
     view.rows.map((row) => resultsRowOf(row, row.route === null ? null : row.route.kind === "partner" ? { kind: "partner", partnerId: row.route.partnerRef.reference } : { kind: "correction", rowNumber: row.route.rowNumber })),
     view.counts.needsReview + view.counts.failed,
     stateCounts,
+    view.cancellation, // The receipt's own record of a stop, reported as the read states it rather than inferred from the rows it skipped.
   );
 };
 const intentKeyOf = (command: string, input: Omit<MutationInput<unknown>, "operationId">): string => JSON.stringify([command, input.scope, input.expectedRevision, input.payload]);
@@ -189,7 +192,8 @@ function ReadNotice({ state, title, onRetry, fallback = null }: ReadNoticeProps)
     attempts.current.set(intent, minted);
     return minted;
   }, []);
-  const latestEnvelope = proposalRead.kind === "view" ? proposalRead.envelope : null;
+  // Whichever read answered last states the current scope and the revision a change from this page must present: the proposal while the import is in review, and the receipt once it has been processed, which reports the import record's own revision so the stop offered on the results step is accepted rather than refused as stale.
+  const latestEnvelope = proposalRead.kind === "view" ? proposalRead.envelope : resultsRead.kind === "view" ? resultsRead.envelope : null;
   const currentScope = latestEnvelope === null ? scope : latestEnvelope.scope;
   const currentRevision = latestEnvelope === null ? expectedRevision : latestEnvelope.revision;
   const importIdentity = proposalRead.kind === "view" ? proposalRead.request.identity : null;
@@ -260,7 +264,8 @@ function ReadNotice({ state, title, onRetry, fallback = null }: ReadNoticeProps)
     advanceDone.current = advanceTicket;
     advance();
   }, [advanceTicket, advance]);
-  const shownIdentity = importIdentity ?? (resultsRead.kind === "view" ? resultsRead.request.identity : null);
+  // The address names the import the results state, not the attempt whose read answered: a receipt reports the import it belongs to, so a stop's own attempt identity never replaces the identity the receipt address and the screen both show.
+  const shownIdentity = importIdentity ?? (resultsRead.kind === "view" ? resultsRead.view.importOperationId : resultsRead.kind === "pending" ? resultsRead.request.identity : null);
   useEffect(() => {
     if (shownIdentity === null) return;
     const url = new URL(window.location.href);
@@ -442,7 +447,7 @@ function ReadNotice({ state, title, onRetry, fallback = null }: ReadNoticeProps)
               <Alert>
                 <AlertTitle>{JOURNEY_COPY.acceptCheck.inFlightTitle}</AlertTitle>
                 <AlertDescription>
-                  <p>{JOURNEY_COPY.acceptCheck.inFlightStatement}</p>
+                  <p className="type-supporting">{JOURNEY_COPY.acceptCheck.inFlightStatement}</p>
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -462,8 +467,8 @@ function ReadNotice({ state, title, onRetry, fallback = null }: ReadNoticeProps)
       <ImportStepper current={step} completed={completedSteps} onReopen={journey.goTo} />
       <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-4">
         <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-sm text-muted-foreground">{stepLabel(step)}</p>
-          <h2 id={headingId} className="text-xl font-semibold text-balance">
+          <p className="type-supporting">{stepLabel(step)}</p>
+          <h2 id={headingId} className="type-section-title text-balance">
             {stepTitle(step)}
           </h2>
         </div>

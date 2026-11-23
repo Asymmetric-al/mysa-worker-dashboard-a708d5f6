@@ -103,7 +103,9 @@ const RECORDED_DECISION_COPY: Readonly<Record<ReviewDecision, RecordedDecisionCo
 };
 const RENDITION_PURPOSE_WORDS: Readonly<Record<RenditionPurpose, string>> = { display: "Display image", playback: "Playback video", poster: "Poster image", captions: "Caption track", transcript: "Transcript" };
 const FACT_LIST_CLASS = "grid min-w-0 gap-x-4 gap-y-2 text-sm sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]";
-const PART_HEADING_CLASS = "text-base font-medium text-pretty";
+/** The panel states its own title and each of its parts at the scale of the level they render at, so a part never reads at the same measure as the surface that holds it. */
+const PANEL_HEADING_SCALE: Readonly<Record<keyof typeof PANEL_HEADING_TAG, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title" };
+const PART_HEADING_SCALE: Readonly<Record<SubHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const COPY = {
   notStated: "Not stated",
   recordedDecisionHeading: "The decision on record",
@@ -192,7 +194,7 @@ function FrozenRevision({ candidate, level }: { readonly candidate: CandidateVie
   const variant = candidate.variantId.trim();
   return (
     <section aria-labelledby={titleId} data-slot="review-frozen-revision" data-candidate-audience={candidate.audience} data-candidate-locale={candidate.locale.tag} className="flex min-w-0 flex-col gap-3">
-      <Heading {...{ id: titleId, className: PART_HEADING_CLASS }}>{COPY.frozenHeading}</Heading>
+      <Heading {...{ id: titleId, className: cn(PART_HEADING_SCALE[level], "text-pretty") }}>{COPY.frozenHeading}</Heading>
       <dl className={FACT_LIST_CLASS}>
         <dt className="text-muted-foreground">Edition</dt>
         <dd className="flex min-w-0 flex-wrap items-center gap-2">
@@ -232,7 +234,7 @@ function PublishIntent({ notifyRequestedByAuthor, protectedNoticeScope, level }:
   const scope = protectedNoticeScope?.trim() ?? "";
   return (
     <section aria-labelledby={titleId} data-slot="review-publish-intent" data-notify-requested={notifyRequestedByAuthor ? "true" : "false"} className="flex min-w-0 flex-col gap-3">
-      <Heading {...{ id: titleId, className: PART_HEADING_CLASS }}>{COPY.intentHeading}</Heading>
+      <Heading {...{ id: titleId, className: cn(PART_HEADING_SCALE[level], "text-pretty") }}>{COPY.intentHeading}</Heading>
       <div className="flex min-w-0 flex-col gap-2 text-sm">
         <p className="flex min-w-0 flex-wrap items-center gap-2">
           <StatusBadge label={notifyRequestedByAuthor ? COPY.notifyBadge : COPY.publishOnlyBadge} tone={notifyRequestedByAuthor ? "info" : "neutral"} />
@@ -255,7 +257,7 @@ function CandidatePreview({ candidate, level }: { readonly candidate: CandidateV
   const frameDocument = previewDocumentOf(candidate.renderedHtml, candidate.locale, frameTitle);
   return (
     <section aria-labelledby={titleId} data-slot="review-preview" className="flex min-w-0 flex-col gap-3">
-      <Heading {...{ id: titleId, className: PART_HEADING_CLASS }}>{COPY.previewHeading}</Heading>
+      <Heading {...{ id: titleId, className: cn(PART_HEADING_SCALE[level], "text-pretty") }}>{COPY.previewHeading}</Heading>
       {candidate.renderedHtml.trim() === "" ? (
         <p className="text-sm text-muted-foreground text-pretty">{COPY.noRenderedBodyNotice}</p>
       ) : (
@@ -277,7 +279,7 @@ function CandidatePreview({ candidate, level }: { readonly candidate: CandidateV
               return (
                 <li key={`${rendition.purpose}-${rendition.url}`} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                   <span className="min-w-0 text-muted-foreground wrap-anywhere">{purpose}</span>
-                  <a {...{ href: rendition.url, target: "_blank", rel: "noreferrer", className: "inline-flex min-h-target items-center underline underline-offset-4 wrap-anywhere" }}>{`${COPY.openRenditionPrefix} ${purpose.toLowerCase()}`}</a>
+                  <a {...{ href: rendition.url, target: "_blank", rel: "noreferrer", className: "inline-flex min-h-target items-center wrap-anywhere inline-link" }}>{`${COPY.openRenditionPrefix} ${purpose.toLowerCase()}`}</a>
                 </li>
               );
             })}
@@ -295,7 +297,7 @@ function SiblingStanding({ standing, activeVariantId, level }: { readonly standi
   if (others.length === 0) return null;
   return (
     <section aria-labelledby={titleId} data-slot="review-sibling-standing" className="flex min-w-0 flex-col gap-3">
-      <Heading {...{ id: titleId, className: PART_HEADING_CLASS }}>{COPY.siblingHeading}</Heading>
+      <Heading {...{ id: titleId, className: cn(PART_HEADING_SCALE[level], "text-pretty") }}>{COPY.siblingHeading}</Heading>
       <ul className="flex min-w-0 flex-col gap-3 text-sm">
         {others.map((edition) => {
           const audience = AUDIENCE_WORDS[edition.audience];
@@ -382,7 +384,7 @@ function RecordedDecision({ record, level }: { readonly record: RecordedCandidat
   const note = record.note?.trim() ?? "";
   return (
     <section aria-labelledby={titleId} data-slot="review-recorded-decision" data-decision={record.decision} className="flex min-w-0 flex-col gap-3">
-      <Heading {...{ id: titleId, className: PART_HEADING_CLASS }}>{COPY.recordedDecisionHeading}</Heading>
+      <Heading {...{ id: titleId, className: cn(PART_HEADING_SCALE[level], "text-pretty") }}>{COPY.recordedDecisionHeading}</Heading>
       <Alert variant="default" role={undefined}>
         <AlertTitle>{copy.title}</AlertTitle>
         <AlertDescription>
@@ -428,7 +430,7 @@ export function ReviewPanel({ family, candidates, activeVariantId, onSelect, pol
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
-            <Heading {...{ id: titleId, className: "text-pretty" }}>{copy.title}</Heading>
+            <Heading {...{ id: titleId, className: cn(PANEL_HEADING_SCALE[headingLevel], "text-pretty") }}>{copy.title}</Heading>
           </CardTitle>
           <CardDescription className="text-pretty">{copy.introduction}</CardDescription>
         </CardHeader>

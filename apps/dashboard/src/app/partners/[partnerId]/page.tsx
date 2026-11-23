@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactElement } from "react";
 import { buttonVariants } from "@/components/ui/button";
@@ -15,6 +16,7 @@ const EDIT_SUFFIX = "/edit";
 const NEW_INTERACTION_SUFFIX = "/interactions/new";
 const DETAIL_COPY = SURFACE_STATE_COPY["partner-detail"];
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Partner" };
 function detailRead<Data, Shown>(result: ReadResult<ReadEnvelope<Data>>, select: (data: Data) => Shown): PartnerReadResult<Shown> {
   switch (result.kind) {
     case "envelope":
@@ -36,21 +38,21 @@ function RecordActions({ partnerId, contactEditsAdmitted, logInteractionAdmitted
   const actions: ReactElement[] = [];
   if (contactEditsAdmitted) {
     actions.push(
-      <Link key="contact-edits" className={actionClass} href={partnerHref(partnerId, EDIT_SUFFIX)}>
+      <Link key="contact-edits" data-slot="button" className={actionClass} href={partnerHref(partnerId, EDIT_SUFFIX)}>
         {"Edit permitted fields"}
       </Link>,
     );
   }
   if (logInteractionAdmitted) {
     actions.push(
-      <Link key="log-interaction" className={actionClass} href={partnerHref(partnerId, NEW_INTERACTION_SUFFIX)}>
+      <Link key="log-interaction" data-slot="button" className={actionClass} href={partnerHref(partnerId, NEW_INTERACTION_SUFFIX)}>
         {PARTNER_ACTION_LABELS.logInteraction}
       </Link>,
     );
   }
   if (createTaskAdmitted) {
     actions.push(
-      <Link key="create-task" className={actionClass} href={workHref(partnerId)}>
+      <Link key="create-task" data-slot="button" className={actionClass} href={workHref(partnerId)}>
         {PARTNER_ACTION_LABELS.createFollowUpTask}
       </Link>,
     );

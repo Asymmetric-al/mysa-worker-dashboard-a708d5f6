@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { RepeatProfile, SeriesEnd } from "@/modules/time/recurrence";
+import { UNFINISHED_WORK_VALUES } from "../copy/missed-dates";
 import { REPEAT_PROFILE_FIELDS, SERIES_FIELD_MESSAGES, type RepeatProfileField } from "../copy/repeat-profiles";
 import { civilDateSchema, taskCategorySchema, taskNoteSchema, taskTitleSchema, timeZoneSchema } from "./task";
 export const SERIES_SCHEMA_MESSAGES = {
@@ -9,6 +10,7 @@ export const SERIES_SCHEMA_MESSAGES = {
   dayOfMonthNotApplicable: "A day of the month belongs to the monthly profiles, so choose one of those or remove the day.",
   endCountInvalid: "Choose how many occurrences, as a whole number of at least 1.",
   effectiveFromRequired: "Choose the date this change takes effect from, so the dates before it keep the rule they were planned under.",
+  unfinishedWorkInvalid: "Choose what happens to the unfinished work when the series stops: keep it, or cancel it.",
 } as const;
 export const REPEAT_PROFILE_VALUES = ["none", "weekly", "everyNWeeks", "monthlyOnDay", "everyNMonths"] as const satisfies readonly RepeatProfile[];
 export const repeatProfileSchema = z.enum(REPEAT_PROFILE_VALUES, { error: SERIES_SCHEMA_MESSAGES.profileInvalid });
@@ -76,5 +78,6 @@ export const pauseSeriesSchema = z.strictObject({ seriesId: seriesIdSchema });
 export type PauseSeriesPayload = z.infer<typeof pauseSeriesSchema>;
 export const resumeSeriesSchema = z.strictObject({ seriesId: seriesIdSchema });
 export type ResumeSeriesPayload = z.infer<typeof resumeSeriesSchema>;
-export const stopSeriesSchema = z.strictObject({ seriesId: seriesIdSchema });
+/** Stopping states what becomes of the dates it leaves behind; the default is the service's own `keep`, so an absence still states a fate. */
+export const stopSeriesSchema = z.strictObject({ seriesId: seriesIdSchema, unfinishedWork: z.enum(UNFINISHED_WORK_VALUES, { error: SERIES_SCHEMA_MESSAGES.unfinishedWorkInvalid }).default("keep") });
 export type StopSeriesPayload = z.infer<typeof stopSeriesSchema>;

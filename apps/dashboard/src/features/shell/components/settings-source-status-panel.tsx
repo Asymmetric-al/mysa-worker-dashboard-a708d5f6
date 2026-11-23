@@ -68,7 +68,7 @@ const isReadAnswer = (value: SourceStatusRead): value is ReadResult<ReadEnvelope
 const Fact = factFrame({ rowClassName: "flex min-w-0 flex-col gap-1", termClassName: "text-sm font-medium text-muted-foreground", valueClassName: "flex min-w-0 flex-col gap-1 text-sm text-pretty" });
 const FactGroup = ({ heading, children }: { readonly heading: string; readonly children: ReactNode }): ReactElement => (
   <div className="flex min-w-0 flex-col gap-3">
-    <h3 className="text-base font-semibold text-pretty">{heading}</h3>
+    <h3 className="type-subsection-title text-pretty">{heading}</h3>
     {children}
   </div>
 );
@@ -88,7 +88,7 @@ function SourceStatusCard({ envelope, devState, timeZone, locale }: SourceStatus
             <bdi className="mono-identifier wrap-anywhere">{formatSourceReference(envelope.source)}</bdi>
           </Fact>
         </dl>
-        <p className="text-sm text-muted-foreground text-pretty">{COPY.sourceNote}</p>
+        <p className="type-supporting text-pretty">{COPY.sourceNote}</p>
       </FactGroup>
       <Separator />
       <FactGroup heading={COPY.coverageHeading}>
@@ -103,7 +103,7 @@ function SourceStatusCard({ envelope, devState, timeZone, locale }: SourceStatus
           <Fact term={COPY.coverageToLabel}>{coverageBound(envelope.coverage.to)}</Fact>
         </dl>
         {envelope.coverage.state === "complete" ? null : <StateNotice kind="partial-coverage" headingLevel={4} title={COVERAGE_NOTICE_TITLE[envelope.coverage.state]} coverage={envelope.coverage} />}
-        <p className="text-sm text-muted-foreground text-pretty">{COPY.coverageNote}</p>
+        <p className="type-supporting text-pretty">{COPY.coverageNote}</p>
       </FactGroup>
       <Separator />
       <FactGroup heading={COPY.asOfHeading}>
@@ -117,7 +117,7 @@ function SourceStatusCard({ envelope, devState, timeZone, locale }: SourceStatus
             {reading.zoneFallback ? <span className="text-muted-foreground">{COPY.zoneFallback}</span> : null}
           </Fact>
         </dl>
-        <p className="text-sm text-muted-foreground text-pretty">{COPY.asOfNote}</p>
+        <p className="type-supporting text-pretty">{COPY.asOfNote}</p>
       </FactGroup>
       {devState === null ? null : (
         <>
@@ -134,7 +134,7 @@ function SourceStatusCard({ envelope, devState, timeZone, locale }: SourceStatus
                 <bdi className="mono-identifier wrap-anywhere">{devState.clock.derivedInstant}</bdi>
               </Fact>
             </dl>
-            <p className="text-sm text-muted-foreground text-pretty">{COPY.devNote}</p>
+            <p className="type-supporting text-pretty">{COPY.devNote}</p>
           </FactGroup>
         </>
       )}

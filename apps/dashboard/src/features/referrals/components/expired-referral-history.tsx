@@ -14,6 +14,7 @@ const STATUS_TONE: Readonly<Record<ReferralStatusWord, StatusTone>> = { active: 
 const NOT_RECORDED = statusBadgeProps(VALUE_STATE_WORDS, "unknown");
 export type ExpiredHistoryHeadingLevel = 2 | 3 | 4;
 const HEADINGS: Readonly<Record<ExpiredHistoryHeadingLevel, { readonly title: "h2" | "h3" | "h4"; readonly section: "h3" | "h4"; readonly notice: 3 | 4 }>> = { 2: { title: "h2", section: "h3", notice: 3 }, 3: { title: "h3", section: "h4", notice: 4 }, 4: { title: "h4", section: "h4", notice: 4 } };
+const HEADING_SCALE: Readonly<Record<"h2" | "h3" | "h4", string>> = { h2: "type-section-title", h3: "type-subsection-title", h4: "type-group-title" };
 export type ExpiredReferralHistoryProps = { readonly referral: ExpiredHistoryRow | null; readonly status?: ReferralStatusWord; readonly searchEmpty?: boolean; readonly headingLevel?: ExpiredHistoryHeadingLevel; readonly dir?: "ltr" | "rtl"; readonly className?: string };
 const NotRecorded = (): ReactElement => <StatusBadge label={NOT_RECORDED.label} tone={NOT_RECORDED.tone} />;
 const PermittedDate = ({ value }: { readonly value: string | null }): ReactElement => (value === null ? <NotRecorded /> : <bdi className="tabular-figures">{value}</bdi>);
@@ -80,10 +81,10 @@ export default function ExpiredReferralHistory({ referral, status, searchEmpty =
     <StateNotice kind="empty" headingLevel={headings.notice} title={LIST_COPY.views.expired.empty.title} description={LIST_COPY.views.expired.empty.body} />
   );
   return (
-    <Card dir={dir} size="sm" className={cn("min-w-0", className)}>
+    <Card dir={dir} className={cn("min-w-0", className)}>
       <CardHeader>
         <CardTitle>
-          <TitleTag className="font-heading text-base font-medium">{EXPIRED_HISTORY_COPY.heading}</TitleTag>
+          <TitleTag className={HEADING_SCALE[headings.title]}>{EXPIRED_HISTORY_COPY.heading}</TitleTag>
         </CardTitle>
         <CardDescription className="text-pretty wrap-anywhere">{EXPIRED_HISTORY_COPY.explanation}</CardDescription>
       </CardHeader>
@@ -95,7 +96,7 @@ export default function ExpiredReferralHistory({ referral, status, searchEmpty =
         {referral === null || searchEmpty ? emptyNotice : <PermittedFacts referral={referral} status={status ?? referral.status.status} />}
         <Separator />
         <div className="flex min-w-0 flex-col gap-2">
-          <SectionTag className="font-heading text-sm font-medium">{EXPIRED_HISTORY_COPY.absentHeading}</SectionTag>
+          <SectionTag className={HEADING_SCALE[headings.section]}>{EXPIRED_HISTORY_COPY.absentHeading}</SectionTag>
           <AbsentFacts />
         </div>
       </CardContent>

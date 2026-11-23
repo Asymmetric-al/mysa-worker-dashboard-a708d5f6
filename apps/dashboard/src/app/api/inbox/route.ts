@@ -1,3 +1,4 @@
+import { routeMethods } from "@/app/api/methods";
 import { reads } from "@/modules/data-service";
 import { pagingParamsOf, pagingQuerySchema } from "../paging";
 import { readGrammar, readRoute } from "../read";
@@ -9,4 +10,5 @@ const MESSAGES = {
 } as const;
 const inboxQuerySchema = pagingQuerySchema({ page: MESSAGES.pageInvalid, pageSize: MESSAGES.pageSizeInvalid });
 /** Reads one page of this reader's inbox, one message per recipient and notification intent. */
-export const GET = readRoute(readGrammar(inboxQuerySchema, pagingParamsOf), (params) => reads.audience.readInbox(params));
+const readInbox = readRoute(readGrammar(inboxQuerySchema, pagingParamsOf), (params) => reads.audience.readInbox(params));
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readInbox });

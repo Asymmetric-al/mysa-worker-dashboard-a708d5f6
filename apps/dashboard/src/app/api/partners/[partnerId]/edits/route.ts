@@ -1,5 +1,6 @@
 import { mutationInputSchema, mutations, saveContactEditsInput } from "@/modules/data-service";
 import { writeRoute } from "../../../handler";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const contactEditPayloadSchema = saveContactEditsInput.partial({ partnerId: true });
@@ -10,7 +11,8 @@ function contactEditRequestSchema(target: string) {
   });
 }
 /** Saves the caller's permitted-field edits to the partner record this path names, against the revision they read. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function POST(request: Request, { params }: { params: Promise<{ partnerId: string }> }): Promise<Response> {
+async function saveContactEdits(request: Request, { params }: { params: Promise<{ partnerId: string }> }): Promise<Response> {
   const { partnerId } = await params;
   return writeRoute(request, contactEditRequestSchema(partnerId), (input) => mutations.partnerPreparation.saveContactEdits({ ...input, payload: { ...input.payload, partnerId } }));
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: saveContactEdits });

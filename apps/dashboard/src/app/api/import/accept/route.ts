@@ -1,4 +1,5 @@
 import { ZodError, z } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import type { SourceReference } from "@/lib/ids";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse, type MutationInput } from "@/modules/data-service";
 import { IMPORT_DECISION_KINDS, type ImportCellCorrectionInput, type ImportDecisionInput } from "@/modules/import/decide";
@@ -33,7 +34,7 @@ const acceptImportRowsPayloadSchema: z.ZodType<AcceptImportRowsPayload> = z.stri
 const acceptImportRowsRequestSchema: z.ZodType<MutationInput<AcceptImportRowsPayload>> = mutationInputSchema(acceptImportRowsPayloadSchema);
 const isBodyObject = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value);
 /** Accepts the reviewed decisions snapshot and answers with exactly one of the service's eight outcomes. */
-export async function POST(request: Request): Promise<Response> {
+async function acceptImportRows(request: Request): Promise<Response> {
   const body = await jsonBodyOf(request);
   if (body === undefined) return toResponse(outcomeFromError(UNIDENTIFIED_ATTEMPT, new ZodError([{ code: "custom", path: ["payload"], message: JSON_BODY_REFUSAL }])));
   const parsed = acceptImportRowsRequestSchema.safeParse(isBodyObject(body) ? body : {});
@@ -41,3 +42,4 @@ export async function POST(request: Request): Promise<Response> {
   const input: MutationInput<AcceptImportRowsPayload> = { operationId: parsed.data.operationId, scope: parsed.data.scope, expectedRevision: parsed.data.expectedRevision, payload: parsed.data.payload };
   return mutate(input.operationId, () => mutations.import.acceptImportRows(input));
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: acceptImportRows });

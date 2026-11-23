@@ -3,7 +3,6 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import OperationResult from "@/components/operation-result";
-import { PaginationBar } from "@/components/pagination-bar";
 import { RecordList, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import SimulationLabel from "@/components/simulation-label";
 import { StateNotice } from "@/components/state-notice";
@@ -207,7 +206,7 @@ function RepeatReasons({ reasons }: { readonly reasons: readonly RepeatReason[] 
   if (reasons.length === 0) return null;
   return (
     <section aria-label={REPEAT_BLOCK.title} data-slot="delivery-repeat-reasons" className="flex min-w-0 flex-col gap-2">
-      <h3 className="font-heading text-base font-medium text-pretty">{REPEAT_BLOCK.title}</h3>
+      <h3 className="type-subsection-title text-pretty">{REPEAT_BLOCK.title}</h3>
       <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{REPEAT_BLOCK.description}</p>
       <ul className="flex min-w-0 flex-col gap-3">
         {reasons.map((entry) => (
@@ -220,7 +219,7 @@ function RepeatReasons({ reasons }: { readonly reasons: readonly RepeatReason[] 
                 ))}
               </span>
             </div>
-            <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{entry.reason}</p>
+            <p className="type-body text-pretty wrap-anywhere">{entry.reason}</p>
           </li>
         ))}
       </ul>
@@ -315,9 +314,9 @@ function NoticeMessageBlock({ notice }: { readonly notice: SendResultData["notic
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} data-slot="delivery-notice" data-notice-state={notice === null ? "absent" : "stated"} className="flex min-w-0 flex-col gap-2">
-      <h3 {...{ id: headingId, className: "font-heading text-base font-medium text-pretty" }}>{NOTICE_BLOCK.title}</h3>
+      <h3 {...{ id: headingId, className: "type-subsection-title text-pretty" }}>{NOTICE_BLOCK.title}</h3>
       {notice === null ? (
-        <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{NOTICE_BLOCK.absent}</p>
+        <p className="type-supporting text-pretty wrap-anywhere">{NOTICE_BLOCK.absent}</p>
       ) : (
         <>
           <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{NOTICE_BLOCK.description}</p>
@@ -370,13 +369,13 @@ function DeliverySummary({ envelope, locale }: { readonly envelope: DeliveryEnve
 }
 const OutcomeNarratives = ({ outcomes }: { readonly outcomes: readonly SendOutcome[] }): ReactElement => (
   <section aria-label={OUTCOMES_BLOCK.title} data-slot="delivery-outcome-narratives" className="flex min-w-0 flex-col gap-2">
-    <h3 className="font-heading text-base font-medium text-pretty">{OUTCOMES_BLOCK.title}</h3>
+    <h3 className="type-subsection-title text-pretty">{OUTCOMES_BLOCK.title}</h3>
     <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{OUTCOMES_BLOCK.description}</p>
     <ul className="flex min-w-0 flex-col gap-3">
       {outcomes.map((outcome) => (
         <li key={outcome} className="flex min-w-0 flex-col gap-1">
           <StatusBadge {...SEND_STATUS[outcome]} />
-          <p className="text-sm text-pretty wrap-anywhere">{OUTCOME_NARRATIVE[outcome]}</p>
+          <p className="type-body text-pretty wrap-anywhere">{OUTCOME_NARRATIVE[outcome]}</p>
         </li>
       ))}
     </ul>
@@ -393,18 +392,18 @@ const UnservedCard = ({ entries }: { readonly entries: readonly UnservedRecipien
         {entries.map((entry) => (
           <li key={entry.recipientId} className="flex min-w-0 flex-col gap-1 border-b border-border pb-3 last:border-b-0 last:pb-0">
             <StatusBadge {...statusBadgeProps(UNSERVED_STATE, entry.reason)} />
-            <p className="text-sm text-pretty wrap-anywhere">
+            <p className="type-body text-pretty wrap-anywhere">
               <span className="text-muted-foreground">Recipient </span>
               <ReferenceFigure reference={entry.recipientId} />
             </p>
             {entry.reason === "already-covered" ? (
-              <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">
+              <p className="type-supporting text-pretty wrap-anywhere">
                 {UNSERVED_BLOCK.alreadyCovered} <span className="text-foreground">{UNSERVED_BLOCK.coveredByIntent} </span>
                 <ReferenceFigure reference={entry.coveredByIntentId} /> <span className="text-foreground">{UNSERVED_BLOCK.coveredByRendition} </span>
                 <ReferenceFigure reference={entry.coveredByRenditionId} />
               </p>
             ) : (
-              <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{RENDITION_REFUSAL_NARRATIVE[entry.renditionRefusal]}</p>
+              <p className="type-supporting text-pretty wrap-anywhere">{RENDITION_REFUSAL_NARRATIVE[entry.renditionRefusal]}</p>
             )}
           </li>
         ))}
@@ -425,7 +424,7 @@ const DuplicateCard = ({ rows }: { readonly rows: readonly SendResultRow[] }): R
       <ul className="flex min-w-0 flex-col gap-3">
         {rows.map((row, index) => (
           <li key={`${row.dedupeKey}-${String(index)}`} className="flex min-w-0 flex-col gap-1 border-b border-border pb-3 last:border-b-0 last:pb-0">
-            <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+            <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 type-body">
               <span className="text-muted-foreground">Recipient </span>
               <ReferenceFigure reference={row.recipientId} />
               <OutcomeFigure state={row.state} />
@@ -482,7 +481,7 @@ function RecoveryCard({ actions, isFetching, onCheck, repeat, headingLevel }: { 
             <p {...{ id: hintId, className: "text-xs text-muted-foreground text-pretty wrap-anywhere" }}>{RECOVERY.checkDescription}</p>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{actionReasonOf(recovery, RECOVERY.noActionNote)}</p>
+          <p className="type-supporting text-pretty wrap-anywhere">{actionReasonOf(recovery, RECOVERY.noActionNote)}</p>
         )}
         <Separator />
         <div className="flex min-w-0 flex-col gap-2">
@@ -505,12 +504,12 @@ function RecoveryCard({ actions, isFetching, onCheck, repeat, headingLevel }: { 
               )}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{repeat.withheldReason}</p>
+            <p className="type-supporting text-pretty wrap-anywhere">{repeat.withheldReason}</p>
           )}
           {repeat.outcome === null ? null : (
             <div data-slot="delivery-repeat-result" className="flex min-w-0 flex-col gap-2">
               <OperationResult outcome={repeat.outcome} headingLevel={receiptLevelOf(headingLevel)} />
-              {repeat.repeatedIntentId === null ? null : <Link {...{ className: "text-sm underline underline-offset-4", href: deliveryPathOf(repeat.repeatedIntentId) }}>{REPEAT.openLabel}</Link>}
+              {repeat.repeatedIntentId === null ? null : <Link {...{ className: "type-body inline-link", href: deliveryPathOf(repeat.repeatedIntentId) }}>{REPEAT.openLabel}</Link>}
             </div>
           )}
         </div>
@@ -553,19 +552,10 @@ const ROW_FIELDS: readonly RowField[] = [
 ];
 const deliveryColumns = (base: DedupeBase | undefined): ReadonlyArray<RecordListColumnDef<SendResultRow>> =>
   ROW_FIELDS.map((field) => ({ id: field.id, header: field.label, enableSorting: false, ...(field.fixed === true ? { enableHiding: false } : {}), cell: ({ row }) => field.render(row.original, identityOfRow(base, row.original)) }));
-const RowCard = ({ row, identity }: { readonly row: SendResultRow; readonly identity: DedupeIdentity }): ReactElement => (
-  <li data-slot="delivery-row" data-outcome={row.state} className="flex min-w-0 flex-col gap-2 border-b border-border pb-4 last:border-b-0 last:pb-0">
-    <dl className="flex min-w-0 flex-col gap-1.5 text-sm">
-      {ROW_FIELDS.map((field) => (
-        <Fact key={field.id} label={field.label}>
-          {field.render(row, identity)}
-        </Fact>
-      ))}
-    </dl>
-  </li>
-);
 export type DeliveryHeadingLevel = 1 | 2 | 3;
 const HEADING_TAG: Readonly<Record<DeliveryHeadingLevel, "h1" | "h2" | "h3">> = { 1: "h1", 2: "h2", 3: "h3" };
+/** The one type scale's heading utility for each level, so this surface's heading takes the measure of the level the composing page gives it rather than one fixed size. */
+const HEADING_SCALE: Readonly<Record<DeliveryHeadingLevel, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title" };
 export type DeliveryResultsProps = {
   /** The exact authority this read runs under; the service re-derives scope from it on every request. */ readonly scope: Scope;
   /** The interface locale this surface formats its counts in, stated by the route that composes it. */ readonly locale: string;
@@ -618,14 +608,12 @@ export default function DeliveryResults({ scope, locale, intentId: statedIntentI
     writeWindow({ page: pageCount, pageSize });
   }, [controlledState, pageCount, page, pageSize, writeWindow]);
   const checkResult = (): void => read.refetch();
-  const changePage = (nextPage: number): void => commitQuery({ ...listQueryState, page: nextPage });
-  const changePageSize = (nextPageSize: number): void => commitQuery({ ...listQueryState, pageSize: nextPageSize });
   function frame(children: ReactNode): ReactElement {
     return (
       <section aria-labelledby={headingId} data-slot="delivery-results" className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
         <div className="flex min-w-0 flex-col gap-1">
-          <Heading {...{ id: headingId, className: "font-heading text-xl font-semibold text-pretty wrap-anywhere" }}>{SURFACE.heading}</Heading>
-          <p className="max-w-prose text-sm text-muted-foreground text-pretty wrap-anywhere">{SURFACE.intro}</p>
+          <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-pretty wrap-anywhere") }}>{SURFACE.heading}</Heading>
+          <p className="max-w-prose type-supporting text-pretty wrap-anywhere">{SURFACE.intro}</p>
         </div>
         {/* The one simulated-effect disclosure for this surface, stated where the mail-submission boundary is crossed rather than once per row. */}
         <SimulationLabel effect={SIMULATED_EFFECT_BY_TRIGGER.notify} context="block" />
@@ -672,23 +660,12 @@ export default function DeliveryResults({ scope, locale, intentId: statedIntentI
     ) : (
       <>
         {/*
-          Two compositions of one answer with opposite responsive display utilities, so `display: none`
-          removes the other from the accessibility tree: a reader meets the table or the labelled cards,
-          never both and never neither (WCAG 1.3.1, 1.4.10). Only the table's own scroll region may scroll
-          sideways; the page itself never does.
+          One composition of this answer at every width: the shared record list, whose own labelled, focusable
+          scroll region carries the table on a narrow screen, so a reader meets each recipient's row exactly
+          once instead of through a second rendering beside it (WCAG 1.3.1, 1.4.10). Only that region may
+          scroll sideways; the page itself never does.
         */}
-        <div className="hidden min-w-0 md:block">
-          <RecordList label={tableLabel} columns={columns} rows={rows} rowCount={data.page.total} queryState={listQueryState} onQueryStateChange={commitQuery} getRowId={(row) => row.recipientId} itemNoun={ITEM_NOUN} pageSizeOptions={PAGE_SIZES} />
-        </div>
-        <div className="flex min-w-0 flex-col gap-3 md:hidden">
-          <ul aria-label={tableLabel} className="flex min-w-0 flex-col gap-4">
-            {rows.map((row, index) => (
-              <RowCard key={`${row.dedupeKey}-${String(index)}`} row={row} identity={identityOfRow({ publisherId: data.publisherId, purpose: data.purpose, intentId: data.intentId }, row)} />
-            ))}
-          </ul>
-          {/* The phone composition's own pager, at the read's own window: 50 rows by default, 200 at most. */}
-          <PaginationBar {...{ total: data.page.total, page: data.page.page, pageSize: data.page.pageSize, pageSizeOptions: PAGE_SIZES, onPageChange: changePage, onPageSizeChange: changePageSize, itemNoun: ITEM_NOUN }} />
-        </div>
+        <RecordList label={tableLabel} columns={columns} rows={rows} rowCount={data.page.total} queryState={listQueryState} onQueryStateChange={commitQuery} getRowId={(row) => row.recipientId} itemNoun={ITEM_NOUN} pageSizeOptions={PAGE_SIZES} />
         <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
           <p className="text-pretty wrap-anywhere">{SURFACE.recipientHelp}</p>
           <p className="text-pretty wrap-anywhere">{SURFACE.pinnedHelp}</p>

@@ -2,11 +2,12 @@
 /** The one owner of the browser's data transport. */
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient, type UseMutationResult, type UseQueryResult } from "@tanstack/react-query";
 import { useRef } from "react";
+import type { ZodType } from "zod";
 import { scopeKey, type ScopeKey } from "@/components/context-switch-guard";
 import { isNonEmptyString, isRecord } from "@/lib/guards";
 import { newOperationId, type SourceReference } from "@/lib/ids";
 import type { Coverage, MutationInput, OperationOutcomeName, ReadEnvelope, Scope } from "@/modules/data-service/envelope";
-import { isOutcome, isReadResult, outcomeFromError, unavailable, type MutationOutcome, type ReadResult } from "@/modules/data-service/outcome";
+import { invalid, isOutcome, isReadResult, outcomeFromError, unavailable, type MutationOutcome, type ReadResult } from "@/modules/data-service/outcome";
 // ---------------------------------------------------------------------------------------------
 // The statuses one read answers with
 // ---------------------------------------------------------------------------------------------
@@ -60,8 +61,6 @@ export interface ReadTarget {
   readonly body?: unknown;
   /** Whether the envelope's `data` member is the payload this read documents. */
   readonly admits: (data: unknown) => boolean;
-  /** The cancellation signal of the query that issued this read, so a context switch can abandon it. */
-  readonly signal?: AbortSignal;
 }
 /** One read that states its own outage: where it goes, what payload it admits, and what a reader is told when it produces no answer. */
 export interface OutageReadTarget extends ReadTarget {
@@ -115,13 +114,9 @@ async function transportOf<T, C extends Coverage>(target: ReadTarget): Promise<T
       credentials: "same-origin", // The development session is an httpOnly, sameSite=lax cookie, so only a same-origin request carries it, and the handler resolves the caller's authority from it rather than from the query.
       cache: "no-store", // Next caches opt-in, and a stale envelope would be a lie about the store's current state.
       ...(asksWithBody ? { body: JSON.stringify(target.body) } : {}),
-      ...(target.signal === undefined ? {} : { signal: target.signal }),
     });
-  } catch (fault) {
-    if (target.signal?.aborted === true) {
-      throw fault; // A read the caller abandoned is cancelled rather than answered: the error that stopped it is handed on, so a cancelled query never records an outage it never observed.
-    }
-    return { kind: "none", status: undefined, detail: "no answer at all" };
+  } catch {
+    return { kind: "none", status: undefined, detail: "no answer at all" }; // No caller abandons a read — it fills the cache rather than belonging to one component — so a request that threw here was cut off by the transport itself, and the surface is handed its own outage.
   }
   let body: unknown;
   try {
@@ -168,8 +163,8 @@ export interface ReadQueryOptions<T, C extends Coverage = Coverage> {
   readonly job: string;
   /** Whatever else tells two requests of this job apart: the query, the page, or the record's identifier. */
   readonly segment?: readonly unknown[];
-  /** The one request this query issues, given the signal that cancels it. */
-  readonly read: (signal: AbortSignal) => Promise<ReadResult<ReadEnvelope<T, C>>>;
+  /** The one request this query issues: a read fills the cache rather than belonging to one component, so it takes nothing that could abandon it. */
+  readonly read: () => Promise<ReadResult<ReadEnvelope<T, C>>>;
   /** How long the answer is treated as fresh, where the family states it. */
   readonly staleTime?: number;
   /** Whether the read is issued at all: a query nobody named stays idle rather than asking about nothing. */
@@ -186,13 +181,13 @@ export function asOfInstant(asOf: string): number | undefined {
   const instant = Date.parse(asOf);
   return Number.isFinite(instant) ? instant : undefined;
 }
-/** Reads one job into the cache under its scope-led key: the answer is the read's own four arms, handed on unwrapped so */
+/** Reads one job into the cache under its scope-led key: the answer is the read's own four arms, unwrapped, so every surface narrows it the same way. The query is never cancelled by an observer unmounting — the answer belongs to the cache, not to the component that asked — so one request per key is in flight at a time and a remount inside the cache's lifetime joins that request instead of repeating it. */
 export function useReadQuery<T, C extends Coverage = Coverage>(options: ReadQueryOptions<T, C>): ReadQueryResult<T, C> {
   const { key, job, segment, read, staleTime, enabled, initialAnswer, refetchOnMount, keepPrevious } = options;
   const seededAt = initialAnswer !== undefined && initialAnswer.kind === "envelope" ? asOfInstant(initialAnswer.envelope.asOf) : undefined; // A seeded entry is as fresh as the instant the envelope states it was read at, so the first paint is the server's own answer rather than the moment the browser mounted.
   return useQuery<ReadResult<ReadEnvelope<T, C>>, Error>({
     queryKey: readQueryKey(key, job, segment),
-    queryFn: ({ signal }) => read(signal),
+    queryFn: () => read(),
     retry: false, // A refusal is an answer this read states, not a moment to ask again: a retry loop would turn one denial, outage or refused request into a stream of requests and still leave the surface with nothing to show.
     ...(staleTime === undefined ? {} : { staleTime }),
     ...(enabled === undefined ? {} : { enabled }),
@@ -246,10 +241,12 @@ export async function refreshJobs(queryClient: QueryClient, outcome: MutationOut
   if (!refreshing.includes(outcome.outcome)) return;
   await Promise.all(jobs.map((job) => queryClient.invalidateQueries({ queryKey: [...key, job] }))); // Prefix invalidation follows the hierarchical key every read uses, so every params variant of each job in this scope is asked for again while no other context's entry is touched.
 }
-/** What one cached change needs: where it posts, the scope segments its family's reads are keyed by, and what a settled answer leaves stale. */
-export interface OutcomeMutationOptions {
+/** What one cached change needs: where it posts, what payload that handler admits, the scope segments its family's reads are keyed by, and what a settled answer leaves stale. */
+export interface OutcomeMutationOptions<Payload = unknown> {
   /** The one handler that admits this change. */
   readonly url: string;
+  /** The schema the payload this change carries has to satisfy, so the one transport can refuse a malformed value with its field messages before any request leaves the browser; a change whose family declares none posts its payload exactly as the caller stated it. */
+  readonly payloadSchema?: ZodType<Payload>;
   /** The job segments of this family's reads that a settled change makes stale. */
   readonly jobs: readonly string[];
   /** What a request that never left this device is reported with, stated by the family that owns the surface. */
@@ -258,12 +255,21 @@ export interface OutcomeMutationOptions {
   readonly refreshing?: readonly OperationOutcomeName[];
 }
 /** Submits one of a family's named changes and re-reads what it leaves stale, answering exactly one of the eight outcomes. */
-export function useOutcomeMutation<Payload>(options: OutcomeMutationOptions): UseMutationResult<MutationOutcome, Error, MutationInput<Payload>> {
+export function useOutcomeMutation<Payload>(options: OutcomeMutationOptions<Payload>): UseMutationResult<MutationOutcome, Error, MutationInput<Payload>> {
   const queryClient = useQueryClient();
-  const { url, jobs, offlineGuidance, refreshing } = options;
+  const { url, payloadSchema, jobs, offlineGuidance, refreshing } = options;
   return useMutation<MutationOutcome, Error, MutationInput<Payload>>({
     retry: false, // Recovery is the attempt's `operationId` and the service's ledger, never a library retry: a quiet resubmission would either repeat the effect or answer `changed-intent` for a conflict the caller never caused.
-    mutationFn: (input: MutationInput<Payload>): Promise<MutationOutcome> => sendMutation(url, input, offlineGuidance),
+    networkMode: "always", // What a device with no connection is told is this module's decision, not the connection clock's: `sendMutation` must run to answer `unavailable` with the family's own guidance, where the default would pause the attempt here and resume it by itself once the connection returned, applying the change with no notice.
+    mutationFn: async (input: MutationInput<Payload>): Promise<MutationOutcome> => {
+      // A payload this change's own schema refuses is answered as `invalid` with its field messages and never sent, so the same refusal reaches
+      // the surface without a request whose only outcome could be that refusal; the schema's own output is what travels, as the handler's is the same shape.
+      if (payloadSchema === undefined) return sendMutation(url, input, offlineGuidance);
+      const checked = payloadSchema.safeParse(input.payload);
+      if (!checked.success) return invalid({ operationId: input.operationId, fields: checked.error });
+      const fields: MutationInput<Payload> = { operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: checked.data };
+      return sendMutation(url, fields, offlineGuidance);
+    },
     onSuccess: async (outcome: MutationOutcome, input: MutationInput<Payload>): Promise<void> => {
       await refreshJobs(queryClient, outcome, scopeKey(input.scope), jobs, refreshing);
     },

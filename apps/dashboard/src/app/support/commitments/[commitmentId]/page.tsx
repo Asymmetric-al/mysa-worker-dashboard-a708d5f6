@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import { CommitmentDetail } from "@/features/support/components/commitment-detail";
 import { reads } from "@/modules/data-service";
@@ -5,6 +6,7 @@ import { pageRefusalOf, searchSuffixOf, type ReadNoticeCopy, type SearchParams }
 const LIST_HREF = "/support/commitments";
 type CommitmentDetailRouteProps = { readonly params: Promise<{ commitmentId: string }>; readonly searchParams: Promise<SearchParams> };
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: "Commitment" };
 const NOTICE_COPY: ReadNoticeCopy = {
   headingLevel: 1,
   denied: { title: "This commitment is not shown in this context", body: "The commitments read was refused for the context this session is admitted to. Nothing here states whether a commitment carries that identifier, what such a commitment would be, or how large it is." },

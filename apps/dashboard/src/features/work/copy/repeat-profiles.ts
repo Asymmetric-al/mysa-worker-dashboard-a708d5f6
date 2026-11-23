@@ -1,5 +1,23 @@
 import type { RepeatProfile, SeriesEnd } from "@/modules/time/recurrence";
 export const REPEAT_PROFILE_LABELS: Record<RepeatProfile, string> = { none: "Does not repeat", weekly: "Weekly", everyNWeeks: "Every N weeks", monthlyOnDay: "Monthly on day N", everyNMonths: "Every N months on day N" };
+export type RepeatRuleFacts = { readonly profile: RepeatProfile; readonly interval: number; readonly dayOfMonth: number | null };
+type IntervalUnit = "week" | "month"; /** An interval counted in its own unit, so a plan that repeats every single week reads as such rather than as "every 1 weeks". */
+const everyInterval = (interval: number, unit: IntervalUnit): string => (interval === 1 ? `Every ${unit}` : `Every ${String(interval)} ${unit}s`);
+/** One rule stated with its own numbers, so a plan's rule reads as the rule it states rather than as its profile's placeholder name. */
+export function repeatRuleLabel(rule: RepeatRuleFacts): string {
+  switch (rule.profile) {
+    case "none":
+      return REPEAT_PROFILE_LABELS.none;
+    case "weekly":
+      return REPEAT_PROFILE_LABELS.weekly;
+    case "everyNWeeks":
+      return everyInterval(rule.interval, "week");
+    case "monthlyOnDay":
+      return rule.dayOfMonth === null ? "Monthly" : `Monthly on day ${String(rule.dayOfMonth)}`;
+    case "everyNMonths":
+      return rule.dayOfMonth === null ? everyInterval(rule.interval, "month") : `${everyInterval(rule.interval, "month")} on day ${String(rule.dayOfMonth)}`;
+  }
+}
 export const REPEAT_PROFILE_ORDER = ["none", "weekly", "everyNWeeks", "monthlyOnDay", "everyNMonths"] as const satisfies readonly RepeatProfile[];
 type UnlistedRepeatProfile = Exclude<RepeatProfile, (typeof REPEAT_PROFILE_ORDER)[number]>;
 export const REPEAT_PROFILE_ORDER_IS_COMPLETE: UnlistedRepeatProfile extends never ? true : false = true;

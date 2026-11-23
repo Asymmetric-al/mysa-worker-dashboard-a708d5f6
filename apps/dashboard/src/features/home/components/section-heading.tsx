@@ -8,10 +8,10 @@ export default function SectionHeading(props: { id: string; sectionKey: HomeSect
   const description = props.description ?? copy.description;
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <h2 id={props.id} className="font-heading text-lg font-medium text-pretty break-words">
+      <h2 id={props.id} className="type-section-title text-pretty break-words">
         <bdi>{count === null ? copy.heading : `${copy.heading} (${count})`}</bdi>
       </h2>
-      {description.trim().length > 0 ? <p className="text-sm text-pretty break-words text-muted-foreground">{description}</p> : null}
+      {description.trim().length > 0 ? <p className="type-supporting text-pretty break-words">{description}</p> : null}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { PREVIEW_RENDITION_PURPOSES, authorisePreview, type PreviewDenialReason 
 import { REACH_VALUES, isDirectlyReadable, isListedPublicly, reachMetadata, withdrawEdition, type Reach, type ReachMetadata, type Tombstone } from "@/modules/content/reach";
 import { renderToHtml, type RenderMediaPlacement, type RenderRendition, type RenderRenditionPurpose, type RenderRenditions } from "@/modules/content/render";
 import { REVIEW_DECISIONS, REVIEW_STEPS_PER_CANDIDATE, VARIANT_FAMILIES, admittedAudiences, translationStaleness, type ContentCandidate, type ContentDocument, type ContentRevision, type ContentVariant, type Release, type ReviewDecision, type TranslationStaleness } from "@/modules/content/variant";
+import { scenarioMediaServing } from "@/modules/dev-runtime/scenario";
 import { mediaStateReason, type MediaRenditionPurpose, type MediaStateReason } from "@/modules/media/asset";
 import { GOAL_MEASURE } from "@/modules/support/goal";
 import { clampPageSize } from "@/modules/support/report";
@@ -163,7 +164,9 @@ const mainRenditionPurpose = (kind: MediaAssetKind): MediaRenditionPurpose => MA
 const RENDERABLE_PURPOSES: Readonly<Record<MediaRenditionPurpose, RenderRenditionPurpose>> = { display: "display", playback: "playback", poster: "poster", captions: "captions", transcript: "transcript" };
 const asRenderPurpose = (purpose: MediaRenditionPurpose): RenderRenditionPurpose => RENDERABLE_PURPOSES[purpose];
 const VISIBLE_MEDIA_ASSET_FIELDS = ["assetId", "kind", "profileCheck", "renditions", "tagVerification", "revision"] as const;
+/** One placement as this surface may state it: `ready` only when its main rendition exists and the media source is served, and `unavailable` with the source's own reason otherwise. The full rendition list stays on an unavailable placement, because those records are the facts the editor shows about the asset it still holds. */
 function placementViews(workspace: ContentWorkspace, placements: readonly MediaPlacementRecord[], captionTracks: readonly ContentCaptionTrackRecord[]): readonly ContentPlacementView[] {
+  const serving = scenarioMediaServing(workspace.session.scenarioId);
   return placements.map((placement) => {
     const asset = workspace.state.mediaAssets.find((candidate) => candidate.assetId === placement.assetId);
     const tracks = captionTracks.filter((track) => track.assetId === placement.assetId);
@@ -173,8 +176,9 @@ function placementViews(workspace: ContentWorkspace, placements: readonly MediaP
     const visible = project(asset, VISIBLE_MEDIA_ASSET_FIELDS);
     const renditions: ContentRenditionView[] = visible.renditions.map((rendition) => ({ renditionId: rendition.renditionId, purpose: rendition.purpose, mimeType: rendition.mimeType, path: renditionPath(visible.assetId, rendition.renditionId) }));
     const main = renditions.some((rendition) => rendition.purpose === mainRenditionPurpose(visible.kind));
+    const ready = main && serving === "served";
     const { placementId, assetId, sectionElement, position, altText, caption, credit } = placement;
-    return { placementId, assetId, kind: visible.kind, sectionElement, position, altText, caption, credit, state: main ? "ready" : "unavailable", reason: main ? null : reason, renditions, captionTracks: tracks };
+    return { placementId, assetId, kind: visible.kind, sectionElement, position, altText, caption, credit, state: ready ? "ready" : "unavailable", reason: ready ? null : reason, renditions, captionTracks: tracks };
   });
 }
 function unreadablePlacement(placement: MediaPlacementRecord, kind: MediaAssetKind, reason: MediaStateReason, tracks: readonly ContentCaptionTrackRecord[]): ContentPlacementView {
@@ -189,9 +193,12 @@ function renderRevision(body: unknown, placements: readonly ContentPlacementView
   for (const placement of placements) {
     const captionTrack = placement.captionTracks.find((track) => track.isDefault) ?? placement.captionTracks[0];
     const keys = renditionKeys(placement.placementId);
-    for (const rendition of placement.renditions) {
-      const purpose = asRenderPurpose(rendition.purpose);
-      renditions[keys[purpose]] = { src: rendition.path, purpose };
+    // Only a placement the media source serves reaches the renderer with rendition addresses: an unavailable placement carries none, so the single renderer states its text alternative and caption in the place of a player, and the preview's own rendition list stays empty for it.
+    if (placement.state === "ready") {
+      for (const rendition of placement.renditions) {
+        const purpose = asRenderPurpose(rendition.purpose);
+        renditions[keys[purpose]] = { src: rendition.path, purpose };
+      }
     }
     renderedPlacements.push({
       placementId: placement.placementId,
@@ -736,6 +743,8 @@ export type ContentPreviewData =
       readonly renderedHtml: string;
       readonly placements: readonly ContentPlacementView[];
       readonly renditionIds: readonly string[];
+      /** Every placement this rendering could not reach, with its own kind, words and the source's reason, so the surface states each one as unavailable instead of showing a frame that cannot load. Empty when every placement is ready, and empty when the revision places no media at all. */
+      readonly unreadyMedia: readonly ContentPlacementView[];
       readonly inert: true;
       readonly givingAction: "none";
     }
@@ -796,6 +805,7 @@ export async function readPreview(input: { readonly variantId: string; readonly 
     const data: ContentPreviewData = { status: "invalid", variantId: record.variantId, revisionId: admitted.revisionId, issues: rendered.issues };
     return respond(workspace, documentRecord.documentId, record.revision, data, { placements: "unknown" }, []);
   }
+  const unreadyMedia = placements.filter((placement) => placement.state !== "ready");
   const data: ContentPreviewData = {
     status: "authorised",
     variantId: record.variantId,
@@ -807,10 +817,11 @@ export async function readPreview(input: { readonly variantId: string; readonly 
     renderedHtml: rendered.html,
     placements,
     renditionIds: decision.renditionIds,
+    unreadyMedia,
     inert: decision.inert,
     givingAction: decision.givingAction,
   };
-  return respond(workspace, documentRecord.documentId, record.revision, data, { placements: placements.length === 0 ? "zero" : "value", renditionIds: decision.renditionIds.length === 0 ? "zero" : "value" }, []);
+  return respond(workspace, documentRecord.documentId, record.revision, data, { placements: placements.length === 0 ? "zero" : "value", renditionIds: decision.renditionIds.length === 0 ? "zero" : "value", unreadyMedia: unreadyMedia.length === 0 ? "zero" : "value" }, []);
 }
 function candidateFor(state: ContentWorkspaceState, record: ContentVariantRecordLike, candidateId: string | undefined): ContentCandidate | undefined {
   if (candidateId === undefined || !isNonEmptyString(candidateId)) return undefined;

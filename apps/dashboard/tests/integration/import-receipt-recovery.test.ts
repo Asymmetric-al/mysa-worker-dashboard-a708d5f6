@@ -140,13 +140,13 @@ async function ledgerEntriesFor(operationId: string): Promise<readonly Readonly<
   const listed: unknown[] = Array.isArray(operations["entries"]) ? operations["entries"] : [];
   return [...keyed, ...listed].filter((entry): entry is Readonly<Record<string, unknown>> => isRecord(entry) && entry["operationId"] === operationId);
 }
-async function acceptUnderLostAcknowledgement(scope: Scope, revision: string, fileFingerprint: string): Promise<LostAcceptance> {
+async function acceptUnderLostAcknowledgement(scope: Scope, revision: string, fileFingerprint: string, importOperationId: string): Promise<LostAcceptance> {
   const input = { operationId: newOperationId(), scope, expectedRevision: revision, payload: { acknowledged: true as const, fileFingerprint, decisions: await reviewedDecisions() } };
   await armLostAcknowledgement();
   const first = await mutations.import.acceptImportRows(input, SESSION);
   const replay = await mutations.import.acceptImportRows(input, SESSION);
   if (replay.outcome !== "alreadyAccepted") throw new Error(`replaying the acceptance answered "${replay.outcome}" instead of "alreadyAccepted": ${JSON.stringify(replay)}`);
-  const stored = readStoredReceipt(replay.result, replay.operationId);
+  const stored = readStoredReceipt(replay.result, importOperationId); // AAP 0.6.2: a receipt is identified by the import operation identity, so it is read under the import's own id rather than the attempt that ran it.
   if (stored.kind !== "found") throw new Error(`the replayed result is not the receipt the operation stored: ${JSON.stringify(stored)}`);
   // The recovery a worker actually performs after "check the result": that read reports the revision the acceptance produced, and the same work is retried under the same identity. The revision presented is the concurrency token rather than the intent, so the stored receipt comes back rather than a conflict.
   const retried = await mutations.import.acceptImportRows({ ...input, expectedRevision: replay.revision }, SESSION);
@@ -175,20 +175,22 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
     vi.unstubAllEnvs(); // Whatever this file stubbed is undone here, so no suite running after it inherits the environment.
   });
   it("answers a lost acknowledgement with `unknown`, under the attempt's own identity", async () => {
-    const { scope, revision, fileFingerprint } = await reviewTheFixtureFile();
-    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint);
+    const { scope, revision, fileFingerprint, importOperationId } = await reviewTheFixtureFile();
+    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint, importOperationId);
     expect([isOutcome(acceptance.first), acceptance.first.outcome]).toEqual([true, "unknown"]);
     if (acceptance.first.outcome !== "unknown") throw new Error(`the acceptance answered "${acceptance.first.outcome}" instead of "unknown": ${JSON.stringify(acceptance.first)}`);
     expect(acceptance.first.operationId).toBe(acceptance.input.operationId);
     expect(Object.keys(acceptance.first).sort()).toEqual(["operationId", "outcome"]);
   });
   it("returns the stored receipt on a byte-identical replay, with exactly one ledger record", async () => {
-    const { scope, revision, fileFingerprint } = await reviewTheFixtureFile();
-    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint);
+    const { scope, revision, fileFingerprint, importOperationId } = await reviewTheFixtureFile();
+    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint, importOperationId);
     expect(acceptance.replay.operationId).toBe(acceptance.input.operationId);
     expect(acceptance.replay.result).toEqual(acceptance.receipt);
     const readBack = envelopeOf(await reads.import.readImportReceipt(acceptance.replay.operationId, { session: SESSION, pageSize: 200 }), "the acceptance's receipt").data;
-    expect(readBack.importOperationId).toBe(acceptance.input.operationId);
+    expect(readBack.importOperationId).toBe(importOperationId); // The receipt states the import it belongs to, which is the identity the surface holds and its address names.
+    const byImport = envelopeOf(await reads.import.readImportReceipt(importOperationId, { session: SESSION, pageSize: 200 }), "the import's own receipt").data; // The identity the journey holds answers the receipt, not the proposal it has already processed.
+    expect([byImport.importOperationId, byImport.cancelled, byImport.cancellation, byImport.counts]).toEqual([importOperationId, false, null, acceptance.receipt.counts]);
     expect(readBack.counts).toEqual(acceptance.receipt.counts);
     expect(readBack.revision).toContain(acceptance.receipt.fingerprint.checksum);
     // The receipt publishes the file identity it was accepted under and the decisions it recorded, in the input shape a further acceptance posts back: a worker reads them from the receipt rather than guessing that some other identifier stands for the file.
@@ -205,8 +207,8 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
   it("creates one private record per accepted row, and no duplicate when the attempt is replayed", async () => {
     const before = await partnerTotal();
     const reused = await reusedIdentity();
-    const { scope, revision, fileFingerprint } = await reviewTheFixtureFile();
-    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint);
+    const { scope, revision, fileFingerprint, importOperationId } = await reviewTheFixtureFile();
+    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint, importOperationId);
     const after = await partnerTotal();
     expect(after - before).toBe(3); // Three rows were accepted — one created, one corrected and one reused — so a second effect would show here.
     const accepted = acceptance.receipt.results.filter((result) => result.state === "accepted" || result.state === "already-accepted");
@@ -230,15 +232,15 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
   it("records no membership and no consent for the rows it accepts", async () => {
     const before = await membershipRecords();
     expect(before.length).toBeGreaterThan(0); // The comparison has teeth only because the seeded audience is not empty.
-    const { scope, revision, fileFingerprint } = await reviewTheFixtureFile();
-    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint);
+    const { scope, revision, fileFingerprint, importOperationId } = await reviewTheFixtureFile();
+    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint, importOperationId);
     // AAP 0.8.5: "A `subscribed` flag is not consent", and importing a contact never subscribes anyone. The fixture's `Subscribed` column is preserved as data on the row, so the membership records must be exactly the records that stood before the import: the same count, the same states, the same choices.
     expect(await membershipRecords()).toEqual(before);
     expect(acceptance.receipt.facts).toEqual({ memberships: 0, consentRecords: 0, audienceMembers: 0, safetyQualified: false, externalEffects: 0 }); // The receipt states the same fact in the record it stores, so the result step cannot claim otherwise.
   });
   it("reports a state and a route for every data row, from the closed vocabulary", async () => {
-    const { scope, revision, fileFingerprint } = await reviewTheFixtureFile();
-    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint);
+    const { scope, revision, fileFingerprint, importOperationId } = await reviewTheFixtureFile();
+    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint, importOperationId);
     const receipt = acceptance.receipt;
     expect(receipt.results).toHaveLength(FIXTURE_DATA_ROWS);
     expect(receipt.counts).toEqual({ accepted: 3, alreadyAccepted: 0, skipped: 1, needsReview: FIXTURE_DATA_ROWS - 4, failed: 0, total: FIXTURE_DATA_ROWS });
@@ -262,7 +264,7 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
   });
   it("cancels only what acceptance had not already applied", async () => {
     const { scope, revision, importOperationId, fileFingerprint } = await reviewTheFixtureFile();
-    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint);
+    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint, importOperationId);
     const acceptedTotal = await partnerTotal();
     const reviewed = envelopeOf(await reads.import.readImportProposal({ session: SESSION, importOperationId, pageSize: 200 }), "the accepted import's proposal").data;
     expect(reviewed.inFlight).toBe(false);
@@ -278,6 +280,8 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
       const detail = envelopeOf(await reads.partners.readPartner(result.route.partnerRef.reference, {}, SESSION), `the record row ${String(result.rowNumber)} points at`).data;
       expect(detail.partner.partnerId).toBe(result.route.partnerRef.reference);
     }
+    const stopped = envelopeOf(await reads.import.readImportReceipt(importOperationId, { session: SESSION, pageSize: 200 }), "the import's receipt after the cancellation").data; // What the results step reads: the import's own identity states the stop the cancellation recorded.
+    expect([stopped.cancelled, stopped.cancellation?.acceptedRowsRetained, stopped.cancellation?.stoppedRows, stopped.counts.accepted]).toEqual([true, 3, FIXTURE_DATA_ROWS - 3, 3]);
     const untouched = envelopeOf(await reads.import.readImportReceipt(acceptance.input.operationId, { session: SESSION, pageSize: 200 }), "the acceptance's receipt").data;
     expect(untouched.cancelled).toBe(false);
     expect(untouched.counts).toEqual(acceptance.receipt.counts);
@@ -304,7 +308,7 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
   });
   it("requires a fresh review when the chosen file's content changes", async () => {
     const { scope, revision, importOperationId, fileFingerprint } = await reviewTheFixtureFile();
-    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint);
+    const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint, importOperationId);
     const changedBytes = Buffer.from(`${FIXTURE_TEXT.trimEnd()}\n${CHANGED_ROW}\n`, "utf8"); // One more data row is a different file: its content fingerprint hashes the headers and every cell, and its row count is part of it, so the two files cannot share a checksum.
     expect(changedBytes.byteLength).not.toBe(FIXTURE_BYTES.byteLength);
     const proposed = await mutations.import.proposeImport({ operationId: newOperationId(), scope, expectedRevision: NO_REVISION_TO_COMPARE, payload: { fileName: FIXTURE_NAME, contentBase64: changedBytes.toString("base64"), confirmedMapping: CONFIRMED_MAPPING } }, SESSION);

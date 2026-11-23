@@ -5,7 +5,7 @@ import RecordList, { useRecordListWindow, type RecordListColumnDef, type RecordL
 import SidePanel from "@/components/side-panel";
 import StateNotice from "@/components/state-notice";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useIsMobile } from "@/components/ui/use-mobile";
 import { cn } from "@/lib/cn";
@@ -42,7 +42,8 @@ function offeredPageSize(requested: number): number {
   return offered;
 }
 const offeredPage = (requested: number): number => (Number.isFinite(requested) ? Math.max(FIRST_PAGE, Math.trunc(requested)) : FIRST_PAGE);
-const checkInInstantOf = (row: CheckInRow): string | null => row.privateDraft?.savedAt ?? row.shared?.sharedAt ?? null;
+// The day a check-in is filed under is the day its question set was captured, which the private save and the share both keep: the draft's own saved instant moves every time the worker writes, so dating the row by it would re-date the check-in on every autosave.
+const checkInInstantOf = (row: CheckInRow): string | null => row.privateDraft?.questionsCapturedAt ?? row.shared?.questionsCapturedAt ?? null;
 function checkInDayLabelOf(row: CheckInRow): string {
   const instant = checkInInstantOf(row);
   return instant === null ? NO_DATE_RECORDED : storedDayText(instant);
@@ -154,7 +155,7 @@ export default function CheckInList({ initialQuery, scope, locale, onOpen }: Che
   );
   const rowActions = useCallback(
     (row: CheckInRow): ReactElement => (
-      <Button type="button" variant="ghost" size="sm" className="h-auto max-w-full py-1 whitespace-normal" onClick={() => openCheckIn(row.checkInId)}>
+      <Button type="button" variant="ghost" size="sm" className={BUTTON_WRAP_CLASS} onClick={() => openCheckIn(row.checkInId)}>
         {"Open"}
         <span className="sr-only">{` the check-in from ${checkInDayLabelOf(row)}`}</span>
       </Button>
@@ -203,7 +204,7 @@ export default function CheckInList({ initialQuery, scope, locale, onOpen }: Che
   );
   return (
     <section data-slot="check-in-list" data-interface-locale={locale} className="flex min-w-0 flex-col gap-4">
-      <Panel headingLevel={2} titleClassName="font-heading text-lg font-semibold text-balance" title={COACHING_COPY.checkIns.heading} description={COACHING_COPY.checkIns.purpose} contentClassName="flex min-w-0 flex-col gap-3">
+      <Panel headingLevel={2} titleClassName="text-balance" title={COACHING_COPY.checkIns.heading} description={COACHING_COPY.checkIns.purpose} contentClassName="flex min-w-0 flex-col gap-3">
         {content}
       </Panel>
       <SidePanel open={selectedRow !== null} onOpenChange={handleOpenChange} variant={isMobile ? "phone" : "desktop"} title={selectedRow === null ? DETAIL_TITLE : `${DETAIL_TITLE}, ${checkInDayLabelOf(selectedRow)}`} detail={detailOf(selectedRow)} />

@@ -6,17 +6,17 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogMedia, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/cn";
-import { sameScope, type MinistryId, type MutationInput, type OrganizationId, type Scope, type SupportSubjectId } from "@/modules/data-service/envelope";
+import { sameScope, type MinistryId, type MutationInput, type OrganizationId, type PrincipalId, type Scope, type SupportSubjectId } from "@/modules/data-service/envelope";
 import { unknown as unknownOutcome, type JsonValue, type MutationOutcome } from "@/modules/data-service/outcome";
 /** The literal leading segment of every query key: the scope a read ran under. */
 export const SCOPE_KEY_ROOT = "scope";
-/** The leading three segments every cache key in this application starts with, beside the literal root: the organisation, the ministry and the support subject. */
-export type ScopeKey = readonly [typeof SCOPE_KEY_ROOT, OrganizationId, MinistryId, SupportSubjectId];
+/** The leading four segments every cache key in this application starts with, beside the literal root: the organisation, the ministry, the support subject and the principal, so a key states the whole authority the envelope states. */
+export type ScopeKey = readonly [typeof SCOPE_KEY_ROOT, OrganizationId, MinistryId, SupportSubjectId, PrincipalId];
 /** The plain JSON values a query's parameters may hold, so a key stays comparable and cacheable. */
 export type QueryParams = Readonly<Record<string, JsonValue>>;
 export type ScopedQueryKey = readonly [...ScopeKey, string, QueryParams];
 /** The scope segments of a query key, in the order every consumer uses. */
-export const scopeKey = (scope: Scope): ScopeKey => [SCOPE_KEY_ROOT, scope.organizationId, scope.ministryId, scope.supportSubjectId];
+export const scopeKey = (scope: Scope): ScopeKey => [SCOPE_KEY_ROOT, scope.organizationId, scope.ministryId, scope.supportSubjectId, scope.principalId];
 /** A complete query key for one job in one context. */
 export const queryKey = (scope: Scope, job: string, params: QueryParams = {}): ScopedQueryKey => [...scopeKey(scope), job, params];
 /** Whether a response that started in `scopeAtRequestTime` has been overtaken by `currentScope`. */

@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import { isRecord } from "@/lib/guards";
 import { PRESENTATION_CHOICES } from "@/modules/content/document";
 import { RENDITION_PURPOSES } from "@/modules/media/asset";
@@ -88,7 +89,7 @@ function bodyOfText(text: string): unknown {
   }
 }
 /** Reads one edition's working draft or its frozen candidate as the full read envelope, or answers `invalid` for a query this transport does not read and `denied` or `unavailable` as the service refused it. */
-export const GET = readRoute(
+const readDraftEdition = readRoute(
   readGrammar(readQuerySchema, (search) => ({ view: search.get("view") ?? undefined, variantId: search.get("variantId") ?? undefined })),
   (query) => (query.view === "draft" ? reads.updates.readDraft({ variantId: query.variantId }) : reads.updates.readCandidate({ variantId: query.variantId })),
 );
@@ -97,9 +98,10 @@ const DRAFT_WRITES = {
   restoreRevisionAsDraft: (raw, { operationId, sessionId }) => dispatch(restoreRevisionAsDraftRequestSchema, raw, operationId, "operation", (input) => mutations.updates.restoreRevisionAsDraft(sessionId, input)),
 } satisfies Readonly<Record<DraftMutation, ClaimedWrite>>;
 /** Saves one edition's draft, or restores an earlier revision as a new draft, and answers with exactly one of the closed outcomes. */
-export async function POST(request: NextRequest): Promise<Response> {
+async function changeDraft(request: NextRequest): Promise<Response> {
   const text = await request.text().catch(() => "");
   const sized = requestTextSchema.safeParse(text);
   if (!sized.success) return toResponse(outcomeFromError(UNIDENTIFIED_ATTEMPT, sized.error));
   return claimedBodyRoute(request, bodyOfText(text), claimedMutationSchema, (claim) => claim.payload.operation, DRAFT_WRITES);
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readDraftEdition, POST: changeDraft });

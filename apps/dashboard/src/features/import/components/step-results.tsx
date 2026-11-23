@@ -4,10 +4,10 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { PaginationBar } from "@/components/pagination-bar";
 import SimulationLabel from "@/components/simulation-label";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { TableCell, TableHead, TableRow } from "@/components/ui/table";
 import type { ImportRowState } from "@/modules/data-service/envelope";
-import type { ImportProposalRowRoute, ImportRowWindow } from "@/modules/data-service/reads/import";
+import type { ImportProposalRowRoute, ImportReceiptCancellationView, ImportRowWindow } from "@/modules/data-service/reads/import";
 import type { RowResultCopyEntry } from "../copy";
 import { IMPORT_SIMULATION_EFFECT, JOURNEY_COPY, RESULTS_COPY, RESULT_STATE_HEADINGS, ROW_RESULT_COPY, TABLE_LABELS, chosenFileSize, importReceiptHref, resultCorrectionStatement, resultPartnerLinkLabel, resultStoppableRowSentence, resultWindowSentence, reviewDecisionLabel } from "../copy";
 import { IMPORT_ROW_RESULT_STATES } from "@/modules/import/receipt";
@@ -25,6 +25,8 @@ export type ImportResultsRow = { readonly rowNumber: number; readonly decisionLa
   readonly rowWindow: ImportRowWindow;
   readonly stoppableRows: number;
   readonly stateCounts: Readonly<Record<ImportRowState, number>> | null;
+  /** The stop this import's receipt records, exactly as the read states it, or `null` while the import has not been stopped. */
+  readonly cancellation: ImportReceiptCancellationView | null;
 }
 /** Props of {@link StepResults}. */ export interface StepResultsProps {
   readonly results: ImportResultsView;
@@ -40,20 +42,21 @@ function RowRoute({ row, onCorrection }: { readonly row: ImportResultsRow; reado
   if (route === null) return <span className="text-muted-foreground">{RESULTS_COPY.noRoute}</span>;
   if (route.kind === "partner") {
     return (
-      <Link className="inline-flex min-h-6 items-center underline underline-offset-4" href={`${/partners/}${encodeURIComponent(route.partnerId)}`}>
+      <Link className="inline-flex min-h-6 items-center inline-link" href={`${/partners/}${encodeURIComponent(route.partnerId)}`}>
         {resultPartnerLinkLabel(row.rowNumber)}
       </Link>
     );
   }
   if (onCorrection === undefined) return <span className="text-muted-foreground">{resultCorrectionStatement(route.rowNumber)}</span>;
   return (
-    <Button type="button" variant="outline" size="sm" className="h-auto min-h-6 whitespace-normal text-start" onClick={() => onCorrection(route.rowNumber)}>
+    <Button type="button" variant="outline" size="sm" className={`${BUTTON_WRAP_CLASS} text-start`} onClick={() => onCorrection(route.rowNumber)}>
       {reviewDecisionLabel(route.rowNumber)}
     </Button>
   );
 }
 /** Step five of the contact import: the per-row result of one completed operation, its counts and its routes. */ export default function StepResults({ results, onPageChange, onPageSizeChange, stop, onStartAnother, onCorrection, recovered }: StepResultsProps): ReactElement {
   const stateCounts = results.stateCounts;
+  const cancellation = results.cancellation;
   const firstRowHeader = useRef<HTMLTableCellElement | null>(null);
   const focusedOperation = useRef<string | null>(null);
   useEffect(() => {
@@ -86,10 +89,10 @@ function RowRoute({ row, onCorrection }: { readonly row: ImportResultsRow; reado
   };
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <p className="text-sm text-pretty text-muted-foreground">{RESULTS_COPY.lead}</p>
+      <p className="type-supporting text-pretty">{RESULTS_COPY.lead}</p>
       {recovered ? (
         <div className="flex min-w-0 flex-col gap-1 text-sm">
-          <p className="font-medium">{JOURNEY_COPY.reload.completedHeading}</p> <p className="text-pretty text-muted-foreground">{JOURNEY_COPY.reload.completedStatement}</p>
+          <p className="font-medium">{JOURNEY_COPY.reload.completedHeading}</p> <p className="type-supporting text-pretty">{JOURNEY_COPY.reload.completedStatement}</p>
         </div>
       ) : null}
       <SimulationLabel effect={IMPORT_SIMULATION_EFFECT} context="block" />
@@ -101,14 +104,14 @@ function RowRoute({ row, onCorrection }: { readonly row: ImportResultsRow; reado
           <FactRow label={RESULTS_COPY.operationLabels.receiptAddress} value={receiptHref} mono />
         </dl>
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-          <Link className="inline-flex min-h-6 items-center underline underline-offset-4" href={receiptHref}>
+          <Link className="inline-flex min-h-6 items-center inline-link" href={receiptHref}>
             {RESULTS_COPY.receiptLinkLabel}
           </Link>
-          <Button type="button" variant="outline" size="sm" className="h-auto min-h-6" onClick={copyReceiptAddress}>
+          <Button type="button" variant="outline" size="sm" className={BUTTON_WRAP_CLASS} onClick={copyReceiptAddress}>
             {RESULTS_COPY.copyReceiptLabel}
           </Button>
         </div>
-        <p className="text-pretty text-muted-foreground">{RESULTS_COPY.receiptNote}</p>
+        <p className="type-supporting text-pretty">{RESULTS_COPY.receiptNote}</p>
         <output aria-live="polite" aria-atomic="true" className="block min-h-4 text-xs text-pretty text-muted-foreground">
           {receiptAnnouncement}
         </output>
@@ -142,7 +145,19 @@ function RowRoute({ row, onCorrection }: { readonly row: ImportResultsRow; reado
           </dl>
         </div>
       )}
-      <p className="text-sm text-pretty text-muted-foreground">{resultWindowSentence(results.rowWindow)}</p>
+      {/* The stop the receipt records, stated as the read reports it: the address that reads an import back is where a worker finds out that a stop reached only the rows acceptance had not applied. */}
+      {cancellation === null ? null : (
+        <div className="flex min-w-0 flex-col gap-1 text-sm">
+          <p className="font-medium">{RESULTS_COPY.cancellationHeading}</p>
+          <dl className="flex min-w-0 flex-col gap-1">
+            <FactRow label={RESULTS_COPY.cancellationLabels.cancelledAt} value={cancellation.cancelledAt} mono />
+            <FactRow label={RESULTS_COPY.cancellationLabels.acceptedRowsRetained} value={String(cancellation.acceptedRowsRetained)} />
+            <FactRow label={RESULTS_COPY.cancellationLabels.stoppedRows} value={String(cancellation.stoppedRows)} />
+          </dl>
+          <p className="text-pretty text-muted-foreground">{RESULTS_COPY.cancellationStatement}</p>
+        </div>
+      )}
+      <p className="type-supporting text-pretty">{resultWindowSentence(results.rowWindow)}</p>
       <ImportTable label={TABLE_LABELS.results} headings={RESULT_HEADINGS}>
         {results.rows.map((row, rowIndex) => {
           const result: RowResultCopyEntry | null = row.state === null ? null : Object.hasOwn(ROW_RESULT_COPY, row.state) ? ROW_RESULT_COPY[row.state] : null;
@@ -168,14 +183,14 @@ function RowRoute({ row, onCorrection }: { readonly row: ImportResultsRow; reado
       <PaginationBar total={results.rowWindow.total} page={results.rowWindow.page} pageSize={results.rowWindow.pageSize} itemNoun="rows" onPageChange={onPageChange} onPageSizeChange={onPageSizeChange} />
       {results.stoppableRows <= 0 ? null : (
         <div className="flex min-w-0 flex-col gap-2">
-          <p className="text-sm text-pretty text-muted-foreground">{resultStoppableRowSentence(results.stoppableRows)}</p> <StopImportReview stop={stop} />
+          <p className="type-supporting text-pretty">{resultStoppableRowSentence(results.stoppableRows)}</p> <StopImportReview stop={stop} />
         </div>
       )}
       <div className="flex min-w-0 flex-col gap-2">
         <Button type="button" variant="outline" className="w-fit" onClick={onStartAnother}>
           {JOURNEY_COPY.startAnotherLabel}
         </Button>
-        <p className="text-sm text-pretty text-muted-foreground">{JOURNEY_COPY.startAnotherStatement}</p>
+        <p className="type-supporting text-pretty">{JOURNEY_COPY.startAnotherStatement}</p>
       </div>
     </div>
   );

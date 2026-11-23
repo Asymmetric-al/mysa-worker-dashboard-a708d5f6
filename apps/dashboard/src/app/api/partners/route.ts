@@ -3,8 +3,10 @@ import { z } from "zod";
 import { mutationInputSchema, mutations, reads, refusedRead, toResponse, type PartnerRecord } from "@/modules/data-service";
 import { isResolvableTimeZone, parseCivilDate } from "@/modules/time/civil";
 import { refusalIdentityGiven, writeRoute } from "../handler";
+import { routeMethods } from "../methods";
 import { readResponse } from "../read";
 import { wholePageParameter } from "../paging";
+import { refusedSearchParameters } from "../search";
 type RosterQuery = NonNullable<Parameters<typeof reads.partners.findPartners>[0]>;
 type RosterSort = NonNullable<RosterQuery["sort"]>;
 const ROSTER_SORT_FIELDS = ["displayName", "kind", "stage", "favourite", "lastActivityOn"] as const satisfies readonly RosterSort["field"][];
@@ -13,8 +15,16 @@ const CONTACT_METHOD_KINDS = ["email", "phone", "postal"] as const satisfies rea
 const UNATTEMPTED_REQUEST_ID = "no-operation-attempted";
 const SAVED_VIEWS_JOB = "saved-views";
 const FACETS_JOB = "facets";
+const ROSTER_JOB = "roster";
+/** The parameters each of this path's three jobs applies: the roster reads the whole filter set, the facet set describes the giving selection it is read with, and the saved views read none of them. */
+const JOB_PARAMETERS: Readonly<Record<typeof ROSTER_JOB | typeof SAVED_VIEWS_JOB | typeof FACETS_JOB, readonly (keyof RosterQueryParams)[]>> = {
+  [ROSTER_JOB]: ["search", "facet", "sort", "direction", "page", "pageSize", "currency", "from", "to", "timeZone"],
+  [FACETS_JOB]: ["currency", "from", "to", "timeZone"],
+  [SAVED_VIEWS_JOB]: [],
+};
 const rosterQuerySchema = z
   .strictObject({
+    job: z.enum([ROSTER_JOB, SAVED_VIEWS_JOB, FACETS_JOB], "Read the roster, or name the saved-views or facets job, which with the roster are the only answers this path gives.").optional(),
     search: z.string().optional(),
     facet: z.array(z.string().min(1, "A facet needs a facet and a value.")).optional(),
     sort: z.enum(ROSTER_SORT_FIELDS, "Sort the roster by display name, kind, stage, favourite or last activity.").optional(),
@@ -49,6 +59,13 @@ const rosterQuerySchema = z
       const separator = expression.indexOf(":");
       if (separator < 1 || separator === expression.length - 1) context.addIssue({ code: "custom", path: ["facet"], message: `Name each facet as facetId:value. The value "${expression}" states no facet and value pair, so it filters nothing.` });
     }
+    if (params.job === undefined) return;
+    // Each job applies the parameters it reads: a parameter the chosen job cannot apply is refused rather than dropped once the job is known, because a read that dropped it would answer a result the caller did not ask for.
+    const applied = JOB_PARAMETERS[params.job];
+    for (const name of Object.keys(params) as (keyof RosterQueryParams)[]) {
+      if (name === "job" || applied.includes(name)) continue;
+      context.addIssue({ code: "custom", path: [name], message: `The "${params.job}" job reads no "${name}", so remove it: this path applies each parameter to the job that reads it rather than ignoring one the chosen job cannot.` });
+    }
   });
 type RosterQueryParams = z.output<typeof rosterQuerySchema>;
 const privatePreparationPayloadSchema = z.strictObject({
@@ -57,20 +74,11 @@ const privatePreparationPayloadSchema = z.strictObject({
   note: z.string().trim().min(1, "A note needs at least one visible character.").optional(),
 });
 const createPreparationRequestSchema = mutationInputSchema(privatePreparationPayloadSchema);
-const firstValue = (search: URLSearchParams, name: string): string | undefined => search.get(name) ?? undefined;
 function rawRosterParams(search: URLSearchParams): Record<string, unknown> {
-  return {
-    search: firstValue(search, "search"),
-    facet: search.getAll("facet"),
-    sort: firstValue(search, "sort"),
-    direction: firstValue(search, "direction"),
-    page: firstValue(search, "page"),
-    pageSize: firstValue(search, "pageSize"),
-    currency: firstValue(search, "currency"),
-    from: firstValue(search, "from"),
-    to: firstValue(search, "to"),
-    timeZone: firstValue(search, "timeZone"),
-  };
+  // Every name the request states is handed to the grammar, so a parameter this read does not declare is refused by name rather than dropped before the schema can see it; a repeated facet keeps all of its values, because several facets narrow one result together.
+  const stated: Record<string, unknown> = {};
+  for (const name of new Set(search.keys())) stated[name] = name === "facet" ? search.getAll("facet") : (search.get(name) ?? undefined);
+  return stated;
 }
 function assembleRosterQuery(params: RosterQueryParams): RosterQuery {
   const applied: Record<string, string[]> = {};
@@ -104,15 +112,16 @@ const givingSelectionOf = (params: RosterQueryParams): NonNullable<Parameters<ty
   ...(params.timeZone === undefined ? {} : { timeZone: params.timeZone }),
 });
 /** Reads the partner roster, with the facet set describing the same query, as one envelope — or, when another job is named, the caller's own saved views with the drift each one now carries, or the facet set on its own. */
-export async function GET(request: NextRequest): Promise<Response> {
+async function readRoster(request: NextRequest): Promise<Response> {
   const search = new URL(request.url).searchParams;
-  if (search.get("job") === SAVED_VIEWS_JOB) return readResponse(UNATTEMPTED_REQUEST_ID, () => reads.partners.readSavedViews());
   const params = rosterQuerySchema.safeParse(rawRosterParams(search));
-  if (!params.success) return toResponse(refusedRead(UNATTEMPTED_REQUEST_ID, params.error));
-  if (search.get("job") === FACETS_JOB) return readResponse(UNATTEMPTED_REQUEST_ID, () => reads.partners.readFacets(givingSelectionOf(params.data)));
+  if (!params.success) return toResponse(refusedRead(UNATTEMPTED_REQUEST_ID, refusedSearchParameters(params.error)));
+  if (params.data.job === SAVED_VIEWS_JOB) return readResponse(UNATTEMPTED_REQUEST_ID, () => reads.partners.readSavedViews());
+  if (params.data.job === FACETS_JOB) return readResponse(UNATTEMPTED_REQUEST_ID, () => reads.partners.readFacets(givingSelectionOf(params.data)));
   return readResponse(UNATTEMPTED_REQUEST_ID, () => reads.partners.findPartners(assembleRosterQuery(params.data)));
 }
 /** Creates the worker's own private preparation record for a contact. */
-export const POST = (request: NextRequest): Promise<Response> => writeRoute(request, createPreparationRequestSchema, mutations.partnerPreparation.createPrivatePreparation, refusalIdentityOf);
+const createPreparation = (request: NextRequest): Promise<Response> => writeRoute(request, createPreparationRequestSchema, mutations.partnerPreparation.createPrivatePreparation, refusalIdentityOf);
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readRoster, POST: createPreparation });
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

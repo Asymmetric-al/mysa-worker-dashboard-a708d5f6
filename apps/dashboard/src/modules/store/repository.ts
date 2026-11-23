@@ -11,30 +11,42 @@ const DOCUMENT_KEY_NAMES: readonly string[] = DOCUMENT_KEYS;
 export const MEMO_BYTE_BUDGET = 4 * 67_229_868;
 /** How long the memo keeps an entry nothing has read: long enough that the reads behind one screen never re-parse, short enough that a session nobody is visiting gives its dataset back. */
 export const MEMO_IDLE_MS = 10 * 60 * 1000;
-interface MemoizedDocuments {
+/** One document as the memo holds it: the signature of the file it was parsed from, the value it parsed to and the source bytes that cost. An entry holds all four of a session's documents, an absent one as an absent value, so a session that has no workload document is not looked for one on every read. */
+interface HeldDocument {
   readonly signature: string;
-  readonly documents: SessionDocuments;
+  readonly value: unknown;
+  readonly sourceBytes: number;
+}
+/** One session's memo entry: the documents it holds, the set the last read answered with, and the bookkeeping the byte budget and the idle window are kept from. */
+interface MemoizedSession {
+  /** The set the last read answered with, kept while every document in it is still the document on disk; `undefined` once a transaction has dropped a document it declared, so the next read builds a fresh set around the documents it still holds. */
+  readonly container: SessionDocuments | undefined;
+  readonly held: ReadonlyMap<SessionDocumentKey, HeldDocument>;
   readonly sourceBytes: number;
   readonly readAtMs: number;
 }
-const documentMemo = new Map<string, MemoizedDocuments>(); // Sessions in the order they were last read, which is the order they are dropped in: the memo is a cache in front of the disk and nothing else, so a session that is not here is answered by its files.
+const documentMemo = new Map<string, MemoizedSession>(); // Sessions in the order they were last read, which is the order they are dropped in: the memo is a cache in front of the disk and nothing else, so a session that is not here is answered by its files.
 let memoizedBytes = 0;
-interface DocumentSignature {
+interface DocumentMeasurement {
   readonly signature: string;
   readonly sourceBytes: number;
 }
-async function signatureOf(paths: ReturnType<typeof sessionPaths>): Promise<DocumentSignature> {
-  const parts = await Promise.all(
-    DOCUMENT_KEYS.map(async (key) => {
-      try {
-        const stats = await stat(paths[key]);
-        return { stated: `${stats.mtimeMs}:${stats.size}`, bytes: stats.size };
-      } catch {
-        return { stated: "-", bytes: 0 };
-      }
-    }),
-  );
-  return { signature: parts.map((part) => part.stated).join("|"), sourceBytes: parts.reduce((total, part) => total + part.bytes, 0) };
+/** One document as the disk states it: its own `mtimeMs:size` signature, which is what lets a read re-parse only the document that moved, and the bytes it costs; a document the store does not hold states `-`, so its absence is a state to remember rather than a reason to look for it again. */
+async function measureDocument(file: string): Promise<DocumentMeasurement> {
+  try {
+    const stats = await stat(file);
+    return { signature: `${stats.mtimeMs}:${stats.size}`, sourceBytes: stats.size };
+  } catch {
+    return { signature: "-", sourceBytes: 0 };
+  }
+}
+async function measureSession(paths: ReturnType<typeof sessionPaths>): Promise<Readonly<Record<SessionDocumentKey, DocumentMeasurement>>> {
+  const [state, operations, meta, workload] = await Promise.all([measureDocument(paths.state), measureDocument(paths.operations), measureDocument(paths.meta), measureDocument(paths.workload)]);
+  return { state, operations, meta, workload };
+}
+/** Whether every document the entry holds is still the document the disk states: one comparison per document, because a write of one says nothing about the other three. */
+function holdsCurrentDocuments(held: ReadonlyMap<SessionDocumentKey, HeldDocument>, measured: Readonly<Record<SessionDocumentKey, DocumentMeasurement>>): boolean {
+  return DOCUMENT_KEYS.every((key) => held.get(key)?.signature === measured[key].signature);
 }
 /** Drops one session's entry and its bytes from the total, so the bound is maintained incrementally rather than re-measured from the entries. */
 function forget(sessionId: string): void {
@@ -43,8 +55,8 @@ function forget(sessionId: string): void {
   memoizedBytes -= forgotten.sourceBytes;
   documentMemo.delete(sessionId);
 }
-/** Records a freshly parsed document set as the newest entry, then drops the least recently read entries until the total is inside the budget. */
-function remember(sessionId: string, entry: MemoizedDocuments): void {
+/** Records a session's entry as the newest, then drops the least recently read entries until the total is inside the budget. */
+function remember(sessionId: string, entry: MemoizedSession): void {
   forget(sessionId);
   documentMemo.set(sessionId, entry);
   memoizedBytes += entry.sourceBytes;
@@ -60,6 +72,22 @@ function dropIdle(nowMs: number): void {
     if (nowMs - entry.readAtMs < MEMO_IDLE_MS) return;
     forget(sessionId);
   }
+}
+/** Drops the documents a transaction declared and keeps the ones it could not write, because the parsed dataset behind a write that never touches it is the whole of what the memo is for. The set goes with them, so the next read builds a fresh one from the documents this entry still holds and the documents it reads again. */
+function forgetDocuments(sessionId: string, keys: ReadonlySet<SessionDocumentKey>): void {
+  const remembered = documentMemo.get(sessionId);
+  if (remembered === undefined) return;
+  const held = new Map(remembered.held);
+  let sourceBytes = remembered.sourceBytes;
+  for (const key of keys) {
+    const dropped = held.get(key);
+    if (dropped === undefined) continue;
+    held.delete(key);
+    sourceBytes -= dropped.sourceBytes;
+  }
+  memoizedBytes -= remembered.sourceBytes;
+  documentMemo.set(sessionId, { ...remembered, container: undefined, held, sourceBytes }); // Replaced in place, not re-inserted: a transaction that read the session is not a later read of it, so the eviction order still follows the reads.
+  memoizedBytes += sourceBytes;
 }
 const documentValue = (documents: SessionDocuments, key: SessionDocumentKey): unknown => (Object.hasOwn(documents, key) ? documents[key] : undefined);
 async function readRequiredDocument(file: string): Promise<unknown> {
@@ -82,22 +110,39 @@ export async function readSession(sessionId: string): Promise<SessionDocuments |
   const paths = sessionPaths(sessionId);
   const nowMs = Date.now();
   dropIdle(nowMs);
-  const measured = await signatureOf(paths);
+  const measured = await measureSession(paths);
   const memoized = documentMemo.get(sessionId);
-  if (memoized !== undefined && memoized.signature === measured.signature) {
-    remember(sessionId, { ...memoized, readAtMs: nowMs }); // A hit costs the recency update and nothing else: the entry keeps the documents it already parsed and the bytes it already counted, and moves to the newest position so the eviction order is the read order.
-    return memoized.documents;
+  if (memoized !== undefined && memoized.container !== undefined && holdsCurrentDocuments(memoized.held, measured)) {
+    remember(sessionId, { ...memoized, readAtMs: nowMs }); // A hit costs the recency update and nothing else: the entry keeps the documents it already parsed and the bytes it already counted, answers with the very set the previous read answered with, and moves to the newest position so the eviction order is the read order.
+    return memoized.container;
   }
-  const state = await readJson(paths.state);
+  // The document this read already holds, or nothing when its own signature moved and the file has to be read again.
+  const heldDocument = (key: SessionDocumentKey): HeldDocument | undefined => {
+    const held = memoized?.held.get(key);
+    return held !== undefined && held.signature === measured[key].signature ? held : undefined;
+  };
+  const heldState = heldDocument("state");
+  const state = heldState === undefined ? await readJson(paths.state) : heldState.value;
   if (state === undefined) {
     if (!(await existsOnDisk(DATA_ROOT))) throw new StoreAbsentError(DATA_ROOT);
     forget(sessionId);
     return undefined;
   }
-  const [operations, meta, workload] = await Promise.all([readRequiredDocument(paths.operations), readRequiredDocument(paths.meta), readJson(paths.workload)]);
-  const documents: SessionDocuments = { state, operations, meta };
+  const heldOperations = heldDocument("operations");
+  const operations = heldOperations === undefined ? await readRequiredDocument(paths.operations) : heldOperations.value;
+  const heldMeta = heldDocument("meta");
+  const meta = heldMeta === undefined ? await readRequiredDocument(paths.meta) : heldMeta.value;
+  const heldWorkload = heldDocument("workload");
+  const workload = heldWorkload === undefined ? await readJson(paths.workload) : heldWorkload.value;
+  const documents: SessionDocuments = { state, operations, meta }; // The set is built around the values this read holds, so a document it did not re-parse is the very object the previous set carried, and a transaction's reference check on an undeclared document still recognises it.
   if (workload !== undefined) documents.workload = workload;
-  remember(sessionId, { signature: measured.signature, documents, sourceBytes: measured.sourceBytes, readAtMs: nowMs });
+  const held = new Map<SessionDocumentKey, HeldDocument>();
+  let sourceBytes = 0;
+  for (const key of DOCUMENT_KEYS) {
+    held.set(key, { signature: measured[key].signature, value: documentValue(documents, key), sourceBytes: measured[key].sourceBytes });
+    sourceBytes += measured[key].sourceBytes;
+  }
+  remember(sessionId, { container: documents, held, sourceBytes, readAtMs: nowMs });
   return documents;
 }
 /** Refusal raised by `transact` for a session the store does not hold, which it never creates. */
@@ -143,7 +188,7 @@ export async function transact<T>(sessionId: string, writes: readonly SessionDoc
       }
       return result;
     } finally {
-      forget(sessionId); // Dropped on every path: a read answered from this entry could otherwise serve a document the callback changed.
+      forgetDocuments(sessionId, declared); // Dropped on every path, and only for the documents this transaction declared: a read answered from this entry could otherwise serve a document the callback changed, while a document the write set excludes is still the very one on disk and keeps its parse.
     }
   });
 }

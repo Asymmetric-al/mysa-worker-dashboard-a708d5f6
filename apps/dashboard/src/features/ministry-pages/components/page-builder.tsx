@@ -22,7 +22,7 @@ import PagePreviewFrame, { type PagePreviewView } from "./page-preview-frame";
 import PresetChooser from "./preset-chooser";
 import ReachControl from "./reach-control";
 import ReleaseControls, { type ReleaseVariantView } from "./release-controls";
-import SectionFields, { type PageBuilderSection as FieldsSection, type SectionPlacement } from "./section-fields";
+import SectionFields, { type PageBuilderSection as FieldsSection, type SectionPlacement, type SectionSaveState } from "./section-fields";
 import SectionOutline, { type PageBuilderSection as OutlineSection } from "./section-outline";
 import StopShowingPublicly from "./stop-showing-publicly";
 /** One Page as `readPage` states it: the document, its locked fields, its giving binding, the composed draft, that draft's sections, the presets, every language edition and the reach values those releases may carry. */
@@ -44,9 +44,9 @@ const REFUSED_DESCRIPTION = "The request this Page was read with is not one the 
 const GIVING_LOADING_DESCRIPTION = "The approved giving designation for this Page is being read. No other fund and no default designation is shown in the meantime, and no amount is shown at all.";
 const GIVING_REFUSED_DESCRIPTION = "The request for this Page's giving designation is not one that read admits, so this placement states no destination rather than an invented one.";
 const SECTION_CLASS = "flex min-w-0 flex-col gap-4";
-const HEADING_CLASS = "font-heading text-lg font-medium text-pretty wrap-anywhere";
-const NOTE_CLASS = "text-sm text-pretty text-muted-foreground wrap-anywhere";
-const PREVIEW_LINK_CLASS = "inline-flex min-h-6 w-fit max-w-full min-w-0 items-center text-start text-sm font-medium underline-offset-4 text-pretty wrap-anywhere hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+const HEADING_CLASS = "type-section-title text-pretty wrap-anywhere";
+const NOTE_CLASS = "type-supporting text-pretty wrap-anywhere";
+const PREVIEW_LINK_CLASS = "inline-flex min-h-6 w-fit max-w-full min-w-0 items-center text-start text-sm font-medium inline-link text-pretty wrap-anywhere focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 function otherEditionDescription(composedLocale: string, openLocale: string): string {
   if (composedLocale === "") return `The Page read named no edition to compose, so no section can be changed here. ${openLocale === "" ? "No language edition is open either." : "This edition can still be previewed, reviewed, released and set to its own reach."}`;
   return `The Page read composes the ${composedLocale} draft, so its sections are the ones that can be changed. The ${openLocale === "" ? "edition" : `${openLocale} edition`} you have open can still be previewed, reviewed, released and set to its own reach.`;
@@ -97,7 +97,7 @@ function previewViewOf(result: PagePreviewReadResult): PagePreviewView {
   switch (result.kind) {
     case "envelope": {
       const data = result.envelope.data;
-      if (data.status === "authorised") return { status: "authorised", variantId: data.variantId, revisionId: data.revision.revisionId, servedLocale: data.locale.tag, direction: data.locale.direction, html: data.renderedHtml, inert: true, givingAction: "none" };
+      if (data.status === "authorised") return { status: "authorised", variantId: data.variantId, revisionId: data.revision.revisionId, servedLocale: data.locale.tag, direction: data.locale.direction, html: data.renderedHtml, unreadyMedia: data.unreadyMedia, inert: true, givingAction: "none" };
       if (data.status === "denied") return { status: "denied", reason: data.reason };
       return { status: "unavailable", source: result.envelope.source };
     }
@@ -142,6 +142,7 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
   const previewHeadingId = useId();
   const controlsHeadingId = useId();
   const [selection, setSelection] = useState<BuilderSelection>({ locale: openingLocale, sectionId: null, pane: "outline", releaseVariantIds: [] });
+  const [sectionSave, setSectionSave] = useState<SectionSaveState | null>(null);
   const pageRead = usePage(scope, documentId);
   const localesRead = usePageLocales(scope, documentId);
   const givingRead = useGivingBinding(scope, documentId);
@@ -161,6 +162,12 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
   const sections = readView === undefined ? [] : sectionsOf(readView);
   const chosenSectionId = selection.sectionId !== null && sections.some((section) => section.sectionId === selection.sectionId) ? selection.sectionId : (sections[0]?.sectionId ?? null);
   const selectedSection = sections.find((section) => section.sectionId === chosenSectionId);
+  // One section's save result is ignored while another section is chosen, and choosing another section returns the fields pane to its own unsettled state.
+  const selectedSave = sectionSave !== null && sectionSave.sectionId === chosenSectionId ? sectionSave : null;
+  const chooseSection = (sectionId: string): void => {
+    if (sectionId !== chosenSectionId) setSectionSave(null);
+    setSelection((current) => ({ ...current, sectionId }));
+  };
   const previewParams = previewParamsOf(documentId, activeRecord);
   const previewSeedApplies = preview !== undefined && (preview.status === "authorised" ? preview.variantId === (activeEdition?.variant.variantId ?? "") : activeLocale === openingLocale);
   const unreleasedPreview: PagePreviewView | undefined = previewParams === undefined && activeLocale !== "" ? { status: "unreleased", locale: activeLocale } : undefined;
@@ -170,10 +177,12 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
   const rereadGiving = givingRead.refetch;
   if (pageResult.kind !== "envelope") return refusalNotice(pageResult, PAGE_REFUSAL, () => void pageRead.refetch(), className);
   const builder = pageResult.envelope.data;
+  // The document record's own revision, as the read that runs again after every accepted write states it: the reach, containment, withdrawal and edition-creation changes all validate that record, so each of them presents this revision rather than one an edition holds.
+  const documentRevision = pageResult.envelope.revision;
   const family = builder.family === "update" ? undefined : builder.family;
   if (family === undefined) return <StateNotice kind="refused" headingLevel={2} title={copy.states.refusedTitle} description={"An Update is not a Page: it carries prose and its own media rather than a section catalogue, a reach setting and language editions of its own."} className={className} />;
   const catalogue = catalogueOf(cataloguesRead.data?.kind === "envelope" ? cataloguesRead.data.envelope.data : undefined, family);
-  const catalogueDocument = { documentId, expectedRevision: page.revision, ...(composedLocale === "" ? {} : { locale: composedLocale }) };
+  const catalogueDocument = { documentId, expectedRevision: documentRevision, ...(composedLocale === "" ? {} : { locale: composedLocale }) };
   const givingResult = givingRead.data;
   const givingView: ReadEnvelope<GivingBindingView> | undefined = givingResult === undefined ? givingBinding : givingResult.kind === "envelope" ? { ...givingResult.envelope, data: givingResult.envelope.data.binding } : undefined;
   const givingProblem = givingResult === undefined || givingResult.kind === "envelope" ? undefined : givingResult;
@@ -198,6 +207,7 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
               <ReleaseControls
                 scope={scope}
                 documentId={documentId}
+                documentRevision={documentRevision}
                 expectedRevision={activeRecord?.recordRevision ?? page.revision}
                 variants={releaseVariantsOf(documentId, editionRecords)}
                 selectedVariantIds={selection.releaseVariantIds}
@@ -205,9 +215,9 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
               />
             </div>
             <div className={SECTION_CLASS}>
-              <ReachControl variantId={activeEdition?.variant.variantId ?? ""} documentId={documentId} scope={scope} expectedRevision={page.revision} current={reachOf(activeRecord)} />
+              <ReachControl variantId={activeEdition?.variant.variantId ?? ""} documentId={documentId} scope={scope} expectedRevision={documentRevision} current={reachOf(activeRecord)} />
               <Separator />
-              <StopShowingPublicly scope={scope} documentId={documentId} expectedRevision={page.revision} editionCount={editionList.length} />
+              <StopShowingPublicly scope={scope} documentId={documentId} expectedRevision={documentRevision} editionCount={editionList.length} />
             </div>
           </div>
           <Separator />
@@ -233,7 +243,7 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
                 <StateNotice kind="empty" headingLevel={3} title={"This Page has no language edition yet"} description={copy.states.emptyEditions} />
               ) : composingDraft ? (
                 <>
-                  <SectionOutline sections={sections} selectedSectionId={chosenSectionId} onSelect={(sectionId) => setSelection((current) => ({ ...current, sectionId }))} variantId={draftVariantId} expectedRevision={draftExpectedRevision} />
+                  <SectionOutline sections={sections} selectedSectionId={chosenSectionId} onSelect={chooseSection} variantId={draftVariantId} expectedRevision={draftExpectedRevision} />
                   {outsideCatalogueCountOf(builder) === 0 ? null : <p className={NOTE_CLASS}>{copy.catalogue.outsideCatalogue}</p>}
                 </>
               ) : builder.draft === null ? (
@@ -276,7 +286,7 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
               ) : selectedSection === undefined ? (
                 <p className={NOTE_CLASS}>{copy.builder.selectSection}</p>
               ) : (
-                <SectionFields key={`${selectedSection.sectionId}:${signatureOf(selectedSection)}`} section={selectedSection} variantId={draftVariantId} expectedRevision={draftExpectedRevision} direction={direction} scope={scope} documentId={documentId} />
+                <SectionFields key={`${selectedSection.sectionId}:${signatureOf(selectedSection)}`} section={selectedSection} variantId={draftVariantId} expectedRevision={draftExpectedRevision} direction={direction} scope={scope} documentId={documentId} saveState={selectedSave} onSaveStateChange={setSectionSave} />
               )}
             </section>
             <section data-pane="preview" aria-labelledby={previewHeadingId} className={paneClass("preview", selection.pane)}>
@@ -291,7 +301,7 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
                   <p className={NOTE_CLASS}>{copy.builder.openEditionPreviewNote}</p>
                 </div>
               )}
-              {previewView === undefined ? LOADING_NOTICE(3, "Reading this edition's preview", PREVIEW_LOADING_DESCRIPTION) : <PagePreviewFrame layout="builder" preview={previewView} givingBinding={givingView?.data} />}
+              {previewView === undefined ? LOADING_NOTICE(3, "Reading this edition's preview", PREVIEW_LOADING_DESCRIPTION) : <PagePreviewFrame layout="builder" preview={previewView} givingBinding={givingView?.data} retry={{ label: copy.preview.mediaRetryLabel, onClick: () => void previewRead.refetch() }} />}
             </section>
           </div>
         </div>

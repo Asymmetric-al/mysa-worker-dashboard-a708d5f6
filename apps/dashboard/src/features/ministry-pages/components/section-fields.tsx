@@ -2,7 +2,7 @@
 import { useForm } from "@tanstack/react-form";
 import { useCallback, useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { attemptForIntent, type ReviewedAttempt } from "@/components/attempt";
-import { FormErrorSummary, FormField, FormFieldGroup, fieldErrorsFromInvalid, type FieldErrorLookup } from "@/components/form-field";
+import { civilDateConvention, FormErrorSummary, FormField, FormFieldGroup, fieldErrorsFromInvalid, type FieldErrorLookup } from "@/components/form-field";
 import { MediaPicker, type MediaPickerKind, type MediaPickerOutcome, type MediaRegisterInput, type MediaPlacement } from "@/components/media-picker";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -39,8 +39,19 @@ export type PageBuilderSection = {
   readonly presentation: PresentationChoice;
   readonly placements?: readonly SectionPlacement[];
 };
-/** The revision this form was opened at, presented as `expectedRevision` on every save. · The scope the Page was read in, when the caller already holds it; otherwise it is resolved from that read. · The Page identity, when the caller already holds it; otherwise it is resolved from the Page's own read. */
-export type SectionFieldsProps = { readonly section: PageBuilderSection; readonly variantId: string; readonly expectedRevision: string; readonly direction: ContentDirection; readonly disabled?: boolean; readonly className?: string; readonly scope?: MutationScope; readonly documentId?: string };
+/** The revision this form was opened at, presented as `expectedRevision` on every save. · The scope the Page was read in, when the caller already holds it; otherwise it is resolved from that read. · The Page identity, when the caller already holds it; otherwise it is resolved from the Page's own read. · The save result this section holds above the form, and the one way to change it. */
+export type SectionFieldsProps = {
+  readonly section: PageBuilderSection;
+  readonly variantId: string;
+  readonly expectedRevision: string;
+  readonly direction: ContentDirection;
+  readonly disabled?: boolean;
+  readonly className?: string;
+  readonly scope?: MutationScope;
+  readonly documentId?: string;
+  readonly saveState: SectionSaveState | null;
+  readonly onSaveStateChange: (next: SectionSaveState) => void;
+};
 type FieldControlKind = "text" | "long-text" | "date";
 type FieldWording = { readonly label: string; readonly description: string; readonly control: FieldControlKind };
 const FIELD_WORDING: Readonly<Record<SectionFieldKey, FieldWording>> = {
@@ -71,9 +82,9 @@ const FIELDS_COPY = {
   saveAgain: "Save my text against the current revision",
   retrySameChange: "Send this change again",
   saving: "Saving this section, so its fields are written to this edition's draft…",
-  saved: "Section saved to this edition's draft. Nothing was released.",
-  savedAlready: "This change had already been saved, so nothing was repeated.",
-  unchanged: "Nothing changed, so nothing was saved.",
+  saved: (revision: string) => `Section saved to this edition's draft at revision ${revision}. Nothing was released.`,
+  savedAlready: (revision: string) => `This change had already been saved at revision ${revision}, so nothing was repeated.`,
+  unchanged: (revision: string) => `Nothing changed at revision ${revision}, so nothing was saved.`,
   conflictTitle: "A newer version of this edition is on the record",
   conflictBody: "Your text is still in this form and nothing was overwritten. The edition has been read again, so the record as it now stands is beside this form for comparison.",
   deniedTitle: "You cannot change this section",
@@ -140,22 +151,25 @@ function refusalsByControl(fields: Readonly<Record<string, readonly string[]>>):
   }
   return Object.fromEntries(byControl);
 }
-type SaveSettlement =
-  | { readonly kind: "accepted"; readonly repeated: boolean }
-  | { readonly kind: "unchanged" }
+/** What one section save settled as, in the terms this form states it: the outcome the mutation answered, narrowed to the members the fields pane shows. */
+export type SaveSettlement =
+  | { readonly kind: "accepted"; readonly repeated: boolean; readonly revision: string }
+  | { readonly kind: "unchanged"; readonly revision: string }
   | { readonly kind: "conflict"; readonly currentRevision: string; readonly changedIntent: boolean }
   | { readonly kind: "denied"; readonly reasonCode: string }
   | { readonly kind: "invalid"; readonly errors: FieldErrorLookup }
   | { readonly kind: "unavailable"; readonly sourceSystem: string; readonly guidance: string }
   | { readonly kind: "unknown"; readonly operationId: string };
+/** The save result one section holds, owned by the builder above the fields pane: the re-read after an accepted save replaces the form to refresh its values, so a result kept inside the form would go with it. It carries the section it belongs to, the settlement last stated, the revision a conflict re-applies against, and the attempt identity a replay after a remount still has to re-present. */
+export type SectionSaveState = { readonly sectionId: string; readonly settlement: SaveSettlement | null; readonly reapplyRevision: string | null; readonly attempt: ReviewedAttempt | null };
 function settlementOf(outcome: MediaPickerOutcome): SaveSettlement {
   switch (outcome.outcome) {
     case "accepted":
-      return { kind: "accepted", repeated: false };
+      return { kind: "accepted", repeated: false, revision: outcome.revision };
     case "alreadyAccepted":
-      return { kind: "accepted", repeated: true };
+      return { kind: "accepted", repeated: true, revision: outcome.revision };
     case "unchanged":
-      return { kind: "unchanged" };
+      return { kind: "unchanged", revision: outcome.revision };
     case "conflict":
       return { kind: "conflict", currentRevision: outcome.currentRevision, changedIntent: outcome.reason === "changed-intent" };
     case "denied":
@@ -169,8 +183,8 @@ function settlementOf(outcome: MediaPickerOutcome): SaveSettlement {
   }
 }
 const SETTLED_STATUS: Readonly<Record<SaveSettlement["kind"], (settlement: SaveSettlement) => string>> = {
-  accepted: (settlement) => (settlement.kind === "accepted" && settlement.repeated ? FIELDS_COPY.savedAlready : FIELDS_COPY.saved),
-  unchanged: () => FIELDS_COPY.unchanged,
+  accepted: (settlement) => (settlement.kind === "accepted" ? (settlement.repeated ? FIELDS_COPY.savedAlready(settlement.revision) : FIELDS_COPY.saved(settlement.revision)) : ""),
+  unchanged: (settlement) => (settlement.kind === "unchanged" ? FIELDS_COPY.unchanged(settlement.revision) : ""),
   conflict: () => `${FIELDS_COPY.conflictTitle}. ${FIELDS_COPY.conflictBody}`,
   denied: () => `${FIELDS_COPY.deniedTitle}. ${FIELDS_COPY.deniedBody}`,
   invalid: () => FIELDS_COPY.invalidTitle,
@@ -192,6 +206,10 @@ const intentDigestOf = (body: SaveSectionPayloadBody): string =>
     body.presentation.alignment,
     body.presentation.imageFit,
   ]);
+/** The identity one chosen file contributes to the attempt's intent: its name, its size and its last-modified instant, or nothing when no file was chosen. */
+const fileIdentityOf = (file: File | undefined): string => (file === undefined ? "" : `${file.name}:${String(file.size)}:${String(file.lastModified)}`);
+/** The intent a removal carries: the edition it detaches from, and the placement it detaches. The revision is deliberately absent, so a retry after the Page is read again submits the same attempt instead of a new one. */
+const removalIntentOf = (variantId: string, placementId: string): string => JSON.stringify([variantId, placementId]);
 function readBytesBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -206,6 +224,22 @@ function readBytesBase64(file: File): Promise<string> {
       resolve(separator === -1 ? "" : result.slice(separator + 1));
     };
     reader.readAsDataURL(file);
+  });
+}
+/** The chosen file's own text, for a caption track, which is carried to the service as WebVTT text rather than as bytes. */
+function readTextFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("The browser could not read the chosen file, so nothing was sent."));
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("The browser read the chosen file as something other than text, so nothing was sent."));
+        return;
+      }
+      resolve(result);
+    };
+    reader.readAsText(file);
   });
 }
 type SettlementNotice = { readonly title: string; readonly destructive: boolean; readonly body: ReactNode; readonly detail: readonly [string, string]; readonly again: string | null };
@@ -231,7 +265,7 @@ function noticeOf(settlement: SaveSettlement, expectedRevision: string): Settlem
       return { title: FIELDS_COPY.unknownTitle, destructive: false, body: FIELDS_COPY.unknownBody, detail: [FIELDS_COPY.operationLabel, settlement.operationId], again: FIELDS_COPY.retrySameChange };
   }
 }
-function SectionFieldsForm({ section, variantId, expectedRevision, direction, disabled = false, className, scope, documentId }: SectionFieldsProps): ReactElement {
+function SectionFieldsForm({ section, variantId, expectedRevision, direction, disabled = false, className, scope, documentId, saveState, onSaveStateChange }: SectionFieldsProps): ReactElement {
   const headingId = useId();
   const saveReasonId = useId();
   const form = useForm({ defaultValues: formValuesOf(section) });
@@ -241,31 +275,32 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
   const saveSection = useSaveSectionFields();
   const registerMedia = useRegisterPageMediaAsset();
   const removeMedia = useRemovePagePlacement();
-  const [settlement, setSettlement] = useState<SaveSettlement | null>(null);
-  const [reapplyRevision, setReapplyRevision] = useState<string | null>(null);
+  const settlement = saveState?.settlement ?? null;
+  const reapplyRevision = saveState?.reapplyRevision ?? null;
+  const attempt = saveState?.attempt ?? null;
   const [pickerOpen, setPickerOpen] = useState(false);
-  const attempt = useRef<ReviewedAttempt | null>(null);
   const mediaAttempt = useRef<ReviewedAttempt | null>(null);
+  const removalAttempt = useRef<ReviewedAttempt | null>(null);
   const saving = saveSection.isPending;
+  const settle = useCallback((next: { readonly settlement: SaveSettlement | null; readonly reapplyRevision: string | null; readonly attempt: ReviewedAttempt | null }): void => onSaveStateChange({ sectionId: section.sectionId, ...next }), [onSaveStateChange, section.sectionId]);
   const clearSettlement = useCallback((): void => {
-    setSettlement((current) => (current === null ? current : null));
-    setReapplyRevision((current) => (current === null ? current : null));
-  }, []);
+    if (settlement === null && reapplyRevision === null) return;
+    settle({ settlement: null, reapplyRevision: null, attempt });
+  }, [attempt, reapplyRevision, settle, settlement]);
   const submit = useCallback(async (): Promise<void> => {
     if (authority === undefined || disabled || saving) return;
     const body = payloadBodyOf(section, variantId, form.state.values);
-    const identity = attemptForIntent(attempt.current, intentDigestOf(body));
-    attempt.current = identity;
+    const identity = attemptForIntent(attempt, intentDigestOf(body));
+    settle({ settlement, reapplyRevision, attempt: identity });
     try {
       const outcome = await saveSection.mutateAsync({ operationId: identity.operationId, scope: authority.scope, expectedRevision: reapplyRevision ?? expectedRevision, documentId: authority.documentId, payload: body });
       const next = settlementOf(outcome);
-      setSettlement(next);
-      setReapplyRevision(next.kind === "conflict" ? next.currentRevision : null);
+      settle({ settlement: next, reapplyRevision: next.kind === "conflict" ? next.currentRevision : null, attempt: identity });
       if (next.kind === "conflict") rereadPage();
     } catch {
-      setSettlement({ kind: "unknown", operationId: identity.operationId });
+      settle({ settlement: { kind: "unknown", operationId: identity.operationId }, reapplyRevision, attempt: identity });
     }
-  }, [authority, disabled, expectedRevision, form, reapplyRevision, rereadPage, saveSection, saving, section, variantId]);
+  }, [attempt, authority, disabled, expectedRevision, form, reapplyRevision, rereadPage, saveSection, saving, section, settle, settlement, variantId]);
   const errors = settlement !== null && settlement.kind === "invalid" ? settlement.errors : null;
   const fieldKeys = admittedFieldKeysOf(section);
   const admittedLabels: Readonly<Record<string, string | undefined>> = Object.fromEntries([...fieldKeys.map((key) => [key, FIELD_WORDING[key].label]), ["treatment", "Treatment"], ["layout", "Layout"], ["alignment", "Alignment"], ["imageFit", "Image fit"]]);
@@ -276,10 +311,14 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
   const saveReason = authority === undefined ? FIELDS_COPY.noAuthority : disabled ? FIELDS_COPY.disabledReason : null;
   const registerMediaAsset = useCallback(
     async (input: MediaRegisterInput): Promise<MediaPickerOutcome> => {
-      const identity = attemptForIntent(mediaAttempt.current, [input.kind, input.file.name, String(input.file.size), String(input.file.lastModified), input.placement.altText, input.placement.caption ?? "", input.placement.credit ?? "", input.placement.language ?? ""].join("|"));
+      const identity = attemptForIntent(
+        mediaAttempt.current,
+        [input.kind, fileIdentityOf(input.file), input.placement.altText, input.placement.caption ?? "", input.placement.credit ?? "", input.placement.language ?? "", input.placement.transcript ?? "", fileIdentityOf(input.poster?.file), fileIdentityOf(input.captions?.file), input.captions?.label ?? ""].join("|"),
+      );
       mediaAttempt.current = identity;
       if (authority === undefined) return unavailable({ operationId: identity.operationId, source: { system: SOURCE_SYSTEM, reference: MEDIA_PATH }, guidance: NO_AUTHORITY_GUIDANCE });
       const language = input.placement.language === undefined || input.placement.language.trim() === "" ? undefined : input.placement.language.trim();
+      const transcript = input.placement.transcript === undefined || input.placement.transcript.trim() === "" ? undefined : input.placement.transcript.trim();
       const descriptor = { altText: input.placement.altText, ...(input.placement.caption === undefined || input.placement.caption === "" ? {} : { caption: input.placement.caption }), ...(input.placement.credit === undefined || input.placement.credit === "" ? {} : { credit: input.placement.credit }) };
       return registerMedia.mutateAsync({
         operationId: identity.operationId,
@@ -294,15 +333,21 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
           ...(descriptor.credit === undefined ? {} : { credit: descriptor.credit }),
           ...(language === undefined ? {} : { language }),
           placement: descriptor,
+          ...(input.poster === undefined ? {} : { poster: { bytesBase64: await readBytesBase64(input.poster.file), name: input.poster.file.name, altText: descriptor.altText } }),
+          ...(input.captions === undefined ? {} : { captions: { vtt: await readTextFile(input.captions.file), language: input.captions.language, ...(input.captions.label === undefined ? {} : { label: input.captions.label }) } }),
+          ...(transcript === undefined ? {} : { transcript: { text: transcript } }),
+          sectionPlacement: { variantId, sectionElement: section.sectionType },
         },
       });
     },
-    [authority, expectedRevision, registerMedia],
+    [authority, expectedRevision, registerMedia, section.sectionType, variantId],
   );
   const removePlacedMedia = useCallback(
     async ({ placementId }: { readonly placementId: string }): Promise<MediaPickerOutcome> => {
-      if (authority === undefined) return unavailable({ operationId: globalThis.crypto.randomUUID(), source: { system: SOURCE_SYSTEM, reference: MEDIA_PATH }, guidance: NO_AUTHORITY_GUIDANCE });
-      return removeMedia.mutateAsync({ operationId: globalThis.crypto.randomUUID(), scope: authority.scope, expectedRevision, documentId: authority.documentId, payload: { variantId, placementId } });
+      const identity = attemptForIntent(removalAttempt.current, removalIntentOf(variantId, placementId));
+      removalAttempt.current = identity;
+      if (authority === undefined) return unavailable({ operationId: identity.operationId, source: { system: SOURCE_SYSTEM, reference: MEDIA_PATH }, guidance: NO_AUTHORITY_GUIDANCE });
+      return removeMedia.mutateAsync({ operationId: identity.operationId, scope: authority.scope, expectedRevision, documentId: authority.documentId, payload: { variantId, placementId } });
     },
     [authority, expectedRevision, removeMedia, variantId],
   );
@@ -311,31 +356,38 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
     const initial = formValuesOf(section)[key];
     const dateIsCivil = key !== "date" || initial === "" || ISO_CIVIL_DATE.test(initial);
     return (
-      <FormField key={key} label={wording.label} name={key} description={dateIsCivil ? wording.description : `${wording.description}${FIELDS_COPY.storedAsText}`} error={errors?.byField[key]}>
-        {(control) => (
-          <form.Field name={key}>
-            {(field) => {
-              const change = (next: string): void => {
-                field.handleChange(next);
-                clearSettlement();
-              };
-              if (wording.control === "long-text") return <Textarea id={control.id} rows={4} value={field.state.value} disabled={disabled} aria-describedby={control.describedBy} aria-invalid={control.invalid ? true : undefined} onChange={(event) => change(event.currentTarget.value)} />;
-              return (
-                <Input
-                  id={control.id}
-                  type={wording.control === "date" && dateIsCivil ? "date" : "text"}
-                  value={field.state.value}
-                  disabled={disabled}
-                  aria-describedby={control.describedBy}
-                  aria-invalid={control.invalid ? true : undefined}
-                  onChange={(event) => change(event.currentTarget.value)}
-                  className={key === "language" ? "font-mono" : undefined}
-                />
-              );
-            }}
-          </form.Field>
-        )}
-      </FormField>
+      <form.Subscribe key={key} selector={(state) => state.values[key]}>
+        {(held) => {
+          const civilNote = key === "date" ? ` ${civilDateConvention(dateIsCivil ? held : null)}` : "";
+          return (
+            <FormField label={wording.label} name={key} description={dateIsCivil ? `${wording.description}${civilNote}` : `${wording.description}${FIELDS_COPY.storedAsText}${civilNote}`} error={errors?.byField[key]}>
+              {(control) => (
+                <form.Field name={key}>
+                  {(field) => {
+                    const change = (next: string): void => {
+                      field.handleChange(next);
+                      clearSettlement();
+                    };
+                    if (wording.control === "long-text") return <Textarea id={control.id} rows={4} value={field.state.value} disabled={disabled} aria-describedby={control.describedBy} aria-invalid={control.invalid ? true : undefined} onChange={(event) => change(event.currentTarget.value)} />;
+                    return (
+                      <Input
+                        id={control.id}
+                        type={wording.control === "date" && dateIsCivil ? "date" : "text"}
+                        value={field.state.value}
+                        disabled={disabled}
+                        aria-describedby={control.describedBy}
+                        aria-invalid={control.invalid ? true : undefined}
+                        onChange={(event) => change(event.currentTarget.value)}
+                        className={key === "language" ? "font-mono" : undefined}
+                      />
+                    );
+                  }}
+                </form.Field>
+              )}
+            </FormField>
+          );
+        }}
+      </form.Subscribe>
     );
   }
   function renderChoice(options: readonly { readonly value: string; readonly label: string; readonly description: string }[], name: "treatment" | "layout", group: { readonly legendId: string; readonly describedBy: string | undefined; readonly invalid: boolean }, isMember: (candidate: string) => boolean): ReactElement {
@@ -361,7 +413,7 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
                   <RadioGroupItem id={optionId} value={option.value} aria-label={option.label} aria-describedby={`${optionId}-hint`} className="mt-0.5" />
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="text-sm font-medium">{option.label}</span>
-                    <span id={`${optionId}-hint`} className="text-sm text-pretty text-muted-foreground">
+                    <span id={`${optionId}-hint`} className="type-supporting text-pretty">
                       {option.description}
                     </span>
                   </span>
@@ -387,26 +439,26 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
   function renderMedia(): ReactElement | null {
     if (!withMedia) return null;
     return (
-      <Card size="sm" data-slot="section-fields-media">
+      <Card data-slot="section-fields-media">
         <CardHeader>
           <CardTitle>{MEDIA_COPY.heading}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm">
-          <p className="text-pretty text-muted-foreground">{mediaKind === "image" ? copy.constraints.imageProfile : copy.constraints.videoProfile}</p>
+          <p className="type-supporting text-pretty">{mediaKind === "image" ? copy.constraints.imageProfile : copy.constraints.videoProfile}</p>
           {placement === undefined ? (
-            <p className="text-muted-foreground">{MEDIA_COPY.nonePlaced}</p>
+            <p className="type-supporting">{MEDIA_COPY.nonePlaced}</p>
           ) : (
             <div className="flex flex-col gap-1">
               <p className="font-medium">{MEDIA_COPY.placedLabel}</p>
-              <p className="text-pretty wrap-anywhere">
+              <p className="type-body text-pretty wrap-anywhere">
                 <bdi>{placement.altText}</bdi>
               </p>
               {placement.caption === undefined ? null : (
-                <p className="text-pretty wrap-anywhere">
+                <p className="type-body text-pretty wrap-anywhere">
                   <bdi>{placement.caption}</bdi>
                 </p>
               )}
-              {section.placements?.some((candidate) => candidate.kind === mediaKind && candidate.state === "unavailable") === true ? <p className="text-muted-foreground">{MEDIA_COPY.unavailable}</p> : null}
+              {section.placements?.some((candidate) => candidate.kind === mediaKind && candidate.state === "unavailable") === true ? <p className="type-supporting">{MEDIA_COPY.unavailable}</p> : null}
             </div>
           )}
           <div className="flex flex-wrap items-center gap-2">
@@ -414,7 +466,7 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
               {mediaKind === "image" ? MEDIA_COPY.addImage : MEDIA_COPY.addVideo}
             </Button>
           </div>
-          <p className="text-muted-foreground">{MEDIA_COPY.mediaLanguageNote}</p>
+          <p className="type-supporting">{MEDIA_COPY.mediaLanguageNote}</p>
           <MediaPicker kind={mediaKind} open={pickerOpen} onOpenChange={setPickerOpen} {...(placement === undefined ? {} : { placement: placement })} onRegister={registerMediaAsset} {...(placement === undefined ? {} : { onRemove: removePlacedMedia })} />
         </CardContent>
       </Card>
@@ -424,13 +476,13 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
     <DirectionProvider direction={direction}>
       <section dir={direction} data-slot="section-fields" data-section-id={section.sectionId} aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
         <div className="flex min-w-0 flex-col gap-1">
-          <h3 id={headingId} className="font-heading text-base font-medium wrap-anywhere">
+          <h3 id={headingId} className="type-subsection-title wrap-anywhere">
             <bdi>{copy.catalogue.sections[section.sectionType].label}</bdi>
             {` — ${FIELDS_COPY.heading}`}
           </h3>
-          <p className="text-sm text-pretty text-muted-foreground">{FIELDS_COPY.enterNote}</p>
+          <p className="type-supporting text-pretty">{FIELDS_COPY.enterNote}</p>
           {saveReason === null ? null : (
-            <p id={saveReasonId} className="text-sm text-pretty text-muted-foreground">
+            <p id={saveReasonId} className="type-supporting text-pretty">
               {saveReason}
             </p>
           )}
@@ -438,6 +490,7 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
         <FormErrorSummary errors={errors} labels={admittedLabels} order={summaryOrder} headingLevel={4} />
         <form
           className="flex min-w-0 flex-col gap-6"
+          aria-busy={saving ? true : undefined}
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
@@ -452,7 +505,7 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
             <FormFieldGroup legend="Layout" name="layout" error={errors?.byField["layout"]}>
               {(group) => renderChoice(LAYOUT_OPTIONS, "layout", group, isLayout)}
             </FormFieldGroup>
-            <p className="text-sm text-pretty text-muted-foreground">{copy.presentation.boundedNote}</p>
+            <p className="type-supporting text-pretty">{copy.presentation.boundedNote}</p>
             <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-start">
               {selectChoices.map((choice) => (
                 <FormField key={choice.name} label={choice.label} name={choice.name} error={errors?.byField[choice.name]}>
@@ -475,7 +528,7 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
             <Button type="submit" disabled={disabled || saving || authority === undefined} aria-describedby={saveReason === null ? undefined : saveReasonId}>
               {saving ? "Saving…" : FIELDS_COPY.save}
             </Button>
-            <output data-slot="section-fields-status" className="text-sm text-pretty text-muted-foreground">
+            <output data-slot="section-fields-status" className="type-supporting text-pretty">
               {statusTextOf(saving, settlement)}
             </output>
           </div>
@@ -484,8 +537,8 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
           <Alert {...(notice.destructive ? { variant: "destructive" as const } : {})}>
             <AlertTitle>{notice.title}</AlertTitle>
             <AlertDescription>
-              <p>{notice.body}</p>
-              <p>
+              <p className="type-supporting">{notice.body}</p>
+              <p className="type-supporting">
                 {`${notice.detail[0]}: `}
                 <bdi className="mono-identifier">{notice.detail[1]}</bdi>
               </p>
@@ -504,12 +557,12 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
 }
 function ManagedSectionSummary({ section }: { readonly section: PageBuilderSection }): ReactElement {
   const stated = admittedFieldKeysOf(section).filter((key) => textOf(section.fields, key).trim() !== "");
-  if (stated.length === 0) return <p className="text-sm text-pretty">{FIELDS_COPY.managedFallback}</p>;
+  if (stated.length === 0) return <p className="type-supporting text-pretty">{FIELDS_COPY.managedFallback}</p>;
   return (
-    <dl className="flex min-w-0 flex-col gap-1 text-sm">
+    <dl className="flex min-w-0 flex-col gap-1 type-body">
       {stated.map((key) => (
         <div key={key} className="flex min-w-0 flex-col gap-0.5">
-          <dt className="text-muted-foreground">{FIELD_WORDING[key].label}</dt>
+          <dt className="type-supporting">{FIELD_WORDING[key].label}</dt>
           <dd className="wrap-anywhere">
             <bdi>{textOf(section.fields, key)}</bdi>
           </dd>

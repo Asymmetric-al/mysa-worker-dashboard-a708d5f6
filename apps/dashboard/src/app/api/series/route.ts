@@ -3,6 +3,7 @@ import { z } from "zod";
 import { mutationInputSchema, mutations, reads } from "@/modules/data-service";
 import { claimedWriteRoute, claimedWrites } from "../handler";
 import { READ_ATTEMPT, readGrammar, readRoute } from "../read";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const MESSAGES = {
@@ -111,7 +112,7 @@ function rawSeriesReadParams(search: URLSearchParams): Record<string, unknown> {
 const readSeriesIdSchema = z.string({ error: MESSAGES.readSeriesIdRequired }).min(1, MESSAGES.readSeriesIdRequired);
 const seriesReadQuerySchema = z.strictObject({ seriesId: readSeriesIdSchema }, { error: MESSAGES.readingInvalid });
 /** One recurring series by its identifier: the rule in force, the next three dates and any disclosed month-day resolution, the single actionable occurrence and how its plan stands. */
-export const GET = readRoute(readGrammar(seriesReadQuerySchema, rawSeriesReadParams), (query) => reads.series.readSeries(query), READ_ATTEMPT);
+const readSeries = readRoute(readGrammar(seriesReadQuerySchema, rawSeriesReadParams), (query) => reads.series.readSeries(query), READ_ATTEMPT);
 /** The eight named series mutations, each judged by its own payload schema before it runs. */
 const SERIES_WRITES = claimedWrites<SeriesMutationName>("mutation", {
   createSeries: [createSeriesBodySchema, mutations.series.createSeries],
@@ -124,4 +125,5 @@ const SERIES_WRITES = claimedWrites<SeriesMutationName>("mutation", {
   resolveMissedPlan: [resolveMissedPlanBodySchema, mutations.series.resolveMissedPlan],
 });
 /** One named series mutation, selected by `payload.mutation`, applied at most once by operation identity. */
-export const POST = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, claimedBodySchema, (claim) => claim.payload.mutation, SERIES_WRITES);
+const changeSeries = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, claimedBodySchema, (claim) => claim.payload.mutation, SERIES_WRITES);
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readSeries, POST: changeSeries });

@@ -42,12 +42,14 @@ const RELEASE_UNCHANGED_BY_DRAFT_NOTE = "The last release still publishes the re
 const CHANGE_KIND_WORDS: Readonly<Record<ComparisonChangeKind, string>> = { section: "Section", media: "Media placement" };
 const VALUE_STATE_PREFIX = "Value state";
 const HEADING_TAG: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4">> = { 1: "h1", 2: "h2", 3: "h3", 4: "h4" };
+/** The one type scale's heading utility for each level, so this surface's headings take the measure of the level they are given rather than one fixed size. */
+const HEADING_SCALE: Readonly<Record<NoticeHeadingLevel, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const NESTED_HEADING_LEVEL: Readonly<Record<NoticeHeadingLevel, 2 | 3 | 4>> = { 1: 2, 2: 3, 3: 4, 4: 4 };
-const RENDERED_COMPARISON = cn("flex min-w-0 flex-col gap-3 text-sm text-pretty wrap-anywhere", "[&_p]:mb-3 [&_p:last-child]:mb-0", "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4", "[&_img]:h-auto [&_img]:max-w-full [&_video]:max-w-full");
+const RENDERED_COMPARISON = cn("flex min-w-0 flex-col gap-3 type-body text-pretty wrap-anywhere", "[&_p]:mb-3 [&_p:last-child]:mb-0", "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4", "[&_img]:h-auto [&_img]:max-w-full [&_video]:max-w-full");
 type ContentTextDirection = ContentVariant["locale"]["direction"];
-function Heading({ level, id, className, children }: { readonly level: NoticeHeadingLevel; readonly id: string; readonly className: string; readonly children: ReactNode }): ReactElement {
+function Heading({ level, id, className, children }: { readonly level: NoticeHeadingLevel; readonly id: string; readonly className?: string; readonly children: ReactNode }): ReactElement {
   const Tag = HEADING_TAG[level];
-  return <Tag {...{ id, className }}>{children}</Tag>;
+  return <Tag {...{ id, className: cn(HEADING_SCALE[level], className) }}>{children}</Tag>;
 }
 const changeStateWord = (state: ValueState | undefined): string | undefined => (state === undefined ? undefined : valueStateWord(state)?.label);
 const changeIdentifier = (change: ComparisonChange): string => (change.kind === "section" ? change.element : change.placementId);
@@ -94,9 +96,9 @@ type ChangeListProps = { readonly changes: readonly ComparisonChange[] | undefin
 function ChangeList({ changes, unchanged, headingLevel, headingId }: ChangeListProps): ReactElement {
   const body =
     changes === undefined ? (
-      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{NO_CHANGE_LIST_NOTE}</p>
+      <p className="type-supporting text-pretty wrap-anywhere">{NO_CHANGE_LIST_NOTE}</p>
     ) : changes.length === 0 ? (
-      <p className="text-sm text-pretty wrap-anywhere">{NO_CHANGES_NOTE}</p>
+      <p className="type-body text-pretty wrap-anywhere">{NO_CHANGES_NOTE}</p>
     ) : (
       <ul className="flex min-w-0 list-none flex-col gap-1 p-0">
         {changes.map((change, index) => (
@@ -106,9 +108,9 @@ function ChangeList({ changes, unchanged, headingLevel, headingId }: ChangeListP
     );
   return (
     <section data-slot="comparison-changes" aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
-      <Heading {...{ level: headingLevel, id: headingId, className: "text-sm font-medium" }}>{CHANGES_HEADING}</Heading>
+      <Heading {...{ level: headingLevel, id: headingId }}>{CHANGES_HEADING}</Heading>
       {body}
-      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{unchanged ? SAME_CHECKSUM_NOTE : RELEASE_UNCHANGED_BY_DRAFT_NOTE}</p>
+      <p className="type-supporting text-pretty wrap-anywhere">{unchanged ? SAME_CHECKSUM_NOTE : RELEASE_UNCHANGED_BY_DRAFT_NOTE}</p>
     </section>
   );
 }
@@ -129,7 +131,7 @@ function ComparisonPane({ side, title, headingId, headingLevel, direction, lang,
     <Card data-comparison-pane={side} aria-labelledby={headingId} dir={direction} className="min-w-0">
       <CardHeader>
         <CardTitle>
-          <Heading {...{ level: headingLevel, id: headingId, className: "text-base font-medium text-pretty" }}>{title}</Heading>
+          <Heading {...{ level: headingLevel, id: headingId, className: "text-pretty" }}>{title}</Heading>
         </CardTitle>
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-3">
@@ -171,8 +173,8 @@ export function CompareWithRelease({ variant, draft, release, changes, headingLe
     <section data-slot="compare-with-release" aria-labelledby={titleId} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <header className="flex min-w-0 flex-col gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <Heading {...{ level: headingLevel, id: titleId, className: "text-base font-medium text-pretty" }}>{COMPARISON_HEADING}</Heading>
-          <StatusBadge label={AUDIENCE_LABELS[variant.audience].label} srPrefix="Audience" />
+          <Heading {...{ level: headingLevel, id: titleId, className: "text-pretty" }}>{COMPARISON_HEADING}</Heading>
+          <StatusBadge label={AUDIENCE_LABELS[variant.audience].label} tone={AUDIENCE_LABELS[variant.audience].tone} srPrefix="Audience" />
           <span className="text-sm text-muted-foreground">
             <bdi>{LOCALE_DISPLAY_NAMES[variant.locale.tag] ?? variant.locale.tag}</bdi>
           </span>

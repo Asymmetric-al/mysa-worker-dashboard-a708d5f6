@@ -1,13 +1,14 @@
 "use client";
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { type UseQueryResult } from "@tanstack/react-query";
 import { scopeKey } from "@/components/context-switch-guard";
 import { isRecord } from "@/lib/guards";
-import { fetchRead } from "@/lib/read-transport";
+import { fetchRead, useReadQuery } from "@/lib/read-transport";
 import type { reads } from "@/modules/data-service";
 import type { Scope } from "@/modules/data-service/envelope";
 export type AgendaQuery = Parameters<typeof reads.work.readAgenda>[0];
 export type AgendaResult = Awaited<ReturnType<typeof reads.work.readAgenda>>;
 type AgendaEnvelope = Extract<AgendaResult, { readonly kind: "envelope" }>["envelope"];
+const AGENDA_JOB = "agenda";
 function agendaParams(query: AgendaQuery): URLSearchParams {
   const params = new URLSearchParams();
   params.set("read", "readAgenda");
@@ -24,7 +25,8 @@ function agendaParams(query: AgendaQuery): URLSearchParams {
   return params;
 }
 const isAgendaData = (value: unknown): boolean => isRecord(value);
-async function getAgendaRead(query: AgendaQuery, signal: AbortSignal): Promise<AgendaResult> {
-  return fetchRead<AgendaEnvelope["data"], AgendaEnvelope["coverage"]>({ url: `/api/tasks?${agendaParams(query).toString()}`, admits: isAgendaData, signal });
-} /** Reads the dated agenda for one scope and one query state, returning the read's envelope, `denied`, `unavailable` and `refused` arms unchanged. */
-export const useAgenda = (scope: Scope, query: AgendaQuery): UseQueryResult<AgendaResult, Error> => useQuery<AgendaResult, Error>({ queryKey: [...scopeKey(scope), "agenda", query], queryFn: ({ signal }) => getAgendaRead(query, signal) });
+async function getAgendaRead(query: AgendaQuery): Promise<AgendaResult> {
+  return fetchRead<AgendaEnvelope["data"], AgendaEnvelope["coverage"]>({ url: `/api/tasks?${agendaParams(query).toString()}`, admits: isAgendaData });
+} /** Reads the dated agenda for one scope and one query state, returning the read's envelope, `denied`, `unavailable` and `refused` arms unchanged. `initialAnswer` is the envelope the route already read for this same window: it seeds the cache, so the window the server answered is not asked for again on the way in, while a window the server did not answer still is. */
+export const useAgenda = (scope: Scope, query: AgendaQuery, initialAnswer?: AgendaResult): UseQueryResult<AgendaResult, Error> =>
+  useReadQuery<AgendaEnvelope["data"], AgendaEnvelope["coverage"]>({ key: scopeKey(scope), job: AGENDA_JOB, segment: [query], read: () => getAgendaRead(query), initialAnswer, refetchOnMount: initialAnswer === undefined });

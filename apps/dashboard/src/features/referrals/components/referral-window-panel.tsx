@@ -31,33 +31,33 @@ type NominalAndResolvedProps = { readonly headingId: string; readonly nominal: R
 function NominalAndResolved({ headingId, nominal, nominalUnavailableReason, end, sourceZone }: NominalAndResolvedProps): ReactElement {
   return (
     <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
-      <h4 id={headingId} className="text-sm font-semibold text-pretty">
+      <h4 id={headingId} className="type-group-title text-pretty">
         {NOMINAL_VS_RESOLVED.heading}
       </h4>
       <dl className="flex min-w-0 flex-col gap-2">
         <Fact term={NOMINAL_VS_RESOLVED.nominalLabel}>
           {nominal === null ? (
             <>
-              <p className="text-pretty">{NOMINAL_VS_RESOLVED.nominalUnavailable}</p>
-              {nominalUnavailableReason === null ? null : <p className="text-pretty">{nominalUnavailableReason}</p>}
+              <p className="type-supporting text-pretty">{NOMINAL_VS_RESOLVED.nominalUnavailable}</p>
+              {nominalUnavailableReason === null ? null : <p className="type-supporting text-pretty">{nominalUnavailableReason}</p>}
             </>
           ) : (
             <>
-              <p>
+              <p className="type-body">
                 <EnvelopeValue value={nominal.lastIncludedOn} />
               </p>
-              <p className="text-pretty">{nominal.wording}</p>
+              <p className="type-supporting text-pretty">{nominal.wording}</p>
             </>
           )}
         </Fact>
         <Fact term={NOMINAL_VS_RESOLVED.resolvedLabel}>
-          <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+          <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 type-body">
             <EnvelopeValue value={end} />
             <bdi className="break-all">{sourceZone}</bdi>
           </p>
         </Fact>
       </dl>
-      {nominal !== null && nominal.disagreesWithResolved ? <p className="text-pretty">{NOMINAL_VS_RESOLVED.disagreementNote}</p> : null}
+      {nominal !== null && nominal.disagreesWithResolved ? <p className="type-supporting text-pretty">{NOMINAL_VS_RESOLVED.disagreementNote}</p> : null}
     </section>
   );
 }
@@ -74,7 +74,7 @@ function WindowNotice({ title, lines }: { readonly title: string; readonly lines
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription>
         {lines.map((line) => (
-          <p key={line} className="text-pretty">
+          <p key={line} className="type-supporting text-pretty">
             {line}
           </p>
         ))}
@@ -87,14 +87,14 @@ function WindowBody({ referral, nominalHeadingId }: { readonly referral: Referra
   const notice = referral.datePrecision !== "date" ? { title: precision.label, lines: [NO_DEADLINE_NOTICE, precision.hint] } : referral.status.status === "refused" ? { title: STATUS_COPY.refused.label, lines: [WINDOW_COPY.unresolvedWindow, STATUS_COPY.refused.description] } : null;
   if (notice !== null) return <WindowNotice title={notice.title} lines={notice.lines} />;
   const deadline = referral.deadline;
-  if (deadline === null) return <p className="text-pretty text-muted-foreground">{WINDOW_COPY.noWindowRecorded}</p>;
+  if (deadline === null) return <p className="type-supporting text-pretty">{WINDOW_COPY.noWindowRecorded}</p>;
   const nominal = deadline.nominal;
   const continued = referral.windowKind === "continued";
   const statements = continued ? [] : newWindowStatements(referral, deadline, nominal, nominal !== null && nominal.disagreesWithResolved);
   const predecessor = referral.predecessorId;
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      {continued ? <p className="text-pretty">{CONTINUATION_WINDOW_COPY.explanation}</p> : null}
+      {continued ? <p className="type-supporting text-pretty">{CONTINUATION_WINDOW_COPY.explanation}</p> : null}
       {statements.length === 0 ? null : (
         <ul className="flex min-w-0 flex-col gap-1.5">
           {statements.map((statement) => (
@@ -104,12 +104,12 @@ function WindowBody({ referral, nominalHeadingId }: { readonly referral: Referra
           ))}
         </ul>
       )}
-      {continued ? <p className="text-pretty text-muted-foreground">{CONTINUATION_WINDOW_COPY.elapsedNotCalendar}</p> : null}
+      {continued ? <p className="type-supporting text-pretty">{CONTINUATION_WINDOW_COPY.elapsedNotCalendar}</p> : null}
       {continued || statements.length > 0 ? <Separator /> : null}
       <NominalAndResolved headingId={nominalHeadingId} nominal={nominal} nominalUnavailableReason={deadline.nominalUnavailableReason} end={deadline.end} sourceZone={referral.sourceZone} />
-      {continued ? <p className="text-pretty text-muted-foreground">{CONTINUATION_WINDOW_COPY.oneSuccessor}</p> : null}
+      {continued ? <p className="type-supporting text-pretty">{CONTINUATION_WINDOW_COPY.oneSuccessor}</p> : null}
       {predecessor === null ? null : (
-        <p className="text-pretty">
+        <p className="type-body text-pretty">
           <span className="font-medium">{CONTINUATION_WINDOW_COPY.predecessorLabel}</span> <bdi className="mono-identifier break-all">{predecessor}</bdi>
         </p>
       )}
@@ -126,10 +126,10 @@ export default function ReferralWindowPanel({ referral, dir, className }: Referr
   const status = STATUS_COPY[referral.status.status];
   return (
     <section aria-labelledby={headingId} data-slot="referral-window-panel" dir={dir} className={cn("flex min-w-0 flex-col", className)}>
-      <Card size="sm">
+      <Card>
         <CardHeader>
           <CardTitle>
-            <h3 id={headingId} className="text-pretty break-words">
+            <h3 id={headingId} className="type-subsection-title text-pretty break-words">
               {heading}
             </h3>
           </CardTitle>

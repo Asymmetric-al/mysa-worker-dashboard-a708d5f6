@@ -1,6 +1,8 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useCallback, useState, type ReactElement } from "react";
 import { intentKeyOf, mayReplay, reappliableRevision, useReviewedMutation, type MutationSubmit } from "@/components/action-review";
+import { hasSettled } from "@/components/attempt";
 import { FormField, FormFieldGroup } from "@/components/form-field";
 import OperationResult from "@/components/operation-result";
 import { Button } from "@/components/ui/button";
@@ -94,6 +96,7 @@ export type LanguagePreferenceProps = {
 /** The reading-language preference for one membership. */
 export function LanguagePreference({ scope, membershipId, publisherId, purpose, currentChoice, currentLanguage, expectedRevision, languageOptions, onCheckResult, onSaved, disabled = false, disabledReason, dir, headingLevel = 2, className }: LanguagePreferenceProps): ReactElement {
   const setPreference = useSetPreference();
+  const router = useRouter();
   const submit = useCallback<MutationSubmit<SetPreferencePayload>>((input) => setPreference.mutateAsync(input), [setPreference]);
   const review = useReviewedMutation<SetPreferencePayload>(submit);
   const [pending, setPending] = useState<string | null>(null);
@@ -117,9 +120,12 @@ export function LanguagePreference({ scope, membershipId, publisherId, purpose, 
   const settle = useCallback(
     async (run: () => Promise<MutationOutcome | null>): Promise<void> => {
       const outcome = await run();
-      if (outcome !== null && (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged")) onSaved?.();
+      if (!hasSettled(outcome)) return;
+      // The language stated as recorded above is the page's own server read, and no client query mounts that read, so the route is asked to read itself again; the receipt below is this component's own state, so it stays on screen across that re-read.
+      router.refresh();
+      onSaved?.();
     },
-    [onSaved],
+    [onSaved, router],
   );
   const save = (): void => {
     if (attempt === null || review.pending || disabled) return;

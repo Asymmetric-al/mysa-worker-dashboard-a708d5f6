@@ -78,7 +78,7 @@ export default function PrivateNoteComposer({ scope, partnerId, expectedRevision
   };
   return (
     <section data-slot="private-note-composer" aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-3", className)}>
-      <h3 id={headingId} className="text-base font-medium text-pretty">
+      <h3 id={headingId} className="type-subsection-title text-pretty">
         Write a private note
       </h3>
       <Alert data-slot="private-note-audience">
@@ -112,7 +112,7 @@ export default function PrivateNoteComposer({ scope, partnerId, expectedRevision
             />
           )}
         </FormField>
-        <p id={contextId} className="text-sm text-pretty text-muted-foreground">
+        <p id={contextId} className="type-supporting text-pretty">
           {characterLine(Array.from(body).length)}
         </p>
         <div className="flex flex-wrap items-center gap-2">

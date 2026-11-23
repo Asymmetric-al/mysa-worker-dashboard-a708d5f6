@@ -5,7 +5,7 @@ import { fieldErrorsFromInvalid, FormFieldGroup } from "@/components/form-field"
 import { StateNotice, type NoticeRetry } from "@/components/state-notice";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import SectionCard from "@/components/section-card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
@@ -260,7 +260,7 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
         )}
         {onDismiss === undefined ? null : (
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" size="sm" className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal" disabled={submitting} onClick={dismiss}>
+            <Button type="button" variant="outline" size="sm" className={BUTTON_WRAP_CLASS} disabled={submitting} onClick={dismiss}>
               {DISMISS_LABEL}
             </Button>
           </div>

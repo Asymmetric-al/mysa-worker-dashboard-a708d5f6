@@ -109,7 +109,7 @@ function ChoiceRadios<Key extends string>({
         {legend}
       </legend>
       <div className="flex flex-col gap-3">
-        <p id={hintId} className="text-sm text-muted-foreground">
+        <p id={hintId} className="type-supporting">
           {hint}
         </p>
         <RadioGroup value={value} onValueChange={onChoose} aria-labelledby={legendId} aria-describedby={hintId}>
@@ -198,7 +198,7 @@ export function SettingsPreferencePanel() {
                 </NativeSelectOption>
               ))}
             </NativeSelect>
-            <p id={languageHintId} className="text-sm text-muted-foreground">
+            <p id={languageHintId} className="type-supporting">
               Sets the language of the dates, times and numbers you see here. It does not translate the interface, and it is never the language of something sent to a partner.
             </p>
           </div>
@@ -219,7 +219,7 @@ export function SettingsPreferencePanel() {
                 ))}
               </NativeSelect>
             )}
-            <p id={timeZoneHintId} className="text-sm text-muted-foreground">
+            <p id={timeZoneHintId} className="type-supporting">
               Changes how dates and times are shown to you. A date with no time of day — a due date, an introduction date — keeps the day the service recorded, and no deadline moves.
               {mode === "text" ? " This browser cannot list or check time-zone names, so the name you type is used exactly as typed, for example Europe/Berlin." : ""}
             </p>

@@ -90,16 +90,16 @@ export function PageReviewSurface({ document, candidateId, expectedRevision, sco
   );
   return (
     <div data-slot="page-review-surface" data-page-family={document.family} data-reviewed-variant-id={reviewedEdition?.variantId} className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
-      <p data-slot="page-review-family" className="text-sm text-muted-foreground text-pretty">
+      <p data-slot="page-review-family" className="type-supporting text-pretty">
         <bdi>{copy.families[document.family].label}</bdi>
       </p>
       <section aria-labelledby={editionsTitleId} data-slot="page-review-editions" className="flex min-w-0 flex-col gap-3">
-        <h2 id={editionsTitleId} className="font-heading text-base font-medium text-pretty">
+        <h2 id={editionsTitleId} className="type-section-title text-pretty">
           {copy.editions.heading}
         </h2>
-        <p className="text-sm text-muted-foreground text-pretty">{copy.review.approveNote}</p>
+        <p className="type-supporting text-pretty">{copy.review.approveNote}</p>
         {document.editions.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-pretty">{copy.states.emptyEditions}</p>
+          <p className="type-supporting text-pretty">{copy.states.emptyEditions}</p>
         ) : (
           <ul aria-labelledby={editionsTitleId} className="flex min-w-0 flex-col gap-3">
             {document.editions.map((edition) => {
@@ -119,21 +119,21 @@ export function PageReviewSurface({ document, candidateId, expectedRevision, sco
           </ul>
         )}
         <Separator />
-        <p className="text-sm text-muted-foreground text-pretty">{copy.review.reviewDoesNotRelease}</p>
+        <p className="type-supporting text-pretty">{copy.review.reviewDoesNotRelease}</p>
       </section>
       {reviewedEdition === undefined ? null : (
         <section aria-labelledby={reachTitleId} data-slot="page-review-reach" className="flex min-w-0 flex-col gap-3">
-          <h2 id={reachTitleId} className="font-heading text-base font-medium text-pretty">
+          <h2 id={reachTitleId} className="type-section-title text-pretty">
             {copy.release.reachHeading}
           </h2>
-          <p className="text-sm text-muted-foreground text-pretty">{copy.review.publishOnlyCannotBecomeNotify}</p>
+          <p className="type-supporting text-pretty">{copy.review.publishOnlyCannotBecomeNotify}</p>
           <ReachControl variantId={reviewedEdition.variantId} documentId={document.documentId} scope={scope} expectedRevision={document.recordRevision} current={reach ?? null} />
           <SimulationLabel effect="publication-reach" />
         </section>
       )}
       {givingBinding === undefined ? null : (
         <section aria-labelledby={givingTitleId} data-slot="page-review-giving" className="flex min-w-0 flex-col gap-3">
-          <h2 id={givingTitleId} className="font-heading text-base font-medium text-pretty">
+          <h2 id={givingTitleId} className="type-section-title text-pretty">
             {copy.giving.designationLabel}
           </h2>
           <GivingDesignation binding={givingBinding} layout="inline" />

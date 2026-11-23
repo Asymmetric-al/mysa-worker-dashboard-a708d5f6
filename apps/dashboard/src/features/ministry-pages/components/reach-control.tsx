@@ -8,7 +8,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/cn";
 import { decideReach, REACH_VALUES, type Reach } from "@/modules/content/reach";
 import { copy } from "../copy";
-import { useSetPageReach, type SetReachVariables } from "../hooks/page-mutations";
+import { openRevisionOf, settledRevisionOf, useSetPageReach, type SetReachVariables } from "../hooks/page-mutations";
 import type { SetReachPayload } from "../schemas/reach";
 type ReachScope = SetReachVariables["scope"];
 type ReachOutcome = Awaited<ReturnType<ReturnType<typeof useSetPageReach>["mutateAsync"]>>;
@@ -66,6 +66,8 @@ export default function ReachControl({ variantId, documentId, scope, expectedRev
   const disabledReasonId = useId();
   const [chosen, setChosen] = useState<Reach | null>(null);
   const [settled, setSettled] = useState(false);
+  const [attemptRevision, setAttemptRevision] = useState<string | null>(null);
+  const [acceptedRevision, setAcceptedRevision] = useState<string | null>(null);
   const setReach = useSetPageReach();
   const mutateReach = setReach.mutateAsync;
   const submit = useCallback(async (input: SetReachVariables) => mutateReach({ operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload }), [mutateReach]);
@@ -83,11 +85,14 @@ export default function ReachControl({ variantId, documentId, scope, expectedRev
     );
   }
   const shown = chosen ?? current;
+  // The revision a new attempt presents: the record's revision as the read states it, or — until that read has landed — the revision the change this view last had accepted produced.
+  const openRevision = openRevisionOf(expectedRevision, attemptRevision, acceptedRevision);
   const choose = (next: string): void => {
     if (disabled) return;
     const decision = decideReach(current, next);
     if (decision.status === "invalid") return;
     setChosen(decision.status === "changed" ? decision.reach : null);
+    setAttemptRevision(decision.status === "changed" ? openRevision : null); // The revision this step is opened against, held for the attempt: the read that follows an acceptance states a newer one, and the result the step reports still belongs to the attempt it made.
     setSettled(false);
   };
   const keepRecorded = (): void => {
@@ -95,7 +100,9 @@ export default function ReachControl({ variantId, documentId, scope, expectedRev
     setSettled(false);
   };
   const handleSettled = (outcome: ReachOutcome): void => {
-    if (outcome.outcome !== "accepted" && outcome.outcome !== "alreadyAccepted" && outcome.outcome !== "unchanged") return;
+    const settledRevision = settledRevisionOf(outcome);
+    if (settledRevision === null) return;
+    setAcceptedRevision(settledRevision);
     setSettled(true);
     if (chosen !== null) onSaved?.(chosen);
   };
@@ -143,7 +150,7 @@ export default function ReachControl({ variantId, documentId, scope, expectedRev
           confirmLabel={REACH_CONTROL_COPY.confirmLabel}
           cancelLabel={REACH_CONTROL_COPY.cancelLabel}
           onCancel={keepRecorded}
-          input={{ scope, expectedRevision, payload: { documentId, reach: chosen } }}
+          input={{ scope, expectedRevision: attemptRevision ?? openRevision, payload: { documentId, reach: chosen } }}
           submit={submit}
           onSettled={handleSettled}
           simulationEffect={copy.release.simulatedEffectKey}

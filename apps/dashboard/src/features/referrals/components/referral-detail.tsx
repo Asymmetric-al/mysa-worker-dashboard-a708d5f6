@@ -1,11 +1,12 @@
 "use client";
-import { useCallback, useId, type ReactElement, type ReactNode } from "react";
+import { useCallback, useId, useState, type ReactElement, type ReactNode } from "react";
+import { hasSettled } from "@/components/attempt";
 import RecordDetail, { type RecordDetailBreadcrumbEntry, type RecordDetailIdentity, type RecordDetailLayout, type RecordDetailSectionSlots } from "@/components/record-detail";
 import StateNotice, { type NoticeHeadingLevel } from "@/components/state-notice";
 import StatusBadge, { statusBadgeProps, VALUE_STATE_WORDS, type StatusTone } from "@/components/status-badge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
-import type { ReadAction, Scope, reads } from "@/modules/data-service";
+import type { MutationOutcome, ReadAction, Scope, reads } from "@/modules/data-service";
 import { CONTINUATION_WINDOW_COPY, EXPIRED_HISTORY_COPY, INTRODUCED_BY_COPY, LIST_COPY, PRECISION_COPY, STATUS_COPY, WINDOW_COPY, type ReferralStatusWord } from "../copy";
 import { useReferral } from "../hooks/use-referral";
 import ContinueReferralAction from "./continue-referral-action";
@@ -46,11 +47,12 @@ const Fact = ({ term, value, help, valueClass, trailing }: { readonly term: stri
     </dd>
   </div>
 );
+const BODY_HEADING_SCALE: Readonly<Record<"h3" | "h4", string>> = { h3: "type-subsection-title", h4: "type-group-title" };
 function BodySection({ headingId, level, slot, title, children }: { readonly headingId: string; readonly level: "h3" | "h4"; readonly slot: string; readonly title: string; readonly children: ReactNode }): ReactElement {
   const Heading = level === "h3" ? "h3" : "h4";
   return (
     <section aria-labelledby={headingId} data-slot={slot} className="flex min-w-0 flex-col gap-2">
-      <Heading id={headingId} className="font-heading text-sm font-medium text-pretty wrap-anywhere">
+      <Heading id={headingId} className={cn(BODY_HEADING_SCALE[level], "text-pretty wrap-anywhere")}>
         {title}
       </Heading>
       {children}
@@ -154,6 +156,7 @@ export function ReferralDetail({ scope, referralId, layout, dir, breadcrumb, cla
   const reread = useCallback((): void => {
     void refetch();
   }, [refetch]);
+  const [settledCycleId, setSettledCycleId] = useState<string | null>(null);
   const noticeHeading = NOTICE_HEADING[layout];
   const noticeClass = cn("text-start", className);
   const retry = { label: "Try again", onClick: reread };
@@ -171,13 +174,17 @@ export function ReferralDetail({ scope, referralId, layout, dir, breadcrumb, cla
     case "envelope": {
       const { envelope } = read;
       const data = envelope.data;
-      // The one continuation an eligible cycle can hold is offered beside that card and never inside it: the card states a read-only permission over facts a continuation leaves exactly as it carries them, and a cycle that has not ended, one already continued and a setting that is off all render the history alone.
+      // The one continuation an eligible cycle can hold is offered beside that card and never inside it: the card states a read-only permission over facts a continuation leaves exactly as it carries them, and a cycle that has not ended, one already continued and a setting that is off all render the history alone. A continuation this visit has already taken stands beside that card too, because the reread that follows it no longer offers the action it took and the receipt is the only record of what it produced.
       if (data.view === "expired-history") {
+        const cycleId = data.referral.referralId;
+        const keepReceipt = (outcome: MutationOutcome): void => {
+          if (hasSettled(outcome)) setSettledCycleId(cycleId);
+        };
         return (
           <div dir={dir} className={cn("flex min-w-0 flex-col gap-4", className)}>
             <ExpiredReferralHistory referral={data.referral} status={data.referral.status.status} headingLevel={EXPIRED_HEADING[layout]} dir={dir} />
-            {continueOffered(envelope.actions, data.continuationPolicy) ? (
-              <ContinueReferralAction scope={scope} referral={data.referral} expectedRevision={envelope.revision} continuationPolicy={data.continuationPolicy} actions={envelope.actions} onCheckResult={reread} headingLevel={REVIEW_HEADING[layout]} dir={dir} />
+            {continueOffered(envelope.actions, data.continuationPolicy) || settledCycleId === cycleId ? (
+              <ContinueReferralAction scope={scope} referral={data.referral} expectedRevision={envelope.revision} continuationPolicy={data.continuationPolicy} actions={envelope.actions} onCheckResult={reread} onSettled={keepReceipt} headingLevel={REVIEW_HEADING[layout]} dir={dir} />
             ) : null}
           </div>
         );

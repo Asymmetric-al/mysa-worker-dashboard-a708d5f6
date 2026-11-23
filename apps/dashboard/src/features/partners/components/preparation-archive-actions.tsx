@@ -5,7 +5,7 @@ import OperationResult from "@/components/operation-result";
 import StateNotice from "@/components/state-notice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import type { PartnerKind, ReadAction, Scope } from "@/modules/data-service/envelope";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
@@ -88,7 +88,7 @@ export default function PreparationArchiveActions({ partnerId, kind, archived, e
   return (
     <section data-slot="preparation-archive-actions" data-direction={direction} data-state={pending ? "pending" : settled === null ? "idle" : "settled"} aria-busy={pending ? true : undefined} className={cn("flex min-w-0 flex-col gap-3 text-start", className)}>
       <AlertDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <AlertDialogTrigger render={<Button type="button" variant="outline" size="sm" disabled={pending} className="h-auto min-h-8 max-w-full whitespace-normal" />}>{label}</AlertDialogTrigger>
+        <AlertDialogTrigger render={<Button type="button" variant="outline" size="sm" disabled={pending} className={BUTTON_WRAP_CLASS} />}>{label}</AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{label}</AlertDialogTitle>

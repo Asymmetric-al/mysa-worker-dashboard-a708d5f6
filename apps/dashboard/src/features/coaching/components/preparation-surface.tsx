@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { ReactElement } from "react";
 import { StateNotice } from "@/components/state-notice";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
@@ -14,7 +14,6 @@ type PreparationSourceIdentity = { readonly system: string; readonly reference: 
 export type PreparationSurfaceProps = { readonly preparation: PreparationRecord | null; readonly busy?: boolean; readonly unavailable?: PreparationSourceIdentity | null };
 type PreparationView = { readonly state: "busy" } | { readonly state: "unavailable"; readonly source: PreparationSourceIdentity } | { readonly state: "present"; readonly body: string; readonly updatedOn: CivilDate | string | null } | { readonly state: "absent" };
 const CHECK_INS_HREF = "/coaching/check-ins";
-const LINK_CONTROL_CLASS = "h-auto min-h-8 max-w-full whitespace-normal py-1.5";
 function resolveView({ preparation, busy = false, unavailable = null }: PreparationSurfaceProps): PreparationView {
   if (busy) return { state: "busy" };
   if (unavailable !== null) return { state: "unavailable", source: unavailable };
@@ -28,7 +27,7 @@ function PreparationContent({ view }: { readonly view: PreparationView }): React
     case "unavailable":
       return <StateNotice kind="unavailable" title="Preparation unavailable" description={COACHING_COPY.overview.unavailable} source={view.source} headingLevel={3} />;
     case "present":
-      return view.body.trim() === "" ? <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">This preparation has no text in it yet.</p> : <bdi className="block break-words text-pretty whitespace-pre-wrap">{view.body}</bdi>;
+      return view.body.trim() === "" ? <p className="type-supporting text-pretty wrap-anywhere">This preparation has no text in it yet.</p> : <bdi className="block break-words text-pretty whitespace-pre-wrap">{view.body}</bdi>;
     case "absent":
       return <StateNotice kind="empty" title="No preparation yet" description={COACHING_COPY.overview.empty} action={{ label: "Write a check-in", href: CHECK_INS_HREF }} headingLevel={3} />;
   }
@@ -40,7 +39,9 @@ export default function PreparationSurface(props: PreparationSurfaceProps): Reac
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="wrap-anywhere">
-            <h2 id="coaching-preparation-heading">{"Private preparation"}</h2>
+            <h2 id="coaching-preparation-heading" className="type-section-title">
+              {"Private preparation"}
+            </h2>
           </CardTitle>
           <CardDescription className="text-pretty wrap-anywhere">{COACHING_COPY.overview.purpose}</CardDescription>
           <CardAction>
@@ -48,7 +49,7 @@ export default function PreparationSurface(props: PreparationSurfaceProps): Reac
           </CardAction>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
-          <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">
+          <p className="type-supporting text-pretty wrap-anywhere">
             <bdi>Only you can see this; a coach you invite never sees it.</bdi>
           </p>
           <Separator />
@@ -67,7 +68,7 @@ export default function PreparationSurface(props: PreparationSurfaceProps): Reac
                 </>
               )}
             </p>
-            <Link {...{ href: CHECK_INS_HREF, className: cn(buttonVariants({ variant: "outline", size: "sm" }), LINK_CONTROL_CLASS) }}>Write a check-in</Link>
+            <Link {...{ href: CHECK_INS_HREF, "data-slot": "button", className: cn(buttonVariants({ variant: "outline", size: "sm" }), BUTTON_WRAP_CLASS) }}>Write a check-in</Link>
           </CardFooter>
         ) : null}
       </Card>

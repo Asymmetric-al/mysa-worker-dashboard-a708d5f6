@@ -21,6 +21,8 @@ const ACCEPTED_QUESTIONS = ["What went well?", "What was hard?"] as const;
 const COACH_WRITE_QUESTION = "A question only a coach could write"; // What the coach identity attempts to write, so the worker's own surfaces can show it never arrived.
 const COACH_WRITE_ANSWER = "An answer only a coach could write";
 const CHECK_INS_PATH = "/api/coaching/checkins"; // The development control's two verbs, which this file operates as values rather than re-deriving URLs.
+const PORTFOLIO_PATH = "/api/coaching/subjects?view=portfolio"; // The coach portfolio read the coach's own route composes, operated as a value so the state after a revocation is judged on the read the surface itself answers from.
+const COACHING_RELATIONSHIPS = "Coaching relationships"; // The caption the portfolio table states, and so the name its rows are addressed by: a portfolio holding nothing renders no such table at all.
 const relationshipSection = (page: Page, grantId: string): Locator => page.locator(`[data-slot="coaching-relationship"][data-grant="${grantId}"]`); // The section the sharing surface opens for one relationship, addressed by the grant reference it is disclosed under: every relationship the read returns is disclosed, so a module row, a switch or a stop review belongs to the grant whose section holds them.
 async function revokeGrant(page: Page, grantId: string, reviewTexts: readonly string[] = ["Revoke this coach's access?"]): Promise<void> {
   const section = relationshipSection(page, grantId); // Revokes one relationship through its own review, which states what stops and what stays, and the confirmation behind it, then waits for that section's receipt.
@@ -311,14 +313,20 @@ test("stops each grant through its own review while an unrelated draft is invali
   await page.goto("/coaching/check-ins");
   await expect(page.getByText("Check-in state: Shared")).toBeVisible();
   await expect(page.getByText("Two good conversations and one difficult one.").first()).toBeVisible();
-  await page.goto("/coaching/sharing"); // A revoked and an ended episode are both refused to the coach, and each refusal states nothing about what it withheld. The second grant is stopped first, from its own section through the same review: the worker ends the access the page has just disclosed, rather than the first revoke being taken to cover a grant it never named.
+  await page.goto("/coaching/sharing"); // The second grant is stopped from its own section through the same review: the worker ends the access the page has just disclosed, rather than the first revoke being taken to cover a grant it never named.
   await revokeGrant(page, FINANCIAL_GRANT);
   await page.goto("/coaching/sharing");
   await expect(relationshipSection(page, PRIMARY_GRANT)).toHaveAttribute("data-state", "revoked");
   await expect(relationshipSection(page, FINANCIAL_GRANT)).toHaveAttribute("data-state", "revoked");
   await expect(page.getByRole("button", { name: /^Revoke the grant for /u })).toHaveCount(0);
-  await actAs(page, COACH_SESSION); // What a coach is refused is judged on the grants the coach's own session record states — the store keeps one document per development session, so the worker's two revokes above are asserted in the worker's own read, and the coach's refusals are asserted on the revoked and ended episodes that session holds.
-  for (const stoppedGrant of [REVOKED_GRANT, ENDED_GRANT]) {
+  await actAs(page, COACH_SESSION); // The record a coach reads is the worker's own, so the two revokes just accepted reach it: the read the surface composes holds no relationship, the portfolio renders its empty state instead of a table, and each stopped subject is refused on the page with no module enumerated.
+  const emptied = await page.request.get(PORTFOLIO_PATH);
+  expect(emptied.ok()).toBe(true);
+  const emptiedRead = parseJson(await emptied.text());
+  expect(isRecord(emptiedRead) && isRecord(emptiedRead.data) ? emptiedRead.data.holdsNoSubjects : undefined, "Both revokes reached the record the coach reads, so the portfolio states that it holds nothing rather than answering the seeded grant.").toBe(true);
+  await page.goto("/coaching/coach");
+  await expect(page.getByRole("table", { name: COACHING_RELATIONSHIPS }), "With no relationship left to read, the portfolio renders its empty state rather than a table of subjects.").toHaveCount(0);
+  for (const stoppedGrant of [PRIMARY_GRANT, FINANCIAL_GRANT]) {
     await page.goto(`/coaching/coach/${stoppedGrant}`);
     await expect(page.locator("main").getByText(/Reason no-permission/u)).toBeVisible();
     await expect(page.getByRole("tab")).toHaveCount(0);

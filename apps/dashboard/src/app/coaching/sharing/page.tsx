@@ -2,6 +2,8 @@
  * `/coaching/sharing` — the worker's invitation and grant surface: every relationship the coaching read returns, each named by its own opaque grant and coach references, with the five modules and the state a coach meets in each, the duration and the cutoff frozen when it was accepted, the separately reviewed financial range, and the closed set of stop-type effects.
  *
  * One section per relationship, because one worker can hold more than one grant with the same coach in the same ministry: a surface that showed only the live grant it named first would leave a second grant — one a coach can still read through, and one nothing on the page had disclosed — standing after the first was revoked, so the page would read as if the revoke had changed nothing. Each section is built from its own relationship, with its own grant view, its own modules and its own stop controls, so no control on this page ever stands for another grant.
+ *
+ * The sections are ordered here, live before closed, rather than in the read: the read's own order is the identity order it shares with the API and the coach surfaces, and a relationship a coach can still read through must never sit below one that is already over. The disclosures a section states twice are stated here once each: the module controls carry the five modules in that relationship's section, and the range review carries that relationship's reviewed range, so the summary beside them omits what those two cards already state and keeps every fact it alone states.
  */
 import type { Metadata } from "next";
 import type { ReactElement } from "react";
@@ -12,6 +14,7 @@ import ModuleToggles, { type ModuleToggleEntry } from "@/features/coaching/compo
 import SharingSummary, { type CoachingGrantView, type FinancialRange, type GrantDurationView, type ModuleRead, type SharingOutcome } from "@/features/coaching/components/sharing-summary";
 import StopActions from "@/features/coaching/components/stop-actions";
 import { COACHING_COPY, type StopEffect } from "@/features/coaching/copy";
+import { compareCodeUnits } from "@/lib/ordering";
 import { reads } from "@/modules/data-service";
 import { PageColumn, PageHeading, pageRefusalOf, type ReadNoticeCopy } from "../../page-frame";
 type SharingEnvelope = Extract<Awaited<ReturnType<typeof reads.coaching.readCoachingOverview>>, { readonly kind: "envelope" }>["envelope"];
@@ -22,13 +25,22 @@ type SharingCandidates = InvitationFormProps["candidates"];
 const INTERFACE_LOCALE = "en-GB";
 /** One relationship's own section: its heading, the summary it states, and the controls that act on it alone. */
 const RELATIONSHIP_CLASS = "flex min-w-0 flex-col gap-4";
-const RELATIONSHIP_HEADING_CLASS = "text-lg font-semibold text-pretty wrap-anywhere";
+const RELATIONSHIP_HEADING_CLASS = "type-section-title text-pretty wrap-anywhere";
 /** An opaque reference is rendered as the read reports it, so a reader sees the identity a record carries. */
 const IDENTIFIER_CLASS = "mono-identifier wrap-anywhere";
 const NOTICE_COPY: ReadNoticeCopy = { headingLevel: 1, denied: { title: COACHING_COPY.sharing.heading }, unavailable: { title: COACHING_COPY.sharing.heading, body: COACHING_COPY.sharing.unavailable }, refused: { title: COACHING_COPY.sharing.heading } };
 const GRANT_LEVEL_STOP_EFFECTS = ["end-relationship", "revoke"] as const satisfies readonly StopEffect[];
 const GRANT_LEVEL_STOP_MUTATION: Readonly<Record<(typeof GRANT_LEVEL_STOP_EFFECTS)[number], string>> = { "end-relationship": "endCoaching", revoke: "revokeGrant" };
 const ACTING_ROLE = "worker";
+/** The lifecycle states an episode can no longer be stopped in: the same closed set the stop controls read, so a relationship nothing can be stopped in any more is told apart from the ones a coach can still read through. */
+const CLOSED_EPISODE_STATES: ReadonlySet<SharingRelationship["state"]> = new Set<SharingRelationship["state"]>(["revoked", "expired", "ended", "left", "superseded"]);
+/** Live relationships first, then the closed ones, and inside each band by grant reference in code-unit order: the order the read states is the identity order it shares with the API and the coach surfaces, so this page orders its own sections rather than redefining that contract, and the code-unit tie-break keeps the order identical on every render. */
+function liveFirst(one: SharingRelationship, two: SharingRelationship): number {
+  const oneClosed = CLOSED_EPISODE_STATES.has(one.state);
+  const twoClosed = CLOSED_EPISODE_STATES.has(two.state);
+  if (oneClosed !== twoClosed) return oneClosed ? 1 : -1;
+  return compareCodeUnits(one.grantId, two.grantId);
+}
 export const metadata: Metadata = { title: COACHING_COPY.sharing.heading };
 const outcomeOf = (reached: boolean): SharingOutcome => (reached ? "reached" : "not-reached");
 function durationViewOf(duration: SharingRelationship["duration"]): GrantDurationView {
@@ -94,7 +106,8 @@ function RelationshipSection({ relationship, index, scope, asOf, grantLevelEffec
       <h2 id={headingId} className={RELATIONSHIP_HEADING_CLASS}>
         Sharing with <bdi className={IDENTIFIER_CLASS}>{relationship.recipientPrincipalId}</bdi> under <bdi className={IDENTIFIER_CLASS}>{relationship.grantId}</bdi>
       </h2>
-      <SharingSummary grant={grantViewOf(relationship)} locale={INTERFACE_LOCALE} />
+      {/* The summary states only what this section does not already state in a card of its own: the module controls below carry the five modules for a relationship the read admitted, and the range review below carries that relationship's reviewed range. Everything else — the relationship itself, the four outcomes, the duration and the closing instant — is stated by the summary and nothing else. */}
+      <SharingSummary grant={grantViewOf(relationship)} locale={INTERFACE_LOCALE} statedElsewhere={{ modules: refusal === null, financialRange: true }} />
       {/* The range this relationship's own record states, with the figure a coach reads for it and the coverage that figure was reported over. A record that states no range renders the review's own "not shared" statement here, in this relationship's section, so the page never speaks for another grant's range. */}
       <FinancialRangeReview range={reviewedRangeOf(relationship, asOf)} reviewedAt={relationship.invitation.issuedAt} reviewedByRole={ACTING_ROLE} locale={INTERFACE_LOCALE} />
       {refusal === null ? (
@@ -115,13 +128,14 @@ export default async function CoachingSharingPage(): Promise<ReactElement> {
   const envelope = result.envelope;
   const grantLevelEffects = grantLevelStopEffectsOf(envelope.actions);
   const candidates = await readInvitationCandidates(envelope.data.invitableCoaches);
+  const relationships = envelope.data.relationships.toSorted(liveFirst);
   return (
     <PageColumn>
       {/* The one h1: every relationship below opens its own section at level two, and the cards and stop controls inside a section state their own headings beneath that. */}
       <PageHeading title={COACHING_COPY.sharing.heading} />
-      {/* Every relationship the read returned is disclosed, including one this page would have called "the" relationship before: the read carries each grant separately, and a surface that showed one of them would leave the others — and the access a coach still holds through them — unnamed and unstoppable. */}
-      {envelope.data.relationships.length === 0 ? <SharingSummary grant={null} locale={INTERFACE_LOCALE} /> : null}
-      {envelope.data.relationships.map((relationship, index) => (
+      {/* Every relationship the read returned is disclosed, including one this page would have called "the" relationship before: the read carries each grant separately, and a surface that showed one of them would leave the others — and the access a coach still holds through them — unnamed and unstoppable. They are laid out live first, so the first screen states the relationships a coach can still read through rather than one that is already over. */}
+      {relationships.length === 0 ? <SharingSummary grant={null} locale={INTERFACE_LOCALE} /> : null}
+      {relationships.map((relationship, index) => (
         <RelationshipSection key={relationship.grantId} relationship={relationship} index={index} scope={envelope.scope} asOf={envelope.asOf} grantLevelEffects={grantLevelEffects} />
       ))}
       {/* The duration control is composed inside this form, which owns the value it edits: it is a controlled input, so a route that renders on the server cannot hand it the change handler its state would need. The cutoff that the chosen duration produces is stated by the summary in each relationship's section. */}

@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { mutationInputSchema, mutations } from "@/modules/data-service";
 import { claimedWriteRoute, dispatch, type ClaimedWrite } from "../../handler";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const MESSAGES = { operationRequired: "State which reach change this request makes as payload.operation: setReach or stopShowingPublicly.", bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload." } as const;
@@ -18,4 +19,5 @@ const WRITES = {
   stopShowingPublicly: (raw, { operationId, sessionId }) => dispatch(stopShowingPubliclyBodySchema, raw, operationId, "operation", (input) => mutations.pages.stopShowingPublicly(sessionId, input)),
 } satisfies Readonly<Record<ReachOperation, ClaimedWrite>>;
 /** One named reach change, selected by `payload.operation`. */
-export const POST = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES);
+const setPageReach = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES);
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: setPageReach });

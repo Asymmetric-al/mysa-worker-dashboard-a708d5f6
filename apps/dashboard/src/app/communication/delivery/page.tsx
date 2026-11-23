@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import { StateNotice } from "@/components/state-notice";
 import DeliveryResults from "@/features/updates/components/delivery-results";
@@ -19,6 +20,7 @@ const PAGE_COPY = {
   refused: { title: "This screen's request was refused" },
   retry: "Try this read again",
 } as const;
+export const metadata: Metadata = { title: PAGE_COPY.title };
 function queryOf(intentId: string, searchParams: SearchParams): SendResultQuery {
   const page = wholeNumberOf(paramOf(searchParams, PARAM.page));
   const pageSize = wholeNumberOf(paramOf(searchParams, PARAM.pageSize));
@@ -41,13 +43,13 @@ export default async function CommunicationDeliveryPage({ searchParams }: { read
   if (intentId === undefined) {
     return (
       <div className="flex min-w-0 flex-col gap-6 text-start">
-        <h1 className="text-2xl font-semibold text-pretty wrap-anywhere">{PAGE_COPY.title}</h1>
+        <h1 className="type-page-title text-pretty wrap-anywhere">{PAGE_COPY.title}</h1>
         <StateNotice kind="empty" headingLevel={SECTION_HEADING_LEVEL} title={PAGE_COPY.unnamed.title} description={PAGE_COPY.unnamed.description} action={EMPTY_ACTION} />
       </div>
     );
   }
   const result = await reads.audience.readSendResult(queryOf(intentId, stated));
-  if (result.kind !== "envelope") return pageRefusalOf(result, { ...NOTICE_COPY, unavailable: { ...NOTICE_COPY.unavailable, action: { label: PAGE_COPY.retry, href: addressOf(intentId, stated) } } }, 4);
+  if (result.kind !== "envelope") return pageRefusalOf(result, { ...NOTICE_COPY, unavailable: { ...NOTICE_COPY.unavailable, action: { label: PAGE_COPY.retry, href: addressOf(intentId, stated) } } }, 4, { title: PAGE_COPY.title });
   return (
     <PageColumn>
       <PageHeading title={PAGE_COPY.title} paragraphs={[PAGE_COPY.lede]} />

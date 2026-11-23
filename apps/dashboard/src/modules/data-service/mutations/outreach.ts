@@ -99,7 +99,7 @@ async function runOutreachMutation<P, R extends MutationResult>(input: MutationI
   const parsed = plan.schema.safeParse(input.payload);
   const pending: PayloadState<P> = parsed.success ? { validated: true, payload: parsed.data } : { validated: false };
   const scope = input.scope;
-  const opening = await openMutation(input, source);
+  const opening = await openMutation(plan.name, input, source);
   if (!opening.ok) return opening.outcome;
   return runMutation<P, R>({
     sessionId: opening.sessionId,

@@ -40,6 +40,10 @@ const SEEDED_VARIANT_ID = "variant-update-autumn-en-public";
 const IMAGE_FIXTURE_PATH = fileURLToPath(new URL("../public/fixtures/media/IMG_20260814-harbour-youth-group.jpg", import.meta.url)); // The committed fixture the picker is handed: a real JPEG whose own filename and EXIF must never reach the output.
 const IMAGE_ALT_TEXT = "Six young people around a table in the church hall";
 const TYPED_PROSE = "We met on Friday and shared a meal together.";
+const TYPED_ELSEWHERE = "The second tab wrote this line about the harbour meal."; // The line a second tab saves, which is what leaves a first tab holding a revision the record has moved past.
+const TYPED_STALE = "The first tab wrote this line before the record moved on."; // The line the first tab writes against the revision it read, so its save is genuinely refused as a conflict.
+const TYPED_AFTER_RECOVERY = "The line written after the conflict was recovered."; // The two edits that follow the recovery, each of which must reach the service.
+const TYPED_AFTER_RECOVERY_TOO = " And a second line written after that, which a reload must still find.";
 const ROUTES = {
   partners: "/partners",
   work: "/work",
@@ -325,20 +329,25 @@ test.describe("the WCAG 2.2 AA audit", () => {
 });
 test.describe("a save that is refused", () => {
   test.use({ viewport: DESKTOP_VIEWPORT, persona: ESTABLISHED_WORKER });
-  test("a refusal the service produces is stated in the field's own error slot, and the corrected save is accepted", async ({ page }) => {
+  test("a refusal is stated in the field's own error slot before anything is sent, and the corrected save is accepted", async ({ page }) => {
     const { form, displayName, givenName } = await openPartnerEdit(page);
     await expect(form, "The permitted-field edit is offered to the identity that may change this record.").toBeVisible();
+    const save = form.getByRole("button", { name: "Save these changes" });
+    await expect(save, "A pristine form is still offered for sending, so the save that changes nothing stays reachable.").toBeEnabled();
+    await expect(page.locator("#field-displayName-error"), "A pristine form states no refusal, because no field has been edited yet.").toHaveCount(0);
     await typeFromKeyboard(page, givenName, EDITED_GIVEN_NAME, "The given name");
     await typeFromKeyboard(page, displayName, "", "Clearing the display name");
-    await pressFromKeyboard(page, form.getByRole("button", { name: "Save these changes" }), "Saving an empty display name");
-    await expect(page.locator("#field-displayName-error"), "The refused field states its own message in the control's error slot.").toBeVisible();
+    await expect(page.locator("#field-displayName-error"), "The required field states its own message as soon as it is emptied, without waiting for a save.").toBeVisible();
     await expect(displayName, "The control is marked invalid for assistive technology, not only coloured.").toHaveAttribute("aria-invalid", "true");
     await expect(displayName, "The invalid control is described by its own message, so a screen reader reads why it was refused.").toHaveAttribute("aria-describedby", /field-displayName-error/u);
+    await expect(save, "The primary action is withheld while the field it would send states what it needs.").toBeDisabled();
+    await expect(form.getByText(/^Saving cannot start while a field above states what it needs\./u), "The action states why it is withheld and that nothing typed was discarded.").toBeVisible();
     await expect(givenName, "The refusal loses nothing else the worker typed.").toHaveValue(EDITED_GIVEN_NAME);
-    await typeFromKeyboard(page, displayName, EDITED_DISPLAY_NAME, "Correcting the display name"); // The retry succeeds once the field it refused is corrected: the failure changed nothing, so nothing has to be re-entered beyond the one value the refusal named.
-    await pressFromKeyboard(page, form.getByRole("button", { name: "Save these changes" }), "Saving the corrected change");
-    await expect(page.locator('[data-slot="partner-edit-outcome"][data-outcome="accepted"]'), "The corrected change is accepted, so a refused save is recoverable without re-entering the form.").toBeVisible();
+    await typeFromKeyboard(page, displayName, EDITED_DISPLAY_NAME, "Correcting the display name"); // The retry succeeds once the field it refused is corrected: the refusal changed nothing, so nothing has to be re-entered beyond the one value it named.
     await expect(page.locator("#field-displayName-error"), "The corrected field no longer states an error.").toHaveCount(0);
+    await expect(save, "The primary action is offered again once nothing above needs correcting.").toBeEnabled();
+    await pressFromKeyboard(page, save, "Saving the corrected change");
+    await expect(page.locator('[data-slot="partner-edit-outcome"][data-outcome="accepted"]'), "The corrected change is accepted, so a refused save is recoverable without re-entering the form.").toBeVisible();
     await expectDevelopmentData(page, "The permitted-field edit");
   });
   test("a stale revision shows the current value beside the preserved input and offers a deliberate choice", async ({ page, request }) => {
@@ -352,9 +361,20 @@ test.describe("a save that is refused", () => {
     await expect(conflict, "A stale revision is answered with the conflict panel rather than a silently lost change.").toBeVisible();
     for (const name of ["Apply my changes", "Discard mine"]) await expect(conflict.getByRole("button", { name }), `The panel offers ${name} deliberately rather than deciding for the worker.`).toBeVisible();
     await expect(conflict.getByText(/revision/u).first(), "The panel states the revision the record stands at, so the refusal is stated in the record's own terms.").toBeVisible();
+    const conflictText = (await conflict.innerText()).replace(/\s+/gu, " "); // The panel's own words, read once: a conflict states the fields that differ rather than the two whole records, so a worker reads what the other change actually touched.
+    expect(conflictText, "The panel lists the fields the record and this edit disagree on.").toContain("Fields that differ");
+    expect(conflictText, "The display name this edit changed is named by the form's own label for it.").toContain("Display name");
+    expect(conflictText, "The given name this edit changed is named by the label the form gives that field, not as a nested record.").toContain("Given name");
+    expect(conflictText, "No whole record is printed: the panel states no JSON object and restates none of the record's untouched fields - its revision, audience, source reference, tags or contact methods.").not.toMatch(/[{}]|"(?:revision|audience|source|tags|favourite|restrictions|contactMethods)"|ownerPrincipalId/u);
     await expect(displayName, "Every value the worker typed is still in its own field after the refusal.").toHaveValue(EDITED_DISPLAY_NAME);
     await expect(givenName, "Every value the worker typed is still in its own field after the refusal.").toHaveValue(EDITED_GIVEN_NAME);
     await expect(page.locator('[data-slot="partner-edit-outcome"][data-outcome="accepted"]'), "The refused attempt applied nothing, so no accepted change is claimed.").toHaveCount(0);
+    await page.goto(ROUTES.partnerEdit); // An armed conflict refuses a save that changes nothing too, because the revision is compared before anything is applied, so the panel must say that no field differs rather than fall back to printing the record.
+    await pressFromKeyboard(page, form.getByRole("button", { name: "Save these changes" }), "Saving with no field changed against a revision that has moved");
+    await expect(conflict, "A save whose input differs on no field is still refused as a conflict rather than silently applied.").toBeVisible();
+    const unchangedText = (await conflict.innerText()).replace(/\s+/gu, " ");
+    expect(unchangedText, "A conflict that disagrees on no field says so, naming the revision as what it refuses.").toContain("Your input states no value the record holds differently");
+    expect(unchangedText, "Even then no whole record is printed: no JSON object and none of the record's untouched fields reach the worker.").not.toMatch(/[{}]|"(?:revision|audience|source|tags|favourite|restrictions|contactMethods|displayName|nameParts)"|ownerPrincipalId/u);
     await clearFailurePlan(request);
     await page.goto(ROUTES.partnerEdit);
     await typeFromKeyboard(page, form.getByRole("textbox", { name: /^Given name/u }), EDITED_GIVEN_NAME, "The given name, re-entered");
@@ -406,5 +426,40 @@ test.describe("a save that is refused", () => {
     await expect(page.locator('[data-slot="autosave-status"]'), "The adopted text saves as an ordinary change once the condition behind the refusal is gone.").toHaveAttribute("data-autosave-state", "saved");
     await expect(page.getByRole("textbox", { name: "The text of this Update edition" }), "The saved text is the text still on screen.").toContainText(TYPED_PROSE);
     await expectDevelopmentData(page, "The Update editor after a recovered save");
+  });
+  test("a conflict recovered from a second tab leaves one saved state, and every edit after it reaches the record", async ({ page, context }) => {
+    await page.goto(ROUTES.editor); // This tab reads the edition at the revision it holds, so a save from a second tab leaves it behind.
+    const editor = page.getByRole("textbox", { name: "The text of this Update edition" });
+    await expect(editor, "The edition's own text is the one editing surface this family has.").toBeVisible();
+    const status = page.locator('[data-slot="autosave-status"]');
+    const other = await context.newPage(); // A second tab of this same browser and session, so the conflict is a real one between two writers rather than an injected failure.
+    await other.goto(ROUTES.editor);
+    const otherEditor = other.getByRole("textbox", { name: "The text of this Update edition" });
+    await expect(otherEditor, "The second tab opens the same edition's own editing surface.").toBeVisible();
+    await otherEditor.focus();
+    await other.keyboard.type(TYPED_ELSEWHERE);
+    await expect(other.locator('[data-slot="autosave-status"]'), "The second tab's save is acknowledged first, so the record has genuinely moved past the revision the first tab holds.").toHaveAttribute("data-autosave-state", "saved");
+    await editor.focus();
+    await page.keyboard.type(TYPED_STALE);
+    await expect(status, "The first tab's save is refused as a conflict with the revision the record now stands at.").toHaveAttribute("data-autosave-state", "conflict");
+    await other.close(); // The second tab has done its work: resolving the conflict belongs to the first tab.
+    await pressFromKeyboard(page, status.getByRole("button", { name: "Retry the same work" }), "Retrying the same work after the conflict");
+    await expect(status, "The retried save is acknowledged, so the one owner of the draft's save state states one saved outcome.").toHaveAttribute("data-autosave-state", "saved");
+    await expect(page.getByText(/Not saved/u), "Nothing on the page still says the text is unsaved: one owner of that state is what leaves one state on screen.").toHaveCount(0);
+    const revisionFact = page.locator('[data-slot="editor-shell-body"] dl dd .mono-identifier').first(); // The draft revision the editor states: the fact a save moves, and so the proof a later edit reached the service.
+    await expect(revisionFact, "The editor states the revision the recovered draft now stands at.").toBeVisible();
+    const recovered = (await revisionFact.innerText()).trim();
+    await editor.focus();
+    await page.keyboard.type(TYPED_AFTER_RECOVERY);
+    await expect(status, "The first edit after the recovered conflict is saved rather than silently held back.").toHaveAttribute("data-autosave-state", "saved");
+    await expect(revisionFact, "The first edit after the recovered conflict reached the service: the stated draft revision moved.").not.toHaveText(recovered);
+    const afterFirstEdit = (await revisionFact.innerText()).trim();
+    await editor.focus();
+    await page.keyboard.type(TYPED_AFTER_RECOVERY_TOO);
+    await expect(status, "The second edit is saved as well, so recovering a conflict never halts the autosave.").toHaveAttribute("data-autosave-state", "saved");
+    await expect(revisionFact, "The second edit reached the service too: the stated draft revision moved again.").not.toHaveText(afterFirstEdit);
+    await page.reload();
+    await expect(page.getByRole("textbox", { name: "The text of this Update edition" }), "The text written after the recovered conflict is stored, so a reload still finds it in the editor.").toContainText(TYPED_AFTER_RECOVERY_TOO);
+    await expectDevelopmentData(page, "The Update editor after a recovered conflict");
   });
 });

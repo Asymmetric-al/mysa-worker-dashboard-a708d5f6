@@ -13,7 +13,7 @@ import type { CoverageState, ReadEnvelope, Scope, ValueState } from "@/modules/d
 import { isReadResult } from "@/modules/data-service/outcome";
 import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { formatMinor } from "@/modules/money/format";
-import { BUCKET_MEANING, CHART_CAPTIONS, COMMITMENT_KIND_LABELS, COUNT_STATE_NOTE, EMPTY_STATES, MEASURE_LABELS, NO_PERCENTAGE, fillTemplate } from "../copy";
+import { BUCKET_MEANING, CHART_CAPTIONS, COMMITMENT_KIND_LABELS, COUNT_STATE_NOTE, EMPTY_STATES, MEASURE_LABELS, MONTHLY_EQUIVALENT_NO_COMMITMENTS, NO_PERCENTAGE, fillTemplate } from "../copy";
 import { useSupportOverview, type SupportOverviewRead } from "../hooks/use-support-overview";
 import { REPORT_CATALOG, REPORT_ORDER, reportHref } from "../report-catalog";
 import AmountValue from "./amount-value";
@@ -119,7 +119,7 @@ const PeriodNote = ({ period, coverage }: { readonly period: PeriodText; readonl
 );
 function MeasureSection({ title, description, period, coverage, children }: { readonly title: string; readonly description: string; readonly period: PeriodText; readonly coverage: CoverageState; readonly children: ReactNode }): ReactElement {
   return (
-    <SectionCard title={title} description={description} headingLevel={3} cardSize="sm" cardClassName="bg-muted/40 ring-border" contentClassName="flex flex-col gap-3">
+    <SectionCard title={title} description={description} headingLevel={3} cardVariant="muted" contentClassName="flex flex-col gap-3">
       <PeriodNote period={period} coverage={coverage} />
       {children}
     </SectionCard>
@@ -134,7 +134,7 @@ function CashCounts({ envelope, entry }: { readonly envelope: SupportOverviewEnv
         <CountRow label="Allocations" count={entry.allocationCount.count} state={stateOf(envelope, `${path}.allocationCount`, entry.allocationCount.valueState)} />
         <CountRow label="Donors" count={entry.donorCount.count} state={stateOf(envelope, `${path}.donorCount`, entry.donorCount.valueState)} />
       </dl>
-      <p>{"Each count is stated at its own grain and the three are never added together: a gift split between two allocations is one gift, two allocations and one donor, and a view that legitimately holds both grain levels counts the amount once."}</p>
+      <p className="type-supporting">{"Each count is stated at its own grain and the three are never added together: a gift split between two allocations is one gift, two allocations and one donor, and a view that legitimately holds both grain levels counts the amount once."}</p>
     </div>
   );
 }
@@ -206,9 +206,12 @@ function MonthlyEquivalents({ envelope, period, locale }: { readonly envelope: S
 function CommittedSupport({ envelope, locale }: { readonly envelope: SupportOverviewEnvelope; readonly locale: string }): ReactElement {
   const report = envelope.data.report;
   const period = periodOf(report);
-  const hasCommitments = envelope.data.commitmentKinds.some((kind) => kind.count > 0);
+  const commitmentCount = envelope.data.commitmentKinds.reduce((total, kind) => total + kind.count, 0);
+  const hasCommitments = commitmentCount > 0;
   const hasMonthlyEquivalents = envelope.data.monthlyEquivalent.length > 0;
-  const empty = <StateNotice kind="empty" title={EMPTY_STATES.commitments.title} description={EMPTY_STATES.commitments.body} action={EMPTY_STATES.commitments.action} />;
+  const commitmentsEmpty = <StateNotice kind="empty" title={EMPTY_STATES.commitments.title} description={EMPTY_STATES.commitments.body} action={EMPTY_STATES.commitments.action} />;
+  // Two tabs, two measures: an empty monthly-equivalent list states that the source calculated no monthly equivalent, and says how many commitments it does report, because the absence of this measure is not an absence of commitments.
+  const monthlyEquivalentsEmpty = <StateNotice kind="empty" title={EMPTY_STATES.monthlyEquivalents.title} description={commitmentCount === 0 ? MONTHLY_EQUIVALENT_NO_COMMITMENTS : fillTemplate(EMPTY_STATES.monthlyEquivalents.body, { count: String(commitmentCount) })} action={EMPTY_STATES.monthlyEquivalents.action} />;
   return (
     <Tabs defaultValue="committed" className="min-w-0 gap-4">
       <TabsList aria-label="Committed support and monthly equivalents" className="max-w-full">
@@ -216,12 +219,12 @@ function CommittedSupport({ envelope, locale }: { readonly envelope: SupportOver
         <TabsTrigger value="monthly">Monthly equivalents</TabsTrigger>
       </TabsList>
       <TabsContent value="committed" aria-label="Committed versus goal" className="flex flex-col gap-3">
-        {hasCommitments ? <CommitmentKinds envelope={envelope} period={period} /> : empty}
-        <p className="max-w-prose text-sm text-muted-foreground">{"The goal is compared with received support on the goal's own read, and its progress figure is stated once, in the Support goal section below. It is never recomputed, re-rounded or capped here."}</p>
-        <p className="max-w-prose text-sm">{goalComparisonSentence(report.goal)}</p>
+        {hasCommitments ? <CommitmentKinds envelope={envelope} period={period} /> : commitmentsEmpty}
+        <p className="max-w-prose type-supporting">{"The goal is compared with received support on the goal's own read, and its progress figure is stated once, in the Support goal section below. It is never recomputed, re-rounded or capped here."}</p>
+        <p className="max-w-prose type-body">{goalComparisonSentence(report.goal)}</p>
       </TabsContent>
       <TabsContent value="monthly" aria-label="Monthly equivalents" className="flex flex-col gap-3">
-        {hasMonthlyEquivalents ? <MonthlyEquivalents envelope={envelope} period={period} locale={locale} /> : empty}
+        {hasMonthlyEquivalents ? <MonthlyEquivalents envelope={envelope} period={period} locale={locale} /> : monthlyEquivalentsEmpty}
       </TabsContent>
     </Tabs>
   );
@@ -240,11 +243,11 @@ function Destinations(): ReactElement {
   const links = [{ href: "/support/gifts", label: "Read the whole gifts ledger" }, { href: "/support/commitments", label: "Read the commitments" }, ...REPORT_ORDER.map((id) => ({ href: reportHref(id), label: REPORT_CATALOG[id].title }))];
   return (
     <section aria-label="Destinations" className="flex flex-col gap-3">
-      <h3>Read the whole ledger, the commitments and the four reports</h3>
+      <h3 className="type-subsection-title">Read the whole ledger, the commitments and the four reports</h3>
       <ul className="flex flex-wrap gap-2">
         {links.map((link) => (
           <li key={link.href}>
-            <Link href={link.href} className={linkClass}>
+            <Link href={link.href} data-slot="button" className={linkClass}>
               {link.label}
             </Link>
           </li>
@@ -261,13 +264,13 @@ function OverviewFigures({ envelope, scope, locale, dir }: OverviewFiguresProps)
     <div className="flex min-w-0 flex-col gap-8">
       <SnapshotStatement basis={report.snapshot.basis} currencies={report.snapshot.currencies} period={periodOf(report)} coverage={envelope.coverage} asOf={report.snapshot.asOf} isCurrentPeriod={isCurrentPeriodOf(report)} locale={locale} />
       <section aria-label="Cash received in this period" className="flex min-w-0 flex-col gap-3">
-        <h3>Cash received</h3>
+        <h3 className="type-subsection-title">Cash received</h3>
         <CashSummary envelope={envelope} locale={locale} />
       </section>
       <RecurringOutcomes envelope={envelope} />
       <section aria-label="Committed support and the goal it is read beside" className="flex min-w-0 flex-col gap-3">
-        <h3>Committed support</h3>
-        <p className="max-w-prose text-sm text-muted-foreground">{"Commitments, committed amounts and the goal are measures of their own. They are read beside received support and are never added to it, divided by it, or presented as one combined figure."}</p>
+        <h3 className="type-subsection-title">Committed support</h3>
+        <p className="type-supporting max-w-prose">{"Commitments, committed amounts and the goal are measures of their own. They are read beside received support and are never added to it, divided by it, or presented as one combined figure."}</p>
         <CommittedSupport envelope={envelope} locale={locale} />
       </section>
       <MonthlyHistory report={report} locale={locale} />
@@ -300,8 +303,8 @@ export function SupportOverview({ scope, locale, dir, initialEnvelope, className
   return (
     <div dir={dir} className={cn("flex w-full min-w-0 flex-col gap-6", className)}>
       <header className="flex min-w-0 flex-col gap-2">
-        <h2 className="font-heading text-xl font-semibold tracking-tight text-pretty wrap-anywhere">Received support</h2>
-        <p className="max-w-prose text-sm text-muted-foreground">
+        <h2 className="type-section-title text-pretty wrap-anywhere">Received support</h2>
+        <p className="type-supporting max-w-prose">
           {"Cash received on the one named basis this application measures, then the recurring outcomes that are not cash and the committed measures kept separate from both. Every figure states its period, its coverage and the instant it was read at, and a currency is never combined with another."}
         </p>
       </header>

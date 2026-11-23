@@ -1,7 +1,8 @@
 import { reads, refusedRead, toResponse } from "@/modules/data-service";
 import { jsonBodyOf } from "../handler";
-import { reportRequestSchema, supportQueryOf } from "../support/query";
+import { foreignScopeRefusal, reportRequestSchema, supportQueryOf } from "../support/query";
 import { READ_ATTEMPT, readResponse } from "../read";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 function requestBodyOf(body: unknown): unknown {
@@ -9,8 +10,13 @@ function requestBodyOf(body: unknown): unknown {
   return { query: body };
 }
 /** Computes one of the four fixed reports for the query the body states. */
-export async function POST(request: Request): Promise<Response> {
+async function runReport(request: Request): Promise<Response> {
   const parsed = reportRequestSchema.safeParse(requestBodyOf(await jsonBodyOf(request)));
   if (!parsed.success) return toResponse(refusedRead(READ_ATTEMPT, parsed.error));
-  return readResponse(READ_ATTEMPT, () => reads.support.readReport(parsed.data.query.reportId, supportQueryOf(parsed.data.query)));
+  const { query } = parsed.data;
+  return readResponse(READ_ATTEMPT, async () => {
+    const read = await reads.support.readReport(query.reportId, supportQueryOf(query));
+    return read.kind === "envelope" ? (foreignScopeRefusal(query.scope, read.envelope.scope) ?? read) : read;
+  });
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: runReport });

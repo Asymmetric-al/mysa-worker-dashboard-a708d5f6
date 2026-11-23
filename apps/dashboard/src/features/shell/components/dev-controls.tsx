@@ -85,7 +85,7 @@ function ReadyControls({ devState, transports, onReread, className }: ReadyContr
       <DevPanel devState={devState} onSetScenario={transports.onSetScenario} onSetClock={transports.onSetClock} onAdvanceClock={transports.onAdvanceClock} onSetFailurePlan={transports.onSetFailurePlan} reset={transports.reset} />
       <fieldset data-slot="dev-controls-presets" aria-describedby={presetsHintId} aria-busy={advancing ? true : undefined} className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4">
         <legend className="px-1 text-sm font-medium">{CLOCK_COPY.presetsLabel}</legend>
-        <p id={presetsHintId} className="text-sm text-pretty text-muted-foreground">
+        <p id={presetsHintId} className="type-supporting text-pretty">
           {CLOCK_COPY.body}
         </p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -95,7 +95,7 @@ function ReadyControls({ devState, transports, onReread, className }: ReadyContr
             </Button>
           ))}
         </div>
-        {advancing ? <output className="block text-sm text-pretty text-muted-foreground">{CLOCK_COPY.presetPendingNote}</output> : null}
+        {advancing ? <output className="block type-supporting text-pretty">{CLOCK_COPY.presetPendingNote}</output> : null}
         {receipt === null ? null : (
           <div data-slot="dev-controls-preset-result" data-outcome={receipt.outcome.outcome} className="min-w-0">
             <OperationResult
@@ -151,9 +151,9 @@ function PersonaControl({ devState, onSelectPersona, onReread }: { readonly devS
   const receiptHeading = receipt !== null && isSettledOutcome(receipt.outcome) ? `${PERSONA_SWITCH_COPY.label}: ${switched?.label ?? receipt.personaId}` : undefined;
   return (
     <SectionCard title={PERSONA_SWITCH_COPY.label} headingLevel={3} description={PERSONA_SWITCH_COPY.explanation} cardClassName="min-w-0" dataSlot="dev-controls-identity" contentClassName="flex min-w-0 flex-col gap-4">
-      <p className="text-sm text-pretty text-muted-foreground">{PERSONA_SWITCH_COPY.selectionNote}</p>
-      <p className="text-sm text-pretty text-muted-foreground">{PERSONA_SWITCH_COPY.grantsNothingNote}</p>
-      {catalogue.state !== "persisted" && catalogue.finding !== null ? <p className="text-sm text-pretty text-muted-foreground">{catalogue.finding}</p> : null}
+      <p className="type-supporting text-pretty">{PERSONA_SWITCH_COPY.selectionNote}</p>
+      <p className="type-supporting text-pretty">{PERSONA_SWITCH_COPY.grantsNothingNote}</p>
+      {catalogue.state !== "persisted" && catalogue.finding !== null ? <p className="type-supporting text-pretty">{catalogue.finding}</p> : null}
       {catalogue.personas.length === 0 ? null : (
         <div className="flex min-w-0 flex-col gap-1">
           <Label htmlFor={selectId}>{PERSONA_SWITCH_COPY.selectLabel}</Label>
@@ -169,7 +169,7 @@ function PersonaControl({ devState, onSelectPersona, onReread }: { readonly devS
               </NativeSelectOption>
             ))}
           </NativeSelect>
-          <p className="text-sm text-pretty text-muted-foreground">{activePersona === undefined ? PERSONA_SWITCH_COPY.unlistedIdentityNote : activePersona.description}</p>
+          <p className="type-supporting text-pretty">{activePersona === undefined ? PERSONA_SWITCH_COPY.unlistedIdentityNote : activePersona.description}</p>
           {activePersona === undefined ? null : (
             <output aria-atomic="true" className="mono-identifier text-xs break-all text-muted-foreground">
               {activePersona.id}
@@ -177,11 +177,11 @@ function PersonaControl({ devState, onSelectPersona, onReread }: { readonly devS
           )}
         </div>
       )}
-      <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+      <p className="flex min-w-0 flex-wrap items-center gap-2 type-supporting">
         <Badge variant="outline">{PERSONA_SESSION_STATE_LABELS[sessionState].label}</Badge>
         <span className="min-w-0 text-pretty text-muted-foreground">{PERSONA_SESSION_STATE_OUTCOMES[sessionState]}</span>
       </p>
-      {switching ? <output className="block text-sm text-pretty text-muted-foreground">{PERSONA_SWITCH_COPY.pendingNote}</output> : null}
+      {switching ? <output className="block type-supporting text-pretty">{PERSONA_SWITCH_COPY.pendingNote}</output> : null}
       {receipt === null ? null : (
         <div data-slot="dev-controls-persona-result" data-outcome={receipt.outcome.outcome} className="min-w-0">
           <OperationResult outcome={receipt.outcome} heading={receiptHeading} headingLevel={4} onCheckResult={receipt.outcome.outcome === "unknown" ? onReread : undefined} onRetrySameWork={mayReplay(receipt.outcome) ? replay : undefined} />

@@ -1,10 +1,12 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from "react";
 import { intentKeyOf, mayReplay, reappliableRevision, useReviewedMutation, type MutationSubmit } from "@/components/action-review";
+import { hasSettled } from "@/components/attempt";
 import OperationResult, { type OperationResultProps } from "@/components/operation-result";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { UNSUBSCRIBE_COPY } from "@/features/audience/copy/preferences";
 import { cn } from "@/lib/cn";
 import type { MembershipState, MutationInput, Scope } from "@/modules/data-service/envelope";
@@ -15,7 +17,7 @@ type UnsubscribeInput = Omit<MutationInput<UnsubscribePayload>, "operationId">;
 /** The one membership this confirmation is about: */ export type UnsubscribeTarget = { readonly publisherId: string; readonly publisherLabel: string; readonly purpose: UnsubscribePayload["purpose"]; readonly purposeLabel: string; readonly membershipState: MembershipState; readonly expectedRevision: string };
 export type UnsubscribeConfirmProps = { readonly scope: Scope; readonly target: UnsubscribeTarget; readonly open?: boolean; readonly onOpenChange?: (open: boolean) => void; readonly disabled?: boolean; readonly disabledReason?: string; readonly onCheckResult?: () => void; readonly className?: string };
 const IDENTIFIER_CLASS = "mono-identifier wrap-anywhere";
-const ACTION_CLASS = "h-auto min-h-9 max-w-full py-2 whitespace-normal text-pretty";
+const ACTION_CLASS = cn(BUTTON_WRAP_CLASS, "text-pretty");
 const CURRENT_STATE_LABEL = "This membership today:";
 const STRICT_SCOPE_REASON = "This confirmation applies to exactly one publisher and one purpose, and this membership does not state both, so nothing can be submitted from here.";
 const AUTHORITY_REASON = "This session cannot turn off these notices.";
@@ -68,6 +70,7 @@ const PublisherSentence = ({ template, value }: { readonly template: string; rea
   const setDialogOpen = onOpenChange ?? setDialogOpenHere;
   const resultRef = useRef<HTMLDivElement | null>(null);
   const unsubscribe = useUnsubscribe();
+  const router = useRouter();
   const submit = useCallback<MutationSubmit<UnsubscribePayload>>((submitted) => unsubscribe.mutateAsync(submitted), [unsubscribe]);
   const review = useReviewedMutation<UnsubscribePayload>(submit);
   const signature = useMemo(() => membershipSignature(scope, target.publisherId, target.purpose), [scope, target.publisherId, target.purpose]);
@@ -87,15 +90,20 @@ const PublisherSentence = ({ template, value }: { readonly template: string; rea
     if (current === null) return;
     resultRef.current?.focus();
   }, [current]);
+  // The membership state stated above is the page's own server read, and no client query mounts that read, so the route is asked to read itself again once a result stands and not after a refusal, which changed nothing. The receipt below is this component's own state, so it stays on screen across that re-read.
+  const record = (outcome: UnsubscribeOutcome): void => {
+    setSettled({ signature, outcome });
+    if (hasSettled(outcome)) router.refresh();
+  };
   const settle = (run: () => Promise<UnsubscribeOutcome | null>): void => {
     void run().then((outcome) => {
-      if (outcome !== null) setSettled({ signature, outcome });
+      if (outcome !== null) record(outcome);
     });
   };
   const confirm = (): void => {
     if (input === null) return;
     setDialogOpen(false);
-    void review.submit(input).then((outcome) => setSettled({ signature, outcome }));
+    void review.submit(input).then(record);
   };
   const replaySameAttempt = (): void => settle(() => review.retry());
   const applyAgain = (): void => settle(() => review.reapply());
@@ -103,11 +111,11 @@ const PublisherSentence = ({ template, value }: { readonly template: string; rea
   const reapplyHandler = reappliableRevision(current) === null ? undefined : applyAgain;
   return (
     <section data-slot="unsubscribe-confirm" data-state={state} data-membership-state={target.membershipState} aria-labelledby={titleId} aria-busy={review.pending ? true : undefined} className={cn("flex min-w-0 flex-col gap-3 text-start", className)}>
-      <h3 id={titleId} className="text-base font-medium wrap-anywhere">
+      <h3 id={titleId} className="type-subsection-title wrap-anywhere">
         {UNSUBSCRIBE_COPY.heading}
       </h3>
-      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">Turning these notices off changes one membership: this publisher's Update email for this purpose. Every other purpose, every other publisher and every other record stays as it is.</p>
-      <p className="text-sm text-pretty wrap-anywhere">
+      <p className="type-supporting text-pretty wrap-anywhere">Turning these notices off changes one membership: this publisher's Update email for this purpose. Every other purpose, every other publisher and every other record stays as it is.</p>
+      <p className="type-body text-pretty wrap-anywhere">
         {CURRENT_STATE_LABEL} <StatedValue value={membershipState} />.
       </p>
       <div className="flex flex-wrap items-center gap-2">
@@ -141,7 +149,7 @@ const PublisherSentence = ({ template, value }: { readonly template: string; rea
                 <p>{UNSUBSCRIBE_COPY.recallStatement}</p>
               </AlertDescription>
             </Alert>
-            {unavailableReason === null ? null : <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{unavailableReason}</p>}
+            {unavailableReason === null ? null : <p className="type-supporting text-pretty wrap-anywhere">{unavailableReason}</p>}
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction confirmVariant="destructive" className={ACTION_CLASS} disabled={actionUnavailable} onClick={confirm}>
@@ -153,18 +161,18 @@ const PublisherSentence = ({ template, value }: { readonly template: string; rea
       </div>
       {review.pending ? <output className="block text-sm text-muted-foreground text-pretty wrap-anywhere">Turning off these notices — working</output> : null}
       {unavailableReason === null ? null : (
-        <p id={reasonId} className="text-sm text-muted-foreground text-pretty wrap-anywhere">
+        <p id={reasonId} className="type-supporting text-pretty wrap-anywhere">
           {unavailableReason}
         </p>
       )}
-      {target.membershipState === "off" && current === null ? <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{ALREADY_OFF_NOTE}</p> : null}
+      {target.membershipState === "off" && current === null ? <p className="type-supporting text-pretty wrap-anywhere">{ALREADY_OFF_NOTE}</p> : null}
       {current === null ? null : (
         <div ref={resultRef} tabIndex={-1} data-slot="unsubscribe-confirm-result" data-outcome={current.outcome} className="flex min-w-0 flex-col gap-3">
           <OperationResult outcome={current} headingLevel={4} onCheckResult={current !== null && current.outcome === "unknown" ? (onCheckResult ?? replaySameAttempt) : undefined} onRetrySameWork={retrySameWork} onReapply={reapplyHandler} fieldLabels={PAYLOAD_FIELD_LABELS} />
           {statement === null ? null : (
             <Alert role={undefined} data-slot="unsubscribe-confirm-statement">
               <AlertTitle>
-                <h4 className="wrap-anywhere">{statement.title}</h4>
+                <h4 className="type-group-title wrap-anywhere">{statement.title}</h4>
               </AlertTitle>
               <AlertDescription className="flex flex-col gap-2 text-pretty wrap-anywhere">
                 {statement.sentences.map((sentence) => (

@@ -126,7 +126,7 @@ function FacetLoading(): ReactNode {
     </div>
   );
 }
-const LayerNote = ({ children }: { readonly children: ReactNode }): ReactNode => <p className="text-sm leading-snug text-muted-foreground">{children}</p>;
+const LayerNote = ({ children }: { readonly children: ReactNode }): ReactNode => <p className="type-supporting">{children}</p>;
 type FacetControlProps = { readonly facet: FacetSpec; readonly selected: readonly string[]; readonly onSelectionChange: (values: readonly string[]) => void; readonly pending: boolean; readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly describedBy?: string };
 const FacetTriggerContent = ({ facet, selectedCount }: { readonly facet: FacetSpec; readonly selectedCount: number }): ReactNode => (
   <>
@@ -224,7 +224,7 @@ function SingleFacetControl({ facet, selected, onSelectionChange, pending }: Fac
   return (
     <Combobox items={valueIds} value={current} itemToStringLabel={(valueId: string) => labelOfValue(facet, valueId)} onValueChange={(next: string | null) => onSelectionChange(next === null ? [] : [next])}>
       <ComboboxInput aria-label={facet.label} placeholder={facet.label} showClear={current !== null} className="w-44 max-w-full" />
-      <ComboboxContent className="w-64 max-w-[calc(100vw-2rem)]">
+      <ComboboxContent className="w-80 max-w-[calc(100vw-2rem)]">
         {loading ? (
           <div className="p-3" aria-busy="true">
             <span className="sr-only">{TOOLBAR_COPY.facetLoading}</span>

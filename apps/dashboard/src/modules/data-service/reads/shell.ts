@@ -49,6 +49,7 @@ import {
   type ValueState,
 } from "../envelope";
 import type { ReadResult } from "../outcome";
+import { resolveWorlds, scopeOf } from "./audience";
 import { answerOf, deniedRead, instantOf, readAction, readDecodedState, resolveReading, sourceUnavailableRead, statedProjection, storeSource } from "./frame";
 export type AdmissionGuidanceKey = "workspace-ready" | "account-recovery" | "request-access" | "sign-in-again" | "retry-later";
 export type AdmissionContext = { readonly organizationId: string; readonly ministryId: string; readonly supportSubjectId: string };
@@ -203,6 +204,8 @@ function commitmentAttentionItems(commitments: readonly CommitmentRowRecord[], c
     .sort((left, right) => compareCodeUnits(left.commitmentRowId, right.commitmentRowId))
     .map((record) => homeItem({ itemId: `commitment:${record.commitmentRowId}`, section: "attention", reason: "commitment-needs-attention", destination: `/support/commitments/${record.commitmentRowId}`, label: record.cadence, status: "needs-attention" }));
 }
+/** The delivery surface reports one named notice, so the destination that opens it must name that notice. */
+const deliveryDestinationOf = (intentId: string): string => `/communication/delivery?intentId=${encodeURIComponent(intentId)}`;
 function notificationItems(intents: readonly NotificationIntentRecord[], results: readonly NotificationSendResultRecord[], context: HomeBuildContext): readonly HomeItem[] {
   if (!canView(context.session, { kind: "content-variant", scope: context.scope }).allowed) return [];
   const resultsByIntent = new Map<string, NotificationSendResultRecord[]>();
@@ -217,7 +220,7 @@ function notificationItems(intents: readonly NotificationIntentRecord[], results
     const outcomes = resultsByIntent.get(intent.intentId) ?? [];
     if (!(outcomes.length === 0 || outcomes.some((outcome) => outcome.recipients.some((copy) => copy.state !== "accepted")))) continue;
     const lastRecordedAt = outcomes.at(-1)?.recordedAt ?? null;
-    items.push(homeItem({ itemId: `notification:${intent.intentId}`, section: "unfinished-work", reason: "notification-needs-attention", destination: "/communication/delivery", label: null, status: "needs-attention", onDate: lastRecordedAt === null ? null : civilDayOf(lastRecordedAt) }));
+    items.push(homeItem({ itemId: `notification:${intent.intentId}`, section: "unfinished-work", reason: "notification-needs-attention", destination: deliveryDestinationOf(intent.intentId), label: null, status: "needs-attention", onDate: lastRecordedAt === null ? null : civilDayOf(lastRecordedAt) }));
   }
   return items;
 }
@@ -341,7 +344,7 @@ function supportValueStates(figure: HomeSupportFigure): Readonly<Record<string, 
 }
 /** Reads the session's admission: which of the five states it is in, the guidance key the shell renders, and — only when admitted — the principal, the selected context and the scenario it runs. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readAdmissionState(): Promise<ReadResult<ReadEnvelope<AdmissionStateData>>> {
-  const opened = await resolveReading({});
+  const opened = await resolveReading({ job: "readAdmissionState" });
   if (!opened.ok) return opened.result;
   const session = opened.session;
   const asOf = opened.instant.toString();
@@ -353,14 +356,20 @@ export async function readAdmissionState(): Promise<ReadResult<ReadEnvelope<Admi
   const storedContext = stored.value.context;
   if (session.sessionState !== "signed-in") return answerOf(NO_CONTEXT_SCOPE, asOf, { data: { state: session.sessionState, guidance: GUIDANCE_BY_STATE[session.sessionState], principalId: null, context: null, scenarioId: null }, source, revision: storedContext.revision, coverage, actions });
   const selection = selectionOf(storedContext);
-  if (selection === undefined) return answerOf(NO_CONTEXT_SCOPE, asOf, { data: { state: "signed-in", guidance: "workspace-ready", principalId: session.principalId, context: null, scenarioId: session.scenarioId }, source, revision: storedContext.revision, coverage, actions });
+  if (selection === undefined) {
+    // A session that selected no context still states the authority its records are read in: the worlds it reads name the context in force, and a session holding none of its own states the principal it does hold.
+    const worlds = await resolveWorlds("readAdmissionState", { sessionId: session.sessionId });
+    if (!worlds.ok) return worlds.result;
+    const authority = scopeOf(session, worlds.published) ?? { ...NO_CONTEXT_SCOPE, principalId: session.principalId };
+    return answerOf(authority, asOf, { data: { state: "signed-in", guidance: "workspace-ready", principalId: session.principalId, context: null, scenarioId: session.scenarioId }, source, revision: storedContext.revision, coverage, actions });
+  }
   const admission = assertScope(session, selection.scope);
   if (!admission.ok) return { kind: "denied", denied: admission.denial };
   return answerOf(selection.scope, asOf, { data: { state: "signed-in", guidance: "workspace-ready", principalId: session.principalId, context: selection.context, scenarioId: session.scenarioId }, source, revision: storedContext.revision, coverage, actions });
 }
 /** Reads the memberships this session may act in, grouped by organisation and ministry, with the one in force marked and `directEntry` set when a single ministry makes a chooser unnecessary. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readContextChooser(): Promise<ReadResult<ReadEnvelope<ContextChooserData>>> {
-  const opened = await resolveReading({});
+  const opened = await resolveReading({ job: "readContextChooser" });
   if (!opened.ok) return opened.result;
   const session = opened.session;
   if (session.sessionState !== "signed-in") return deniedRead("not-admitted");
@@ -378,7 +387,7 @@ export async function readContextChooser(): Promise<ReadResult<ReadEnvelope<Cont
 }
 /** Reads the worker's day as Attention, Information and Unfinished work, every item carrying why it is there and where it goes, with received support stated through the one report computation. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readHome(): Promise<ReadResult<ReadEnvelope<HomeData>>> {
-  const opened = await resolveReading({});
+  const opened = await resolveReading({ job: "readHome" });
   if (!opened.ok) return opened.result;
   const session = opened.session;
   if (session.sessionState !== "signed-in") return deniedRead("not-admitted");

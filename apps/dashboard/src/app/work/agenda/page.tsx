@@ -33,7 +33,9 @@ export default async function WorkAgendaPage(): Promise<ReactElement> {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink render={<Link href="/work" />}>{"Work"}</BreadcrumbLink>
+            <BreadcrumbLink className="inline-link" render={<Link href="/work" />}>
+              {"Work"}
+            </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>

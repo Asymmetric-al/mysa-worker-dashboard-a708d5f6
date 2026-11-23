@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { mutationInputSchema, mutations } from "@/modules/data-service";
 import { claimedWriteRoute, dispatch, type ClaimedWrite } from "../../handler";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const MESSAGES = { operationRequired: "State which step this request takes as payload.operation: submitForReview, approveCandidate, requestChanges or publishVariants.", bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload." } as const;
@@ -24,4 +25,5 @@ const WRITES = {
   publishVariants: (raw, { operationId, sessionId }) => dispatch(publishVariantsBodySchema, raw, operationId, "operation", (input) => mutations.pages.publishVariants(sessionId, input)),
 } satisfies Readonly<Record<ReleaseOperation, ClaimedWrite>>;
 /** One step of the page release ladder, selected by `payload.operation`. */
-export const POST = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES);
+const advanceRelease = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES);
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: advanceRelease });

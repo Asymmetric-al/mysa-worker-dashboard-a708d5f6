@@ -6,7 +6,7 @@ import ActionReview from "@/components/action-review";
 import { scopeKey } from "@/components/context-switch-guard";
 import StateNotice from "@/components/state-notice";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import type { SourceReference } from "@/lib/ids";
 import type { TaskShareRefusalReason, TaskShareSummaryState, TaskStatus } from "@/modules/coaching/taskshare";
@@ -57,7 +57,7 @@ const WITHHELD_REASON_STATEMENT: Readonly<Record<TaskShareRefusalReason, string>
 };
 const NO_WITHHELD_REASON_STATEMENT = "The read did not state why this summary is held. Nothing is shown until you review it again.";
 const STOP_EFFECT = STOP_EFFECT_COPY["remove-task-share"];
-const CONTROL_CLASS = "h-auto min-h-8 max-w-full py-1.5 whitespace-normal text-start";
+const CONTROL_CLASS = `${BUTTON_WRAP_CLASS} text-start`;
 const canStop = (state: TaskShareSummaryState): boolean => state === "shared" || state === "needs-review";
 const Fact = ({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement => (
   <div className="flex min-w-0 items-baseline gap-x-1.5">
@@ -68,11 +68,11 @@ const Fact = ({ label, children }: { readonly label: string; readonly children: 
 const withheldReasonStatement = (reason: TaskShareRefusalReason | null | undefined): string => (reason === null || reason === undefined ? NO_WITHHELD_REASON_STATEMENT : WITHHELD_REASON_STATEMENT[reason]);
 function SharedDescription({ description }: { readonly description: string | null }): ReactElement {
   const text = description === null ? "" : description.trim();
-  if (text === "") return <p className="min-w-0 text-sm text-pretty text-muted-foreground">{"The read states this summary as shared but carries no description for it, so nothing is reproduced here. Review it again to share a description."}</p>;
+  if (text === "") return <p className="min-w-0 type-supporting text-pretty">{"The read states this summary as shared but carries no description for it, so nothing is reproduced here. Review it again to share a description."}</p>;
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <p className="text-xs font-medium text-muted-foreground">{"The description you reviewed"}</p>
-      <p className="min-w-0 text-sm text-pretty whitespace-pre-line wrap-anywhere">{text}</p>
+      <p className="min-w-0 type-body text-pretty whitespace-pre-line wrap-anywhere">{text}</p>
     </div>
   );
 }
@@ -80,22 +80,22 @@ function ShareStatement({ entry }: { readonly entry: TaskShareListEntry }): Reac
   const copy = TASK_SHARE_STATE_COPY[entry.state];
   switch (entry.state) {
     case "shared":
-      return <p className="min-w-0 text-sm text-pretty text-muted-foreground">{copy.description}</p>;
+      return <p className="min-w-0 type-supporting text-pretty">{copy.description}</p>;
     case "needs-review":
       return (
         <div className="flex min-w-0 flex-col gap-1.5">
-          <p className="min-w-0 text-sm text-pretty">
+          <p className="min-w-0 type-body text-pretty">
             <span className="font-medium">{`Description withheld. `}</span>
             {copy.description}
           </p>
-          <p className="min-w-0 text-sm text-pretty text-muted-foreground">{withheldReasonStatement(entry.withheldReason)}</p>
-          <p className="min-w-0 text-sm">
-            <Link {...{ href: REVIEW_AGAIN_HREF, className: "underline underline-offset-4" }}>{"Review it again"}</Link>
+          <p className="min-w-0 type-supporting text-pretty">{withheldReasonStatement(entry.withheldReason)}</p>
+          <p className="min-w-0 type-body">
+            <Link {...{ href: REVIEW_AGAIN_HREF, className: "inline-link" }}>{"Review it again"}</Link>
           </p>
         </div>
       );
     case "removed":
-      return <p className="min-w-0 text-sm text-pretty text-muted-foreground">{copy.description}</p>;
+      return <p className="min-w-0 type-supporting text-pretty">{copy.description}</p>;
     case "unavailable":
       return <StateNotice kind="unavailable" headingLevel={4} title={copy.label} description={copy.description} className="min-w-0" />;
   }
@@ -110,7 +110,7 @@ function TaskShareItem({ entry, stopping, reviewRegionId, onStop }: TaskShareIte
       <section aria-labelledby={titleId} data-state={entry.state} className="flex min-w-0 flex-col gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <StatusBadge label={copy.label} tone={STATE_TONE[entry.state]} srPrefix={"Sharing state"} />
-          <h3 id={titleId} className="min-w-0 text-sm font-medium text-pretty">
+          <h3 id={titleId} className="min-w-0 type-subsection-title text-pretty">
             {`${copy.label}: ${SHARE_TITLE_NOUN} `}
             <bdi className="mono-identifier">{entry.taskId}</bdi>
           </h3>
@@ -208,7 +208,7 @@ export default function TaskShareList({ shares, scope, locale, unavailable }: Ta
           />
         ) : (
           <>
-            <p className="min-w-0 text-sm text-pretty text-muted-foreground">{"Dates are calendar days: a due date carries no time of day and no zone."}</p>
+            <p className="min-w-0 type-supporting text-pretty">{"Dates are calendar days: a due date carries no time of day and no zone."}</p>
             <ul aria-labelledby={regionHeadingId} className="flex min-w-0 flex-col gap-4">
               {shares.map((entry) => (
                 <TaskShareItem key={entry.shareId} entry={entry} stopping={stopping !== null && stopping.shareId === entry.shareId} reviewRegionId={reviewRegionId} onStop={beginStop} />
@@ -228,19 +228,19 @@ export default function TaskShareList({ shares, scope, locale, unavailable }: Ta
                 title={STOP_EFFECT.title}
                 description={
                   <div className="flex min-w-0 flex-col gap-2">
-                    <p>
+                    <p className="type-supporting">
                       {`This stops the summary for ${SHARE_TITLE_NOUN} `}
                       <bdi className="mono-identifier">{stopping.taskId}</bdi>
                       {`, ${STOP_STATE_PHRASE[stopping.state]}.`}
                     </p>
-                    <p>{STOP_EFFECT.consequence}</p>
-                    <p>{STOP_EFFECT.assurance}</p>
+                    <p className="type-supporting">{STOP_EFFECT.consequence}</p>
+                    <p className="type-supporting">{STOP_EFFECT.assurance}</p>
                   </div>
                 }
                 consequence={
                   <div className="flex min-w-0 flex-col gap-2">
-                    <p>{STOP_EFFECT.consequence}</p>
-                    <p>{STOP_EFFECT.assurance}</p>
+                    <p className="type-supporting">{STOP_EFFECT.consequence}</p>
+                    <p className="type-supporting">{STOP_EFFECT.assurance}</p>
                   </div>
                 }
                 confirmLabel={STOP_LABEL}

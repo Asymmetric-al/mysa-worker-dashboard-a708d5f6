@@ -2,7 +2,7 @@
 import Link from "next/link";
 import type { ReactElement, ReactNode } from "react";
 import { PRIMARY_NAV } from "@/components/sidebar-nav";
-import { buttonVariants } from "@/components/ui/button";
+import { buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import SectionCard from "@/components/section-card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
@@ -80,12 +80,12 @@ export const HelpContent = ({ className }: HelpContentProps): ReactElement => (
       {SESSION_STATE_SECTIONS.map((state, index) => (
         <div key={state.key} className="flex min-w-0 flex-col gap-2">
           {index === 0 ? null : <Separator />}
-          <h4 className="font-medium">{state.title}</h4>
-          <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{state.body}</p>
+          <h4 className="type-group-title">{state.title}</h4>
+          <p className="type-supporting text-pretty wrap-anywhere">{state.body}</p>
           {state.steps.length === 0 ? null : (
             <>
               <p className="text-sm font-medium">What you can do</p>
-              <ol className="flex list-decimal flex-col gap-1.5 ps-5 text-sm text-pretty wrap-anywhere">
+              <ol className="flex list-decimal flex-col gap-1.5 ps-5 type-supporting text-pretty wrap-anywhere">
                 {state.steps.map((step) => (
                   <li key={step}>{step}</li>
                 ))}
@@ -96,63 +96,63 @@ export const HelpContent = ({ className }: HelpContentProps): ReactElement => (
       ))}
     </HelpSection>
     <HelpSection id={SECTION_IDS.context} title="Choosing and switching context" description={CHOOSER_COPY.body} contentClass="flex min-w-0 flex-col gap-4">
-      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{CHOOSER_COPY.oneMinistryNote}</p>
+      <p className="type-supporting text-pretty wrap-anywhere">{CHOOSER_COPY.oneMinistryNote}</p>
       <Separator />
-      <h4 className="font-medium">{CONTEXT_SWITCH_COPY.title}</h4>
-      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{CONTEXT_SWITCH_COPY.body}</p>
+      <h4 className="type-group-title">{CONTEXT_SWITCH_COPY.title}</h4>
+      <p className="type-supporting text-pretty wrap-anywhere">{CONTEXT_SWITCH_COPY.body}</p>
       <dl className="flex min-w-0 flex-col gap-3">
         {SWITCH_CHOICES.map((choice) => (
           <div key={choice.label} className="flex min-w-0 flex-col gap-1">
             <dt className="text-sm font-medium">{choice.label}</dt>
-            <dd className="text-sm text-muted-foreground text-pretty wrap-anywhere">{choice.note}</dd>
+            <dd className="type-supporting text-pretty wrap-anywhere">{choice.note}</dd>
           </div>
         ))}
       </dl>
-      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{CONTEXT_SWITCH_COPY.conflictNote}</p>
-      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{LATE_RESULT_DISCARDED}</p>
+      <p className="type-supporting text-pretty wrap-anywhere">{CONTEXT_SWITCH_COPY.conflictNote}</p>
+      <p className="type-supporting text-pretty wrap-anywhere">{LATE_RESULT_DISCARDED}</p>
     </HelpSection>
     <HelpSection id={SECTION_IDS.settings} title="Settings and its preferences" description={SETTINGS_INTRO} contentClass="flex min-w-0 flex-col gap-4">
       {SETTING_FACTS.map((fact, index) => (
         <div key={fact.heading} className="flex min-w-0 flex-col gap-2">
           {index === 0 ? null : <Separator />}
-          <h4 className="font-medium">{fact.heading}</h4>
-          <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{fact.body}</p>
+          <h4 className="type-group-title">{fact.heading}</h4>
+          <p className="type-supporting text-pretty wrap-anywhere">{fact.body}</p>
         </div>
       ))}
     </HelpSection>
     <HelpSection id={SECTION_IDS.development} title="The synthetic dataset and where each effect is labelled" description={DEVELOPMENT_INTRO} contentClass="flex min-w-0 flex-col gap-4">
-      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{DEVELOPMENT_LABEL_POINTER}</p>
+      <p className="type-supporting text-pretty wrap-anywhere">{DEVELOPMENT_LABEL_POINTER}</p>
       <Separator />
-      <h4 className="font-medium">Where an effect is labelled</h4>
-      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{SIMULATED_INTRO}</p>
+      <h4 className="type-group-title">Where an effect is labelled</h4>
+      <p className="type-supporting text-pretty wrap-anywhere">{SIMULATED_INTRO}</p>
       <dl className="flex min-w-0 flex-col gap-3">
         {SIMULATED_BOUNDARIES.map((boundary) => (
           <div key={boundary.name} className="flex min-w-0 flex-col gap-1">
             <dt className="text-sm font-medium">{boundary.name}</dt>
-            <dd className="text-sm text-muted-foreground text-pretty wrap-anywhere">{boundary.where}</dd>
+            <dd className="type-supporting text-pretty wrap-anywhere">{boundary.where}</dd>
           </div>
         ))}
       </dl>
       <Separator />
-      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{RESULT_DISTINCTIONS}</p>
+      <p className="type-supporting text-pretty wrap-anywhere">{RESULT_DISTINCTIONS}</p>
     </HelpSection>
     <HelpSection id={SECTION_IDS.destinations} title="Where each job begins" description="Each retained workflow begins at one of these destinations, and each destination is the shell's own entry for it, listed in the navigation's order." contentClass="flex min-w-0 flex-col gap-4">
       <nav aria-label="Workflow destinations" className="min-w-0">
         <ul className="flex min-w-0 flex-col gap-4">
           {DESTINATIONS.map((destination) => (
             <li key={destination.href} className="flex min-w-0 flex-col gap-2">
-              <h4 className="flex min-w-0 flex-wrap items-center">
-                <Link href={destination.href} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "h-auto min-h-8 max-w-full whitespace-normal py-1.5")}>
+              <h4 className="type-group-title flex min-w-0 flex-wrap items-center">
+                <Link href={destination.href} data-slot="button" className={cn(buttonVariants({ variant: "outline", size: "sm" }), BUTTON_WRAP_CLASS)}>
                   {destination.label}
                 </Link>
               </h4>
-              {destination.description === "" ? null : <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{destination.description}</p>}
+              {destination.description === "" ? null : <p className="type-supporting text-pretty wrap-anywhere">{destination.description}</p>}
             </li>
           ))}
         </ul>
       </nav>
       <Separator />
-      <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">Settings and Help sit together at the foot of the same rail, below its rule, and keep that position on every screen. A destination that has sub-surfaces shows them beneath it in the rail.</p>
+      <p className="type-supporting text-pretty wrap-anywhere">Settings and Help sit together at the foot of the same rail, below its rule, and keep that position on every screen. A destination that has sub-surfaces shows them beneath it in the rail.</p>
     </HelpSection>
   </div>
 );

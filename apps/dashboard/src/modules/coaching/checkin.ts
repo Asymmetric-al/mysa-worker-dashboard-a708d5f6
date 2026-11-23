@@ -124,19 +124,23 @@ export function validateCheckInRequest(payload: CheckInPayload): readonly CheckI
   violations.push(...answerViolations(payload.questions, payload.answers));
   return violations;
 }
+/** The answers a save writes: those the payload states beside the questions it carries, plus the stored answers that belong to no question, which such a payload has no position to state — a save writes the question set and never deletes that work. A payload carrying no questions is a whole statement on its own, so it replaces the stored answers. */
+const retainedAnswers = (existing: CheckInPrivateDraftRevision | undefined, payload: CheckInPayload): readonly CheckInAnswer[] => (existing === undefined || payload.questions.length === 0 ? payload.answers : [...payload.answers, ...existing.answers.filter((answer) => answer.questionOrder === null)]);
 /** Saves the worker's private draft — the only revision an autosave touches, so nothing becomes readable by a coach here; returns the saved record, or the refusal (a stale revision, or the. */
 export function savePrivateDraft(checkIn: CheckIn, payload: CheckInPayload, expectedRevision: number, now: CheckInInstant): CheckInMutation {
   const stale = staleRevisionRefusal(checkIn, expectedRevision);
   if (stale !== null) return err(stale);
   const admitted = admittedPayload(payload);
   if (!admitted.ok) return err(admitted.error);
-  const captured = captureQuestions(payload.questions, now);
-  if (!captured.ok) return err(captured.error);
-  const answers = freezeAnswers(payload.answers);
+  const recaptured = captureQuestions(payload.questions, now);
+  if (!recaptured.ok) return err(recaptured.error);
   const existing = checkIn.privateDraft;
-  if (existing !== undefined && sameQuestions(existing.captured.questions, captured.value.questions) && sameAnswers(existing.answers, answers)) return ok(accepted(checkIn, false, "This private draft already holds that text, so nothing changed."));
+  // The question set is captured when the editor starts, so a save that leaves its wording and order as they already stand keeps the instant it was captured: saving a draft is not a new capture, and only a change to the set itself begins one.
+  const captured = existing !== undefined && sameQuestions(existing.captured.questions, recaptured.value.questions) ? existing.captured : recaptured.value;
+  const answers = freezeAnswers(retainedAnswers(existing, payload));
+  if (existing !== undefined && captured === existing.captured && sameAnswers(existing.answers, answers)) return ok(accepted(checkIn, false, "This private draft already holds that text, so nothing changed."));
   const revision = checkIn.revision + 1;
-  const next: CheckIn = { ...checkIn, revision, privateDraft: { revisionId: revisionIdOf(checkIn.checkInId, "private", revision), captured: captured.value, answers, savedAt: now } };
+  const next: CheckIn = { ...checkIn, revision, privateDraft: { revisionId: revisionIdOf(checkIn.checkInId, "private", revision), captured, answers, savedAt: now } };
   return ok(accepted(next, true, "The private draft is saved. It stays your own working text: a coach sees nothing until you share this check-in."));
 }
 /** Shares the saved private draft by creating the shared revision a named coach may read, recording the recipients and the share duration; returns the shared record, or the refusal (a stale. */

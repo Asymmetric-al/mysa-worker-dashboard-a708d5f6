@@ -21,8 +21,8 @@ export const metadata: Metadata = { title: PAGE_TITLE };
 const TASK_LIST_KEYS = ["today", "upcoming", "overdue", "all", "undated"] as const satisfies readonly TaskListKey[];
 /** This surface's agenda address, named once so the link and any other reference to it state one address. */
 const AGENDA_HREF = "/work/agenda";
-/** The agenda link's treatment: the same shape a task row gives its own link, so one link style serves this surface — at least 24 CSS px tall (WCAG 2.5.8) and underlined, so the affordance is never carried by colour alone. */
-const AGENDA_LINK_CLASS = "inline-flex min-h-6 max-w-full items-center break-words underline underline-offset-3 hover:decoration-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+/** The agenda link's treatment: the same shape a task row gives its own link, so one link style serves this surface — at least 24 CSS px tall (WCAG 2.5.8) and carrying the one inline-link underline, so the affordance is never carried by colour alone. */
+const AGENDA_LINK_CLASS = "inline-flex min-h-6 max-w-full items-center break-words inline-link hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const DISPLAY_TIME_ZONE = REPORT_DEFAULT_TIME_ZONE;
 const TASK_PAGE_SIZE = PAGE_SIZE_DEFAULT;
 const LINK_CHOICE_PAGE_SIZE = PAGE_SIZE_DEFAULT;
@@ -69,7 +69,7 @@ export default async function WorkPage({ searchParams }: { readonly searchParams
   return (
     <PageColumn>
       <PageHeading title={PAGE_TITLE} paragraphs={[PAGE_COPY.lede, PAGE_COPY.zone]} />
-      <p className="text-sm">
+      <p className="type-body">
         <Link href={AGENDA_HREF} className={AGENDA_LINK_CLASS}>
           {PAGE_COPY.agendaLink}
         </Link>

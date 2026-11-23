@@ -25,6 +25,7 @@ type ResponseRow = NonNullable<RequestRow["response"]>;
 const responseKindOf = (recorded: ResponseRow["kind"]): ResponseKind => (recorded === "needs-clarification" ? "needs clarification" : recorded);
 const HEADING_TAG = { 3: "h3", 4: "h4" } as const;
 type RequestResponseHeadingLevel = keyof typeof HEADING_TAG;
+const HEADING_SCALE: Readonly<Record<RequestResponseHeadingLevel, string>> = { 3: "type-subsection-title", 4: "type-group-title" };
 const NESTED_HEADING_LEVEL = 4;
 const ASSERTING_KINDS: ReadonlySet<string> = new Set(ASSERTING_RESPONSE_KINDS);
 const NO_KIND_VALUE = "";
@@ -385,7 +386,7 @@ export default function RequestResponseForm({ initiativeId, request, scope, expe
   return (
     <section aria-labelledby={headingId} data-slot="request-response-form" data-state={response !== null ? "answered" : presentation === null ? "unpresented" : "awaiting"} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-1">
-        <Heading id={headingId} className="font-heading text-base font-medium text-pretty">
+        <Heading id={headingId} className={cn(HEADING_SCALE[headingLevel], "text-pretty")}>
           {RESPONSE_SURFACE_COPY.heading}
         </Heading>
         <p className="text-sm text-pretty text-muted-foreground">{RESPONSE_SURFACE_COPY.intro}</p>

@@ -7,7 +7,10 @@ type SearchParams = Record<string, string | string[] | undefined>;
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Receiving preview" };
 const LOCALE_PARAM = "locale";
+const VARIANT_PARAM = "variant";
 const MAX_LOCALE_TAG_LENGTH = 35;
+// A variant identity is one opaque reference naming a document, an audience and a language tag, so a stated value longer than this cannot name an edition of this application.
+const MAX_VARIANT_REFERENCE_LENGTH = 200;
 const NO_AUTHORITY_SCOPE: Scope = { organizationId: "" as Scope["organizationId"], ministryId: "" as Scope["ministryId"], supportSubjectId: "" as Scope["supportSubjectId"], principalId: "" as Scope["principalId"] };
 const UNNAMED_PERSONA = "this session's admitted reader";
 function personaLabelOf(development: DevelopmentRead): string | undefined {
@@ -23,11 +26,19 @@ function requestedLocaleFrom(searchParams: SearchParams): string | undefined {
   if (trimmed.length === 0 || trimmed.length > MAX_LOCALE_TAG_LENGTH) return undefined;
   return trimmed;
 }
-/** One published Update at its exact post, in the language the address asks for, exactly as this reader's access admits it right now. */
+function requestedVariantFrom(searchParams: SearchParams): string | undefined {
+  const stated = searchParams[VARIANT_PARAM];
+  if (typeof stated !== "string") return undefined;
+  const trimmed = stated.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_VARIANT_REFERENCE_LENGTH) return undefined;
+  return trimmed;
+}
+/** One published Update at its exact post, in the edition the address pins and the language it asks for, exactly as this reader's access admits it right now. */
 export default async function ReceivingPostPage({ params, searchParams }: { params: Promise<{ updateId: string }>; searchParams: Promise<SearchParams> }): Promise<ReactElement> {
   const [{ updateId }, stated] = await Promise.all([params, searchParams]);
   const locale = requestedLocaleFrom(stated);
-  const [post, development] = await Promise.all([reads.audience.readReceivingPost({ updateId, locale }), reads.dev.readDevState()]);
+  const variant = requestedVariantFrom(stated);
+  const [post, development] = await Promise.all([reads.audience.readReceivingPost({ updateId, locale, variant }), reads.dev.readDevState()]);
   const scope = post.kind === "envelope" ? post.envelope.scope : NO_AUTHORITY_SCOPE;
-  return <ReceivingPost scope={scope} params={{ updateId, locale }} initialEnvelope={post} persona={personaLabelOf(development) ?? UNNAMED_PERSONA} />;
+  return <ReceivingPost scope={scope} params={{ updateId, locale, variant }} initialEnvelope={post} persona={personaLabelOf(development) ?? UNNAMED_PERSONA} />;
 }

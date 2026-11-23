@@ -4,6 +4,7 @@ import { isRecord } from "@/lib/guards";
 import { newOperationId } from "@/lib/ids";
 import { mutations, reads, type MutationOutcome, type Scope } from "@/modules/data-service";
 import { resolveSession } from "@/modules/data-service/authorize";
+import { DEFAULT_SCENARIO_ID, type ScenarioId } from "@/modules/dev-runtime/scenario";
 import { DEFAULT_SESSION_ID, seed, type SeededSessionDocuments, type SessionStateDocument } from "@/modules/dev-runtime/seed";
 import { readSession, resetSession } from "@/modules/store/repository";
 import { SEED_INSTANT } from "@/modules/time/clock";
@@ -18,6 +19,8 @@ const SEEDED_EN_RELEASE = "release-update-en-1";
 /** The prose a later save writes, so a published revision and a newer draft can never be confused. */
 const LATER_PROSE = ["Autumn at Harbour Youth", "A later wording, written after the review."];
 const AWAITING_REVIEW_CODE = "awaiting-review";
+const SIMULATED_PARTIAL_RELEASE_CODE = "simulated-partial-release";
+const PARTIAL_RELEASE_SCENARIO = "partial-release-failure" as const;
 const PUBLISH_ONLY = "publish-only" as const;
 const PUBLISH_AND_NOTIFY = "publish-and-notify" as const;
 const describeOutcome = (outcome: MutationOutcome): string => JSON.stringify(outcome);
@@ -100,6 +103,15 @@ async function armLostAcknowledgement(): Promise<void> {
 async function disarmFailure(): Promise<void> {
   await mutations.dev.setFailurePlan({ operationId: newOperationId(), scope: scope(), expectedRevision: await developmentRevision(), payload: { plan: null } }, SESSION);
 }
+async function selectScenario(scenarioId: ScenarioId): Promise<void> {
+  acceptedOutcome(await mutations.dev.setScenario({ operationId: newOperationId(), scope: scope(), expectedRevision: await developmentRevision(), payload: { scenarioId } }, SESSION));
+}
+/** Puts this session back on the baseline scenario, so a case that selected another one leaves nothing behind for the case after it. */
+async function restoreScenario(): Promise<void> {
+  const state = expectEnvelope(await reads.dev.readDevState(SESSION), "this session's development state");
+  if (state.data.scenario.id === DEFAULT_SCENARIO_ID) return;
+  await selectScenario(DEFAULT_SCENARIO_ID);
+}
 beforeAll(async () => {
   vi.stubEnv("NODE_ENV", "development"); // The failure plan is a development control, gated on the build rather than on admission.
   const seeded = firstSaying(await seed(), "sessionId", DEFAULT_SESSION_ID, `The deterministic seed lays down no session ${JSON.stringify(DEFAULT_SESSION_ID)}, so this suite has no world to start from.`);
@@ -114,7 +126,9 @@ beforeEach(async () => {
   resolvedScope = resolution.session.selected;
 });
 afterEach(async () => {
-  if (resolvedScope !== undefined) await disarmFailure();
+  if (resolvedScope === undefined) return;
+  await disarmFailure(); // A case that armed a failure plan disarms it, so the next case starts from the seed's own plan.
+  await restoreScenario(); // A case that selected another scenario puts the session back on the baseline one, on the same terms.
 });
 afterAll(async () => {
   await resetSession(SESSION_ID);
@@ -187,6 +201,42 @@ describe("publishing one submission whose editions do not share a fate", () => {
     const arabicReleases = (await storedState()).releases.filter((release) => release.variantId === PUBLIC_AR_EDITION); // No release exists at the revision the failed attempt would have published, and no second head either.
     expect(arabicReleases.map((release) => release.releaseId)).toEqual([before.headRelease.releaseId]);
     expect(arabicReleases.filter((release) => release.revisionId === failing.candidateId)).toHaveLength(0);
+  });
+  it("simulates the partial failure when the partial-release-failure scenario is selected", async () => {
+    const seededCandidate = await candidateView(PUBLIC_AR_EDITION);
+    if (seededCandidate.data.status !== "reviewable") throw new Error("The seeded Arabic edition must hold a frozen candidate for this case to release it before the simulated partial release.");
+    await answerReviewAsApproved(PUBLIC_AR_EDITION, seededCandidate.data.candidate.candidateId);
+    const firstRelease = acceptedOutcome(await mutations.updates.publishVariants(SESSION_ID, await publicationInput([{ variantId: PUBLIC_AR_EDITION }])));
+    expect(firstRelease.items?.[0]?.state).toBe("released");
+    const priorGood = await editionView(PUBLIC_AR_EDITION); // The head the simulated failure has to keep, laid down by the same mutation every other case releases through.
+    if (priorGood.releaseHeadId === null || priorGood.headRelease === null) throw new Error("The Arabic edition must hold the release head the simulated failure keeps before this case starts.");
+    const failing = await draftSubmitAndApprove(PUBLIC_AR_EDITION, ["الخريف في هاربر يوث", "نص أحدث ينتظر إصداره."], "rtl");
+    const approvedEnglish = await draftSubmitAndApprove(PUBLIC_EN_EDITION, ["Autumn at Harbour Youth", "The wording the reviewer approved."]);
+    await selectScenario(PARTIAL_RELEASE_SCENARIO);
+    const armed = expectEnvelope(await reads.dev.readDevState(SESSION), "this session's development state");
+    expect([armed.data.scenario.id, armed.data.scenario.flags.releaseSynthesis]).toEqual([PARTIAL_RELEASE_SCENARIO, "one-sibling-fails"]);
+    const published = acceptedOutcome(await mutations.updates.publishVariants(SESSION_ID, await publicationInput([{ variantId: PUBLIC_EN_EDITION, mode: PUBLISH_ONLY }, { variantId: PUBLIC_AR_EDITION }])));
+    const items = published.items ?? [];
+    expect(items.map((item) => item.targetId)).toEqual([PUBLIC_EN_EDITION, PUBLIC_AR_EDITION]);
+    const released = items.filter((item) => item.state === "released");
+    const failed = items.filter((item) => item.state === "failed-prior-good-head");
+    expect([released.map((item) => item.targetId), failed.map((item) => item.targetId)]).toEqual([[PUBLIC_EN_EDITION], [PUBLIC_AR_EDITION]]);
+    const sibling = failed[0];
+    expect(sibling?.reasonCode).toBe(SIMULATED_PARTIAL_RELEASE_CODE);
+    expect(sibling?.reason ?? "").toMatch(/simulates a partial release/);
+    expect(sibling?.reason ?? "").toMatch(/no release was recorded for this edition/);
+    expect(sibling?.reason ?? "").toMatch(/stands rather than being rolled back/);
+    expect(sibling?.revision).toBe(priorGood.headRelease.releaseId); // The withheld edition answers with the head that stays published, never with a release it made.
+    const englishHead = await editionView(PUBLIC_EN_EDITION);
+    expect([englishHead.headRelease?.revisionId, englishHead.headRelease?.releaseId]).toEqual([approvedEnglish.candidateId, released[0]?.revision]);
+    expect(englishHead.headRelease?.revisionId).not.toBe(SEEDED_EN_RELEASE);
+    const after = await editionView(PUBLIC_AR_EDITION);
+    expect([after.releaseHeadId, after.headRelease?.releaseId, after.headRelease?.revisionId]).toEqual([priorGood.releaseHeadId, priorGood.headRelease.releaseId, priorGood.headRelease.revisionId]);
+    expect(after.candidateId).toBe(failing.candidateId);
+    const arabicReleases = (await storedState()).releases.filter((release) => release.variantId === PUBLIC_AR_EDITION); // Nothing was released at the revision the simulation withheld, and the prior-good head is the only release the edition holds.
+    expect(arabicReleases.map((release) => release.releaseId)).toEqual([priorGood.headRelease.releaseId]);
+    expect(arabicReleases.filter((release) => release.revisionId === failing.candidateId)).toHaveLength(0);
+    expect(published.changed).toEqual([PUBLIC_EN_EDITION]);
   });
   it("recovers a lost acknowledgement under the original operation instead of publishing twice", async () => {
     const approved = await draftSubmitAndApprove(PUBLIC_EN_EDITION, ["Autumn at Harbour Youth", "A revised closing paragraph."]);

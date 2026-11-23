@@ -75,7 +75,7 @@ function PreservedEvidence({ detail }: { readonly detail: InitiativeDetail }): R
   return (
     <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <h3 id={headingId} className="font-heading text-sm leading-none font-medium">
+        <h3 id={headingId} className="type-subsection-title">
           {REOPEN_COPY.evidenceHeading}
         </h3>
         <Badge variant="secondary">{INITIATIVE_STATE_COPY[initiative.state].label}</Badge>
@@ -104,12 +104,12 @@ function PreservedEvidence({ detail }: { readonly detail: InitiativeDetail }): R
           <p className="text-xs text-pretty text-muted-foreground">{REOPEN_COPY.recordedInstantNote}</p>
         </div>
       )}
-      <p className="text-sm text-pretty text-muted-foreground">{CLOSURE_COPY.historyPreservedNote}</p>
-      <p className="text-sm text-pretty text-muted-foreground">{REOPEN_COPY.exclusionsKept}</p>
+      <p className="type-supporting text-pretty">{CLOSURE_COPY.historyPreservedNote}</p>
+      <p className="type-supporting text-pretty">{REOPEN_COPY.exclusionsKept}</p>
       <Separator />
       <div className="flex min-w-0 flex-col gap-1 text-sm text-pretty text-muted-foreground">
-        <p>{REOPEN_COPY.noSolicitation}</p>
-        <p>{REOPEN_COPY.noRecords}</p>
+        <p className="type-supporting">{REOPEN_COPY.noSolicitation}</p>
+        <p className="type-supporting">{REOPEN_COPY.noRecords}</p>
       </div>
     </section>
   );
@@ -166,11 +166,11 @@ function ReopenInitiativeBody({ initiativeId, envelope, registerCloseGuard, onCl
         consequential
         description={
           <>
-            <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+            <p className="type-supporting flex min-w-0 flex-wrap items-baseline gap-x-1.5">
               <bdi className="font-medium text-foreground">{initiative.name}</bdi>
               <span>{CLOSURE_COPY.reopenHelp}</span>
             </p>
-            <p>
+            <p className="type-supporting">
               {`${REOPEN_COPY.reasonTerm}: `}
               <bdi>{reason.trim() === "" ? REOPEN_COPY.noReason : reason.trim()}</bdi>
             </p>
@@ -178,7 +178,7 @@ function ReopenInitiativeBody({ initiativeId, envelope, registerCloseGuard, onCl
         }
         consequence={
           <>
-            <p>{CLOSURE_COPY.historyPreservedNote}</p> <p>{REOPEN_COPY.exclusionsKept}</p>
+            <p className="type-supporting">{CLOSURE_COPY.historyPreservedNote}</p> <p className="type-supporting">{REOPEN_COPY.exclusionsKept}</p>
           </>
         }
         confirmLabel={CONFIRM_LABEL}
@@ -191,7 +191,7 @@ function ReopenInitiativeBody({ initiativeId, envelope, registerCloseGuard, onCl
       {progress.reopened ? <output className="block text-sm text-pretty">{REOPEN_COPY.reopenedStatement}</output> : null}
     </>
   );
-  const renderBody = (): ReactElement => (initiative.initiativeId !== initiativeId ? <p className="text-sm text-pretty text-muted-foreground">{REOPEN_COPY.mismatchBody}</p> : phase === "confirming-discard" ? renderDiscardQuestion() : renderReview());
+  const renderBody = (): ReactElement => (initiative.initiativeId !== initiativeId ? <p className="type-supporting text-pretty">{REOPEN_COPY.mismatchBody}</p> : phase === "confirming-discard" ? renderDiscardQuestion() : renderReview());
   return <div className="flex min-w-0 flex-col gap-5">{renderBody()}</div>;
 }
 /** The confirmed reopen of a closed initiative. The wrapper owns the modal substrate and the decision to close, and nothing else: the subscription to the family's mutation, the field, the review step and the receipt all live in the body, whose lifetime is the visit. */

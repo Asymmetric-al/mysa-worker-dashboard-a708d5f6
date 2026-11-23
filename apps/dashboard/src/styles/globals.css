@@ -225,6 +225,11 @@
     @apply block max-h-96 w-full rounded-lg border border-border;
   }
 
+  /* A transcript or linked-media alternative stands on its own beside the player rather than inside a sentence, so it carries the 24x24 CSS px target floor in its own box. */
+  .content-section-media a {
+    @apply inline-flex min-h-6 items-center;
+  }
+
   /* Treatment: an emphasized section reads at a weight above the page's own, and a normal one at the document's weight. */
   .content-treatment-normal .content-section-text {
     @apply font-normal;
@@ -307,6 +312,61 @@
     width: 3px;
     background-color: var(--highlight);
   }
+}
+
+/* Overlay scrollbars paint nothing until a scroll begins, so a table wider than its region reads as simply cut off at
+   the edge. This utility keeps the region's own horizontal scrollbar painted and reserving its space, drawn from the
+   boundary and quiet-surface tokens, so the columns beyond the edge are discoverable by a pointer before any scroll. */
+@utility scroll-cue-x {
+  scrollbar-width: thin;
+  scrollbar-color: var(--input) var(--muted);
+
+  /* An engine that supports the standard properties above paints the bar from them; one that does not draws the same
+     bar from the same two tokens through these pseudo-elements. Its height comes from the spacing scale and its
+     rounding from the one declared --radius value, so no length or radius of its own is introduced. */
+  &::-webkit-scrollbar {
+    height: calc(var(--spacing) * 2.5);
+  }
+
+  &::-webkit-scrollbar-track {
+    background-color: var(--muted);
+    border-radius: var(--radius);
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--input);
+    border-radius: var(--radius);
+  }
+}
+
+/* The one type scale: every heading element and every body paragraph in the product resolves through these utilities, so the same element role measures the same on every screen. A page title is 24/32/600, a section title 18/28/500, a subsection 16/24/500 and a group title 14/20/500, so size falls as the level deepens and weight never rises. Body copy is 14/20/400; supporting copy states the one muted ink, while a record's own values and authored prose keep the body ink. Every value is a system type utility: a component states no font size, weight or leading of its own, except at the few composition points that replace a design-system default with the one body measure (the empty-state description and the field hint, which override the design system's own relaxed and normal leadings where the copy is owned). One documented exception: a surface that labels its own chrome rather than the page's outline — the compact side panel's region title — takes the group-title scale in the muted ink, because a panel header is chrome and not a section of the page. */
+@utility type-page-title {
+  @apply font-heading text-2xl font-semibold;
+}
+
+@utility type-section-title {
+  @apply font-heading text-lg font-medium;
+}
+
+@utility type-subsection-title {
+  @apply font-heading text-base font-medium;
+}
+
+@utility type-group-title {
+  @apply font-heading text-sm font-medium;
+}
+
+@utility type-body {
+  @apply text-sm font-normal;
+}
+
+@utility type-supporting {
+  @apply text-sm font-normal text-muted-foreground;
+}
+
+/* One link treatment: a link inside content is underlined in the ink of the words around it, at one offset, so a destination stays recognisable without relying on colour. A link styled as a control (a button, a pill, a pagination step, a tab) keeps the control's own treatment and states no underline, and an anchor inside authored content keeps the content renderer's own treatment, which is the same underline. */
+@utility inline-link {
+  @apply underline underline-offset-4;
 }
 
 /* Motion collapses rather than disappears: a transition tied to a state change still completes, it simply completes at once. Declared outside a cascade layer so it also settles the animation and transition utilities of the design system. */

@@ -17,7 +17,7 @@ export function ScrollRegion({ label, children, stickyOffset = DEFAULT_STICKY_OF
         {...rest}
         aria-label={label}
         tabIndex={focusable ? 0 : undefined}
-        className={cn("relative overflow-x-auto overscroll-x-contain scroll-px-2", maxHeight === undefined ? null : "overflow-y-auto", focusable ? "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]" : null, className)}
+        className={cn("relative overflow-x-auto overscroll-x-contain scroll-px-2 scroll-cue-x", maxHeight === undefined ? null : "overflow-y-auto", focusable ? "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]" : null, className)}
         style={{ scrollPaddingTop: stickyOffset, ...(maxHeight === undefined ? {} : { maxHeight }), ...style }}
       >
         {children}

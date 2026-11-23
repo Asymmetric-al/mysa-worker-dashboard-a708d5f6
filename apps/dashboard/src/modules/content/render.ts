@@ -129,11 +129,14 @@ function renderSection(section: ContentSection, documentDirection: ContentDirect
 function composeDocument(document: ContentDocumentJson, options: RenderOptions): string {
   const media = options.media ?? "inline";
   const renditions = options.renditions ?? {};
-  const sections = document.sections.map((section) => ({ section, paragraphs: sectionParagraphs(section) })).filter((entry) => entry.paragraphs.length > 0);
+  const placements = options.placements ?? [];
+  // A section is rendered when it states text of its own or holds a placement: an image or video section states its words in the placement rather
+  // than in a field, so its media belongs in its own frame instead of at the end of the document, detached from the section it was composed into.
+  const sections = document.sections.map((section) => ({ section, paragraphs: sectionParagraphs(section) })).filter((entry) => entry.paragraphs.length > 0 || placements.some((placement) => placement.sectionElement === entry.section.element));
   const inSections = sections.map(() => [] as string[]);
   const trailing: string[] = [];
   // A placement naming a rendered section is rendered inside it, beside that section's own text; one that names no section, or one this document does not render, stays at the end of the document in the order the read supplied it, and where two sections share one catalogue element the first of them carries the media so it is rendered exactly once.
-  for (const placement of options.placements ?? []) {
+  for (const placement of placements) {
     const rendered = renderPlacement(placement, media, renditions);
     const named = placement.sectionElement;
     const index = named === undefined || named === null ? -1 : sections.findIndex((entry) => entry.section.element === named);

@@ -80,7 +80,7 @@ function applyGoal(context: MutationContext, scope: Scope, payload: GoalSavePayl
 /** Saves the one support goal and answers exactly one outcome — `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function saveGoal(input: MutationInput<GoalSavePayload>, source?: SessionSource): Promise<MutationOutcome> {
   const operationId = attemptIdOf(input);
-  const opening = await openMutation(input, source);
+  const opening = await openMutation("saveGoal", input, source);
   if (!opening.ok) return opening.outcome;
   const { scope } = input;
   return runMutation<GoalSavePayload, GoalSaveResult>({

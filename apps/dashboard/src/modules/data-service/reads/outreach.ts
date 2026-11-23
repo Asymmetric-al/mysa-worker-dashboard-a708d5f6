@@ -8,7 +8,7 @@ import { clampPageSize } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
 import { civilDateAt, parseCivilDate, serialiseCivilDate, type CivilDate, type DatePrecision } from "@/modules/time/civil";
 import { newWindowEnd, referralWindowState, type MidnightResolution, type NewWindowEnd, type ReferralWindowStatus, type WindowRefusalReason } from "@/modules/time/window";
-import { assertScope, canEdit, canView, readResultOfRefusal, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
+import { assertScope, canEdit, canView, readResultOfRefusal, recordRefusalOutage, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
 import {
   INITIATIVE_STAGES,
   buildEnvelope,
@@ -62,7 +62,10 @@ const STORE_UNREADABLE_GUIDANCE = "The session's records could not be read. Relo
 const DOCUMENT_UNREADABLE_GUIDANCE = "The stored outreach records are not in a shape this build can read. Reset the seed from Settings to restore the known dataset.";
 async function openOutreach(job: string, source?: SessionSource): Promise<OutreachOpening> {
   const resolved = await resolveSession(source);
-  if (!resolved.ok) return { ok: false, result: readResultOfRefusal(resolved.refusal) };
+  if (!resolved.ok) {
+    recordRefusalOutage(job, resolved.refusal);
+    return { ok: false, result: readResultOfRefusal(resolved.refusal) };
+  }
   const { session } = resolved;
   const scope = session.selected;
   if (scope === null) {

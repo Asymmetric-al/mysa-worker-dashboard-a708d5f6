@@ -1,4 +1,5 @@
 import { z, ZodError } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse, type MutationInput, type MutationOutcome } from "@/modules/data-service";
 import { pagingParamsOf, pagingQuerySchema } from "../../paging";
 import { UNIDENTIFIED_ATTEMPT, operationIdentityOf, readRequestBody } from "../../handler";
@@ -95,9 +96,9 @@ async function runCheckInMutation(input: MutationInput<CheckInPayload>): Promise
 }
 const answer = (result: Parameters<typeof toResponse>[0]): Response => toResponse(result, { headers: { "cache-control": "no-store" } });
 /** One page of the worker's check-ins, each keeping its captured question set, its private autosave and its shared revision apart, with the page window and limits the service reports. */
-export const GET = readRoute(readGrammar(checkInListQuerySchema, pagingParamsOf), (query) => reads.coaching.readCheckIns(query), READ_ATTEMPT, NO_STORE_RESPONSE);
+const readCheckIns = readRoute(readGrammar(checkInListQuerySchema, pagingParamsOf), (query) => reads.coaching.readCheckIns(query), READ_ATTEMPT, NO_STORE_RESPONSE);
 /** One named check-in change, selected by `payload.operation`; answers with exactly one of `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function POST(request: Request): Promise<Response> {
+async function changeCheckIn(request: Request): Promise<Response> {
   const body = await readRequestBody(request, MAX_REQUEST_BYTES);
   if (body.kind === "oversized") return answer(outcomeFromError(UNIDENTIFIED_ATTEMPT, new ZodError([{ code: "custom", path: [], message: MESSAGES.requestTooLarge(body.bytes), input: undefined }])));
   if (body.kind === "unreadable") return answer(outcomeFromError(UNIDENTIFIED_ATTEMPT, new ZodError([{ code: "custom", path: [], message: MESSAGES.bodyNotJson, input: undefined }])));
@@ -109,3 +110,4 @@ export async function POST(request: Request): Promise<Response> {
     return answer(outcomeFromError(parsed.data.operationId, error));
   }
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readCheckIns, POST: changeCheckIn });

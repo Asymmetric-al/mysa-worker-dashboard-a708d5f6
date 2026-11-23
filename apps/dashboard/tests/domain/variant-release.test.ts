@@ -81,6 +81,7 @@ function alreadyAcceptedOutcome(outcome: MutationOutcome): Extract<MutationOutco
   return outcome;
 }
 const invalidOutcome = (outcome: MutationOutcome): InvalidOutcome => (outcome.outcome !== "invalid" ? throwing(`This change was expected to be refused by validation and was answered with ${JSON.stringify(outcome)}.`) : outcome);
+const unchangedOutcome = (outcome: MutationOutcome): Extract<MutationOutcome, { outcome: "unchanged" }> => (outcome.outcome !== "unchanged" ? throwing(`This change was expected to answer that the record already said it, and it answered with ${JSON.stringify(outcome)}.`) : outcome);
 /** The per-edition results of one release, which an aggregate answer would not carry at all. */
 function itemsOf(outcome: Extract<MutationOutcome, { outcome: "accepted" }>): readonly PerItemResult[] {
   const items = requiredSaying(outcome.items, "This change reports no per-item results, so no edition's own outcome could be asserted.");
@@ -117,6 +118,12 @@ const releaseOf = async (world: World, variantId: string) => (await envelopeOf(r
 type ReleaseView = Awaited<ReturnType<typeof releaseOf>>;
 const releasedView = (view: ReleaseView): Extract<ReleaseView, { status: "released" }> => (view.status === "released" ? view : throwing(`This edition was expected to serve a release at its head, and its release read reported "${view.status}".`));
 const withdrawnReleaseView = (view: ReleaseView): Extract<ReleaseView, { status: "withdrawn" }> => (view.status === "withdrawn" ? view : throwing(`This edition was expected to hold a withdrawn release, and its release read reported "${view.status}".`));
+const PAGE_ID = "doc-page-harbour-kitchen";
+const pageOf = async (world: World) => envelopeOf(reads.pages.readPage({ pageId: PAGE_ID, session: sourceOf(world) }), `readPage(${PAGE_ID})`);
+type PageView = Awaited<ReturnType<typeof pageOf>>;
+type PageDraftView = NonNullable<PageView["data"]["draft"]>;
+const pageDraftOf = (view: PageView): PageDraftView => (view.data.draft === null ? throwing(`The seeded Page ${PAGE_ID} was expected to hold a saved draft, and its read reported none.`) : view.data.draft);
+const pageSectionOf = (view: PageView, position: number) => required(view.data.sections[position], `section ${String(position)} of ${PAGE_ID}`);
 const devStateOf = async (world: World) => envelopeOf(reads.dev.readDevState(sourceOf(world)), "readDevState");
 const body = (direction: "ltr" | "rtl", paragraphs: readonly string[]): unknown => ({ type: "doc", profileVersion: 1, direction, content: paragraphs.map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })), sections: [] });
 function textOfDocument(content: ContentRevision["body"]): readonly string[] {
@@ -436,5 +443,24 @@ describe("withdrawing one locale leaves the others", () => {
     expect(arabicEdition.headRelease?.withdrawnAt).toBeDefined();
     const again = await mutations.updates.withdrawLocale(partial.sessionId, attempt({ variantId: AR_EDITION }, (await overviewOf(partial)).revision, partial.scope));
     expect(outcomeIs(again, "unchanged").outcome).toBe("unchanged");
+  });
+});
+describe("a section save that writes nothing is not an acceptance", () => {
+  it("answers unchanged with the revision on the record and writes the same section once one presentation choice differs", async () => {
+    const before = await pageOf(control);
+    const draft = pageDraftOf(before);
+    const section = pageSectionOf(before, 0);
+    const sectionId = `section-${String(section.position)}`;
+    // This save states exactly what the draft on the record already holds, so it is answered with the revision it found rather than accepted: nothing is written, no record revision advances and the stored section stands as it did.
+    const repeated = unchangedOutcome(await mutations.pages.saveSectionFields(control.sessionId, attempt({ variantId: draft.variantId, sectionId, fields: section.fields, presentation: section.presentation }, draft.recordRevision, control.scope)));
+    const unchanged = await pageOf(control);
+    expect([repeated.revision, pageDraftOf(unchanged)]).toEqual([draft.recordRevision, draft]);
+    expect(pageSectionOf(unchanged, 0)).toEqual(section);
+    // One presentation choice moved is one thing said differently, so the same section saved again is a change the service has to write as a new revision of the same draft.
+    const moved = { ...section.presentation, alignment: section.presentation.alignment === "start" ? ("center" as const) : ("start" as const) };
+    const accepted = acceptedOutcome(await mutations.pages.saveSectionFields(control.sessionId, attempt({ variantId: draft.variantId, sectionId, presentation: moved }, draft.recordRevision, control.scope)));
+    const advanced = await pageOf(control);
+    expect(accepted.revision).not.toBe(draft.recordRevision);
+    expect([pageDraftOf(advanced).recordRevision, pageDraftOf(advanced).revisionId, pageSectionOf(advanced, 0).presentation]).toEqual([accepted.revision, draft.revisionId, moved]);
   });
 });

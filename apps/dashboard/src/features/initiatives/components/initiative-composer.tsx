@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactElement } from "react";
 import { useForm } from "@tanstack/react-form";
 import ActionReview from "@/components/action-review";
-import FormField, { fieldControlId, fieldErrorsFromInvalid, FormErrorSummary, FormFieldGroup, type FieldErrorLookup, type FormFieldControl } from "@/components/form-field";
+import FormField, { civilDateConvention, fieldControlId, fieldErrorsFromInvalid, FormErrorSummary, FormFieldGroup, type FieldErrorLookup, type FormFieldControl } from "@/components/form-field";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -307,14 +307,14 @@ export default function InitiativeComposer({ open, onOpenChange, envelope, onCre
                 <>
                   <form.Field name="startOn">
                     {(field) => (
-                      <FormField name={START_FIELD} label={START_DATE_LABEL} description={START_DATE_DESCRIPTION} error={errors?.byField[START_FIELD]}>
+                      <FormField name={START_FIELD} label={START_DATE_LABEL} description={`${START_DATE_DESCRIPTION} ${civilDateConvention(field.state.value)}`} error={errors?.byField[START_FIELD]}>
                         {(control) => <Input id={control.id} name={START_FIELD} type="date" {...entryOf(field)} {...controlAria(control)} />}
                       </FormField>
                     )}
                   </form.Field>
                   <form.Field name="endOn">
                     {(field) => (
-                      <FormField name={END_FIELD} label={END_DATE_LABEL} description={END_DATE_DESCRIPTION} error={errors?.byField[END_FIELD]}>
+                      <FormField name={END_FIELD} label={END_DATE_LABEL} description={`${END_DATE_DESCRIPTION} ${civilDateConvention(field.state.value)}`} error={errors?.byField[END_FIELD]}>
                         {(control) => <Input id={control.id} name={END_FIELD} type="date" {...entryOf(field)} {...controlAria(control)} />}
                       </FormField>
                     )}

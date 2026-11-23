@@ -2,10 +2,11 @@
 import { useId, useRef, type ReactElement, type ReactNode } from "react";
 import { fieldErrorsFromInvalid, FormErrorSummary } from "@/components/form-field";
 import StatusBadge, { type StatusBadgeSpec } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
+import { isRecord } from "@/lib/guards";
 import type { InvalidOutcome, MutationOutcome, PerItemResult } from "@/modules/data-service/outcome";
 type OutcomeName = MutationOutcome["outcome"];
 export type AnnouncementSeverity = "polite" | "assertive";
@@ -22,6 +23,8 @@ export const OUTCOME_HEADINGS: Readonly<Record<OutcomeName, string>> = {
   unknown: "Result not confirmed",
 };
 const RECEIPT_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
+/** The one type scale's utility per level, so a receipt states its own heading at the measure of the level it lands at. */
+const RECEIPT_HEADING_SCALE: Readonly<Record<"h2" | "h3" | "h4", string>> = { h2: "type-section-title", h3: "type-subsection-title", h4: "type-group-title" };
 export type ReceiptHeadingLevel = keyof typeof RECEIPT_HEADING_TAG;
 /** The closed per-item vocabulary, listed once so the set has a runtime form as well as a type. */
 export const PER_ITEM_RESULT_STATES = ["accepted", "unchanged", "excluded", "failed"] as const;
@@ -31,6 +34,15 @@ const NO_REASON_TEXT = "No reason was stated for this row.";
 const PER_ITEM_HEADING = "Result for each row";
 const PER_ITEM_MIXED_NOTE = "Each row below reports its own result, and rows can differ, so read them one at a time rather than as one result for the whole batch.";
 const NOT_STATED_TEXT = "Not stated";
+const CONFLICT_CURRENT_LABEL = "The value the record holds now";
+const CONFLICT_INPUT_LABEL = "Your input, kept as you entered it";
+const CONFLICT_FIELDS_HEADING = "Fields that differ";
+const CONFLICT_FIELDS_NOTE = "Only the fields where the record and your input disagree are listed, each with the value the record holds now beside what you entered. Every other field of the record stays as it is, so it is not restated here.";
+const CONFLICT_NO_DIFFERENCE = "Your input states no value the record holds differently, so no field is listed here: what this conflict refuses is the revision, not a value.";
+const CONFLICT_FIELD_HEAD = "Field";
+const CONFLICT_VALUE_CLASS = "min-w-0 rounded-md bg-muted p-2 text-sm whitespace-pre-wrap wrap-anywhere text-foreground";
+const FIELD_KEY_SEPARATOR = /[_-]+/u;
+const CAMEL_WORD_BREAK = /(?<=[a-z0-9])(?=[A-Z])/u;
 function describeValue(value: unknown): string {
   if (value === null || value === undefined) return NOT_STATED_TEXT;
   if (typeof value === "string") return value.trim() === "" ? NOT_STATED_TEXT : value;
@@ -88,7 +100,7 @@ const ValueBlock = ({ label, value }: { readonly label: string; readonly value: 
   </div>
 );
 const ReceiptButton = ({ label, variant, onSelect }: { readonly label: string; readonly variant: "default" | "outline"; readonly onSelect: () => void }): ReactElement => (
-  <Button type="button" variant={variant} size="sm" className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal" onClick={onSelect}>
+  <Button type="button" variant={variant} size="sm" className={BUTTON_WRAP_CLASS} onClick={onSelect}>
     {label}
   </Button>
 );
@@ -181,6 +193,128 @@ export function PerItemResults({ items, columns = [], renderItemAction, heading 
     </section>
   );
 }
+/** The label a field is stated under: the surface's own stem, or a readable one derived from the last name the field's path carries. */
+function conflictFieldLabel(path: string, fieldLabels: Readonly<Record<string, string | undefined>> | undefined): string {
+  const stated = fieldLabels?.[path]?.trim() ?? "";
+  if (stated !== "") return stated;
+  const name = path.slice(path.lastIndexOf(".") + 1);
+  const words = name
+    .split(FIELD_KEY_SEPARATOR)
+    .flatMap((part) => part.split(CAMEL_WORD_BREAK))
+    .filter((word) => word !== "")
+    .map((word) => word.toLowerCase());
+  const text = words.join(" ");
+  return text === "" ? name : text.charAt(0).toUpperCase() + text.slice(1);
+}
+/** The keys a record actually states, so a key holding no value is not read as a field. */
+const statedKeys = (record: Record<string, unknown>): readonly string[] => Object.keys(record).filter((key) => record[key] !== undefined);
+/** Whether the record's value agrees with every field the caller's input states for it, in any key order and in any order the keys were written. */
+function valuesAgree(held: unknown, entered: unknown): boolean {
+  if (held === entered) return true;
+  if (Array.isArray(entered)) return Array.isArray(held) && held.length === entered.length && entered.every((member: unknown, index: number) => valuesAgree(held[index], member));
+  if (!isRecord(entered)) return false;
+  return isRecord(held) && statedKeys(entered).every((key) => key in held && valuesAgree(held[key], entered[key]));
+}
+type ConflictDifference = { readonly key: string; readonly label: string; readonly current: unknown; readonly input: unknown };
+const labelledAt = (labels: Readonly<Record<string, string | undefined>> | undefined, path: string): boolean => (labels?.[path]?.trim() ?? "") !== "";
+const labelledUnder = (labels: Readonly<Record<string, string | undefined>> | undefined, path: string): boolean => Object.keys(labels ?? {}).some((key) => key.startsWith(`${path}.`) && labelledAt(labels, key));
+// The receipt lists only the fields the caller's input states that disagree with the record. The record's other fields — its revision, audience and source reference among them — are not part of what the caller proposed, so printing them would state a second revision beside the one the receipt names.
+function conflictDifferences(current: unknown, preservedInput: unknown, fieldLabels: Readonly<Record<string, string | undefined>> | undefined): readonly ConflictDifference[] | null {
+  if (!isRecord(current) || !isRecord(preservedInput)) return null;
+  const statements: ConflictDifference[] = [];
+  const stated = (path: string, held: unknown, entered: unknown): void => {
+    statements.push({ key: path, label: conflictFieldLabel(path, fieldLabels), current: held, input: entered });
+  };
+  // A field the surface names as a whole is stated as a whole; one the surface names part by part is stated part by part, under the same words the form uses for it, so no unchanged part of the record is printed. A part the record does not state at all is stated as the value it holds for that part, which is none.
+  function differing(held: unknown, entered: unknown, path: string): void {
+    if (labelledUnder(fieldLabels, path)) {
+      if (isRecord(held) && isRecord(entered)) {
+        for (const key of statedKeys(entered)) {
+          if (!valuesAgree(held[key], entered[key])) differing(held[key], entered[key], `${path}.${key}`);
+        }
+        return;
+      }
+      if (Array.isArray(held) && Array.isArray(entered) && held.length === entered.length) {
+        entered.forEach((member: unknown, index: number) => {
+          if (!valuesAgree(held[index], member)) differing(held[index], member, `${path}.${String(index)}`);
+        });
+        return;
+      }
+    }
+    stated(path, held, entered);
+  }
+  for (const key of statedKeys(preservedInput)) {
+    if (current[key] !== undefined && !valuesAgree(current[key], preservedInput[key])) differing(current[key], preservedInput[key], key);
+  }
+  return statements;
+}
+/** The fields a stale-revision conflict disagrees on, each with what the record holds beside what the caller entered. */
+function ConflictFields({ fields }: { readonly fields: readonly ConflictDifference[] }): ReactElement {
+  const headingId = useId();
+  return (
+    <section className="flex min-w-0 flex-col gap-2">
+      <div className="flex min-w-0 flex-col gap-1">
+        <p id={headingId} className="text-sm font-medium">
+          {CONFLICT_FIELDS_HEADING}
+        </p>
+        <p className="text-sm text-muted-foreground">{CONFLICT_FIELDS_NOTE}</p>
+      </div>
+      <ul aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2 sm:hidden">
+        {fields.map((field) => (
+          <li key={field.key} className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border p-3">
+            <p className="text-sm font-medium wrap-anywhere">{field.label}</p>
+            <p className="min-w-0 text-sm wrap-anywhere">
+              <span className="text-muted-foreground">{`${CONFLICT_CURRENT_LABEL}: `}</span>
+              <bdi dir="ltr" className="wrap-anywhere">
+                {describeValue(field.current)}
+              </bdi>
+            </p>
+            <p className="min-w-0 text-sm wrap-anywhere">
+              <span className="text-muted-foreground">{`${CONFLICT_INPUT_LABEL}: `}</span>
+              <bdi dir="ltr" className="wrap-anywhere">
+                {describeValue(field.input)}
+              </bdi>
+            </p>
+          </li>
+        ))}
+      </ul>
+      <table aria-labelledby={headingId} className="hidden w-full table-fixed border-collapse text-sm sm:table">
+        <thead>
+          <tr>
+            <th scope="col" className={PER_ITEM_HEAD_CLASS}>
+              {CONFLICT_FIELD_HEAD}
+            </th>
+            <th scope="col" className={PER_ITEM_HEAD_CLASS}>
+              {CONFLICT_CURRENT_LABEL}
+            </th>
+            <th scope="col" className={PER_ITEM_HEAD_CLASS}>
+              {CONFLICT_INPUT_LABEL}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {fields.map((field) => (
+            <tr key={field.key}>
+              <th scope="row" className={PER_ITEM_HEAD_CLASS}>
+                {field.label}
+              </th>
+              <td className={PER_ITEM_CELL_CLASS}>
+                <pre dir="ltr" className={CONFLICT_VALUE_CLASS}>
+                  {describeValue(field.current)}
+                </pre>
+              </td>
+              <td className={PER_ITEM_CELL_CLASS}>
+                <pre dir="ltr" className={CONFLICT_VALUE_CLASS}>
+                  {describeValue(field.input)}
+                </pre>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
 const hasFacts = (outcome: { readonly revision: string; readonly created?: readonly string[] | undefined; readonly changed?: readonly string[] | undefined }): boolean => outcome.revision.trim() !== "" || (outcome.created ?? []).some((id) => id.trim() !== "") || (outcome.changed ?? []).some((id) => id.trim() !== "");
 type ReceiptBody = { readonly summary: ReactNode; readonly details: ReactNode };
 type ReceiptContext = {
@@ -190,6 +324,7 @@ type ReceiptContext = {
   readonly onReapply: (() => void) | undefined;
   readonly perItemColumns: readonly PerItemColumn[] | undefined;
   readonly renderItemAction: ((item: PerItemResult) => ReactNode) | undefined;
+  readonly fieldLabels: Readonly<Record<string, string | undefined>> | undefined;
 };
 type ReceiptOutcome = Exclude<MutationOutcome, { readonly outcome: "invalid" }>;
 function unknownRecoverySentence(offersCheck: boolean, offersReplay: boolean): string | null {
@@ -233,6 +368,7 @@ function receiptBody(outcome: ReceiptOutcome, context: ReceiptContext): ReceiptB
       return receipt(<p>Nothing needed changing, so nothing happened: no history entry and no activity record was created.</p>, hasFacts(outcome) ? <ReceiptFacts revision={outcome.revision} /> : null);
     case "conflict": {
       const reapply = context.run(context.onReapply);
+      const differences = conflictDifferences(outcome.current, outcome.preservedInput, context.fieldLabels);
       return receipt(
         <>
           <p>{outcome.reason === "stale-revision" ? "Someone else saved a change after you opened this record, so your change was not applied." : "This submission reused the identity of an earlier request with different content, so it was refused."}</p>
@@ -245,10 +381,16 @@ function receiptBody(outcome: ReceiptOutcome, context: ReceiptContext): ReceiptB
         </>,
         <>
           <ReceiptFacts revision={outcome.currentRevision} revisionLabel="Current revision" />
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-            <ValueBlock label="The value the record holds now" value={outcome.current} />
-            <ValueBlock label="Your input, kept as you entered it" value={outcome.preservedInput} />
-          </div>
+          {differences === null ? (
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+              <ValueBlock label={CONFLICT_CURRENT_LABEL} value={outcome.current} />
+              <ValueBlock label={CONFLICT_INPUT_LABEL} value={outcome.preservedInput} />
+            </div>
+          ) : differences.length === 0 ? (
+            <p className="text-sm text-pretty">{CONFLICT_NO_DIFFERENCE}</p>
+          ) : (
+            <ConflictFields fields={differences} />
+          )}
         </>,
       );
     }
@@ -321,11 +463,11 @@ function InvalidReceipt({ outcome, title, headingLevel, fieldLabels, className }
     <Card data-slot="operation-result" data-outcome="invalid" className={cn("min-w-0", className)}>
       <CardHeader>
         <CardTitle>
-          <Heading>{title}</Heading>
+          <Heading className={RECEIPT_HEADING_SCALE[RECEIPT_HEADING_TAG[headingLevel]]}>{title}</Heading>
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <p role="alert" className="text-sm">
+        <p role="alert" className="type-supporting">
           The submission was refused before anything changed, and it named no field to correct. Nothing was applied.
         </p>
       </CardContent>
@@ -361,13 +503,15 @@ export function OperationResult({ outcome, heading, headingLevel = 3, onCheckRes
           }
         };
   if (outcome.outcome === "invalid") return <InvalidReceipt outcome={outcome} title={title} headingLevel={headingLevel} fieldLabels={fieldLabels} className={className} />;
-  const { summary, details } = receiptBody(outcome, { run, onCheckResult, onRetrySameWork, onReapply, perItemColumns, renderItemAction });
+  const { summary, details } = receiptBody(outcome, { run, onCheckResult, onRetrySameWork, onReapply, perItemColumns, renderItemAction, fieldLabels });
   const Heading = RECEIPT_HEADING_TAG[headingLevel];
   return (
     <Card data-slot="operation-result" data-outcome={outcome.outcome} className={cn("min-w-0", className)}>
       <CardHeader>
         <CardTitle>
-          <Heading id={titleId}>{title}</Heading>
+          <Heading id={titleId} className={RECEIPT_HEADING_SCALE[RECEIPT_HEADING_TAG[headingLevel]]}>
+            {title}
+          </Heading>
         </CardTitle>
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-4">

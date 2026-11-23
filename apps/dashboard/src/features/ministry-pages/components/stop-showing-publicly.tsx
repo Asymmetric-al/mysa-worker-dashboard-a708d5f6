@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import { copy } from "../copy";
-import { useStopShowingPagePublicly, type StopShowingPayload, type StopShowingVariables } from "../hooks/page-mutations";
+import { openRevisionOf, settledRevisionOf, useStopShowingPagePublicly, type StopShowingPayload, type StopShowingVariables } from "../hooks/page-mutations";
 /** The scope this containment is addressed to: the authority the Page read it came from ran under. */
 export type ContainmentScope = StopShowingVariables["scope"];
 type ContainmentOutcome = OperationResultProps["outcome"];
@@ -36,11 +36,13 @@ export function StopShowingPublicly({ scope, documentId, expectedRevision, editi
   const titleId = useId();
   const reasonId = useId();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [attemptRevision, setAttemptRevision] = useState<string | null>(null);
   const resultRef = useRef<HTMLDivElement | null>(null);
   const stopShowing = useStopShowingPagePublicly();
   const submit = useCallback<MutationSubmit<StopShowingPayload>>((input) => stopShowing.mutateAsync(input), [stopShowing]);
   const review = useReviewedMutation<StopShowingPayload>(submit);
-  const input = useMemo<ContainmentInput>(() => ({ scope, expectedRevision, payload: containmentAcknowledgement(documentId) }), [scope, expectedRevision, documentId]);
+  const openRevision = openRevisionOf(expectedRevision, attemptRevision, settledRevisionOf(review.outcome)); // The revision a new confirmation presents: the read's, or — until that read has landed — the revision this view's own last acceptance produced.
+  const input = useMemo<ContainmentInput>(() => ({ scope, expectedRevision: attemptRevision ?? openRevision, payload: containmentAcknowledgement(documentId) }), [scope, openRevision, attemptRevision, documentId]); // The revision this confirmation is opened against, held for the attempt: the read that follows an acceptance reports a newer one, and the result below still belongs to the attempt it made.
   const current: ContainmentOutcome | null = review.reviewedIntent === intentKeyOf(input) ? review.outcome : null;
   const editions = statedEditionCount(editionCount);
   const unavailableReason = disabled ? ((disabledReason?.trim() ?? "") === "" ? "This session cannot stop showing this Page publicly." : (disabledReason?.trim() ?? "")) : editions === 0 ? "This Page has no language edition yet, so there is nothing public to stop showing." : null;
@@ -53,22 +55,23 @@ export function StopShowingPublicly({ scope, documentId, expectedRevision, editi
   }, [current]);
   const confirm = (): void => {
     setDialogOpen(false);
-    void review.submit(input);
+    setAttemptRevision(openRevision);
+    void review.submit({ scope, expectedRevision: openRevision, payload: containmentAcknowledgement(documentId) });
   };
   const state = review.pending ? "working" : current !== null ? "settled" : "review";
   return (
     <section data-slot="stop-showing-publicly" data-state={state} data-edition-count={String(editions)} aria-labelledby={titleId} aria-busy={review.pending ? true : undefined} className={cn("flex min-w-0 flex-col gap-3 text-start", className)}>
-      <Card size="sm" className="min-w-0">
+      <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
-            <h3 id={titleId} className="wrap-anywhere">
+            <h3 id={titleId} className="type-subsection-title wrap-anywhere">
               {copy.stopShowingPublicly.action}
             </h3>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-3">
-          <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{"Stopping this hides every language edition of this Page at once: no address serves it, and the public discovery index leaves it out."}</p>
-          <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{DELETES_NOTHING}</p>
+          <p className="type-supporting text-pretty wrap-anywhere">{"Stopping this hides every language edition of this Page at once: no address serves it, and the public discovery index leaves it out."}</p>
+          <p className="type-supporting text-pretty wrap-anywhere">{DELETES_NOTHING}</p>
           <div className="flex flex-wrap items-center gap-2">
             <AlertDialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <AlertDialogTrigger render={<Button type="button" variant="destructive" disabled={unavailableReason !== null || review.pending} aria-describedby={unavailableReason === null ? undefined : reasonId} />}>{copy.stopShowingPublicly.action}</AlertDialogTrigger>
@@ -82,11 +85,11 @@ export function StopShowingPublicly({ scope, documentId, expectedRevision, editi
                     </span>
                   </AlertDialogDescription>
                 </AlertDialogHeader>
-                <div className="flex min-w-0 flex-col gap-2 text-sm text-pretty wrap-anywhere">
-                  <p>{DELETES_NOTHING}</p>
+                <div className="flex min-w-0 flex-col gap-2 text-pretty wrap-anywhere">
+                  <p className="type-supporting">{DELETES_NOTHING}</p>
                   <Separator />
-                  <p>{copy.stopShowingPublicly.doesNotRecallCopies}</p>
-                  <p>{"A message already sent, a copy a browser or another service kept, and a copy someone passed on sit outside this application and stay where they are."}</p>
+                  <p className="type-supporting">{copy.stopShowingPublicly.doesNotRecallCopies}</p>
+                  <p className="type-supporting">{"A message already sent, a copy a browser or another service kept, and a copy someone passed on sit outside this application and stay where they are."}</p>
                 </div>
                 <AlertDialogFooter>
                   <AlertDialogCancel>{"Cancel"}</AlertDialogCancel>
@@ -97,9 +100,9 @@ export function StopShowingPublicly({ scope, documentId, expectedRevision, editi
               </AlertDialogContent>
             </AlertDialog>
           </div>
-          {review.pending ? <output className="block text-sm text-muted-foreground text-pretty wrap-anywhere">{"Stopping every language edition of this Page — working"}</output> : null}
+          {review.pending ? <output className="block type-supporting text-pretty wrap-anywhere">{"Stopping every language edition of this Page — working"}</output> : null}
           {unavailableReason === null ? null : (
-            <p id={reasonId} className="text-sm text-muted-foreground text-pretty wrap-anywhere">
+            <p id={reasonId} className="type-supporting text-pretty wrap-anywhere">
               {unavailableReason}
             </p>
           )}
@@ -111,11 +114,13 @@ export function StopShowingPublicly({ scope, documentId, expectedRevision, editi
           {statement === null ? null : (
             <Alert role={undefined} data-slot="stop-showing-publicly-containment">
               <AlertTitle>
-                <h4 className="wrap-anywhere">{statement.title}</h4>
+                <h4 className="type-group-title wrap-anywhere">{statement.title}</h4>
               </AlertTitle>
               <AlertDescription className="flex flex-col gap-2 text-pretty wrap-anywhere">
                 {statement.sentences.map((sentence) => (
-                  <p key={sentence}>{sentence}</p>
+                  <p key={sentence} className="type-supporting">
+                    {sentence}
+                  </p>
                 ))}
               </AlertDescription>
             </Alert>

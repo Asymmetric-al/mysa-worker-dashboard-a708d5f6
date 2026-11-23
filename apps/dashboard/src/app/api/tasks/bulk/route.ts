@@ -3,6 +3,7 @@ import { isRecord } from "@/lib/guards";
 import { assertNever } from "@/lib/result";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse } from "@/modules/data-service";
 import { UNIDENTIFIED_ATTEMPT, dispatch, jsonBodyOf, operationIdentityOf } from "../../handler";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const MESSAGES = {
@@ -46,7 +47,7 @@ function claimedOperation(body: unknown): unknown {
 }
 const refusal = (operationId: string, path: readonly PropertyKey[], message: string): Response => toResponse(outcomeFromError(operationId, new z.ZodError([{ code: "custom", path: [...path], message }])));
 /** One bulk action, chosen by `payload.operation`. */
-export async function POST(request: Request): Promise<Response> {
+async function applyBulkAction(request: Request): Promise<Response> {
   const body = await jsonBodyOf(request);
   if (body === undefined) return refusal(UNIDENTIFIED_ATTEMPT, ["body"], MESSAGES.bodyNotJson);
   const operation = claimedOperation(body);
@@ -65,3 +66,4 @@ export async function POST(request: Request): Promise<Response> {
       return assertNever(operation, "Unhandled bulk task mutation");
   }
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: applyBulkAction });

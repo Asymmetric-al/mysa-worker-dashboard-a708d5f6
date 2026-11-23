@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { isRecord } from "@/lib/guards";
-import { canView, readResultOfRefusal, resolveSession, type ResolvedSession, type SessionSource } from "@/modules/data-service/authorize";
+import { canView, readResultOfRefusal, recordRefusalOutage, resolveSession, type ResolvedSession, type SessionSource } from "@/modules/data-service/authorize";
 import { ministryIdSchema, organizationIdSchema, principalIdSchema, SESSION_STATES, supportSubjectIdSchema, type ReadAction, type ReadEnvelope, type RecordedValueState, type Scope, type SessionState } from "@/modules/data-service/envelope";
 import type { ReadResult } from "@/modules/data-service/outcome";
 import { answerOf, sourceUnavailableRead } from "./frame";
@@ -61,7 +61,10 @@ function devValueStates(catalogue: DevPersonaCatalogue, offsetMilliseconds: numb
 /** Reads this session's development state — scenario, clock offset and derived instant, the armed failure plan, the persona catalogue, the scenario availability flags and reset availability —. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readDevState(source?: SessionSource): Promise<ReadResult<ReadEnvelope<DevState>>> {
   const resolved = await resolveSession(source);
-  if (!resolved.ok) return readResultOfRefusal(resolved.refusal);
+  if (!resolved.ok) {
+    recordRefusalOutage("readDevState", resolved.refusal);
+    return readResultOfRefusal(resolved.refusal);
+  }
   const session = resolved.session;
   const access = canView(session, { kind: "dev-runtime" });
   if (!access.allowed) return { kind: "denied", denied: access.denial };

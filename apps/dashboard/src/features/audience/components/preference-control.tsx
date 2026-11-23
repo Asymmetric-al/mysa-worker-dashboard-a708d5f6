@@ -1,6 +1,8 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useCallback, useState, type ReactElement } from "react";
 import { mayReplay, useReviewedMutation } from "@/components/action-review";
+import { hasSettled } from "@/components/attempt";
 import { FormFieldGroup } from "@/components/form-field";
 import OperationResult, { type ReceiptHeadingLevel } from "@/components/operation-result";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -46,6 +48,7 @@ export type PreferenceControlProps = {
 export default function PreferenceControl({ scope, membershipId, publisherId, purpose, currentChoice, expectedRevision, disabled = false, disabledReason, onSettled, onCheckResult, headingLevel, className }: PreferenceControlProps): ReactElement {
   const setPreference = useSetPreference();
   const mutatePreference = setPreference.mutateAsync;
+  const router = useRouter();
   const submitPreference = useCallback(async (input: MutationInput<SetPreferencePayload>): Promise<MutationOutcome> => mutatePreference({ operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload }), [mutatePreference]);
   const { operationId, submit, retry, reapply, pending, outcome } = useReviewedMutation<SetPreferencePayload>(submitPreference);
   const [requested, setRequested] = useState<PreferenceChoice | null>(null);
@@ -56,6 +59,8 @@ export default function PreferenceControl({ scope, membershipId, publisherId, pu
   const adopt = (result: MutationOutcome): void => {
     const acknowledged = result.outcome === "accepted" || result.outcome === "alreadyAccepted" || result.outcome === "unchanged" ? result.revision : result.outcome === "conflict" ? result.currentRevision : null;
     if (acknowledged !== null) setAcknowledgedRevision(acknowledged);
+    // The recorded choice this control is composed beside is the page's own server read, and no client query mounts that read, so the route is asked to read itself again after a result that stands; a refusal changed nothing, so it asks for nothing. The receipt below is this component's own state, so it stays on screen across that re-read.
+    if (hasSettled(result)) router.refresh();
     onSettled?.(result);
   };
   const choose = async (next: PreferenceChoice): Promise<void> => {

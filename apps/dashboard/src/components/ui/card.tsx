@@ -2,7 +2,10 @@ import * as React from "react";
 import { cn } from "@/lib/cn";
 const CARD_CLASS =
   "group/card flex flex-col gap-(--card-spacing) overflow-hidden rounded-2xl bg-card py-(--card-spacing) text-sm text-card-foreground ring-1 ring-foreground/10 [--card-spacing:--spacing(6)] has-[>img:first-child]:pt-0 data-[size=sm]:[--card-spacing:--spacing(4)] *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl";
-const Card = ({ className, size = "default", ...props }: React.ComponentProps<"div"> & { size?: "default" | "sm" }) => <div data-slot="card" data-size={size} className={cn(CARD_CLASS, className)} {...props} />;
+type CardVariant = "default" | "muted";
+/** The muted card role has one surface step and one ring, so a card of that role renders the same on every route; radius, border and density stay in the one recipe above. */
+const CARD_VARIANT_CLASS: Readonly<Record<CardVariant, string>> = { default: "", muted: "bg-muted/40 ring-border" };
+const Card = ({ className, size = "default", variant = "default", ...props }: React.ComponentProps<"div"> & { size?: "default" | "sm"; variant?: CardVariant }) => <div data-slot="card" data-size={size} data-variant={variant} className={cn(CARD_CLASS, CARD_VARIANT_CLASS[variant], className)} {...props} />;
 const CardHeader = ({ className, ...props }: React.ComponentProps<"div">) => (
   <div data-slot="card-header" className={cn("group/card-header @container/card-header grid auto-rows-min items-start gap-2 rounded-t-xl px-(--card-spacing) has-data-[slot=card-action]:grid-cols-[1fr_auto] has-data-[slot=card-description]:grid-rows-[auto_auto] [.border-b]:pb-(--card-spacing)", className)} {...props} />
 );

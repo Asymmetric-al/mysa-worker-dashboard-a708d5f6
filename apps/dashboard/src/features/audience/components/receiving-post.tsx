@@ -39,7 +39,9 @@ const LABELS = {
 } as const;
 const AUDIENCE_WORDS: Readonly<Record<PostAudience, StatusBadgeSpec>> = { public: { label: "Public", tone: "neutral" }, "approved-supporter": { label: "Approved supporters", tone: "info" } };
 const HEADING_TAGS: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4">> = { 1: "h1", 2: "h2", 3: "h3", 4: "h4" };
-const NOTE_CLASS = "text-sm text-muted-foreground text-pretty wrap-anywhere";
+/** The one type scale's heading utility for each level, so this surface's heading takes the measure of the level the composing page gives it rather than one fixed size. */
+const HEADING_SCALE: Readonly<Record<NoticeHeadingLevel, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
+const NOTE_CLASS = "type-supporting text-pretty wrap-anywhere";
 type PostSurface =
   | { readonly kind: "rendered"; readonly data: PostData; readonly asOf: string }
   | { readonly kind: "denied"; readonly sentence: string; readonly reasonCode: DenialCode | undefined }
@@ -80,17 +82,18 @@ function postSurface(result: ReadResult<ReceivingPostEnvelope>, refusal: { reado
   }
 }
 const audienceWordOf = (audience: PostData["audience"]): StatusBadgeSpec | undefined => (audience === null ? undefined : Object.hasOwn(AUDIENCE_WORDS, audience) ? AUDIENCE_WORDS[audience] : { label: audience, tone: "muted" });
-type MediaGroup = { readonly assetId: string; readonly playback: PostRendition | undefined; readonly poster: PostRendition | undefined; readonly captions: readonly PostRendition[] };
+type MediaGroup = { readonly assetId: string; readonly playback: PostRendition | undefined; readonly poster: PostRendition | undefined; readonly captions: readonly PostRendition[]; readonly state: PostRendition["state"] };
 function groupRenditions(renditions: readonly PostRendition[]): readonly MediaGroup[] {
-  const grouped = new Map<string, { playback?: PostRendition; poster?: PostRendition; captions: PostRendition[] }>();
+  const grouped = new Map<string, { playback?: PostRendition; poster?: PostRendition; captions: PostRendition[]; state: PostRendition["state"] }>();
   for (const rendition of renditions) {
-    const entry = grouped.get(rendition.assetId) ?? { captions: [] };
+    // Every rendition of one asset answers with the same state, because one serving rule judges them: the first one this group meets states it for the group.
+    const entry = grouped.get(rendition.assetId) ?? { captions: [], state: rendition.state };
     if (rendition.purpose === "playback") entry.playback = rendition;
     else if (rendition.purpose === "poster") entry.poster = rendition;
     else if (rendition.purpose === "captions") entry.captions.push(rendition);
     grouped.set(rendition.assetId, entry);
   }
-  return [...grouped].map(([assetId, entry]) => ({ assetId, playback: entry.playback, poster: entry.poster, captions: entry.captions }));
+  return [...grouped].map(([assetId, entry]) => ({ assetId, playback: entry.playback, poster: entry.poster, captions: entry.captions, state: entry.state }));
 }
 const DeniedSurface = ({ sentence, reasonCode, headingLevel }: { readonly sentence: string; readonly reasonCode: DenialCode | undefined; readonly headingLevel: NoticeHeadingLevel }): ReactElement => (
   <div data-slot="receiving-post-denied">
@@ -123,13 +126,14 @@ function RenderedPost({ data, asOf, persona, headingLevel, onRefresh }: Rendered
   const fallback = data.fallbackOccurred && requested.length > 0 && requested !== servedTag;
   const audience = audienceWordOf(data.audience);
   const publishedAt = data.publishedAt?.trim() ?? "";
-  const unplayableVideos = groupRenditions(data.renditions).filter((group) => group.playback === undefined && (group.poster !== undefined || group.captions.length > 0));
+  // A group is stated here when this reading cannot play it: its playback rendition is absent, or the source that rendition points at could not be read.
+  const unplayableVideos = groupRenditions(data.renditions).filter((group) => (group.playback === undefined ? group.poster !== undefined || group.captions.length > 0 : group.state === "unavailable"));
   const Heading = HEADING_TAGS[headingLevel];
   return (
     <DirectionProvider direction={direction}>
       <article data-slot="receiving-post" data-fallback={fallback ? "true" : "false"} aria-labelledby={titleId} className="flex min-w-0 flex-col gap-4 text-start">
         <header className="flex min-w-0 flex-col gap-2">
-          <Heading id={titleId} dir={direction} className="font-heading text-xl font-medium break-words text-balance">
+          <Heading id={titleId} dir={direction} className={cn(HEADING_SCALE[headingLevel], "break-words text-balance")}>
             {(data.title ?? "").trim().length === 0 ? LABELS.headingFallback : (data.title ?? "").trim()}
           </Heading>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -153,17 +157,21 @@ function RenderedPost({ data, asOf, persona, headingLevel, onRefresh }: Rendered
             <ServerHtml html={data.html ?? ""} direction={direction} lang={servedTag.length === 0 ? undefined : servedTag} />
           </CardContent>
         </Card>
-        {unplayableVideos.map((group) => (
-          <VideoPlayer
-            key={group.assetId}
-            title={LABELS.videoTitle}
-            poster={group.poster?.path}
-            captions={group.captions.map((track) => ({ src: track.path, srcLang: servedTag.length === 0 ? LABELS.undeterminedLanguage : servedTag, label: LABELS.captions }))}
-            state="unavailable"
-            direction={direction}
-            onRetry={onRefresh}
-          />
-        ))}
+        {unplayableVideos.map((group) => {
+          // A group whose source is down is stated in words and offers the retry this surface re-reads with, and is given none of the addresses it cannot fetch: its poster and its caption track stay unrequested.
+          const unreadable = group.state === "unavailable";
+          return (
+            <VideoPlayer
+              key={group.assetId}
+              title={LABELS.videoTitle}
+              poster={unreadable ? undefined : group.poster?.path}
+              captions={unreadable ? undefined : group.captions.map((track) => ({ src: track.path, srcLang: servedTag.length === 0 ? LABELS.undeterminedLanguage : servedTag, label: LABELS.captions }))}
+              state="unavailable"
+              direction={direction}
+              onRetry={onRefresh}
+            />
+          );
+        })}
         <footer className="flex min-w-0 flex-col gap-2">
           {fallback ? <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.languageFallbackStatement(requested, servedTag)}</p> : null}
           <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.recheckStatement}</p>
@@ -177,14 +185,14 @@ function RenderedPost({ data, asOf, persona, headingLevel, onRefresh }: Rendered
 const PreferencesEntryPoint = (): ReactElement => (
   <footer data-slot="receiving-post-preferences" className="mt-4 flex min-w-0 flex-col gap-1.5">
     <p className={NOTE_CLASS}>{PREFERENCES_ENTRY_COPY.description}</p>
-    <Link href="/preview/preferences" className="inline-flex min-h-6 max-w-full items-center break-words text-start underline underline-offset-4 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+    <Link href="/preview/preferences" className="inline-link inline-flex min-h-6 max-w-full items-center break-words text-start hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
       {PREFERENCES_ENTRY_COPY.linkLabel}
     </Link>
   </footer>
 );
 /** Props of {@link ReceivingPost}. */ export interface ReceivingPostProps {
   readonly scope: Scope;
-  readonly params: { readonly updateId: string; readonly locale?: string };
+  readonly params: { readonly updateId: string; readonly locale?: string; readonly variant?: string };
   readonly initialEnvelope: ReadResult<ReceivingPostEnvelope>;
   readonly persona: string;
   readonly denialReason?: PreviewDenialReason;

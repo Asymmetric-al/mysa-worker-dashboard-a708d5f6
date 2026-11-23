@@ -10,7 +10,7 @@ import SnapshotStatement from "./snapshot-statement";
 export type PrintReportSnapshot = { readonly basis: SupportBasis; readonly currencies: readonly string[]; readonly period: { readonly from: string; readonly to: string } | null; readonly coverage: Coverage; readonly asOf: string; readonly isCurrentPeriod: boolean };
 export type PrintReportProps = { readonly model: PrintModel; readonly snapshot: PrintReportSnapshot; readonly locale: string; readonly dir?: "ltr" | "rtl"; readonly className?: string };
 const KEEP_TOGETHER = "min-w-0 print:break-inside-avoid";
-const HEADING_CLASS = "text-base font-semibold print:text-sm";
+const HEADING_CLASS = "type-subsection-title print:text-sm";
 const WRAPPING_TEXT_CLASS = "min-w-0 break-words";
 const ALIGN: Readonly<Record<PrintColumn["align"], string>> = { start: "text-start", end: "text-end" };
 const HEADINGS = { summary: "Summary, one line per currency", rows: "Rows", about: "About this page" } as const;
@@ -67,7 +67,7 @@ export function PrintReport({ model, snapshot, locale, dir, className }: PrintRe
   return (
     <section aria-label="Printable report" data-print-report="" dir={dir} className={cn("flex min-w-0 flex-col gap-6 print:gap-3 print:text-xs", className)}>
       <header className="flex min-w-0 flex-col gap-1 print:break-inside-avoid">
-        <h2 className="text-xl font-semibold tracking-tight print:text-base">
+        <h2 className="type-section-title print:text-base">
           <bdi>{model.title}</bdi>
         </h2>
         {model.statusLabel === null ? null : (

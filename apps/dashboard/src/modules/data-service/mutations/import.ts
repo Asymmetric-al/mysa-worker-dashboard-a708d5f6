@@ -152,7 +152,7 @@ const TEXT_UNAVAILABLE_GUIDANCE = "The file text this import kept can no longer 
 const RECEIPT_UNAVAILABLE_GUIDANCE = "This import's recorded receipt cannot be read, so an acceptance could not tell which rows it already applied and nothing was changed. Read the operation's result again rather than repeating the import: rows it already accepted are recorded under its operation identity.";
 type ImportMutationSpec<P, R extends MutationResult> = Pick<MutationPlan<P, R>, "readCurrent" | "apply">;
 async function runImportMutation<P, R extends MutationResult>(input: MutationInput<P>, session: SessionSource | undefined, operationId: string, schema: z.ZodType<P>, name: MutationName, spec: ImportMutationSpec<P, R>): Promise<MutationOutcome> {
-  const opening = await openMutation(input, session);
+  const opening = await openMutation(name, input, session);
   return !opening.ok ? opening.outcome : runMutation<P, R>({ sessionId: opening.sessionId, input, schema, name, authorize: (resolved) => preparationAuthority(resolved, input.scope), ...spec });
 }
 function preparationAuthority(session: ResolvedSession, scope: Scope): ScopeDecision {
@@ -545,7 +545,8 @@ export async function acceptImportRows(input: MutationInput<AcceptImportRowsPayl
         applications.push({ rowNumber: row.rowNumber, partnerRef: reference, appliedByThisAttempt: true, failure: null });
       }
       const acceptedAt = now().toString();
-      const built = buildReceipt({ importOperationId: operationId, fileMeta: { name: review.fileName, bytes: review.byteLength, rowCount: file.dataRowCount, columnCount: file.columnCount }, mapping: confirmedMapping, rowDecisions: set, summary, processedAt: acceptedAt, applications });
+      // The receipt belongs to the import, not to this attempt: it is identified by the import operation identity the review and the proposal are recorded under, so the acceptance stays reachable by the one identity the journey holds and the address names. This attempt's own identity is what the ledger records, and a replay of it returns this same stored receipt.
+      const built = buildReceipt({ importOperationId: review.importOperationId, fileMeta: { name: review.fileName, bytes: review.byteLength, rowCount: file.dataRowCount, columnCount: file.columnCount }, mapping: confirmedMapping, rowDecisions: set, summary, processedAt: acceptedAt, applications });
       if (!built.ok) refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, built.refusal.message));
       const receipt = built.receipt;
       const revision = nextRevision(stored.proposal.revision);
@@ -593,7 +594,7 @@ export async function cancelImport(input: MutationInput<CancelImportPayload>, se
       if (prior.kind === "unreadable") refuseUnavailable({ operationId: context.operationId, reference: "import-receipt", guidance: RECEIPT_UNAVAILABLE_GUIDANCE });
       let receipt: ImportReceipt | null = null;
       if (prior.kind === "receipt") {
-        receipt = { ...cancelUnacceptedRows(prior.receipt, cancelledAt), importOperationId: operationId };
+        receipt = cancelUnacceptedRows(prior.receipt, cancelledAt); // The stored receipt already names the import, so the cancellation is recorded on that one receipt rather than re-keyed to this attempt.
       } else if (review.mapping !== null) {
         const confirmedMapping = review.mapping;
         const parsed = await parseCsv(review.text);
@@ -603,7 +604,15 @@ export async function cancelImport(input: MutationInput<CancelImportPayload>, se
         const set = review.decisions ?? createDecisionSet(file);
         const summarised = summariseDecisions(set, { file, mapping: confirmedMapping, validation, candidates: candidatesOf(state.partners) });
         if (!summarised.ok) refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, summarised.refusal.message));
-        const built = buildReceipt({ importOperationId: operationId, fileMeta: { name: review.fileName, bytes: review.byteLength, rowCount: file.dataRowCount, columnCount: file.columnCount }, mapping: confirmedMapping, rowDecisions: set, summary: summarised.summary, processedAt: cancelledAt, applications: [] });
+        const built = buildReceipt({
+          importOperationId: review.importOperationId,
+          fileMeta: { name: review.fileName, bytes: review.byteLength, rowCount: file.dataRowCount, columnCount: file.columnCount },
+          mapping: confirmedMapping,
+          rowDecisions: set,
+          summary: summarised.summary,
+          processedAt: cancelledAt,
+          applications: [],
+        });
         if (!built.ok) refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, built.refusal.message));
         receipt = cancelUnacceptedRows(built.receipt, cancelledAt);
       }
@@ -625,7 +634,7 @@ export async function cancelImport(input: MutationInput<CancelImportPayload>, se
       });
       const nextReview: ImportReviewRecord = { ...review, cancelledAt, receipt: receipt === null ? null : storedResult(receipt) };
       context.docs.state = stateAfter(state, { proposals: state.proposals.map((entry) => (entry.importOperationId === proposal.importOperationId ? proposal : entry)), reviews: state.reviews.map((entry) => (entry.importOperationId === nextReview.importOperationId ? nextReview : entry)) });
-      return { changed: true, revision, result: storedResult(receipt ?? { importOperationId: operationId, cancelledAt, acceptedRowsRetained: 0, stoppedRows: 0, recallsCreatedRecords: false }), changedIds: [proposal.importOperationId] };
+      return { changed: true, revision, result: storedResult(receipt ?? { importOperationId: review.importOperationId, cancelledAt, acceptedRowsRetained: 0, stoppedRows: 0, recallsCreatedRecords: false }), changedIds: [proposal.importOperationId] };
     },
   });
 }

@@ -5,11 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { useCallback, useId, useMemo, useState, type ChangeEvent, type ReactElement, type ReactNode } from "react";
 import ActionReview, { type MutationSubmit } from "@/components/action-review";
 import { factFrame } from "@/components/fact-list";
-import { fieldErrorsFromInvalid, FormField, refusalSummary, type FieldErrorLookup } from "@/components/form-field";
+import { civilDateConvention, fieldErrorsFromInvalid, FormField, refusalSummary, type FieldErrorLookup } from "@/components/form-field";
+import SectionCard from "@/components/section-card";
 import StateNotice from "@/components/state-notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
@@ -41,25 +42,11 @@ const FOLLOW_UP_FIELDS = [
 ] as const;
 type FollowUpFieldName = (typeof FOLLOW_UP_FIELDS)[number]["name"];
 const Fact = factFrame({ rowClassName: "flex min-w-0 flex-col gap-1", termClassName: "text-sm font-medium", valueClassName: "min-w-0 text-sm text-pretty break-words text-muted-foreground" });
-function SectionCard({ id, title, children }: { readonly id: string; readonly title: string; readonly children: ReactNode }): ReactElement {
-  return (
-    <Card className="min-w-0">
-      <CardHeader>
-        <CardTitle>
-          <h2 id={id} className="font-heading text-base font-medium">
-            {title}
-          </h2>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex min-w-0 flex-col gap-3">{children}</CardContent>
-    </Card>
-  );
-}
 function Frame({ dir, className, returnHref, children }: { readonly dir?: "ltr" | "rtl"; readonly className?: string; readonly returnHref: string; readonly children: ReactNode }): ReactElement {
   return (
     <div data-slot="gift-detail" dir={dir} className={cn("mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-6 py-6", className)}>
       <nav aria-label="Return path" className="min-w-0">
-        <Link href={returnHref} className="inline-flex min-h-target max-w-full items-center gap-1.5 text-sm font-medium text-primary underline-offset-4 hover:underline">
+        <Link href={returnHref} className="inline-link inline-flex min-h-target max-w-full items-center gap-1.5 text-sm font-medium text-primary">
           <ArrowLeftIcon aria-hidden="true" className="size-4 shrink-0 rtl:rotate-180" />
           <span className="min-w-0 text-pretty">Back to the gifts ledger, with the filters, sort and page you came from</span>
         </Link>
@@ -79,11 +66,11 @@ function LoadingBody(): ReactElement {
           ["h-4 w-32", "h-4 w-5/6"],
           ["h-4 w-40", "h-4 w-3/4"],
         ].map(([heading, body]) => (
-          <div key={heading} className="flex min-w-0 flex-col gap-2 rounded-2xl bg-card p-6 ring-1 ring-foreground/10">
+          <Card key={heading} className="min-w-0 gap-2 px-(--card-spacing)">
             <Skeleton className={heading} />
             <Skeleton className="h-4 w-full" />
             <Skeleton className={body} />
-          </div>
+          </Card>
         ))}
       </div>
     </div>
@@ -144,7 +131,7 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
   const [lastOutcome, setLastOutcome] = useState<MutationOutcome | null>(null);
   const followUp = useFollowUpTask();
   const carriedQuery = useMemo<GiftsQuery>(() => ledgerQuery ?? parseGiftsQuery(search), [ledgerQuery, search]);
-  const gifts = useGifts({ scope, query: carriedQuery });
+  const gifts = useGifts({ scope, query: carriedQuery, record: giftId });
   const returnHref = useMemo(() => ledgerHrefOf(carriedQuery), [carriedQuery]);
   const settle = useCallback((outcome: MutationOutcome): void => {
     setLastOutcome(outcome);
@@ -203,10 +190,10 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
           <Badge variant="outline">{VALUE_STATE_WORD[amountState]}</Badge>
           {row.refundOf === undefined ? null : <Badge variant="outline">Correction</Badge>}
         </div>
-        <h1 id={recordHeadingId} className="font-heading text-xl font-semibold tracking-tight">
+        <h1 id={recordHeadingId} className="type-page-title">
           Gift record
         </h1>
-        <p className="min-w-0 text-sm text-pretty text-muted-foreground">One row of received support, stated at the grain, in the currency and with the provenance the source reports for it. Nothing on this record is recomputed: every figure is the one the read returned.</p>
+        <p className="type-supporting min-w-0 text-pretty">One row of received support, stated at the grain, in the currency and with the provenance the source reports for it. Nothing on this record is recomputed: every figure is the one the read returned.</p>
         <p className="flex min-w-0 flex-wrap items-baseline gap-2 break-words" data-grain={grain} data-value-state={amountState} data-gift-row-id={row.giftRowId}>
           <AmountValue money={row.amount} valueState={amountState} locale={locale} emphasis="headline" />
         </p>
@@ -253,36 +240,38 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
           </dl>
         </CardContent>
       </Card>
-      <SectionCard id={grainHeadingId} title="What this row is">
-        <p>
+      <SectionCard headingId={grainHeadingId} title="What this row is" cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-3">
+        <p className="type-supporting">
           {grain === "allocation"
             ? "This row is one authorised allocation of a gift. A gift split between several destinations is reported once per allocation, and only the allocation this read is authorised to see is shown here: no other allocation of the same gift appears on this record, and none of them is added together with it."
-            : "This row is a whole gift that carries no allocation, so it is the gift itself rather than a part of one. Nothing here divides it into allocations and no part of it is shown in place of the whole."}
+            : row.refundOf === undefined
+              ? "This row is a whole gift that carries no allocation, so it is the gift itself rather than a part of one. Nothing here divides it into allocations and no part of it is shown in place of the whole."
+              : "This row is a correction that carries no allocation. It is recorded against the row named in the correction section below, so it stands on its own rather than as a part of that row: nothing here divides it into allocations and nothing here folds it back into the row it corrects."}
         </p>
-        <p>Another row of the same gift may exist in the ledger. Each row is its own record, and this one neither totals the others nor stands in for them.</p>
-        <p className="text-muted-foreground">The snapshot statement below states the grain rule this family reports on, including why a view that holds both grain levels counts the gift once.</p>
-        <p>
+        <p className="type-supporting">Another row of the same gift may exist in the ledger. Each row is its own record, and this one neither totals the others nor stands in for them.</p>
+        <p className="type-supporting">The snapshot statement below states the grain rule this family reports on, including why a view that holds both grain levels counts the gift once.</p>
+        <p className="type-body">
           <span className="sr-only">The grain this read reports at </span>
           <bdi className="mono-identifier">{view.data.grain}</bdi>
         </p>
       </SectionCard>
       {correction === undefined && row.refundOf === undefined ? null : (
-        <SectionCard id={correctionHeadingId} title={row.refundOf === undefined ? "A correction against this row is also in this result" : "This row is a correction"}>
+        <SectionCard headingId={correctionHeadingId} title={row.refundOf === undefined ? "A correction against this row is also in this result" : "This row is a correction"} cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-3">
           {row.refundOf === undefined ? null : (
-            <p>
+            <p className="type-supporting">
               This row records a refund or correction against another row, <bdi className="mono-identifier">{row.refundOf}</bdi>. It carries its own date and its own amount, exactly as the source states them above, and it is never netted into the row it corrects: the two are read as two records, so the change is
               explained in the open rather than hidden inside a difference.
             </p>
           )}
           {correction === undefined ? null : (
-            <p>
+            <p className="type-supporting">
               The result also holds the correction recorded against this row: <bdi className="mono-identifier">{correction.giftRowId}</bdi>, with its own date and its own amount. Both records stand as the source states them, and neither is combined with the other here.
             </p>
           )}
         </SectionCard>
       )}
-      <SectionCard id={provenanceHeadingId} title="Provenance">
-        <p>The record this row came from, as one opaque reference. It is printed exactly as the source gave it: it is never linked, never parsed, and never compared with another reference to decide what it means.</p>
+      <SectionCard headingId={provenanceHeadingId} title="Provenance" cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-3">
+        <p className="type-supporting">The record this row came from, as one opaque reference. It is printed exactly as the source gave it: it is never linked, never parsed, and never compared with another reference to decide what it means.</p>
         <dl className="flex min-w-0 flex-col gap-2">
           {[
             { label: "Source system", value: row.provenance.system },
@@ -293,15 +282,15 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
           ))}
         </dl>
       </SectionCard>
-      <SectionCard id={snapshotHeadingId} title="Basis, coverage and as-of">
+      <SectionCard headingId={snapshotHeadingId} title="Basis, coverage and as-of" cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-3">
         <SnapshotStatement basis={snapshot.basis} currencies={snapshot.currencies} period={{ from: String(snapshot.period.from), to: String(snapshot.period.to) }} coverage={view.coverage} asOf={view.asOf} isCurrentPeriod={snapshot.period.state === "in-progress"} locale={locale} />
-        <p className="text-sm text-pretty text-muted-foreground">Every figure on this record was read once, at the snapshot stated here. Two surfaces compare only when their coverage and their as-of instant agree.</p>
+        <p className="type-supporting text-pretty">Every figure on this record was read once, at the snapshot stated here. Two surfaces compare only when their coverage and their as-of instant agree.</p>
       </SectionCard>
       <section aria-labelledby={followUpHeadingId} className="flex min-w-0 flex-col gap-3">
-        <h2 id={followUpHeadingId} className="font-heading text-base font-medium">
+        <h2 id={followUpHeadingId} className="type-section-title">
           Follow up on this gift
         </h2>
-        <p className="min-w-0 text-sm text-pretty">{GIVING_FOLLOW_UP.description}</p>
+        <p className="type-supporting min-w-0 text-pretty">{GIVING_FOLLOW_UP.description}</p>
         <Card className="min-w-0">
           <CardContent>
             <div className="grid min-w-0 gap-3 sm:grid-cols-2">
@@ -309,8 +298,9 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
                 const fieldClass = "wide" in field && field.wide ? "min-w-0 sm:col-span-2" : undefined;
                 const autoComplete = "autoComplete" in field ? field.autoComplete : undefined;
                 const fieldType = "type" in field ? field.type : undefined;
+                const fieldDescription = field.name === "dueOn" ? `${field.description} ${civilDateConvention(drafts.dueOn)}` : field.description;
                 return (
-                  <FormField key={field.name} label={field.label} name={field.name} description={field.description} error={messagesFor(errors, field.name)} required={"required" in field && field.required} optionalHint={"hint" in field && field.hint} className={fieldClass}>
+                  <FormField key={field.name} label={field.label} name={field.name} description={fieldDescription} error={messagesFor(errors, field.name)} required={"required" in field && field.required} optionalHint={"hint" in field && field.hint} className={fieldClass}>
                     {(control) => {
                       const onFieldChange = (event: ChangeEvent<HTMLInputElement>): void => {
                         draftSetters[field.name](event.target.value);
@@ -356,7 +346,7 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
         />
         {settledSuccess ? (
           <div className="flex min-w-0 flex-col gap-2">
-            <p className="min-w-0 text-sm text-pretty">{GIVING_FOLLOW_UP.resultNote}</p>
+            <p className="type-supporting min-w-0 text-pretty">{GIVING_FOLLOW_UP.resultNote}</p>
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <Button type="button" variant="outline" onClick={startAnother}>
                 Start another follow-up

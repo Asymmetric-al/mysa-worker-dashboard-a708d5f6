@@ -39,7 +39,7 @@ export default function HomeItemRow(props: { item: unknown; variant: HomeSection
   const leadsWithReason = variant === "attention";
   const lifecycle = variant === "unfinished-work" ? view.lifecycle : undefined;
   const destination = (
-    <Link href={view.destination.href} className={cn("inline-flex min-h-6 min-w-6 w-fit max-w-full flex-wrap items-center gap-x-1.5 text-start underline-offset-4 hover:underline", variant === "information" ? "text-sm font-normal" : "text-sm font-medium")}>
+    <Link href={view.destination.href} className={cn("inline-flex min-h-6 min-w-6 w-fit max-w-full flex-wrap items-center gap-x-1.5 text-start inline-link", variant === "information" ? "text-sm font-normal" : "text-sm font-medium")}>
       <bdi className="text-pretty wrap-anywhere">{view.title}</bdi>
       <span className="text-xs font-normal text-muted-foreground">{view.destination.label}</span>
     </Link>

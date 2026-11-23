@@ -55,7 +55,7 @@ export default function FileChooser({ selection, onChoose, onContinue }: FileCho
         <p id={limitsHeadingId} className="font-medium">
           {CHOOSE_FILE_COPY.limitsHeading}
         </p>
-        <p className="text-pretty text-muted-foreground">{CHOOSE_FILE_COPY.limitsLead}</p>
+        <p className="type-supporting text-pretty">{CHOOSE_FILE_COPY.limitsLead}</p>
         <ul aria-labelledby={limitsHeadingId} className="flex list-disc flex-col gap-1 ps-5 text-pretty text-muted-foreground">
           {LIMIT_ROWS.map((limit) => (
             <li key={limit.key}>
@@ -67,8 +67,8 @@ export default function FileChooser({ selection, onChoose, onContinue }: FileCho
       {/* Offered before the control, for the worker who has no file in hand: the example is a download, and choosing it is the same review as any other file. */}
       <div className="flex min-w-0 flex-col gap-1 text-sm">
         <p className="font-medium">{CHOOSE_FILE_COPY.exampleHeading}</p>
-        <p className="text-pretty text-muted-foreground">{CHOOSE_FILE_COPY.exampleLead}</p>
-        <a href={EXAMPLE_FILE_HREF} download className="inline-flex min-h-6 items-center underline underline-offset-4">
+        <p className="type-supporting text-pretty">{CHOOSE_FILE_COPY.exampleLead}</p>
+        <a href={EXAMPLE_FILE_HREF} download className="inline-flex min-h-6 items-center inline-link">
           {CHOOSE_FILE_COPY.exampleLinkLabel}
         </a>
       </div>
@@ -84,7 +84,7 @@ export default function FileChooser({ selection, onChoose, onContinue }: FileCho
           {CHOOSE_FILE_COPY.chosenFileHeading}
         </p>
         {selection === undefined ? (
-          <p className="text-pretty text-muted-foreground">{CHOOSE_FILE_COPY.noFileChosen}</p>
+          <p className="type-supporting text-pretty">{CHOOSE_FILE_COPY.noFileChosen}</p>
         ) : (
           <dl aria-labelledby={chosenFileHeadingId} className="flex flex-col gap-1">
             <FactRow label={CHOOSE_FILE_COPY.fileNameLabel} value={selection.fileName} />
@@ -97,7 +97,7 @@ export default function FileChooser({ selection, onChoose, onContinue }: FileCho
           {CHOOSE_FILE_COPY.continueLabel}
         </Button>
         {selection === undefined ? (
-          <p id={continueHintId} className="text-sm text-pretty text-muted-foreground">
+          <p id={continueHintId} className="type-supporting text-pretty">
             {CHOOSE_FILE_COPY.continueBlocked}
           </p>
         ) : null}

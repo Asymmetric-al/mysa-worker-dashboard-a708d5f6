@@ -14,6 +14,13 @@ export function fieldControlId(name: string): string {
     .replace(/^-+|-+$/g, "");
   return `field-${slug === "" ? "control" : slug}`;
 }
+/** The one body measure for a field's hint: the design system's field description states a normal leading of its own, and every 14px paragraph in the product reads at the body measure instead. `leading-5` is the body measure's 20px step, and the class merge keeps it over the design system's own leading. */
+const HINT_CLASS = "type-supporting leading-5";
+/** The one sentence a date field states about itself: the convention a civil date is written and read in here, and the exact day the field holds once it holds one. */
+export function civilDateConvention(value?: string | null): string {
+  const held = typeof value === "string" ? value.trim() : "";
+  return held === "" ? "Civil dates here are written and read as year-month-day, for example 2026-09-12." : `Civil dates here are written and read as year-month-day, and this one is ${held}.`;
+}
 function messagesOf(value: unknown): readonly string[] {
   const raw: readonly unknown[] = Array.isArray(value) ? value : [value];
   const messages: string[] = [];
@@ -112,7 +119,11 @@ export function FormField({ label, name, description, error, required = false, o
         {label}
         <FieldMarkers required={required} optionalHint={optionalHint} />
       </FieldLabel>
-      {hasDescription ? <FieldDescription id={descriptionId}>{hint}</FieldDescription> : null}
+      {hasDescription ? (
+        <FieldDescription id={descriptionId} className={HINT_CLASS}>
+          {hint}
+        </FieldDescription>
+      ) : null}
       {children({ id, describedBy, invalid, required })}
       {invalid ? <FieldMessage id={errorId} messages={messages} /> : null}
     </Field>
@@ -141,7 +152,11 @@ export function FormFieldGroup({ legend, name, description, error, required = fa
         {legend}
         <FieldMarkers required={required} optionalHint={optionalHint} />
       </FieldLegend>
-      {hasDescription ? <FieldDescription id={descriptionId}>{hint}</FieldDescription> : null}
+      {hasDescription ? (
+        <FieldDescription id={descriptionId} className={HINT_CLASS}>
+          {hint}
+        </FieldDescription>
+      ) : null}
       {children({ describedBy, invalid, required, legendId })}
       {invalid ? <FieldMessage id={errorId} messages={messages} /> : null}
     </FieldSet>
@@ -150,6 +165,8 @@ export function FormFieldGroup({ legend, name, description, error, required = fa
 /** The heading levels a surrounding page can need; the level is the caller's, not the summary's. */
 export type SummaryHeadingLevel = 2 | 3 | 4;
 const SUMMARY_HEADING_TAG: Readonly<Record<SummaryHeadingLevel, "h2" | "h3" | "h4">> = { 2: "h2", 3: "h3", 4: "h4" };
+/** The one type scale's utility per level, so the one error summary states its heading at the measure of the level it lands at. */
+const SUMMARY_HEADING_SCALE: Readonly<Record<SummaryHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const DEFAULT_SUMMARY_TITLE = "There is a problem with this form";
 type SummaryEntry = { readonly path: string | null; readonly label: string; readonly messages: readonly string[] };
 export type FormErrorSummaryProps = {
@@ -210,7 +227,7 @@ export function FormErrorSummary({ errors, labels, order, title = DEFAULT_SUMMAR
       <Alert variant="destructive" aria-labelledby={titleId}>
         <CircleAlertIcon aria-hidden="true" />
         <AlertTitle>
-          <Heading id={titleId} className="text-base font-medium">
+          <Heading id={titleId} className={SUMMARY_HEADING_SCALE[headingLevel]}>
             {title}
           </Heading>
         </AlertTitle>
@@ -223,7 +240,7 @@ export function FormErrorSummary({ errors, labels, order, title = DEFAULT_SUMMAR
                 <li key={path ?? `form-level-${String(index)}`}>
                   {path === null ? null : (
                     <a
-                      className="rounded-sm"
+                      className="inline-link rounded-sm"
                       href={`#${fieldControlId(path)}`}
                       onClick={(event) => {
                         event.preventDefault();

@@ -3,7 +3,9 @@ import { z } from "zod";
 import { mutationInputSchema, mutations, reads } from "@/modules/data-service";
 import { isResolvableTimeZone } from "@/modules/time/civil";
 import { claimedWriteRoute, claimedWrites } from "../handler";
+import { pagingParamsOf, pagingParameter } from "../paging";
 import { READ_ATTEMPT, readGrammar, readRoute } from "../read";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const MESSAGES = {
@@ -28,6 +30,8 @@ const MESSAGES = {
   displayTimeZoneUnresolvable: "Name a display time zone this runtime resolves, such as UTC or Europe/London, so every date in this view is read in a zone that exists.",
   listInvalid: "Read one of the five lists — today, upcoming, overdue, all or undated — so the view holds the work you asked for rather than a wider list you did not.",
   sortInvalid: "Order the list as field:direction, with the field dueOn, title, category or status and the direction asc or desc, so the rows arrive in the order you asked for.",
+  pageInvalid: "State the page as a whole number from 1, so the view opens on the page you asked for rather than a page this request assumes.",
+  pageSizeInvalid: "State the page size as a whole number from 1, so the view carries the rows you asked for rather than a size this request assumes.",
 } as const;
 const TITLE_MAX_LENGTH = 200;
 const CATEGORY_MAX_LENGTH = 60;
@@ -166,33 +170,29 @@ const sortSchema = z.array(z.string()).transform((tokens: readonly string[], con
   }
   return instructions;
 });
-const taskListQuerySchema = z.object({ displayTimeZone: displayTimeZoneSchema, list: listNameSchema.optional(), sort: sortSchema.optional() });
+const taskListQuerySchema = z.object({ displayTimeZone: displayTimeZoneSchema, list: listNameSchema.optional(), sort: sortSchema.optional(), page: pagingParameter(MESSAGES.pageInvalid).optional(), pageSize: pagingParameter(MESSAGES.pageSizeInvalid).optional() });
 type TaskListQueryParams = z.output<typeof taskListQuerySchema>;
 function rawTaskListParams(search: URLSearchParams): Record<string, unknown> {
   const sort = search.getAll("sort").flatMap((value) => value.split(","));
-  return { displayTimeZone: search.get("displayTimeZone") ?? undefined, list: search.get("list") ?? undefined, sort: sort.length === 0 ? undefined : sort };
+  return { ...pagingParamsOf(search), displayTimeZone: search.get("displayTimeZone") ?? undefined, list: search.get("list") ?? undefined, sort: sort.length === 0 ? undefined : sort };
 }
-function taskListQueryOf(search: URLSearchParams, params: TaskListQueryParams): TaskListQuery {
-  const page = search.get("page");
-  const pageSize = search.get("pageSize");
-  return { list: params.list ?? "all", displayTimeZone: params.displayTimeZone, page: page === null ? undefined : Number(page), pageSize: pageSize === null ? undefined : Number(pageSize), ...(params.sort === undefined ? {} : { sort: params.sort }) };
+function taskListQueryOf(params: TaskListQueryParams): TaskListQuery {
+  return { list: params.list ?? "all", displayTimeZone: params.displayTimeZone, page: params.page, pageSize: params.pageSize, ...(params.sort === undefined ? {} : { sort: params.sort }) };
 }
 type AgendaReadQuery = Parameters<typeof reads.work.readAgenda>[0];
 const READ_PARAM = "read";
 const AGENDA_READ = "readAgenda";
-const agendaQuerySchema = z.object({ displayTimeZone: displayTimeZoneSchema });
+const agendaQuerySchema = z.object({ displayTimeZone: displayTimeZoneSchema, page: pagingParameter(MESSAGES.pageInvalid).optional(), pageSize: pagingParameter(MESSAGES.pageSizeInvalid).optional() });
 type AgendaQueryParams = z.output<typeof agendaQuerySchema>;
-const rawAgendaParams = (search: URLSearchParams): Record<string, unknown> => ({ displayTimeZone: search.get("displayTimeZone") ?? undefined });
-function agendaQueryOf(search: URLSearchParams, params: AgendaQueryParams): AgendaReadQuery {
-  const page = search.get("page");
-  const pageSize = search.get("pageSize");
-  return { displayTimeZone: params.displayTimeZone, page: page === null ? undefined : Number(page), pageSize: pageSize === null ? undefined : Number(pageSize) };
+const rawAgendaParams = (search: URLSearchParams): Record<string, unknown> => ({ ...pagingParamsOf(search), displayTimeZone: search.get("displayTimeZone") ?? undefined });
+function agendaQueryOf(params: AgendaQueryParams): AgendaReadQuery {
+  return { displayTimeZone: params.displayTimeZone, page: params.page, pageSize: params.pageSize };
 }
 const discriminantSchema = z.object({ payload: z.object({ operation: z.enum(TASK_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.bodyNotJson });
-const LIST_ROUTE = readRoute(readGrammar(taskListQuerySchema, rawTaskListParams), (params, search) => reads.work.listTasks(taskListQueryOf(search, params)), READ_ATTEMPT);
-const AGENDA_ROUTE = readRoute(readGrammar(agendaQuerySchema, rawAgendaParams), (params, search) => reads.work.readAgenda(agendaQueryOf(search, params)), READ_ATTEMPT);
+const LIST_ROUTE = readRoute(readGrammar(taskListQuerySchema, rawTaskListParams), (params) => reads.work.listTasks(taskListQueryOf(params)), READ_ATTEMPT);
+const AGENDA_ROUTE = readRoute(readGrammar(agendaQuerySchema, rawAgendaParams), (params) => reads.work.readAgenda(agendaQueryOf(params)), READ_ATTEMPT);
 /** One page of one task list or of the dated agenda, exactly as the request asked for it. */
-export const GET = (request: Request): Promise<Response> => (new URL(request.url).searchParams.get(READ_PARAM) === AGENDA_READ ? AGENDA_ROUTE(request) : LIST_ROUTE(request));
+const readTasks = (request: Request): Promise<Response> => (new URL(request.url).searchParams.get(READ_PARAM) === AGENDA_READ ? AGENDA_ROUTE(request) : LIST_ROUTE(request));
 /** The five named task mutations, each judged by its own payload schema before it runs. */
 const TASK_WRITES = claimedWrites<TaskOperation>("operation", {
   createTask: [createTaskBodySchema, mutations.work.createTask],
@@ -202,4 +202,5 @@ const TASK_WRITES = claimedWrites<TaskOperation>("operation", {
   cancelTask: [cancelTaskBodySchema, mutations.work.cancelTask],
 });
 /** One named task mutation, selected by `payload.operation`. */
-export const POST = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, TASK_WRITES);
+const changeTask = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, TASK_WRITES);
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readTasks, POST: changeTask });

@@ -3,7 +3,7 @@ import { useForm } from "@tanstack/react-form";
 import { useCallback, useId, useState, type ReactElement } from "react";
 import ActionReview from "@/components/action-review";
 import { ChoiceGroup } from "@/components/choice-group";
-import FormField, { FormFieldGroup, fieldErrorsFromInvalid } from "@/components/form-field";
+import FormField, { civilDateConvention, FormFieldGroup, fieldErrorsFromInvalid } from "@/components/form-field";
 import { Fact } from "@/components/fact";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -80,7 +80,7 @@ function DurationControl({ value, onChange, error = null, frozenCutoff = null, d
         {(group) => <ChoiceGroup frame={group} value={kind} choices={DURATION_KINDS} wording={DURATION_WORDING.kinds} idPrefix={`${idPrefix}-duration`} onChange={chooseKind} disabled={disabled} />}
       </FormFieldGroup>
       {kind === "through-date" ? (
-        <FormField label={DURATION_WORDING.dateLabel} name="duration.throughDate" description={dateDescription} error={refusedDateText ?? undefined} required>
+        <FormField label={DURATION_WORDING.dateLabel} name="duration.throughDate" description={`${dateDescription} ${civilDateConvention(civilDateText)}`} error={refusedDateText ?? undefined} required>
           {(field) => <Input id={field.id} type="date" lang={locale} value={civilDateText} disabled={disabled} aria-describedby={field.describedBy} aria-invalid={field.invalid} aria-required={field.required} onChange={(event) => changeDate(event.currentTarget.value)} className="w-full sm:max-w-60" />}
         </FormField>
       ) : null}
@@ -96,10 +96,10 @@ const CUTOFF_FACTS: readonly { readonly label: string; readonly className: strin
 function DurationCutoffPanel({ frozenCutoff }: { readonly frozenCutoff: FrozenDurationCutoff | null }): ReactElement {
   const sourceLimit = frozenCutoff === null ? null : statedReason(frozenCutoff.sourceLimit);
   return (
-    <Card size="sm">
+    <Card>
       <CardHeader>
         <CardTitle>
-          <h3 className="font-heading text-base font-medium">{DURATION_WORDING.cutoffHeading}</h3>
+          <h3 className="type-subsection-title">{DURATION_WORDING.cutoffHeading}</h3>
         </CardTitle>
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-3">
@@ -108,8 +108,8 @@ function DurationCutoffPanel({ frozenCutoff }: { readonly frozenCutoff: FrozenDu
         </div>
         {frozenCutoff === null ? (
           <>
-            <p className="text-sm text-muted-foreground">{DURATION_WORDING.cutoffNotFixed}</p>
-            <p className="text-sm text-muted-foreground">{DURATION_WORDING.cutoffNotProvisional}</p>
+            <p className="type-supporting">{DURATION_WORDING.cutoffNotFixed}</p>
+            <p className="type-supporting">{DURATION_WORDING.cutoffNotProvisional}</p>
           </>
         ) : (
           <>
@@ -123,9 +123,9 @@ function DurationCutoffPanel({ frozenCutoff }: { readonly frozenCutoff: FrozenDu
                 </div>
               ))}
             </dl>
-            <p className="text-sm text-muted-foreground">{DURATION_WORDING.cutoffExclusive}</p>
-            <p className="text-sm text-muted-foreground">{DURATION_WORDING.cutoffFrozenAtAcceptance}</p>
-            <p className="text-sm text-muted-foreground">{DURATION_WORDING.chosenIsAMaximum}</p>
+            <p className="type-supporting">{DURATION_WORDING.cutoffExclusive}</p>
+            <p className="type-supporting">{DURATION_WORDING.cutoffFrozenAtAcceptance}</p>
+            <p className="type-supporting">{DURATION_WORDING.chosenIsAMaximum}</p>
             {frozenCutoff.sourceLimitWins ? (
               <>
                 <Separator />
@@ -331,7 +331,7 @@ type RangeDateFieldProps = { readonly name: string; readonly label: string; read
  * being stated, so the calendar a worker opens cannot offer a pair that describes no period.
  */
 const RangeDateField = ({ name, label, description, value, min, max, error, locale, onChange }: RangeDateFieldProps): ReactElement => (
-  <FormField name={name} label={label} description={description} error={error}>
+  <FormField name={name} label={label} description={`${description} ${civilDateConvention(value)}`} error={error}>
     {(control) => (
       <Input id={control.id} type="date" lang={locale} value={value} min={min === "" ? undefined : min} max={max === "" ? undefined : max} aria-describedby={control.describedBy} aria-invalid={control.invalid ? true : undefined} onChange={(event) => onChange(event.currentTarget.value)} className="w-full sm:max-w-60" />
     )}
@@ -435,12 +435,12 @@ export default function InvitationForm({ candidates, rangeCurrencies, scope, exp
   return (
     <section data-slot="invitation-form" aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 {...{ id: headingId, className: "font-heading text-lg font-medium" }}>{"Invite a coach"}</h2>
-        <p className="text-sm text-pretty text-muted-foreground">{SECTION_LEAD}</p>
+        <h2 {...{ id: headingId, className: "type-section-title" }}>{"Invite a coach"}</h2>
+        <p className="type-supporting text-pretty">{SECTION_LEAD}</p>
       </div>
       <section aria-labelledby={stagesId} className="flex min-w-0 flex-col gap-2">
-        <h3 {...{ id: stagesId, className: "font-heading text-base font-medium" }}>{"What an invitation does, and what it never does"}</h3>
-        <p className="text-sm text-pretty text-muted-foreground">{"These four things are separate outcomes, and recording an invitation reaches only the first: it sends no message, verifies nobody and makes nothing readable."}</p>
+        <h3 {...{ id: stagesId, className: "type-subsection-title" }}>{"What an invitation does, and what it never does"}</h3>
+        <p className="type-supporting text-pretty">{"These four things are separate outcomes, and recording an invitation reaches only the first: it sends no message, verifies nobody and makes nothing readable."}</p>
         <ol className="flex min-w-0 list-decimal flex-col gap-2 ps-5 text-sm">
           {SHARING_OUTCOME_COPY.map((stage) => (
             <li key={stage.id} className="min-w-0 text-pretty">
@@ -491,16 +491,16 @@ export default function InvitationForm({ candidates, rangeCurrencies, scope, exp
               ))}
               <Separator />
               <section aria-labelledby={modulesId} className="flex min-w-0 flex-col gap-2">
-                <h3 {...{ id: modulesId, className: "font-heading text-base font-medium" }}>{MODULES_HEADING}</h3>
-                <p className="text-sm text-pretty text-muted-foreground">{"Every module is recorded as switched off when the invitation is created. You choose which ones to switch on once the person has accepted, so nothing here pre-selects a module and no module can be read before then."}</p>
+                <h3 {...{ id: modulesId, className: "type-subsection-title" }}>{MODULES_HEADING}</h3>
+                <p className="type-supporting text-pretty">{"Every module is recorded as switched off when the invitation is created. You choose which ones to switch on once the person has accepted, so nothing here pre-selects a module and no module can be read before then."}</p>
                 <ul className="flex min-w-0 flex-col gap-3">
                   {Object.entries(MODULE_COPY).map(([key, wording]) => (
                     <li key={key} className="flex min-w-0 flex-col gap-0.5">
-                      <p className="text-sm">
+                      <p className="type-body">
                         <span className="font-medium text-foreground">{wording.name}</span>
                         <span className="text-muted-foreground">{` — ${MODULE_STATE_WORD}`}</span>
                       </p>
-                      <p className="text-sm text-pretty text-muted-foreground">{wording.description}</p>
+                      <p className="type-supporting text-pretty">{wording.description}</p>
                     </li>
                   ))}
                 </ul>
@@ -511,10 +511,10 @@ export default function InvitationForm({ candidates, rangeCurrencies, scope, exp
               {rangeCurrencies.length === 0 ? (
                 // A source nothing could be read from is stated as that, never as a range of zero or as a period of its own.
                 <section aria-labelledby={rangeId} className="flex min-w-0 flex-col gap-2">
-                  <h3 id={rangeId} className="font-heading text-base font-medium">
+                  <h3 id={rangeId} className="type-subsection-title">
                     {RANGE_COPY.heading}
                   </h3>
-                  <p className="text-sm text-pretty text-muted-foreground">{RANGE_COPY.unreadable}</p>
+                  <p className="type-supporting text-pretty">{RANGE_COPY.unreadable}</p>
                 </section>
               ) : (
                 <FormFieldGroup legend={RANGE_COPY.heading} name={RANGE_FIELD} description={RANGE_COPY.lead} error={rangeMessages} optionalHint>
@@ -548,15 +548,15 @@ export default function InvitationForm({ candidates, rangeCurrencies, scope, exp
                           onSelect={(next) => setRange({ ...currentRange, currency: next })}
                         />
                       ) : (
-                        <p className="text-sm text-pretty text-muted-foreground">{`${RANGE_COPY.currencyDescription} ${RANGE_COPY.singleCurrency(chosenCurrency)}`}</p>
+                        <p className="type-supporting text-pretty">{`${RANGE_COPY.currencyDescription} ${RANGE_COPY.singleCurrency(chosenCurrency)}`}</p>
                       )}
-                      {rangeCurrencyChoices.length > 1 ? <p className="text-sm text-pretty text-muted-foreground">{RANGE_COPY.currencyRequired}</p> : null}
-                      <p className="text-sm text-pretty text-muted-foreground">{RANGE_COPY.optionalNote}</p>
+                      {rangeCurrencyChoices.length > 1 ? <p className="type-supporting text-pretty">{RANGE_COPY.currencyRequired}</p> : null}
+                      <p className="type-supporting text-pretty">{RANGE_COPY.optionalNote}</p>
                     </div>
                   )}
                 </FormFieldGroup>
               )}
-              {outstanding.length === 0 ? null : <p className="text-sm text-pretty text-muted-foreground">{`Still needed before this invitation can be recorded: ${listOf(outstanding)}.`}</p>}
+              {outstanding.length === 0 ? null : <p className="type-supporting text-pretty">{`Still needed before this invitation can be recorded: ${listOf(outstanding)}.`}</p>}
               {gap === null && !rangeReversed ? (
                 <ActionReview<InvitationPayload>
                   title={"Record this invitation"}
@@ -574,12 +574,12 @@ export default function InvitationForm({ candidates, rangeCurrencies, scope, exp
                   <Button type="button" disabled aria-describedby={gap === null ? rangeBlockedId : gapId}>
                     {CONFIRM_LABEL}
                   </Button>
-                  <p id={gap === null ? rangeBlockedId : undefined} className="text-sm text-pretty text-muted-foreground">
+                  <p id={gap === null ? rangeBlockedId : undefined} className="type-supporting text-pretty">
                     {gap === null ? RANGE_COPY.reversed : "Nothing can be submitted until the missing choice above is available."}
                   </p>
                 </div>
               )}
-              {recorded ? <p className="text-sm text-pretty text-muted-foreground">{"Recording an invitation reached the first of the four outcomes above and no further: identity verification, deliberate acceptance and live access have not happened."}</p> : null}
+              {recorded ? <p className="type-supporting text-pretty">{"Recording an invitation reached the first of the four outcomes above and no further: identity verification, deliberate acceptance and live access have not happened."}</p> : null}
             </div>
           );
         }}

@@ -10,6 +10,8 @@ import { buildNotice, resolveRendition, type RenditionCandidate as NoticeRenditi
 import { containEditions, decideReach, withdrawEdition } from "@/modules/content/reach";
 import { VARIANT_AUDIENCES, VARIANT_FAMILIES, admittedAudiences, applyDraftRevision, applyReleaseOutcome, applyReviewDecision, createRelease, createRevision, createVariant as buildVariant, freezeCandidate, isReleaseUnchanged, restoreAsNewDraft, revisionChecksum, variantKeyAllowed } from "@/modules/content/variant";
 import type { ContentRevision, ContentVariant, MediaPlacement, Release, VariantAudience, VariantFamily } from "@/modules/content/variant";
+import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
+import { canonicalJson } from "@/modules/import/receipt";
 import { uploadedMediaReference, writeMediaBytes } from "@/modules/store/media";
 import { RENDITION_PURPOSES, acceptImage, acceptVideo, mediaStateReason, prepareRendition, type MediaAcceptanceSuccess, type MediaAssetScope, type MediaProfileCheck, type MediaRefusal, type MediaRendition, type MediaTagVerification } from "@/modules/media/asset";
 import { instantAt } from "@/modules/time/clock";
@@ -49,7 +51,15 @@ const contentReviewRecordSchema = z.object({
   revision: recordRevisionSchema,
 });
 type ContentReviewRecord = StoredRecord<z.infer<typeof contentReviewRecordSchema>>;
-const mediaAssetDescriptorRecordSchema = z.object({ assetId: z.string().min(1), altText: z.string().min(1).nullable(), caption: z.string().min(1).nullable(), credit: z.string().min(1).nullable(), language: z.string().min(1).nullable(), revision: recordRevisionSchema });
+const mediaAssetDescriptorRecordSchema = z.object({
+  assetId: z.string().min(1),
+  altText: z.string().min(1).nullable(),
+  caption: z.string().min(1).nullable(),
+  credit: z.string().min(1).nullable(),
+  language: z.string().min(1).nullable(),
+  captionLabel: z.string().min(1).max(120).nullable().optional(),
+  revision: recordRevisionSchema,
+});
 type MediaAssetDescriptorRecord = StoredRecord<z.infer<typeof mediaAssetDescriptorRecordSchema>>;
 const contentMutationStateSchema = z.object({
   contentDocuments: z.array(contentDocumentRecordSchema),
@@ -238,7 +248,8 @@ function storedShareOf(share: StatedShare, previous: SharePresentationRecord | u
   };
 }
 const COMPARED_REVISION_MEMBERS = ["mediaPlacements", "captions", "sharePresentation", "body"] as const;
-const storedContentEquals = (left: StoredContentRevision, right: StoredContentRevision): boolean => left.contentChecksum === right.contentChecksum && COMPARED_REVISION_MEMBERS.every((member) => JSON.stringify(left[member]) === JSON.stringify(right[member]));
+// A save writes nothing when every member below already states what the save states, whatever order either side was assembled in: a stored body is canonicalised when it is written, while a freshly parsed one carries the profile's own member order. These members are the whole of what the revision digest is derived from — the body, the placements in authored order, the alternative text and captions those placements carry, and the share presentation — so comparing them is not weaker than comparing the digest, and it does not depend on a stored digest having been produced by the same formula.
+const storedContentEquals = (left: StoredContentRevision, right: StoredContentRevision): boolean => COMPARED_REVISION_MEMBERS.every((member) => canonicalJson(left[member]) === canonicalJson(right[member]));
 type ResolvedPlacements = { readonly placements: readonly MediaPlacementRecord[]; readonly altText: Readonly<Record<string, string>>; readonly captions: Readonly<Record<string, string>>; readonly tracks: readonly ContentCaptionTrackRecord[]; readonly domain: readonly MediaPlacement[] };
 const UNPLACEABLE_ASSET = "This media asset is not one this edition may place, so choose an asset registered in this ministry.";
 function resolvePlacements(input: { readonly state: ContentMutationState; readonly session: ResolvedSession; readonly previous: readonly MediaPlacementRecord[]; readonly requested: readonly z.infer<typeof placementRefSchema>[] }): ResolvedPlacements {
@@ -270,7 +281,9 @@ function resolvePlacements(input: { readonly state: ContentMutationState; readon
     domain.push({ placementId, assetId: asset.assetId });
     const captionRendition = asset.renditions.find((entry) => entry.purpose === "captions");
     const descriptorLanguage = descriptor?.language ?? null;
-    if (asset.kind === "video" && captionRendition !== undefined && descriptorLanguage !== null) tracks.push({ assetId: asset.assetId, renditionId: captionRendition.renditionId, language: descriptorLanguage, label: descriptorLanguage, isDefault: tracks.length === 0 });
+    // The track is named by the label the person who placed it stated, and falls back to the media's own language when they left one out.
+    const descriptorLabel = descriptor?.captionLabel ?? null;
+    if (asset.kind === "video" && captionRendition !== undefined && descriptorLanguage !== null) tracks.push({ assetId: asset.assetId, renditionId: captionRendition.renditionId, language: descriptorLanguage, label: descriptorLabel ?? descriptorLanguage, isDefault: tracks.length === 0 });
   });
   return { placements, altText, captions, tracks, domain };
 }
@@ -514,11 +527,27 @@ function noticeRenditionOf(state: ContentMutationState, revision: StoredContentR
 }
 /** Publishes one revision of each selected edition, and reports what each edition's attempt produced. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export const publishVariants = async (sessionId: string, input: MutationInput<PublishVariantsPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, publishVariantsPayloadSchema, "publishVariants", { apply: applyPublishVariants });
+/** What a later edition of one simulated partial release answers: no release is recorded for it, the release head it already held stays the published revision, and the release a sibling recorded in the same call stands. */
+function simulatedSiblingAttempt(variant: ContentVariantRecord, head: ReleaseRecord | undefined): ReleaseAttempt {
+  return {
+    variantId: variant.variantId,
+    state: head === undefined ? "needs-attention" : "failed-prior-good-head",
+    ...(head === undefined ? {} : { releaseId: head.releaseId }),
+    reasonCode: "simulated-partial-release",
+    reason:
+      head === undefined
+        ? "This scenario simulates a partial release, so no release was recorded for this edition and it still needs attention; the sibling edition's release stands rather than being rolled back."
+        : "This scenario simulates a partial release, so no release was recorded for this edition and the revision it already published stays the head; the sibling edition's release stands rather than being rolled back.",
+  };
+}
 function applyPublishVariants(context: MutationContext, payload: PublishVariantsPayload): ApplyResult<MutationResult> {
   const { raw, state } = openState(context.docs);
   const selections = releaseSelectionsOf(state, payload);
   const document = requireDocument(state, payload.documentId ?? requireVariant(state, selections[0]?.variantId ?? "").documentId);
   const at = scenarioInstant(context.session);
+  // A development scenario can simulate the partial release the seeded example demonstrates for real, and one call selecting a single edition has no sibling to fail.
+  const simulatedPartialRelease = isScenarioId(context.session.scenarioId) && scenarioFlagsFor(context.session.scenarioId).releaseSynthesis === "one-sibling-fails" && selections.length > 1;
+  let releasedEdition: string | undefined;
   const attempts: ReleaseAttempt[] = [];
   const createdReleases = new Map<string, ReleaseRecord>();
   const supersededReleases = new Map<string, ReleaseRecord>();
@@ -580,10 +609,16 @@ function applyPublishVariants(context: MutationContext, payload: PublishVariants
       });
       continue;
     }
+    // The first edition of a simulated partial release that can release goes on to release exactly as it does in every other scenario; each later one answers here, before a release is built or a head is touched.
+    if (simulatedPartialRelease && releasedEdition !== undefined) {
+      attempts.push(simulatedSiblingAttempt(variant, head));
+      continue;
+    }
     const domainVariant = contentVariantOf(variant);
     const domainRevision = contentRevisionOf(revision, parsed.document);
     const domainHead = head === undefined ? undefined : domainReleaseOf(head, variant, state);
     if (domainHead !== undefined && isReleaseUnchanged(domainHead, domainRevision)) {
+      releasedEdition = variant.variantId;
       attempts.push({ variantId: variant.variantId, state: "released", releaseId: domainHead.releaseId, revisionId: domainHead.revisionId, notifyMode, reasonCode: "already-published", reason: "This edition already publishes exactly this revision; no second release was recorded." });
       continue;
     }
@@ -597,6 +632,7 @@ function applyPublishVariants(context: MutationContext, payload: PublishVariants
       supersededReleases.set(advanced.supersededRelease.releaseId, storedReleaseOf(advanced.supersededRelease, previous === undefined ? INITIAL_REVISION_TOKEN : nextRevision(previous.revision), previous));
     }
     updatedVariants.set(variant.variantId, storedVariantOf(advanced.variant, nextRevision(variant.revision)));
+    releasedEdition = variant.variantId;
     attempts.push({ variantId: variant.variantId, state: "released", releaseId: built.release.releaseId, revisionId: built.release.revisionId, notifyMode });
   }
   if (createdReleases.size === 0) {
@@ -905,7 +941,8 @@ function applyRestoreRevisionAsDraft(context: MutationContext, payload: RestoreR
   return { changed: true, revision: nextRevision(variant.revision), result, created: [restored.revisionId], changedIds: [variant.variantId] } satisfies ApplyResult<typeof result>;
 }
 type DraftTarget = { readonly variant: ContentVariantRecord; readonly revision: StoredContentRevision; readonly document: ContentDocumentRecord; readonly body: ContentDocumentJson };
-function draftTargetOf(state: ContentMutationState, payload: { readonly draftRevisionId?: string; readonly variantId?: string }): DraftTarget {
+// The draft one editorial change edits, resolved from the identity the payload names. A section change and a media placement change both edit the edition's own draft, so both resolve it here and cannot disagree about which revision an edition is editing.
+function resolveDraftTarget(state: ContentMutationState, payload: { readonly draftRevisionId?: string; readonly variantId?: string }): DraftTarget {
   let variant: ContentVariantRecord;
   let revision: StoredContentRevision;
   if (payload.draftRevisionId !== undefined) {
@@ -914,14 +951,23 @@ function draftTargetOf(state: ContentMutationState, payload: { readonly draftRev
     if (variant.draftRevisionId !== revision.revisionId) throw invalidField("draftRevisionId", "This revision is no longer the edition's draft, so reopen the page and compose into the current draft.");
   } else if (payload.variantId !== undefined) {
     variant = requireVariant(state, payload.variantId);
-    if (variant.draftRevisionId === null) throw invalidField("variantId", "This edition has no draft yet, so save the draft once before composing its sections.");
+    if (variant.draftRevisionId === null) throw invalidField("variantId", "This edition has no draft yet, so save its draft once before changing what it holds.");
     revision = requireRevision(state, variant.draftRevisionId);
   } else {
-    throw invalidField("draftRevisionId", "A section change names the draft revision it edits, so open the page's draft first.");
+    throw invalidField("draftRevisionId", "This change names the draft revision it edits, so open the edition's draft first.");
   }
   const document = requireDocument(state, variant.documentId);
-  if (document.family === "update") throw invalidField("variantId", "A section composes a Worker or Project Page; an Update carries prose and its own media placements.");
   return { variant, revision, document, body: requireParsedBody(revision) };
+}
+// A section composes a Worker or Project Page, so a section change on an Update draft is refused instead of writing a structure that family renders nowhere.
+function draftTargetOf(state: ContentMutationState, payload: { readonly draftRevisionId?: string; readonly variantId?: string }): DraftTarget {
+  const target = resolveDraftTarget(state, payload);
+  if (target.document.family === "update") throw invalidField("variantId", "A section composes a Worker or Project Page; an Update carries prose and its own media placements.");
+  return target;
+}
+// The draft a media placement change edits: an Update carries prose and its own media placements exactly as a Page composes its own sections, so this reader states no family guard and both families place media on their draft.
+function placementTargetOf(state: ContentMutationState, payload: { readonly draftRevisionId?: string; readonly variantId?: string }): DraftTarget {
+  return resolveDraftTarget(state, payload);
 }
 function sectionIndexOf(sections: readonly ContentSection[], sectionId: string): number {
   const numericText = /^section-(\d+)$/u.exec(sectionId)?.[1] ?? (/^\d+$/u.test(sectionId) ? sectionId : undefined);
@@ -1065,6 +1111,15 @@ function storedProfileOf(check: MediaProfileCheck): { readonly container: string
 }
 const storedVerificationOf = (verification: MediaTagVerification): { readonly checked: boolean; readonly residualTags: readonly string[] } => ({ checked: verification.checked, residualTags: [...verification.residualTags] });
 const uploadBytesSchema = z.strictObject({ bytesBase64: z.string().min(1, "Choose a file to upload."), name: z.string().min(1).max(255).optional() });
+// The section one registration places its asset into: a Page composes media into a section, so an attempt that binds states the draft edition it composes and the catalogue element the page read keys that section's placements by.
+const sectionPlacementPayloadSchema = z
+  .strictObject({
+    draftRevisionId: recordIdSchema.optional(),
+    variantId: recordIdSchema.optional(),
+    sectionElement: z.string({ error: "State the section this media is placed in." }).trim().min(1, "State the section this media is placed in."),
+    position: z.int({ error: "State the position this placement takes as a whole number." }).nonnegative("A position is zero or more, counting from the first placement.").optional(),
+  })
+  .superRefine(refuseUnnamedDraftTarget);
 const registerMediaAssetPayloadSchema = z
   .strictObject({
     kind: z.enum(["image", "video"], { error: "Choose whether this file is an image or a video." }),
@@ -1077,6 +1132,7 @@ const registerMediaAssetPayloadSchema = z
     poster: z.strictObject({ bytesBase64: z.string().min(1), name: z.string().min(1).max(255).optional(), altText: z.string().trim().min(1).max(PLACEMENT_TEXT_MAX_CHARS).optional() }).optional(),
     captions: z.strictObject({ vtt: z.string().min(1, "Choose a WebVTT caption file."), language: localeTagSchema, label: z.string().trim().min(1).max(120).optional() }).optional(),
     transcript: z.strictObject({ text: z.string().min(1, "State the transcript, or leave it out.") }).optional(),
+    sectionPlacement: sectionPlacementPayloadSchema.optional(),
   })
   .superRefine((payload, ctx) => {
     const altText = payload.altText ?? payload.placement?.altText;
@@ -1122,7 +1178,53 @@ async function writeReplayedRegistration(sessionId: string, payload: RegisterMed
   const replayed = await prepareRegisteredRenditions(payload, assetId, scope);
   for (const rendition of replayed.renditions) await writeMediaBytes(uploadedMediaReference(sessionId, assetId, rendition.renditionId, rendition.mimeType), rendition.bytes);
 }
-/** Registers one uploaded image or video as a scoped asset with prepared renditions. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
+// The revision a registration presents: none for an Updates registration, which registers the asset here and places it through its own draft save, and the draft edition's own revision for a Page registration, which writes the placement itself.
+function registrationTargetOf(documents: MutationContext["docs"], sectionPlacement: RegisterMediaAssetPayload["sectionPlacement"]): CurrentTarget {
+  return sectionPlacement === undefined ? { kind: "absent" } : draftTarget(documents, sectionPlacement);
+}
+function storeRegisteredAsset(documents: MutationContext["docs"], opened: OpenedState, asset: MediaAssetRecord, descriptor: MediaAssetDescriptorRecord): string {
+  writeState(documents, opened.raw, { mediaAssets: [...opened.state.mediaAssets, asset], mediaAssetDescriptors: [...opened.state.mediaAssetDescriptors, descriptor] });
+  return asset.revision;
+}
+// One registration of a Page's section writes the asset, its descriptor and the draft revision that places it in that section, so an accepted attempt never leaves a stored asset no draft refers to.
+function placeRegisteredAsset(input: {
+  readonly context: MutationContext;
+  readonly opened: OpenedState;
+  readonly asset: MediaAssetRecord;
+  readonly descriptor: MediaAssetDescriptorRecord;
+  readonly altText: string;
+  readonly caption: string | null;
+  readonly credit: string | null;
+  readonly sectionPlacement: NonNullable<RegisterMediaAssetPayload["sectionPlacement"]>;
+}): string {
+  const { context, opened, asset, descriptor, altText, caption, credit, sectionPlacement } = input;
+  const mediaAssets = [...opened.state.mediaAssets, asset];
+  const mediaAssetDescriptors = [...opened.state.mediaAssetDescriptors, descriptor];
+  // A section composes a Worker or Project Page only, so a registration that names one on an Update is refused with the message a section change gets.
+  const target = draftTargetOf(opened.state, sectionPlacement);
+  // A placement is read back by the section it names, so a registration that names a section this draft does not hold is refused rather than stored where nothing would render it.
+  if (!target.body.sections.some((section) => section.element === sectionPlacement.sectionElement)) throw invalidField("sectionPlacement.sectionElement", "This draft holds no section of that type, so reopen the edition and choose the section again.");
+  const requested: readonly z.infer<typeof placementRefSchema>[] = [
+    ...target.revision.mediaPlacements.map(placementRefOf),
+    {
+      assetId: asset.assetId,
+      purpose: asset.kind === "image" ? "display" : "playback",
+      ...(altText.length === 0 ? {} : { altText }),
+      ...(caption === null ? {} : { caption }),
+      ...(credit === null ? {} : { credit }),
+      sectionElement: sectionPlacement.sectionElement,
+      ...(sectionPlacement.position === undefined ? {} : { position: sectionPlacement.position }),
+    },
+  ];
+  const placed: OpenedState = { raw: { ...opened.raw, mediaAssets, mediaAssetDescriptors }, state: { ...opened.state, mediaAssets, mediaAssetDescriptors } };
+  const resolved = resolvePlacements({ state: placed.state, session: context.session, previous: target.revision.mediaPlacements, requested });
+  const written = writeDraftEdit({ context, opened: placed, target, body: target.body, placements: resolved.placements, tracks: resolved.tracks });
+  if (written.changed) return written.revision;
+  // A placement list that already stated this entry changes no revision, so the asset and its descriptor are written on their own rather than appended twice.
+  writeState(context.docs, placed.raw, { mediaAssets, mediaAssetDescriptors });
+  return asset.revision;
+}
+/** Registers one uploaded image or video as a scoped asset with prepared renditions, and places it in the section a Page registration names. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function registerMediaAsset(sessionId: string, input: MutationInput<RegisterMediaAssetPayload>): Promise<MutationOutcome> {
   const scope: MediaAssetScope = { organizationId: input.scope.organizationId, ministryId: input.scope.ministryId };
   const pending: PendingRenditionBytes[] = [];
@@ -1132,6 +1234,7 @@ export async function registerMediaAsset(sessionId: string, input: MutationInput
     schema: registerMediaAssetPayloadSchema,
     name: "registerMediaAsset",
     authorize: (session) => editorialDecision(session, input.scope),
+    readCurrent: (documents) => registrationTargetOf(documents, input.payload.sectionPlacement),
     apply: async (context) => {
       const { raw, state } = openState(context.docs);
       const payload = input.payload;
@@ -1154,10 +1257,11 @@ export async function registerMediaAsset(sessionId: string, input: MutationInput
         tagVerification: storedVerificationOf(accepted.tagVerification),
         revision: INITIAL_REVISION_TOKEN,
       };
-      const descriptor: MediaAssetDescriptorRecord = { assetId, altText: altText.length === 0 ? null : altText, caption, credit, language, revision: INITIAL_REVISION_TOKEN };
-      writeState(context.docs, raw, { mediaAssets: [...state.mediaAssets, asset], mediaAssetDescriptors: [...state.mediaAssetDescriptors, descriptor] });
+      const descriptor: MediaAssetDescriptorRecord = { assetId, altText: altText.length === 0 ? null : altText, caption, credit, language, captionLabel: payload.captions?.label ?? null, revision: INITIAL_REVISION_TOKEN };
+      const sectionPlacement = payload.sectionPlacement;
+      const revision = sectionPlacement === undefined ? storeRegisteredAsset(context.docs, { raw, state }, asset, descriptor) : placeRegisteredAsset({ context, opened: { raw, state }, asset, descriptor, altText, caption, credit, sectionPlacement });
       const result: RegisteredMediaAssetView = { assetId, kind: accepted.kind, state: "ready", altText: descriptor.altText, caption, language, renditions: renditions.map((rendition) => ({ renditionId: rendition.renditionId, purpose: rendition.purpose })) };
-      return { changed: true, revision: asset.revision, result, created: [assetId] } satisfies ApplyResult<typeof result>;
+      return { changed: true, revision, result, created: [assetId] } satisfies ApplyResult<typeof result>;
     },
   });
   try {
@@ -1180,7 +1284,7 @@ const withoutTracksOf = (tracks: readonly ContentCaptionTrackRecord[], remaining
 export const replacePlacement = async (sessionId: string, input: MutationInput<PlacementTargetPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, placementTargetPayloadSchema, "replacePlacement", { readCurrent: draftTarget, apply: applyReplacePlacement });
 function applyReplacePlacement(context: MutationContext, payload: PlacementTargetPayload): ApplyResult<MutationResult> {
   const opened = openState(context.docs);
-  const target = draftTargetOf(opened.state, payload);
+  const target = placementTargetOf(opened.state, payload);
   if (target.revision.mediaPlacements.find((placement) => placement.placementId === payload.placementId) === undefined) throw invalidField("placementId", "This draft holds no placement by that identity, so reopen the page and choose the placement again.");
   const requested = target.revision.mediaPlacements.map((placement) => {
     if (placement.placementId !== payload.placementId) return placementRefOf(placement);
@@ -1202,7 +1306,7 @@ function applyReplacePlacement(context: MutationContext, payload: PlacementTarge
 export const removePlacement = async (sessionId: string, input: MutationInput<PlacementTargetPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, placementTargetPayloadSchema, "removePlacement", { readCurrent: draftTarget, apply: applyRemovePlacement });
 function applyRemovePlacement(context: MutationContext, payload: PlacementTargetPayload): ApplyResult<MutationResult> {
   const opened = openState(context.docs);
-  const target = draftTargetOf(opened.state, payload);
+  const target = placementTargetOf(opened.state, payload);
   const placementId = payload.placementId;
   if (!target.revision.mediaPlacements.some((placement) => placement.placementId === placementId)) throw invalidField("placementId", "This draft holds no placement by that identity, so reopen the page and choose the placement again.");
   const placements = target.revision.mediaPlacements.filter((placement) => placement.placementId !== placementId);

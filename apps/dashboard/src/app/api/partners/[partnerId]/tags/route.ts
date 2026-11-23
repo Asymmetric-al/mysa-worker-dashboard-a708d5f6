@@ -2,6 +2,7 @@ import { z, ZodError } from "zod";
 import { assertNever } from "@/lib/result";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse, type MutationInput, type MutationOutcome } from "@/modules/data-service";
 import { jsonBodyOf, mutate, operationIdentityOf } from "../../../handler";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const OPERATIONS = ["setTag", "setFavourite"] as const;
@@ -36,7 +37,7 @@ async function fileInto<Parsed extends { readonly partnerId?: string }, Payload>
 }
 type TagsParams = { readonly partnerId: string };
 /** Files one partner record under a personal label or the favourite mark: the body's `payload.operation` names `setTag` or `setFavourite`, exactly one of them runs, and the answer is exactly one of the eight outcomes. */
-export async function POST(request: Request, context: { params: Promise<TagsParams> }): Promise<Response> {
+async function fileTagOrFavourite(request: Request, context: { params: Promise<TagsParams> }): Promise<Response> {
   const { partnerId } = await context.params;
   const raw = await jsonBodyOf(request);
   const claimed = discriminantSchema.safeParse(raw);
@@ -51,3 +52,4 @@ export async function POST(request: Request, context: { params: Promise<TagsPara
       return assertNever(operation, "Unhandled partner filing mutation");
   }
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: fileTagOrFavourite });

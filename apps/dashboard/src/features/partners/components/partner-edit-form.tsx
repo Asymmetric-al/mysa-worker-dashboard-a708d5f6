@@ -3,7 +3,7 @@ import { useForm } from "@tanstack/react-form";
 import Link from "next/link";
 import { useCallback, useId, useRef, useState, type FormEvent, type ReactElement } from "react";
 import { outcomeNotice, useAttemptedMutation, type OutcomeNoticeCopy } from "@/components/attempt";
-import { FormField, type FieldErrorLookup } from "@/components/form-field";
+import { FormField, fieldErrorsFromInvalid, type FieldErrorLookup } from "@/components/form-field";
 import OperationResult from "@/components/operation-result";
 import StateNotice from "@/components/state-notice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -13,12 +13,12 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import type { reads } from "@/modules/data-service";
 import type { PartnerRecord, ReadEnvelope } from "@/modules/data-service/envelope";
-import type { MutationOutcome } from "@/modules/data-service/outcome";
+import { invalid, UNIDENTIFIED_ATTEMPT, type MutationOutcome } from "@/modules/data-service/outcome";
 import { PERMISSION_FACT_COPY } from "../copy/facets";
 import { IDENTITY_COPY, PRIVATE_RECORD_COPY } from "../copy/privacy";
 import { FORM_OUTCOME_COPY, PARTNER_ACTION_LABELS } from "../copy/states";
 import { useSaveContactEdits } from "../hooks/use-partner-mutations";
-import { restrictionEditSchema, type SaveContactEditsPayload } from "../schemas/partner-edit";
+import { restrictionEditSchema, saveContactEditsPayloadSchema, type SaveContactEditsPayload } from "../schemas/partner-edit";
 import { TextField } from "./bound-fields";
 import { CONTACT_KIND_DEFAULT, CONTACT_METHODS_FIELD, ContactMethodList, contactMethodFieldLabels, type ContactMethodRow } from "./contact-method-rows";
 type PartnerRecordEnvelope = ReadEnvelope<Extract<Awaited<ReturnType<typeof reads.partners.readPartner>>, { readonly kind: "envelope" }>["envelope"]["data"]>;
@@ -40,6 +40,8 @@ const RELATIONSHIP_LABEL = "Relationship label";
 const RELATIONSHIP_LABEL_DESCRIPTION = "The relationship word recorded against this person or household, stated in the source's own words rather than chosen from a list. Leave it empty to clear the label.";
 const RESTRICTIONS_LEGEND = "Restrictions";
 const UNCONFIRMED_NOTE = "Saving is paused until the result above is checked, because this attempt may already have changed the record. Checking it reads what happened and applies nothing.";
+const SAVE_NOTE = "Saving changes the permitted fields of this record. It sends no message, records no interaction, subscribes no one and creates no financial record.";
+const LOCAL_REFUSAL_NOTE = "Saving cannot start while a field above states what it needs. Nothing you typed has been discarded.";
 const BACK_TO_RECORD_LABEL = "Back to the record";
 const EDITS_UNAVAILABLE_TITLE = "Contact edits are unavailable here";
 const EDITS_UNAVAILABLE_BODY = "This record does not admit a permitted-field change in the current session and scope, so no field is offered and nothing was changed. A refusal here says nothing about what exists anywhere else.";
@@ -81,6 +83,45 @@ function restrictionCarryProblem(record: PartnerRecord): string | null {
   if (unrepresentable === -1) return null;
   return `Restriction ${String(unrepresentable + 1)} on this record carries no label or no detail, so this edit cannot carry it through unchanged. Nothing was changed: correct that restriction first, because saving without it would drop a restriction rather than preserve it.`;
 }
+const NO_REFUSAL: FieldErrorLookup = { byField: {}, form: [], count: 0 };
+/** The form field a path a local refusal can name belongs to, so its message is stated only once that field has been edited; `null` where this form offers no control for the path. */
+function formFieldOf(path: string): string | null {
+  if (path === DISPLAY_NAME_FIELD) return "displayName";
+  if (path === GIVEN_NAME_FIELD) return "givenName";
+  if (path === FAMILY_NAME_FIELD) return "familyName";
+  if (path === ADDITIONAL_NAMES_FIELD || path.startsWith(`${ADDITIONAL_NAMES_FIELD}.`)) return "additionalNames";
+  if (path === CONTACT_METHODS_FIELD || path.startsWith(`${CONTACT_METHODS_FIELD}.`)) return CONTACT_METHODS_FIELD;
+  if (path === RELATIONSHIP_LABEL_FIELD) return "relationshipLabel";
+  return null;
+}
+/** The form fields the worker has edited, read from the form's own field metadata. */
+const editedFieldNames = (fieldMeta: Readonly<Partial<Record<string, { readonly isDirty: boolean }>>>): readonly string[] => Object.keys(fieldMeta).filter((name) => fieldMeta[name]?.isDirty === true);
+/** The refusal the payload this form would send already carries, read from the one schema the change is saved through before anything is sent: a message for a field the worker has not edited is withheld so a pristine form states nothing, and a message the schema states for the form itself is stated once any field has been edited. */
+function localRefusalOf(values: EditFormValues, record: PartnerRecord, partnerRef: string, editedFields: readonly string[]): FieldErrorLookup {
+  const checked = saveContactEditsPayloadSchema.safeParse(payloadOf(values, record, partnerRef));
+  if (checked.success) return NO_REFUSAL;
+  const refusal = fieldErrorsFromInvalid(invalid({ operationId: UNIDENTIFIED_ATTEMPT, fields: checked.error }));
+  const byField: Record<string, readonly string[]> = {};
+  for (const [path, messages] of Object.entries(refusal.byField)) {
+    const owner = formFieldOf(path);
+    if (owner !== null && editedFields.includes(owner)) byField[path] = messages;
+  }
+  const form = editedFields.length === 0 ? [] : refusal.form;
+  return { byField, form, count: Object.keys(byField).length + form.length };
+}
+/** One message per path: what this form states before it sends, beside everything the last attempt settled with, so a refusal the record's own schema names is never lost or stated twice. */
+function mergedFieldErrors(local: FieldErrorLookup, settled: FieldErrorLookup | null): FieldErrorLookup | null {
+  if (settled === null) return local.count === 0 ? null : local;
+  const byField: Record<string, readonly string[]> = {};
+  for (const path of new Set([...Object.keys(local.byField), ...Object.keys(settled.byField)])) {
+    const messages: string[] = [];
+    for (const message of [...(local.byField[path] ?? []), ...(settled.byField[path] ?? [])]) if (!messages.includes(message)) messages.push(message);
+    if (messages.length > 0) byField[path] = messages;
+  }
+  const form: string[] = [];
+  for (const message of [...local.form, ...settled.form]) if (!form.includes(message)) form.push(message);
+  return { byField, form, count: Object.keys(byField).length + form.length };
+}
 function fieldLabelsFor(values: EditFormValues): Readonly<Record<string, string | undefined>> {
   const labels: Record<string, string | undefined> = {
     [DISPLAY_NAME_FIELD]: DISPLAY_NAME_LABEL,
@@ -121,10 +162,10 @@ function AdditionalNameField({ index, row, errors, onChange, onRemove }: Additio
 function RestrictionsBlock({ record }: { readonly record: PartnerRecord }): ReactElement {
   return (
     <section aria-label={RESTRICTIONS_LEGEND} className="flex min-w-0 flex-col gap-2">
-      <h3 className="font-heading text-base font-medium">{RESTRICTIONS_LEGEND}</h3>
-      <p className="text-sm text-pretty text-muted-foreground">A restriction is a limit the source recorded, and this form changes none of them. Each one is carried through this edit exactly as it is stored, so an edit to another field can never drop a restriction the form does not mention.</p>
+      <h3 className="type-subsection-title">{RESTRICTIONS_LEGEND}</h3>
+      <p className="type-supporting text-pretty">A restriction is a limit the source recorded, and this form changes none of them. Each one is carried through this edit exactly as it is stored, so an edit to another field can never drop a restriction the form does not mention.</p>
       {record.restrictions.length === 0 ? (
-        <p className="text-sm text-pretty text-muted-foreground">No restriction is recorded for this record, so this edit carries none.</p>
+        <p className="type-supporting text-pretty">No restriction is recorded for this record, so this edit carries none.</p>
       ) : (
         <ul className="flex min-w-0 list-disc flex-col gap-2 ps-4 text-sm">
           {record.restrictions.map((restriction, index) => (
@@ -143,13 +184,13 @@ function ConflictPanel({ outcome, fieldLabels, onApplyMine, onDiscardMine }: Con
   const titleId = useId();
   return (
     <section data-slot="partner-edit-conflict" data-reason={outcome.reason} aria-labelledby={titleId} className="flex min-w-0 flex-col gap-3">
-      <h3 id={titleId} className="sr-only">
+      <h3 id={titleId} className="type-subsection-title sr-only">
         {FORM_OUTCOME_COPY.conflict.title}
       </h3>
       <OperationResult outcome={outcome} headingLevel={4} fieldLabels={fieldLabels} />
       <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-4 text-sm">
-        <p className="font-medium">What to do with your input</p>
-        <p className="text-pretty text-muted-foreground">{CONFLICT_CHOICE_BODY}</p>
+        <p className="type-group-title">What to do with your input</p>
+        <p className="type-supporting text-pretty">{CONFLICT_CHOICE_BODY}</p>
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" className="min-h-target max-w-full whitespace-normal" onClick={() => onApplyMine(outcome.currentRevision)}>
             Apply my changes
@@ -165,14 +206,14 @@ function ConflictPanel({ outcome, fieldLabels, onApplyMine, onDiscardMine }: Con
 function AcceptedNote({ partnerRef, revision }: { readonly partnerRef: string; readonly revision: string }): ReactElement {
   return (
     <div data-slot="partner-edit-accepted" className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-4 text-sm">
-      <p className="font-medium">This record now stands at the revision below</p>
-      <p className="text-pretty">The change was applied once, and this receipt stays on the page as the record of it.</p>
-      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+      <p className="type-group-title">This record now stands at the revision below</p>
+      <p className="type-supporting text-pretty">The change was applied once, and this receipt stays on the page as the record of it.</p>
+      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
         <span className="text-muted-foreground">{REVISION_LABEL}</span>
         <bdi className="mono-identifier wrap-anywhere">{revision}</bdi>
       </p>
       <p className="min-w-0">
-        <Link href={recordHref(partnerRef)} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "min-h-target max-w-full whitespace-normal")}>
+        <Link href={recordHref(partnerRef)} data-slot="button" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "min-h-target max-w-full whitespace-normal")}>
           {BACK_TO_RECORD_LABEL}
         </Link>
       </p>
@@ -251,25 +292,27 @@ export default function PartnerEditForm({ partnerRef, envelope, onSettled, dir, 
     },
     [clearSettledRefusal, form],
   );
-  const fieldErrors = edits.fieldErrors;
+  const settledFieldErrors = edits.fieldErrors;
   const unconfirmed = outcome !== null && outcome.outcome === "unknown";
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     if (isPending || unconfirmed || carryProblem !== null) return;
-    void edits.submit({ scope: envelope.scope, expectedRevision: envelope.revision, payload: payloadOf(form.state.values, record, partnerRef) });
+    const values = form.state.values;
+    if (localRefusalOf(values, record, partnerRef, editedFieldNames(form.state.fieldMeta)).count > 0) return;
+    void edits.submit({ scope: envelope.scope, expectedRevision: envelope.revision, payload: payloadOf(values, record, partnerRef) });
   };
   return (
     <section dir={dir} aria-labelledby={headingId} data-slot="partner-edit-form" className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 id={headingId} className="font-heading text-lg font-medium">
+        <h2 id={headingId} className="type-section-title">
           Edit permitted fields
         </h2>
-        <p className="text-sm text-pretty text-muted-foreground">Only the fields this record permits you to change are shown, and each one is saved against the revision this page read.</p>
-        <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground">
+        <p className="type-supporting text-pretty">Only the fields this record permits you to change are shown, and each one is saved against the revision this page read.</p>
+        <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-supporting">
           <span>{REVISION_LABEL}</span>
           <bdi className="mono-identifier wrap-anywhere">{envelope.revision}</bdi>
         </p>
-        <p className="text-sm text-pretty text-muted-foreground">It is sent unchanged with your change. If someone saved this record after this page was read, your change is refused as a conflict and their value is shown beside yours instead of being replaced.</p>
+        <p className="type-supporting text-pretty">It is sent unchanged with your change. If someone saved this record after this page was read, your change is refused as a conflict and their value is shown beside yours instead of being replaced.</p>
       </div>
       {availability.admitted ? null : <StateNotice kind="denied" headingLevel={3} title={EDITS_UNAVAILABLE_TITLE} description={availability.reason ?? EDITS_UNAVAILABLE_BODY} action={{ label: BACK_TO_RECORD_LABEL, href: recordHref(partnerRef) }} className="min-w-0" />}
       {availability.admitted ? (
@@ -284,104 +327,114 @@ export default function PartnerEditForm({ partnerRef, envelope, onSettled, dir, 
             </Alert>
           ) : null}
           <form onSubmit={handleSubmit} noValidate aria-busy={isPending ? true : undefined} className="flex min-w-0 flex-col gap-6">
-            <form.Field name="displayName">{(field) => <TextField field={field} name={DISPLAY_NAME_FIELD} label={DISPLAY_NAME_LABEL} description={DISPLAY_NAME_DESCRIPTION} error={fieldErrors?.byField[DISPLAY_NAME_FIELD]} required onEdit={clearSettledRefusal} className="w-full" />}</form.Field>
-            <div className="flex min-w-0 flex-col gap-4">
-              <div className="flex min-w-0 flex-col gap-1">
-                <h3 id={namesHeadingId} className="font-heading text-base font-medium">
-                  Name parts
-                </h3>
-                <p className="text-sm text-pretty text-muted-foreground">Optional. A record may be known by one name only, and a part you leave blank is stored as absent rather than as an empty name.</p>
-              </div>
-              <form.Field name="givenName">{(field) => <TextField field={field} name={GIVEN_NAME_FIELD} label={GIVEN_NAME_LABEL} error={fieldErrors?.byField[GIVEN_NAME_FIELD]} optionalHint onEdit={clearSettledRefusal} className="w-full" />}</form.Field>
-              <form.Field name="familyName">{(field) => <TextField field={field} name={FAMILY_NAME_FIELD} label={FAMILY_NAME_LABEL} error={fieldErrors?.byField[FAMILY_NAME_FIELD]} optionalHint onEdit={clearSettledRefusal} className="w-full" />}</form.Field>
-              <form.Subscribe selector={(state) => state.values.additionalNames}>
-                {(additionalNames) => (
-                  <div className="flex min-w-0 flex-col gap-4">
-                    {additionalNames.length === 0 ? null : (
-                      <ul aria-labelledby={namesHeadingId} className="flex min-w-0 list-none flex-col gap-4 p-0">
-                        {additionalNames.map((row, index) => (
-                          <li key={row.rowKey} className="min-w-0">
-                            <AdditionalNameField
-                              index={index}
-                              row={row}
-                              errors={fieldErrors}
-                              onChange={(next) => setAdditionalNames(additionalNames.map((candidate) => (candidate.rowKey === row.rowKey ? next : candidate)))}
-                              onRemove={() => setAdditionalNames(additionalNames.filter((candidate) => candidate.rowKey !== row.rowKey))}
-                            />
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="min-h-target w-fit max-w-full whitespace-normal"
-                        onClick={() => {
-                          rowSequence.current.additional += 1;
-                          setAdditionalNames([...additionalNames, { rowKey: additionalRowKey(rowSequence.current.additional), value: "" }]);
-                        }}
-                      >
-                        Add another name part
-                      </Button>
-                      <p className="text-xs text-pretty text-muted-foreground">Each part you add can be removed again, and removing one leaves every other part exactly as you wrote it.</p>
+            <form.Subscribe selector={(state) => state.values}>
+              {(values) => {
+                const localRefusal = localRefusalOf(values, record, partnerRef, editedFieldNames(form.state.fieldMeta));
+                const fieldErrors = mergedFieldErrors(localRefusal, settledFieldErrors);
+                return (
+                  <>
+                    <form.Field name="displayName">{(field) => <TextField field={field} name={DISPLAY_NAME_FIELD} label={DISPLAY_NAME_LABEL} description={DISPLAY_NAME_DESCRIPTION} error={fieldErrors?.byField[DISPLAY_NAME_FIELD]} required onEdit={clearSettledRefusal} className="w-full" />}</form.Field>
+                    <div className="flex min-w-0 flex-col gap-4">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <h3 id={namesHeadingId} className="type-subsection-title">
+                          Name parts
+                        </h3>
+                        <p className="type-supporting text-pretty">Optional. A record may be known by one name only, and a part you leave blank is stored as absent rather than as an empty name.</p>
+                      </div>
+                      <form.Field name="givenName">{(field) => <TextField field={field} name={GIVEN_NAME_FIELD} label={GIVEN_NAME_LABEL} error={fieldErrors?.byField[GIVEN_NAME_FIELD]} optionalHint onEdit={clearSettledRefusal} className="w-full" />}</form.Field>
+                      <form.Field name="familyName">{(field) => <TextField field={field} name={FAMILY_NAME_FIELD} label={FAMILY_NAME_LABEL} error={fieldErrors?.byField[FAMILY_NAME_FIELD]} optionalHint onEdit={clearSettledRefusal} className="w-full" />}</form.Field>
+                      <form.Subscribe selector={(state) => state.values.additionalNames}>
+                        {(additionalNames) => (
+                          <div className="flex min-w-0 flex-col gap-4">
+                            {additionalNames.length === 0 ? null : (
+                              <ul aria-labelledby={namesHeadingId} className="flex min-w-0 list-none flex-col gap-4 p-0">
+                                {additionalNames.map((row, index) => (
+                                  <li key={row.rowKey} className="min-w-0">
+                                    <AdditionalNameField
+                                      index={index}
+                                      row={row}
+                                      errors={fieldErrors}
+                                      onChange={(next) => setAdditionalNames(additionalNames.map((candidate) => (candidate.rowKey === row.rowKey ? next : candidate)))}
+                                      onRemove={() => setAdditionalNames(additionalNames.filter((candidate) => candidate.rowKey !== row.rowKey))}
+                                    />
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                            <div className="flex min-w-0 flex-col gap-1">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="min-h-target w-fit max-w-full whitespace-normal"
+                                onClick={() => {
+                                  rowSequence.current.additional += 1;
+                                  setAdditionalNames([...additionalNames, { rowKey: additionalRowKey(rowSequence.current.additional), value: "" }]);
+                                }}
+                              >
+                                Add another name part
+                              </Button>
+                              <p className="text-xs text-pretty text-muted-foreground">Each part you add can be removed again, and removing one leaves every other part exactly as you wrote it.</p>
+                            </div>
+                          </div>
+                        )}
+                      </form.Subscribe>
                     </div>
-                  </div>
-                )}
-              </form.Subscribe>
-            </div>
-            <div className="flex min-w-0 flex-col gap-4">
-              <div className="flex min-w-0 flex-col gap-1">
-                <h3 id={methodsHeadingId} className="font-heading text-base font-medium">
-                  {CONTACT_METHODS_LEGEND}
-                </h3>
-                <p className="text-sm text-pretty text-muted-foreground">{CONTACT_METHODS_HELP}</p>
-                <p className="text-sm text-pretty text-muted-foreground">{CONTACT_METHODS_IDENTITY_NOTE}</p>
-              </div>
-              <form.Subscribe selector={(state) => state.values.contactMethods}>
-                {(contactMethods) => (
-                  <ContactMethodList
-                    rows={contactMethods}
-                    headingId={methodsHeadingId}
-                    errors={fieldErrors}
-                    valueDescription="The address, number or postal detail itself. The record stores no verification for it, so it states what was recorded rather than a confirmed detail."
-                    emptyNote="No contact method is recorded. Every permitted-field edit is still available, and a method you add is recorded against this same record."
-                    addNote="A row you add can be removed again, and removing one leaves every other row exactly as you wrote it."
-                    showPermittedFact
-                    onRowsChange={setContactMethods}
-                    onAdd={() => {
-                      rowSequence.current.methods += 1;
-                      setContactMethods([...contactMethods, { rowKey: contactMethodRowKey(rowSequence.current.methods), kind: CONTACT_KIND_DEFAULT, value: "", permitted: false }]);
-                    }}
-                  />
-                )}
-              </form.Subscribe>
-            </div>
-            <form.Field name="relationshipLabel">
-              {(field) => <TextField field={field} name={RELATIONSHIP_LABEL_FIELD} label={RELATIONSHIP_LABEL} description={RELATIONSHIP_LABEL_DESCRIPTION} error={fieldErrors?.byField[RELATIONSHIP_LABEL_FIELD]} optionalHint onEdit={clearSettledRefusal} className="w-full" />}
-            </form.Field>
-            <RestrictionsBlock record={record} />
-            {carryProblem === null ? null : (
-              <Alert variant="destructive" className="min-w-0">
-                <AlertTitle>This edit cannot carry every restriction</AlertTitle>
-                <AlertDescription>
-                  <p>{carryProblem}</p>
-                </AlertDescription>
-              </Alert>
-            )}
-            <Separator />
-            <div className="flex min-w-0 flex-col gap-2">
-              {unconfirmed ? null : (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="submit" disabled={isPending || carryProblem !== null} aria-describedby={actionNoteId} className="min-h-target max-w-full whitespace-normal">
-                    {isPending ? "Saving the changes" : "Save these changes"}
-                  </Button>
-                </div>
-              )}
-              <p id={actionNoteId} className="text-sm text-pretty text-muted-foreground">
-                {unconfirmed ? UNCONFIRMED_NOTE : "Saving changes the permitted fields of this record. It sends no message, records no interaction, subscribes no one and creates no financial record."}
-              </p>
-            </div>
+                    <div className="flex min-w-0 flex-col gap-4">
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <h3 id={methodsHeadingId} className="type-subsection-title">
+                          {CONTACT_METHODS_LEGEND}
+                        </h3>
+                        <p className="type-supporting text-pretty">{CONTACT_METHODS_HELP}</p>
+                        <p className="type-supporting text-pretty">{CONTACT_METHODS_IDENTITY_NOTE}</p>
+                      </div>
+                      <form.Subscribe selector={(state) => state.values.contactMethods}>
+                        {(contactMethods) => (
+                          <ContactMethodList
+                            rows={contactMethods}
+                            headingId={methodsHeadingId}
+                            errors={fieldErrors}
+                            valueDescription="The address, number or postal detail itself. The record stores no verification for it, so it states what was recorded rather than a confirmed detail."
+                            emptyNote="No contact method is recorded. Every permitted-field edit is still available, and a method you add is recorded against this same record."
+                            addNote="A row you add can be removed again, and removing one leaves every other row exactly as you wrote it."
+                            showPermittedFact
+                            onRowsChange={setContactMethods}
+                            onAdd={() => {
+                              rowSequence.current.methods += 1;
+                              setContactMethods([...contactMethods, { rowKey: contactMethodRowKey(rowSequence.current.methods), kind: CONTACT_KIND_DEFAULT, value: "", permitted: false }]);
+                            }}
+                          />
+                        )}
+                      </form.Subscribe>
+                    </div>
+                    <form.Field name="relationshipLabel">
+                      {(field) => <TextField field={field} name={RELATIONSHIP_LABEL_FIELD} label={RELATIONSHIP_LABEL} description={RELATIONSHIP_LABEL_DESCRIPTION} error={fieldErrors?.byField[RELATIONSHIP_LABEL_FIELD]} optionalHint onEdit={clearSettledRefusal} className="w-full" />}
+                    </form.Field>
+                    <RestrictionsBlock record={record} />
+                    {carryProblem === null ? null : (
+                      <Alert variant="destructive" className="min-w-0">
+                        <AlertTitle>This edit cannot carry every restriction</AlertTitle>
+                        <AlertDescription>
+                          <p>{carryProblem}</p>
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    <Separator />
+                    <div className="flex min-w-0 flex-col gap-2">
+                      {unconfirmed ? null : (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button type="submit" disabled={isPending || carryProblem !== null || localRefusal.count > 0} aria-describedby={actionNoteId} className="min-h-target max-w-full whitespace-normal">
+                            {isPending ? "Saving the changes" : "Save these changes"}
+                          </Button>
+                        </div>
+                      )}
+                      <p id={actionNoteId} className="type-supporting text-pretty">
+                        {unconfirmed ? UNCONFIRMED_NOTE : localRefusal.count > 0 ? LOCAL_REFUSAL_NOTE : SAVE_NOTE}
+                      </p>
+                    </div>
+                  </>
+                );
+              }}
+            </form.Subscribe>
           </form>
         </>
       ) : null}

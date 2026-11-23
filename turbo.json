@@ -6,7 +6,7 @@
     "dev": { "cache": false, "persistent": true, "passThroughEnv": ["PORT", "NEXT_TELEMETRY_DISABLED"] },
     "typecheck": { "dependsOn": ["build"], "outputs": [] },
     "lint": { "dependsOn": ["^build"], "outputs": [] },
-    "test": { "dependsOn": ["^build"], "outputs": ["test-results/**", "playwright-report/**"], "passThroughEnv": ["PORT", "WORKLOAD_MEASUREMENT"] },
+    "test": { "cache": false, "dependsOn": ["^build"], "outputs": ["test-results/**", "playwright-report/**"], "passThroughEnv": ["PORT", "WORKLOAD_MEASUREMENT"] },
     "lines": { "cache": false, "outputs": [] }
   }
 }

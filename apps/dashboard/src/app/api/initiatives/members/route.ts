@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import { mutationInputSchema, mutations, type MutationInput, type MutationOutcome } from "@/modules/data-service";
 import { writeRoute } from "../../handler";
 export const runtime = "nodejs";
@@ -21,4 +22,5 @@ async function runMemberChange(input: MutationInput<MemberChange>): Promise<Muta
   return mutations.outreach.returnMember({ ...input, payload: { initiativeId: payload.initiativeId, memberId: payload.memberId } });
 }
 /** Adds, removes or returns the explicitly selected working-list members, and answers one outcome. */
-export const POST = (request: Request): Promise<Response> => writeRoute(request, membersRequestSchema, runMemberChange);
+const changeMembers = (request: Request): Promise<Response> => writeRoute(request, membersRequestSchema, runMemberChange);
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: changeMembers });

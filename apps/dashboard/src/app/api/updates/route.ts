@@ -1,27 +1,17 @@
-import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { VARIANT_AUDIENCES } from "@/modules/content/variant";
-import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse } from "@/modules/data-service";
-import { writeRoute } from "../handler";
+import { outcomeFromError, reads, toResponse } from "@/modules/data-service";
 import { READ_ATTEMPT, readResponse } from "../read";
-import { sessionIdOf } from "../session-cookie";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const UPDATE_FAMILY = "update" as const;
 const MESSAGES = {
   documentRequired: "This action applies to one Update, so open the Update again and retry rather than pasting an address.",
-  audienceInvalid: "Choose the audience this edition serves: public or approved supporters.",
-  localeRequired: "State the content locale this edition is written in, such as en, fr or ar-EG.",
-  localeInvalid: "Use a content-locale tag such as en, fr or ar-EG: a language subtag, then any hyphen-separated subtags.",
   pageInvalid: "State the page as a whole number from 1, or leave it out to read the first page.",
   pageSizeInvalid: "State the page size as a whole number from 1, or leave it out and the read applies its own 50-row default and 200-row ceiling.",
   parameterUnrecognised: "Address the Updates list with a page and a page size and nothing else: a parameter this read does not admit belongs to another read, and answering as though it had been read would state a list the request never asked for.",
 } as const;
-const LOCALE_TAG_PATTERN = /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/u;
 const documentIdSchema = z.string({ error: MESSAGES.documentRequired }).trim().min(1, MESSAGES.documentRequired).max(160, MESSAGES.documentRequired);
-const localeTagSchema = z.string({ error: MESSAGES.localeRequired }).trim().min(2, MESSAGES.localeInvalid).max(35, MESSAGES.localeInvalid).regex(LOCALE_TAG_PATTERN, MESSAGES.localeInvalid);
-const createVariantPayloadSchema = z.strictObject({ documentId: documentIdSchema, audience: z.enum(VARIANT_AUDIENCES, { error: MESSAGES.audienceInvalid }), locale: localeTagSchema });
-const createVariantBodySchema = mutationInputSchema(createVariantPayloadSchema);
 const updateTargetSchema = z.object({ documentId: documentIdSchema });
 // The list branch's own closed grammar: the window and nothing else. The parameters are read by name from the whole query string, so a name this branch does not admit is refused at that name rather than dropped — a caller who asked this read for a filter, a search or another family's parameter is told so, instead of being answered with a list that ignored half of the question.
 const updateListQuerySchema = z.strictObject(
@@ -36,7 +26,7 @@ type UpdateListQueryParams = z.output<typeof updateListQuerySchema>;
 /** The page the list read is asked for, stated in the read's own vocabulary: an unstated half is left unstated rather than defaulted here. */
 const updateListQueryOf = (params: UpdateListQueryParams): NonNullable<Parameters<typeof reads.updates.findContentDocuments>[0]> => ({ families: [UPDATE_FAMILY], ...(params.page === undefined ? {} : { page: params.page }), ...(params.pageSize === undefined ? {} : { pageSize: params.pageSize }) });
 /** Answers the two reads this path carries: the ministry's own Updates when the request names none, and one Update's edition matrix when it names one. */
-export function GET(request: Request): Promise<Response> {
+function readUpdates(request: Request): Promise<Response> {
   const search = new URL(request.url).searchParams;
   const documentId = search.get("documentId");
   // The only parameter that names a record. Without it the request is the list the Updates surface opens on rather than a malformed read, because a worker asking what their ministry has written holds no identity yet; nothing else may select a principal, persona, organization, ministry, audience or locale: the scope comes from the session resolution inside the service.
@@ -49,5 +39,4 @@ export function GET(request: Request): Promise<Response> {
   if (!target.success) return Promise.resolve(toResponse(outcomeFromError(READ_ATTEMPT, target.error)));
   return readResponse(READ_ATTEMPT, () => reads.updates.readVariantOverview({ documentId: target.data.documentId }));
 }
-/** Creates one working variant of one Update — one family-permitted audience in one exact content locale, with no draft, candidate or release yet. */
-export const POST = (request: NextRequest): Promise<Response> => writeRoute(request, createVariantBodySchema, (input) => mutations.updates.createVariant(sessionIdOf(request), { ...input, payload: { ...input.payload, family: UPDATE_FAMILY } }));
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readUpdates });

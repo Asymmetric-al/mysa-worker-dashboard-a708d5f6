@@ -36,10 +36,6 @@ export const FACET_GROUPING_COPY = { acrossFacets: "Every selected filter must m
   "acrossFacets" | "withinFacet" | "activeFilters" | "clearAll" | "removeFilter" | "clearFacet",
   string
 >;
-export const CURRENCY_SCOPE_COPY = { chooseCurrencyFirst: "Choose one currency before setting an amount range.", rangeAppliesTo: "The amount range applies only to", notComparable: "Amounts in different currencies are not compared." } as const satisfies Record<
-  "chooseCurrencyFirst" | "rangeAppliesTo" | "notComparable",
-  string
->;
 export const PERMISSION_FACTS = ["contactability", "communicationConsent", "protectedReaderGrant"] as const;
 export type PermissionFactKey = (typeof PERMISSION_FACTS)[number];
 export const PERMISSION_FACT_COPY: Readonly<Record<PermissionFactKey, { readonly label: string; readonly explanation: string; readonly whenAbsent: string }>> = {

@@ -9,7 +9,7 @@ export function ManagedSectionLock({ sectionTypeLabel, reasonKey, className, chi
   return (
     <Card aria-disabled="true" data-managed-section="locked" className={className}>
       <CardHeader>
-        <h3 className="font-heading text-base font-medium wrap-anywhere">
+        <h3 className="type-subsection-title wrap-anywhere">
           <bdi>{sectionTypeLabel}</bdi>
         </h3>
         <CardAction>
@@ -22,11 +22,15 @@ export function ManagedSectionLock({ sectionTypeLabel, reasonKey, className, chi
       <CardContent className="flex flex-col gap-2">
         <Alert variant="default" role={undefined}>
           <AlertDescription>
-            <p dir="auto">{copy.lockReasons.reasons[reasonKey]}</p>
-            <p dir="auto">{copy.lockReasons.genericLockedReason}</p>
+            <p dir="auto" className="type-supporting">
+              {copy.lockReasons.reasons[reasonKey]}
+            </p>
+            <p dir="auto" className="type-supporting">
+              {copy.lockReasons.genericLockedReason}
+            </p>
           </AlertDescription>
         </Alert>
-        {children === undefined || children === null ? null : <div className="text-sm wrap-anywhere">{children}</div>}
+        {children === undefined || children === null ? null : <div className="type-body wrap-anywhere">{children}</div>}
       </CardContent>
     </Card>
   );

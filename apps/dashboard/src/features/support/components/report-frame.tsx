@@ -14,7 +14,7 @@ import { sameScope, type Coverage, type CoverageState, type GiftAttribution, typ
 import { printModel } from "@/modules/export/print";
 import { matrixDrilldownQuery, type MatrixCell, type ReportQuery, type ReportResult } from "@/modules/support/report";
 import { COVERAGE_TEMPLATES, REPORT_NOT_FOUND, fillTemplate } from "../copy";
-import { reportSnapshotId, useReport, type ReportEnvelope, type ReportRequestQuery } from "../hooks/use-report";
+import { reportSnapshotId, useReport, type ReportEnvelope, type ReportReadResult, type ReportRequestQuery } from "../hooks/use-report";
 import { REPORT_CATALOG, isReportId, reportTitle, type ReportId } from "../report-catalog";
 import ExportPrintActions from "./export-print-actions";
 import PrintReport from "./print-report";
@@ -57,7 +57,9 @@ function isReportResult(value: unknown): value is ReportResult {
   );
 }
 const isReportEnvelope = (value: ReadEnvelope<unknown>): value is ReportEnvelope => isReportResult(value.data);
-const seededEnvelope = (initialEnvelope: ReadEnvelope<unknown> | undefined, scope: Scope): ReportEnvelope | undefined => (initialEnvelope === undefined || !isReportEnvelope(initialEnvelope) ? undefined : sameScope(initialEnvelope.scope, scope) ? initialEnvelope : undefined);
+/** The envelope this page already read, when it is this authority's answer to this exact request: the same scope and the same query, identified by the one snapshot identity the read and its export share. A seed that answered another query would state another report's figures without asking for this one, so it is never used. */
+const seededEnvelope = (initialEnvelope: ReadEnvelope<unknown> | undefined, scope: Scope, asked: ReportRequestQuery): ReportEnvelope | undefined =>
+  initialEnvelope === undefined || !isReportEnvelope(initialEnvelope) || !sameScope(initialEnvelope.scope, scope) ? undefined : reportSnapshotId(requestQueryOf(initialEnvelope.data.snapshot.query)) === reportSnapshotId(asked) ? initialEnvelope : undefined;
 const periodInputOf = (period: ReportQuery["period"]): ReportRequestQuery["period"] => (period.kind === "preset" ? { kind: "preset", preset: period.preset } : period.kind === "year" ? { kind: "year", year: period.year } : { kind: "explicit", from: String(period.from), to: String(period.to) });
 function requestQueryOf(query: ReportQuery): ReportRequestQuery {
   const { amountRange, page, sort } = query;
@@ -123,9 +125,11 @@ function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear
   const recognised = isReportId(reportId);
   const requestQuery = requestQueryOf(query);
   const snapshotId = reportSnapshotId(requestQuery);
-  const read = useReport({ scope, query: requestQuery, snapshotId, enabled: recognised });
+  const seed = seededEnvelope(initialEnvelope, scope, requestQuery); // The envelope this page already read on the server for this same request: seeding the read with it means the mount asks for nothing the page has already read, and an answer to any other request is never passed off as this one's.
+  const seededAnswer: ReportReadResult | undefined = seed === undefined ? undefined : { kind: "envelope", envelope: seed };
+  const read = useReport({ scope, query: requestQuery, snapshotId, enabled: recognised, initialAnswer: seededAnswer });
   const answer = read.data;
-  const envelope = answer === undefined ? (read.isError ? undefined : seededEnvelope(initialEnvelope, scope)) : answer.kind === "envelope" ? answer.envelope : undefined;
+  const envelope = answer === undefined ? (read.isError ? undefined : seed) : answer.kind === "envelope" ? answer.envelope : undefined;
   const retry = { label: "Retry the read", onClick: (): void => void read.refetch() };
   const selectYear = useCallback(
     (year: number): void => {
@@ -205,7 +209,9 @@ function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink render={<Link href="/support" />}>Support</BreadcrumbLink>{" "}
+              <BreadcrumbLink className="inline-link" render={<Link href="/support" />}>
+                Support
+              </BreadcrumbLink>{" "}
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -214,8 +220,8 @@ function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear
           </BreadcrumbList>
         </Breadcrumb>
         <header className="flex min-w-0 flex-col gap-2">
-          <h1 className="font-heading text-2xl font-semibold tracking-tight text-pretty wrap-anywhere">{title}</h1>
-          <p className="max-w-prose text-sm text-balance text-muted-foreground md:text-pretty">{description}</p>
+          <h1 className="type-page-title text-pretty wrap-anywhere">{title}</h1>
+          <p className="type-supporting max-w-prose text-balance md:text-pretty">{description}</p>
         </header>
         {content}
       </div>

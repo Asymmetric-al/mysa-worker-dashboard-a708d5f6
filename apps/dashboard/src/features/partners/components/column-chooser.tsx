@@ -104,7 +104,7 @@ export default function ColumnChooser({ value, onValueChange, envelope = null, c
                   <Label htmlFor={optionId} className="cursor-pointer items-start font-normal leading-snug">
                     <bdi className="min-w-0 break-words">{column.displayName}</bdi>
                   </Label>
-                  <p id={hintId} className={cn("text-xs leading-snug text-pretty text-muted-foreground", locked ? undefined : "sr-only sm:not-sr-only")}>
+                  <p id={hintId} className={cn("type-supporting text-pretty", locked ? undefined : "sr-only sm:not-sr-only")}>
                     {locked ? "This is the last visible column, so it stays shown. Show another column to hide this one." : column.hint}
                   </p>
                 </div>
@@ -112,7 +112,7 @@ export default function ColumnChooser({ value, onValueChange, envelope = null, c
             );
           })}
         </div>
-        {optional.length === 0 ? <StateNotice kind="empty" headingLevel={4} title="No optional column is offered here" description={COLUMN_CHOOSER_COPY.noOptionalBody} className="shrink-0 p-0 sm:p-0" /> : null}
+        {optional.length === 0 ? <StateNotice kind="empty" headingLevel={4} title="No optional column is offered here" description={COLUMN_CHOOSER_COPY.noOptionalBody} className="shrink-0 border-0 p-0 sm:p-0" /> : null}
         <Separator className="shrink-0" />
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Button type="button" variant="outline" size="sm" disabled={allShown} onClick={showAllColumns}>

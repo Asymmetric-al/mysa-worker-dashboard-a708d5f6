@@ -171,6 +171,8 @@ const OWNED_UNDATED_TASK = "task-undated-prayer";
 const COMPLETED_TASK = "task-completed-intro";
 /** An open task in the second worker's ministry, which the selected worker may not change. */
 const FOREIGN_TASK = "task-river-invite-owen";
+/** The worker's own series still in force, so a series mutation may pause it and the result can be read back. */
+const OWNED_ACTIVE_SERIES = "series-weekly-call-round";
 /** The private tag these cases apply. The seed sets no task tags at all, so the first attempt writes it. */
 const BULK_TAG = "contract-bulk";
 /** One row of a bulk action's answer, as the stored result carries it. */
@@ -346,16 +348,16 @@ describe("accepted, then replayed", () => {
     const input = attempt(scope, revision, payload);
     const first = expectOutcome(await mutations.partners.setTag(input, HERO), "accepted");
     // One identity with one intent hashes to one digest, and a changed payload hashes to another. That is how `changed-intent` is decided from a stored entry rather than guessed from a repeated id. The revision the
-    const digest = intentHash(scope, payload); // attempt presented is the concurrency token and not part of the intent, so the digest is taken from what the attempt asks for in the scope it claims, and from nothing else.
-    expect(intentHash(input.scope, input.payload)).toBe(digest);
-    expect(intentHash(scope, { ...payload, tag: "another-probe" })).not.toBe(digest);
+    const digest = intentHash("setTag", scope, payload); // attempt presented is the concurrency token and not part of the intent, so the digest is taken from what the attempt asks for, by which named mutation, in the scope it claims, and from nothing else.
+    expect(intentHash("setTag", input.scope, input.payload)).toBe(digest);
+    expect(intentHash("setTag", scope, { ...payload, tag: "another-probe" })).not.toBe(digest);
     const ledger: OperationLedger = emptyLedger(); // A ledger that never saw the attempt holds nothing under its identity, so the identity is fresh rather than a replay of something that was never accepted.
     expect(lookup(ledger, input.operationId)).toBeUndefined();
     expect(begin(ledger, input.operationId, digest).state).toBe("fresh");
     // The ledger's own three answers, stated directly: a recorded attempt is looked up by identity, and the same identity with another intent is a conflict rather than a second effect.
     const entry: OperationRecord = { operationId: input.operationId, intentHash: digest, scope, outcome: "accepted", result: { partnerId: PARTNER, tag: "ledger-probe" }, revision: first.revision, at: "2026-11-20T00:00:00Z" };
     const recorded = record(ledger, entry);
-    expect([lookup(recorded, input.operationId), [begin(recorded, input.operationId, digest).state, begin(recorded, input.operationId, intentHash(scope, { ...payload, tag: "another-probe" })).state]]).toEqual([entry, ["replay", "changed-intent"]]);
+    expect([lookup(recorded, input.operationId), [begin(recorded, input.operationId, digest).state, begin(recorded, input.operationId, intentHash("setTag", scope, { ...payload, tag: "another-probe" })).state]]).toEqual([entry, ["replay", "changed-intent"]]);
   });
 });
 describe("conflict, both kinds", () => {
@@ -380,6 +382,23 @@ describe("conflict, both kinds", () => {
     const after = await partnerEnvelope(PARTNER); // The record reflects the first write only: one tag, one revision, no second effect.
     expect([after.revision, after.data.partner.tags.filter((tag) => tag === "follow-up").length]).toEqual([first.revision, 1]);
     expect(after.data.partner.tags).not.toContain("newsletter");
+  });
+  it("answers a reused identity that names another mutation of one path as a conflict, not a replay", async () => {
+    // A transport strips the wire discriminant before the service sees the payload, so `completeTask` and `reopenTask` arrive as the same {taskId} and `pauseSeries` and `resumeSeries` as the same {seriesId}. Each attempt below presents one identity, one scope, one revision and one payload, and differs from its predecessor only in the mutation it names: the intent has to name the mutation, or the second call of a pair replays the first result instead of answering that the identity was reused.
+    const created = expectOutcome(await mutations.work.createTask(attempt(scope, NO_RECORD, { title: "Cross-verb probe" }), HERO), "accepted");
+    const taskId = required(created.created?.[0], "the task createTask created");
+    const completing = attempt(scope, await listedRevisionOf(taskId), { taskId });
+    expectOutcome(await mutations.work.completeTask(completing, HERO), "accepted");
+    const reopening = expectOutcome(await mutations.work.reopenTask(completing, HERO), "conflict");
+    expect([reopening.reason, reopening.operationId]).toEqual(["changed-intent", completing.operationId]);
+    const heldTask = firstSaying(expectEnvelope(await reads.work.listTasks({ list: "all", displayTimeZone: "UTC", pageSize: 200 }, HERO), "listTasks").data.tasks, "taskId", taskId, `The task ${taskId} stands in no list, so the effect of the identity cannot be read back.`);
+    expect(heldTask.status).toBe("completed"); // The completion is the only effect the identity produced: the reopen under it was refused, so nothing reopened the task.
+    const seriesReading = async () => expectEnvelope(await reads.series.readSeries({ seriesId: OWNED_ACTIVE_SERIES }, HERO), `readSeries ${OWNED_ACTIVE_SERIES}`);
+    const pausing = attempt(scope, (await seriesReading()).revision, { seriesId: OWNED_ACTIVE_SERIES });
+    expectOutcome(await mutations.series.pauseSeries(pausing, HERO), "accepted");
+    const resuming = expectOutcome(await mutations.series.resumeSeries(pausing, HERO), "conflict");
+    expect([resuming.reason, resuming.operationId]).toEqual(["changed-intent", pausing.operationId]);
+    expect((await seriesReading()).data.state).toBe("paused"); // The pause stands, because the resume that named another mutation under the same identity was refused rather than replayed.
   });
   it("keeps the two conflict kinds distinguishable, so a caller knows whether to re-read or start again", async () => {
     const revision = (await partnerEnvelope(PARTNER)).revision;

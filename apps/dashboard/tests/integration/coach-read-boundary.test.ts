@@ -11,7 +11,7 @@ import { GRANT_LIFECYCLE_STATES, MODULE_KEYS, NO_MODULES_SELECTED, type ModuleKe
 import { setFailurePlan, type FailurePlanDocument } from "@/modules/dev-runtime/failures";
 import { buildSessionMeta, setClock, type AdmittedMembership, type ScenarioId, type SessionMetaDocument } from "@/modules/dev-runtime/scenario";
 import { SEEDED_PERSONAS, findSeededSession, type SeededSession, type SessionStateDocument } from "@/modules/dev-runtime/seed";
-import { readSession, resetSession, transact } from "@/modules/store/repository";
+import { resetSession } from "@/modules/store/repository";
 import { SEED_INSTANT } from "@/modules/time/clock";
 import { shareCutoff, shareThroughDateOfCutoff } from "@/modules/time/window";
 import { firstSaying, requiredSaying, throwing } from "../helpers/answers";
@@ -22,14 +22,16 @@ const SECOND_WORKER_SESSION = "it-coach-boundary-second";
 const COACH_SOURCE: SessionSource = { sessionId: COACH_SESSION };
 const WORKER_SOURCE: SessionSource = { sessionId: WORKER_SESSION };
 const SECOND_WORKER_SOURCE: SessionSource = { sessionId: SECOND_WORKER_SESSION };
-const WORKER_WORKSPACE = "established-worker";
-const COACH_SEAT_WORKSPACE = "coach";
+const WORKER_SEED = "established-worker"; // The seeded session whose own world the worker seat holds in every case, laid down here under this file's own session id.
+const COACH_SEAT_SEED = "reader-public"; // A seeded session whose world holds no records at all: the coach's seat starts from that empty world, so nothing below can be answered from a copy of the worker's.
 const ACTIVE_GRANT_ID = "grant-established-coach";
 const REVOKED_GRANT_ID = "grant-revoked-coach";
 const ENDED_GRANT_ID = "grant-ended-coach";
 const SUPPORT_SHARING_GRANT_ID = "grant-established-coach-support";
 const SEEDED_DOWN_MODULE_SESSION = "coach-coaching-module-unavailable"; // The two seeded seats the scenario case reads: the coach's own seat in the unavailable-module world, and the baseline coach's seat as the control that the scenario is what changed rather than the world
+const SEEDED_DOWN_MODULE_WORLD = "established-worker-coaching-unavailable"; // The two worlds those seats are seated in, laid down from the seed's own documents so the case reads the seeded world itself rather than a copy of it.
 const SEEDED_BASELINE_COACH_SESSION = "coach";
+const SEEDED_BASELINE_WORLD = "established-worker";
 const COACH_PRINCIPAL = SEEDED_PERSONAS.coach.principalId;
 const WORKER_PRINCIPAL = SEEDED_PERSONAS["established-worker"].principalId;
 const SECOND_WORKER_PRINCIPAL = SEEDED_PERSONAS["second-worker"].principalId;
@@ -57,8 +59,9 @@ function contextOf(state: SessionStateDocument, sessionId: string, meta: Session
     revision: state.context.revision,
   };
 }
-async function layDownSession(sessionId: string, meta: SessionMetaDocument, workspace: string): Promise<void> {
-  const template = await seededDocuments(workspace);
+/** Lays one seat's documents down under this file's own session id: the records of the seeded session it starts from, and the meta that states which world its coaching records live in. */
+async function layDownSession(sessionId: string, meta: SessionMetaDocument, seedId: string): Promise<void> {
+  const template = await seededDocuments(seedId);
   const state = structuredClone(template.state);
   await resetSession(sessionId, { state: { ...state, context: contextOf(state, sessionId, meta) }, operations: structuredClone(template.operations), meta });
 }
@@ -67,15 +70,9 @@ async function layDownSeededSession(sessionId: string): Promise<void> {
   await resetSession(sessionId, { state: structuredClone(template.state), operations: structuredClone(template.operations), meta: structuredClone(template.meta) });
 }
 const grantRecord = (state: SessionStateDocument, grantId: string): CoachingGrantRecord => firstSaying(state.coachingGrants, "grantId", grantId, `The seeded world holds no coaching grant ${JSON.stringify(grantId)}, so the case that names it has nothing to assert about.`);
-async function carryState(from: string, to: string): Promise<void> {
-  const state = structuredClone(requiredSaying(await readSession(from), `The store holds no session ${JSON.stringify(from)}, so the world there is not the one to carry.`).state);
-  await transact(to, ["state"], (draft) => {
-    draft.state = state;
-  });
-}
-type MetaOverrides = { readonly scenarioId?: ScenarioId; readonly failurePlan?: FailurePlanDocument };
+type MetaOverrides = { readonly scenarioId?: ScenarioId; readonly failurePlan?: FailurePlanDocument; readonly coachingRecordsSessionId?: string | null };
 const workerMeta = (overrides: MetaOverrides = {}): SessionMetaDocument => buildSessionMeta({ principalId: WORKER_ROW.principalId, admittedMemberships: WORKER_ROW.admittedMemberships, selectedContext: WORKER_ROW.selectedContext, sessionState: "signed-in", ...overrides });
-const coachMeta = (overrides: MetaOverrides = {}): SessionMetaDocument => buildSessionMeta({ principalId: COACH_PRINCIPAL, admittedMemberships: [], selectedContext: null, sessionState: "signed-in", ...overrides });
+const coachMeta = (overrides: MetaOverrides = {}): SessionMetaDocument => buildSessionMeta({ principalId: COACH_PRINCIPAL, admittedMemberships: [], selectedContext: null, sessionState: "signed-in", coachingRecordsSessionId: WORKER_SESSION, ...overrides });
 const secondWorkerMeta = (): SessionMetaDocument => buildSessionMeta({ principalId: SECOND_WORKER_ROW.principalId, admittedMemberships: SECOND_WORKER_ROW.admittedMemberships, selectedContext: SECOND_WORKER_ROW.selectedContext, sessionState: "signed-in" });
 /** The one armed failure that names the read this file is about (AAP 0.12.5). */
 function armedScopeDenial(): FailurePlanDocument {
@@ -165,9 +162,9 @@ beforeAll(() => {
   vi.stubEnv("NODE_ENV", "development"); // The development controls and the named-session resolution are gated on `NODE_ENV`, so the run is put in a development build and the environment it arrived with is restored in `afterAll`.
 });
 beforeEach(async () => {
-  await layDownSession(WORKER_SESSION, workerMeta(), WORKER_WORKSPACE); // Each case lays its own sessions down, so a sibling suite's global reset cannot strand it and no case inherits a document another case wrote.
-  await layDownSession(COACH_SESSION, coachMeta(), WORKER_WORKSPACE);
-  await layDownSession(SECOND_WORKER_SESSION, secondWorkerMeta(), SECOND_WORKER_ROW.workspace);
+  await layDownSession(WORKER_SESSION, workerMeta(), WORKER_SEED); // Each case lays its own sessions down, so a sibling suite's global reset cannot strand it and no case inherits a document another case wrote.
+  await layDownSession(COACH_SESSION, coachMeta(), COACH_SEAT_SEED); // The coach's own world carries no coaching record, so nothing below can be answered from a copy of the worker's.
+  await layDownSession(SECOND_WORKER_SESSION, secondWorkerMeta(), SECOND_WORKER_ROW.sessionId);
   workerScope = await scopeOf(WORKER_SOURCE);
   await restoreClocks();
 });
@@ -190,7 +187,7 @@ describe("coach read boundary", () => {
     expect(secondWorkerScope.principalId).toBe(SECOND_WORKER_PRINCIPAL);
     expect(secondWorkerScope.principalId).not.toBe(WORKER_PRINCIPAL);
     expect(grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID).ministryIds).not.toContain(secondWorkerScope.ministryId);
-    await layDownSession(COACH_SESSION, coachMeta({ failurePlan: armedScopeDenial() }), WORKER_WORKSPACE); // The armed scope-denial mode (AAP 0.12.5) takes effect on the read it names, before the coaching families are decoded, so nothing is enumerated, counted or projected first.
+    await layDownSession(COACH_SESSION, coachMeta({ failurePlan: armedScopeDenial() }), COACH_SEAT_SEED); // The armed scope-denial mode (AAP 0.12.5) is armed on the seat and takes effect on the read it names, before the coaching families are decoded, so nothing is enumerated, counted or projected first.
     const armed = await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE);
     expect(assertDenied(armed).reasonCode).toBe("no-permission");
     expectDenialWithholds(armed, [ACTIVE_GRANT_ID, WORKER_PRINCIPAL, "target-calls-weekly"]);
@@ -207,17 +204,14 @@ describe("coach read boundary", () => {
     const invited = grantRecord(await storedStateOf(WORKER_SESSION), grantId); // A fresh invitation shares nothing: the five flags are all off, and the record says so.
     expect(invited.state).toBe("invited");
     expect([invited.modules, Object.keys(invited.modules).sort()]).toEqual([NO_MODULES_SELECTED, [...MODULE_KEYS].sort()]);
-    await carryState(WORKER_SESSION, COACH_SESSION);
     // Acceptance is the coach's own deliberate write, and the service groups it — with the departure — apart from the worker's coaching changes: the identity holds exactly these two.
-    expectAccepted(await mutations.coach.acceptInvitation(attempt(grantAuthorityScope(COACH_PRINCIPAL, YOUTH.ministryId), { grantId }, await currentRevisionOf(COACH_SESSION, grantId)), COACH_SOURCE));
+    expectAccepted(await mutations.coach.acceptInvitation(attempt(grantAuthorityScope(COACH_PRINCIPAL, YOUTH.ministryId), { grantId }, await currentRevisionOf(WORKER_SESSION, grantId)), COACH_SOURCE));
     const sharingNothing = assertEnvelope(await reads.coach.readCoachSubject({ grantId }, COACH_SOURCE));
     expect(sharingNothing.data.sharesNothing).toBe(true);
     expect(sharingNothing.data.modules).toHaveLength(0);
     expect(serialised(sharingNothing)).not.toContain("targets");
-    await carryState(COACH_SESSION, WORKER_SESSION);
     const switchedOn: readonly ModuleKey[] = ["targets", "check-ins"];
     await shareModules(grantId, switchedOn);
-    await carryState(WORKER_SESSION, COACH_SESSION);
     const envelope = assertEnvelope(await reads.coach.readCoachSubject({ grantId }, COACH_SOURCE));
     expect([envelope.data.sharesNothing, envelope.data.modules.map((view) => view.module).sort()]).toEqual([false, [...switchedOn].sort()]);
     const modulesInForce = grantRecord(await storedStateOf(WORKER_SESSION), grantId);
@@ -227,7 +221,6 @@ describe("coach read boundary", () => {
   });
   it("carries no gift row, no commitment row, no donor and no private target label, even with every module shared", async () => {
     await shareModules(ACTIVE_GRANT_ID, MODULE_KEYS);
-    await carryState(WORKER_SESSION, COACH_SESSION);
     const envelope = assertEnvelope(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE));
     expect(envelope.data.modules).toHaveLength(MODULE_KEYS.length);
     const state = await storedStateOf(WORKER_SESSION);
@@ -254,7 +247,7 @@ describe("coach read boundary", () => {
     expect(envelope.coverage.state).not.toBe("partial");
   });
   it("denies a read at the frozen exclusive cutoff while the stored grant still stands active", async () => {
-    const initial = grantRecord(await storedStateOf(COACH_SESSION), ACTIVE_GRANT_ID);
+    const initial = grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID);
     expect(initial.state).toBe("active");
     const storedCutoff = initial.duration.cutoffInstant;
     if (storedCutoff === null) throw new Error("The seeded grant states no cutoff, so no case here has an exclusive endpoint to read at.");
@@ -274,23 +267,24 @@ describe("coach read boundary", () => {
     const closed = await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE);
     expect(assertDenied(closed).reasonCode).toBe("no-permission");
     expectDenialWithholds(closed, [ACTIVE_GRANT_ID, WORKER_PRINCIPAL]);
-    const afterwards = grantRecord(await storedStateOf(COACH_SESSION), ACTIVE_GRANT_ID);
+    const afterwards = grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID);
     expect([afterwards.state, afterwards.revision, afterwards.duration.cutoffInstant]).toEqual(["active", initial.revision, storedCutoff]);
   });
   it("writes nothing when a coach reads, and leaves the worker's own work untouched by a revocation", async () => {
     const coachDocumentBefore = serialised(await storedStateOf(COACH_SESSION));
+    const recordsDocumentBefore = serialised(await storedStateOf(WORKER_SESSION)); // The document a coach's reads reach is the worker's own, so an enumeration that wrote anything would land there.
     const coachWorkBefore = await sourceWorkOf(COACH_SESSION);
     assertEnvelope(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE));
     assertEnvelope(await reads.coach.readCoachPortfolio(COACH_SOURCE));
     assertDenied(await reads.coach.readCoachSubject({ grantId: ENDED_GRANT_ID }, COACH_SOURCE));
     assertDenied(await reads.coach.readCoachSubject({ grantId: REVOKED_GRANT_ID }, COACH_SOURCE));
     expect(serialised(await storedStateOf(COACH_SESSION))).toBe(coachDocumentBefore);
+    expect(serialised(await storedStateOf(WORKER_SESSION))).toBe(recordsDocumentBefore);
     expect(await sourceWorkOf(COACH_SESSION)).toEqual(coachWorkBefore);
     const workerWorkBefore = await sourceWorkOf(WORKER_SESSION);
     expectAccepted(await mutations.coaching.revokeGrant(attempt(workerScope, { grantId: ACTIVE_GRANT_ID }, await currentRevisionOf(WORKER_SESSION, ACTIVE_GRANT_ID)), WORKER_SOURCE));
     expect(await sourceWorkOf(WORKER_SESSION)).toEqual(workerWorkBefore);
-    await carryState(WORKER_SESSION, COACH_SESSION);
-    expect(assertDenied(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE)).reasonCode).toBe("no-permission");
+    expect(assertDenied(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE)).reasonCode).toBe("no-permission"); // The worker's accepted revocation reaches the coach with nothing copied between the two documents.
     expect([await sourceWorkOf(COACH_SESSION), grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID).state]).toEqual([coachWorkBefore, "revoked"]);
   });
   it("keeps the stop types distinct and refuses a stale action on an episode that is already closed", async () => {
@@ -320,18 +314,17 @@ describe("coach read boundary", () => {
       await mutations.coaching.endCoaching(attempt(coachScope, { grantId: ACTIVE_GRANT_ID }), COACH_SOURCE),
     ];
     for (const outcome of forbidden) expect([isOutcome(outcome), outcome.outcome]).toEqual([true, "denied"]);
-    const coachBefore = serialised(await storedStateOf(COACH_SESSION));
-    expectAccepted(await mutations.coach.leaveCoaching(attempt(coachScope, { grantId: ACTIVE_GRANT_ID }, await currentRevisionOf(COACH_SESSION, ACTIVE_GRANT_ID)), COACH_SOURCE));
-    const left = grantRecord(await storedStateOf(COACH_SESSION), ACTIVE_GRANT_ID);
+    const recordsBefore = serialised(await storedStateOf(WORKER_SESSION));
+    // The grant this case revoked is closed, so the coach's own departure is asserted on the relationship that is still live: both writes address the worker's one record, and each produces its own stop type.
+    expectAccepted(await mutations.coach.leaveCoaching(attempt(coachScope, { grantId: SUPPORT_SHARING_GRANT_ID }, await currentRevisionOf(WORKER_SESSION, SUPPORT_SHARING_GRANT_ID)), COACH_SOURCE));
+    const left = grantRecord(await storedStateOf(WORKER_SESSION), SUPPORT_SHARING_GRANT_ID);
     expect([left.state, new Set([left.state, revokedState, endedState]).size]).toEqual(["left", 3]);
-    expect(serialised(await storedStateOf(COACH_SESSION))).not.toBe(coachBefore);
+    expect(serialised(await storedStateOf(WORKER_SESSION))).not.toBe(recordsBefore); // The coach's own accepted departure is written to the one record both identities address, so the change is visible there and nowhere else.
     expect(assertDenied(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE)).reasonCode).toBe("no-permission");
   });
   it("leaves the other admitted modules readable when one shared module's source is unavailable", async () => {
-    await layDownSession(WORKER_SESSION, workerMeta(), COACH_SEAT_WORKSPACE); // The coach's seat runs the unavailable-coaching-module scenario, so the module that reads the support source reports unavailable, the modules that do not stay usable, and neither is presented as the other.
-    await layDownSession(COACH_SESSION, coachMeta({ scenarioId: "coaching-module-unavailable" }), COACH_SEAT_WORKSPACE);
+    await layDownSession(COACH_SESSION, coachMeta({ scenarioId: "coaching-module-unavailable" }), COACH_SEAT_SEED); // The coach's seat runs the unavailable-coaching-module scenario, so the module that reads the support source reports unavailable, the modules that do not stay usable, and neither is presented as the other.
     await shareModules(ACTIVE_GRANT_ID, ["support-goal"]);
-    await carryState(WORKER_SESSION, COACH_SESSION);
     const envelope = assertEnvelope(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE));
     expect(envelope.data.modules.map((view) => view.module).sort()).toEqual(["check-ins", "support-goal", "targets"]);
     const goal = envelope.data.modules.find((view) => view.module === "support-goal");
@@ -348,8 +341,10 @@ describe("coach read boundary", () => {
   });
   it("reports one admitted coaching module unavailable in the seeded scenario while the others stay usable", async () => {
     // AAP 0.12.5 arms this failure with a seeded scenario flag rather than a hand-edited record, so the case reads the seeded seats themselves: the coach's own seat in the scenario, and the baseline coach's seat as the control proving the scenario is what changed the module rather than the world.
-    await layDownSeededSession(SEEDED_DOWN_MODULE_SESSION);
+    await layDownSeededSession(SEEDED_DOWN_MODULE_SESSION); // Each seat is laid down with the world it is seated in, so the coaching record it reads is that world's own rather than a copy the case had to carry across.
+    await layDownSeededSession(SEEDED_DOWN_MODULE_WORLD);
     await layDownSeededSession(SEEDED_BASELINE_COACH_SESSION);
+    await layDownSeededSession(SEEDED_BASELINE_WORLD);
     const down = assertEnvelope(await reads.coach.readCoachSubject({ grantId: SUPPORT_SHARING_GRANT_ID }, { sessionId: SEEDED_DOWN_MODULE_SESSION }));
     expect(down.data.modules.map((view) => view.module).sort()).toEqual(["check-ins", "support-goal", "targets"]);
     const goal = down.data.modules.find((view) => view.module === "support-goal");
@@ -364,10 +359,10 @@ describe("coach read boundary", () => {
     expect(targets.progress.length).toBeGreaterThan(0);
     const checkIns = down.data.modules.find((view) => view.module === "check-ins");
     if (checkIns === undefined || checkIns.module !== "check-ins") throw new Error("The check-ins module is shared and was not enumerated, which would blank the whole surface for one module's outage.");
-    // The module is still enumerated and usable — its content is complete, so it states no exception at all — and the outage of its neighbour changed neither its state nor the reading it carries. This grant shares no check-in of its own, so nothing is projected into it and nothing is claimed either.
+    // The module is still enumerated and usable, and the outage of its neighbour changed neither its state nor the reading it carries. This grant shares no check-in of its own, so the module states the empty period it holds: an empty module is its own state, never the neighbour's outage and never a complete share this relationship does not have.
     expect(checkIns.state).not.toBe("unavailable");
     expect(checkIns.unavailability).toBeNull();
-    expect(checkIns.state).toBeNull();
+    expect(checkIns.state).toBe("empty");
     expect(checkIns.sharedCheckIns).toHaveLength(0);
     // The same read of the same grant through the baseline coach's seat. The source is there and holds the goal the grant shares, so the module the scenario made unavailable reads as usable figures there.
     const baseline = assertEnvelope(await reads.coach.readCoachSubject({ grantId: SUPPORT_SHARING_GRANT_ID }, { sessionId: SEEDED_BASELINE_COACH_SESSION }));

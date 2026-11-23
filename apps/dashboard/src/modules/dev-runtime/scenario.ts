@@ -9,9 +9,9 @@ const SCENARIO_ID_LIST = ["baseline", "financial-source-unavailable", "media-una
 export type ScenarioId = (typeof SCENARIO_ID_LIST)[number];
 export const SCENARIO_IDS: readonly ScenarioId[] = Object.freeze(SCENARIO_ID_LIST);
 export const DEFAULT_SCENARIO_ID: ScenarioId = "baseline";
-export type ScenarioFlags = { financialSource: "available" | "unavailable"; mediaAsset: "available" | "unavailable"; coachingModule: "available" | "unavailable"; continuationSetting: "on" | "off" };
+export type ScenarioFlags = { financialSource: "available" | "unavailable"; mediaAsset: "available" | "unavailable"; coachingModule: "available" | "unavailable"; continuationSetting: "on" | "off"; releaseSynthesis: "per-edition" | "one-sibling-fails" };
 export type ScenarioDefinition = { readonly label: string; readonly description: string; readonly flags: ScenarioFlags };
-const BASELINE_FLAGS: ScenarioFlags = { financialSource: "available", mediaAsset: "available", coachingModule: "available", continuationSetting: "off" };
+const BASELINE_FLAGS: ScenarioFlags = { financialSource: "available", mediaAsset: "available", coachingModule: "available", continuationSetting: "off", releaseSynthesis: "per-edition" };
 const defineScenario = (label: string, description: string, flags: Partial<ScenarioFlags> = {}): ScenarioDefinition => Object.freeze({ label, description, flags: Object.freeze({ ...BASELINE_FLAGS, ...flags }) });
 export const SCENARIO_DEFINITIONS: Readonly<Record<ScenarioId, ScenarioDefinition>> = Object.freeze({
   baseline: defineScenario("Baseline", "Every source available and worker continuation off — the state every criterion other than the feature-specific ones starts from."),
@@ -20,7 +20,11 @@ export const SCENARIO_DEFINITIONS: Readonly<Record<ScenarioId, ScenarioDefinitio
   "coaching-module-unavailable": defineScenario("Coaching module unavailable", "One admitted coaching module's source is down: that module reports unavailable while the other admitted modules stay usable and are never blanked with it.", { coachingModule: "unavailable" }),
   "continuation-on": defineScenario("Continuation on", "The worker-continuation setting is on, so an ordinarily expired referral cycle offers the Continue action within its current permission.", { continuationSetting: "on" }),
   "continuation-off": defineScenario("Continuation off", "The worker-continuation setting is explicitly off, so an expired referral offers no Continue action; named so a spec depends on this scenario rather than on the baseline default."),
-  "partial-release-failure": defineScenario("Partial release failure", "One variant of a submission releases while a sibling fails, preserving the sibling's prior-good release head instead of rolling the successful one back."),
+  "partial-release-failure": defineScenario(
+    "Partial release failure",
+    "A simulated partial release: when one submission releases several editions at once, only the first edition that can release does, and every sibling is reported as failing under the release head it already held — or as still needing attention when it holds none — rather than the batch rolling the released edition back.",
+    { releaseSynthesis: "one-sibling-fails" },
+  ),
 });
 export const isScenarioId = (value: unknown): value is ScenarioId => typeof value === "string" && Object.hasOwn(SCENARIO_DEFINITIONS, value);
 /** The flags a scenario sets. */
@@ -28,6 +32,8 @@ export function scenarioFlagsFor(scenarioId: ScenarioId): ScenarioFlags {
   if (!isScenarioId(scenarioId)) throw new RangeError(`Unknown scenario ${describeValue(scenarioId)}: this release defines ${SCENARIO_IDS.join(", ")}.`);
   return SCENARIO_DEFINITIONS[scenarioId].flags;
 }
+/** The one media-availability rule this build has, which the serving route and every rendering surface read rather than each judging the scenario for itself: a scenario id this release does not define fails closed to `unavailable`, so no surface promises a rendition the serving path would refuse. */
+export const scenarioMediaServing = (scenarioId: string): "served" | "unavailable" => (isScenarioId(scenarioId) && scenarioFlagsFor(scenarioId).mediaAsset === "available" ? "served" : "unavailable");
 export { SESSION_STATES };
 export type { AdmittedMembership, SessionState };
 export const isSessionState = (value: unknown): value is SessionState => typeof value === "string" && (SESSION_STATES as readonly string[]).includes(value);
@@ -46,6 +52,8 @@ export interface SessionMetaDocument {
   admittedMemberships: AdmittedMembership[];
   selectedContext: SelectedContext | null;
   capabilities: string[];
+  /** The session whose documents hold this seat's coaching records, or null when they are its own: a coach seat is admitted to a worker's shared coaching records without becoming that worker, so the record it reads and writes is the worker's own and never a copy of it. */
+  coachingRecordsSessionId: string | null;
   personas: PersistedPersonaRecord[];
 }
 const DEV_SOURCE_SYSTEM = "dev-runtime";
@@ -90,6 +98,8 @@ function parseAdmittedMemberships(value: unknown): AdmittedMembership[] | undefi
   return memberships;
 }
 const parseCapabilities = (value: unknown): string[] | undefined => (Array.isArray(value) && value.every(isNonEmptyString) && new Set<string>(value).size === value.length ? value : undefined);
+/** The seat's coaching records session: absent and null both state that the seat's own documents hold them, and a stated one has to be a session id. */
+const parseCoachingRecordsSessionId = (value: unknown): string | null | undefined => (value === undefined || value === null ? null : typeof value === "string" && isSafeSessionId(value) ? value : undefined);
 const isPersistedPersonaKind = (value: unknown): value is PersistedPersonaKind => typeof value === "string" && (PERSISTED_PERSONA_KINDS as readonly string[]).includes(value);
 function parsePersistedPersonas(value: unknown): PersistedPersonaRecord[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -119,6 +129,7 @@ export interface SessionMetaSeedInput {
   failurePlan?: FailurePlanDocument;
   selectedContext?: SelectedContext | null;
   capabilities?: readonly string[];
+  coachingRecordsSessionId?: string | null;
   personas?: readonly PersistedPersonaRecord[];
 }
 export function buildSessionMeta(input: SessionMetaSeedInput): SessionMetaDocument {
@@ -132,6 +143,7 @@ export function buildSessionMeta(input: SessionMetaSeedInput): SessionMetaDocume
     admittedMemberships: input.admittedMemberships,
     selectedContext: input.selectedContext ?? null,
     capabilities: input.capabilities ?? [],
+    coachingRecordsSessionId: input.coachingRecordsSessionId ?? null,
     personas: input.personas ?? [],
   });
   if (parsed.ok) return parsed.value;
@@ -160,8 +172,11 @@ export function parseSessionMeta(value: unknown): Result<SessionMetaDocument, Se
   if (selectedContext === undefined) return err(refuse("meta-unreadable", "The stored session's selected context is null or a non-empty organization, ministry and support subject reference."));
   const capabilities = parseCapabilities(value.capabilities ?? []);
   if (capabilities === undefined) return err(refuse("meta-unreadable", "The stored session's capability set is zero or more distinct non-empty capability names."));
+  const coachingRecordsSessionId = parseCoachingRecordsSessionId(value.coachingRecordsSessionId);
+  if (coachingRecordsSessionId === undefined)
+    return err(refuse("meta-unreadable", `${describeValue(value.coachingRecordsSessionId)} cannot name the session a seat's coaching records live in: a session id is 1 to 64 characters drawn only from A-Z, a-z, 0-9, underscore and hyphen, and null states that the seat's own documents hold them.`));
   const personas = parsePersistedPersonas(value.personas ?? []);
-  return personas === undefined ? err(refuse("meta-unreadable", personaRosterRequirement())) : ok({ version: SESSION_META_VERSION, scenarioId, clockOffsetMs, failurePlan: failurePlan.value, sessionState, principalId, admittedMemberships, selectedContext, capabilities, personas });
+  return personas === undefined ? err(refuse("meta-unreadable", personaRosterRequirement())) : ok({ version: SESSION_META_VERSION, scenarioId, clockOffsetMs, failurePlan: failurePlan.value, sessionState, principalId, admittedMemberships, selectedContext, capabilities, coachingRecordsSessionId, personas });
 }
 type MetaUpdate = (meta: SessionMetaDocument) => Result<SessionMetaDocument, SessionControlRefusal>;
 async function updateSessionMeta(sessionId: string, update: MetaUpdate): Promise<Result<SessionMetaDocument, SessionControlRefusal>> {

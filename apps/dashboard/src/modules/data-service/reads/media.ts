@@ -1,6 +1,6 @@
 import { assertNever } from "@/lib/result";
 import { isDirectlyReadable } from "@/modules/content/reach";
-import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
+import { scenarioMediaServing } from "@/modules/dev-runtime/scenario";
 import type { MediaOriginalReference } from "@/modules/media/asset";
 import { assertReadable, type ByteRange, type MediaServingState, type MediaSizedRendition } from "@/modules/media/serve";
 import { readMediaBytes, statMediaBytes, type MediaByteWindow } from "@/modules/store/media";
@@ -94,6 +94,7 @@ const sizedRendition = (asset: MediaAssetRecord, record: MediaAssetRenditionReco
 /** The bytes one serving decision admitted: its own range when it named one, and the whole rendition otherwise. */
 const admittedWindow = (byteRange: ByteRange | null, totalBytes: number): MediaByteWindow => (byteRange === null ? { start: 0, end: totalBytes - 1 } : { start: byteRange.start, end: byteRange.end });
 const bytesSourceOf = (asset: MediaAssetRecord): MediaOriginalReference => ({ system: MEDIA_SOURCE_SYSTEM, reference: asset.assetId });
-const servingStateOf = (scenarioId: string): MediaServingState => (!isScenarioId(scenarioId) || scenarioFlagsFor(scenarioId).mediaAsset === "unavailable" ? "unavailable" : "served");
+// The scenario's own media rule, read from the one place that states it: the bytes this route serves and the state every rendering surface states come from the same answer.
+const servingStateOf = (scenarioId: string): MediaServingState => scenarioMediaServing(scenarioId);
 /** The one refusal every failed media authorisation answers with: the request names no record this caller may read. */
 const refused = (): MediaAssetReadResult => deniedRead(MEDIA_REFUSAL_REASON);

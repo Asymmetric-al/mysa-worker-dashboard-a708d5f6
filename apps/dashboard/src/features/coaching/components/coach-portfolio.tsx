@@ -20,7 +20,7 @@ const COACHING_PAGE_SIZES: readonly number[] = [COACHING_DEFAULT_PAGE_SIZE, COAC
 const FIRST_PAGE = 1;
 const RETRY_LABEL = "Try again";
 const COLUMN_LABELS = { worker: "Worker", ministry: "Ministry", modules: "Shared with you", access: "Access", ends: "Access ends" } as const;
-const MUTED_TEXT_CLASS = "text-sm text-pretty text-muted-foreground";
+const MUTED_TEXT_CLASS = "type-supporting text-pretty";
 const IDENTITY_STATEMENT =
   "A row names the worker by the identity this read reports and by nothing else: a matching name, address or email establishes neither identity nor authority. No private note, check-in answer, task description, amount or donor appears on this page, and no relationship is compared with another.";
 function windowOf<T>(items: readonly T[], page: number, pageSize: number): { readonly items: readonly T[]; readonly page: number } {
@@ -42,7 +42,7 @@ function directionOfLocale(locale: string): "ltr" | "rtl" {
 }
 const subjectHref = (subjectId: string): string => `/coaching/coach/${encodeURIComponent(subjectId)}`;
 const SubjectCell = ({ subject, onOpen }: { readonly subject: PortfolioSubject; readonly onOpen: ((subjectId: string) => void) | undefined }): ReactElement => (
-  <Link href={subjectHref(subject.grantId)} className={"rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"} onClick={() => onOpen?.(subject.grantId)}>
+  <Link href={subjectHref(subject.grantId)} className={"inline-flex min-h-6 items-center rounded-sm font-medium inline-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"} onClick={() => onOpen?.(subject.grantId)}>
     <bdi className="mono-identifier">{subject.workerPrincipalId}</bdi>
   </Link>
 );
@@ -137,7 +137,7 @@ export default function CoachPortfolio({ initialQuery, scope, locale, onOpen }: 
     const visiblePage = windowOf(subjects, queryState.page, queryState.pageSize);
     content = (
       <>
-        <p className="max-w-prose text-sm text-pretty">{"Each relationship is listed by the ministry it covers and then by the grant's own identity, in the order this read answers with: nothing on this page re-orders, narrows or adds the relationships together."}</p>
+        <p className="max-w-prose type-supporting text-pretty">{"Each relationship is listed by the ministry it covers and then by the grant's own identity, in the order this read answers with: nothing on this page re-orders, narrows or adds the relationships together."}</p>
         <RecordList
           label={heading}
           columns={columns}
@@ -155,8 +155,8 @@ export default function CoachPortfolio({ initialQuery, scope, locale, onOpen }: 
   }
   return (
     <section aria-labelledby={headingId} dir={directionOfLocale(locale)} className="min-w-0">
-      <Panel titleId={headingId} titleClassName="font-heading text-xl font-semibold text-pretty" headingLevel={2} title={heading} description={COACHING_COPY.coachPortfolio.purpose} cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-4">
-        <p className="max-w-prose text-sm text-pretty">{"This view is read-only: a coach can read what the worker switched on, and cannot edit, assign, remind, complete, reopen, export or impersonate anything. Stopping a share never recalls what was already read."}</p>
+      <Panel titleId={headingId} headingLevel={2} title={heading} description={COACHING_COPY.coachPortfolio.purpose} cardClassName="min-w-0" titleClassName="text-pretty" contentClassName="flex min-w-0 flex-col gap-4">
+        <p className="max-w-prose type-supporting text-pretty">{"This view is read-only: a coach can read what the worker switched on, and cannot edit, assign, remind, complete, reopen, export or impersonate anything. Stopping a share never recalls what was already read."}</p>
         <Separator />
         {content}
       </Panel>

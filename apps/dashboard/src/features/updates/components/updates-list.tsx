@@ -3,12 +3,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useId, useMemo, useState, type FormEvent, type ReactElement } from "react";
 import ActionReview from "@/components/action-review";
-import { DraftStatus, LIFECYCLE_STATUS } from "@/components/draft-status";
+import { CONTENT_LIFECYCLE_STATES, DraftStatus, LIFECYCLE_STATUS } from "@/components/draft-status";
 import { fieldErrorsFromInvalid, FormErrorSummary, FormField, FormFieldGroup, refusalSummary, type FieldErrorLookup } from "@/components/form-field";
 import RecordList, { useRecordListWindow, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import StateNotice, { type NoticeHeadingLevel } from "@/components/state-notice";
 import StatusBadge, { REACH_STATUS } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,11 +39,13 @@ const DEFAULT_AUDIENCE: EditionAudience = "public";
 const DOCUMENTS_MEMBER = "documents";
 const NO_ORDER: RecordListQueryState["sort"] = [];
 const NO_COLUMNS_HIDDEN: RecordListQueryState["columnVisibility"] = {};
-const ROW_LINK_CLASS = "rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+const ROW_LINK_CLASS = "inline-link rounded-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const CELL_TEXT_CLASS = "min-w-0 text-xs text-pretty text-muted-foreground wrap-anywhere";
 const CELL_STACK_CLASS = "flex min-w-0 flex-col gap-1";
 const IDENTIFIER_CLASS = "mono-identifier text-xs break-all";
-const MUTED_PARAGRAPH_CLASS = "text-sm text-pretty text-muted-foreground";
+const MUTED_PARAGRAPH_CLASS = "type-supporting text-pretty";
+const NOTE_LEAD_CLASS = "text-sm font-medium";
+const STATE_NOTE_ROW_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2";
 const SURFACE_COPY = {
   heading: "Updates",
   purpose: "Every Update this ministry's content holds, with each edition's own draft, its one review step and its own release.",
@@ -52,6 +54,7 @@ const SURFACE_COPY = {
   audienceNote: "A public edition is the one readers of this Update's public page are served. An approved-supporter edition is served only to supporters this publisher has approved. The same language can hold one of each, and the two are separate editions with separate releases.",
   outcomeNote:
     "This list states what has been written, frozen for review and released. It states nothing about who was notified, whose provider accepted a notice, what was delivered or what was read: publication, notification submission, provider acceptance, delivery and reading are separate outcomes, and none of the last four is shown here.",
+  statesLead: "What the states on this page mean",
   tableLabel: "Updates and their editions",
   columnLabels: { update: "Update", audience: "Audience", language: "Language", status: "Status", review: "Review", release: "Release" },
   noTitle: "No title yet",
@@ -59,6 +62,7 @@ const SURFACE_COPY = {
   noCandidate: "No candidate in review.",
   candidateFrozen: "Candidate frozen",
   candidateRevision: "Frozen revision",
+  candidateAwaitingRelease: "Awaiting release",
   awaitingRelease: "This candidate is not yet the released revision.",
   notReleased: "Not released.",
   lastRelease: "Last release",
@@ -70,6 +74,7 @@ const SURFACE_COPY = {
   reachPrefix: "Reach",
   statusPrefix: "Status",
   translationUnresolved: "Its source edition cannot be read, so this translation's state is unknown rather than current.",
+  translationStateUnknown: "Translation state unknown",
   addEdition: "Add an edition",
   addEditionNote: "An edition is one audience in one content language. Adding one starts it with no draft, no review and no release: nothing is published and no notice is submitted by this step.",
   unavailableTitle: "The Updates could not be read",
@@ -141,7 +146,7 @@ const UpdateCell = ({ row }: { readonly row: RosterRow }): ReactElement => (
 );
 const AudienceCell = ({ edition }: { readonly edition: RosterEdition }): ReactElement => (
   <div className={CELL_STACK_CLASS}>
-    <StatusBadge label={AUDIENCE_LABELS[edition.audience].label} tone={edition.audience === "public" ? "info" : "neutral"} srPrefix={SURFACE_COPY.audiencePrefix} />
+    <StatusBadge label={AUDIENCE_LABELS[edition.audience].label} tone={AUDIENCE_LABELS[edition.audience].tone} srPrefix={SURFACE_COPY.audiencePrefix} />
     <span className="sr-only">{AUDIENCE_LABELS[edition.audience].whoReceives}</span>
   </div>
 );
@@ -154,8 +159,8 @@ const LanguageCell = ({ edition }: { readonly edition: RosterEdition }): ReactEl
 );
 const StatusCell = ({ edition }: { readonly edition: RosterEdition }): ReactElement => (
   <div className={CELL_STACK_CLASS}>
-    <DraftStatus state={edition.lifecycle} {...(edition.staleSince === null ? {} : { staleSince: edition.staleSince })} />
-    {edition.translationStatus === "unresolved" ? <span className={CELL_TEXT_CLASS}>{SURFACE_COPY.translationUnresolved}</span> : null}
+    <DraftStatus state={edition.lifecycle} explanation={false} {...(edition.staleSince === null ? {} : { staleSince: edition.staleSince })} />
+    {edition.translationStatus === "unresolved" ? <StatusBadge label={SURFACE_COPY.translationStateUnknown} tone="caution" srPrefix={SURFACE_COPY.statusPrefix} /> : null}
   </div>
 );
 function ReviewCell({ edition, reviewAvailable }: { readonly edition: RosterEdition; readonly reviewAvailable: boolean }): ReactElement {
@@ -176,35 +181,76 @@ function ReviewCell({ edition, reviewAvailable }: { readonly edition: RosterEdit
           </Link>
         )}
       </span>
-      {edition.awaitingRelease ? <span className={CELL_TEXT_CLASS}>{SURFACE_COPY.awaitingRelease}</span> : null}
+      {edition.awaitingRelease ? <StatusBadge label={SURFACE_COPY.candidateAwaitingRelease} tone="info" srPrefix={SURFACE_COPY.reviewPrefix} /> : null}
     </div>
   );
 }
-const LabelledFigure = ({ label, value }: { readonly label: string; readonly value: string }): ReactElement => (
-  <span className={CELL_TEXT_CLASS}>
-    {`${label}: `}
+/** The divider between two facts stated on one line: a sighted reader's dot is not a word, so assistive technology skips it and hears each fact's own label instead. */
+const FACT_SEPARATOR = <span aria-hidden="true">{" · "}</span>;
+/** One fact on the release line: a sighted reader reads the value, and assistive technology still hears the label it belongs to. */
+const LabelledFact = ({ label, value }: { readonly label: string; readonly value: string }): ReactElement => (
+  <>
+    <span className="sr-only">{`${label}: `}</span>
     <bdi className={IDENTIFIER_CLASS}>{value}</bdi>
-  </span>
+  </>
 );
 function ReleaseCell({ edition }: { readonly edition: RosterEdition }): ReactElement {
   const release = edition.release;
   if (release === null) {
     return (
       <div className={CELL_STACK_CLASS}>
-        <span className={CELL_TEXT_CLASS}>{SURFACE_COPY.notReleased}</span>
-        {edition.lastReleaseAt === null ? null : <LabelledFigure label={SURFACE_COPY.lastRelease} value={edition.lastReleaseAt} />}
+        <span className={CELL_TEXT_CLASS}>
+          {SURFACE_COPY.notReleased}
+          {edition.lastReleaseAt === null ? null : (
+            <>
+              {" "}
+              <LabelledFact label={SURFACE_COPY.lastRelease} value={edition.lastReleaseAt} />
+            </>
+          )}
+        </span>
       </div>
     );
   }
   return (
     <div className={CELL_STACK_CLASS}>
       <StatusBadge {...REACH_STATUS[release.reach]} srPrefix={SURFACE_COPY.reachPrefix} />
-      <LabelledFigure label={SURFACE_COPY.published} value={release.publishedAt} />
-      <LabelledFigure label={SURFACE_COPY.releasedRevision} value={release.revisionId} />
-      {release.withdrawnAt === null ? null : <LabelledFigure label={SURFACE_COPY.withdrawn} value={release.withdrawnAt} />}
+      <span className={CELL_TEXT_CLASS}>
+        <LabelledFact label={SURFACE_COPY.published} value={release.publishedAt} />
+        {FACT_SEPARATOR}
+        <LabelledFact label={SURFACE_COPY.releasedRevision} value={release.revisionId} />
+        {release.withdrawnAt === null ? null : (
+          <>
+            {FACT_SEPARATOR}
+            <LabelledFact label={SURFACE_COPY.withdrawn} value={release.withdrawnAt} />
+          </>
+        )}
+      </span>
     </div>
   );
 }
+type StateNote = { readonly term: string; readonly detail: string };
+/** The prose a dense row leaves out, gathered: every lifecycle state the listed editions actually hold, in the vocabulary's own order, plus the two compact badges' own sentences. */
+function stateNotesOf(rows: readonly RosterRow[]): readonly StateNote[] {
+  const held = new Set(rows.map((row) => row.edition.lifecycle));
+  const notes: StateNote[] = CONTENT_LIFECYCLE_STATES.filter((state) => held.has(state)).map((state) => ({ term: LIFECYCLE_STATUS[state].label, detail: LIFECYCLE_STATUS[state].explanation }));
+  if (rows.some((row) => row.edition.translationStatus === "unresolved")) notes.push({ term: SURFACE_COPY.translationStateUnknown, detail: SURFACE_COPY.translationUnresolved });
+  if (rows.some((row) => row.edition.awaitingRelease)) notes.push({ term: SURFACE_COPY.candidateAwaitingRelease, detail: SURFACE_COPY.awaitingRelease });
+  return notes;
+}
+/** The sentences the cells no longer carry, stated once under the table: the state word or badge label, then what it permits. */
+const StateNotes = ({ notes }: { readonly notes: readonly StateNote[] }): ReactElement => (
+  <div className="flex min-w-0 flex-col gap-1">
+    <p className={NOTE_LEAD_CLASS}>{SURFACE_COPY.statesLead}</p>
+    <dl className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+      {notes.map((note) => (
+        <div key={note.term} className={STATE_NOTE_ROW_CLASS}>
+          <dt className="font-medium">{note.term}</dt>
+          <dd className="min-w-0 text-pretty wrap-anywhere">{note.detail}</dd>
+        </div>
+      ))}
+    </dl>
+  </div>
+);
 const LiveEditionStatus = ({ documentId, edition }: { readonly documentId: string; readonly edition: VariantOverviewData["editions"][number] }): ReactElement => (
   <StatusBadge label={LIFECYCLE_STATUS[lifecycleFor(documentId, edition)].label} tone={LIFECYCLE_STATUS[lifecycleFor(documentId, edition)].tone} srPrefix={SURFACE_COPY.statusPrefix} />
 );
@@ -449,6 +495,8 @@ export type UpdatesListProps = {
   readonly className?: string;
 };
 const HEADING_TAG = { 1: "h1", 2: "h2" } as const;
+/** The one type scale's heading utility for each level this surface may take, so its own heading measures the same as every other heading at that level. */
+const HEADING_SCALE: Readonly<Record<1 | 2, string>> = { 1: "type-page-title", 2: "type-section-title" };
 export default function UpdatesList({ roster, initialResult, headingLevel = 2, className }: UpdatesListProps): ReactElement {
   const headingId = useId();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -475,6 +523,7 @@ export default function UpdatesList({ roster, initialResult, headingLevel = 2, c
   const current = answeredRoster ?? roster;
   const rows = useMemo(() => rowsOf(current), [current]);
   const reviewAvailable = current.actions.some((action) => action.name === REVIEW_CANDIDATE_ACTION && action.available);
+  const stateNotes = stateNotesOf(rows); // The states the rows on show actually hold, so the notes under the table explain what a reader can see and nothing they cannot.
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<RosterRow>>>(
     () => [
       { id: "update", header: SURFACE_COPY.columnLabels.update, enableSorting: false, enableHiding: false, cell: (context) => <UpdateCell row={context.row.original} /> },
@@ -509,30 +558,33 @@ export default function UpdatesList({ roster, initialResult, headingLevel = 2, c
     content = <StateNotice kind="empty" headingLevel={noticeLevel} title={SURFACE_COPY.emptyTitle} description={SURFACE_COPY.emptyBody} action={{ label: SURFACE_COPY.emptyAction, href: HELP_HREF }} />;
   } else {
     content = (
-      <RecordList
-        label={SURFACE_COPY.tableLabel}
-        columns={columns}
-        rows={rows}
-        rowCount={current.page.total}
-        queryState={{ sort: NO_ORDER, page: current.page.page, pageSize: current.page.pageSize, columnVisibility }}
-        onQueryStateChange={handleQueryStateChange}
-        getRowId={(row) => row.key}
-        itemNoun={ITEM_NOUN}
-        pageSizeOptions={PAGE_SIZE_OPTIONS}
-        isLoading={read.isFetching}
-      />
+      <>
+        <RecordList
+          label={SURFACE_COPY.tableLabel}
+          columns={columns}
+          rows={rows}
+          rowCount={current.page.total}
+          queryState={{ sort: NO_ORDER, page: current.page.page, pageSize: current.page.pageSize, columnVisibility }}
+          onQueryStateChange={handleQueryStateChange}
+          getRowId={(row) => row.key}
+          itemNoun={ITEM_NOUN}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          isLoading={read.isFetching}
+        />
+        {stateNotes.length === 0 ? null : <StateNotes notes={stateNotes} />}
+      </>
     );
   }
   return (
-    <section data-slot="updates-list" aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
+    <section data-slot="updates-list" aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1">
-          <HeadingTag {...{ id: headingId, className: "font-heading text-2xl font-semibold text-pretty break-words" }}>{SURFACE_COPY.heading}</HeadingTag>
+          <HeadingTag {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-pretty break-words") }}>{SURFACE_COPY.heading}</HeadingTag>
           <p className={MUTED_PARAGRAPH_CLASS}>{SURFACE_COPY.purpose}</p>
           <p className={MUTED_PARAGRAPH_CLASS}>{SURFACE_COPY.intro}</p>
         </div>
         <div className="flex min-w-0 flex-col items-start gap-1">
-          {offersCreate ? <Button {...{ type: "button", className: "h-auto max-w-full whitespace-normal", onClick: () => setDialogOpen(true) }}>{SURFACE_COPY.addEdition}</Button> : null}
+          {offersCreate ? <Button {...{ type: "button", className: BUTTON_WRAP_CLASS, onClick: () => setDialogOpen(true) }}>{SURFACE_COPY.addEdition}</Button> : null}
           {offersCreate ? <p className="max-w-prose text-xs text-pretty text-muted-foreground">{SURFACE_COPY.addEditionNote}</p> : null}
         </div>
       </div>

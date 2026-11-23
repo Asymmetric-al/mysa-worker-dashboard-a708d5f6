@@ -164,7 +164,7 @@ const KindList = ({ rows, valueStates, showsShare, label }: KindListProps): Reac
 type SurfaceProps = { readonly headingId: string; readonly children: ReactNode; readonly className?: string };
 const Surface = ({ headingId, children, className }: SurfaceProps): ReactElement => (
   <section aria-labelledby={headingId} data-slot="initiative-results" className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
-    <h3 id={headingId} className="font-heading text-base font-medium text-pretty">
+    <h3 id={headingId} className="type-subsection-title text-pretty">
       {RESULTS_COPY.heading}
     </h3>
     {children}
@@ -172,9 +172,9 @@ const Surface = ({ headingId, children, className }: SurfaceProps): ReactElement
 );
 const ResultsStatement = (): ReactElement => (
   <div className="flex min-w-0 flex-col gap-1 text-sm text-pretty text-muted-foreground">
-    <p>{SURFACE_COPY.intro}</p>
-    <p>{RESPONSE_AGREEMENT_COPY.agreementCreatesNothing}</p>
-    <p>{SURFACE_COPY.worthNote}</p>
+    <p className="type-supporting">{SURFACE_COPY.intro}</p>
+    <p className="type-supporting">{RESPONSE_AGREEMENT_COPY.agreementCreatesNothing}</p>
+    <p className="type-supporting">{SURFACE_COPY.worthNote}</p>
   </div>
 );
 type InitiativeResultsSurfaceProps = { readonly initiativeId: string; readonly queryState?: RecordListQueryState; readonly initialEnvelope: ReadEnvelope<ResultsData>; readonly onQueryStateChange?: (next: RecordListQueryState) => void; readonly className?: string };
@@ -189,7 +189,7 @@ function InitiativeResultsSurface({ initiativeId, queryState: controlledState, i
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(controlledState === undefined ? NO_COLUMNS_HIDDEN : controlledState.columnVisibility);
   const listQueryState = useMemo<RecordListQueryState>(() => ({ sort: NO_SORT, page, pageSize, columnVisibility }), [page, pageSize, columnVisibility]);
   const seeded = useMemo<InitiativeResultsEnvelope<ResultsData>>(() => ({ kind: "envelope", envelope: initialEnvelope }), [initialEnvelope]);
-  const read = useInitiativeResults<ResultsData>(initiativeId, listQueryState, seeded);
+  const read = useInitiativeResults<ResultsData>(initiativeId, seeded);
   const result = read.status === "ready" ? read.result : undefined;
   const envelope = result !== undefined && result.kind === "envelope" ? result.envelope : undefined;
   const kindRows: readonly ResponseKindRow[] = envelope === undefined ? NO_RESPONSE_KINDS : envelope.data.responseKinds;
@@ -257,7 +257,7 @@ function InitiativeResultsSurface({ initiativeId, queryState: controlledState, i
       </p>
       {hasRequests ? (
         results.requests.answered.count === 0 ? (
-          <p className="text-sm text-pretty">{RESULTS_COPY.noResultsNote}</p>
+          <p className="type-supporting text-pretty">{RESULTS_COPY.noResultsNote}</p>
         ) : null
       ) : (
         <StateNotice kind="empty" headingLevel={4} title={`${RESULTS_COPY.heading}: ${results.initiative.name}`} description={RESULTS_COPY.noResultsNote} action={{ label: SURFACE_COPY.emptyAction, href: `${initiativeHref(initiativeId)}#requests` }} />
@@ -269,8 +269,8 @@ function InitiativeResultsSurface({ initiativeId, queryState: controlledState, i
       {termsRows.length === 0 ? null : (
         <div data-slot="initiative-results-terms" className="flex min-w-0 flex-col gap-3">
           <div className="flex min-w-0 flex-col gap-1">
-            <h4 className="text-sm font-semibold">{SURFACE_COPY.termsHeading}</h4>
-            <p className="text-sm text-pretty text-muted-foreground">{RESPONSE_AGREEMENT_COPY.bindsToTermsVersion}</p>
+            <h4 className="type-group-title">{SURFACE_COPY.termsHeading}</h4>
+            <p className="type-supporting text-pretty">{RESPONSE_AGREEMENT_COPY.bindsToTermsVersion}</p>
           </div>
           <RecordList label={`${RESULTS_COPY.heading} for ${results.initiative.name}: ${SURFACE_COPY.termsHeading}`} columns={termsColumns} rows={termsRows} rowCount={termsRows.length} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={termsVersionRowId} itemNoun="terms versions" />
         </div>

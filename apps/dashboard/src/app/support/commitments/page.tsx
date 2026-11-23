@@ -40,10 +40,10 @@ function NarrowingStatement({ actions }: { readonly actions: readonly ReadAction
   if (refused.length === 0) return null;
   return (
     <section aria-labelledby={NARROWING_HEADING_ID} className="flex min-w-0 flex-col gap-2">
-      <h2 id={NARROWING_HEADING_ID} className="text-base font-semibold text-pretty">
+      <h2 id={NARROWING_HEADING_ID} className="type-section-title text-pretty">
         {COMMITMENTS_PAGE_COPY.narrowing.heading}
       </h2>
-      <p className="max-w-prose text-sm text-pretty text-muted-foreground">{COMMITMENTS_PAGE_COPY.narrowing.body}</p>
+      <p className="type-supporting max-w-prose text-pretty">{COMMITMENTS_PAGE_COPY.narrowing.body}</p>
       <dl className="flex min-w-0 flex-col gap-2">
         {refused.map((filter) => (
           <div key={filter.name} className="flex min-w-0 flex-col gap-0.5">

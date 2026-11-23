@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { archivePreparationInput, mutationInputSchema, mutations, restorePreparationInput } from "@/modules/data-service";
 import { refusalIdentityGiven, writeRoute } from "../../../handler";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const UNATTEMPTED_OPERATION_ID = "no-operation-attempted";
@@ -13,7 +14,7 @@ function preparationChangeRequest(address: string) {
 type PreparationAddress = { readonly partnerId: string };
 const refusalIdentityOf = refusalIdentityGiven(UNATTEMPTED_OPERATION_ID);
 /** Archives or restores one worker-private preparation record, as `payload.intent` names, and answers with exactly one of the eight outcomes. */
-export async function POST(request: Request, context: { params: Promise<PreparationAddress> }): Promise<Response> {
+async function changePreparationArchive(request: Request, context: { params: Promise<PreparationAddress> }): Promise<Response> {
   const { partnerId } = await context.params;
   return writeRoute(
     request,
@@ -22,3 +23,4 @@ export async function POST(request: Request, context: { params: Promise<Preparat
     refusalIdentityOf,
   );
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: changePreparationArchive });

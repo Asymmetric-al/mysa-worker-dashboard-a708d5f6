@@ -61,10 +61,10 @@ const TAG_COLUMN_LABEL = "Private tags";
 const NO_PRIVATE_TAG_LABEL = "No private tag";
 const INITIATIVE_ROUTE_PREFIX = "/partners/initiatives";
 /** One row's private tags as chips, wrapped so a long tag never widens the column. */ const TAG_CHIP_GROUP_CLASS = "flex min-w-0 flex-wrap items-center gap-1";
-const TAG_CHIP_TEXT_CLASS = "min-w-0 wrap-anywhere"; /** A row's link, sized so its target is at least 24 CSS px tall (WCAG 2.5.8) and underlined so its affordance is never carried by colour alone. */
-const ROW_LINK_CLASS = "inline-flex min-h-6 max-w-full items-center break-words underline underline-offset-3 hover:decoration-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+const TAG_CHIP_TEXT_CLASS = "min-w-0 wrap-anywhere"; /** A row's link, sized so its target is at least 24 CSS px tall (WCAG 2.5.8) and carrying the one inline-link underline so its affordance is never carried by colour alone. */
+const ROW_LINK_CLASS = "inline-flex min-h-6 max-w-full items-center break-words inline-link hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const SECTION_CLASS = "flex min-w-0 flex-col gap-3";
-const QUIET_CLASS = "text-sm text-pretty text-muted-foreground";
+const QUIET_CLASS = "type-supporting text-pretty";
 const LIST_BODY_CLASS = "flex min-w-0 flex-col gap-3";
 const EMPTY_LIST_COPY: Readonly<Record<TaskListKey, { readonly title: string; readonly description: string }>> = {
   today: { title: "Nothing is due today", description: "No open task in this context is dated today. Later work is read in Upcoming, work with no date in Undated, and a task that passed its date without an answer in Overdue." },
@@ -390,7 +390,7 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
       {selectedTasks.length === 0 ? null : <BulkActionBar scope={scope} expectedRevision={expectedRevision} selectedTasks={selectedTasks} onClearSelection={clearSelection} onCheckResult={refreshAll} />}
       <div className={SECTION_CLASS}>
         <div className="flex min-w-0 flex-col gap-2">
-          <h2 className="font-heading text-lg font-medium text-pretty">{"Task lists"}</h2>
+          <h2 className="type-section-title text-pretty">{"Task lists"}</h2>
           <p className={cn(QUIET_CLASS, "max-w-prose")}>{BULK_SELECTION_SCOPE_NOTE}</p>
         </div>
         {listRegion}

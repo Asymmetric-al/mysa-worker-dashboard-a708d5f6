@@ -14,6 +14,8 @@ import type { ReadResult } from "@/modules/data-service/outcome";
 type ListedEdition = DiscoveryIndexEnvelope["data"]["entries"][number];
 export type DiscoveryIndexProps = { readonly scope: Scope; readonly initialEnvelope: ReadResult<DiscoveryIndexEnvelope>; readonly headingLevel?: NoticeHeadingLevel; readonly className?: string };
 const HEADING_TAGS: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4">> = { 1: "h1", 2: "h2", 3: "h3", 4: "h4" };
+/** The one type scale's heading utility for each level, so this surface's heading takes the measure of the level the composing page gives it rather than one fixed size. */
+const HEADING_SCALE: Readonly<Record<NoticeHeadingLevel, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const LISTED_STATUS = statusBadgeProps(REACH_STATUS, "listed");
 const UNAVAILABLE_TITLE = `${DISCOVERY_INDEX_COPY.heading} could not be read`;
 const noticeLevelOf = (headingLevel: NoticeHeadingLevel): NoticeHeadingLevel => (headingLevel === 1 ? 2 : headingLevel === 2 ? 3 : 4);
@@ -21,7 +23,7 @@ function ListedEditionRow({ edition }: { readonly edition: ListedEdition }): Rea
   const title = edition.title.trim();
   return (
     <li data-slot="discovery-edition" className="min-w-0">
-      <Link href={edition.href} className="flex min-h-11 min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1 rounded-sm p-2 text-start underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+      <Link href={edition.href} className="inline-link flex min-h-11 min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1 rounded-sm p-2 text-start focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           {title === "" ? null : <bdi className="text-sm font-medium text-pretty wrap-anywhere">{title}</bdi>}
           <span className="text-xs text-muted-foreground wrap-anywhere">
@@ -89,7 +91,7 @@ function IndexBody({ result, headingLevel, onRetry }: IndexBodyProps): ReactElem
       <Card>
         <CardHeader>
           <CardTitle>
-            <Heading id={headingId} className="text-balance">
+            <Heading id={headingId} className={cn(HEADING_SCALE[headingLevel], "text-balance")}>
               {DISCOVERY_INDEX_COPY.heading}
             </Heading>
           </CardTitle>

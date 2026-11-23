@@ -1,7 +1,7 @@
 "use client";
 import { useId, type ReactNode } from "react";
 import DraftStatus, { LIFECYCLE_STATUS, type ContentLifecycleState, type LifecycleSpec } from "@/components/draft-status";
-import StatusBadge, { type StatusBadgeSpec } from "@/components/status-badge";
+import StatusBadge, { AUDIENCE_STATUS, type StatusBadgeSpec } from "@/components/status-badge";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,8 +9,8 @@ import { cn } from "@/lib/cn";
 import { languageNameOf } from "@/lib/language-name";
 import type { ContentLocale } from "@/modules/content/locale";
 import { VARIANT_AUDIENCES, variantKeyAllowed, type VariantAudience, type VariantFamily } from "@/modules/content/variant";
-/** The word and tone of each audience a variant may serve, exhaustive over the content module's closed union so a third audience is a compile error rather than an unlabelled chip. */
-export const AUDIENCE_WORDS: Readonly<Record<VariantAudience, StatusBadgeSpec>> = { public: { label: "Public", tone: "neutral" }, "approved-supporter": { label: "Approved supporter", tone: "info" } };
+/** The word and tone of each audience a variant may serve, declared once in {@link AUDIENCE_STATUS} and named here for the surfaces that already import it. */
+export const AUDIENCE_WORDS: Readonly<Record<VariantAudience, StatusBadgeSpec>> = AUDIENCE_STATUS;
 const NO_EDITION_NOTICE = "No edition you are permitted to read is listed here.";
 export type VariantTab = { readonly variantId: string; readonly audience: VariantAudience; readonly locale: ContentLocale; readonly lifecycle: ContentLifecycleState; readonly staleSince?: string };
 export type VariantSwitcherProps = { readonly family: VariantFamily; readonly variants: readonly VariantTab[]; readonly activeVariantId: string; readonly onSelect: (variantId: string) => void; readonly label: string; readonly className?: string };
@@ -69,7 +69,7 @@ export function VariantSwitcher({ family, variants, activeVariantId, onSelect, l
     return (
       <div data-slot="variant-switcher" data-family={family} data-no-editions="true" className={cn("flex min-w-0 flex-col gap-2", className)}>
         <span className="text-start text-sm leading-none font-medium">{label}</span>
-        <p className="text-start text-sm text-muted-foreground text-pretty wrap-anywhere">{NO_EDITION_NOTICE}</p>
+        <p className="type-supporting text-start text-pretty wrap-anywhere">{NO_EDITION_NOTICE}</p>
       </div>
     );
   }

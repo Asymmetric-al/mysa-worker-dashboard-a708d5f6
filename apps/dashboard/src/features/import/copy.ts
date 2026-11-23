@@ -140,7 +140,7 @@ export const ACCEPTANCE_REVIEW_COPY = {
   title: "Accept the rows you decided",
   description: "Accepting applies the decisions you reviewed. A row you decided to create becomes a new private preparation entry of your own; a row you decided to reuse attaches a private entry to the contact you named, and that contact is left exactly as it stands.",
   confirmLabel: "Accept the reviewed rows",
-  selectionNoun: "rows",
+  selectionNoun: (count: number): string => (count === 1 ? "row" : "rows"),
 } as const;
 /** The words the validate-and-review step states beside the material the read derived: */ export const REVIEW_COPY = {
   lead: "Every row below is what the importer would make of this file: the values it would supply, the problems it states, the cells it keeps as data, the restrictions it carries and the contacts it proposes for reuse. Decide about each row on its own and record that decision; a recorded decision applies nothing by itself, and nothing reaches a contact until you accept the rows you decided.",
@@ -227,6 +227,10 @@ export const importReceiptHref = (operationId: string): string => `/partners/imp
   summaryHeading: "What acceptance decided about the rows",
   summaryLabels: { create: "Created as a new private entry", reuse: "Attached to a contact you reuse", skip: "Skipped", unresolved: "Left undecided", rowCount: "Data rows in the file" },
   stateCountsHeading: "What became of the rows",
+  cancellationHeading: "This import was stopped after acceptance",
+  cancellationLabels: { cancelledAt: "Stopped at", acceptedRowsRetained: "Rows already applied and kept", stoppedRows: "Rows stopped before anything was applied" },
+  cancellationStatement:
+    "The stop reached only the rows acceptance had not applied. Every row this import had already applied keeps the record it became, nothing was withdrawn or deleted, and no message was recalled, because an import sends none. The instant is stated exactly as the receipt holds it, in ISO 8601 (UTC).",
   column: { row: "Row", decision: "Decision", state: "Result", reason: "What happened", route: "Where this row leads" },
   noState: "No result recorded",
   noReason: "This row states no reason of its own.",

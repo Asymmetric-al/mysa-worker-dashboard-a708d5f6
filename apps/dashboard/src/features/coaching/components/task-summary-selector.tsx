@@ -38,8 +38,10 @@ const RELOAD_LABEL = "Reload the list";
 const FIELD_LABELS: Readonly<Record<string, string>> = { taskId: SELECT_LABEL, safeDescription: "Reviewed description", occurrenceId: "Occurrence", reviewedFingerprint: "Reviewed meaning" };
 const DEFAULT_HEADING_LEVEL: ReviewHeadingLevel = 2;
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
+/** The one type scale's heading utility per level, so the selector's card states its heading at the level it sits at with the same measure as every other heading there. */
+const HEADING_SCALE: Readonly<Record<ReviewHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const ROOT_CLASS = "flex min-w-0 flex-col gap-4";
-const SENTENCE_CLASS = "text-sm text-pretty text-muted-foreground";
+const SENTENCE_CLASS = "type-supporting text-pretty";
 const FACT_ROW_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2";
 const FACT_TERM_CLASS = "text-muted-foreground";
 const AUTHORED_TEXT_CLASS = "min-w-0 break-words text-pretty whitespace-pre-wrap";
@@ -271,7 +273,9 @@ export function TaskSummarySelector({ candidates, existing, scope, locale, initi
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="wrap-anywhere">
-            <Heading id={headingId}>{"Share a task summary"}</Heading>
+            <Heading id={headingId} className={HEADING_SCALE[headingLevel]}>
+              {"Share a task summary"}
+            </Heading>
           </CardTitle>
           <CardDescription className="text-pretty wrap-anywhere">{SURFACE_PURPOSE}</CardDescription>
         </CardHeader>

@@ -6,7 +6,7 @@ import ActionReview from "@/components/action-review";
 import { lifecycleOf, variantRecordOf } from "@/components/draft-status";
 import { FormErrorSummary, FormFieldGroup, fieldErrorsFromInvalid, type FieldErrorLookup } from "@/components/form-field";
 import LocaleSwitcher, { type LocaleEdition } from "@/components/locale-switcher";
-import MediaPicker, { type MediaPickerKind, type MediaPickerOutcome, type MediaPlacement as OnScreenPlacement, type MediaPosterOption, type MediaRegisterInput } from "@/components/media-picker";
+import MediaPicker, { type MediaPickerKind, type MediaPickerOutcome, type MediaPlacement as OnScreenPlacement, type MediaRegisterInput } from "@/components/media-picker";
 import ProseEditor, { type ProseEditorProps } from "@/components/prose-editor";
 import { ScrollRegion } from "@/components/scroll-region";
 import { StateNotice } from "@/components/state-notice";
@@ -78,6 +78,8 @@ const BODY_PANE_TITLE = "The text of this edition";
 const EDITOR_LABEL = "The text of this Update edition";
 const EDITOR_DESCRIPTION = "Write the edition's own text. A save is sent after a short pause, carries the revision the service last acknowledged, and states the media this draft holds.";
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
+/** The one type scale's utility for each level, so every heading this surface renders takes the measure of the level it is given rather than one fixed size. */
+const HEADING_SCALE: Readonly<Record<EditorHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const NESTED_HEADING_LEVEL: Readonly<Record<EditorHeadingLevel, EditorHeadingLevel>> = { 2: 3, 3: 4, 4: 4 };
 const LOCAL_RECOVERY = {
   title: "This browser kept text the service never acknowledged",
@@ -134,7 +136,7 @@ const editionInLocale = (overview: VariantOverviewData, audience: VariantOvervie
   overview.editions.find((edition) => edition.audience === audience && edition.locale.tag === tag) ?? overview.editions.find((edition) => edition.locale.tag === tag);
 function Heading({ level, id, className, children }: { readonly level: EditorHeadingLevel; readonly id: string; readonly className: string; readonly children: ReactNode }): ReactElement {
   const Tag = HEADING_TAG[level];
-  return <Tag {...{ id, className }}>{children}</Tag>;
+  return <Tag {...{ id, className: cn(HEADING_SCALE[level], className) }}>{children}</Tag>;
 }
 const REMOVAL_ON_SAVE = "This session cannot place this file, so saving this draft removes the placement. Everything the record holds about the rest of the draft is unchanged.";
 const KIND_WORDS = { image: "Image", video: "Video" } as const;
@@ -157,12 +159,12 @@ function PlacementRow({ placement, onManage }: PlacementRowProps): ReactElement 
     <li data-slot="placement-row" data-kind={placement.kind} data-state={placement.state} className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-sm font-medium">{KIND_WORDS[placement.kind]}</span>
-        <span className="min-w-0 text-sm text-muted-foreground wrap-anywhere">
+        <span className="min-w-0 type-supporting wrap-anywhere">
           <span className="sr-only">{`${PLACEMENT_LABELS.state}: `}</span>
           <bdi>{placement.state === "ready" ? PLACEMENT_STATE_WORDS.ready : (placement.reason?.label ?? "")}</bdi>
         </span>
       </div>
-      <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 text-sm">
+      <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 type-body">
         {rows.map((row) => (
           <Fragment key={row.label}>
             <dt className="text-muted-foreground">{row.label}</dt>
@@ -171,9 +173,9 @@ function PlacementRow({ placement, onManage }: PlacementRowProps): ReactElement 
         ))}
       </dl>
       {placement.state === "ready" ? null : (
-        <div className="flex min-w-0 flex-col gap-1 text-sm text-muted-foreground">
-          {placement.reason?.action === undefined ? null : <p className="text-pretty wrap-anywhere">{placement.reason.action}</p>}
-          {placeable ? null : <p className="text-pretty wrap-anywhere">{REMOVAL_ON_SAVE}</p>}
+        <div className="flex min-w-0 flex-col gap-1">
+          {placement.reason?.action === undefined ? null : <p className="type-supporting text-pretty wrap-anywhere">{placement.reason.action}</p>}
+          {placeable ? null : <p className="type-supporting text-pretty wrap-anywhere">{REMOVAL_ON_SAVE}</p>}
         </div>
       )}
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -182,7 +184,6 @@ function PlacementRow({ placement, onManage }: PlacementRowProps): ReactElement 
     </li>
   );
 }
-type SaveOutcome = Awaited<ReturnType<ProseEditorProps["onSave"]>>;
 type DraftEditorProps = { readonly scope: Scope; readonly variantId: string; readonly recordRevision: string; readonly asOf: string; readonly data: DraftData; readonly direction: EditorDirection; readonly localeTag: string; readonly headingLevel: EditorHeadingLevel };
 function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, localeTag, headingLevel }: DraftEditorProps): ReactElement {
   const titleId = useId();
@@ -207,9 +208,9 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
     if (mediaRequests === 0) return;
     mediaPaneRef.current?.focus();
   }, [mediaRequests]);
-  const saveText = async (document: EditorDocument): Promise<SaveOutcome> => {
+  const reportChange = (document: EditorDocument): void => {
     lastBodyRef.current = document;
-    return recovery.notifyChange(document, statedRefs);
+    void recovery.notifyChange(document, statedRefs);
   };
   const placeMedia = async (input: MediaRegisterInput, swappedPlacementId: string | null): Promise<MediaPickerOutcome> => {
     setMediaRefusal(null);
@@ -244,19 +245,18 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
   };
   const images = placements.filter((placement) => placement.kind === "image");
   const videos = placements.filter((placement) => placement.kind === "video");
-  const posterChoices: readonly MediaPosterOption[] = images.map((placement) => ({ assetId: placement.assetId, label: placement.altText }));
   const keptText = recovery.localRecovery.present ? recovery.localRecovery.body : null;
   const managed = picker === null || picker.placementId === undefined ? undefined : placements.find((placement) => placement.placementId === picker.placementId);
   const revision = data.status === "draft" ? data.revision : null;
   const editorPane = (
     <div className={cn("flex min-w-0 flex-col gap-4", pane === "write" ? "flex" : "hidden", "md:flex")}>
-      <p className="min-w-0 text-sm text-muted-foreground text-pretty wrap-anywhere">{EDITOR_DESCRIPTION}</p>
+      <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{EDITOR_DESCRIPTION}</p>
       {keptText === null ? null : (
         <Alert>
           <AlertTitle>{LOCAL_RECOVERY.title}</AlertTitle>
           <AlertDescription>
-            <p>{LOCAL_RECOVERY.whatItIs}</p>
-            <p>{LOCAL_RECOVERY.whatAdopting}</p>
+            <p className="type-supporting">{LOCAL_RECOVERY.whatItIs}</p>
+            <p className="type-supporting">{LOCAL_RECOVERY.whatAdopting}</p>
           </AlertDescription>
           <AlertAction>
             <Button {...{ type: "button", size: "sm", variant: "outline", onClick: () => adoptLocalText(keptText) }}>{LOCAL_RECOVERY.action}</Button>
@@ -266,9 +266,9 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
       {/* Direction is a property of the content, applied to the editing block and never to the interface around it. */}
       <DirectionProvider direction={direction}>
         <div dir={direction} lang={localeTag} className="min-w-0">
-          {/* The editor's numeric counter shapes only its own local "not saved" wording: the revision every save states is
-              the opaque one the recovery hook carries, and an opaque reference has no number to take from it. */}
-          <ProseEditor key={`draft-${String(editorInstance)}`} initialDocument={adoptedBody ?? initialBody} expectedRevision={0} direction={direction} label={EDITOR_LABEL} onSave={saveText} onRequestMedia={requestMedia} />
+          {/* The editor reports every change here and holds no save state of its own: the recovery hook is the one owner of
+              the draft, so it carries the revision each save states and the one place that says whether the text is saved. */}
+          <ProseEditor key={`draft-${String(editorInstance)}`} initialDocument={adoptedBody ?? initialBody} direction={direction} label={EDITOR_LABEL} onChange={reportChange} onRequestMedia={requestMedia} />
         </div>
       </DirectionProvider>
       <AutosaveStatus recovery={recovery} acknowledgedAsOf={asOf} />
@@ -289,7 +289,7 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
   };
   const mediaPane = (
     <section ref={mediaPaneRef} tabIndex={-1} aria-label={MEDIA_PANE_TITLE} data-slot="editor-media-pane" className={cn("min-w-0 flex-col gap-4 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]", pane === "media" ? "flex" : "hidden", "md:flex")}>
-      <p className="min-w-0 text-sm text-muted-foreground text-pretty wrap-anywhere">{MEDIA_GROUP_DESCRIPTION}</p>
+      <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{MEDIA_GROUP_DESCRIPTION}</p>
       <FormFieldGroup legend={MEDIA_GROUP_LEGEND} name="add-media" description="The picker states the formats, sizes and lengths it admits before any work begins, requires alternative text, and never keeps the file's own name.">
         {() => (
           <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -314,10 +314,10 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
     <Card data-slot="editor-shell-body" data-edition={variantId} className="min-w-0">
       <CardHeader>
         <CardTitle>
-          <Heading {...{ level: headingLevel, id: titleId, className: "text-base font-medium text-pretty" }}>{BODY_PANE_TITLE}</Heading>
+          <Heading {...{ level: headingLevel, id: titleId, className: "text-pretty" }}>{BODY_PANE_TITLE}</Heading>
         </CardTitle>
         {revision === null ? (
-          <p className="min-w-0 text-sm text-muted-foreground text-pretty wrap-anywhere">Nothing has been saved for this edition yet. The first save records the text as its draft; nothing is published by it.</p>
+          <p className="min-w-0 type-supporting text-pretty wrap-anywhere">Nothing has been saved for this edition yet. The first save records the text as its draft; nothing is published by it.</p>
         ) : (
           <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 text-xs">
             {[
@@ -353,15 +353,8 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
         onOpenChange={(next) => {
           if (!next) setPicker(null);
         }}
-        {...(managed === undefined
-          ? {}
-          : {
-              placement: onScreenPlacementOf(managed),
-              onRemove: (input: { readonly placementId: string }) => removeMedia(input.placementId),
-              onReplace: (input: { readonly placementId: string } & MediaRegisterInput) => placeMedia({ kind: input.kind, file: input.file, ...(input.probe === undefined ? {} : { probe: input.probe }), placement: input.placement }, managed.placementId),
-            })}
+        {...(managed === undefined ? {} : { placement: onScreenPlacementOf(managed), onRemove: (input: { readonly placementId: string }) => removeMedia(input.placementId), onReplace: (input: { readonly placementId: string } & MediaRegisterInput) => placeMedia(input, managed.placementId) })}
         onRegister={(input: MediaRegisterInput) => placeMedia(input, null)}
-        posterAssets={posterChoices}
         onSettled={(outcome: MediaPickerOutcome) => {
           if (outcome.outcome === "invalid") setMediaRefusal(fieldErrorsFromInvalid(outcome));
         }}
@@ -472,18 +465,18 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
   return (
     <section aria-labelledby={titleId} data-slot="editor-shell" data-edition={variantId} className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
       <header className="flex min-w-0 flex-col gap-3">
-        <Heading {...{ level: headingLevel, id: titleId, className: "text-2xl font-semibold text-pretty wrap-anywhere" }}>{SURFACE_TITLE}</Heading>
-        <p className="min-w-0 text-sm text-muted-foreground text-pretty wrap-anywhere">
+        <Heading {...{ level: headingLevel, id: titleId, className: "text-pretty wrap-anywhere" }}>{SURFACE_TITLE}</Heading>
+        <p className="min-w-0 type-supporting text-pretty wrap-anywhere">
           {audience.label} edition in <bdi lang={data.locale.tag}>{languageName === "" ? data.locale.tag : languageName}</bdi>. {audience.whoReceives}
         </p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Link {...{ href: `/communication/${encodeURIComponent(updateId)}/${encodeURIComponent(variantId)}/preview`, className: cn(buttonVariants({ variant: "outline", size: "sm" })) }}>Preview this edition</Link>
+          <Link {...{ href: `/communication/${encodeURIComponent(updateId)}/${encodeURIComponent(variantId)}/preview`, className: cn(buttonVariants({ variant: "outline", size: "sm" })), "data-slot": "button" }}>Preview this edition</Link>
         </div>
         <Alert>
           <AlertTitle>A saved draft is not a release, and a release is not a message</AlertTitle>
           <AlertDescription>
-            <p>{DRAFT_VS_RELEASED.draftIsNotWhatReadersSee}</p>
-            <p>{DRAFT_VS_RELEASED.releaseIsWhatRecipientsReceive}</p>
+            <p className="type-supporting">{DRAFT_VS_RELEASED.draftIsNotWhatReadersSee}</p>
+            <p className="type-supporting">{DRAFT_VS_RELEASED.releaseIsWhatRecipientsReceive}</p>
           </AlertDescription>
         </Alert>
       </header>
@@ -498,7 +491,7 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
         <div className="flex min-w-0 flex-col gap-4">
           <VariantSwitcher family="update" variants={tabs} activeVariantId={variantId} onSelect={openEdition} label="Edition being written" />
           <LocaleSwitcher locales={locales ?? []} requested={data.locale.tag} served={data.locale.tag} onRequest={openLocale} onDirectionChange={(servedDirection: EditorDirection) => setReportedDirection({ edition: variantId, direction: servedDirection })} label="Language edition" />
-          <p className="min-w-0 text-sm text-muted-foreground text-pretty wrap-anywhere">{EDITION_SWITCHING_NOTE}</p>
+          <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{EDITION_SWITCHING_NOTE}</p>
         </div>
       )}
       <DraftEditor scope={scope} variantId={variantId} recordRevision={envelope.revision} asOf={envelope.asOf} data={data} direction={direction} localeTag={data.locale.tag} headingLevel={NESTED_HEADING_LEVEL[headingLevel]} />

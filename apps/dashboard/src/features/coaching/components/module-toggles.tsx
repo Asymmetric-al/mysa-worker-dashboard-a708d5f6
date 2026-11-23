@@ -26,6 +26,8 @@ const SET_INCOMPLETE_DESCRIPTION =
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { grantId: "Coaching relationship", moduleKey: "Module", enabled: "Sharing of this module" };
 const CARD_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 type RowHeadingLevel = 2 | 3 | 4;
+/** The one type scale's heading utility per level, so the modules card states the level it sits at with the same measure on every surface. */
+const CARD_HEADING_SCALE: Readonly<Record<RowHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const ROW_HEADING_LEVEL: Readonly<Record<RowHeadingLevel, RowHeadingLevel>> = { 2: 3, 3: 4, 4: 4 };
 type StateVariant = "secondary" | "outline" | "destructive" | "ghost";
 const STATE_VARIANT: Readonly<Record<ModuleReadState, StateVariant>> = { empty: "outline", partial: "secondary", withheld: "outline", unavailable: "destructive", ended: "secondary" };
@@ -156,18 +158,18 @@ function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowH
         </p>
         <Switch checked={entry.enabled} onCheckedChange={changeTo} aria-labelledby={`${nameId} ${stateId}`} aria-describedby={gateId === null ? descriptionId : `${descriptionId} ${gateId}`} aria-disabled={blocked ? true : undefined} className="aria-disabled:opacity-60" />
       </div>
-      <p {...{ id: descriptionId, className: "text-sm text-pretty text-muted-foreground" }}>{copy.description}</p>
+      <p {...{ id: descriptionId, className: "type-supporting text-pretty" }}>{copy.description}</p>
       {direct.pending ? <output {...{ "aria-live": "polite", className: "block text-sm text-muted-foreground" }}>{"Applying this module change, and nothing else…"}</output> : null}
       {refusal === null ? null : <StateNotice kind="refused" title={"This module change was not sent"} description={refusal} headingLevel={rowHeadingLevel} />}
       {entry.enabled ? null : (
-        <p className="text-sm text-pretty text-muted-foreground">
+        <p className="type-supporting text-pretty">
           <bdi>{OFF_WORD}</bdi>
           {": "}
           {"This module is switched off, so your coach cannot read it. The work inside it stays exactly as it is, and switching it back on is the same deliberate act as switching it on the first time."}
         </p>
       )}
       {entry.enabled && entry.readState === null ? (
-        <p className="text-sm text-pretty text-muted-foreground">
+        <p className="type-supporting text-pretty">
           <bdi>{MODULE_COMPLETE_COPY.label}</bdi>
           {": "}
           {MODULE_COMPLETE_COPY.description}
@@ -228,7 +230,9 @@ export default function ModuleToggles({ grantId, modules, scope, expectedRevisio
     <Card data-slot="module-toggles" data-grant-state={grantState} className={cn("min-w-0", className)}>
       <CardHeader>
         <CardTitle>
-          <CardHeading id={headingId}>{"Modules you share"}</CardHeading>
+          <CardHeading id={headingId} className={CARD_HEADING_SCALE[headingLevel]}>
+            {"Modules you share"}
+          </CardHeading>
         </CardTitle>
         <CardDescription>
           <p>{COACHING_COPY.sharing.purpose}</p>

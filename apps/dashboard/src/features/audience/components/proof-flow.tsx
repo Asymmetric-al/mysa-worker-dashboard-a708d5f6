@@ -2,11 +2,12 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useId, useMemo, useState, type ReactElement } from "react";
 import { intentKeyOf, useReviewedMutation } from "@/components/action-review";
+import { hasSettled } from "@/components/attempt";
 import FormField, { fieldErrorsFromInvalid } from "@/components/form-field";
 import OperationResult from "@/components/operation-result";
 import SimulationLabel from "@/components/simulation-label";
 import StatusBadge, { MEMBERSHIP_STATUS, statusBadgeProps, type MembershipStatus } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { MEMBERSHIP_STATE_DESCRIPTIONS, PURPOSE_LABEL } from "@/features/audience/copy/membership";
@@ -40,7 +41,6 @@ const ZONE_HEADING_TAG = { 2: "h3", 3: "h4", 4: "h4" } as const;
 const EMAIL_FIELD = "email";
 const SIGNUP_FIELD_LABELS: Readonly<Record<string, string>> = { email: "Email address", publisherId: "Publisher", purpose: "Purpose", displayName: "Display name", languagePreference: "Reading language" };
 const CONFIRM_FIELD_LABELS: Readonly<Record<string, string>> = { membershipId: "The membership this confirmation applies to" };
-const CONTROL_CLASS = "h-auto min-h-9 max-w-full py-2 whitespace-normal";
 const SURFACE_COPY = {
   entitlement: "One membership, for this publisher and this purpose only. No other publisher, no other purpose and no other record about you changes here.",
   emailLabel: "Email address",
@@ -134,10 +134,19 @@ export function ProofFlow({ scope, publisherId, publisherLabel, purpose, state, 
     const target = membership;
     if (target === null || windowClosed) return;
     setConfirmAttemptFor(target.membershipId);
-    void confirmReview.submit({ scope, expectedRevision, payload: { membershipId: target.membershipId } });
+    // Confirmation is the act that changes the state this page read states, and no client query mounts that read, so the route is asked to read itself again rather than leaving the card on its previous step; a refusal changed nothing, so it asks for nothing.
+    void confirmReview.submit({ scope, expectedRevision, payload: { membershipId: target.membershipId } }).then((recorded) => {
+      if (hasSettled(recorded)) router.refresh();
+    });
   };
-  const retryActiveStep = (): void => void (confirmOutcome === null ? signupReview.retry() : confirmReview.retry());
-  const reapplyActiveStep = (): void => void (confirmOutcome === null ? signupReview.reapply() : confirmReview.reapply());
+  // A retry or a re-apply carries out the same act again, so an answer that finally stands leaves the page read out of date for exactly the reason the first press made it so; a refusal changed nothing, so it asks for nothing.
+  const settleActiveStep = (run: () => Promise<MutationOutcome | null>): void => {
+    void run().then((recorded) => {
+      if (hasSettled(recorded)) router.refresh();
+    });
+  };
+  const retryActiveStep = (): void => settleActiveStep(confirmOutcome === null ? signupReview.retry : confirmReview.retry);
+  const reapplyActiveStep = (): void => settleActiveStep(confirmOutcome === null ? signupReview.reapply : confirmReview.reapply);
   return (
     <section aria-labelledby={titleId} dir={dir} data-slot="proof-flow" data-step={shownStep} data-operation-id={activeOperationId === null ? undefined : activeOperationId} className={cn("min-w-0", className)}>
       <Card className="min-w-0">
@@ -173,7 +182,7 @@ export function ProofFlow({ scope, publisherId, publisherLabel, purpose, state, 
               <div className="flex min-w-0 flex-col gap-2">
                 <SimulationLabel effect="mail-submission" />
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" className={CONTROL_CLASS} onClick={requestNotices} disabled={signupReview.pending}>
+                  <Button type="button" className={BUTTON_WRAP_CLASS} onClick={requestNotices} disabled={signupReview.pending}>
                     {signupReview.pending ? `${PROOF_FLOW_COPY.requestStep.label} — working` : PROOF_FLOW_COPY.requestStep.label}
                   </Button>
                 </div>
@@ -196,7 +205,7 @@ export function ProofFlow({ scope, publisherId, publisherLabel, purpose, state, 
                 <div className="flex min-w-0 flex-col gap-2">
                   <p className="text-sm text-pretty text-muted-foreground">{PROOF_FLOW_COPY.confirmAction.description}</p>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button type="button" className={CONTROL_CLASS} onClick={confirmAddress} disabled={confirmReview.pending || windowClosed} aria-describedby={deadlineLabel === null ? undefined : closedReasonId}>
+                    <Button type="button" className={BUTTON_WRAP_CLASS} onClick={confirmAddress} disabled={confirmReview.pending || windowClosed} aria-describedby={deadlineLabel === null ? undefined : closedReasonId}>
                       {confirmReview.pending ? `${PROOF_FLOW_COPY.confirmAction.label} — working` : PROOF_FLOW_COPY.confirmAction.label}
                     </Button>
                   </div>

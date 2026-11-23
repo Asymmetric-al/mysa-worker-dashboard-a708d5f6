@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ComponentProps, ReactElement } from "react";
 import { PageBuilder } from "@/features/ministry-pages/components/page-builder";
 import { reads } from "@/modules/data-service";
-import { PageSurface, ReadNotices, wireFormOf, type ReadNoticeCopy } from "../../page-frame";
+import { PageSurface, pageRefusalOf, wireFormOf, type PageHeadingContent, type ReadNoticeCopy } from "../../page-frame";
 export const dynamic = "force-dynamic";
 const SURFACE_TITLE = "Page builder";
 export const metadata: Metadata = { title: SURFACE_TITLE };
@@ -34,7 +34,7 @@ function editionViewOf(documentId: string, edition: PageLocaleEdition): LocalesE
 }
 const editionViewsOf = (documentId: string, editions: readonly PageLocaleEdition[]): LocalesEnvelope["data"] => editions.map((edition) => editionViewOf(documentId, edition));
 const NOTICE_COPY: ReadNoticeCopy = {
-  headingLevel: 1,
+  headingLevel: 2,
   denied: { title: "This Page is not available in this session", body: "This session may not read the Page this address names, so no edition, section, draft or giving destination is stated here. " + "A refusal is not a Page with nothing composed." },
   unavailable: {
     title: "This Page's builder could not be composed",
@@ -42,7 +42,9 @@ const NOTICE_COPY: ReadNoticeCopy = {
   },
   refused: { title: "This builder's request was refused" },
 };
-const failureNoticeOf = (result: FailedRead): ReactElement => <ReadNotices failure={result} copy={NOTICE_COPY} />;
+const PAGE_HEADING: PageHeadingContent = { title: SURFACE_TITLE };
+/** A refusal keeps the page's own title and states what could not be read beneath it, so the screen still says which page it is. */
+const failureNoticeOf = (result: FailedRead): ReactElement => pageRefusalOf(result, NOTICE_COPY, 6, PAGE_HEADING);
 /** One Page's builder: three reads of one address at one instant, and the honest notice that replaces the builder when any of them answers without an envelope. */
 export default async function PageBuilderPage({ params }: { readonly params: Promise<{ pageId: string }> }): Promise<ReactElement> {
   const { pageId } = await params;

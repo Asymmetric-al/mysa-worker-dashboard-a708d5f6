@@ -1,6 +1,7 @@
 /** Whole-query agreement of the export: the integration half of success criterion 1, driven through the real store, the real service read and the real writers. */
 import { parse } from "csv-parse/sync";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { exportResponse } from "@/app/api/export/respond";
 import { reads } from "@/modules/data-service";
 import type { SessionSource } from "@/modules/data-service/authorize";
 import { buildWorkload } from "@/modules/dev-runtime/generate";
@@ -176,6 +177,17 @@ describe("whole-query export agreement (criterion 1)", () => {
     expect([[ledger.data.grain, ledger.data.report.total], ledger.data.report.summary]).toEqual([["gift-allocation", result.total], result.summary]);
     expect(ledger.data.report.snapshot.asOf).toBe(result.snapshot.asOf);
   });
+  it("states the ledger's rows without the comparison its view never renders, while the report of the same query states it", async () => {
+    const ledger = await giftsEnvelope({ period: CLOSED_PERIOD, timeZone: TIME_ZONE });
+    const report = await reportEnvelope(EXPORT_REPORT_ID, { period: CLOSED_PERIOD, timeZone: TIME_ZONE }); // One computation over one query: the ledger asks for the projection its view renders and the report for the comparison it shows, so only that member differs.
+    expect([ledger.data.report.comparison, Object.keys(ledger.valueStates).filter((path) => path.startsWith("comparison."))]).toEqual([undefined, []]);
+    const comparison = report.data.comparison;
+    expect([comparison?.equalElapsed, comparison?.reconciles, (comparison?.contributorDeltas.length ?? 0) > 0, report.valueStates["comparison.USD.current"]]).toEqual([true, true, true, "incomplete-subtotal"]);
+    // The ledger states the value of every field its own envelope carries: no comparison, and the designation and attribution values its filters offer. Those two members are the only paths a report of the same query does not state, so both are dropped before the figures are compared.
+    const statesOfOneQuery = (states: Readonly<Record<string, string>>): Readonly<Record<string, string>> => Object.fromEntries(Object.entries(states).filter(([path]) => !path.startsWith("comparison.") && !path.startsWith("facets.")));
+    expect(statesOfOneQuery(ledger.valueStates)).toEqual(statesOfOneQuery(report.valueStates));
+    expect([ledger.data.report.rows, ledger.data.report.summary, ledger.data.report.series, ledger.data.report.total, ledger.data.report.page]).toEqual([report.data.rows, report.data.summary, report.data.series, report.data.total, report.data.page]);
+  });
   it("exports the whole query, never the loaded page", async () => {
     const { exported, paged, parsed } = await exportedRun();
     expect([parsed.meta.get("page"), parsed.rows.length, parsed.rows.length]).toEqual(["whole-query", exported.data.rowCount, paged.data.total]);
@@ -206,7 +218,7 @@ describe("whole-query export agreement (criterion 1)", () => {
     for (const field of required) expect(parsed.meta.get(field) ?? "").not.toBe("");
     expect([[...parsed.meta.keys()], [parsed.meta.get("grain"), parsed.meta.get("basis")?.startsWith(SUPPORT_BASIS), parsed.meta.get("period_from"), parsed.meta.get("period_to")]]).toEqual([required, ["gift-allocation", true, exported.data.snapshot.period.from.toString(), exported.data.snapshot.period.to.toString()]]);
     expect([parsed.meta.get("period_state"), parsed.meta.get("coverage_state"), parsed.meta.get("snapshot_as_of"), parsed.meta.get("row_total")]).toEqual([exported.data.snapshot.period.state, exported.data.snapshot.coverage.state, exported.data.snapshot.asOf, String(exported.data.rowCount)]);
-    expect(parsed.meta.get("currency")).toBe(UNKNOWN_CURRENCY);
+    expect([parsed.meta.get("currency"), exported.coverage.currency]).toEqual([CSV_ALL_CURRENCIES, CSV_ALL_CURRENCIES]);
     // The printed table's columns are the file's columns: one column list, rendered by two writers from one result.
     expect([parsed.header, printModel((await reportEnvelope(EXPORT_REPORT_ID, { period: CLOSED_PERIOD, timeZone: TIME_ZONE })).data).columns.map((column) => column.header)]).toEqual([CSV_COLUMN_HEADERS, CSV_COLUMN_HEADERS]);
     const kwdRow = rowById(parsed.rows, "gift-row-harbour-0004");
@@ -223,6 +235,17 @@ describe("whole-query export agreement (criterion 1)", () => {
     expect(leadingZero).toBeDefined();
     expect(cell(leadingZero ?? {}, "gift_id")).toBe("gift-harbour-0001");
     expect(exported.data.csv).toContain(LEADING_ZERO_ROW_ID);
+  });
+  it("describes the query that produced it, rather than a report substituted for the one posted", async () => {
+    const posted: SupportQuery = { reportId: "partner-month-matrix", period: CLOSED_PERIOD, timeZone: TIME_ZONE };
+    const exported = await exportEnvelope(posted);
+    const parsed = parseExport(exported.data.csv);
+    const matrix = await reportEnvelope("partner-month-matrix", { period: CLOSED_PERIOD, timeZone: TIME_ZONE });
+    // The filename, the snapshot and the file's own query record name the report the caller posted, so no reader of the file has to infer which of the four reports these rows came from.
+    expect([exported.data.filename.startsWith("support-partner-month-matrix-"), exported.data.snapshot.query.reportId, parsed.meta.get("snapshot_query")?.split(";")[0]]).toEqual([true, "partner-month-matrix", "report=partner-month-matrix"]);
+    // And the rows are that report's rows: the count and the per-currency minor-unit sums the screen holds for the same query.
+    expect([parsed.rows.length, sumExportedAmounts(parsed.rows).totals]).toEqual([matrix.data.total, totalsOf(matrix.data.summary)]);
+    expect(exported.data.rowCount).toBe(matrix.data.total);
   });
   it("never reveals a withheld or anonymous record, directly or by subtracting one figure from another", async () => {
     const { parsed, paged } = await exportedRun();
@@ -248,7 +271,7 @@ describe("whole-query export agreement (criterion 1)", () => {
     expect(unknownSummary?.received.valueState).toBe("unknown");
     // The withheld state, rendered by the same writer and the same print model from the same result: the cell becomes the word, and the printed page states that such a value is in no total and cannot be inferred by subtraction. (The support read states `unknown` for a value its source does not state;
     const withheldResult: ReportResult = { ...paged.data, valueStates: { ...paged.data.valueStates, "rows.0.amount": "withheld" } }; // `withheld` is the state the envelope admits for a value that exists and is not shown, so the writers' rendering of it is asserted here on the one result they are given.)
-    const withheldRow = parseExport(toCsv(withheldResult)).rows.find((row) => cell(row, "gift_row_id") === paged.data.rows[0]?.giftRowId);
+    const withheldRow = parseExport(await toCsv(withheldResult)).rows.find((row) => cell(row, "gift_row_id") === paged.data.rows[0]?.giftRowId);
     expect([cell(withheldRow ?? {}, "amount"), cell(withheldRow ?? {}, "amount_minor_units"), printModel(withheldResult).notes.some((note) => note.includes("withheld here"))]).toEqual([VALUE_STATE_TEXT.withheld, VALUE_STATE_TEXT.withheld, true]);
   });
   it("leaves the whole-query values where they were when the sort or the page window moves", async () => {
@@ -319,12 +342,40 @@ describe("whole-query export agreement (criterion 1)", () => {
     if (refusedReport.kind !== "denied") throw new Error(`The refused principal's report answered "${refusedReport.kind}".`);
     expect(refusedReport.denied.reasonCode).toBe(refusedExport.denied.reasonCode);
   });
+  it("answers the envelope itself, with its CSV carried through the slices character for character", async () => {
+    const envelope = await exportEnvelope({ period: CLOSED_PERIOD, timeZone: TIME_ZONE });
+    const response = exportResponse({ kind: "envelope", envelope });
+    expect([response.status, response.headers.get("content-type"), response.headers.get("cache-control")]).toEqual([200, "application/json; charset=utf-8", "no-store"]);
+    const body = await response.text();
+    expect(envelope.data.csv.length).toBeGreaterThan(65536); // A file longer than one slice, so the case crosses many of the writer's boundaries rather than one.
+    // The bytes on the wire are exactly the envelope's own JSON, so a client reading this response reads the same file, row count, provenance records and snapshot the envelope states.
+    expect(body).toBe(JSON.stringify(envelope));
+    expect((JSON.parse(body) as ExportEnvelope).data.csv).toBe(envelope.data.csv);
+  });
+});
+describe("an export whose caller has gone", () => {
+  it("stops for a caller that left before or during the file, and answers it nothing", async () => {
+    const alreadyGone = await reads.export.readExport({ period: CLOSED_PERIOD, timeZone: TIME_ZONE }, SESSION, AbortSignal.abort()).then(
+      () => throwing("The export read answered a caller that had already gone, so a file was built for nobody."),
+      (error: unknown) => error,
+    );
+    expect([alreadyGone instanceof DOMException, (alreadyGone as DOMException).name]).toEqual([true, "AbortError"]);
+    const { data: result } = await reportEnvelope(EXPORT_REPORT_ID, { period: CLOSED_PERIOD, timeZone: TIME_ZONE });
+    const caller = new AbortController();
+    const building = toCsv(result, caller.signal);
+    caller.abort(); // The caller's socket closes mid-file: the writer's first turn has begun and has not yet resumed, which is the state the abandoned export reaches.
+    const stopped = await building.then(
+      () => throwing("The writer finished a file whose caller had gone, so the whole CSV was built for nobody."),
+      (error: unknown) => error,
+    );
+    expect([stopped instanceof DOMException, (stopped as DOMException).name]).toEqual([true, "AbortError"]);
+  });
 });
 describe("the exporter's formatting cost", () => {
   it("formats each monetary row once and writes both amount columns from that one rendering", async () => {
     const { data: result } = await reportEnvelope(EXPORT_REPORT_ID, { period: CLOSED_PERIOD, timeZone: TIME_ZONE });
     formatCounters.formatMinorCalls = 0;
-    const parsed = parseExport(toCsv(result));
+    const parsed = parseExport(await toCsv(result));
     const monetaryRows = parsed.rows.filter((row) => !new Set<string>(Object.values(VALUE_STATE_TEXT)).has(cell(row, "amount")));
     expect([parsed.rows.length, monetaryRows.length > 0]).toEqual([PAGE_SIZE_DEFAULT, true]);
     expect(formatCounters.formatMinorCalls).toBe(monetaryRows.length); // The amount column expands to two cells, and both are written from the one rendering the first of them asks for: a rendering per cell would ask for twice this count.

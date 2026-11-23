@@ -6,6 +6,7 @@ import type { MembershipState } from "@/modules/audience/membership";
 import type { GrantLifecycleState } from "@/modules/coaching/grant";
 import type { TaskStatus } from "@/modules/coaching/taskshare";
 import type { Reach } from "@/modules/content/reach";
+import type { VariantAudience } from "@/modules/content/variant";
 import type { ValueState } from "@/modules/data-service/envelope";
 import { BUCKET_LABELS, type RecurringBucket } from "@/modules/support/buckets";
 /** The semantic tone of a label, and the only vocabulary with which a caller says how a state should read. */
@@ -20,6 +21,8 @@ const TONE_APPEARANCE: Readonly<Record<StatusTone, { readonly variant: BadgeVari
   danger: { variant: "secondary", className: "bg-destructive text-destructive-foreground" },
   muted: { variant: "outline" },
 };
+/** The word and tone of each audience an edition may serve, exhaustive over the content module's closed union so a third audience is a compile error rather than an unlabelled chip. The Updates list, the variant cards, the review panel and the preview read this one record, so one audience is never stated two ways. */
+export const AUDIENCE_STATUS: Readonly<Record<VariantAudience, StatusBadgeSpec>> = { public: { label: "Public", tone: "neutral" }, "approved-supporter": { label: "Approved supporters", tone: "info" } };
 /** The four states of a membership in one publisher's purpose: `active`, `awaiting-proof`, `off` and `restricted`. */
 export type MembershipStatus = MembershipState;
 export const MEMBERSHIP_STATUS: Readonly<Record<MembershipStatus, StatusBadgeSpec>> = { active: { label: "Active", tone: "positive" }, "awaiting-proof": { label: "Awaiting proof", tone: "caution" }, off: { label: "Off", tone: "neutral" }, restricted: { label: "Restricted", tone: "danger" } };

@@ -39,15 +39,17 @@ const PARAM = {
   sortDirection: "sortDirection",
   page: "page",
   pageSize: "pageSize",
+  record: "record",
 } as const;
-const UNSTATED_PERIOD_PRESET = "";
+/** The preset this ledger's query states when the address states no period: the same default `readGifts` applies from `DEFAULT_PERIOD` in `modules/data-service/reads/support.ts`, so the period the read is narrowed to is the period the query states. */
+export const GIFTS_DEFAULT_PERIOD_PRESET = "this-month";
 const FIRST_PAGE = 0;
 const SIGNED_INTEGER_PATTERN = /^-?\d+$/;
 /** Writes a ledger query as URL parameters, in the service's vocabulary, so a detail visit, a drilldown and a browser Back all restore the exact view the worker left. */ export function toGiftsParams(query: GiftsQuery): URLSearchParams {
   const { period, currency, recipient, sort } = query;
   const range = currency.kind === "one" ? currency.amountRange : undefined;
   const stated: readonly (readonly [string, string | undefined])[] = [
-    [PARAM.period, period.kind === "custom" || period.preset === UNSTATED_PERIOD_PRESET ? undefined : period.preset],
+    [PARAM.period, period.kind === "custom" ? undefined : period.preset],
     [PARAM.from, period.kind === "custom" ? period.from : undefined],
     [PARAM.to, period.kind === "custom" ? period.to : undefined],
     [PARAM.currency, currency.kind === "one" ? currency.currency : undefined],
@@ -71,7 +73,8 @@ export function parseGiftsQuery(source: URLSearchParams | string): GiftsQuery {
   const params = typeof source === "string" ? new URLSearchParams(source) : source;
   const from = params.get(PARAM.from);
   const to = params.get(PARAM.to);
-  const period: GiftPeriodQuery = from !== null && to !== null ? { kind: "custom", from, to } : { kind: "preset", preset: params.get(PARAM.period) ?? UNSTATED_PERIOD_PRESET };
+  const statedPreset = params.get(PARAM.period); // A preset the address states nothing about, or states as empty, is the default this ledger and the read both apply: no address leaves the period unstated.
+  const period: GiftPeriodQuery = from !== null && to !== null ? { kind: "custom", from, to } : { kind: "preset", preset: statedPreset === null || statedPreset === "" ? GIFTS_DEFAULT_PERIOD_PRESET : statedPreset };
   const currencyCode = params.get(PARAM.currency);
   const range = amountRangeOf(params);
   const statedRecipient = params.get(PARAM.recipient);
@@ -121,13 +124,21 @@ type GiftsServiceResult = Awaited<ReturnType<typeof reads.support.readGifts>>;
 type GiftsLedgerData = Extract<GiftsServiceResult, { kind: "envelope" }>["envelope"]["data"];
 export type GiftsEnvelope = ReadEnvelope<GiftsLedgerData, FinancialCoverage>;
 export type GiftsReadResult = ReadResult<GiftsEnvelope>;
-export type UseGiftsOptions = { readonly scope: Scope; readonly query: GiftsQuery; readonly initialEnvelope?: GiftsEnvelope };
-const isGiftsLedgerData = (value: unknown): boolean => isRecord(value) && isRecord(value.report) && typeof value.grain === "string";
-/** Reads `readGifts` for one ledger query in one scope: the result is `envelope | denied | unavailable | refused` as the contract states those four answers, handed on unwrapped so the caller narrows it. */ export function useGifts(options: UseGiftsOptions): UseQueryResult<GiftsReadResult, Error> {
-  const { scope, query, initialEnvelope } = options;
+export type UseGiftsOptions = { readonly scope: Scope; readonly query: GiftsQuery; readonly record?: string; readonly initialEnvelope?: GiftsEnvelope };
+const isFacetProjection = (value: unknown): boolean => isRecord(value) && Array.isArray(value.designations) && Array.isArray(value.attributions);
+const isGiftsLedgerData = (value: unknown): boolean => isRecord(value) && isRecord(value.report) && typeof value.grain === "string" && isFacetProjection(value.facets);
+/** Reads `readGifts` for one ledger query in one scope, and for the one record the address names where it names one: the result is `envelope | denied | unavailable | refused` as the contract states those four answers, handed on unwrapped so the caller narrows it. */ export function useGifts(
+  options: UseGiftsOptions,
+): UseQueryResult<GiftsReadResult, Error> {
+  const { scope, query, record, initialEnvelope } = options;
   return useQuery<GiftsReadResult, Error>({
-    queryKey: [...scopeKey(scope), "gifts", query],
-    queryFn: () => fetchRead<GiftsLedgerData, FinancialCoverage>({ url: `/api/support/gifts?${toGiftsParams(query).toString()}`, admits: isGiftsLedgerData }),
+    queryKey: [...scopeKey(scope), "gifts", record ?? null, query],
+    // The record an address names is not part of the ledger's own state, so the ledger's parameters carry it on the one request that asks for that record and on no other.
+    queryFn: () => {
+      const params = toGiftsParams(query);
+      if (record !== undefined) params.set(PARAM.record, record);
+      return fetchRead<GiftsLedgerData, FinancialCoverage>({ url: `/api/support/gifts?${params.toString()}`, admits: isGiftsLedgerData });
+    },
     staleTime: GIFTS_STALE_TIME_MS,
     ...(initialEnvelope === undefined ? {} : { initialData: (): GiftsReadResult => ({ kind: "envelope", envelope: initialEnvelope }), initialDataUpdatedAt: asOfInstant(initialEnvelope.asOf) }),
   });

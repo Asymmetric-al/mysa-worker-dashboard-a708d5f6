@@ -6,13 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import type { MutationInput, MutationOutcome, ReadAction, Scope, reads } from "@/modules/data-service";
 import { CONTINUE_COPY, CONTINUATION_WINDOW_COPY, EXPIRED_HISTORY_COPY, LIST_COPY, OUTCOME_COPY, STATUS_COPY, type ContinueUnavailableReason } from "../copy";
+import { useReferral } from "../hooks/use-referral";
 import { useContinueReferral } from "../hooks/use-referral-mutations";
 import type { ContinueReferralPayload } from "../schemas";
 const CYCLE_TERM = EXPIRED_HISTORY_COPY.fieldLabels.cycleIndex;
 const DEFAULT_HEADING_LEVEL: ReviewHeadingLevel = 2;
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
+const HEADING_SCALE: Readonly<Record<keyof typeof HEADING_TAG, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const PANEL_CLASS = "flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3";
-const SENTENCE_CLASS = "text-sm text-pretty text-muted-foreground";
+const SENTENCE_CLASS = "type-supporting text-pretty";
 const FACT_ROW_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2";
 const FACT_TERM_CLASS = "text-muted-foreground";
 const IDENTIFIER_CLASS = "mono-identifier min-w-0 wrap-anywhere";
@@ -30,6 +32,8 @@ export type ContinueReferralActionProps = {
   readonly continuationPolicy: ContinuePolicyFacts;
   readonly actions: readonly ReadAction[];
   readonly onCheckResult?: () => void;
+  /** What the action reports once its attempt stands: the surface that hosts it keeps the receipt after a later read stops offering a continuation this attempt has already taken. */
+  readonly onSettled?: (outcome: MutationOutcome) => void;
   readonly headingLevel?: ReviewHeadingLevel;
   readonly dir?: "ltr" | "rtl";
   readonly className?: string;
@@ -50,6 +54,21 @@ function reportedContinuationOf(outcome: MutationOutcome | null): { readonly suc
   const stored = outcome.outcome === "alreadyAccepted" ? asRecord(outcome.result) : null;
   const identified = (stored === null ? null : stringMember(stored, "successorId")) ?? created;
   return identified === null ? null : { successorId: identified, endsAt: stored === null ? null : stringMember(stored, "windowEnd"), elapsedSeconds: stored === null ? null : numberMember(stored, "elapsedSeconds") };
+}
+type SuccessorWindow = { readonly endsAt: string; readonly elapsedSeconds: number };
+const MILLIS_PER_SECOND = 1_000;
+/** The whole seconds between the two instants a record states, or null when either is absent or unreadable: a continuation is measured in elapsed seconds, so its figure is the distance between those instants. */
+function elapsedBetween(start: string | null, end: string | null): number | null {
+  if (start === null || end === null) return null;
+  const seconds = Math.round((Date.parse(end) - Date.parse(start)) / MILLIS_PER_SECOND);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+/** The window the successor's own record states: both presentations of one referral state the instants its window was written with, so the endpoint and the elapsed figure it is counted in come from the record whether the successor still stands inside its window or has itself since expired. */
+function recordedSuccessorWindow(read: ReferralDetailReadResult | undefined): SuccessorWindow | null {
+  if (read === undefined || read.kind !== "envelope") return null;
+  const { windowStart, windowEnd } = read.envelope.data.referral;
+  const elapsedSeconds = elapsedBetween(windowStart, windowEnd);
+  return windowEnd === null || elapsedSeconds === null ? null : { endsAt: windowEnd, elapsedSeconds };
 }
 const STANDING_REASONS: Readonly<Partial<Record<ContinueReferralCycle["status"]["status"], ContinueUnavailableReason | null>>> = { active: "not-ordinarily-expired", "no-deadline": "precision-does-not-admit-a-deadline", refused: null };
 function classifiedReason(referral: ContinueReferralCycle, policy: ContinuePolicyFacts): ContinueUnavailableReason | null {
@@ -91,7 +110,7 @@ function NotOffered({ headingId, headingLevel, sentence, reason, referral }: { r
   const Heading = HEADING_TAG[headingLevel];
   return (
     <section aria-labelledby={headingId} data-slot="continue-referral-unavailable" className={PANEL_CLASS}>
-      <Heading id={headingId} className="text-sm font-medium">
+      <Heading id={headingId} className={HEADING_SCALE[headingLevel]}>
         {CONTINUE_COPY.unavailableHeading}
       </Heading>
       {sentence === null ? null : <p className={SENTENCE_CLASS}>{sentence}</p>}
@@ -107,19 +126,19 @@ function ContinuedWindow({ labelId, successorId, endsAt, elapsedSeconds }: { rea
       <p id={labelId} className="text-sm font-medium">
         {CONTINUATION_WINDOW_COPY.heading}
       </p>
-      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
+      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
         <span className={FACT_TERM_CLASS}>{EXPIRED_HISTORY_COPY.consumedLabels.continued}</span>
-        <Link href={`/partners/referrals/${encodeURIComponent(successorId)}`} className="inline-flex min-h-target max-w-full items-center text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:underline">
+        <Link href={`/partners/referrals/${encodeURIComponent(successorId)}`} className="inline-flex min-h-target max-w-full items-center text-sm font-medium text-primary inline-link focus-visible:underline">
           <bdi className={IDENTIFIER_CLASS}>{successorId}</bdi>
         </Link>
       </p>
-      {statedEnd === null ? null : <p className="text-sm text-pretty">{statedEnd}</p>}
+      {statedEnd === null ? null : <p className="type-supporting text-pretty">{statedEnd}</p>}
       {statedEnd === null ? null : <p className={SENTENCE_CLASS}>{CONTINUATION_WINDOW_COPY.elapsedNotCalendar}</p>}
       <p className={SENTENCE_CLASS}>{CONTINUATION_WINDOW_COPY.oneSuccessor}</p>
     </section>
   );
 }
-export function ContinueReferralAction({ scope, referral, expectedRevision, continuationPolicy, actions, onCheckResult, headingLevel = DEFAULT_HEADING_LEVEL, dir, className }: ContinueReferralActionProps): ReactElement {
+export function ContinueReferralAction({ scope, referral, expectedRevision, continuationPolicy, actions, onCheckResult, onSettled, headingLevel = DEFAULT_HEADING_LEVEL, dir, className }: ContinueReferralActionProps): ReactElement {
   const { mutateAsync } = useContinueReferral();
   const headingId = useId();
   const successorLabelId = useId();
@@ -136,12 +155,22 @@ export function ContinueReferralAction({ scope, referral, expectedRevision, cont
     },
     [mutateAsync],
   );
+  const settle = useCallback(
+    (outcome: MutationOutcome): void => {
+      setSettled(outcome);
+      onSettled?.(outcome);
+    },
+    [onSettled],
+  );
   const withheldReason = referral.continuation.reason ?? continuationPolicy.reason;
   const classified = classifiedReason(referral, continuationPolicy);
   const reported = reportedContinuationOf(settled);
   const successorId = reported?.successorId ?? referral.continuation.cycle.successorId ?? null;
-  const endsAt = reported?.endsAt ?? null;
-  const elapsedSeconds = reported?.elapsedSeconds ?? null;
+  const successor = useReferral({ scope, referralId: successorId });
+  // The accepted outcome carries no result, so the successor's own record supplies the endpoint, and the elapsed figure is the difference between the two instants that record states. A settled report that carries them itself, as a replay does, is preferred to it.
+  const recorded = recordedSuccessorWindow(successor.data);
+  const endsAt = reported?.endsAt ?? recorded?.endsAt ?? null;
+  const elapsedSeconds = reported?.elapsedSeconds ?? recorded?.elapsedSeconds ?? null;
   const commentary = outcomeCommentary(settled);
   const showReview = offered || settled !== null;
   return (
@@ -151,18 +180,17 @@ export function ContinueReferralAction({ scope, referral, expectedRevision, cont
           title={CONTINUE_COPY.confirm.title}
           description={
             <div className="flex min-w-0 flex-col gap-2">
-              <p>{CONTINUE_COPY.available}</p>
-              <p>{CONTINUATION_WINDOW_COPY.explanation}</p>
-              <p>{CONTINUATION_WINDOW_COPY.elapsedNotCalendar}</p>
-              <p>{CONTINUATION_WINDOW_COPY.oneSuccessor}</p>
+              <p className="type-supporting">{CONTINUE_COPY.available}</p>
+              <p className="type-supporting">{CONTINUATION_WINDOW_COPY.explanation}</p>
+              <p className="type-supporting">{CONTINUATION_WINDOW_COPY.elapsedNotCalendar}</p>
+              <p className="type-supporting">{CONTINUATION_WINDOW_COPY.oneSuccessor}</p>
               <CycleFacts referral={referral} />
-              {endsAt === null || elapsedSeconds === null ? null : <p>{CONTINUATION_WINDOW_COPY.elapsedSeconds(elapsedSeconds, endsAt)}</p>}
             </div>
           }
           consequence={
             <div className="flex min-w-0 flex-col gap-2">
-              <p>{CONTINUE_COPY.confirm.body(`${CYCLE_TERM} ${String(referral.cycleIndex)}`)}</p>
-              <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+              <p className="type-supporting">{CONTINUE_COPY.confirm.body(`${CYCLE_TERM} ${String(referral.cycleIndex)}`)}</p>
+              <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
                 <span className={FACT_TERM_CLASS}>{CYCLE_TERM}</span>
                 <bdi className="tabular-figures font-medium">{String(referral.cycleIndex)}</bdi>
                 <bdi className={IDENTIFIER_CLASS}>{referral.referralId}</bdi>
@@ -174,7 +202,7 @@ export function ContinueReferralAction({ scope, referral, expectedRevision, cont
           consequential
           input={input}
           submit={submit}
-          onSettled={setSettled}
+          onSettled={settle}
           checkResult={onCheckResult}
           headingLevel={headingLevel}
         />

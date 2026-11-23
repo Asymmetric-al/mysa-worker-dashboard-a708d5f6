@@ -1,5 +1,4 @@
 import type { Money } from "@/modules/money/amount";
-import { UNKNOWN_CURRENCY } from "@/modules/money/currency";
 import { formatMinor } from "@/modules/money/format";
 import { BASIS_DESCRIPTION, SUPPORT_BASIS } from "@/modules/support/basis";
 import { clampPageSize, type ReportId, type ReportResult, type ReportRow } from "@/modules/support/report";
@@ -41,11 +40,10 @@ function rowContextOf(row: ReportRow, index: number, stateOf: (path: string) => 
   let cells: readonly [string, string] | undefined;
   return { row, stateOf, amountFields: () => (cells ??= amountCells(row.amount, stateOf(rowAmountPath(index)))) };
 }
+// The currency the file states is the query's own partition, which is the fact its coverage states too, so the file's record and its envelope can never describe the query differently. A row whose own currency is unknown still prints its own code in the row's currency column.
 function currencyOf(result: ReportResult): string {
-  const codes = result.snapshot.currencies;
-  if (codes.includes(UNKNOWN_CURRENCY)) return UNKNOWN_CURRENCY;
-  const [only] = codes;
-  return codes.length === 1 && only !== undefined ? only : CSV_ALL_CURRENCIES;
+  const { currency } = result.snapshot.query;
+  return currency.kind === "one" ? currency.currency : CSV_ALL_CURRENCIES;
 }
 const periodIdentity = (period: ReportResult["snapshot"]["query"]["period"]): string => (period.kind === "preset" ? `preset:${period.preset}` : period.kind === "explicit" ? `explicit:${civilDateText(period.from)}..${civilDateText(period.to)}` : `year:${String(period.year)}`);
 const partnerIdentity = (partner: ReportResult["snapshot"]["query"]["partner"]): string => (partner === undefined ? CSV_NOT_STATED : partner.kind === "partner" ? `partner:${partner.partnerId}` : partner.kind);
@@ -103,13 +101,29 @@ export function snapshotMetadata(result: ReportResult): readonly SnapshotFact[] 
     { field: "page", label: "Page", value: pageScope(result) },
   ];
 }
-/** Renders one report result as the text of a CSV download: its metadata records, the one column header record and one record per authorised row, in the order the service returned them. */
-export function toCsv(result: ReportResult): string {
-  const stateOf = (path: string): ValueState => result.valueStates[path] ?? "unknown";
-  const metadata = snapshotMetadata(result).map((fact) => record([CSV_META_FIELD, fact.field, fact.value]));
-  const rows = result.rows.map((row, index) => {
-    const context = rowContextOf(row, index, stateOf);
-    return record(CSV_COLUMNS.flatMap((column) => column.cells.map(([, write]) => write(context))));
+const RECORDS_PER_TURN = 2048;
+// One event-loop turn: `setImmediate` where the runtime answers it and a zero-delay timer where it does not, so the writer yields either way.
+const nextTurn = (): Promise<void> =>
+  new Promise<void>((resolve) => {
+    if (typeof setImmediate === "function") setImmediate(resolve);
+    else setTimeout(resolve, 0);
   });
-  return [...metadata, record(CSV_COLUMN_HEADERS), ...rows].join("");
+/** Renders one report result as the text of a CSV download: its metadata records, the one column header record and one record per authorised row, in the order the service returned them. Answers the whole file, or throws the signal's abort error once the caller that asked for it has gone. */
+export async function toCsv(result: ReportResult, signal?: AbortSignal): Promise<string> {
+  const stateOf = (path: string): ValueState => result.valueStates[path] ?? "unknown";
+  // Accumulated as one string and never as an array joined at the end: a hundred thousand record strings joined into a second copy would hold the whole file twice over while the copy is made.
+  let text =
+    snapshotMetadata(result)
+      .map((fact) => record([CSV_META_FIELD, fact.field, fact.value]))
+      .join("") + record(CSV_COLUMN_HEADERS);
+  for (const [index, row] of result.rows.entries()) {
+    // Rendered as one synchronous block, a whole-query file would starve every other request and hold the close of the caller's socket undelivered, so an abandoned export could not learn that nobody is waiting for it. One turn every 2,048 records lets both events be delivered, and the signal is re-checked after each turn.
+    if (index % RECORDS_PER_TURN === 0) {
+      await nextTurn();
+      signal?.throwIfAborted();
+    }
+    const context = rowContextOf(row, index, stateOf);
+    text += record(CSV_COLUMNS.flatMap((column) => column.cells.map(([, write]) => write(context))));
+  }
+  return text;
 }

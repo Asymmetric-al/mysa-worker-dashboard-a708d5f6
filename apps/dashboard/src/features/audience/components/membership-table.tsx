@@ -67,7 +67,7 @@ const CountCard = ({ heading, figureLabel, count, state, locale, children }: Cou
   <Card>
     <CardHeader>
       <CardTitle>
-        <h2 className="font-heading text-base font-medium">{heading}</h2>
+        <h2 className="type-section-title">{heading}</h2>
       </CardTitle>
     </CardHeader>
     <CardContent className="flex flex-col gap-3">
@@ -97,7 +97,7 @@ const MembershipCounts = ({ view, valueStates, locale, className }: MembershipCo
                 </span>
                 <span className="text-muted-foreground">{description.eligibleSuffix}</span>
               </p>
-              <p className="max-w-prose text-pretty text-xs leading-snug text-muted-foreground">{description.description}</p>
+              <p className="max-w-prose text-pretty text-xs text-muted-foreground">{description.description}</p>
             </li>
           );
         })}
@@ -110,7 +110,7 @@ const MembershipCounts = ({ view, valueStates, locale, className }: MembershipCo
             <span>
               <CountFigure count={view.excludedByReason[reason]} state={statedState(valueStates, `excludedByReason.${reason}`)} locale={locale} />
             </span>
-            <span className="max-w-prose text-pretty text-xs leading-snug text-muted-foreground">{EXCLUSION_REASON_COPY[reason]}</span>
+            <span className="max-w-prose text-pretty text-xs text-muted-foreground">{EXCLUSION_REASON_COPY[reason]}</span>
           </li>
         ))}
       </ul>
@@ -186,7 +186,7 @@ export type MembershipTableProps = { readonly envelope: MembershipSource; readon
           </p>
         </div>
         <MembershipCounts view={view} valueStates={stated.valueStates} locale={locale} />
-        <p className="max-w-prose text-pretty text-sm text-muted-foreground">{NOT_CONSENT_STATEMENT}</p>
+        <p className="max-w-prose text-pretty type-supporting">{NOT_CONSENT_STATEMENT}</p>
         {view.page.total === 0 ? (
           <StateNotice kind="empty" title={SURFACE_COPY.emptyTitle} description={SURFACE_COPY.emptyBody} headingLevel={2} />
         ) : (

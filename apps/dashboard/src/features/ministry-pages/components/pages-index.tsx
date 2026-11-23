@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { ChevronRightIcon } from "lucide-react";
 import { useId, type ReactElement } from "react";
 import DraftStatus, { type ContentLifecycleState } from "@/components/draft-status";
 import SimulationLabel from "@/components/simulation-label";
@@ -27,7 +28,9 @@ const DENIED_DESCRIPTION = "The answer is the same whether or not a Page exists 
 const MISSING_CATALOGUE_TITLE = "This family's catalogue was not supplied";
 const EDITIONS_LABEL = copy.editions.heading;
 const EDITION_LOCALE_LABEL = copy.editions.localeLabel;
-const NOTE_CLASS = "text-sm text-muted-foreground text-pretty wrap-anywhere";
+const NOTE_CLASS = "type-supporting text-pretty wrap-anywhere";
+/** The one link treatment this surface states, for the index row that opens a Page's builder and for the review link beside it: underlined at rest, so the affordance is carried by neither hover nor colour alone, and keeping the 24 CSS px target (WCAG 2.5.8), the wrapping and the focus ring. */
+const PAGE_LINK_CLASS = "inline-flex min-h-6 max-w-full min-w-0 items-center text-start inline-link text-pretty wrap-anywhere focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const envelopeOf = <T,>(answer: PagesIndexAnswer<T>): ReadEnvelope<T> | undefined => ("kind" in answer ? (answer.kind === "envelope" ? answer.envelope : undefined) : answer);
 const refusalOf = <T,>(answer: PagesIndexAnswer<T>): ReadRefusal | undefined => ("kind" in answer && answer.kind !== "envelope" ? answer : undefined);
 const reviewHrefOf = (edition: PageIndexEdition): string | undefined => ((edition.candidateId ?? "").trim() === "" ? undefined : `${"/pages/review/"}${encodeURIComponent(edition.candidateId ?? "")}`);
@@ -46,11 +49,12 @@ function RefusalNotice({ answer, headingLevel, unavailableTitle }: { readonly an
 const PageRow = ({ row }: { readonly row: PageIndexRow }): ReactElement => (
   <li data-slot="pages-index-row" data-family={row.family} data-document-id={row.documentId} className={"flex min-w-0 flex-col gap-3 border-b border-border pb-4 last:border-b-0 last:pb-0"}>
     <div className="flex min-w-0 flex-col gap-1">
-      <Link href={builderPathOf(row.documentId)} className={"inline-flex min-h-6 max-w-full min-w-0 items-center text-start font-medium underline-offset-4 text-pretty wrap-anywhere hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"}>
+      <Link href={builderPathOf(row.documentId)} className={cn(PAGE_LINK_CLASS, "font-medium")}>
         <bdi>{row.title}</bdi>
+        <ChevronRightIcon aria-hidden="true" className="ms-1 size-4 shrink-0 rtl:-scale-x-100" />
         <span className="sr-only">{`, ${builderLinkHintOf(row.family)}`}</span>
       </Link>
-      <p className={"text-sm text-muted-foreground wrap-anywhere"}>
+      <p className={"type-supporting wrap-anywhere"}>
         <bdi>{copy.families[row.family].label}</bdi>
       </p>
     </div>
@@ -63,14 +67,14 @@ const PageRow = ({ row }: { readonly row: PageIndexRow }): ReactElement => (
           return (
             <li key={`${edition.locale}:${String(position)}`} data-slot="pages-index-edition" data-locale={edition.locale} data-lifecycle={edition.lifecycle} className={"flex min-w-0 flex-col gap-1"}>
               <div className={"flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"}>
-                <span className={"text-sm text-muted-foreground wrap-anywhere"}>
+                <span className={"type-supporting wrap-anywhere"}>
                   {EDITION_LOCALE_LABEL}
                   {": "}
                   <bdi>{edition.locale}</bdi>
                 </span>
                 {edition.reach === undefined ? null : <StatusBadge label={copy.reach[edition.reach].label} tone={statusBadgeProps(REACH_STATUS, edition.reach).tone} srPrefix={"Reach"} />}
                 {reviewHref === undefined ? null : (
-                  <Link href={reviewHref} data-slot="pages-index-review" className={"inline-flex min-h-6 max-w-full min-w-0 items-center text-start underline-offset-4 text-pretty wrap-anywhere hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"}>
+                  <Link href={reviewHref} data-slot="pages-index-review" className={PAGE_LINK_CLASS}>
                     {copy.review.openCandidate}
                     <span className="sr-only">{`, ${copy.review.openCandidateHint(edition.locale)}`}</span>
                   </Link>
@@ -97,7 +101,7 @@ export function PagesIndex({ pages, catalogues, onStarted, className }: PagesInd
     <div data-slot="pages-index" className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
       <section aria-labelledby={headingId} className={"flex min-w-0 flex-col gap-4"}>
         <div className="flex min-w-0 flex-col gap-1">
-          <h2 id={headingId} className={"font-heading text-lg font-medium text-pretty wrap-anywhere"}>
+          <h2 id={headingId} className={"type-section-title text-pretty wrap-anywhere"}>
             {"Your Pages"}
           </h2>
           <p className={NOTE_CLASS}>{"Every Page this ministry admits, with the language editions each one carries. A row opens that Page's builder, where an edition is composed as a draft and nothing is released."}</p>

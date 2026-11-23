@@ -8,9 +8,10 @@ export const metadata: Metadata = { title: PAGE_TITLE, description: "Guidance fo
 const CONTENTS_ID = "on-this-page";
 const INTRODUCTION =
   "This page covers the five workflows of the first release and nothing outside them. Every record in the application is synthetic, and every external effect is simulated and labelled where you trigger it. The Development data label sits in the application shell on every screen, including this one, and cannot be dismissed.";
-const BODY_TEXT = "text-sm text-muted-foreground text-pretty wrap-anywhere";
-const STEP_HEADING = "text-sm font-semibold text-pretty wrap-anywhere";
-const INLINE_LINK = "inline-flex min-h-6 items-center rounded-sm font-medium underline underline-offset-4";
+const BODY_TEXT = "type-supporting text-pretty wrap-anywhere";
+const STEP_HEADING = "type-subsection-title text-pretty wrap-anywhere";
+const TERM_TEXT = "text-sm font-medium text-pretty wrap-anywhere";
+const INLINE_LINK = "inline-flex min-h-6 items-center rounded-sm font-medium inline-link";
 const SECTIONS = [
   { id: "journey-import-a-contact", label: "Add a contact and create the next task" },
   { id: "journey-giving-investigation", label: "Investigate a giving change and export it" },
@@ -279,7 +280,7 @@ const ProseBody = ({ section }: { readonly section: ProseSection }) => (
     <dl className="flex min-w-0 flex-col gap-4">
       {section.items.map((item) => (
         <div key={item.title} className="flex min-w-0 flex-col gap-1">
-          <dt className={STEP_HEADING}>{item.title}</dt>
+          <dt className={TERM_TEXT}>{item.title}</dt>
           <dd className={BODY_TEXT}>{item.body}</dd>
         </div>
       ))}
@@ -319,11 +320,11 @@ export default function HelpPage() {
   return (
     <article className="flex min-w-0 flex-col gap-6 text-start">
       <header className="flex min-w-0 flex-col gap-3">
-        <h1 className="text-2xl font-semibold text-pretty wrap-anywhere">{PAGE_TITLE}</h1>
-        <p className="max-w-prose text-sm text-muted-foreground text-pretty wrap-anywhere">{INTRODUCTION}</p>
+        <h1 className="type-page-title text-pretty wrap-anywhere">{PAGE_TITLE}</h1>
+        <p className="max-w-prose type-supporting text-pretty wrap-anywhere">{INTRODUCTION}</p>
       </header>
       <nav aria-labelledby={CONTENTS_ID} className="flex min-w-0 flex-col gap-2">
-        <h2 id={CONTENTS_ID} className="text-base font-semibold">
+        <h2 id={CONTENTS_ID} className="type-section-title">
           {"On this page"}
         </h2>
         <ol className="flex min-w-0 list-decimal flex-col gap-1 ps-5">
@@ -340,7 +341,7 @@ export default function HelpPage() {
         <div key={section.id} className="flex min-w-0 flex-col gap-6">
           {index === 0 ? null : <Separator />}
           <section aria-labelledby={section.id} className="flex min-w-0 flex-col gap-3">
-            <h2 id={section.id} tabIndex={-1} className="text-lg font-semibold text-pretty wrap-anywhere">
+            <h2 id={section.id} tabIndex={-1} className="type-section-title text-pretty wrap-anywhere">
               {sectionHeading(section)}
             </h2>
             {sectionBody(section)}

@@ -3,8 +3,7 @@ import { useId, useState, type ReactElement } from "react";
 import ActionReview, { type MutationSubmit, type ReviewHeadingLevel } from "@/components/action-review";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import type { GrantLifecycleState, ModuleKey } from "@/modules/coaching/grant";
@@ -21,8 +20,10 @@ export type StopActionsProps = { readonly available: ReadonlyArray<StopEffect>; 
 const TERMINAL_EPISODE_STATES: ReadonlySet<GrantLifecycleState> = new Set<GrantLifecycleState>(["revoked", "expired", "ended", "left", "superseded"]);
 const HEADING_TAG: Readonly<Record<ReviewHeadingLevel, "h2" | "h3" | "h4">> = { 2: "h2", 3: "h3", 4: "h4" };
 const NESTED_LEVEL: Readonly<Record<ReviewHeadingLevel, ReviewHeadingLevel>> = { 2: 3, 3: 4, 4: 4 };
+/** The one type scale's heading utility per level, so the stop surface and the statements it makes state each heading at the level it sits at with the same measure as every other heading there. */
+const HEADING_SCALE: Readonly<Record<ReviewHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const ROOT_CLASS = "flex min-w-0 flex-col gap-4",
-  SENTENCE_CLASS = "text-sm text-pretty text-muted-foreground";
+  SENTENCE_CLASS = "type-supporting text-pretty";
 const REVIEW_BODY_CLASS = "flex min-w-0 flex-col gap-2";
 const STATEMENTS_CLASS = "flex min-w-0 flex-col gap-3";
 const SOURCE_WORK_KEPT = "The source work is not deleted: the task, the check-in draft, the target history and your private preparation all stay yours, and they keep working exactly as they do now.";
@@ -133,11 +134,11 @@ const EffectRefused = ({ effect, messages }: { readonly effect: StopEffect; read
     </AlertDescription>
   </Alert>
 );
-type EndedStatementsProps = { readonly state: GrantLifecycleState; readonly role: StopRole; readonly level: ReviewHeadingLevel };
-function EndedStatements({ state, role, level }: EndedStatementsProps): ReactElement {
+type EndedStatementsProps = { readonly state: GrantLifecycleState; readonly role: StopRole };
+/** What a closed episode states about its stop-type effects: the state it stands in, then the six effects once each — their own name, their own assurance, and the note that an effect belongs to the other role. The sentence that a closed episode has nothing left to stop is stated once for the list rather than beside every effect, because it is one fact about the episode and not six. */
+function EndedStatements({ state, role }: EndedStatementsProps): ReactElement {
   const standing = GRANT_STATE_COPY[state];
   const held = effectsForRole(role);
-  const Heading = HEADING_TAG[level];
   return (
     <div data-slot="stop-episode-ended" className={STATEMENTS_CLASS}>
       <Alert>
@@ -147,27 +148,22 @@ function EndedStatements({ state, role, level }: EndedStatementsProps): ReactEle
           <p>{"Beginning again takes a new invitation from the worker, naming the modules and the duration; no later action here can reopen the episode."}</p>
         </AlertDescription>
       </Alert>
-      <ul className={STATEMENTS_CLASS}>
+      <p className={cn(SENTENCE_CLASS, "text-foreground")}>{"This effect can no longer be applied: the episode has ended, so there is nothing left here to stop and no control is shown."}</p>
+      <dl className={STATEMENTS_CLASS}>
         {STOP_EFFECTS.map((effect) => (
-          <li key={effect} data-slot="stop-effect-statement" data-effect={effect}>
-            <Card className="min-w-0">
-              <CardHeader>
-                <CardTitle>
-                  <Heading className={"text-sm font-medium"}>{STOP_EFFECT_COPY[effect].title}</Heading>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex min-w-0 flex-col gap-2">
-                <p className={cn(SENTENCE_CLASS, "text-foreground")}>{"This effect can no longer be applied: the episode has ended, so there is nothing left here to stop and no control is shown."}</p>
-                <p className={SENTENCE_CLASS}>{STOP_EFFECT_COPY[effect].assurance}</p>
-                {held.includes(effect) ? null : <p className={SENTENCE_CLASS}>{OTHER_ROLE_NOTE[role]}</p>}
-              </CardContent>
-            </Card>
-          </li>
+          <div key={effect} data-slot="stop-effect-statement" data-effect={effect} className={"flex min-w-0 flex-col gap-1"}>
+            <dt className={"text-sm font-medium"}>{STOP_EFFECT_COPY[effect].title}</dt>
+            <dd className={cn(SENTENCE_CLASS, "flex min-w-0 flex-col gap-1")}>
+              <p>{STOP_EFFECT_COPY[effect].assurance}</p>
+              {held.includes(effect) ? null : <p>{OTHER_ROLE_NOTE[role]}</p>}
+            </dd>
+          </div>
         ))}
-      </ul>
+      </dl>
     </div>
   );
 }
+/** The effects that end access outright rather than narrow one share: each is the destructive variant and each carries a visible destructive boundary drawn from the same token, so a control that closes the whole relationship never reads at a glance like the quieter outline controls that narrow a share beside it. */
 const DESTRUCTIVE_EFFECTS: ReadonlySet<StopEffect> = new Set<StopEffect>(["end-relationship", "coach-leave", "revoke"]);
 export function StopActions({ available, target, scope, expectedRevision, role, onCheckResult, headingLevel = 2, className }: StopActionsProps): ReactElement {
   const { mutateAsync: setModule } = useSetModule();
@@ -259,16 +255,18 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
   return (
     <section aria-labelledby={headingId} data-slot="stop-actions" data-role={role} data-episode-state={target.episodeState} className={cn(ROOT_CLASS, className)}>
       <header className={"flex min-w-0 flex-col gap-2"}>
-        <Heading id={headingId}>{surface.heading}</Heading>
+        <Heading id={headingId} className={HEADING_SCALE[headingLevel]}>
+          {surface.heading}
+        </Heading>
         <p className={SENTENCE_CLASS}>{surface.purpose}</p>
-        <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
+        <p className="flex min-w-0 flex-wrap items-center gap-2 type-supporting">
           <Badge variant="outline">{standing.label}</Badge>
           <span className="min-w-0 text-pretty text-muted-foreground">{standing.description}</span>
         </p>
       </header>
       <Separator />
       {ended ? (
-        <EndedStatements state={target.episodeState} role={role} level={reviewLevel} />
+        <EndedStatements state={target.episodeState} role={role} />
       ) : (
         <>
           {!terminal && showRow ? (
@@ -279,7 +277,7 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
                 <ul className={"flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"}>
                   {offered.map((effect) => (
                     <li key={effect} className="min-w-0">
-                      <Button type="button" variant={DESTRUCTIVE_EFFECTS.has(effect) ? "destructive" : "outline"} className={"h-auto min-h-target max-w-full py-2 text-start whitespace-normal"} data-effect={effect} onClick={() => choose(effect)}>
+                      <Button type="button" variant={DESTRUCTIVE_EFFECTS.has(effect) ? "destructive" : "outline"} className={cn(BUTTON_WRAP_CLASS, "text-start", DESTRUCTIVE_EFFECTS.has(effect) ? "border-destructive/40" : null)} data-effect={effect} onClick={() => choose(effect)}>
                         {STOP_EFFECT_COPY[effect].title}
                         <span className="sr-only">
                           {" for "}

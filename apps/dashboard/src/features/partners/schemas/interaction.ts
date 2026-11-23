@@ -6,6 +6,7 @@ const INTERACTION_MESSAGES = {
   participantReferenceInvalid: "A participant reference is text, so choose the person from the records this contact can see.",
   participantReferenceRequired: "Choose the person who took part, because a participant names a record rather than a typed name.",
   participantRoleInvalid: "A participant role is text, so say how this person took part.",
+  participantsRequired: "Name at least one person who took part, because an interaction is always recorded against the contact it is about.",
   plannedTimeInvalid: "A planned time is a day and a clock time together, so enter both.",
   timeZoneInvalid: "A timezone is text, so choose the zone this time is stated in.",
   timeZoneRequired: "Choose the timezone this time is stated in, so the time is never read in an assumed zone.",
@@ -36,7 +37,7 @@ export const logInteractionPayloadSchema = z.strictObject({
   type: interactionKindSchema,
   occurredOn: interactionOccurredOnSchema,
   outcome: requiredText("An outcome is text, so say in a sentence what came of the contact.", "Say what came of the contact."),
-  participants: z.array(interactionParticipantSchema, { error: "The people who took part are a list, so name them as a list of records." }),
+  participants: z.array(interactionParticipantSchema, { error: "The people who took part are a list, so name them as a list of records." }).min(1, INTERACTION_MESSAGES.participantsRequired),
   note: interactionNoteBodySchema.optional(),
 });
 export type LogInteractionPayload = z.infer<typeof logInteractionPayloadSchema>;

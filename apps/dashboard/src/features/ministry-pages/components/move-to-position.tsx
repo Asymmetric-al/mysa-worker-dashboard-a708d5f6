@@ -4,13 +4,24 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/cn";
 import { copy } from "../copy";
-export type MoveToPositionProps = { readonly sectionId: string; readonly sectionLabel: string; readonly index: number; readonly count: number; readonly disabled?: boolean; readonly disabledReason?: string; readonly onMove: (toIndex: number) => void; readonly className?: string };
+export type MoveToPositionProps = {
+  readonly controlId: string;
+  readonly sectionId: string;
+  readonly sectionLabel: string;
+  readonly index: number;
+  readonly count: number;
+  readonly disabled?: boolean;
+  readonly disabledReason?: string;
+  readonly busy?: boolean;
+  readonly onMove: (toIndex: number) => void;
+  readonly className?: string;
+};
 const CURRENT_POSITION_LABEL = "Current position";
 function unusableReason(callerDisabled: boolean, callerReason: string | undefined, hasOtherPosition: boolean): string | null {
   if (callerDisabled) return callerReason !== undefined && callerReason.length > 0 ? callerReason : "The order of this edition cannot be changed right now.";
   return hasOtherPosition ? null : "This edition holds no other position to move this section to.";
 }
-export function MoveToPosition({ sectionId, sectionLabel, index, count, disabled, disabledReason, onMove, className }: MoveToPositionProps): ReactElement {
+export function MoveToPosition({ controlId, sectionId, sectionLabel, index, count, disabled, disabledReason, busy = false, onMove, className }: MoveToPositionProps): ReactElement {
   const reasonId = useId();
   const positionCount = Number.isInteger(count) && count > 0 ? count : 0;
   const offersAnotherPosition = positionCount > 1;
@@ -18,7 +29,9 @@ export function MoveToPosition({ sectionId, sectionLabel, index, count, disabled
   return (
     <div data-section-id={sectionId} className={cn("flex flex-col items-start gap-1", className)}>
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" size="sm" />} disabled={disabled === true || !offersAnotherPosition} aria-describedby={reason === null ? undefined : reasonId}>
+        {/* A request in flight is stated as `aria-disabled` rather than `disabled`, so the trigger keeps the person's focus; a
+            press during it is answered by the outline's own guard. */}
+        <DropdownMenuTrigger render={<Button variant="outline" size="sm" id={controlId} />} disabled={disabled === true || !offersAnotherPosition} aria-disabled={busy ? true : undefined} aria-describedby={reason === null ? undefined : reasonId}>
           {copy.builder.moveToPosition}
           <span className="sr-only">
             {" for "}

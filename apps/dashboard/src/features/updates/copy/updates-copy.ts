@@ -1,10 +1,12 @@
 import type { SimulatedEffect } from "@/components/simulation-label";
+import { AUDIENCE_STATUS, type StatusTone } from "@/components/status-badge";
 import type { ContentKind, VariantAudience } from "@/modules/content/variant";
 export type PublishMode = "publish-only" | "publish-and-notify-now";
 export const UPDATE_KIND_LABELS: Record<ContentKind, string> = { update: "General update", prayer: "Prayer request", story: "Story", milestone: "Milestone" };
-export const AUDIENCE_LABELS: Record<VariantAudience, { readonly label: string; readonly whoReceives: string }> = {
-  public: { label: "Public", whoReceives: "Readers of the public edition of this Update can open this variant." },
-  "approved-supporter": { label: "Approved supporters", whoReceives: "Only supporters this publisher has approved can open this variant." },
+/** Each audience's word and tone come from {@link AUDIENCE_STATUS}, and this record adds only what this feature's own reader needs explained beside them. */
+export const AUDIENCE_LABELS: Record<VariantAudience, { readonly label: string; readonly tone: StatusTone; readonly whoReceives: string }> = {
+  public: { ...AUDIENCE_STATUS.public, whoReceives: "Readers of the public edition of this Update can open this variant." },
+  "approved-supporter": { ...AUDIENCE_STATUS["approved-supporter"], whoReceives: "Only supporters this publisher has approved can open this variant." },
 };
 export const VARIANT_AXIS_NOTE =
   "Each variant of an Update is one audience in one content locale. A public variant and an approved-supporter variant in the same locale are two distinct variants, and each keeps its own draft, candidate and release. The permitted pairings are exactly the ones the variant rule admits, so no audience-by-locale cross-product exists. A Page variant is a public locale edition, which is why the Pages family offers locales and no audience choice.";

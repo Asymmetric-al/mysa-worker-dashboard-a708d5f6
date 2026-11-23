@@ -1,10 +1,13 @@
+import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import InitiativeList from "@/features/initiatives/components/initiative-list";
+import { INITIATIVE_COPY } from "@/features/initiatives/copy";
 import { initiativesReadQuery, parseInitiativesQuery } from "@/features/initiatives/query/initiatives-query";
 import { querySearchParamsOf } from "@/lib/query-params";
 import { reads } from "@/modules/data-service";
 import { ReadNotices, searchSuffixOf, type ReadNoticeCopy, type SearchParams } from "../../page-frame";
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { title: INITIATIVE_COPY.listHeading };
 /** This surface's own address, so a retry re-reads the view the reader was in rather than dropping it. */
 const LIST_HREF = "/partners/initiatives";
 /** This route's own wording for the three answers that are not the list. Not one of them states a count, a name, a working list or a size. */

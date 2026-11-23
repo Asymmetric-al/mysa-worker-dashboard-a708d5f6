@@ -18,9 +18,9 @@ const NO_SORT: RecordListQueryState["sort"] = [];
 const DEFAULT_COLUMN_VISIBILITY: RecordListQueryState["columnVisibility"] = {};
 const LOADING_LINES = 4;
 const SURFACE_CLASS = "flex min-w-0 flex-col gap-4";
-const HEADING_CLASS = "flex min-w-32 flex-wrap items-baseline gap-x-2 break-words font-heading text-base font-medium text-pretty";
-const MUTED_CLASS = "text-sm text-muted-foreground";
-const QUIET_CLASS = "max-w-prose text-sm text-pretty text-muted-foreground";
+const HEADING_CLASS = "type-section-title flex min-w-32 flex-wrap items-baseline gap-x-2 break-words text-pretty";
+const MUTED_CLASS = "type-supporting";
+const QUIET_CLASS = "max-w-prose type-supporting text-pretty";
 const WEEKDAY_NAMES: Readonly<Record<number, string>> = { 1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday", 7: "Sunday" };
 const MONTH_NAMES: Readonly<Record<number, string>> = { 1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June", 7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December" };
 const DAY_MARKERS: Readonly<Record<AgendaRow["dateRelation"], string | undefined>> = { today: TASK_LIST_LABELS.today, past: TASK_LIST_LABELS.overdue, future: undefined, undated: undefined };
@@ -127,9 +127,10 @@ type AgendaProps = { readonly scope: Scope; readonly envelope: AgendaEnvelope; r
   const [window, setWindow] = useState<PageWindow>({ page: envelope.data.page, pageSize: envelope.data.pageSize });
   const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(DEFAULT_COLUMN_VISIBILITY);
   const query = useMemo<AgendaQuery>(() => ({ displayTimeZone: envelope.data.displayTimeZone, page: window.page, pageSize: window.pageSize }), [envelope.data.displayTimeZone, window.page, window.pageSize]);
-  const read = useAgenda(scope, query);
-  const seed = sameWindow(envelope, query) ? envelope : undefined;
-  const reading: AgendaResult | undefined = read.data ?? (seed === undefined ? undefined : { kind: "envelope", envelope: seed });
+  const seed = sameWindow(envelope, query) ? envelope : undefined; // The window the server already read, when it is the one on screen: seeding the read with it means mounting the agenda asks for nothing the page has already read, and a window the worker pages into is still asked for.
+  const seededAnswer: AgendaResult | undefined = seed === undefined ? undefined : { kind: "envelope", envelope: seed };
+  const read = useAgenda(scope, query, seededAnswer);
+  const reading: AgendaResult | undefined = read.data ?? seededAnswer;
   const readAgain = read.refetch;
   const refresh = useCallback((): void => void readAgain(), [readAgain]);
   const openEdit = useCallback((): void => router.push(WORK_HREF), [router]);

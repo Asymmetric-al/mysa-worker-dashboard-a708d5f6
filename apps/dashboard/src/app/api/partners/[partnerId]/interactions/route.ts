@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse, type InteractionRecord } from "@/modules/data-service";
 import { jsonBodyOf, mutate, refusalIdentityGiven } from "../../../handler";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const UNATTEMPTED_REQUEST_ID = "no-operation-attempted";
@@ -15,6 +16,7 @@ const MESSAGES = {
   dateInvalid: "State the day as a calendar date in YYYY-MM-DD form.",
   outcomeRequired: "Say in a sentence what came of the contact.",
   participantsInvalid: "The people who took part are a list, so name them as a list of records.",
+  participantsRequired: "Name at least one person who took part, because an interaction is always recorded against the contact it is about.",
   participantReferenceInvalid: "A participant reference is text, so choose the person from the records this contact can see.",
   participantRoleRequired: "Say how this person took part.",
   noteRequired: "A note needs at least one visible character, or leave the note out.",
@@ -39,7 +41,7 @@ function interactionRequestSchema(pathPartnerId: string) {
       type: z.enum(INTERACTION_KINDS, { error: MESSAGES.typeInvalid }),
       occurredOn: occurredOnSchema,
       outcome: requiredText(MESSAGES.outcomeRequired),
-      participants: z.array(participantSchema, { error: MESSAGES.participantsInvalid }),
+      participants: z.array(participantSchema, { error: MESSAGES.participantsInvalid }).min(1, MESSAGES.participantsRequired),
       note: requiredText(MESSAGES.noteRequired).optional(),
       provenance: provenanceSchema.optional(),
     })
@@ -52,7 +54,7 @@ const jsonObjectSchema = z.custom<Record<string, unknown>>((value) => typeof val
 const refusalIdentityOf = refusalIdentityGiven(UNATTEMPTED_REQUEST_ID);
 type InteractionRouteParams = { readonly partnerId: string };
 /** Records something that actually happened with the contact the address names, as one named mutation. */
-export async function POST(request: Request, context: { params: Promise<InteractionRouteParams> }): Promise<Response> {
+async function logInteraction(request: Request, context: { params: Promise<InteractionRouteParams> }): Promise<Response> {
   const { partnerId } = await context.params;
   const body = await jsonBodyOf(request);
   const operationId = refusalIdentityOf(body);
@@ -62,3 +64,4 @@ export async function POST(request: Request, context: { params: Promise<Interact
   if (!parsed.success) return toResponse(outcomeFromError(operationId, parsed.error));
   return mutate(parsed.data.operationId, () => mutations.interactions.logInteraction({ ...parsed.data, payload: { ...parsed.data.payload, partnerId } }));
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: logInteraction });

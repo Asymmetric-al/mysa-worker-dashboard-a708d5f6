@@ -23,9 +23,9 @@ const COUNT_ROWS: readonly { readonly kind: ImportDecisionKind; readonly label: 
   { kind: "unresolved", label: RESULTS_COPY.summaryLabels.unresolved },
 ];
 const CountFact = ({ label, value }: { readonly label: string; readonly value: number }): ReactElement => (
-  <div className="flex min-w-0 items-baseline justify-between gap-3">
+  <div className="flex min-w-0 flex-col gap-0.5">
     <dt className="min-w-0 text-pretty text-muted-foreground">{label}</dt>
-    <dd className="shrink-0 tabular-figures font-medium text-foreground">
+    <dd className="tabular-figures font-medium text-foreground">
       <bdi>{String(value)}</bdi>
     </dd>
   </div>
@@ -38,12 +38,12 @@ export type StepAcceptanceProps = { readonly summary: ImportProposalSummaryView;
   return (
     <div data-slot="step-acceptance" className="flex min-w-0 flex-col gap-6">
       <section aria-labelledby={summaryHeadingId} className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3 text-sm">
-        <h3 id={summaryHeadingId} className="font-heading text-base font-medium">
+        <h3 id={summaryHeadingId} className="type-subsection-title">
           {SUMMARY_COPY.heading}
         </h3>
-        <p className="text-pretty text-muted-foreground">{SUMMARY_COPY.lead}</p>
+        <p className="type-supporting text-pretty">{SUMMARY_COPY.lead}</p>
         <section aria-labelledby={countsHeadingId} className="flex min-w-0 flex-col gap-2">
-          <h4 id={countsHeadingId} className="font-semibold text-foreground">
+          <h4 id={countsHeadingId} className="type-group-title">
             {SUMMARY_COPY.countsHeading}
           </h4>
           <dl className="grid min-w-0 gap-3 sm:grid-cols-2">
@@ -55,7 +55,7 @@ export type StepAcceptanceProps = { readonly summary: ImportProposalSummaryView;
             <CountFact label={SUMMARY_COPY.needsReviewLabel} value={summary.needsReview} />
           </dl>
         </section>
-        <p className="text-pretty text-muted-foreground">{SUMMARY_COPY.detailNote}</p>
+        <p className="type-supporting text-pretty">{SUMMARY_COPY.detailNote}</p>
       </section>
       <AcceptanceReview input={input} submit={submit} decidedRowCount={decidedRowCount} onCancel={onCancel} />
     </div>

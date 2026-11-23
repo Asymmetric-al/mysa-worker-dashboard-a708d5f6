@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import StateNotice from "@/components/state-notice";
 import ReportFrame from "@/features/support/components/report-frame";
@@ -5,15 +6,25 @@ import { REPORT_CATALOG, REPORT_ORDER, isReportId, reportHref, reportTitle, type
 import { reads, type ReadEnvelope } from "@/modules/data-service";
 import { PageColumn, ReadNotices, firstValueOf, searchSuffixOf, wireFormOf } from "../../../page-frame";
 import type { ReportQuery } from "@/modules/support/report";
+import { unadmittedSearchParameterMessage } from "../../../api/search";
 import { AMOUNT_RANGE_CURRENCY_MESSAGE } from "../../../api/support/query";
 type ReportReadResult = Awaited<ReturnType<typeof reads.support.readReport>>;
 type ReportFilters = NonNullable<Parameters<typeof reads.support.readReport>[1]>;
 type ReportRefusal = Extract<ReportReadResult, { readonly kind: "refused" }>["refused"];
 type SearchParams = Readonly<Record<string, string | string[] | undefined>>;
 export const dynamic = "force-dynamic";
+/**
+ * The title of the report this address names, taken from the static catalogue rather than from any record, so a
+ * report that cannot be read still titles the tab with its family word and an address naming no report says
+ * "Report" instead of enumerating one.
+ */
+export async function generateMetadata({ params }: { readonly params: Promise<{ readonly reportId: string }> }): Promise<Metadata> {
+  const { reportId } = await params;
+  return { title: isReportId(reportId) ? reportTitle(reportId) : "Report" };
+}
 const SUPPORT_HREF = "/support";
 const REPORT_LIST_ID = "support-report-choices";
-/** The search parameters this route reads, named once: the filter set is the one the gifts ledger states, in the same names, so the query a worker investigated on that ledger can be opened, exported and printed here without being restated. Any other name in the address is not part of a report's query. */
+/** The search parameters this route reads, named once: the filter set is the one the gifts ledger states, in the same names, so the query a worker investigated on that ledger can be opened, exported and printed here without being restated. `method` is named because the ledger states it, and is refused with its own reason below rather than applied, because the received-support projection carries no giving-method or classification field. Any other name in the address is refused by name rather than ignored, in the one wording the shared `app/api/search.ts` grammar owns for it: a name this grammar does not declare is not part of a report's query, and a report read while a stated name was dropped would be presented as a narrower result than it is. */
 const PARAM = {
   period: "period",
   from: "from",
@@ -23,6 +34,7 @@ const PARAM = {
   amountMin: "amountMin",
   amountMax: "amountMax",
   designation: "designation",
+  method: "method",
   search: "search",
   recipient: "recipient",
   partnerId: "partnerId",
@@ -47,6 +59,8 @@ const PAGE_COPY = {
   listHeading: "The four reports",
   amountRangeNeedsBoth: "State both bounds of an amount range: one bound on its own states no range, and no report is computed from half of one.",
   amountBound: "State an amount bound as a whole number of the selected currency's minor units. A bound that is not one is refused rather than rounded, because rounding would change which rows match.",
+  methodNotApplicable:
+    "This report's projection carries no giving-method or classification field, so a method filter cannot be applied to it. Remove the method from the address: a report read without it would be presented, on the screen, in the CSV and on the printed page, as the filtered result the address stated, which is the one thing a financial surface must never do.",
   pageIndex: "State the page as a whole number of pages from 0, the first page.",
   pageSize: "State the page size as a whole number of rows.",
 } as const;
@@ -137,7 +151,20 @@ function pageWindowOf(search: SearchParams, problems: AddressProblem[]): ReportF
   }
   return { index, size: Number(statedSize) };
 }
+/** A method filter the address states is refused here rather than forwarded to the read: the received-support projection carries no giving-method or classification field, so the report engine cannot apply it, and a report computed without it would be presented as the filtered result the address asked for. */
+function methodProblemOf(search: SearchParams, problems: AddressProblem[]): void {
+  if (statedText(search, PARAM.method) === undefined) return;
+  problems.push({ field: PARAM.method, message: PAGE_COPY.methodNotApplicable });
+}
+/** The names the address states that this grammar does not admit, each refused by name in the wording the shared search grammar owns (`app/api/search.ts`): the address is answered with the name to remove rather than with a report read while one of its stated names was dropped. */
+function unadmittedParametersOf(search: SearchParams): AddressProblem[] {
+  const admitted = new Set<string>(Object.values(PARAM));
+  return Object.keys(search)
+    .filter((name) => !admitted.has(name))
+    .map((name): AddressProblem => ({ field: name, message: unadmittedSearchParameterMessage(name) }));
+}
 function filtersOf(search: SearchParams, problems: AddressProblem[]): ReportFilters {
+  methodProblemOf(search, problems);
   const period = periodOf(search);
   const partner = partnerOf(search);
   const sort = sortOf(search);
@@ -168,13 +195,13 @@ const UnknownReportNotice = (): ReactElement => (
   <div className="flex min-w-0 flex-col gap-6 text-start">
     <StateNotice kind="empty" headingLevel={1} title={PAGE_COPY.unknownTitle} description={PAGE_COPY.unknownBody} action={{ label: PAGE_COPY.unknownAction, href: SUPPORT_HREF }} />
     <section aria-labelledby={REPORT_LIST_ID} className="flex min-w-0 flex-col gap-2">
-      <h2 id={REPORT_LIST_ID} className="text-base font-semibold text-pretty">
+      <h2 id={REPORT_LIST_ID} className="type-section-title text-pretty">
         {PAGE_COPY.listHeading}
       </h2>
       <ul className="flex min-w-0 flex-col gap-1">
         {REPORT_ORDER.map((id) => (
           <li key={id}>
-            <a href={reportHref(id)} className="text-sm underline underline-offset-4">
+            <a href={reportHref(id)} className="inline-link text-sm">
               <bdi>{reportTitle(id)}</bdi>
             </a>
           </li>
@@ -189,7 +216,7 @@ export default async function SupportReportPage({ params, searchParams }: { read
   const stated = await searchParams;
   if (!isReportId(reportId)) return <UnknownReportNotice />;
   // A filter the address states and this route cannot apply is stated before any read: a report computed without it would be presented — on the screen, in the CSV and on the printed page — as the filtered result the address asked for, which is the one thing a financial surface must never do.
-  const problems: AddressProblem[] = [];
+  const problems: AddressProblem[] = unadmittedParametersOf(stated);
   const filters = filtersOf(stated, problems);
   if (problems.length > 0) {
     return (

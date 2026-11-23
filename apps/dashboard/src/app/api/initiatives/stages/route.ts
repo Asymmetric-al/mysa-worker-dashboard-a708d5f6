@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { routeMethods } from "@/app/api/methods";
 import { mutationInputSchema, mutations } from "@/modules/data-service";
 import { writeRoute } from "../../handler";
 export const runtime = "nodejs";
@@ -10,4 +11,5 @@ const setStagePayloadSchema = z.strictObject({
 });
 const setStageRequestSchema = mutationInputSchema(setStagePayloadSchema);
 /** Records one human assessment of where a working-list member stands. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const POST = (request: Request): Promise<Response> => writeRoute(request, setStageRequestSchema, mutations.outreach.setStage);
+const setStage = (request: Request): Promise<Response> => writeRoute(request, setStageRequestSchema, mutations.outreach.setStage);
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: setStage });

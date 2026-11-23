@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { deleteViewInput, mutationInputSchema, mutations, renameViewInput, saveViewInput } from "@/modules/data-service";
 import { claimedWriteRoute, claimedWrites } from "../../../handler";
+import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type PartnerViewsParams = { readonly partnerId: string };
@@ -18,7 +19,8 @@ const intentClaimSchema = z.object({ payload: z.object({ intent: z.enum(VIEW_INT
 /** The three named view intents, each judged by its own payload schema before it runs. */
 const VIEW_WRITES = claimedWrites<ViewIntent>("intent", { saveView: [saveViewBodySchema, mutations.partners.saveView], renameView: [renameViewBodySchema, mutations.partners.renameView], deleteView: [deleteViewBodySchema, mutations.partners.deleteView] });
 /** Saves, renames or deletes one saved view the caller owns, selected by `payload.intent`. */
-export async function POST(request: NextRequest, { params }: { params: Promise<PartnerViewsParams> }): Promise<Response> {
+async function changeSavedView(request: NextRequest, { params }: { params: Promise<PartnerViewsParams> }): Promise<Response> {
   await params;
   return claimedWriteRoute(request, intentClaimSchema, (claim) => claim.payload.intent, VIEW_WRITES);
 }
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: changeSavedView });

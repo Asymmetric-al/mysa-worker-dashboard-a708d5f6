@@ -9,8 +9,6 @@ import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { BUCKET_STATUS, type StatusTone } from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/cn";
 import type { ReadEnvelope, Scope, ValueState } from "@/modules/data-service/envelope";
 import { minorUnitsOf, type Money } from "@/modules/money/amount";
@@ -36,6 +34,8 @@ const READ_ONLY_BODY = [
 const SNAPSHOT_FRAMING =
   "A commitment is not received cash: these rows state the source's own cadence, currency and occurrence state, and none is counted in a received-support figure. The statement below names the one received-support basis and grain this application reports on — the measure these rows are deliberately kept outside of — with the coverage of the records behind this read and the instant it was evaluated at.";
 const UNRECOGNISED_KIND = "Unrecognised commitment type";
+const MONTHLY_EQUIVALENT_UNSTATED = "Not stated by the source";
+const ADDITIONAL_TYPES_UNSTATED = "The read states no reason for this option, so nothing is claimed for it here: the list below states every commitment the source reports and adds no commitment type of its own.";
 const PAUSE_STATUS: Readonly<Record<PauseState, { readonly label: string; readonly tone: StatusTone }>> = { active: { label: "Active", tone: "positive" }, paused: { label: "Paused", tone: "neutral" } };
 const UNSTATED_VALUE_STATE: ValueState = "unknown";
 const NOTHING_HIDDEN: ColumnVisibility = {};
@@ -109,7 +109,7 @@ function PartitionFigures({ buckets, kinds, outsideMeaning }: { readonly buckets
     <div className="grid min-w-0 gap-4 sm:grid-cols-2">
       {groups.map((group) => (
         <section key={group.key} aria-labelledby={`${labelBase}-${group.key}`} className="flex min-w-0 flex-col gap-2 border border-border p-3">
-          <p id={`${labelBase}-${group.key}`} className="text-sm font-medium">
+          <p id={`${labelBase}-${group.key}`} className="type-group-title">
             {group.heading}
           </p>
           <dl className="flex min-w-0 flex-col gap-2">
@@ -134,7 +134,9 @@ function ReadOnlyStatement(): ReactElement {
       <AlertTitle>Commitments are read-only</AlertTitle>
       <AlertDescription>
         {READ_ONLY_BODY.map((sentence) => (
-          <p key={sentence}>{sentence}</p>
+          <p key={sentence} className="type-supporting">
+            {sentence}
+          </p>
         ))}
       </AlertDescription>
     </Alert>
@@ -144,17 +146,13 @@ function ReadOnlyStatement(): ReactElement {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const revealFieldId = useId();
-  const revealReasonId = useId();
   const [columnVisibility, setColumnVisibility] = useState<ColumnVisibility>(NOTHING_HIDDEN);
   const query = useMemo(() => parseCommitmentsQuery(searchParams.toString()), [searchParams]);
   const seeded = useMemo(() => seedOf(initialEnvelope), [initialEnvelope]);
   const read = useCommitments({ scope, query, ...(seeded === undefined ? {} : { initialEnvelope: seeded }) });
   const result = read.data;
-  const rows = result !== undefined && result.kind === "envelope" ? result.envelope.data.commitments : NO_ROWS;
   const valueStates = result !== undefined && result.kind === "envelope" ? result.envelope.valueStates : NO_VALUE_STATES;
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<CommitmentView>>>(() => {
-    const monthlyEquivalentStated = rows.some((row) => row.monthlyEquivalent !== null);
     const list: RecordListColumnDef<CommitmentView>[] = [
       {
         id: "commitment",
@@ -162,7 +160,7 @@ function ReadOnlyStatement(): ReactElement {
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => (
-          <Link href={detailHref(row.original.commitmentRowId, query)} className="inline-flex min-h-6 max-w-full items-center break-words underline underline-offset-3 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+          <Link href={detailHref(row.original.commitmentRowId, query)} className="inline-link inline-flex min-h-6 max-w-full items-center break-words hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
             <bdi className="mono-identifier">{row.original.commitmentRowId}</bdi>
           </Link>
         ),
@@ -201,20 +199,20 @@ function ReadOnlyStatement(): ReactElement {
           return <FixedTotalFigures commitmentRowId={row.original.commitmentRowId} fixedTotal={fixedTotal} valueStates={valueStates} locale={locale} />;
         },
       },
-    ];
-    if (monthlyEquivalentStated) {
-      list.push({
+      {
+        // The measure is stated for every row, whether or not the source supplies a figure for it: a row without one says so in the state vocabulary rather than hiding the column and the measure with it.
         id: "monthlyEquivalent",
         header: MEASURE_LABELS["monthly-equivalent-support"],
         enableSorting: false,
         cell: ({ row }) => {
           const monthly = row.original.monthlyEquivalent;
-          return monthly === null ? <span className="text-muted-foreground">Not stated by the source</span> : <AmountValue money={moneyOf(monthly)} valueState={recordedState(valueStates, row.original.commitmentRowId, "monthlyEquivalent") ?? monthly.valueState} locale={locale} />;
+          const recorded = recordedState(valueStates, row.original.commitmentRowId, "monthlyEquivalent");
+          return monthly === null ? <StatusBadge label={MONTHLY_EQUIVALENT_UNSTATED} valueState={recorded ?? UNSTATED_VALUE_STATE} srPrefix={MEASURE_LABELS["monthly-equivalent-support"]} /> : <AmountValue money={moneyOf(monthly)} valueState={recorded ?? monthly.valueState} locale={locale} />;
         },
-      });
-    }
+      },
+    ];
     return list;
-  }, [locale, query, rows, valueStates]);
+  }, [locale, query, valueStates]);
   const listQueryState = useMemo<RecordListQueryState>(() => ({ sort: [], page: query.page.index + 1, pageSize: query.page.size, columnVisibility }), [query.page.index, query.page.size, columnVisibility]);
   const commitQuery = (next: CommitmentsQuery): void => {
     const search = toCommitmentsParams(next).toString();
@@ -254,7 +252,6 @@ function ReadOnlyStatement(): ReactElement {
     );
   }
   const additionalTypesAction = actions.find((action) => action.name === "showAdditionalTypes");
-  const onAdditionalTypes = (checked: boolean): void => commitQuery({ ...query, showAdditionalTypes: checked, page: { index: 0, size: query.page.size } });
   return surface(
     <>
       <ReadOnlyStatement />
@@ -267,22 +264,14 @@ function ReadOnlyStatement(): ReactElement {
           <SnapshotStatement basis={SUPPORT_BASIS} currencies={NO_CURRENCIES} period={null} coverage={coverage} asOf={asOf} isCurrentPeriod={false} locale={locale} />
           {additionalTypesAction === undefined ? null : (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor={revealFieldId} className={cn("items-start leading-snug font-normal", additionalTypesAction.available && "cursor-pointer")}>
-                <Checkbox id={revealFieldId} className="mt-0.5" checked={query.showAdditionalTypes} disabled={!additionalTypesAction.available} aria-describedby={additionalTypesAction.reason === undefined ? undefined : revealReasonId} onCheckedChange={onAdditionalTypes} />
-                <span className="min-w-0 break-words">Show additional source-supplied commitment types</span>
-              </Label>
-              <p className="text-xs text-muted-foreground">The choice is carried with the request to the source, so the list below states exactly the commitments the read answers with.</p>
-              {additionalTypesAction.reason === undefined ? null : (
-                <p id={revealReasonId} className="text-xs text-muted-foreground">
-                  {additionalTypesAction.reason}
-                </p>
-              )}
+              <p className="text-sm font-medium">Show additional source-supplied commitment types</p>
+              <p className="text-xs text-muted-foreground">{additionalTypesAction.reason ?? ADDITIONAL_TYPES_UNSTATED}</p>
             </div>
           )}
         </CardContent>
       </Card>
       <div className="flex min-w-0 flex-col gap-3">
-        <p className="text-sm text-muted-foreground">Every commitment the source reports sits in exactly one of five recurring outcomes, or outside all five when the evidence behind it is unknown or stale. These figures cover the whole list rather than the page shown.</p>
+        <p className="type-supporting">Every commitment the source reports sits in exactly one of five recurring outcomes, or outside all five when the evidence behind it is unknown or stale. These figures cover the whole list rather than the page shown.</p>
         <PartitionFigures buckets={data.buckets} kinds={data.commitmentKinds} outsideMeaning={BUCKET_MEANING["outside-partition"]} />
       </div>
       <RecordList label={SURFACE_LABEL} columns={columns} rows={data.commitments} rowCount={data.total} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={rowIdOf} itemNoun="commitments" />

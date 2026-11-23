@@ -56,9 +56,9 @@ const MeasureLabel = ({ measure }: { readonly measure: TargetMeasure }): ReactEl
   </>
 );
 function MeasuredAgainstVersion({ version }: { readonly version: Version | undefined }): ReactElement {
-  if (version === undefined) return <p className="text-sm text-muted-foreground">The version this period was measured against is not in the history this read can show, so no version is named here in its place.</p>;
+  if (version === undefined) return <p className="type-supporting">The version this period was measured against is not in the history this read can show, so no version is named here in its place.</p>;
   return (
-    <p className="text-sm text-muted-foreground">
+    <p className="type-body">
       Measured against the version in force from <CivilDateText value={version.effectiveFrom} />, which set a target of <bdi className="tabular-figures">{version.quantity}</bdi>
       <MeasureLabel measure={version.measure} />.{" "}
     </p>
@@ -75,7 +75,7 @@ export default function TargetHistory({ versions, closedPeriods, locale, unavail
   const unreadableSource = unavailable === null ? null : unavailable.source;
   return (
     <section className={cn("flex min-w-0 flex-col gap-4", className)} data-interface-locale={locale}>
-      <p className="text-sm text-balance text-muted-foreground">{TARGET_VERSION_GUARANTEE}</p>
+      <p className="type-supporting text-balance">{TARGET_VERSION_GUARANTEE}</p>
       <Panel titleId={versionsHeadingId} headingLevel={2} title={"Version history"} description={"Each version is the plan in force from its first date until the day before the next version begins, so a period falls inside exactly one of them."}>
         {versionsNewestFirst.length === 0 ? (
           <NoRowsNotice source={unreadableSource} emptyTitle={"No version recorded yet"} emptyDescription={"A target records its first version on the date it is set, and every later change to the quantity, the measure or the calendar start records another one from the date it takes effect."} />
@@ -92,7 +92,7 @@ export default function TargetHistory({ versions, closedPeriods, locale, unavail
                     </p>
                     <StatusBadge label={stateCopy.label} tone={stateCopy.tone} />
                   </div>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="type-body">
                     Target <bdi className="tabular-figures">{version.quantity}</bdi>
                     <MeasureLabel measure={version.measure} />
                   </p>
@@ -120,14 +120,14 @@ export default function TargetHistory({ versions, closedPeriods, locale, unavail
                     {stateCopy.word === null ? null : <StatusBadge label={stateCopy.word} tone={stateCopy.tone} />}
                   </div>
                   {stateCopy.showsFigure ? (
-                    <p className="text-sm">
+                    <p className="type-body">
                       Recorded <bdi className="tabular-figures">{period.recorded}</bdi>
                       {measuredAgainst === undefined ? null : <MeasureLabel measure={measuredAgainst.measure} />}
                     </p>
                   ) : null}
-                  {stateCopy.sentence === null ? null : <p className="text-sm text-muted-foreground">{stateCopy.sentence}</p>}
+                  {stateCopy.sentence === null ? null : <p className="type-supporting">{stateCopy.sentence}</p>}
                   {period.state === "unavailable" && unreadableSource !== null ? (
-                    <p className="text-sm text-muted-foreground">
+                    <p className="type-supporting">
                       Source <bdi className="mono-identifier">{formatSourceReference(unreadableSource)}</bdi>.
                     </p>
                   ) : null}

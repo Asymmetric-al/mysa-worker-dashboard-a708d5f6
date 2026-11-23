@@ -4,13 +4,13 @@ import { MODULE_KEYS, type ModuleKey } from "@/modules/coaching/grant";
 import { TARGET_MEASURES, type TargetMeasure, type TargetPeriod } from "@/modules/coaching/target";
 import { TASK_SUMMARY_MAX_CODE_POINTS } from "@/modules/coaching/taskshare";
 import { parseCivilDate } from "@/modules/time/civil";
-import { LIMIT_COPY, type StopEffect } from "./copy";
+import { LIMIT_COPY, TARGET_PLAN_REFUSALS, type StopEffect } from "./copy";
 const opaqueReferenceSchema = z.string().trim().min(1);
 const civilDateSchema = z
-  .string()
+  .string({ error: TARGET_PLAN_REFUSALS.calendarDateNotADay })
   .trim()
   .superRefine((value, ctx) => {
-    if (parseCivilDate(value).status === "refused") ctx.addIssue({ code: "custom" });
+    if (parseCivilDate(value).status === "refused") ctx.addIssue({ code: "custom", message: TARGET_PLAN_REFUSALS.calendarDateNotADay });
   });
 export const moduleChangePayloadSchema = z.strictObject({ grantId: z.string().trim().min(1), moduleKey: z.enum(MODULE_KEYS), enabled: z.boolean() });
 export type ModuleChangePayload = z.infer<typeof moduleChangePayloadSchema>;
@@ -21,23 +21,23 @@ export const invitationPayloadSchema = z.strictObject({ coachPrincipalId: opaque
 export type InvitationPayload = z.infer<typeof invitationPayloadSchema>;
 export const acceptancePayloadSchema = z.strictObject({ grantId: opaqueReferenceSchema, invitationRevision: z.number().int().min(0) });
 export type AcceptancePayload = z.infer<typeof acceptancePayloadSchema>;
-const measureSchema = z.enum(TARGET_MEASURES) satisfies z.ZodType<TargetMeasure, TargetMeasure>;
+const measureSchema = z.enum(TARGET_MEASURES, { error: TARGET_PLAN_REFUSALS.measureUnknown }) satisfies z.ZodType<TargetMeasure, TargetMeasure>;
 const PERIOD_KINDS = ["weekly", "monthly", "custom"] as const satisfies readonly TargetPeriod["kind"][];
 type PayloadPeriodKind = (typeof PERIOD_KINDS)[number];
-const periodSchema = z.enum(PERIOD_KINDS);
+const periodSchema = z.enum(PERIOD_KINDS, { error: TARGET_PLAN_REFUSALS.periodUnknown });
 type PeriodChoice = { readonly period: PayloadPeriodKind; readonly calendarStart?: string | undefined; readonly periodEnd?: string | undefined };
 function requireCustomPeriodDates(value: PeriodChoice, ctx: z.RefinementCtx): void {
   if (value.period !== "custom") return;
   if (value.calendarStart === undefined) ctx.addIssue({ code: "custom", path: ["calendarStart"], message: "A one-off period states the day it starts." });
   if (value.periodEnd === undefined) ctx.addIssue({ code: "custom", path: ["periodEnd"], message: "A one-off period states the day it ends." });
 }
-const targetIdSchema = z.string().trim().min(1);
-export const targetSavePayloadSchema = z
-  .strictObject({ measure: measureSchema, quantity: z.number().int().min(1), period: periodSchema, calendarStart: civilDateSchema.optional(), periodEnd: civilDateSchema.optional(), privateLabel: z.string().trim().min(1), homePlacement: z.boolean() })
-  .superRefine(requireCustomPeriodDates);
+const targetIdSchema = z.string({ error: TARGET_PLAN_REFUSALS.targetNotNamed }).trim().min(1, { error: TARGET_PLAN_REFUSALS.targetNotNamed });
+const quantitySchema = z.number({ error: TARGET_PLAN_REFUSALS.quantityNotANumber }).int({ error: TARGET_PLAN_REFUSALS.quantityNotWhole }).min(1, { error: TARGET_PLAN_REFUSALS.quantityBelowOne });
+const privateLabelSchema = z.string({ error: TARGET_PLAN_REFUSALS.privateLabelEmpty }).trim().min(1, { error: TARGET_PLAN_REFUSALS.privateLabelEmpty });
+export const targetSavePayloadSchema = z.strictObject({ measure: measureSchema, quantity: quantitySchema, period: periodSchema, calendarStart: civilDateSchema.optional(), periodEnd: civilDateSchema.optional(), privateLabel: privateLabelSchema, homePlacement: z.boolean() }).superRefine(requireCustomPeriodDates);
 export type TargetSavePayload = z.infer<typeof targetSavePayloadSchema>;
 export const targetEditPayloadSchema = z
-  .strictObject({ targetId: targetIdSchema, measure: measureSchema, quantity: z.number().int().min(1), period: periodSchema, calendarStart: civilDateSchema.optional(), periodEnd: civilDateSchema.optional(), privateLabel: z.string().trim().min(1).optional(), homePlacement: z.boolean().optional() })
+  .strictObject({ targetId: targetIdSchema, measure: measureSchema, quantity: quantitySchema, period: periodSchema, calendarStart: civilDateSchema.optional(), periodEnd: civilDateSchema.optional(), privateLabel: privateLabelSchema.optional(), homePlacement: z.boolean().optional() })
   .superRefine(requireCustomPeriodDates);
 export type TargetEditPayload = z.infer<typeof targetEditPayloadSchema>;
 export const targetPausePayloadSchema = z.strictObject({ targetId: targetIdSchema });

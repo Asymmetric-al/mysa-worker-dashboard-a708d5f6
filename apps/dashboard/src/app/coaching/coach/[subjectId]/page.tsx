@@ -46,6 +46,10 @@ function taskSummariesOf(items: readonly SharedTaskSummary[]) {
   });
 }
 const figureOf = (entry: TargetProgress) => ({ periodLabel: `${entry.start} to ${entry.endInclusive} · ${MEASURE_COPY[entry.measure].label}`, value: entry.count, valueState: entry.countState });
+type Goal = Extract<SubjectModule, { readonly module: "support-goal" }>["goal"];
+type ReceivedFigure = Extract<SubjectModule, { readonly module: "support-results" }>["received"][number];
+const goalOf = (goal: Goal) => (goal === null ? null : { amount: goal.amount, measure: goal.measure, effectiveFrom: goal.effectiveFrom, valueState: goal.valueState });
+const receivedOf = (figure: ReceivedFigure) => ({ currency: figure.currency, minorUnits: figure.minorUnits, valueState: figure.valueState, periodState: figure.periodState, coverageState: figure.coverageState, from: figure.from, to: figure.to });
 function bodyOf(module: SubjectModule, envelope: CoachSubjectEnvelope) {
   switch (module.module) {
     case "check-ins":
@@ -55,8 +59,10 @@ function bodyOf(module: SubjectModule, envelope: CoachSubjectEnvelope) {
     case "targets":
       return { kind: "target-progress" as const, figures: module.progress.map(figureOf), coverage: envelope.coverage, asOf: envelope.asOf };
     case "support-goal":
+      return { kind: "support-goal" as const, goal: goalOf(module.goal) };
     case "support-results":
-      return { kind: "financial-range" as const, alreadyRendered: false as const };
+      // The reviewed range and its figures are the read's own projection on its one named basis, carried through here rather than derived again: no amount on this page comes from the view. Each figure keeps the coverage its own period reports, because that is what decides whether the amount is a whole-period figure or an incomplete subtotal.
+      return { kind: "support-results" as const, basis: module.basis, range: module.range, received: module.received.map(receivedOf), figureProblem: module.figureProblem, asOf: envelope.asOf };
   }
 }
 const modulesOf = (envelope: CoachSubjectEnvelope) => envelope.data.modules.map((module) => ({ key: module.module, state: module.state, body: bodyOf(module, envelope) }));
@@ -77,7 +83,7 @@ export default async function CoachSubjectPage({ params }: { readonly params: Pr
   const view = envelope.data;
   return (
     <div className={PAGE_CLASS}>
-      <h1 className="text-2xl font-semibold text-pretty wrap-anywhere">{COACHING_COPY.coachSubject.heading}</h1>
+      <h1 className="type-page-title text-pretty wrap-anywhere">{COACHING_COPY.coachSubject.heading}</h1>
       <CoachSubjectDetail subject={subjectOf(view)} modules={modulesOf(envelope)} locale="en-GB" />
       <StopActions available={admittedLeave(envelope.actions)} target={{ grantId: view.grantId, episodeState: lifecycleWord(view.duration) }} scope={envelope.scope} expectedRevision={envelope.revision} role={COACH_ROLE} headingLevel={2} />
     </div>

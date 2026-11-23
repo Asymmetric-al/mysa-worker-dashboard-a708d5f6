@@ -30,7 +30,7 @@ import {
   type WithdrawUpdatePayload,
 } from "../schemas";
 import { updateQueryKey, type UpdatesReadJob } from "./use-update-queries";
-export const UPDATES_MUTATION_NAMES = ["createVariant", "saveDraft", "submitForReview", "approveCandidate", "requestChanges", "rejectCandidate", "publishVariants", "requestNotification", "withdrawUpdate", "withdrawLocale", "restoreRevisionAsDraft", "registerMediaAsset", "replacePlacement", "removePlacement"] as const;
+export const UPDATES_MUTATION_NAMES = ["createVariant", "saveDraft", "submitForReview", "approveCandidate", "requestChanges", "rejectCandidate", "publishVariants", "requestNotification", "withdrawUpdate", "withdrawLocale", "restoreRevisionAsDraft", "registerMediaAsset", "removePlacement"] as const;
 export type UpdatesMutationName = (typeof UPDATES_MUTATION_NAMES)[number];
 export const UPDATES_MUTATION_ENDPOINTS = {
   createVariant: "/api/variants",
@@ -45,24 +45,22 @@ export const UPDATES_MUTATION_ENDPOINTS = {
   withdrawLocale: "/api/withdraw",
   restoreRevisionAsDraft: "/api/drafts",
   registerMediaAsset: "/api/media",
-  replacePlacement: "/api/media",
   removePlacement: "/api/media",
 } as const satisfies Readonly<Record<UpdatesMutationName, string>>;
 export const UPDATES_MUTATION_INVALIDATIONS = {
   createVariant: ["variant-overview", "release"],
-  saveDraft: ["draft", "variant-overview", "preview"],
+  saveDraft: ["draft", "variant-overview"],
   submitForReview: ["variant-overview", "candidate"],
   approveCandidate: ["candidate", "variant-overview", "share-presentation"],
   requestChanges: ["candidate", "variant-overview"],
   rejectCandidate: ["candidate", "variant-overview"],
-  publishVariants: ["release", "variant-overview", "preview", "share-presentation"],
+  publishVariants: ["release", "variant-overview", "share-presentation"],
   requestNotification: ["send-result", "share-presentation", "variant-overview"],
-  withdrawUpdate: ["release", "variant-overview", "preview", "share-presentation"],
-  withdrawLocale: ["release", "variant-overview", "preview", "share-presentation"],
-  restoreRevisionAsDraft: ["draft", "variant-overview", "preview"],
+  withdrawUpdate: ["release", "variant-overview", "share-presentation"],
+  withdrawLocale: ["release", "variant-overview", "share-presentation"],
+  restoreRevisionAsDraft: ["draft", "variant-overview"],
   registerMediaAsset: ["draft"],
-  replacePlacement: ["draft", "preview"],
-  removePlacement: ["draft", "preview"],
+  removePlacement: ["draft"],
 } as const satisfies Readonly<Record<UpdatesMutationName, readonly UpdatesReadJob[]>>;
 const HANDLER_SOURCE_SYSTEM = "data-service";
 const TRANSPORT_GUIDANCE = "The request did not complete, so this change is reported as neither applied nor refused. Retry the same work: it keeps the attempt's own identity, and replaying it answers with the result already recorded rather than repeating the effect.";
@@ -153,6 +151,10 @@ const withdrawUpdateBody = (payload: WithdrawUpdatePayload): unknown => ({ opera
 const withdrawLocaleBody = (payload: WithdrawLocalePayload): unknown => ({ operation: "withdrawLocale", variantId: payload.variantId });
 async function registerMediaAssetBody(payload: RegisterMediaAssetPayload): Promise<unknown> {
   const { altText, caption, credit, language, transcript } = payload.placement;
+  // The poster and the caption track are the two members the service prepares as their own renditions, so the body carries
+  // the files themselves: the poster's bytes through the same chunked encoder as the video, and the WebVTT text as text.
+  const poster = payload.poster === undefined ? undefined : { bytesBase64: await base64Of(payload.poster.file), name: payload.poster.file.name, altText: payload.poster.altText ?? altText };
+  const captions = payload.captions === undefined ? undefined : { vtt: await payload.captions.file.text(), language: payload.captions.language, ...(payload.captions.label === undefined ? {} : { label: payload.captions.label }) };
   return {
     operation: "registerMediaAsset",
     kind: payload.kind,
@@ -160,6 +162,8 @@ async function registerMediaAssetBody(payload: RegisterMediaAssetPayload): Promi
     altText,
     placement: { altText, ...(caption === undefined ? {} : { caption }), ...(credit === undefined ? {} : { credit }), ...(language === undefined ? {} : { language }) },
     ...(transcript === undefined ? {} : { transcript: { text: transcript } }),
+    ...(poster === undefined ? {} : { poster }),
+    ...(captions === undefined ? {} : { captions }),
   };
 }
 const removePlacementBody = (payload: RemovePlacementPayload): unknown => ({ operation: "removePlacement", variantId: payload.variantId, placementId: payload.placementId });

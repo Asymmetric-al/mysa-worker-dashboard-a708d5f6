@@ -2,10 +2,16 @@
 import path from "node:path";
 const MEASURE_COMMAND = "git ls-files | grep -v -e '^bun.lock$' | xargs wc -l";
 const LIMIT = 100000;
+const USAGE = "usage: bun scripts/count-lines.ts\n";
 const ROOT = path.join(import.meta.dir, "..");
+class UsageError extends Error {}
 interface WcReport {
   tracked: number;
   totals: number[];
+}
+/** The command line takes no arguments: what this command runs is the request's verbatim pipeline and the 100,000-line limit is fixed, so there is no option to accept — `--help` included. */
+function parseArguments(argv: readonly string[]): void {
+  if (argv.length > 0) throw new UsageError(`count-lines takes no arguments, and received: ${argv.join(" ")}`);
 }
 function readWcReport(stdout: string): WcReport {
   const report: WcReport = { tracked: 0, totals: [] };
@@ -18,6 +24,14 @@ function readWcReport(stdout: string): WcReport {
   return report;
 }
 async function main(): Promise<number> {
+  try {
+    parseArguments(process.argv.slice(2));
+  } catch (error) {
+    if (!(error instanceof UsageError)) throw error; // The parser refuses with UsageError only, so any other failure stays a defect rather than being reported as a usage verdict.
+    process.stderr.write(`${error.message}\n`);
+    process.stderr.write(USAGE);
+    return 2; // A refused invocation measured nothing, so it carries the measurement-failure status (2), never the over-limit verdict (1) or a pass (0).
+  }
   let stdout: string;
   let stderr: string;
   let exitStatus: number;

@@ -8,7 +8,7 @@ import { reviewTaskSummary, stopTaskShare as stopCoachingTaskShare, type TaskSha
 import { parseCivilDate, serialiseCivilDate, todayInZone, type CivilDate } from "@/modules/time/civil";
 import { now } from "@/modules/time/clock";
 import { shareThroughDateOfCutoff } from "@/modules/time/window";
-import type { ScopeDecision, SessionSource } from "../authorize";
+import { coachingRecordsSessionIdOf, type ScopeDecision, type SessionSource } from "../authorize";
 import { coachingCheckInRecordSchema, coachingGrantRecordSchema, coachingTaskShareRecordSchema, coachingTargetRecordSchema, ministryIdSchema, principalIdSchema, taskRecordSchema, taskReviewedFingerprint } from "../envelope";
 import type { CoachingCheckInRecord, CoachingDurationRecord, CoachingGrantRecord, CoachingTaskShareRecord, CoachingTargetRecord, MutationInput, Scope, TaskRecord } from "../envelope";
 import { openMutation, refuseConflict, refuseDenied, refuseInvalid, refuseUnavailable, runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
@@ -20,9 +20,20 @@ const STATE_DOCUMENT_REFERENCE = "session-state",
 const SCOPE_ESTABLISHED: ScopeDecision = { ok: true };
 type CoachingSpec<R extends MutationResult> = { readonly scopeAuthority?: "grant"; readonly readCurrent?: (documents: MutationContext["docs"]) => CurrentTarget; readonly apply: (context: MutationContext) => ApplyResult<R> };
 async function runCoachingMutation<P, R extends MutationResult>(input: MutationInput<P>, source: SessionSource | undefined, schema: z.ZodType<P>, name: MutationName, spec: CoachingSpec<R>): Promise<MutationOutcome> {
-  const session = await mutationSessionId(input, source);
-  if (!session.ok) return session.outcome;
-  return runMutation<P, R>({ sessionId: session.sessionId, input, schema, name, authorize: () => SCOPE_ESTABLISHED, ...(spec.scopeAuthority === undefined ? {} : { scopeAuthority: spec.scopeAuthority }), ...(spec.readCurrent === undefined ? {} : { readCurrent: spec.readCurrent }), apply: spec.apply });
+  const opening = await openMutation(name, input, source);
+  if (!opening.ok) return opening.outcome;
+  // The seat names the change and acts as itself; the records it changes may be the world it was seated in, so the transaction addresses that world under the one lock the two identities share.
+  return runMutation<P, R>({
+    sessionId: opening.session.sessionId,
+    recordsSessionId: coachingRecordsSessionIdOf(opening.session),
+    input,
+    schema,
+    name,
+    authorize: () => SCOPE_ESTABLISHED,
+    ...(spec.scopeAuthority === undefined ? {} : { scopeAuthority: spec.scopeAuthority }),
+    ...(spec.readCurrent === undefined ? {} : { readCurrent: spec.readCurrent }),
+    apply: spec.apply,
+  });
 }
 function revisionOrdinalOf(token: string): number {
   const digits = /(\d+)\s*$/u.exec(token);
@@ -48,8 +59,6 @@ function planningToday(at: Temporal.Instant): CivilDate | null {
   const today = todayInZone(TARGET_PLANNING_ZONE, at);
   return today.status === "resolved" ? today.date : null;
 }
-type MutationIdentity = { readonly ok: true; readonly sessionId: string } | { readonly ok: false; readonly outcome: MutationOutcome };
-const mutationSessionId = async (input: unknown, source: SessionSource | undefined): Promise<MutationIdentity> => (source === undefined ? openMutation(input) : { ok: true, sessionId: source.sessionId });
 type StateDocumentCarrier = { state: unknown };
 type CoachingFamilies = {
   readonly document: Record<string, unknown>;

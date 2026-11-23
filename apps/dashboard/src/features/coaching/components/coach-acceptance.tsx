@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { MODULE_KEYS, type GrantLifecycleState, type ModuleKey } from "@/modules/coaching/grant";
 import type { MutationInput, Scope } from "@/modules/data-service/envelope";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
-import { COACHING_COPY, GRANT_STATE_COPY, MODULE_COPY, SHARING_OUTCOME_COPY, type SharingOutcomeId } from "../copy";
+import { GRANT_STATE_COPY, MODULE_COPY, SHARING_OUTCOME_COPY, type SharingOutcomeId } from "../copy";
 import { useAcceptInvitation } from "../hooks/use-coaching";
 import type { AcceptancePayload } from "../schemas";
 import { Panel } from "./panel";
@@ -18,7 +18,7 @@ import type { SharingOutcome, SharingOutcomeSet } from "./sharing-summary";
 const INVITATION_STATES = ["delivered", "superseded", "already-accepted", "expired", "revoked"] as const;
 type InvitationState = (typeof INVITATION_STATES)[number];
 type InvitationSummary = { readonly grantId: string; readonly state: InvitationState; readonly recipientDisplayName: string; readonly organizationName: string; readonly ministryName: string; readonly modules: ReadonlyArray<{ readonly key: ModuleKey }>; readonly durationLabel: string };
-export type CoachAcceptanceProps = { readonly invitation: InvitationSummary | null; readonly outcomes: SharingOutcomeSet; readonly scope: Scope; readonly expectedRevision: string };
+export type CoachAcceptanceProps = { readonly invitation: InvitationSummary | null; readonly outcomes: SharingOutcomeSet; readonly scope: Scope; readonly expectedRevision: string; readonly holdsNoSubjects: boolean };
 type AcceptInput = Omit<MutationInput<AcceptancePayload>, "operationId">;
 type NoticeCopy = { readonly title: string; readonly description: string };
 const LIFECYCLE_OF: Readonly<Record<InvitationState, GrantLifecycleState>> = { delivered: "invited", superseded: "superseded", "already-accepted": "accepted", expired: "expired", revoked: "revoked" };
@@ -62,8 +62,11 @@ const NOTICE_COPY: Readonly<Record<Exclude<InvitationState, "delivered">, Notice
   expired: { title: "This invitation reached its agreed end", description: "The dates this invitation named have passed, so it can no longer be accepted and nothing is readable under it. A new invitation from the worker is what begins a relationship." },
   revoked: { title: "This invitation was revoked", description: "The worker revoked this grant, so it can no longer be accepted and no further read is allowed under it. Revoking stops access; it does not take back what was read before, and only a new invitation begins again." },
 };
-const NO_INVITATION_COPY: NoticeCopy = { title: "No coaching invitation for this account", description: `${COACHING_COPY.coachPortfolio.empty} Nothing on this page can create one, and a matching email address grants nothing either.` };
-const MUTED_TEXT_CLASS = "text-sm text-pretty text-muted-foreground";
+// The acceptance fact and the portfolio's emptiness are two different facts, and the portfolio card above states the emptiness once when that is what its read returned: both notices below therefore state only where the acceptance stands, and neither repeats what the portfolio says about what is shared.
+const NO_PENDING_INVITATION_SENTENCE = "No invitation addressed to you is awaiting acceptance, so nothing on this page asks you to accept anything.";
+const NO_INVITATION_COPY: NoticeCopy = { title: "No coaching invitation for this account", description: `${NO_PENDING_INVITATION_SENTENCE} Opening this page accepts nothing, and a matching email address grants nothing either.` };
+const NO_ACCEPTANCE_COPY: NoticeCopy = { title: "No invitation is waiting for your acceptance", description: `${NO_PENDING_INVITATION_SENTENCE} The access you hold as this worker's coach is what the portfolio reports, and nothing here adds to it or takes any of it away.` };
+const MUTED_TEXT_CLASS = "type-supporting text-pretty";
 const TRAILING_DIGITS = /(\d+)\s*$/u;
 function revisionOrdinal(revision: string): number {
   const digits = TRAILING_DIGITS.exec(revision);
@@ -98,7 +101,7 @@ function InvitationFacts({ invitation, lifecycle }: { readonly invitation: Invit
         {lifecycle === "invited" ? <p className={MUTED_TEXT_CLASS}>{SURFACE_COPY.notAcceptedSentence}</p> : null}
         <Separator />
         <section aria-labelledby={modulesId} className="flex min-w-0 flex-col gap-2">
-          <h3 {...{ id: modulesId, className: "text-sm font-semibold" }}>{SURFACE_COPY.modulesHeading}</h3>
+          <h3 {...{ id: modulesId, className: "type-subsection-title" }}>{SURFACE_COPY.modulesHeading}</h3>
           {namedModules.length === 0 ? (
             <p className={MUTED_TEXT_CLASS}>{SURFACE_COPY.noModulesSentence}</p>
           ) : (
@@ -130,19 +133,19 @@ function OutcomeStanding({ outcomes }: { readonly outcomes: SharingOutcomeSet })
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} data-slot="coach-acceptance-outcomes" className="flex min-w-0 flex-col gap-3">
-      <h3 {...{ id: headingId, className: "text-sm font-semibold" }}>{"Where this invitation stands"}</h3>
+      <h3 {...{ id: headingId, className: "type-subsection-title" }}>{"Where this invitation stands"}</h3>
       <p className={MUTED_TEXT_CLASS}>{"These are four separate outcomes rather than four steps of one, so each is stated on its own and none of them stands in for another."}</p>
       <ul className="flex min-w-0 flex-col gap-4">
         {SHARING_OUTCOME_COPY.map((entry) => {
           const state = outcomes[OUTCOME_STATE_FIELD[entry.id]];
           return (
             <li key={entry.id} data-slot="coach-acceptance-outcome" data-outcome={entry.id} data-state={state} className="flex min-w-0 flex-col gap-1.5">
-              <p className="flex min-w-0 flex-wrap items-baseline gap-2 text-sm">
+              <p className="flex min-w-0 flex-wrap items-baseline gap-2 type-body">
                 <span className="font-medium">{OUTCOME_STAGE_NAME[entry.id]}</span>
                 <StatusBadge label={outcomeWord(entry, state)} tone={OUTCOME_TONE[state]} />
               </p>
               <p className={MUTED_TEXT_CLASS}>{entry.description}</p>
-              <p className="text-sm text-pretty">{OUTCOME_STATE_SENTENCE[entry.id][state]}</p>
+              <p className="type-body text-pretty">{OUTCOME_STATE_SENTENCE[entry.id][state]}</p>
             </li>
           );
         })}
@@ -150,7 +153,18 @@ function OutcomeStanding({ outcomes }: { readonly outcomes: SharingOutcomeSet })
     </section>
   );
 }
-export default function CoachAcceptance({ invitation, outcomes, scope, expectedRevision }: CoachAcceptanceProps): ReactElement {
+/** The statement a coach who holds relationships but has no invitation awaiting acceptance reads: a plain region rather than an empty state, because an empty state over a non-empty portfolio would misstate what the read returned. */
+function NoAcceptanceStatement(): ReactElement {
+  const headingId = useId();
+  return (
+    <section aria-labelledby={headingId} data-slot="coach-acceptance-no-invitation" className="min-w-0">
+      <Panel titleId={headingId} headingLevel={2} title={NO_ACCEPTANCE_COPY.title} contentClassName="flex min-w-0 flex-col gap-2">
+        <p className="max-w-prose text-sm text-pretty">{NO_ACCEPTANCE_COPY.description}</p>
+      </Panel>
+    </section>
+  );
+}
+export default function CoachAcceptance({ invitation, outcomes, scope, expectedRevision, holdsNoSubjects }: CoachAcceptanceProps): ReactElement {
   const { mutateAsync } = useAcceptInvitation();
   const [submitted, setSubmitted] = useState<AcceptInput | null>(null);
   const [settled, setSettled] = useState<MutationOutcome | null>(null);
@@ -161,7 +175,10 @@ export default function CoachAcceptance({ invitation, outcomes, scope, expectedR
     },
     [mutateAsync],
   );
-  if (invitation === null) return <StateNotice kind="empty" headingLevel={2} title={NO_INVITATION_COPY.title} description={NO_INVITATION_COPY.description} />;
+  // An invitation awaiting acceptance and the portfolio's own emptiness are separate facts, and this surface states each from the read's own answer: a coach whose read returned relationships reads a statement, never an empty state that claims nothing is shared.
+  if (invitation === null) {
+    return holdsNoSubjects ? <StateNotice kind="empty" headingLevel={2} title={NO_INVITATION_COPY.title} description={NO_INVITATION_COPY.description} /> : <NoAcceptanceStatement />;
+  }
   const state = invitation.state;
   const holdsReceipt = settled !== null && (settled.outcome === "accepted" || settled.outcome === "alreadyAccepted" || settled.outcome === "unchanged");
   const acceptedJustNow = settled !== null && (settled.outcome === "accepted" || settled.outcome === "alreadyAccepted");
@@ -176,7 +193,7 @@ export default function CoachAcceptance({ invitation, outcomes, scope, expectedR
           title={SURFACE_COPY.acceptTitle}
           description={
             <div className="flex min-w-0 flex-col gap-2">
-              <p>{SURFACE_COPY.acceptDescription}</p>
+              <p className="type-supporting">{SURFACE_COPY.acceptDescription}</p>
               <dl className="flex min-w-0 flex-col gap-1">
                 <Fact term={SURFACE_COPY.factTerms.recipient}>
                   <bdi>{invitation.recipientDisplayName}</bdi>
@@ -192,8 +209,8 @@ export default function CoachAcceptance({ invitation, outcomes, scope, expectedR
           }
           consequence={
             <div className="flex min-w-0 flex-col gap-2">
-              <p>{SURFACE_COPY.acceptConsequence}</p>
-              <p>{SURFACE_COPY.acceptContainment}</p>
+              <p className="type-supporting">{SURFACE_COPY.acceptConsequence}</p>
+              <p className="type-supporting">{SURFACE_COPY.acceptContainment}</p>
             </div>
           }
           confirmLabel={SURFACE_COPY.acceptLabel}

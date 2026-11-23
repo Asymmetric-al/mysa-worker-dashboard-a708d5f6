@@ -7,6 +7,7 @@ import { failureFor, failurePlanOfDocument } from "@/modules/dev-runtime/failure
 import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
 import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { exponentOf } from "@/modules/money/currency";
+import { canonicalDigest } from "@/modules/store/atomic";
 import { BUCKET_LABELS, COMMITMENT_KINDS, OUTSIDE_PARTITION, PARTITION_BUCKETS, isInPartition, type CommitmentKind, type CommitmentRow, type RecurringBucket } from "@/modules/support/buckets";
 import type { SupportProjection } from "@/modules/support/basis";
 import { GOAL_CAPABILITY, GOAL_MEASURE, formatPercentageBasisPoints, goalProgress, type GoalProgress } from "@/modules/support/goal";
@@ -20,20 +21,23 @@ import {
   clampPageSize,
   runReport,
   type CurrencySelection,
+  type FacetsReportResult,
   type PeriodPreset,
   type PeriodState,
   type ReportId,
+  type ReportFacets,
   type ReportPartnerSelection,
   type ReportPeriod,
   type ReportQuery,
   type ReportQueryProblem,
+  type ReportSections,
   type ReportResult,
   type ReportScope,
   type Snapshot,
   type SortDirection,
   type SortField,
 } from "@/modules/support/report";
-import { serialiseCivilDate } from "@/modules/time/civil";
+import { serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
 import { canEdit, canExport, type AccessDecision, type ResolvedSession, type SessionSource } from "../authorize";
 import {
   commitmentRowRecordSchema,
@@ -44,6 +48,7 @@ import {
   type CommitmentRowRecord,
   type Coverage,
   type FinancialCoverage,
+  type GiftAttribution,
   type GiftRowRecord,
   type ReadAction,
   type ReadEnvelope,
@@ -53,7 +58,7 @@ import {
   type SupportProjectionRecord,
   type ValueState,
 } from "../envelope";
-import { LOCAL_STORE_SYSTEM, unavailable, type ReadResult, type UnavailableOutcome } from "../outcome";
+import { LOCAL_STORE_SYSTEM, refusedRead, unavailable, type ReadResult, type UnavailableOutcome } from "../outcome";
 import { READ_ATTEMPT_ID, answerOf, cachedDecoder, civilDateOf, countState, deniedRead, openRead, readStoreDocument, recordedStateOf, sourceUnavailableRead, statedProjection } from "./frame";
 const DATE_BASIS = "original-gift-date";
 const GIFT_ROW_GRAIN = "gift-allocation";
@@ -84,42 +89,18 @@ const REPORT_DEFAULT_PERIOD: Readonly<Record<ReportId, ReportPeriod>> = Object.f
   "partner-month-matrix": { kind: "preset", preset: "this-year" },
   "period-comparison": { kind: "preset", preset: "this-month" },
 });
-const FILTER_ACTION_BY_FIELD: Readonly<Record<string, string>> = Object.freeze({
-  period: "filterByPeriod",
-  "period.preset": "filterByPeriod",
-  "period.year": "filterByPeriod",
-  "period.kind": "filterByPeriod",
-  currency: "filterByCurrency",
-  "currency.currency": "filterByCurrency",
-  "currency.kind": "filterByCurrency",
-  amountRange: "filterByAmountRange",
-  partner: "filterByPartner",
-  "partner.partnerId": "filterByPartner",
-  "partner.kind": "filterByPartner",
-  designation: "filterByDesignation",
-  method: "filterByMethod",
-  search: "search",
-  sort: "sortRows",
-  "sort.field": "sortRows",
-  "sort.direction": "sortRows",
-  page: "pageRows",
-  "page.index": "pageRows",
-  "page.size": "pageRows",
-  timeZone: "resolvePeriodZone",
-  reportId: "selectReport",
-  scope: "selectContext",
-});
-const UNNAMED_FILTER_ACTION = "refuseFilter";
 export type SupportPeriodInput = { readonly kind: "preset"; readonly preset: string } | { readonly kind: "explicit"; readonly from: string; readonly to: string } | { readonly kind: "year"; readonly year: number };
 export type SupportPartnerInput = { readonly kind: "partner"; readonly partnerId: string } | { readonly kind: "anonymous" } | { readonly kind: "unresolved" };
 export type SupportQuery = { readonly period?: SupportPeriodInput; readonly currency?: string } & { readonly amountRange?: { readonly minMinor: number; readonly maxMinor: number }; readonly designation?: string } & { readonly partner?: SupportPartnerInput; readonly method?: string; readonly search?: string } & {
   readonly sort?: { readonly field?: string; readonly direction?: string };
   readonly page?: { readonly index?: number; readonly size?: number };
-} & { readonly timeZone?: string };
+} & { readonly timeZone?: string; readonly reportId?: ReportId } & {
+  /** The record this address names: one gift row or one gift, by the identifier the source states for it. The gifts ledger then covers the days that record's own evidence sits on rather than the period the ledger defaults to, so a record opened from a direct route is read in the period it was given in even where that is not the period the ledger would assume. */
+  readonly record?: string;
+};
 export interface SupportPageInput {
   readonly page?: { readonly index?: number; readonly size?: number };
   readonly commitmentId?: string;
-  readonly showAdditionalTypes?: boolean;
 }
 export type SupportAmount = { readonly currency: string; readonly exponent: number | null; readonly minorUnits: number | null; readonly valueState: ValueState };
 export type SupportPeriod = { readonly from: string; readonly to: string; readonly state: PeriodState };
@@ -132,7 +113,7 @@ export type CommitmentFigure = { readonly commitmentRowId: string; readonly kind
   readonly pause: { readonly state: "active" | "paused"; readonly resumeOn: string | null };
 } & { readonly fixedTotal: SupportFixedTotalFigure | null; readonly monthlyEquivalent: SupportAmount | null };
 export type SupportOverviewData = { readonly report: ReportResult; readonly monthlyEquivalent: readonly MonthlyEquivalentFigure[]; readonly buckets: readonly RecurringBucketFigure[]; readonly commitmentKinds: readonly CommitmentKindFigure[] };
-export type GiftLedgerData = { readonly report: ReportResult; readonly grain: typeof GIFT_ROW_GRAIN };
+export type GiftLedgerData = { readonly report: ReportResult; readonly grain: typeof GIFT_ROW_GRAIN; readonly facets: ReportFacets };
 export type CommitmentsData = { readonly commitments: readonly CommitmentFigure[]; readonly total: number; readonly page: { readonly index: number; readonly size: number; readonly totalPages: number }; readonly buckets: readonly RecurringBucketFigure[]; readonly commitmentKinds: readonly CommitmentKindFigure[] };
 export type SupportGoalFigure = { readonly amount: Money; readonly measure: SupportGoalRecord["measure"]; readonly effectiveFrom: string; readonly revision: string };
 /** One currency the subject's financial source states, at the exact precision an amount in it is written: the closed set a goal may be stated in. */
@@ -160,14 +141,15 @@ function goalCurrenciesOf(projection: SupportProjection): readonly GoalCurrency[
   }
   return currencies;
 }
-// One validated copy per workload document object: the store hands back a fresh object whenever any of the session's files change, so an entry is released with the document version it belongs to.
+// One validated copy per workload document object: the store hands back the same object while the workload document is unchanged and a fresh one once it moves, so an entry is released with the document version it belongs to.
 const validatedWorkload = cachedDecoder(workloadDocumentSchema);
-// The latest projection of one workload document, replaced rather than accumulated: a goal save moves the record's revision and a clock change moves the read's as-of instant, and either answer is the only one a read of that document version may come back with.
+// The latest projection of one workload document, replaced rather than accumulated: the key is the state the projection is built from, so a goal save, a gift or commitment edit and a clock change each answer one projection and every other read of that document version is answered from it.
 const storedProjections = new WeakMap<object, { readonly key: string; readonly projection: SupportProjection }>();
+/** The projection one workload document version states for the state a read holds; the key is the content of that state, because the document set outlives a write of `state.json` and the record's revision is not the whole of it — a goal save rewrites the record's goal and leaves its revision where it was. */
 function projectionFor(input: Parameters<typeof projectionOf>[0]): SupportProjection {
   const anchor = input.workload;
   if (anchor === undefined) return projectionOf(input);
-  const key = `${input.record.supportSubjectId}|${input.record.revision}|${input.asOf}`;
+  const key = `${canonicalDigest([input.record, input.gifts, input.commitments])}|${input.asOf}`;
   const remembered = storedProjections.get(anchor);
   if (remembered !== undefined && remembered.key === key) return remembered.projection;
   const built = projectionOf(input);
@@ -177,8 +159,59 @@ function projectionFor(input: Parameters<typeof projectionOf>[0]): SupportProjec
 function projectionOf(input: { readonly record: SupportProjectionRecord; readonly gifts: readonly GiftRowRecord[]; readonly workloadGifts: readonly GiftRowRecord[]; readonly workload: WorkloadDocument | undefined; readonly commitments: readonly CommitmentRowRecord[]; readonly asOf: string }): SupportProjection {
   return statedProjection({ record: input.record, gifts: input.gifts, workloadGifts: input.workloadGifts, commitments: input.commitments, header: input.workload?.header, asOf: input.asOf, withGoal: true });
 }
+// One token per projection object, taken the first time a read computes from it: `projectionFor` keeps one projection for the state it belongs to and hands that same object to every read of that state, so a token names one snapshot of everything a report is computed from, and a result computed for it is never offered to a read of a later one.
+const snapshotTokens = new WeakMap<SupportProjection, number>();
+let snapshotsNamed = 0;
+function snapshotTokenOf(projection: SupportProjection): number {
+  const named = snapshotTokens.get(projection);
+  if (named !== undefined) return named;
+  snapshotsNamed += 1;
+  snapshotTokens.set(projection, snapshotsNamed);
+  return snapshotsNamed;
+}
+// The report of one query against one snapshot, kept while it is small enough to hold: `runReport` filters, de-duplicates, sorts and aggregates the whole projection, and the same query against the same snapshot is asked for repeatedly — a repeat page load, the same query the server-rendered document already carries, and concurrent requests that arrive identical.
+// An entry is weighed by the rows, series points, currency summaries, contributor deltas and matrix cells it retains, because those are what make a whole-dataset result thousands of times heavier than one page of it: 20,000 units holds a comparison-bearing report read — about 8,800 contributor deltas and its rows — and refuses a whole-dataset read such as the export's 100,000 rows or the whole-span report's 38,000 deltas, which is cheaper to recompute than to keep.
+// What is held is a settled result and never a computation in flight, because `runReport` is synchronous: the first read to reach it has finished before a second one can begin, so a registry of promises would never have a second waiter.
+const MEMO_ENTRY_WEIGHT_LIMIT = 20_000;
+const MEMO_TOTAL_WEIGHT_LIMIT = 60_000;
+interface HeldReport {
+  readonly weight: number;
+  readonly result: ReportResult;
+}
+const heldReports = new Map<string, HeldReport>();
+let heldReportsWeight = 0;
+/** Every row, series point, currency summary, contributor delta and matrix cell a result retains. */
+function weightOfReport(result: ReportResult): number {
+  const cells = result.matrix === undefined ? 0 : result.matrix.rows.reduce((total, row) => total + row.cells.length, 0);
+  const deltas = result.comparison === undefined ? 0 : result.comparison.contributorDeltas.length;
+  return result.rows.length + result.series.length + result.summary.length + deltas + cells;
+}
+/** Holds one settled result under the identity of the computation: nothing at all for a result heavier than one entry may be, and otherwise the least recently read entries are dropped until the total this memo may hold is respected. */
+function holdReport(key: string, result: ReportResult): void {
+  const weight = weightOfReport(result);
+  if (weight > MEMO_ENTRY_WEIGHT_LIMIT) return;
+  for (const [held, entry] of heldReports) {
+    if (heldReportsWeight + weight <= MEMO_TOTAL_WEIGHT_LIMIT) break;
+    heldReports.delete(held);
+    heldReportsWeight -= entry.weight;
+  }
+  heldReports.set(key, { weight, result });
+  heldReportsWeight += weight;
+}
+/** The result held for one computation, marked as the most recently read so that the entry which has gone longest without a reader is the one dropped first. */
+function heldReportOf(key: string): ReportResult | undefined {
+  const held = heldReports.get(key);
+  if (held === undefined) return undefined;
+  heldReports.delete(key);
+  heldReports.set(key, held);
+  return held.result;
+}
+/** The identity of one computation: the snapshot the projection belongs to, the sections the caller asked the engine for and the query exactly as this read built it. A built query states its members in one fixed order, so the same query always serialises to the same text and two different queries never share one. The sections belong in the key because a surface that renders no comparison is a different answer from one that does, and a result that carries the facet values the ledger's filters offer is a different answer again: the ledger asks for its projection without the preceding window and with those values, a report asks for the comparison and no facets, and the same query text states all of them. */
+function computationKeyOf(query: ReportQuery, projection: SupportProjection, sections: ReportSections): string {
+  return `${snapshotTokenOf(projection)}|${sections.comparison === false ? "without-comparison" : "with-comparison"}|${sections.facets === true ? "with-facets" : "without-facets"}|${JSON.stringify(query)}`;
+}
 async function readContext(job: string, source?: SessionSource, permit?: (session: ResolvedSession, scope: Scope) => AccessDecision): Promise<SupportContextOutcome> {
-  const opened = await openRead({ source, unselectedReason: "not-admitted", sessionFaultReason: "session-unavailable", permit });
+  const opened = await openRead({ job, source, unselectedReason: "not-admitted", sessionFaultReason: "session-unavailable", permit });
   if (!opened.ok) return { ok: false, result: opened.result };
   const stored = await readStoreDocument({ session: opened.session, job, source: SUPPORT_SOURCE, guidance: STORE_UNAVAILABLE_GUIDANCE });
   if (!stored.ok) return { ok: false, result: stored.result };
@@ -204,10 +237,8 @@ interface SupportQueryDefaults {
   readonly period: ReportPeriod;
   readonly paged: boolean;
 }
-interface BuiltSupportQuery {
-  readonly query: ReportQuery;
-  readonly refused: readonly ReportQueryProblem[];
-}
+/** A support query the report engine accepts, or the per-field refusal that states why the caller's own query is not one: no read computes an answer for a query it was not asked. */
+type BuiltSupportQuery = { readonly ok: true; readonly query: ReportQuery } | { readonly ok: false; readonly refusal: ReadResult<never> };
 const EVERY_CURRENCY: CurrencySelection = Object.freeze({ kind: "all" });
 const reportScopeOf = (scope: Scope): ReportScope => ({ organizationId: scope.organizationId, ministryId: scope.ministryId, supportSubjectId: scope.supportSubjectId, principalId: scope.principalId });
 const isPreset = (value: string): value is PeriodPreset => PERIOD_PRESETS.some((preset) => preset === value);
@@ -249,6 +280,28 @@ function periodOf(input: SupportPeriodInput | undefined, fallback: ReportPeriod,
       return fallback;
   }
 }
+type ExplicitReportPeriod = Extract<ReportPeriod, { readonly kind: "explicit" }>;
+/** The days one record's own evidence sits on: the day each row of that record was given, and the day of every correction recorded against one of those rows, so the record and a correction against it are both in the result the address is answered with. Absent when the projection holds no such record or none of its evidence carries a day, which leaves the ledger's own default period in place rather than a period invented for it. */
+function recordPeriodOf(projection: SupportProjection, record: string): ExplicitReportPeriod | undefined {
+  const named = projection.gifts.filter((row) => row.giftRowId === record || row.giftId === record);
+  if (named.length === 0) return undefined;
+  const rowIds = new Set(named.map((row) => row.giftRowId));
+  const days: CivilDate[] = [];
+  for (const row of projection.gifts) {
+    const day = row.originalGiftOn;
+    if (day === undefined) continue;
+    if (rowIds.has(row.giftRowId) || (row.refundOf !== undefined && rowIds.has(row.refundOf))) days.push(day);
+  }
+  const [first, ...rest] = days;
+  if (first === undefined) return undefined;
+  let earliest = first;
+  let latest = first;
+  for (const day of rest) {
+    if (Temporal.PlainDate.compare(day, earliest) < 0) earliest = day;
+    if (Temporal.PlainDate.compare(day, latest) > 0) latest = day;
+  }
+  return { kind: "explicit", from: earliest, to: latest };
+}
 function currencyOf(code: string | undefined): CurrencySelection {
   const trimmed = optionalText(code);
   return trimmed === undefined ? EVERY_CURRENCY : { kind: "one", currency: trimmed };
@@ -288,35 +341,21 @@ function sortOf(input: SupportQuery["sort"], refused: ReportQueryProblem[]): Rep
   }
   return { field, direction };
 }
-function pageOf(input: SupportQuery["page"], refused: ReportQueryProblem[]): ReportQuery["page"] {
+/** The page window the caller states, carried as stated: the report engine judges whether the index is a whole page number and states the one wording of that rule, so this read adds no second copy of it. */
+function pageOf(input: SupportQuery["page"]): ReportQuery["page"] {
   if (input === undefined) return { index: 0 };
   const index = input.index ?? 0;
-  if (!Number.isSafeInteger(index) || index < 0) {
-    refused.push({ field: "page.index", message: "A page index is a whole number of pages from zero. This value is not one, so the first page is read rather than a page nobody asked for." });
-    return { index: 0 };
-  }
   return input.size === undefined ? { index } : { index, size: input.size };
 }
-function rootFieldOf(field: string): string {
-  const separator = field.indexOf(".");
-  return separator === -1 ? field : field.slice(0, separator);
-}
-function withoutRefusedFilters(query: ReportQuery, problems: readonly ReportQueryProblem[], defaults: SupportQueryDefaults): ReportQuery {
-  const refused = new Set(problems.map((problem) => rootFieldOf(problem.field)));
-  return {
-    reportId: query.reportId,
-    scope: query.scope,
-    period: refused.has("period") ? defaults.period : query.period,
-    currency: refused.has("currency") ? EVERY_CURRENCY : query.currency,
-    ...(query.amountRange === undefined || refused.has("amountRange") ? {} : { amountRange: query.amountRange }),
-    ...(query.designation === undefined || refused.has("designation") ? {} : { designation: query.designation }),
-    ...(query.partner === undefined || refused.has("partner") ? {} : { partner: query.partner }),
-    ...(query.method === undefined || refused.has("method") ? {} : { method: query.method }),
-    ...(query.search === undefined || refused.has("search") ? {} : { search: query.search }),
-    ...(query.sort === undefined || refused.has("sort") ? {} : { sort: query.sort }),
-    ...(query.page === undefined || refused.has("page") ? {} : { page: query.page }),
-    ...(query.timeZone === undefined || refused.has("timeZone") ? {} : { timeZone: query.timeZone }),
-  };
+/** One entry per field the query problems name, in the engine's own field paths, so the caller is told every value it has to correct rather than the first of them. */
+function refusalFieldsOf(problems: readonly ReportQueryProblem[]): Readonly<Record<string, readonly string[]>> {
+  const fields = new Map<string, string[]>();
+  for (const problem of problems) {
+    const stated = fields.get(problem.field);
+    if (stated === undefined) fields.set(problem.field, [problem.message]);
+    else if (!stated.includes(problem.message)) stated.push(problem.message);
+  }
+  return Object.fromEntries(fields);
 }
 function buildSupportQuery(input: SupportQuery, scope: Scope, defaults: SupportQueryDefaults): BuiltSupportQuery {
   const refused: ReportQueryProblem[] = [];
@@ -338,25 +377,31 @@ function buildSupportQuery(input: SupportQuery, scope: Scope, defaults: SupportQ
     ...(method === undefined ? {} : { method }),
     ...(search === undefined ? {} : { search }),
     ...(sort === undefined ? {} : { sort }),
-    ...(defaults.paged ? { page: pageOf(input.page, refused) } : {}),
+    ...(defaults.paged ? { page: pageOf(input.page) } : {}),
     ...(timeZone === undefined ? {} : { timeZone }),
   };
   const built = buildReportQuery(candidate);
-  if (built.ok) return { query: built.query, refused };
-  refused.push(...built.problems);
-  const rebuilt = buildReportQuery(withoutRefusedFilters(candidate, built.problems, defaults));
-  if (rebuilt.ok) return { query: rebuilt.query, refused };
-  const stated = rebuilt.problems.map((problem) => `${problem.field}: ${problem.message}`).join(" ");
-  throw new TypeError(`The support read could not build a query the report engine accepts from its own defaults. ${stated}`);
+  // A value this read cannot carry is refused rather than replaced: the candidate above holds the read's own default in its place, so answering `built.query` would serve a query the caller never asked for. Every filter the report engine refuses is refused for the same reason and by the same answer.
+  if (built.ok && refused.length === 0) return { ok: true, query: built.query };
+  if (!built.ok) refused.push(...built.problems);
+  return { ok: false, refusal: refusedRead(READ_ATTEMPT_ID, refusalFieldsOf(refused)) };
 }
-function reportOf(job: string, query: ReportQuery, context: SupportReadContext): Result<ReportResult, UnavailableOutcome> {
+function reportOf(job: string, query: ReportQuery, context: SupportReadContext, sections: ReportSections & { readonly facets: true }): Result<FacetsReportResult, UnavailableOutcome>;
+function reportOf(job: string, query: ReportQuery, context: SupportReadContext, sections?: ReportSections): Result<ReportResult, UnavailableOutcome>;
+function reportOf(job: string, query: ReportQuery, context: SupportReadContext, sections: ReportSections = {}): Result<ReportResult, UnavailableOutcome> {
+  const key = computationKeyOf(query, context.projection, sections);
+  const held = heldReportOf(key);
+  if (held !== undefined) return ok(withStatedRowAmounts(held));
   try {
-    return ok(withStatedRowAmounts(runReport(query, context.projection)));
+    const result = runReport(query, context.projection, sections);
+    holdReport(key, result);
+    return ok(withStatedRowAmounts(result));
   } catch {
     return err(sourceUnavailable(job, context.projection.source, SUPPORT_SOURCE_GUIDANCE));
   }
 }
-function withStatedRowAmounts(result: ReportResult): ReportResult {
+/** One read's own copy of a result, with an amount in a currency this application holds no precision for stated as unknown: the engine's result is held as it was computed, so a copy is what keeps one read from altering what the next one is answered with. */
+function withStatedRowAmounts<T extends ReportResult>(result: T): T {
   const states: Record<string, ValueState> = { ...result.valueStates };
   result.rows.forEach((row, index) => {
     if (exponentOf(row.amount.currency) === undefined) states[`rows.${index}.amount`] = "unknown";
@@ -368,6 +413,8 @@ function recordedStatesOf(result: ReportResult): Record<string, RecordedValueSta
   for (const [path, state] of Object.entries(result.valueStates)) recorded[path] = recordedStateOf(state);
   return recorded;
 }
+/** The path one attribution's count is recorded at: the partner's own opaque reference, or the kind when no partner is named. */
+const attributionPathOf = (attribution: GiftAttribution): string => (attribution.kind === "partner" ? `partner:${attribution.partnerId}` : attribution.kind);
 const statedAmountStateOf = (money: Money): ValueState => (exponentOf(money.currency) === undefined ? "unknown" : money.minorUnits === 0 ? "zero" : "value");
 const amountFigureOf = (money: Money, state: ValueState): SupportAmount => ({ currency: money.currency, exponent: exponentOf(money.currency) ?? null, minorUnits: state === "value" || state === "zero" || state === "incomplete-subtotal" ? money.minorUnits : null, valueState: state });
 function bucketFiguresOf(rows: readonly CommitmentRow[]): readonly RecurringBucketFigure[] {
@@ -399,18 +446,13 @@ const financialCoverageOf = (projection: SupportProjection, query: ReportQuery):
 function envelopeOf<T, C extends Coverage>(input: { readonly data: T; readonly context: SupportReadContext; readonly coverage: C; readonly revision: string; readonly valueStates: Readonly<Record<string, RecordedValueState>>; readonly actions: readonly ReadAction[] }): ReadResult<ReadEnvelope<T, C>> {
   return answerOf(input.context.scope, input.context.asOf, { data: input.data, source: input.context.projection.source, revision: input.revision, coverage: input.coverage, valueStates: input.valueStates, actions: input.actions });
 }
-function filterActionName(field: string): string {
-  const name = FILTER_ACTION_BY_FIELD[field];
-  return name === undefined ? UNNAMED_FILTER_ACTION : name;
-}
-const refusalActions = (refused: readonly ReportQueryProblem[]): readonly ReadAction[] => refused.map((problem) => ({ name: filterActionName(problem.field), available: false, reason: problem.message }));
 const exportAction = (decision: AccessDecision): ReadAction => (decision.allowed ? { name: "exportQuery", available: true } : { name: "exportQuery", available: false, reason: EXPORT_UNAVAILABLE_REASON });
-function ledgerActions(query: ReportQuery, refused: readonly ReportQueryProblem[], decision: AccessDecision): readonly ReadAction[] {
+/** The actions the ledger states over the query it read: each filter the query can carry is available, and the two the support projection cannot apply are stated with the reason they are absent. A filter the engine refuses never reaches this list, because the read answers that refusal rather than an envelope. */
+function ledgerActions(query: ReportQuery, decision: AccessDecision): readonly ReadAction[] {
   const byName = new Map<string, ReadAction>();
   for (const name of ["filterByPeriod", "filterByCurrency", "filterByAmountRange", "filterByPartner", "filterByDesignation", "filterByMethod", "search", "sortRows", "pageRows"]) byName.set(name, { name, available: true });
   byName.set("filterByAmountRange", { name: "filterByAmountRange", available: query.currency.kind === "one", ...(query.currency.kind === "one" ? {} : { reason: AMOUNT_RANGE_PARTITION_REASON }) });
   byName.set("filterByMethod", { name: "filterByMethod", available: false, reason: METHOD_FILTER_REASON });
-  for (const action of refusalActions(refused)) byName.set(action.name, action);
   byName.set("exportQuery", exportAction(decision));
   return [...byName.values()];
 }
@@ -449,12 +491,13 @@ function exportFilenameOf(result: ReportResult): string {
   const { query, period } = result.snapshot;
   return `support-${query.reportId}-${serialiseCivilDate(period.from)}-to-${serialiseCivilDate(period.to)}.csv`;
 }
-/** States received support for one period, cash first, and the non-cash measures beside it. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
+/** States received support for one period, cash first, and the non-cash measures beside it. Answers `envelope`, or the read's own refusal: `refused` when the query states a filter the report engine will not apply, `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readSupportOverview(query: SupportQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<SupportOverviewData, FinancialCoverage>>> {
   const outcome = await readContext(JOB_OVERVIEW, source);
   if (!outcome.ok) return outcome.result;
   const { context } = outcome;
   const built = buildSupportQuery(query, context.scope, { reportId: OVERVIEW_REPORT_ID, period: DEFAULT_PERIOD, paged: false });
+  if (!built.ok) return built.refusal;
   const report = reportOf(JOB_OVERVIEW, built.query, context);
   if (!report.ok) return { kind: "unavailable", unavailable: report.error };
   const result = report.value;
@@ -463,19 +506,30 @@ export async function readSupportOverview(query: SupportQuery = {}, source?: Ses
   for (const figure of data.buckets) valueStates[`buckets.${figure.bucket}.count`] = recordedStateOf(figure.valueState);
   for (const figure of data.commitmentKinds) valueStates[`commitmentKinds.${figure.kind}.count`] = recordedStateOf(figure.valueState);
   for (const figure of data.monthlyEquivalent) valueStates[`monthlyEquivalent.${figure.commitmentRowId}.amount`] = recordedStateOf(figure.amount.valueState);
-  return envelopeOf({ data, context, coverage: financialCoverageOf(context.projection, result.snapshot.query), revision: context.revision, valueStates, actions: refusalActions(built.refused) });
+  return envelopeOf({ data, context, coverage: financialCoverageOf(context.projection, result.snapshot.query), revision: context.revision, valueStates, actions: [] });
 }
-/** The gifts ledger: one whole-query report over the caller's bounded filter set. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
+/** The gifts ledger: one whole-query report over the caller's bounded filter set — or, when the address names one record, over the days that record's own evidence sits on — with the designations and attributions the whole result contains so each filter offers the values it holds. Answers `envelope`, or the read's own refusal: `refused` when the query states a filter the report engine will not apply, `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readGifts(query: SupportQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<GiftLedgerData, FinancialCoverage>>> {
   const outcome = await readContext(JOB_GIFTS, source);
   if (!outcome.ok) return outcome.result;
   const { context } = outcome;
-  const built = buildSupportQuery(query, context.scope, { reportId: LEDGER_REPORT_ID, period: DEFAULT_PERIOD, paged: true });
-  const report = reportOf(JOB_GIFTS, built.query, context);
+  const record = optionalText(query.record);
+  const recordPeriod = record === undefined ? undefined : recordPeriodOf(context.projection, record);
+  // A record the projection holds is read over the days its own evidence sits on, whole and unpaged: the period and the page an address carries describe the ledger's list, and neither may leave the record it names outside the answer. Those days are also stated as the address's own period, so the read validates them exactly as it validates any period a caller states.
+  const built =
+    recordPeriod === undefined
+      ? buildSupportQuery(query, context.scope, { reportId: LEDGER_REPORT_ID, period: DEFAULT_PERIOD, paged: true })
+      : buildSupportQuery({ ...query, period: { kind: "explicit", from: serialiseCivilDate(recordPeriod.from), to: serialiseCivilDate(recordPeriod.to) } }, context.scope, { reportId: LEDGER_REPORT_ID, period: recordPeriod, paged: false });
+  if (!built.ok) return built.refusal;
+  // The ledger renders no comparison, so it states none: the per-contributor deltas over the whole dataset are most of this envelope and none of what the surface shows. The report reads, which do render it, keep it. It does offer the designations and attributions this result holds, so those are counted with the figures it renders.
+  const report = reportOf(JOB_GIFTS, built.query, context, { comparison: false, facets: true });
   if (!report.ok) return { kind: "unavailable", unavailable: report.error };
   const result = report.value;
-  const data: GiftLedgerData = { report: result, grain: GIFT_ROW_GRAIN };
-  return envelopeOf({ data, context, coverage: financialCoverageOf(context.projection, result.snapshot.query), revision: context.revision, valueStates: recordedStatesOf(result), actions: ledgerActions(result.snapshot.query, built.refused, canExport(context.session, context.scope)) });
+  const data: GiftLedgerData = { report: result, grain: GIFT_ROW_GRAIN, facets: result.facets };
+  const valueStates = recordedStatesOf(result);
+  for (const value of data.facets.designations) valueStates[`facets.designations.${value.designation}.count`] = recordedStateOf(value.valueState);
+  for (const value of data.facets.attributions) valueStates[`facets.attributions.${attributionPathOf(value.attribution)}.count`] = recordedStateOf(value.valueState);
+  return envelopeOf({ data, context, coverage: financialCoverageOf(context.projection, result.snapshot.query), revision: context.revision, valueStates, actions: ledgerActions(result.snapshot.query, canExport(context.session, context.scope)) });
 }
 /** States every commitment the source reports, in its bucket, with the dates the source states for it. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readCommitments(query: SupportPageInput = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<CommitmentsData>>> {
@@ -509,12 +563,13 @@ export async function readCommitments(query: SupportPageInput = {}, source?: Ses
   ];
   return envelopeOf({ data, context, coverage: context.projection.coverage, revision: context.revision, valueStates, actions });
 }
-/** States the support goal, its progress and the four facts that must stay distinguishable. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
+/** States the support goal, its progress and the four facts that must stay distinguishable. Answers `envelope`, or the read's own refusal: `refused` when the query states a filter the report engine will not apply, `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readGoal(query: SupportQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<GoalData, FinancialCoverage>>> {
   const outcome = await readContext(JOB_GOAL, source);
   if (!outcome.ok) return outcome.result;
   const { context } = outcome;
   const built = buildSupportQuery(query, context.scope, { reportId: GOAL_REPORT_ID, period: GOAL_DEFAULT_PERIOD, paged: false });
+  if (!built.ok) return built.refusal;
   const report = reportOf(JOB_GOAL, built.query, context);
   if (!report.ok) return { kind: "unavailable", unavailable: report.error };
   const result = report.value;
@@ -536,32 +591,35 @@ export async function readGoal(query: SupportQuery = {}, source?: SessionSource)
   const valueStates = recordedStatesOf(result);
   valueStates["goal.amount"] = goal === null ? "unknown" : recordedStateOf(statedAmountStateOf(goal.amount));
   valueStates["goal.percentage"] = progressStateOf(progress);
-  const actions = [decision.allowed ? { name: GOAL_CAPABILITY, available: true } : { name: GOAL_CAPABILITY, available: false, reason: GOAL_EDIT_UNAVAILABLE_REASON }, ...refusalActions(built.refused)];
+  const actions = [decision.allowed ? { name: GOAL_CAPABILITY, available: true } : { name: GOAL_CAPABILITY, available: false, reason: GOAL_EDIT_UNAVAILABLE_REASON }];
   return envelopeOf({ data, context, coverage: financialCoverageOf(context.projection, result.snapshot.query), revision: goal === null ? GOAL_ABSENT_REVISION : goal.revision, valueStates, actions });
 }
-/** Computes one of the four fixed reports of this release, and no other. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
+/** Computes one of the four fixed reports of this release, and no other. Answers `envelope`, or the read's own refusal: `refused` when the query states a filter the report engine will not apply, `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readReport(reportId: ReportId, query: SupportQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<ReportResult, FinancialCoverage>>> {
   assertReportId(reportId);
   const outcome = await readContext(JOB_REPORT, source);
   if (!outcome.ok) return outcome.result;
   const { context } = outcome;
   const built = buildSupportQuery(query, context.scope, { reportId, period: REPORT_DEFAULT_PERIOD[reportId], paged: true });
+  if (!built.ok) return built.refusal;
   const report = reportOf(JOB_REPORT, built.query, context);
   if (!report.ok) return { kind: "unavailable", unavailable: report.error };
   const result = report.value;
-  return envelopeOf({ data: result, context, coverage: financialCoverageOf(context.projection, result.snapshot.query), revision: context.revision, valueStates: recordedStatesOf(result), actions: [...refusalActions(built.refused), exportAction(canExport(context.session, context.scope))] });
+  return envelopeOf({ data: result, context, coverage: financialCoverageOf(context.projection, result.snapshot.query), revision: context.revision, valueStates: recordedStatesOf(result), actions: [exportAction(canExport(context.session, context.scope))] });
 }
-/** Takes the whole query out of the application: the same report in CSV form, with the snapshot identity it states; the printed page renders its model from the same result the browser already holds. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
-export async function readExport(query: SupportQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<SupportExportData, FinancialCoverage>>> {
+/** Takes the whole query out of the application: the same report in CSV form, computed as the report the query itself names so the file's own provenance states the query that produced it; the printed page renders its model from the same result the browser already holds. Answers `envelope`, or the read's own refusal: `refused` when the query states a filter the report engine will not apply, `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
+export async function readExport(query: SupportQuery = {}, source?: SessionSource, signal?: AbortSignal): Promise<ReadResult<ReadEnvelope<SupportExportData, FinancialCoverage>>> {
   const outcome = await readContext(JOB_EXPORT, source, canExport);
   if (!outcome.ok) return outcome.result;
+  signal?.throwIfAborted(); // The caller that asked for the file has gone: the report and the file after this point are abandoned here rather than computed for nobody, and the one computation already in flight is left to finish instead of being torn halfway.
   const { context } = outcome;
-  const built = buildSupportQuery(query, context.scope, { reportId: EXPORT_REPORT_ID, period: DEFAULT_PERIOD, paged: false });
+  const built = buildSupportQuery(query, context.scope, { reportId: query.reportId ?? EXPORT_REPORT_ID, period: DEFAULT_PERIOD, paged: false });
+  if (!built.ok) return built.refusal;
   const report = reportOf(JOB_EXPORT, built.query, context);
   if (!report.ok) return { kind: "unavailable", unavailable: report.error };
   const result = report.value;
   const valueStates = recordedStatesOf(result);
   valueStates["export.rowCount"] = countState(result.total);
-  const data: SupportExportData = { csv: toCsv(result), filename: exportFilenameOf(result), rowCount: result.total, metadata: snapshotMetadata(result), snapshot: result.snapshot };
-  return envelopeOf({ data, context, coverage: financialCoverageOf(context.projection, result.snapshot.query), revision: context.revision, valueStates, actions: [{ name: "exportQuery", available: true }, ...refusalActions(built.refused)] });
+  const data: SupportExportData = { csv: await toCsv(result, signal), filename: exportFilenameOf(result), rowCount: result.total, metadata: snapshotMetadata(result), snapshot: result.snapshot };
+  return envelopeOf({ data, context, coverage: financialCoverageOf(context.projection, result.snapshot.query), revision: context.revision, valueStates, actions: [{ name: "exportQuery", available: true }] });
 }
