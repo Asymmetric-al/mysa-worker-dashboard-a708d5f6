@@ -20,7 +20,7 @@ function AlertDialogContent({ className, size = "default", ...props }: AlertDial
   return (
     <AlertDialogPortal>
       <AlertDialogOverlay />
-      <AlertDialogPrimitive.Popup dir={direction} data-slot="alert-dialog-content" data-size={size} className={cn(ALERT_DIALOG_CONTENT_CLASS, className)} {...props} />
+      <AlertDialogPrimitive.Popup dir={direction} data-slot="alert-dialog-content" data-size={size} aria-modal="true" className={cn(ALERT_DIALOG_CONTENT_CLASS, className)} {...props} />
     </AlertDialogPortal>
   );
 }

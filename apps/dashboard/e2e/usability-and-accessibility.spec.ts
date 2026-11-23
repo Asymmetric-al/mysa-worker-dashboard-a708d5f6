@@ -187,6 +187,7 @@ test.describe("at 320 CSS pixels, with motion suppressed", () => {
       const picker = page.locator('[data-slot="media-picker"]');
       await expect(picker, "The picker opens as one dialog whatever the pane behind it is doing.").toBeVisible();
       await expect(picker.getByRole("heading", { name: "Add an image" }), "The dialog names the job it does.").toBeVisible();
+      await expect(picker, "The open dialog states its modality, so assistive technology knows the page behind it is inert.").toHaveAttribute("aria-modal", "true");
       for (let step = 1; step <= 8; step += 1) {
         await page.keyboard.press("Tab");
         await settleLayout(page);

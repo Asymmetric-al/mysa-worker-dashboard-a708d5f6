@@ -19,7 +19,7 @@ function SheetContent({ className, children, side = "right", showCloseButton = t
   return (
     <SheetPortal>
       <SheetOverlay />
-      <SheetPrimitive.Popup dir={direction} data-slot="sheet-content" data-side={side} className={cn(SHEET_CONTENT_CLASS, className)} {...props}>
+      <SheetPrimitive.Popup dir={direction} data-slot="sheet-content" data-side={side} aria-modal="true" className={cn(SHEET_CONTENT_CLASS, className)} {...props}>
         {children}
         {showCloseButton && (
           <SheetPrimitive.Close data-slot="sheet-close" render={<Button variant="ghost" className="absolute top-4 end-4" size="icon-sm" />}>

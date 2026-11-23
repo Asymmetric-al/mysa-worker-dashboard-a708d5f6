@@ -30,6 +30,7 @@ async function revokeGrant(page: Page, grantId: string, reviewTexts: readonly st
   await review.getByRole("button", { name: "Revoke the grant" }).click();
   const confirmation = page.locator('[role="alertdialog"]');
   await expect(confirmation).toBeVisible();
+  await expect(confirmation, "The confirmation states its own modality, so a screen reader is told the page behind it is inert rather than left to infer it from the focus trap").toHaveAttribute("aria-modal", "true");
   await confirmation.getByRole("button", { name: "Revoke the grant" }).click();
   await expect(section.getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
 }
