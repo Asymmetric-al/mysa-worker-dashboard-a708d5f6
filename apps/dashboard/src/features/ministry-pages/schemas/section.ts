@@ -1,11 +1,6 @@
-/** The payload schemas of the five section mutations the Worker and Project Pages builder sends — `addSection`, `moveSection`, `duplicateSection`, `removeSection` and `saveSectionFields` — together … */
 import { z } from "zod";
 import { PRESENTATION_CHOICES, type PresentationChoice } from "@/modules/content/document";
 import { mutationInputSchema, PAGE_SECTION_TYPES, type MutationInput, type PageSectionType } from "@/modules/data-service/envelope";
-// The annotation types are imported with `import type`, which the compiler erases: they hold each schema
-// below to the service's own payload type without pulling the mutation bodies, the store or `node:fs`
-// into a client bundle. They also keep the defaulted discriminant out of the exported payload types, so
-// a control builds the change and nothing else.
 import type { AddSectionPayload as ServiceAddSectionPayload, MoveSectionPayload as ServiceMoveSectionPayload, SaveSectionFieldsPayload as ServiceSaveSectionFieldsPayload, SectionReferencePayload } from "@/modules/data-service/mutations/content";
 /** The presentation `saveSectionFields` accepts: exactly the profile's four choices, each required. */
 export const presentationSchema: z.ZodType<PresentationChoice> = z.strictObject({
@@ -17,9 +12,7 @@ export const presentationSchema: z.ZodType<PresentationChoice> = z.strictObject(
 /** One section's presentation choices, inferred so the controls and this schema hold one shape. */
 export type Presentation = z.infer<typeof presentationSchema>;
 const sectionFieldValueSchema = z.string({ error: "A section field holds plain text." });
-
 type SectionFieldValues = Readonly<Record<string, typeof sectionFieldValueSchema>>;
-
 const SECTION_FIELD_VALUES = {
   introduction: { heading: sectionFieldValueSchema, body: sectionFieldValueSchema },
   story: { heading: sectionFieldValueSchema, body: sectionFieldValueSchema },
@@ -43,24 +36,16 @@ export const sectionFieldsSchema = z.discriminatedUnion("sectionType", [
 ]);
 /** One catalogue section's type and field values, inferred so the field form and this union agree. */
 export type SectionFields = z.infer<typeof sectionFieldsSchema>;
-function opaqueReferenceSchema(message: string) {
-  return z.string({ error: message }).trim().min(1, message);
-}
+const opaqueReferenceSchema = (message: string) => z.string({ error: message }).trim().min(1, message);
 const sectionIdSchema = opaqueReferenceSchema("Open the edition again, then choose the section to change.");
 const draftEditionReferenceSchema = opaqueReferenceSchema("Open the draft edition again, then change its sections.");
-
 type DraftEditionTarget = { readonly draftRevisionId?: string; readonly variantId?: string };
 const draftEditionFields = { draftRevisionId: draftEditionReferenceSchema.optional(), variantId: draftEditionReferenceSchema.optional() } as const;
 function withDraftEdition<Payload extends DraftEditionTarget>(schema: z.ZodType<Payload>): z.ZodType<Payload> {
   return schema.superRefine((payload, ctx) => {
-    if (payload.draftRevisionId === undefined && payload.variantId === undefined) {
-      ctx.addIssue({ code: "custom", path: ["draftRevisionId"], message: "Open the draft edition first: a section change names what it edits." });
-    }
+    if (payload.draftRevisionId === undefined && payload.variantId === undefined) ctx.addIssue({ code: "custom", path: ["draftRevisionId"], message: "Open the draft edition first: a section change names what it edits." });
   });
 }
-// The section type is held to the catalogue this client mirrors, which is narrower than the text the
-// service payload types it as, so both are named together: the annotation keeps the admitted set and a
-// service change still reaches this file.
 /** The payload `addSection` accepts: the draft edition, one catalogue section type, and the section it follows. */
 export const addSectionPayloadSchema: z.ZodType<ServiceAddSectionPayload & { readonly sectionType: PageSectionType }> = withDraftEdition(
   z.strictObject({ operation: z.literal("addSection").default("addSection"), ...draftEditionFields, sectionType: z.enum(PAGE_SECTION_TYPES, { error: "Choose a section type from the catalogue." }), afterSectionId: sectionIdSchema.optional() }),
@@ -96,9 +81,7 @@ export const removeSectionInputSchema: z.ZodType<RemoveSectionInput> = mutationI
 /** The payload `saveSectionFields` accepts: one section's field values, its presentation choices, or both. */
 export const saveSectionFieldsPayloadSchema: z.ZodType<ServiceSaveSectionFieldsPayload> = withDraftEdition(
   z.strictObject({ operation: z.literal("saveSectionFields").default("saveSectionFields"), ...draftEditionFields, sectionId: sectionIdSchema, fields: z.record(z.string(), sectionFieldValueSchema).optional(), presentation: presentationSchema.optional() }).superRefine((payload, ctx) => {
-    if (payload.fields === undefined && payload.presentation === undefined) {
-      ctx.addIssue({ code: "custom", path: ["fields"], message: "Change a field or an option, or there is nothing to save." });
-    }
+    if (payload.fields === undefined && payload.presentation === undefined) ctx.addIssue({ code: "custom", path: ["fields"], message: "Change a field or an option, or there is nothing to save." });
   }),
 );
 /** The payload `saveSectionFields` accepts, inferred so the field form and its payload agree. */

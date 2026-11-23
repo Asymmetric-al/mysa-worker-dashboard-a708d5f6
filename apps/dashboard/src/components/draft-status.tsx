@@ -21,30 +21,15 @@ export const LIFECYCLE_STATUS: Readonly<Record<ContentLifecycleState, LifecycleS
 export type VariantReleaseOutcome = { readonly variantId: string; readonly outcome: ReleaseOutcome };
 /** The facts {@link lifecycleOf} reads besides the two records themselves — both optional, because a surface that has not run a release attempt or shown a translation has neither. */
 export type LifecycleEvidence = { readonly synthesis?: readonly VariantReleaseOutcome[]; readonly translationSource?: TranslationSourceContext };
-/**
- * The facts of one edition a surface or a read states, as the lifecycle vocabulary reads them: its identity, its audience
- * and language, and its three pointers, any of which may be absent or stated as null.
- */
+/** The facts of one edition a surface or a read states, as the lifecycle vocabulary reads them: its identity, its audience and language, and its three pointers, any of which may be absent or stated as null. */
 export type LifecycleEditionFold = { readonly variantId: string; readonly audience: VariantAudience; readonly locale: VariantLocale; readonly draftRevisionId?: string | null; readonly candidateId?: string | null; readonly releaseHeadId?: string | null };
-/**
- * The edition's own record as the lifecycle vocabulary reads it: the three pointers and its audience and language, nothing
- * added. It is the one adapter from an edition view to `ContentVariant`, so a route that states an edition's lifecycle
- * states it from the same record the matrix does rather than folding the pointers a second way.
- */
+/** The edition's own record as the lifecycle vocabulary reads it: the three pointers and its audience and language, nothing added. It is the one adapter from an edition view to `ContentVariant`, so a route that states an edition's lifecycle states it from the same record the matrix does rather than folding the pointers a second way. */
 export function variantRecordOf(documentId: string, edition: LifecycleEditionFold): ContentVariant {
   const draft = edition.draftRevisionId ?? "";
   const candidate = edition.candidateId ?? "";
   const head = edition.releaseHeadId ?? "";
-  return {
-    variantId: edition.variantId,
-    documentId,
-    audience: edition.audience,
-    locale: edition.locale,
-    // An absent pointer is omitted rather than set to `undefined`, so the record states exactly what the read stated.
-    ...(draft === "" ? {} : { draftRevisionId: draft }),
-    ...(candidate === "" ? {} : { candidateId: candidate }),
-    ...(head === "" ? {} : { releaseHeadId: head }),
-  };
+  // An absent pointer is omitted rather than set to `undefined`, so the record states exactly what the read stated.
+  return { variantId: edition.variantId, documentId, audience: edition.audience, locale: edition.locale, ...(draft === "" ? {} : { draftRevisionId: draft }), ...(candidate === "" ? {} : { candidateId: candidate }), ...(head === "" ? {} : { releaseHeadId: head }) };
 }
 /** Derives the one lifecycle state of an edition from the records the service supplies. */
 export function lifecycleOf(variant: ContentVariant, release?: Release, evidence?: LifecycleEvidence): ContentLifecycleState {

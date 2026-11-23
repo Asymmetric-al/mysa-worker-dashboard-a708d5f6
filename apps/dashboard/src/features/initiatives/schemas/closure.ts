@@ -7,9 +7,7 @@ export const closeInitiativePayloadSchema = z
   .object({ initiativeId: z.string().trim().min(1, "This change is missing the initiative it belongs to; reopen the initiative and try again."), disposition: z.string().trim().min(1, "Choose how this initiative is closing, or name who takes over the unfinished work.").optional(), handoff: initiativeHandoffSchema })
   .strict()
   .superRefine((payload, context) => {
-    if (payload.disposition === undefined && payload.handoff.kind !== "eligible-handoff") {
-      context.addIssue({ code: "custom", path: ["disposition"], message: "Say how this initiative closes: choose a disposition, or name who takes over the unfinished work." });
-    }
+    if (payload.disposition === undefined && payload.handoff.kind !== "eligible-handoff") context.addIssue({ code: "custom", path: ["disposition"], message: "Say how this initiative closes: choose a disposition, or name who takes over the unfinished work." });
   });
 export type CloseInitiativePayload = z.infer<typeof closeInitiativePayloadSchema>;
 export type InitiativeHandoff = CloseInitiativePayload["handoff"];

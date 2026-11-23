@@ -1,43 +1,10 @@
 "use client";
-/**
- * The Partners roster (AAP 0.10.1, family 2): the family's composition root over the one filter surface, the one table
- * preset, the one paging bar and the one scroll region.
- *
- * **What this file owns.** The columns the roster shows, and only the columns the read envelope admits: identity and
- * kind, permitted contact-method availability, tags and favourite, relationship context, the most recent interaction
- * the source actually recorded, open work, and — where the read states a partner's giving facts at all — the last
- * received gift, the currencies that partner gave in during the selected period and the source's own commitment
- * status. A giving column is absent in a context whose envelope does not state those facts: not empty, not disabled,
- * and never something a tooltip explains was hidden.
- *
- * **What it never does.** It builds no table instance, sorts nothing, filters nothing, pages nothing and totals
- * nothing. The service executes every stage and answers the whole-result count beside one page of rows, so the pager
- * states the size of the result rather than the size of a page. Every count, day and currency list rendered here
- * carries the `ValueState` the envelope recorded for it, so a recorded zero, an unknown, a withheld value, an
- * unavailable source and an incomplete subtotal stay five different renderings — in the cell's text and in its
- * accessible name — and none of them is drawn as the digit 0.
- *
- * **The roster is the shared projection.** No private note body and no private preparation text is read here, so no
- * row can disclose one. Tags and favourites are the worker's own labels; the route that composes this surface mounts
- * the family's tag and favourite controls beside a record, and rows carry no selection at all, because a selection is
- * never an audience, a consent or a campaign.
- *
- * **One record, three presentations.** A row is also a place a record opens: one row action opens it in the shared
- * shell beside the list on a desktop and as the sheet on a phone, and that shell hosts the family's own detail body
- * rather than a second one (AAP 0.6.4, 0.3.4). The name and the `Open` action keep navigating to the record's own
- * route, so the direct address stays the direct entry and the list stays visible while the panel is open.
- *
- * **The address owns the query.** `useRosterQuery` parses the search, the filters, the ordering, the page and the
- * column set out of the URL and writes every change back to it, so opening a record and returning re-issues the
- * identical read and the browser restores the list where it was left (AAP 0.1.1 Continuity). This file therefore
- * keeps no query state of its own.
- */
 import Link from "next/link";
 import { ChevronRightIcon } from "lucide-react";
 import { useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { RecordList, type RecordListColumnDef, type RecordListQueryState, type SortDescriptor } from "@/components/record-list";
 import SidePanel from "@/components/side-panel";
-import { StateNotice } from "@/components/state-notice";
+import { StateNotice, type StateNoticeProps } from "@/components/state-notice";
 import StatusBadge, { valueStateWord } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -52,33 +19,8 @@ import ColumnChooser, { PARTNER_COLUMN_KEYS, admittedPartnerColumns, type Partne
 import { PartnerFacets } from "./partner-facets";
 import PartnerRecordPanel from "./partner-record-panel";
 import SavedViewBar from "./saved-view-bar";
-
-// ---------------------------------------------------------------------------------------------
-// The row, as the roster read projects it
-//
-// The row type is declared here because this is the component that renders it: the roster read's own type lives in
-// the service module, which a feature may not import, and `useRosterQuery` deliberately passes the rows through
-// untyped. Every member below is one the service read actually states, and the optional two are the giving facts it
-// omits entirely for a caller who may not see a partner's support history — which is exactly what makes the giving
-// columns absent rather than blank in that context.
-// ---------------------------------------------------------------------------------------------
-
-/** The identity and working labels of one partner, never a contact value and never a private note. */
-interface PartnerRosterRecord {
-  readonly partnerId: string;
-  readonly kind: PartnerKind;
-  readonly displayName: string;
-  readonly tags: readonly string[];
-  readonly favourite: boolean;
-  readonly stage: string | null;
-  readonly audience: RecordAudience;
-  readonly revision: string;
-}
-
-/** Where a partner's referral stands: judged by the service from its preserved endpoint, never derived here. */
+type PartnerRosterRecord = { readonly partnerId: string; readonly kind: PartnerKind; readonly displayName: string; readonly tags: readonly string[]; readonly favourite: boolean; readonly stage: string | null; readonly audience: RecordAudience; readonly revision: string };
 type PartnerReferralStatus = "active" | "incomplete-date" | "expired";
-
-/** One row of the roster: a partner, the admitted facts about the relationship, and the work open on it. */
 export interface PartnerRosterRow {
   readonly partner: PartnerRosterRecord;
   readonly contactMethodKinds: readonly ContactMethodKind[];
@@ -88,263 +30,70 @@ export interface PartnerRosterRow {
   readonly overdueTaskCount: number;
   readonly undatedTaskCount: number;
   readonly lastActivityOn: string | null;
-  /** The currencies the partner gave in during the period the read was asked over; absent when the read states no support facts. */
   readonly givingCurrencies?: readonly string[];
-  /** The original date of the most recent received support; absent when the read states no support facts. */
   readonly lastReceivedOn?: string | null;
-  /** The source's own commitment status, stated only where the source attributes a commitment to the partner. */
   readonly commitmentStatus?: string | null;
 }
-
-// ---------------------------------------------------------------------------------------------
-// What the route hands this surface
-// ---------------------------------------------------------------------------------------------
-
-/** Props of {@link PartnerRoster}. */
-export interface PartnerRosterProps {
-  /** The exact authority the roster is read under. It is handed to the service unchanged, and the service re-derives scope from the session on every read. */
-  readonly scope: Scope;
-  /**
-   * The answer a server render already read for this same scope and view, when the composing route has one — the
-   * route's own `findPartners` result, handed back unchanged. It seeds the roster read, so the first paint states the
-   * rows and the whole-result count the server read rather than a loading notice, and the mount issues no identical
-   * request. An answer that is not an envelope, or that describes a view this surface is not asking for, is ignored and
-   * the read is made as it would be without one, so a denial or an outage always keeps its own arm.
-   */
-  readonly initialResult?: ReadResult<RosterEnvelope<PartnerRosterRow>>;
-  /**
-   * The row-level controls the composing route supplies — the family's tag and favourite actions, mounted once per
-   * row. When it is absent the roster offers its own navigation-only row action, so a row is never without a way in.
-   */
-  readonly rowActions?: (row: PartnerRosterRow) => ReactNode;
-  /**
-   * The first action an empty roster offers. The composing route supplies the private-contact form it owns; on its
-   * own the roster offers the import journey, which is a real way to begin rather than an illustration.
-   */
-  readonly emptyAction?: ReactNode;
-  /** The writing direction of the surrounding document, supplied by the route that composes this surface. */
-  readonly dir?: "ltr" | "rtl";
-  readonly className?: string;
-}
-
-// ---------------------------------------------------------------------------------------------
-// Fixed values and wording
-// ---------------------------------------------------------------------------------------------
-
-/** The label the toolbar, the table caption and its cell names are all built from, so one surface is named once. */
+export type PartnerRosterProps = { readonly scope: Scope; readonly initialResult?: ReadResult<RosterEnvelope<PartnerRosterRow>>; readonly rowActions?: (row: PartnerRosterRow) => ReactNode; readonly emptyAction?: ReactNode; readonly dir?: "ltr" | "rtl"; readonly className?: string };
 const ROSTER_LABEL = "Partner roster";
-
-/** The noun the preset and the pager state their counts in: "Showing 1–50 of 312 partners", "No partners". */
-const ITEM_NOUN = "partners";
-
-/** The two page sizes the roster offers: the documented default and the documented cap. */
 const PAGE_SIZE_OPTIONS: readonly number[] = [ROSTER_PAGE_SIZE_DEFAULT, ROSTER_PAGE_SIZE_CAP];
-
-/** The route family this surface navigates inside, kept in one place so the list and the record cannot drift apart. */
-const PARTNER_ROUTE_PREFIX = "/partners";
-
-/** The import journey, offered as the first action of a roster that holds nothing yet. */
-const IMPORT_HREF = "/partners/import";
-
-/** The prefixes of the envelope's value-state paths: one per row of the page, and one per row member below it. */
 const ROW_PATH_PREFIX = "rows.";
-
-/** The tone each referral status carries, so colour never stands alone: the word itself is the label. */
 const REFERRAL_TONES: Readonly<Record<PartnerReferralStatus, "positive" | "caution" | "muted">> = { active: "positive", "incomplete-date": "caution", expired: "muted" };
-
-/** The three contact-method kinds the partner record holds, named as the record states them. */
 const CONTACT_METHOD_LABELS: Readonly<Record<ContactMethodKind, string>> = { email: "Email", phone: "Phone", postal: "Postal" };
-
-/**
- * The column keys that are also an ordering the service executes, and the field the read names that ordering by.
- * A column absent from this map is a fact the roster shows but does not order by, and its heading offers no sort
- * control at all rather than a control that would reorder one page.
- */
 const SORT_FIELD_BY_COLUMN: Readonly<Record<string, string>> = { displayName: "displayName", kind: "kind", favourite: "favourite", recentActivity: "lastActivityOn" };
-
-/** The inverse: the column a query's ordering is shown under, so a reloaded address marks the heading it came from. */
 const COLUMN_BY_SORT_FIELD: Readonly<Record<string, PartnerColumnKey>> = { displayName: "displayName", kind: "kind", favourite: "favourite", lastActivityOn: "recentActivity" };
-
-/** The wording this surface states for itself; every other word comes from the family's own copy modules. */
 const ROSTER_COPY = {
-  searchPlaceholder: "Search the whole roster",
-  emptyAction: "Import a contact list",
-  emptyActionNote: "A contact list is imported into this ministry and reviewed row by row before anything is accepted.",
   openRecord: (name: string): string => `Open ${name}`,
   openBeside: "Open",
   openBesideNote: (name: string): string => ` ${name} beside the list`,
   panelTitle: "Partner record",
-  noPermittedContact: "No permitted contact method",
-  noTags: "No tag",
-  noStage: "No relationship label recorded",
-  noInitiative: "No initiative",
-  noActivity: "No activity recorded",
-  noGift: "No gift received",
-  noCurrency: "No gift in this period",
-  unfavourable: "Not a favourite",
-  privateRecord: "Private record",
-  projectionNote: "This list shows shared facts only. Notes and preparation text are read on the record itself, and a tag, a favourite or an open task proves nothing about contact, consent or giving.",
-  readAtLabel: "Read at",
-  loadingTitle: "Reading the partner roster",
   filtersUnavailableTitle: "The filters could not be read",
   filtersUnavailableBody: "The filter set describing this roster did not come back, so no filter control is offered here rather than one that would silently match nothing. The search, the list and the records are read independently of it, and reading again settles which it is.",
-  retryFilters: "Try the filters again",
 } as const;
-
-// ---------------------------------------------------------------------------------------------
-// Reading the ordering back and forth
-//
-// The preset speaks column identifiers and the read speaks its own field names. Both directions are stated here, once,
-// so a heading, an address and a request can never name three orderings.
-// ---------------------------------------------------------------------------------------------
-
-/**
- * The members one preset change asks the roster's query to adopt, stated as a mutable patch because each member is
- * written as the change is decided; an absent member is unchanged, which is what keeps a page-size change from also
- * pinning a page.
- */
-type RosterQueryPatch = { sort?: RosterSort | null; page?: number; pageSize?: number; columnVisibility?: Record<string, boolean> };
-
-/** Whether two orderings are the same one, so a change is dispatched only when it changes something. */
-function sameSort(left: RosterSort | null, right: RosterSort | null): boolean {
-  if (left === null || right === null) return left === right;
-  return left.field === right.field && left.direction === right.direction;
-}
-
-/** The preset's own ordering state for the query in force: no descriptor when the address states no ordering. */
-function sortDescriptorsOf(sort: RosterSort | null): SortDescriptor[] {
-  if (sort === null) return [];
-  const columnKey = COLUMN_BY_SORT_FIELD[sort.field];
-  if (columnKey === undefined) return [];
-  return [{ id: columnKey, desc: sort.direction === "desc" }];
-}
-
-/** The ordering a preset change asks the read for, or none when it named a column the read cannot order by. */
-function sortOfDescriptors(descriptors: readonly SortDescriptor[]): RosterSort | null {
+const sameSort = (left: RosterSort | null, right: RosterSort | null): boolean => (left === null || right === null ? left === right : left.field === right.field && left.direction === right.direction);
+const sortDescriptorsOf = (sort: RosterSort | null): SortDescriptor[] => {
+  const id = sort === null ? undefined : COLUMN_BY_SORT_FIELD[sort.field];
+  return id === undefined ? [] : [{ id, desc: sort?.direction === "desc" }];
+};
+const sortOfDescriptors = (descriptors: readonly SortDescriptor[]): RosterSort | null => {
   const [first] = descriptors;
-  if (first === undefined) return null;
-  const field = SORT_FIELD_BY_COLUMN[first.id];
-  if (field === undefined) return null;
-  return { field, direction: first.desc ? "desc" : "asc" };
-}
-
-/** Whether two column sets say the same thing, compared member by member rather than by object identity. */
-function sameVisibility(left: Readonly<Record<string, boolean>>, right: Readonly<Record<string, boolean>>): boolean {
+  const field = first === undefined ? undefined : SORT_FIELD_BY_COLUMN[first.id];
+  return field === undefined ? null : { field, direction: first?.desc === true ? "desc" : "asc" };
+};
+const sameVisibility = (left: Readonly<Record<string, boolean>>, right: Readonly<Record<string, boolean>>): boolean => {
   const keys = Object.keys(left);
-  if (keys.length !== Object.keys(right).length) return false;
-  for (const key of keys) {
-    if (left[key] !== right[key]) return false;
-  }
-  return true;
-}
-
-// ---------------------------------------------------------------------------------------------
-// Reading one row member's value state
-// ---------------------------------------------------------------------------------------------
-
-/** The value states the envelope recorded, keyed by path. */
+  return keys.length === Object.keys(right).length && keys.every((key) => left[key] === right[key]);
+};
 type RecordedStates = Readonly<Record<string, ValueState>>;
-
-/**
- * The state of one member of one row. The read records one path per row member — `rows.<position>.<member>` — where
- * the position is the row's place in the page it answered with, which is also the position the preset hands each cell.
- * A member the envelope says nothing about is reported `unknown` rather than `value`: a number whose state the read
- * did not establish is not offered as a recorded one.
- */
-function stateOfRowMember(states: RecordedStates | null, position: number, member: string): ValueState {
-  if (states === null) return "unknown";
-  const recorded = states[`${ROW_PATH_PREFIX}${String(position)}.${member}`];
-  return recorded ?? "unknown";
-}
-
-/** Whether the read recorded any value it may not show here, which is the one condition the withholding note states. */
-function recordsWithheldFact(states: RecordedStates | null): boolean {
-  if (states === null) return false;
-  for (const path of Object.keys(states)) {
-    if (path.startsWith(ROW_PATH_PREFIX) && states[path] === "withheld") return true;
-  }
-  return false;
-}
-
-// ---------------------------------------------------------------------------------------------
-// The five renderings of a value that is not a plain number
-// ---------------------------------------------------------------------------------------------
-
-/**
- * The word and the accessible explanation for a value the read did not state as an ordinary value. `value` and
- * `zero` are handled by their callers, because a zero is a known number: a cell that holds no count states the
- * recorded zero in words, and a cell that holds one states the number.
- */
+const stateOfRowMember = (states: RecordedStates | null, position: number, member: string): ValueState => states?.[`${ROW_PATH_PREFIX}${String(position)}.${member}`] ?? "unknown";
+const recordsWithheldFact = (states: RecordedStates | null): boolean => states !== null && Object.keys(states).some((path) => path.startsWith(ROW_PATH_PREFIX) && states[path] === "withheld");
 function StatedValueBadge({ state }: { readonly state: ValueState }): ReactElement | null {
   const word = valueStateWord(state);
   if (word === undefined) return null;
-  const copy = VALUE_STATE_COPY[state];
   return (
     <span className="inline-flex min-w-0 items-center gap-1">
-      <StatusBadge label={copy.phrase} tone={word.tone} />
-      <span className="sr-only">{copy.accessibleLabel}</span>
+      <StatusBadge label={VALUE_STATE_COPY[state].phrase} tone={word.tone} />
+      <span className="sr-only">{VALUE_STATE_COPY[state].accessibleLabel}</span>
     </span>
   );
 }
-
-/**
- * One count and the state the read recorded for it. A recorded count is the number the service returned; every other
- * state states its own word instead of a number, so an unread source never reads as a count of none.
- */
 function StatedCount({ count, noun, state }: { readonly count: number; readonly noun: string; readonly state: ValueState }): ReactElement {
-  if (state === "value") {
-    return (
-      <span className="inline-flex min-w-0 items-baseline gap-1">
-        <span className="tabular-figures">{String(count)}</span>
-        <span>{noun}</span>
-      </span>
-    );
-  }
+  const figures = state === "value" ? <span className="tabular-figures">{String(count)}</span> : <StatedValueBadge state={state} />;
   return (
     <span className="inline-flex min-w-0 items-baseline gap-1">
-      <StatedValueBadge state={state} />
-      <span className="sr-only">{noun}</span>
+      {figures}
+      <span className={state === "value" ? undefined : "sr-only"}>{noun}</span>
     </span>
   );
 }
-
-/**
- * One civil day and the state the read recorded for it. The stored day is rendered exactly as it was recorded — it is
- * a calendar day with no time and no zone behind it, so nothing here may convert it — and a recorded absence states
- * the absence in words rather than an empty cell.
- */
 function StatedDay({ day, state, absent }: { readonly day: string | null; readonly state: ValueState; readonly absent: string }): ReactElement {
-  if (state === "zero" || (state === "value" && (day === null || day.trim() === ""))) {
-    return <span className="text-muted-foreground">{absent}</span>;
-  }
-  if (state === "value" && day !== null) {
-    return <bdi className="mono-identifier">{day}</bdi>;
-  }
+  if (state === "zero" || (state === "value" && (day === null || day.trim() === ""))) return <span className="text-muted-foreground">{absent}</span>;
+  if (state === "value" && day !== null) return <bdi className="mono-identifier">{day}</bdi>;
   return <StatedValueBadge state={state} />;
 }
-
-// ---------------------------------------------------------------------------------------------
-// The cells
-// ---------------------------------------------------------------------------------------------
-
-/** The address of one record, from its opaque identifier and never from its details. */
-function partnerHref(partnerId: string): string {
-  return `${PARTNER_ROUTE_PREFIX}/${encodeURIComponent(partnerId)}`;
-}
-
-/** The name a row is known by, falling back to its identifier so a record with no name is never labelled with nothing. */
-function nameOf(row: PartnerRosterRow): string {
-  const name = row.partner.displayName.trim();
-  return name === "" ? row.partner.partnerId : name;
-}
-
-/** The wording of a value from a closed set: the source's own label where it stated one, else the value itself. */
-function closedLabel(vocabulary: Readonly<Partial<Record<string, string>>>, value: string): string {
-  const named = vocabulary[value];
-  return named === undefined ? value : named;
-}
-
-/** One record's identity: the way into the record, and whether it is the worker's own private preparation. */
+const partnerHref = (partnerId: string): string => `/partners/${encodeURIComponent(partnerId)}`;
+const nameOf = (row: PartnerRosterRow): string => row.partner.displayName.trim() || row.partner.partnerId;
+const closedLabel = (vocabulary: Readonly<Partial<Record<string, string>>>, value: string): string => vocabulary[value] ?? value;
 function NameCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
   const displayName = row.partner.displayName.trim();
   return (
@@ -352,78 +101,41 @@ function NameCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
       <Link href={partnerHref(row.partner.partnerId)} className="min-w-0 rounded-sm font-medium underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
         {displayName === "" ? <bdi className="mono-identifier">{row.partner.partnerId}</bdi> : <bdi className="text-pretty wrap-anywhere">{displayName}</bdi>}
       </Link>
-      {row.partner.audience === "private" ? <StatusBadge label={ROSTER_COPY.privateRecord} tone="caution" /> : null}
+      {row.partner.audience === "private" ? <StatusBadge label="Private record" tone="caution" /> : null}
     </span>
   );
 }
-
-/** What kind of record this is: a person, a household, a church, an organization, or the worker's own preparation. */
-function KindCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
-  return <span>{closedLabel(FACET_VALUE_LABELS["contact-type"], row.partner.kind)}</span>;
+function ChipRun({ chips, variant }: { readonly chips: readonly { readonly key: string; readonly content: ReactNode }[]; readonly variant: "secondary" | "outline" }): ReactElement {
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-1">
+      {chips.map((chip) => (
+        <Badge key={chip.key} variant={variant}>
+          {chip.content}
+        </Badge>
+      ))}
+    </span>
+  );
 }
-
-/** The contact methods this record permits, named by kind. A method another record holds grants nothing here. */
+const chip = (key: string, content: ReactNode): { readonly key: string; readonly content: ReactNode } => ({ key, content });
 function ContactMethodCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
-  if (row.contactMethodKinds.length === 0) {
-    return <span className="text-muted-foreground">{ROSTER_COPY.noPermittedContact}</span>;
-  }
-  return (
-    <span className="flex min-w-0 flex-wrap items-center gap-1">
-      {row.contactMethodKinds.map((kind) => (
-        <Badge key={kind} variant="secondary">
-          {CONTACT_METHOD_LABELS[kind]}
-        </Badge>
-      ))}
-    </span>
-  );
+  if (row.contactMethodKinds.length === 0) return <span className="text-muted-foreground">No permitted contact method</span>;
+  return <ChipRun variant="secondary" chips={row.contactMethodKinds.map((kind) => chip(kind, CONTACT_METHOD_LABELS[kind]))} />;
 }
-
-/** The worker's own labels for the record. */
 function TagsCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
-  if (row.partner.tags.length === 0) {
-    return <span className="text-muted-foreground">{ROSTER_COPY.noTags}</span>;
-  }
-  return (
-    <span className="flex min-w-0 flex-wrap items-center gap-1">
-      {row.partner.tags.map((tag) => (
-        <Badge key={tag} variant="outline">
-          <bdi className="min-w-0 wrap-anywhere">{tag}</bdi>
-        </Badge>
-      ))}
-    </span>
-  );
+  if (row.partner.tags.length === 0) return <span className="text-muted-foreground">No tag</span>;
+  return <ChipRun variant="outline" chips={row.partner.tags.map((tag) => chip(tag, <bdi className="min-w-0 wrap-anywhere">{tag}</bdi>))} />;
 }
-
-/** Whether the record is one the worker keeps close. A plain fact, stated as a word rather than as a bare flag. */
-function FavouriteCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
-  if (!row.partner.favourite) {
-    return <span className="text-muted-foreground">{ROSTER_COPY.unfavourable}</span>;
-  }
-  return <StatusBadge label={closedLabel(FACET_VALUE_LABELS.favourite, "favourite")} tone="positive" />;
-}
-
-/**
- * The relationship context: the source's own relationship label, the initiatives this record is on, and where its
- * referral stands. Inclusion in an initiative is not consent, not a stage and not Update membership.
- */
 function RelationshipCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
   const stage = row.partner.stage;
   const initiativeCount = row.initiativeIds.length;
   return (
     <span className="flex min-w-0 flex-col gap-1">
-      {stage === null || stage.trim() === "" ? <span className="text-muted-foreground">{ROSTER_COPY.noStage}</span> : <bdi className="wrap-anywhere">{stage}</bdi>}
-      <span className="text-xs text-muted-foreground">{initiativeCount === 0 ? ROSTER_COPY.noInitiative : `${String(initiativeCount)} initiative${initiativeCount === 1 ? "" : "s"}`}</span>
+      {stage === null || stage.trim() === "" ? <span className="text-muted-foreground">No relationship label recorded</span> : <bdi className="wrap-anywhere">{stage}</bdi>}
+      <span className="text-xs text-muted-foreground">{initiativeCount === 0 ? "No initiative" : `${String(initiativeCount)} initiative${initiativeCount === 1 ? "" : "s"}`}</span>
       {row.referralStatus === null ? null : <StatusBadge label={closedLabel(FACET_VALUE_LABELS["referral-status"], row.referralStatus)} tone={REFERRAL_TONES[row.referralStatus]} srPrefix="Referral" />}
     </span>
   );
 }
-
-/** The most recent interaction the source actually recorded. A gift and a scheduled task are neither. */
-function RecentActivityCell({ row, position, states }: { readonly row: PartnerRosterRow; readonly position: number; readonly states: RecordedStates | null }): ReactElement {
-  return <StatedDay day={row.lastActivityOn} state={stateOfRowMember(states, position, "lastActivityOn")} absent={ROSTER_COPY.noActivity} />;
-}
-
-/** The work open on this record, with the overdue and the undated ones counted separately rather than summed. */
 function OpenTasksCell({ row, position, states }: { readonly row: PartnerRosterRow; readonly position: number; readonly states: RecordedStates | null }): ReactElement {
   return (
     <span className="flex min-w-0 flex-col gap-1">
@@ -433,130 +145,46 @@ function OpenTasksCell({ row, position, states }: { readonly row: PartnerRosterR
     </span>
   );
 }
-
-/** The original date of the most recent received support, on the basis and within the coverage the read states. */
-function LastGiftCell({ row, position, states }: { readonly row: PartnerRosterRow; readonly position: number; readonly states: RecordedStates | null }): ReactElement {
-  const day = row.lastReceivedOn ?? null;
-  return <StatedDay day={day} state={stateOfRowMember(states, position, "lastReceivedOn")} absent={ROSTER_COPY.noGift} />;
-}
-
-/**
- * The currencies this partner gave in during the selected period. The amount itself is read on the support surface,
- * from the one report function, and is never computed or summed here: a list of currencies states which currencies
- * the period's support was received in, and nothing about how much.
- */
 function GivingCurrencyCell({ row, position, states }: { readonly row: PartnerRosterRow; readonly position: number; readonly states: RecordedStates | null }): ReactElement {
   const state = stateOfRowMember(states, position, "givingCurrencies");
   const currencies = row.givingCurrencies ?? [];
-  if (state === "zero" || (state === "value" && currencies.length === 0)) {
-    return <span className="text-muted-foreground">{ROSTER_COPY.noCurrency}</span>;
-  }
-  if (state !== "value") {
-    return <StatedValueBadge state={state} />;
-  }
-  return (
-    <span className="flex min-w-0 flex-wrap items-center gap-1">
-      {currencies.map((currency) => (
-        <Badge key={currency} variant="secondary">
-          <bdi className="mono-identifier">{currency}</bdi>
-        </Badge>
-      ))}
-    </span>
-  );
+  if (state === "zero" || (state === "value" && currencies.length === 0)) return <span className="text-muted-foreground">No gift in this period</span>;
+  if (state !== "value") return <StatedValueBadge state={state} />;
+  return <ChipRun variant="secondary" chips={currencies.map((currency) => chip(currency, <bdi className="mono-identifier">{currency}</bdi>))} />;
 }
-
-/**
- * The source's own commitment status for this partner. The source attributes commitment status to the support subject
- * far more often than to one partner, which is why the column is admitted only where the read states the member on the
- * rows: where it does not, the column does not exist rather than showing every partner as having no commitment.
- */
 function RecurringStatusCell({ row, position, states }: { readonly row: PartnerRosterRow; readonly position: number; readonly states: RecordedStates | null }): ReactElement {
   const state = stateOfRowMember(states, position, "commitmentStatus");
   const stated = row.commitmentStatus ?? "";
-  if (state === "value" && stated.trim() !== "") {
-    return <bdi className="wrap-anywhere">{stated}</bdi>;
-  }
-  // The read recorded that the fact exists but projected no value onto this row, so the cell states what it can show
-  // rather than inventing a status the source never attributed.
+  if (state === "value" && stated.trim() !== "") return <bdi className="wrap-anywhere">{stated}</bdi>;
   return <StatedValueBadge state={state === "value" ? "unknown" : state} />;
 }
-
-// ---------------------------------------------------------------------------------------------
-// The columns
-// ---------------------------------------------------------------------------------------------
-
-/** What one cell renders: the row, its place in the page (which is the position the envelope keyed its states by), and the recorded states. */
-type CellRenderer = (row: PartnerRosterRow, position: number, states: RecordedStates | null) => ReactNode;
-
-/** One cell per catalogue key, so a column the catalogue gains without a cell here fails to compile. */
-const CELLS: Readonly<Record<PartnerColumnKey, CellRenderer>> = {
-  displayName: (row) => <NameCell row={row} />,
-  kind: (row) => <KindCell row={row} />,
-  contactMethodAvailability: (row) => <ContactMethodCell row={row} />,
-  tags: (row) => <TagsCell row={row} />,
-  favourite: (row) => <FavouriteCell row={row} />,
-  relationshipContext: (row) => <RelationshipCell row={row} />,
-  recentActivity: (row, position, states) => <RecentActivityCell row={row} position={position} states={states} />,
-  openTasks: (row, position, states) => <OpenTasksCell row={row} position={position} states={states} />,
-  lastGiftOn: (row, position, states) => <LastGiftCell row={row} position={position} states={states} />,
-  givingTotalInPeriod: (row, position, states) => <GivingCurrencyCell row={row} position={position} states={states} />,
-  recurringStatus: (row, position, states) => <RecurringStatusCell row={row} position={position} states={states} />,
+type ColumnRender = { readonly accessor: (row: PartnerRosterRow) => string; readonly cell: (row: PartnerRosterRow, position: number, states: RecordedStates | null) => ReactNode };
+const COLUMN_RENDER: Readonly<Record<PartnerColumnKey, ColumnRender>> = {
+  displayName: { accessor: nameOf, cell: (row) => <NameCell row={row} /> },
+  kind: { accessor: (row) => row.partner.kind, cell: (row) => <span>{closedLabel(FACET_VALUE_LABELS["contact-type"], row.partner.kind)}</span> },
+  contactMethodAvailability: { accessor: (row) => row.contactMethodKinds.join(" "), cell: (row) => <ContactMethodCell row={row} /> },
+  tags: { accessor: (row) => row.partner.tags.join(" "), cell: (row) => <TagsCell row={row} /> },
+  favourite: { accessor: (row) => (row.partner.favourite ? "favourite" : "not-favourite"), cell: (row) => (row.partner.favourite ? <StatusBadge label={closedLabel(FACET_VALUE_LABELS.favourite, "favourite")} tone="positive" /> : <span className="text-muted-foreground">Not a favourite</span>) },
+  relationshipContext: { accessor: (row) => row.partner.stage ?? "", cell: (row) => <RelationshipCell row={row} /> },
+  recentActivity: { accessor: (row) => row.lastActivityOn ?? "", cell: (row, position, states) => <StatedDay day={row.lastActivityOn} state={stateOfRowMember(states, position, "lastActivityOn")} absent="No activity recorded" /> },
+  openTasks: { accessor: (row) => `${String(row.openTaskCount)} ${String(row.overdueTaskCount)} ${String(row.undatedTaskCount)}`, cell: (row, position, states) => <OpenTasksCell row={row} position={position} states={states} /> },
+  lastGiftOn: { accessor: (row) => row.lastReceivedOn ?? "", cell: (row, position, states) => <StatedDay day={row.lastReceivedOn ?? null} state={stateOfRowMember(states, position, "lastReceivedOn")} absent="No gift received" /> },
+  givingTotalInPeriod: { accessor: (row) => (row.givingCurrencies ?? []).join(" "), cell: (row, position, states) => <GivingCurrencyCell row={row} position={position} states={states} /> },
+  recurringStatus: { accessor: (row) => row.commitmentStatus ?? "", cell: (row, position, states) => <RecurringStatusCell row={row} position={position} states={states} /> },
 };
-
-/** What each column states as its own value, so a column is a data column with a heading rather than a bare renderer. */
-const ACCESSORS: Readonly<Record<PartnerColumnKey, (row: PartnerRosterRow) => string>> = {
-  displayName: (row) => nameOf(row),
-  kind: (row) => row.partner.kind,
-  contactMethodAvailability: (row) => row.contactMethodKinds.join(" "),
-  tags: (row) => row.partner.tags.join(" "),
-  favourite: (row) => (row.partner.favourite ? "favourite" : "not-favourite"),
-  relationshipContext: (row) => row.partner.stage ?? "",
-  recentActivity: (row) => row.lastActivityOn ?? "",
-  openTasks: (row) => `${String(row.openTaskCount)} ${String(row.overdueTaskCount)} ${String(row.undatedTaskCount)}`,
-  lastGiftOn: (row) => row.lastReceivedOn ?? "",
-  givingTotalInPeriod: (row) => (row.givingCurrencies ?? []).join(" "),
-  recurringStatus: (row) => row.commitmentStatus ?? "",
-};
-
-/**
- * The columns this read admits, in the catalogue's own order. A column the read does not admit is not built at all, so
- * a giving column cannot appear, be switched on, or be described as hidden in a context that states no support facts.
- * Only a column the service can order by offers a sort control; the ordering itself is the service's.
- */
-function rosterColumns(admitted: readonly PartnerColumn[], states: RecordedStates | null): ReadonlyArray<RecordListColumnDef<PartnerRosterRow>> {
-  const columns: RecordListColumnDef<PartnerRosterRow>[] = [];
-  for (const column of admitted) {
-    const cell = CELLS[column.key];
-    const accessor = ACCESSORS[column.key];
-    const sortable = SORT_FIELD_BY_COLUMN[column.key] !== undefined;
-    columns.push({ id: column.key, header: column.displayName, enableSorting: sortable, accessorFn: accessor, cell: (context) => cell(context.row.original, context.row.index, states) });
-  }
-  return columns;
-}
-
-/** One row's identity for the preset: the partner identifier, which is what every request names. */
-function partnerRowId(row: PartnerRosterRow): string {
-  return row.partner.partnerId;
-}
-
-/** One row's name for a control: the name it is known by, so a control names the record it acts on. */
-function partnerRowLabel(row: PartnerRosterRow): string {
-  return nameOf(row);
-}
-
-/** The row action a roster that was handed none offers: the way into the record, named with the record it opens. */
-function OpenRecordAction({ row }: { readonly row: PartnerRosterRow }): ReactElement {
-  return (
-    <Link href={partnerHref(row.partner.partnerId)} aria-label={ROSTER_COPY.openRecord(nameOf(row))} className={cn(buttonVariants({ variant: "ghost", size: "icon-xs" }))}>
-      <ChevronRightIcon aria-hidden="true" />
-    </Link>
-  );
-}
-
-/**
- * The row action that opens the record beside the list. Its visible word is the same on every row, so the hidden half
- * names the record it opens and where it opens it: one control never reads as a second way to the record's own page.
- */
+const rosterColumns = (admitted: readonly PartnerColumn[], states: RecordedStates | null): ReadonlyArray<RecordListColumnDef<PartnerRosterRow>> =>
+  admitted.map((column) => {
+    const render = COLUMN_RENDER[column.key];
+    return { id: column.key, header: column.displayName, enableSorting: SORT_FIELD_BY_COLUMN[column.key] !== undefined, accessorFn: render.accessor, cell: (context) => render.cell(context.row.original, context.row.index, states) };
+  });
+const partnerRowId = (row: PartnerRosterRow): string => row.partner.partnerId;
+const partnerRowLabel = (row: PartnerRosterRow): string => nameOf(row);
+const OpenRecordAction = ({ row }: { readonly row: PartnerRosterRow }): ReactElement => (
+  <Link href={partnerHref(row.partner.partnerId)} aria-label={ROSTER_COPY.openRecord(nameOf(row))} className={cn(buttonVariants({ variant: "ghost", size: "icon-xs" }))}>
+    <ChevronRightIcon aria-hidden="true" />
+  </Link>
+);
+/** The row action that opens the record beside the list: its visible word is the same on every row, so the hidden half names the record it opens and where it opens it, and one control never reads as a second way to the record's own page. */
 function OpenBesideAction({ row, onOpen }: { readonly row: PartnerRosterRow; readonly onOpen: (partnerId: string) => void }): ReactElement {
   return (
     <Button
@@ -573,27 +201,16 @@ function OpenBesideAction({ row, onOpen }: { readonly row: PartnerRosterRow; rea
     </Button>
   );
 }
-
-// ---------------------------------------------------------------------------------------------
-// The surface
-// ---------------------------------------------------------------------------------------------
-
-/** The first action a roster that holds no contact yet offers when the composing route supplies none of its own. */
 function ImportFirstAction(): ReactElement {
   return (
     <div className="flex max-w-prose flex-col items-center gap-2">
-      <Link href={IMPORT_HREF} className={cn(buttonVariants({ variant: "outline" }), "h-auto max-w-full whitespace-normal")}>
-        {ROSTER_COPY.emptyAction}
+      <Link href="/partners/import" className={cn(buttonVariants({ variant: "outline" }), "h-auto max-w-full whitespace-normal")}>
+        Import a contact list
       </Link>
-      <p className="text-center text-xs text-pretty text-muted-foreground">{ROSTER_COPY.emptyActionNote}</p>
+      <p className="text-center text-xs text-pretty text-muted-foreground">A contact list is imported into this ministry and reviewed row by row before anything is accepted.</p>
     </div>
   );
 }
-
-/**
- * What a read envelope states about the roster as a whole: partial coverage, a fact the context withholds, the instant
- * the list was read at. None of it is derived from the rows — each statement travels on the envelope the read answered.
- */
 function RosterNotes({ envelope }: { readonly envelope: ReadEnvelope<unknown> }): ReactElement {
   const withheld = SURFACE_STATE_COPY.roster.withheld;
   const partial = SURFACE_STATE_COPY.roster["partial-coverage"];
@@ -606,29 +223,16 @@ function RosterNotes({ envelope }: { readonly envelope: ReadEnvelope<unknown> })
         </p>
       ) : null}
       {envelope.coverage.state === "complete" ? null : <StateNotice kind="partial-coverage" headingLevel={3} title={partial.title} description={partial.body} coverage={envelope.coverage} />}
-      <p className="max-w-prose text-xs text-pretty text-muted-foreground">{ROSTER_COPY.projectionNote}</p>
+      <p className="max-w-prose text-xs text-pretty text-muted-foreground">This list shows shared facts only. Notes and preparation text are read on the record itself, and a tag, a favourite or an open task proves nothing about contact, consent or giving.</p>
       <p className="text-xs text-muted-foreground">
-        {`${ROSTER_COPY.readAtLabel}: `}
+        Read at:
         <bdi className="mono-identifier">{envelope.asOf}</bdi>
       </p>
     </div>
   );
 }
-
-/**
- * The Partners roster for one scope: the one filter surface over the one table preset, the family's saved views and
- * column chooser beside it, and the way into each record in its row.
- *
- * The render has exactly one arm per answer the roster read can give. An envelope the service returned is the list; a
- * denial states its closed reason and nothing else — no row, no count, no name and no hint of what the roster holds; an
- * outage states its source and offers the read again; a refusal states that the request was refused rather than that the
- * source failed. A read that has not answered is a loading state, never an empty roster — unless the composing route
- * hands this surface its own read (`initialResult`), in which case the first paint opens in the envelope arm on that
- * answer, which is the read of the view this surface asks for.
- */
+/** The Partners roster for one scope: the one filter surface over the one table preset, the family's saved views and column chooser beside it, and the way into each record in its row. */
 export default function PartnerRoster({ scope, initialResult, rowActions, emptyAction, dir, className }: PartnerRosterProps): ReactElement {
-  // The columns this surface offers, named once at module scope: the same closed set is given to the one URL parser and
-  // to the saved-view bar, so a stale address or a stored view cannot carry a column this surface does not have.
   const roster = useRosterQuery<PartnerRosterRow>(scope, { admittedColumnKeys: PARTNER_COLUMN_KEYS }, initialResult);
   const result = roster.roster.data;
   const envelope = result !== undefined && result.kind === "envelope" ? result.envelope : null;
@@ -638,42 +242,26 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
   const columns = useMemo(() => rosterColumns(admitted, states), [admitted, states]);
   const busy = roster.roster.isFetching || roster.facets.isFetching;
   const hasActiveFilters = roster.query.search !== "" || Object.keys(roster.query.facets).length > 0;
-  // The record opened beside the list, held as the identifier the read named so the panel's own reads stay keyed by the
-  // record rather than by its position on a page. Its label is read back from the page on screen and falls back to that
-  // identifier where a filter change has since moved the row out of the page: the record the panel reads is still the
-  // one the worker opened, and the shell's title never states a name this page no longer holds.
+  // The record opened beside the list, held as the identifier the read named so the panel's own reads stay keyed by the record rather than by its position on a page; its label is read back from the page on screen and falls back to that identifier where a filter change has since moved the row out of the page.
   const [openPartnerId, setOpenPartnerId] = useState<string | null>(null);
   const isMobile = useIsMobile();
   const openRow = openPartnerId === null ? null : (envelope?.data.rows.find((row) => row.partner.partnerId === openPartnerId) ?? null);
   const openLabel = openPartnerId === null ? null : openRow === null ? openPartnerId : nameOf(openRow);
-  const openBeside = (partnerId: string): void => {
-    setOpenPartnerId(partnerId);
-  };
-  // Only a close clears the selection: the shell reports the state it moved to, and a report of `true` leaves the row
-  // the panel was opened from in place rather than replacing it with nothing.
+  const openBeside = (partnerId: string): void => setOpenPartnerId(partnerId);
+  // Only a close clears the selection: the shell reports the state it moved to, and a report of `true` leaves the row the panel was opened from in place.
   const closePanel = (open: boolean): void => {
     if (!open) setOpenPartnerId(null);
   };
-  // The preset's state and the read's query are one state: the address owns it, so a page, a sort and a visible column
-  // set are the same facts here, in the handler and in the request.
   const queryState: RecordListQueryState = { sort: sortDescriptorsOf(roster.query.sort), page: roster.query.page, pageSize: roster.query.pageSize, columnVisibility: roster.query.columnVisibility };
-  const changeSearch = (value: string): void => {
-    roster.setQuery({ search: value });
-  };
-  const changeApplied = (next: Record<string, string[]>): void => {
-    roster.setQuery({ facets: next });
-  };
-  const changeColumns = (next: Record<string, boolean>): void => {
-    roster.setQuery({ columnVisibility: next });
-  };
-  const clearFilters = (): void => {
-    roster.clearAll();
-  };
-  // Only the members that actually changed are dispatched: a page-size change resets the page in the one place that
-  // rule lives, a new ordering returns to the first page, and a change of visible columns keeps the page it was made on.
+  const retryFacets = { label: "Try the filters again", onClick: (): void => void roster.facets.refetch() };
+  const retryRoster = { label: PARTNER_ACTION_LABELS.retry, onClick: (): void => void roster.roster.refetch() };
+  const changeSearch = (value: string): void => roster.setQuery({ search: value });
+  const changeApplied = (next: Record<string, string[]>): void => roster.setQuery({ facets: next });
+  const changeColumns = (next: Record<string, boolean>): void => roster.setQuery({ columnVisibility: next });
+  const clearFilters = (): void => roster.clearAll();
   const changeQueryState = (next: RecordListQueryState): void => {
     const nextSort = sortOfDescriptors(next.sort);
-    const patch: RosterQueryPatch = {};
+    const patch: { sort?: RosterSort | null; page?: number; pageSize?: number; columnVisibility?: Record<string, boolean> } = {};
     if (!sameSort(nextSort, roster.query.sort)) patch.sort = nextSort;
     if (next.page !== roster.query.page) patch.page = next.page;
     if (next.pageSize !== roster.query.pageSize) patch.pageSize = next.pageSize;
@@ -681,60 +269,20 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
     if (Object.keys(patch).length === 0) return;
     roster.setQuery(patch);
   };
-  /** The filter set's own answer, stated beside the toolbar: a filter block that invented controls for a failed read would offer filters the service never authorised. */
   function filtersNotice(): ReactElement | null {
     const facetsResult = roster.facets.data;
-    if (facetsResult === undefined) {
-      if (!roster.facets.isError) return null;
-      return (
-        <StateNotice
-          kind="unavailable"
-          headingLevel={3}
-          title={ROSTER_COPY.filtersUnavailableTitle}
-          description={ROSTER_COPY.filtersUnavailableBody}
-          retry={{
-            label: ROSTER_COPY.retryFilters,
-            onClick: () => {
-              void roster.facets.refetch();
-            },
-          }}
-        />
-      );
-    }
-    switch (facetsResult.kind) {
-      case "envelope":
-        return null;
-      case "denied":
-        // A denial carries its closed reason and nothing about the records behind it.
-        return <StateNotice kind="denied" headingLevel={3} title={ROSTER_COPY.filtersUnavailableTitle} description={ROSTER_COPY.filtersUnavailableBody} reasonCode={facetsResult.denied.reasonCode} />;
-      case "unavailable":
-        return <StateNotice kind="unavailable" headingLevel={3} title={ROSTER_COPY.filtersUnavailableTitle} description={ROSTER_COPY.filtersUnavailableBody} source={facetsResult.unavailable.source} />;
-      case "refused":
-        return <StateNotice kind="refused" headingLevel={3} title={ROSTER_COPY.filtersUnavailableTitle} description={ROSTER_COPY.filtersUnavailableBody} />;
-    }
+    const title = ROSTER_COPY.filtersUnavailableTitle;
+    const description = ROSTER_COPY.filtersUnavailableBody;
+    if (facetsResult === undefined) return roster.facets.isError ? <StateNotice kind="unavailable" headingLevel={3} title={title} description={description} retry={retryFacets} /> : null;
+    if (facetsResult.kind === "envelope") return null;
+    const stated: Pick<StateNoticeProps, "reasonCode" | "source"> = facetsResult.kind === "denied" ? { reasonCode: facetsResult.denied.reasonCode } : facetsResult.kind === "unavailable" ? { source: facetsResult.unavailable.source } : {};
+    return <StateNotice kind={facetsResult.kind} headingLevel={3} title={title} description={description} {...stated} />;
   }
-  /** The roster itself: the list, the reason it holds none, or the answer that stands instead of a list. */
   function rosterBody(): ReactElement {
     const copy = SURFACE_STATE_COPY.roster;
     if (result === undefined) {
-      if (roster.roster.isError) {
-        // The request itself did not answer, so no row and no count stands in its place.
-        return (
-          <StateNotice
-            kind="unavailable"
-            headingLevel={2}
-            title={copy.unavailable.title}
-            description={copy.unavailable.body}
-            retry={{
-              label: PARTNER_ACTION_LABELS.retry,
-              onClick: () => {
-                void roster.roster.refetch();
-              },
-            }}
-          />
-        );
-      }
-      return <StateNotice kind="loading" headingLevel={2} title={ROSTER_COPY.loadingTitle} loadingLines={5} />;
+      if (roster.roster.isError) return <StateNotice kind="unavailable" headingLevel={2} title={copy.unavailable.title} description={copy.unavailable.body} retry={retryRoster} />;
+      return <StateNotice kind="loading" headingLevel={2} title="Reading the partner roster" loadingLines={5} />;
     }
     switch (result.kind) {
       case "envelope": {
@@ -756,7 +304,7 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
               </span>
             )}
             emptyAction={emptyAction === undefined ? <ImportFirstAction /> : emptyAction}
-            itemNoun={ITEM_NOUN}
+            itemNoun="partners"
             pageSizeOptions={PAGE_SIZE_OPTIONS}
             hasActiveFilters={hasActiveFilters}
             onClearFilters={clearFilters}
@@ -765,53 +313,30 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
         );
       }
       case "denied":
-        // The closed reason code is the whole answer: no row, no count and no hint of what the roster would have held.
         return <StateNotice kind="denied" headingLevel={2} title={copy.denied.title} description={copy.denied.body} reasonCode={result.denied.reasonCode} />;
       case "unavailable":
-        return (
-          <StateNotice
-            kind="unavailable"
-            headingLevel={2}
-            title={copy.unavailable.title}
-            description={result.unavailable.guidance}
-            source={result.unavailable.source}
-            retry={{
-              label: PARTNER_ACTION_LABELS.retry,
-              onClick: () => {
-                void roster.roster.refetch();
-              },
-            }}
-          />
-        );
+        return <StateNotice kind="unavailable" headingLevel={2} title={copy.unavailable.title} description={result.unavailable.guidance} source={result.unavailable.source} retry={retryRoster} />;
       case "refused":
-        // The query this surface states is the read's own admitted one, so a refusal is answered in the roster's words
-        // rather than thrown, and it says the request was refused — not that the partner source failed.
         return <StateNotice kind="refused" headingLevel={2} title={copy.refused.title} description={copy.refused.body} />;
     }
   }
   return (
     <div data-slot="partner-roster" dir={dir} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-3">
-        <PartnerFacets label={ROSTER_LABEL} facetsEnvelope={facetsEnvelope} search={{ value: roster.query.search, onChange: changeSearch, placeholder: ROSTER_COPY.searchPlaceholder }} applied={roster.query.facets} onAppliedChange={changeApplied} pending={busy} />
-        {/* Two controls read one column set: the family's chooser states which optional columns this context admits and
-            why, while the preset's own menu is the table's native affordance over the same controlled state. Neither
-            keeps a copy, so both always describe the columns actually shown. */}
+        <PartnerFacets label={ROSTER_LABEL} facetsEnvelope={facetsEnvelope} search={{ value: roster.query.search, onChange: changeSearch, placeholder: "Search the whole roster" }} applied={roster.query.facets} onAppliedChange={changeApplied} pending={busy} />
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <SavedViewBar scope={scope} admittedColumnKeys={PARTNER_COLUMN_KEYS} initialResult={initialResult} />
           <ColumnChooser value={roster.query.columnVisibility} onValueChange={changeColumns} envelope={envelope} />
         </div>
         {filtersNotice()}
       </div>
-      {/* The list and the record it opens sit side by side from the width the shared shell presents a column beside a
-          list, so the filtered list stays in view while the record is read; below it they are one column and the record
-          is the sheet the phone shows. */}
+      {/* The list and the record it opens sit side by side from the width the shared shell presents a column beside a list, so the filtered list stays in view while the record is read; below it they are one column and the record is the sheet the phone shows. */}
       <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start">
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           {rosterBody()}
           {envelope === null ? null : <RosterNotes envelope={envelope} />}
         </div>
-        {/* Always mounted, outside the list, so a panel that closes returns focus to the row control that opened it. The
-            body is the family's own detail body: the panel is a presentation of the record, never a second one. */}
+        {/* Always mounted, outside the list, so a panel that closes returns focus to the row control that opened it. The body is the family's own detail body: the panel is a presentation of the record, never a second one. */}
         <SidePanel
           open={openPartnerId !== null}
           onOpenChange={closePanel}

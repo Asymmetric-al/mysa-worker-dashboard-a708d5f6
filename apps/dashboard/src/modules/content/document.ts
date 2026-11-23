@@ -1,8 +1,6 @@
-/** The application's single versioned content profile: the Tiptap JSON document shape, its Zod validation, its canonical serialisation, the admitted node and mark sets. */
 import { z } from "zod";
 import { isRecord } from "@/lib/guards";
 export const CONTENT_PROFILE_VERSION = 1;
-/** The two directions a document may state; direction is content, never interface language. */
 export const CONTENT_DIRECTIONS = ["ltr", "rtl"] as const;
 export type ContentDirection = (typeof CONTENT_DIRECTIONS)[number];
 export const ADMITTED_HEADING_LEVELS = [2, 3, 4] as const;
@@ -10,7 +8,6 @@ export const ADMITTED_NODE_TYPES = ["paragraph", "heading", "bulletList", "order
 export type AdmittedNodeType = (typeof ADMITTED_NODE_TYPES)[number];
 export const FORMATTING_MARK_TYPES = ["bold", "italic", "strike", "underline", "code"] as const;
 export const LINK_MARK_TYPE = "link" as const;
-/** Every mark a document may hold, built from the two groups above so the admitted list and the mark schemas below read from one source and cannot diverge. */
 export const ADMITTED_MARK_TYPES = [...FORMATTING_MARK_TYPES, LINK_MARK_TYPE] as const;
 export type AdmittedMarkType = (typeof ADMITTED_MARK_TYPES)[number];
 const ADMITTED_NODE_TYPE_SET: ReadonlySet<string> = new Set(ADMITTED_NODE_TYPES);
@@ -21,7 +18,6 @@ const MAX_CONTENT_DEPTH = 64;
 export type ContentFormattingMark = { readonly type: (typeof FORMATTING_MARK_TYPES)[number] };
 export type ContentLinkMark = { readonly type: typeof LINK_MARK_TYPE; readonly attrs: { readonly href: string } };
 export type ContentMarkNode = ContentFormattingMark | ContentLinkMark;
-/** A run of text, stored verbatim: leading zeros, mixed direction and scripts are never rewritten. */
 export type ContentTextNode = { readonly type: "text"; readonly text: string; readonly marks?: readonly ContentMarkNode[] };
 export type ContentHardBreakNode = { readonly type: "hardBreak" };
 export type ContentInlineNode = ContentTextNode | ContentHardBreakNode;
@@ -31,11 +27,9 @@ export type ContentListItemNode = { readonly type: "listItem"; readonly content?
 export type ContentBulletListNode = { readonly type: "bulletList"; readonly content?: readonly ContentListItemNode[] };
 export type ContentOrderedListNode = { readonly type: "orderedList"; readonly attrs?: { readonly start?: number }; readonly content?: readonly ContentListItemNode[] };
 export type ContentBlockquoteNode = { readonly type: "blockquote"; readonly content?: readonly ContentBlockNode[] };
-/** The text a code block holds: no marks, because a code block formats none of them. */
 export type ContentCodeTextNode = { readonly type: "text"; readonly text: string };
 export type ContentCodeBlockNode = { readonly type: "codeBlock"; readonly content?: readonly ContentCodeTextNode[] };
 export type ContentBlockNode = ContentParagraphNode | ContentHeadingNode | ContentBulletListNode | ContentOrderedListNode | ContentBlockquoteNode | ContentCodeBlockNode;
-export type ContentNode = ContentBlockNode | ContentInlineNode;
 export type ContentSection = { readonly element: string; readonly fields: Readonly<Record<string, string>>; readonly presentation: PresentationChoice; readonly direction?: ContentDirection };
 export type ContentDocumentJson = { readonly type: "doc"; readonly profileVersion: typeof CONTENT_PROFILE_VERSION; readonly direction: ContentDirection; readonly content: readonly ContentBlockNode[]; readonly sections: readonly ContentSection[] };
 export type DocumentIssue = { readonly path: string; readonly message: string };
@@ -46,8 +40,7 @@ function linkHrefProblem(href: string): string | undefined {
   if (href.startsWith("/")) return undefined;
   const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(href)?.[1]?.toLowerCase();
   if (scheme === undefined) return "A link is an absolute https URL or a path beginning with /.";
-  if (scheme !== "http" && scheme !== "https") return `A link may not use the "${scheme}:" scheme: use an https URL or a path beginning with /.`;
-  return /^https?:\/\/[^\s/]/.test(href) ? undefined : "An http(s) link needs a host.";
+  return scheme !== "http" && scheme !== "https" ? `A link may not use the "${scheme}:" scheme: use an https URL or a path beginning with /.` : /^https?:\/\/[^\s/]/.test(href) ? undefined : "An http(s) link needs a host.";
 }
 const linkHrefSchema = z.string().superRefine((href, ctx) => {
   const problem = linkHrefProblem(href);
@@ -64,7 +57,6 @@ const headingLevelSchema = z.literal(ADMITTED_HEADING_LEVELS, { error: "A headin
 const headingSchema: z.ZodType<ContentHeadingNode> = z.object({ type: z.literal("heading"), attrs: z.object({ level: headingLevelSchema }), content: z.array(contentInlineNodeSchema).optional() });
 const codeTextSchema = z.object({ type: z.literal("text"), text: z.string() });
 const codeBlockSchema: z.ZodType<ContentCodeBlockNode> = z.object({ type: z.literal("codeBlock"), content: z.array(codeTextSchema).optional() });
-// The four container schemas are mutually recursive through a list item, so each resolves its children through a deferred getter; the depth guard in the scan below stops a hostile document exhausting the stack.
 const listItemSchema: z.ZodType<ContentListItemNode> = z.lazy(() => z.object({ type: z.literal("listItem"), content: blockSequenceSchema.optional() }));
 const bulletListNodeSchema: z.ZodType<ContentBulletListNode> = z.lazy(() => z.object({ type: z.literal("bulletList"), content: z.array(listItemSchema).optional() }));
 const orderedListNodeSchema: z.ZodType<ContentOrderedListNode> = z.lazy(() => z.object({ type: z.literal("orderedList"), attrs: z.object({ start: z.number().int().min(0, "A numbered list starts at 0 or later.").optional() }).optional(), content: z.array(listItemSchema).optional() }));
@@ -95,11 +87,7 @@ export const contentDocumentSchema: z.ZodType<ContentDocumentJson> = z.strictObj
 });
 const BIDI_CONTROL_PATTERN = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/;
 const BIDI_CONTROL_PATTERN_GLOBAL = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
-
-function bidiControlIndex(text: string): number | undefined {
-  const match = BIDI_CONTROL_PATTERN.exec(text);
-  return match === null ? undefined : match.index;
-}
+const bidiControlIndex = (text: string): number | undefined => BIDI_CONTROL_PATTERN.exec(text)?.index;
 const codePointLabel = (codeUnit: number): string => `U+${codeUnit.toString(16).toUpperCase().padStart(4, "0")}`;
 const stripBidiControls = (text: string): string => text.replace(BIDI_CONTROL_PATTERN_GLOBAL, "");
 function checkTextHasNoBidiControl(value: string, path: string, issues: DocumentIssue[]): void {
@@ -136,14 +124,9 @@ function scanNode(node: unknown, path: string, issues: DocumentIssue[], depth: n
   if (typeof nodeType !== "string") return void issues.push({ path: `${path}.type`, message: "Each content node must state its type." });
   if (!ADMITTED_NODE_TYPE_SET.has(nodeType)) return void issues.push({ path: `${path}.type`, message: `"${nodeType}" is not an admitted content node; the admitted nodes are ${ADMITTED_NODE_TYPES.join(", ")}.` });
   const marks = node["marks"];
-  if (Array.isArray(marks)) {
-    if (nodeType === "text") {
-      scanMarks(marks, `${path}.marks`, issues);
-    } else {
-      // A mark formats text, so only a text node may carry one: the schemas declare `marks` on text alone and would strip it elsewhere, which is the silent loss this profile refuses.
-      issues.push({ path: `${path}.marks`, message: `A mark formats text, so a "${nodeType}" node cannot carry marks.` });
-    }
-  }
+  if (Array.isArray(marks))
+    if (nodeType === "text") scanMarks(marks, `${path}.marks`, issues);
+    else issues.push({ path: `${path}.marks`, message: `A mark formats text, so a "${nodeType}" node cannot carry marks.` });
   if (nodeType === "text") {
     const text = node["text"];
     if (typeof text === "string") checkTextHasNoBidiControl(text, `${path}.text`, issues);
@@ -151,11 +134,7 @@ function scanNode(node: unknown, path: string, issues: DocumentIssue[], depth: n
   }
   if (nodeType === "heading") scanHeadingAttrs(node["attrs"], `${path}.attrs`, issues);
   const children = node["content"];
-  if (Array.isArray(children)) {
-    children.forEach((child, index) => {
-      scanNode(child, `${path}.content.${index}`, issues, depth + 1);
-    });
-  }
+  if (Array.isArray(children)) children.forEach((child, index) => scanNode(child, `${path}.content.${index}`, issues, depth + 1));
 }
 function scanSection(section: unknown, path: string, issues: DocumentIssue[]): void {
   if (!isRecord(section)) return;
@@ -163,34 +142,20 @@ function scanSection(section: unknown, path: string, issues: DocumentIssue[]): v
   if (typeof element === "string") checkTextHasNoBidiControl(element, `${path}.element`, issues);
   const fields = section["fields"];
   if (!isRecord(fields)) return;
-  for (const key of Object.keys(fields)) {
-    const value = fields[key];
-    if (typeof value === "string") checkTextHasNoBidiControl(value, `${path}.fields.${key}`, issues);
-  }
+  for (const [key, value] of Object.entries(fields)) if (typeof value === "string") checkTextHasNoBidiControl(value, `${path}.fields.${key}`, issues);
 }
 function scanDocument(input: unknown): DocumentIssue[] {
   if (!isRecord(input)) return [{ path: "", message: "A content document must be an object." }];
   const issues: DocumentIssue[] = [];
-  const documentType = input["type"];
-  if (documentType !== "doc") issues.push({ path: "type", message: 'A content document\'s root node is the Tiptap document, so its type is "doc".' });
+  if (input["type"] !== "doc") issues.push({ path: "type", message: 'A content document\'s root node is the Tiptap document, so its type is "doc".' });
   const profileVersion = input["profileVersion"];
   if (typeof profileVersion !== "number") {
     issues.push({ path: "profileVersion", message: "A content document states the content profile version it was written against." });
-  } else if (profileVersion !== CONTENT_PROFILE_VERSION) {
-    issues.push({ path: "profileVersion", message: `Content profile version ${profileVersion} is not admitted: this build reads and writes version ${CONTENT_PROFILE_VERSION} only, so the document is not migrated silently.` });
-  }
+  } else if (profileVersion !== CONTENT_PROFILE_VERSION) issues.push({ path: "profileVersion", message: `Content profile version ${profileVersion} is not admitted: this build reads and writes version ${CONTENT_PROFILE_VERSION} only, so the document is not migrated silently.` });
   const content = input["content"];
-  if (Array.isArray(content)) {
-    content.forEach((node, index) => {
-      scanNode(node, `content.${index}`, issues, 0);
-    });
-  }
+  if (Array.isArray(content)) content.forEach((node, index) => scanNode(node, `content.${index}`, issues, 0));
   const sections = input["sections"];
-  if (Array.isArray(sections)) {
-    sections.forEach((section, index) => {
-      scanSection(section, `sections.${index}`, issues);
-    });
-  }
+  if (Array.isArray(sections)) sections.forEach((section, index) => scanSection(section, `sections.${index}`, issues));
   return issues;
 }
 type ZodIssueLike = { readonly path?: readonly PropertyKey[]; readonly message?: string; readonly errors?: readonly (readonly ZodIssueLike[])[] };
@@ -235,7 +200,6 @@ function canonicalise(value: unknown): unknown {
   }
   return value;
 }
-/** Serialises a parsed document to its canonical form: keys sorted, no insignificant whitespace, array order preserved, no `Date` and no locale-dependent formatting. */
 export const serialise = (document: ContentDocumentJson): string => JSON.stringify(canonicalise(document));
 const FNV_OFFSET_BASIS = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
@@ -260,118 +224,92 @@ function createDroppedNames(): DroppedNames {
   const seen = new Set<string>();
   return {
     note(name: string): void {
-      if (!seen.has(name)) {
-        seen.add(name);
-        names.push(name);
-      }
+      if (seen.has(name)) return;
+      seen.add(name);
+      names.push(name);
     },
-    list(): readonly string[] {
-      return names;
-    },
+    list: () => names,
   };
 }
-function childrenOf(node: Record<string, unknown>): readonly unknown[] {
-  const content = node["content"];
-  return Array.isArray(content) ? content : [];
-}
+const childrenOf = (node: Record<string, unknown>): readonly unknown[] => (Array.isArray(node["content"]) ? node["content"] : []);
 function pasteNodeCandidates(value: unknown): readonly unknown[] {
   if (Array.isArray(value)) return value;
   if (!isRecord(value)) return [];
   const content = value["content"];
-  if (typeof value["type"] === "string") return value["type"] === "doc" && Array.isArray(content) ? content : [value];
-  return Array.isArray(content) ? content : [];
+  return typeof value["type"] === "string" ? (value["type"] === "doc" && Array.isArray(content) ? content : [value]) : Array.isArray(content) ? content : [];
 }
 function plainTextOf(value: unknown, depth = 0): string {
   if (depth > MAX_CONTENT_DEPTH) return "";
   if (typeof value === "string") return value;
-  if (Array.isArray(value)) {
+  if (Array.isArray(value))
     return value
       .map((item) => plainTextOf(item, depth + 1))
       .join(" ")
       .trim();
-  }
   if (!isRecord(value)) return "";
   const text = value["text"];
-  if (typeof text === "string") return text;
-  return value.content === undefined ? "" : plainTextOf(value["content"], depth + 1);
+  return typeof text === "string" ? text : value.content === undefined ? "" : plainTextOf(value["content"], depth + 1);
 }
-function paragraphOfText(text: string): ContentParagraphNode | undefined {
-  if (text.trim().length === 0) return undefined;
-  return { type: "paragraph", content: [{ type: "text", text }] };
-}
+const paragraphOfText = (text: string): ContentParagraphNode | undefined => (text.trim().length === 0 ? undefined : { type: "paragraph", content: [{ type: "text", text }] });
 const paragraphWith = (inline: readonly ContentInlineNode[]): ContentParagraphNode => (inline.length === 0 ? { type: "paragraph" } : { type: "paragraph", content: inline });
 const headingLevelOf = (level: number): ContentHeadingNode["attrs"]["level"] | undefined => ADMITTED_HEADING_LEVELS.find((admitted) => admitted === level);
 const FORMATTING_MARKS: Readonly<Record<(typeof FORMATTING_MARK_TYPES)[number], ContentFormattingMark>> = Object.freeze({ bold: { type: "bold" }, italic: { type: "italic" }, strike: { type: "strike" }, underline: { type: "underline" }, code: { type: "code" } });
 const formattingMarkOf = (markType: string): ContentFormattingMark | undefined => FORMATTING_MARKS[markType as ContentFormattingMark["type"]];
 function convertMarks(value: unknown, dropped: DroppedNames): ContentMarkNode[] {
   if (!Array.isArray(value)) return [];
-  const marks: ContentMarkNode[] = [];
   const kept = new Set<string>();
-  for (const item of value) {
-    if (!isRecord(item)) continue;
+  return value.flatMap((item): ContentMarkNode[] => {
+    if (!isRecord(item) || typeof item["type"] !== "string") return [];
     const markType = item["type"];
-    if (typeof markType !== "string") continue;
     if (!ADMITTED_MARK_TYPE_SET.has(markType)) {
       dropped.note(markType);
-      continue;
+      return [];
     }
-    if (markType === "link") {
-      const attrs = item["attrs"];
-      const href = isRecord(attrs) ? attrs["href"] : undefined;
-      // A browser paste can carry a `javascript:` or relative destination: the mark is dropped and disclosed while the text it wrapped stays.
-      if (typeof href !== "string" || linkHrefProblem(href) !== undefined) {
-        dropped.note("link");
-        continue;
-      }
-      if (kept.has("link")) continue;
-      kept.add("link");
-      marks.push({ type: "link", attrs: { href: stripBidiControls(href) } });
-      continue;
+    if (markType !== "link") {
+      const formatting = formattingMarkOf(markType);
+      if (formatting === undefined || kept.has(formatting.type)) return [];
+      kept.add(formatting.type);
+      return [formatting];
     }
-    const formatting = formattingMarkOf(markType);
-    if (formatting === undefined || kept.has(formatting.type)) continue;
-    kept.add(formatting.type);
-    marks.push(formatting);
-  }
-  return marks;
+    const attrs = item["attrs"];
+    const href = isRecord(attrs) ? attrs["href"] : undefined;
+    if (typeof href !== "string" || linkHrefProblem(href) !== undefined) {
+      dropped.note("link");
+      return [];
+    }
+    if (kept.has("link")) return [];
+    kept.add("link");
+    return [{ type: "link", attrs: { href: stripBidiControls(href) } }];
+  });
 }
 function convertInlineNodes(values: readonly unknown[], dropped: DroppedNames): ContentInlineNode[] {
-  const inline: ContentInlineNode[] = [];
-  for (const value of values) {
+  return values.flatMap((value): ContentInlineNode[] => {
     if (typeof value === "string") {
       const text = stripBidiControls(value);
-      if (text.length > 0) inline.push({ type: "text", text });
-      continue;
+      return text.length > 0 ? [{ type: "text", text }] : [];
     }
-    if (!isRecord(value)) continue;
+    if (!isRecord(value)) return [];
     const nodeType = value["type"];
-    if (nodeType === "hardBreak") {
-      inline.push({ type: "hardBreak" });
-      continue;
-    }
+    if (nodeType === "hardBreak") return [{ type: "hardBreak" }];
     if (nodeType !== "text") {
-      // An inline position holds text or a line break, so any other node here is a structure the profile does not admit and is named rather than pasted unrenderable.
       if (typeof nodeType === "string") dropped.note(nodeType);
-      continue;
+      return [];
     }
     const rawText = value["text"];
     const text = typeof rawText === "string" ? stripBidiControls(rawText) : "";
-    if (text.length === 0) continue;
+    if (text.length === 0) return [];
     const marks = convertMarks(value["marks"], dropped);
-    inline.push(marks.length === 0 ? { type: "text", text } : { type: "text", text, marks });
-  }
-  return inline;
+    return [marks.length === 0 ? { type: "text", text } : { type: "text", text, marks }];
+  });
 }
 function convertListItems(values: readonly unknown[], dropped: DroppedNames, depth: number): ContentListItemNode[] {
-  const items: ContentListItemNode[] = [];
-  for (const value of values) {
-    if (!isRecord(value)) continue;
+  return values.flatMap((value) => {
+    if (!isRecord(value)) return [];
     const nodeType = value["type"];
     if (nodeType !== "listItem" && typeof nodeType === "string" && !ADMITTED_NODE_TYPE_SET.has(nodeType)) dropped.note(nodeType);
     const content = convertBlockNodes(childrenOf(value), dropped, depth + 1);
-    if (content.length > 0) items.push({ type: "listItem", content });
-  }
-  return items;
+    return content.length > 0 ? [{ type: "listItem", content }] : [];
+  });
 }
 function convertBlockNode(value: unknown, dropped: DroppedNames, depth: number): ContentBlockNode | undefined {
   if (depth > MAX_CONTENT_DEPTH) return undefined;
@@ -387,22 +325,11 @@ function convertBlockNode(value: unknown, dropped: DroppedNames, depth: number):
       const inline = convertInlineNodes(childrenOf(value), dropped);
       const admittedLevel = typeof level === "number" ? headingLevelOf(level) : undefined;
       if (admittedLevel !== undefined) return { type: "heading", attrs: { level: admittedLevel }, content: inline };
-      // A pasted H1 is another document's managed title and H5/H6 are outside the authoring surface: the text is kept as a paragraph and the dropped level disclosed.
       dropped.note(typeof level === "number" ? `heading level ${level}` : "heading without a level");
       return paragraphWith(inline);
     }
     case "codeBlock": {
-      const lines: string[] = [];
-      for (const child of childrenOf(value)) {
-        if (typeof child === "string") {
-          lines.push(stripBidiControls(child));
-          continue;
-        }
-        if (isRecord(child)) {
-          const text = child["text"];
-          if (typeof text === "string") lines.push(stripBidiControls(text));
-        }
-      }
+      const lines = childrenOf(value).flatMap((child) => (typeof child === "string" ? [stripBidiControls(child)] : isRecord(child) && typeof child["text"] === "string" ? [stripBidiControls(child["text"])] : []));
       const code = lines.filter((line) => line.length > 0);
       return code.length === 0 ? { type: "codeBlock" } : { type: "codeBlock", content: [{ type: "text", text: code.join("\n") }] };
     }
@@ -424,7 +351,6 @@ function convertBlockNode(value: unknown, dropped: DroppedNames, depth: number):
     }
     case "hardBreak":
     case "text":
-      // An inline node pasted where only a block fits keeps its text inside a paragraph.
       return paragraphWith(convertInlineNodes([value], dropped));
     default:
       dropped.note(nodeType);
@@ -432,25 +358,16 @@ function convertBlockNode(value: unknown, dropped: DroppedNames, depth: number):
   }
 }
 function convertBlockNodes(values: readonly unknown[], dropped: DroppedNames, depth: number): ContentBlockNode[] {
-  const blocks: ContentBlockNode[] = [];
-  for (const value of values) {
-    if (isRecord(value) && typeof value["type"] !== "string" && Array.isArray(value["content"])) {
-      blocks.push(...convertBlockNodes(value["content"], dropped, depth + 1));
-      continue;
-    }
+  return values.flatMap((value) => {
+    if (isRecord(value) && typeof value["type"] !== "string" && Array.isArray(value["content"])) return convertBlockNodes(value["content"], dropped, depth + 1);
     const block = convertBlockNode(value, dropped, depth);
-    if (block === undefined) continue;
-    // Every produced node is proved against the schema, so a conversion never hands the editor a shape the profile would refuse on save.
+    if (block === undefined) return [];
     const parsed = contentBlockNodeSchema.safeParse(block);
-    if (parsed.success) {
-      blocks.push(parsed.data);
-      continue;
-    }
+    if (parsed.success) return [parsed.data];
     dropped.note(block.type);
     const fallback = paragraphOfText(plainTextOf(block));
-    if (fallback !== undefined) blocks.push(fallback);
-  }
-  return blocks;
+    return fallback === undefined ? [] : [fallback];
+  });
 }
 export function admittedPasteDecision(decision: PasteDecision, input: PasteInput): PasteOutcome {
   if (decision === "cancel") return { status: "cancelled", content: null };

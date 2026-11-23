@@ -1,11 +1,7 @@
-/** Media acceptance and rendition preparation: the media module's entry points. */
 import { fileTypeFromBuffer, type FileTypeResult } from "file-type";
 import { prepareDisplayImage, type AdmittedImageFormat, type ImagePreparationRefusal } from "./image";
 import { inspectVideo, preparePlaybackRendition, type AdmittedContainer, type AdmittedVideoCodec, type VideoProfileCheck, type VideoRefusal } from "./video";
 import { MEDIA_PREPARATION_STATES, mediaStateReason, type MediaPreparationState, type MediaStateReason } from "./profile";
-
-// The preparation vocabulary and the words each state carries are declared once in `./profile`, which a
-// browser surface may state; these re-exports keep this module's own surface exactly as it already was.
 export { MEDIA_PREPARATION_STATES, mediaStateReason };
 export type { MediaPreparationState, MediaStateReason };
 export const RENDITION_PURPOSES = ["display", "playback", "poster", "captions", "transcript"] as const;
@@ -14,7 +10,6 @@ export type MediaAncillaryRenditionPurpose = "poster" | "captions" | "transcript
 export const ANCILLARY_RENDITION_PURPOSES: readonly MediaAncillaryRenditionPurpose[] = ["poster", "captions", "transcript"];
 export const WEBVTT_MIME_TYPE = "text/vtt";
 export const PLAIN_TEXT_MIME_TYPE = "text/plain";
-// Preparation descriptors: these are the shapes `registerMediaAsset` maps into the persisted record, which is itself declared once in `data-service/envelope.ts`.
 export type MediaAssetScope = { readonly organizationId: string; readonly ministryId: string };
 export type MediaOriginalReference = { readonly system: string; readonly reference: string };
 export type MediaProfileCheck =
@@ -32,7 +27,6 @@ export interface MediaRendition {
   readonly profileCheck?: MediaProfileCheck;
   readonly tagVerification?: MediaTagVerification;
 }
-/** Every code this module can return: its own four rules plus each sibling pipeline's own vocabulary, carried through unchanged so one implementation owns each profile's reasons. */
 export type MediaRefusalCode = ImagePreparationRefusal["code"] | VideoRefusal["code"] | "kind-mismatch" | "alt-text-required" | "invalid-captions" | "invalid-transcript" | "use-acceptance-entry-point" | "unsupported-rendition-purpose";
 export type MediaRefusal = { readonly state: "rejected"; readonly code: MediaRefusalCode; readonly message: string; readonly action?: string };
 export type MediaAcceptanceInput<S extends MediaAssetScope> = { readonly assetId: string; readonly scope: S; readonly sourceOriginalRef: MediaOriginalReference; readonly bytes: Uint8Array; readonly sourceName?: string; readonly variant?: string };
@@ -102,22 +96,15 @@ export async function acceptVideo<S extends MediaAssetScope>(input: AcceptVideoI
     tagVerification,
   };
 }
-export async function prepareRendition(input: PrepareRenditionInput): Promise<MediaRenditionResult> {
-  switch (input.purpose) {
-    case "poster":
-      return preparePoster(input);
-    case "captions":
-      return prepareTextRendition(input, "captions");
-    case "transcript":
-      return prepareTextRendition(input, "transcript");
-    case "display":
-      return refuse("use-acceptance-entry-point", "A display rendition is produced by accepting the image itself: call acceptImage() with the image's asset identity and it returns that rendition.", "Choose the image through the image picker.");
-    case "playback":
-      return refuse("use-acceptance-entry-point", "A playback rendition is produced by accepting the video itself: call acceptVideo() with the video's asset identity and it returns that rendition.", "Choose the video through the video picker.");
-    default:
-      return refuse("unsupported-rendition-purpose", "That rendition purpose is not one this module prepares; it prepares poster, captions and transcript renditions.", "Add a poster image, a caption track or a transcript instead.");
-  }
-}
+const RENDITION_HANDLERS: Readonly<Record<MediaRenditionPurpose, (input: PrepareRenditionInput) => MediaRenditionResult | Promise<MediaRenditionResult>>> = {
+  poster: preparePoster,
+  captions: (input) => prepareTextRendition(input, "captions"),
+  transcript: (input) => prepareTextRendition(input, "transcript"),
+  display: () => refuse("use-acceptance-entry-point", "A display rendition is produced by accepting the image itself: call acceptImage() with the image's asset identity and it returns that rendition.", "Choose the image through the image picker."),
+  playback: () => refuse("use-acceptance-entry-point", "A playback rendition is produced by accepting the video itself: call acceptVideo() with the video's asset identity and it returns that rendition.", "Choose the video through the video picker."),
+};
+export const prepareRendition = async (input: PrepareRenditionInput): Promise<MediaRenditionResult> =>
+  RENDITION_HANDLERS[input.purpose]?.(input) ?? refuse("unsupported-rendition-purpose", "That rendition purpose is not one this module prepares; it prepares poster, captions and transcript renditions.", "Add a poster image, a caption track or a transcript instead.");
 async function preparePoster(input: PrepareRenditionInput): Promise<MediaRenditionResult> {
   const altText = trimmedOrEmpty(input.altText);
   if (altText.length === 0) return refuse("alt-text-required", "A poster needs alternative text describing what it shows, because it stands in for the video wherever the video cannot be played.", "Describe what the poster shows, then choose the image again.");
@@ -166,7 +153,6 @@ const WEBVTT_HEADER = "WEBVTT";
 const CUE_TIMING_ARROW = "-->";
 const TEXT_CONTROL_CODES: readonly number[] = [0x09, 0x0a, 0x0d];
 const END_OF_C0_CONTROLS = 0x20;
-
 function decodeUtf8(bytes: Uint8Array): string | null {
   try {
     return UTF8_DECODER.decode(bytes);
@@ -177,26 +163,14 @@ function decodeUtf8(bytes: Uint8Array): string | null {
 const encodeUtf8 = (text: string): Uint8Array => UTF8_ENCODER.encode(text);
 const stripLeadingByteOrderMark = (text: string): string => (text.startsWith(BYTE_ORDER_MARK) ? text.slice(BYTE_ORDER_MARK.length) : text);
 function carriesNonTextBytes(text: string): boolean {
-  for (let index = 0; index < text.length; index += 1) {
-    const code = text.charCodeAt(index);
-    if (code >= END_OF_C0_CONTROLS) continue;
-    if (TEXT_CONTROL_CODES.includes(code)) continue;
-    return true;
-  }
-  return false;
+  return [...text].some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return code < END_OF_C0_CONTROLS && !TEXT_CONTROL_CODES.includes(code);
+  });
 }
 const splitLines = (text: string): string[] => text.split(LINE_BREAK);
-function firstNonBlankLine(lines: readonly string[]): string | null {
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.length > 0) return trimmed;
-  }
-  return null;
-}
-function isWebVttHeaderLine(line: string): boolean {
-  if (line === WEBVTT_HEADER) return true;
-  return line.startsWith(`${WEBVTT_HEADER} `) || line.startsWith(`${WEBVTT_HEADER}\t`);
-}
+const firstNonBlankLine = (lines: readonly string[]): string | null => lines.map((line) => line.trim()).find((line) => line.length > 0) ?? null;
+const isWebVttHeaderLine = (line: string): boolean => line === WEBVTT_HEADER || line.startsWith(`${WEBVTT_HEADER} `) || line.startsWith(`${WEBVTT_HEADER}\t`);
 function hasCuePayload(lines: readonly string[]): boolean {
   let insideCue = false;
   for (const raw of lines) {
@@ -222,15 +196,9 @@ async function detectKind(bytes: Uint8Array): Promise<FileTypeResult | null> {
 }
 const isVideoKind = (detected: FileTypeResult): boolean => detected.mime.startsWith("video/");
 const isImageKind = (detected: FileTypeResult): boolean => detected.mime.startsWith("image/");
-function renditionIdFor(assetId: string, purpose: MediaRenditionPurpose, variant: string | undefined): string {
-  const suffix = trimmedOrEmpty(variant);
-  return suffix.length === 0 ? `${assetId}:${purpose}` : `${assetId}:${purpose}:${suffix}`;
-}
+const renditionIdFor = (assetId: string, purpose: MediaRenditionPurpose, variant: string | undefined): string => (trimmedOrEmpty(variant).length === 0 ? `${assetId}:${purpose}` : `${assetId}:${purpose}:${trimmedOrEmpty(variant)}`);
 const videoProfileCheck = (profileCheck: VideoProfileCheck): MediaProfileCheck => ({ kind: "video", container: profileCheck.container, codec: profileCheck.codec, durationS: profileCheck.durationS, width: profileCheck.width, height: profileCheck.height });
 const trimmedOrEmpty = (value: string | undefined): string => (value === undefined ? "" : value.trim());
-function trimmedOrAbsent(value: string | undefined): string | undefined {
-  const trimmed = trimmedOrEmpty(value);
-  return trimmed.length === 0 ? undefined : trimmed;
-}
+const trimmedOrAbsent = (value: string | undefined): string | undefined => (trimmedOrEmpty(value).length === 0 ? undefined : trimmedOrEmpty(value));
 const refuse = (code: MediaRefusalCode, message: string, action?: string): MediaRefusal => (action === undefined ? { state: "rejected", code, message } : { state: "rejected", code, message, action });
 const refused = (refusal: ImagePreparationRefusal | VideoRefusal): MediaRefusal => refuse(refusal.code, refusal.message, refusal.action);

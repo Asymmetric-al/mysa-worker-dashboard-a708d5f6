@@ -47,11 +47,7 @@ const RENDERED_COMPARISON = cn("flex min-w-0 flex-col gap-3 text-sm text-pretty 
 type ContentTextDirection = ContentVariant["locale"]["direction"];
 function Heading({ level, id, className, children }: { readonly level: NoticeHeadingLevel; readonly id: string; readonly className: string; readonly children: ReactNode }): ReactElement {
   const Tag = HEADING_TAG[level];
-  return (
-    <Tag id={id} className={className}>
-      {children}
-    </Tag>
-  );
+  return <Tag {...{ id, className }}>{children}</Tag>;
 }
 const changeStateWord = (state: ValueState | undefined): string | undefined => (state === undefined ? undefined : valueStateWord(state)?.label);
 const changeIdentifier = (change: ComparisonChange): string => (change.kind === "section" ? change.element : change.placementId);
@@ -110,9 +106,7 @@ function ChangeList({ changes, unchanged, headingLevel, headingId }: ChangeListP
     );
   return (
     <section data-slot="comparison-changes" aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
-      <Heading level={headingLevel} id={headingId} className="text-sm font-medium">
-        {CHANGES_HEADING}
-      </Heading>
+      <Heading {...{ level: headingLevel, id: headingId, className: "text-sm font-medium" }}>{CHANGES_HEADING}</Heading>
       {body}
       <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{unchanged ? SAME_CHECKSUM_NOTE : RELEASE_UNCHANGED_BY_DRAFT_NOTE}</p>
     </section>
@@ -135,9 +129,7 @@ function ComparisonPane({ side, title, headingId, headingLevel, direction, lang,
     <Card data-comparison-pane={side} aria-labelledby={headingId} dir={direction} className="min-w-0">
       <CardHeader>
         <CardTitle>
-          <Heading level={headingLevel} id={headingId} className="text-base font-medium text-pretty">
-            {title}
-          </Heading>
+          <Heading {...{ level: headingLevel, id: headingId, className: "text-base font-medium text-pretty" }}>{title}</Heading>
         </CardTitle>
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-3">
@@ -166,19 +158,11 @@ function ComparisonPane({ side, title, headingId, headingLevel, direction, lang,
 }
 export type CompareWithReleaseProps = { readonly variant: ContentVariant; readonly draft: ComparisonDraftSide; readonly release: ComparisonReleaseSide; readonly changes?: readonly ComparisonChange[]; readonly headingLevel?: NoticeHeadingLevel; readonly className?: string };
 export function CompareWithRelease({ variant, draft, release, changes, headingLevel = 2, className }: CompareWithReleaseProps): ReactElement {
-  // One id per heading this surface owns, so no two labelled regions collide.
   const baseId = useId();
   const titleId = `${baseId}-title`;
-  const changesId = `${baseId}-changes`;
   const nestedLevel = NESTED_HEADING_LEVEL[headingLevel];
   const direction = variant.locale.direction;
-  const audienceLabel = AUDIENCE_LABELS[variant.audience].label;
-  const localeName = LOCALE_DISPLAY_NAMES[variant.locale.tag] ?? variant.locale.tag;
-  // The edition's own lifecycle: a refused or unreadable release side contributes no release.
-  const lifecycle = lifecycleOf(variant, release.status === "revision" ? release.release : undefined);
-  // Asked of the variant module, and only when both sides are readable: no pair, no claim.
-  let releaseStillCurrent: boolean | undefined;
-  if (draft.status === "revision" && release.status === "revision") releaseStillCurrent = isReleaseUnchanged(release.release, draft.revision);
+  const releaseStillCurrent = draft.status === "revision" && release.status === "revision" ? isReleaseUnchanged(release.release, draft.revision) : undefined;
   const draftPane = (composition: "narrow" | "wide"): ReactElement => <ComparisonPane side="draft" title={DRAFT_PANE_TITLE} headingId={`${baseId}-draft-${composition}`} headingLevel={nestedLevel} direction={direction} lang={variant.locale.tag} scrollLabel={`${DRAFT_PANE_TITLE} content, scrollable`} reading={draft} />;
   const releasePane = (composition: "narrow" | "wide"): ReactElement => (
     <ComparisonPane side="release" title={RELEASE_PANE_TITLE} headingId={`${baseId}-release-${composition}`} headingLevel={nestedLevel} direction={direction} lang={variant.locale.tag} scrollLabel={`${RELEASE_PANE_TITLE} content, scrollable`} reading={release} />
@@ -187,15 +171,13 @@ export function CompareWithRelease({ variant, draft, release, changes, headingLe
     <section data-slot="compare-with-release" aria-labelledby={titleId} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <header className="flex min-w-0 flex-col gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <Heading level={headingLevel} id={titleId} className="text-base font-medium text-pretty">
-            {COMPARISON_HEADING}
-          </Heading>
-          <StatusBadge label={audienceLabel} srPrefix="Audience" />
+          <Heading {...{ level: headingLevel, id: titleId, className: "text-base font-medium text-pretty" }}>{COMPARISON_HEADING}</Heading>
+          <StatusBadge label={AUDIENCE_LABELS[variant.audience].label} srPrefix="Audience" />
           <span className="text-sm text-muted-foreground">
-            <bdi>{localeName}</bdi>
+            <bdi>{LOCALE_DISPLAY_NAMES[variant.locale.tag] ?? variant.locale.tag}</bdi>
           </span>
         </div>
-        <DraftStatus state={lifecycle} />
+        <DraftStatus state={lifecycleOf(variant, release.status === "revision" ? release.release : undefined)} />
         {/* A static explanation, not an alarm: the pass leaves the announcing region to the notices that report a change of condition. */}
         <Alert role={undefined}>
           <AlertTitle>{COMPARISON_MEANING_TITLE}</AlertTitle>
@@ -205,7 +187,7 @@ export function CompareWithRelease({ variant, draft, release, changes, headingLe
           </AlertDescription>
         </Alert>
       </header>
-      {releaseStillCurrent === undefined ? null : <ChangeList changes={changes} unchanged={releaseStillCurrent} headingLevel={nestedLevel} headingId={changesId} />}
+      {releaseStillCurrent === undefined ? null : <ChangeList changes={changes} unchanged={releaseStillCurrent} headingLevel={nestedLevel} headingId={`${baseId}-changes`} />}
       <div className="md:hidden">
         <Tabs defaultValue="draft" className="gap-3">
           <TabsList aria-label={TAB_LIST_LABEL}>
@@ -213,12 +195,8 @@ export function CompareWithRelease({ variant, draft, release, changes, headingLe
             <TabsTrigger value="release">{RELEASE_PANE_TITLE}</TabsTrigger>
           </TabsList>
           {/* Each panel is named as well as by its tab: the label keeps it identifiable before the tab primitive links it, so a reader is never placed in an unnamed region. */}
-          <TabsContent value="draft" aria-label={DRAFT_PANE_TITLE}>
-            {draftPane("narrow")}
-          </TabsContent>
-          <TabsContent value="release" aria-label={RELEASE_PANE_TITLE}>
-            {releasePane("narrow")}
-          </TabsContent>
+          <TabsContent {...{ value: "draft", "aria-label": DRAFT_PANE_TITLE }}>{draftPane("narrow")}</TabsContent>
+          <TabsContent {...{ value: "release", "aria-label": RELEASE_PANE_TITLE }}>{releasePane("narrow")}</TabsContent>
         </Tabs>
       </div>
       <div className="hidden min-w-0 gap-4 md:grid md:grid-cols-2 md:items-start">

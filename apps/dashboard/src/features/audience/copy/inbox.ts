@@ -4,10 +4,7 @@ export const INBOX_TAB_LABELS = { html: "HTML", plain: "Plain text" } as const;
 export const INBOX_EMPTY_COPY: { title: string; description: string } = {
   title: "No message has been produced for this membership yet",
   description:
-    "A message appears here once this publisher has published an Update and a notice has been " +
-    "submitted for this membership's purpose. Staying on Immediate means the next publication " +
-    "produces the first one. An inbox that cannot be read at all is reported separately as a " +
-    "source that is unavailable, so a list holding nothing here always means nothing yet.",
+    "A message appears here once this publisher has published an Update and a notice has been submitted for this membership's purpose. Staying on Immediate means the next publication produces the first one. An inbox that cannot be read at all is reported separately as a source that is unavailable, so a list holding nothing here always means nothing yet.",
 };
 export const PROTECTED_NOTICE_COPY: { heading: string; description: string; linkStatement: string; absenceStatement: string } = {
   heading: "A protected Update arrives as a link, not as the Update itself",
@@ -16,8 +13,5 @@ export const PROTECTED_NOTICE_COPY: { heading: string; description: string; link
   absenceStatement: "The missing content is deliberate rather than a fault: a message that had to stay readable " + "without access would defeat the protection, so there is nothing to retry and nothing " + "incomplete about it.",
 };
 export const ONE_COPY_STATEMENT =
-  "One notification intent produces one message for one recipient. The inbox is checked against " +
-  "this rule, so a second copy of the same intent is a defect to fix at its cause rather than a " +
-  "state this screen explains or an action it offers to repeat. When a submission's outcome is " +
-  "unknown, the check is repeated on the same operation, which returns the result already recorded.";
+  "One notification intent produces one message for one recipient. The inbox is checked against this rule, so a second copy of the same intent is a defect to fix at its cause rather than a state this screen explains or an action it offers to repeat. When a submission's outcome is unknown, the check is repeated on the same operation, which returns the result already recorded.";
 export const INBOX_HEADING = "Messages produced for this membership";

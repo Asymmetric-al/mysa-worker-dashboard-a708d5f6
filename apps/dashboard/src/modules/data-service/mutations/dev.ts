@@ -1,10 +1,9 @@
-/** The six request-path mutations of the development runtime: the context switch every session uses to choose the ministry it acts in, and the five controls the development panel operates — the … */
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { assertDevelopmentOnly, isRecord } from "@/lib/guards";
 import { logger } from "@/lib/logger";
 import { assertScope, canView, resolveSession, type ResolvedSession, type ScopeDecision, type SessionSource } from "@/modules/data-service/authorize";
-import { ministryIdSchema, organizationIdSchema, sessionContextRecordSchema, supportSubjectIdSchema, type OrganizationId, type MinistryId, type MutationInput, type Scope, type SessionContextRecord, type SupportSubjectId } from "@/modules/data-service/envelope";
+import { ministryIdSchema, organizationIdSchema, sessionContextRecordSchema, supportSubjectIdSchema, type MinistryId, type MutationInput, type OrganizationId, type Scope, type SessionContextRecord, type SupportSubjectId } from "@/modules/data-service/envelope";
 import { LOCAL_STORE_SYSTEM, ROOT_FIELD_KEY, denied, invalid, unchanged, unavailable, type MutationOutcome, type MutationResult } from "@/modules/data-service/outcome";
 import { runMutation } from "@/modules/data-service/operations";
 import { DEMONSTRABLE_TARGETS, EMPTY_FAILURE_PLAN, disarmFailurePlan, setFailurePlan as armFailurePlan, type FailureMode, type FailurePlanRefusal, type FailureTargetKind } from "@/modules/dev-runtime/failures";
@@ -18,16 +17,12 @@ async function actingSessionContext(source?: SessionSource): Promise<ActingSessi
   try {
     const fromRequest = await resolveSession();
     if (fromRequest.ok) return { sessionId: fromRequest.session.sessionId, principalId: fromRequest.session.principalId };
-  } catch {
-    // `next/headers` has no request to read outside a request scope, which is a test or a script rather than a browser: the named path below serves it.
-  }
+  } catch {}
   if (source === undefined) return { sessionId: NO_SESSION_ID, principalId: "" };
   try {
     const named = await resolveSession(source);
     if (named.ok) return { sessionId: named.session.sessionId, principalId: named.session.principalId };
-  } catch {
-    // Naming a session directly is refused outside a development build, and a refusal to name one is not a session: the absent id lets the runner answer with the one refusal shape.
-  }
+  } catch {}
   return { sessionId: NO_SESSION_ID, principalId: "" };
 }
 function developmentAuthority(session: ResolvedSession): ScopeDecision {
@@ -39,26 +34,17 @@ const SESSION_STATE_GUIDANCE = "Reload the page to read this session's context r
 const SESSION_STATE_SOURCE_REFERENCE = "session-state";
 const RESET_SOURCE_REFERENCE = "reset";
 const RESET_GUIDANCE = "Reload the page to check whether the store was reset; if it stays unavailable, run the reset from the terminal, which reports the sessions it laid down.";
-
 function sourceUnavailable(operationId: string, source: { readonly system: string; readonly reference: string }, guidance: string): MutationOutcome {
   logger.sourceUnavailable({ job: "development-runtime", source });
   return unavailable({ operationId, source, guidance });
 }
-function developmentDocumentUnavailable(operationId: string): MutationOutcome {
-  return sourceUnavailable(operationId, DEV_SOURCE, DEVELOPMENT_DOCUMENT_GUIDANCE);
-}
-function sessionStateUnavailable(operationId: string): MutationOutcome {
-  return sourceUnavailable(operationId, { system: DEV_SOURCE.system, reference: SESSION_STATE_SOURCE_REFERENCE }, SESSION_STATE_GUIDANCE);
-}
-function resetStoreUnavailable(operationId: string): MutationOutcome {
-  return sourceUnavailable(operationId, { system: LOCAL_STORE_SYSTEM, reference: RESET_SOURCE_REFERENCE }, RESET_GUIDANCE);
-}
+const developmentDocumentUnavailable = (operationId: string): MutationOutcome => sourceUnavailable(operationId, DEV_SOURCE, DEVELOPMENT_DOCUMENT_GUIDANCE);
+const sessionStateUnavailable = (operationId: string): MutationOutcome => sourceUnavailable(operationId, { system: DEV_SOURCE.system, reference: SESSION_STATE_SOURCE_REFERENCE }, SESSION_STATE_GUIDANCE);
+const resetStoreUnavailable = (operationId: string): MutationOutcome => sourceUnavailable(operationId, { system: LOCAL_STORE_SYSTEM, reference: RESET_SOURCE_REFERENCE }, RESET_GUIDANCE);
 function nextRevision(previous: string): string {
   const trailing = /^(.*?)(\d+)$/.exec(previous);
-  if (trailing === null) return `${previous}.1`;
-  const prefix = trailing[1] ?? "";
-  const current = Number(trailing[2] ?? "");
-  return Number.isSafeInteger(current) ? `${prefix}${String(current + 1)}` : `${previous}.1`;
+  const current = trailing === null ? Number.NaN : Number(trailing[2] ?? "");
+  return trailing === null || !Number.isSafeInteger(current) ? `${previous}.1` : `${trailing[1] ?? ""}${String(current + 1)}`;
 }
 type DevelopmentProbe = { readonly kind: "answer"; readonly outcome: MutationOutcome } | { readonly kind: "unreadable"; readonly operationId: string } | { readonly kind: "document"; readonly meta: SessionMetaDocument; readonly revision: string };
 type ProbeRequest<P extends MutationResult> = { readonly sessionId: string; readonly principalId: string; readonly input: MutationInput<P>; readonly schema: z.ZodType<P>; readonly name: string; readonly developmentControl: string };
@@ -71,8 +57,6 @@ async function probeDevelopmentDocument<P extends MutationResult>(request: Probe
     name: request.name,
     diagnosticPass: "probe",
     authorize: developmentAuthority,
-    // The development control is authorised by the build and acts on the caller's own session document, so ministry admission is not asked of a persona that holds none: `authorize.ts` answers the `dev-runtime` question ahead of its admission gate, while the runner's default "membership"
-    // authority would refuse the call with `no-membership` before that question was ever put. The session must still be live and must name the principal it acts for.
     scopeAuthority: "owner",
     readCurrent: (documents) => {
       const parsed = parseSessionMeta(documents.meta);
@@ -85,9 +69,7 @@ async function probeDevelopmentDocument<P extends MutationResult>(request: Probe
       return { changed: false };
     },
   });
-  if (outcome.outcome !== "unchanged") return { kind: "answer", outcome };
-  if (observed === undefined) return { kind: "unreadable", operationId: request.input.operationId };
-  return { kind: "document", meta: observed, revision: devStateRevision(observed, request.principalId) };
+  return outcome.outcome !== "unchanged" ? { kind: "answer", outcome } : observed === undefined ? { kind: "unreadable", operationId: request.input.operationId } : { kind: "document", meta: observed, revision: devStateRevision(observed, request.principalId) };
 }
 async function recordDevelopmentChange<P extends MutationResult, R extends MutationResult>(
   request: { readonly sessionId: string; readonly input: MutationInput<P>; readonly schema: z.ZodType<P>; readonly name: string },
@@ -98,13 +80,11 @@ async function recordDevelopmentChange<P extends MutationResult, R extends Mutat
     input: request.input,
     schema: request.schema,
     name: request.name,
-    // As in `probeDevelopmentDocument`: the document changed is the caller's own session document, so no ministry admission is asked of the persona.
     authorize: developmentAuthority,
     scopeAuthority: "owner",
     apply: () => ({ changed: true, revision: change.revision, result: change.result, ...(change.created === undefined ? {} : { created: change.created }) }),
   });
 }
-/** Writes the plan the control decided on: the plan is cleared or armed on the caller's own session document, so no ministry admission is asked of the persona. */
 function writeFailurePlan(acting: ActingSession, input: MutationInput<SetFailurePlanPayload>, plan: SessionMetaDocument["failurePlan"], revision: string, result: SetFailurePlanResult | null): Promise<MutationOutcome> {
   return runMutation<SetFailurePlanPayload, SetFailurePlanResult | null>({
     sessionId: acting.sessionId,
@@ -115,7 +95,6 @@ function writeFailurePlan(acting: ActingSession, input: MutationInput<SetFailure
     scopeAuthority: "owner",
     apply: (context) => {
       const meta = context.docs.meta;
-      // Unreachable: the runner resolved this session from this same document, so a document that is not one would have been refused before the transaction opened; nothing changed.
       if (!isRecord(meta)) return { changed: false };
       context.docs.meta = { ...meta, failurePlan: plan };
       return { changed: true, revision, result };
@@ -129,34 +108,22 @@ export type SelectContextResult = { readonly organizationId: string; readonly mi
 type StoredSelection = { readonly organizationId: string; readonly ministryId: string; readonly supportSubjectId: string };
 const selectContextPayloadSchema: z.ZodType<SelectContextPayload> = z.strictObject({ organizationId: organizationIdSchema, ministryId: ministryIdSchema, supportSubjectId: supportSubjectIdSchema, resolveUnsavedWork: z.enum(UNSAVED_WORK_RESOLUTIONS).optional() });
 function storedContextRecord(state: unknown): SessionContextRecord | undefined {
-  if (!isRecord(state)) return undefined;
-  const parsed = sessionContextRecordSchema.safeParse(state.context);
-  return parsed.success ? parsed.data : undefined;
+  const parsed = isRecord(state) ? sessionContextRecordSchema.safeParse(state.context) : undefined;
+  return parsed?.success === true ? parsed.data : undefined;
 }
-function storedSelection(record: SessionContextRecord): StoredSelection | undefined {
+const storedSelection = (record: SessionContextRecord): StoredSelection | undefined => {
   const { selectedOrganizationId, selectedMinistryId, selectedSupportSubjectId } = record;
-  if (selectedOrganizationId === null || selectedMinistryId === null || selectedSupportSubjectId === null) return undefined;
-  return { organizationId: selectedOrganizationId, ministryId: selectedMinistryId, supportSubjectId: selectedSupportSubjectId };
-}
-function sameSelection(left: StoredSelection, right: StoredSelection): boolean {
-  return left.organizationId === right.organizationId && left.ministryId === right.ministryId && left.supportSubjectId === right.supportSubjectId;
-}
+  return selectedOrganizationId === null || selectedMinistryId === null || selectedSupportSubjectId === null ? undefined : { organizationId: selectedOrganizationId, ministryId: selectedMinistryId, supportSubjectId: selectedSupportSubjectId };
+};
 /** Switches the context this session acts in and answers one of the eight outcomes. */
 export async function selectContext(input: MutationInput<SelectContextPayload>, source?: SessionSource): Promise<MutationOutcome> {
   const acting = await actingSessionContext(source);
-  // The mutation's own authority question: the context being moved *to* must be an admitted membership of the acting principal. The principal comes from the session, never from the payload, so a request cannot nominate the person it acts for.
   const authorize = (session: ResolvedSession): ScopeDecision => {
     const selection = selectContextPayloadSchema.safeParse(input.payload);
-    if (!selection.success) {
-      // Unreachable through the runner, which validates the payload before it asks this question; a caller that reached it could not be admitted to a context it did not state.
-      return { ok: false, denial: denied({ operationId: input.operationId, reasonCode: "no-permission" }) };
-    }
+    if (!selection.success) return { ok: false, denial: denied({ operationId: input.operationId, reasonCode: "no-permission" }) };
     const target: Scope = { organizationId: selection.data.organizationId, ministryId: selection.data.ministryId, supportSubjectId: selection.data.supportSubjectId, principalId: session.principalId };
     return assertScope(session, target);
   };
-  // The probe reads the context record the caller's revision belongs to and changes nothing, so an attempt that is invalid, refused, a replay or stale is answered before the switch is attempted and an unreadable record is reported as an outage instead of being overwritten. It states
-  // `diagnosticPass: "probe"`, so the `unchanged` it answers to move this function on to the switch writes no diagnostic line: the caller's answer is the switch's own outcome, and that is the attempt's one line. A switch that finds the context already in force answers `unchanged` from this
-  // probe, so it writes no line at all — the module decided that answer itself, before the change.
   let observed: SessionContextRecord | undefined;
   const probe = await runMutation<SelectContextPayload, MutationResult>({
     sessionId: acting.sessionId,
@@ -168,28 +135,17 @@ export async function selectContext(input: MutationInput<SelectContextPayload>, 
     readCurrent: (documents) => {
       const stored = storedContextRecord(documents.state);
       observed = stored;
-      if (stored === undefined) return { kind: "absent" };
-      return { kind: "record", revision: stored.revision, value: storedSelection(stored) ?? null };
+      return stored === undefined ? { kind: "absent" } : { kind: "record", revision: stored.revision, value: storedSelection(stored) ?? null };
     },
     apply: () => ({ changed: false }),
   });
   if (probe.outcome !== "unchanged") return probe;
   if (observed === undefined) return sessionStateUnavailable(input.operationId);
-  // Validated by the probe before it reached this point.
   const target: StoredSelection = { organizationId: input.payload.organizationId, ministryId: input.payload.ministryId, supportSubjectId: input.payload.supportSubjectId };
   const current = storedSelection(observed);
-  if (current !== undefined && sameSelection(current, target)) {
-    // Nothing to switch: the runner's own `unchanged`, with the revision the caller read.
-    return probe;
-  }
+  if (current !== undefined && current.organizationId === target.organizationId && current.ministryId === target.ministryId && current.supportSubjectId === target.supportSubjectId) return probe;
   const resolution = input.payload.resolveUnsavedWork;
-  if (resolution === "stay") {
-    // A caller that chose to keep the work it holds has answered the guard's question, so the switch is not attempted: nothing is applied and no history or activity entry is written. The answer is the closed set's "no change" with the revision the context still stands at, because no staleness or
-    // reused identity exists to report and a conflict would demand a decision the caller just made.
-    return unchanged({ operationId: input.operationId, revision: observed.revision });
-  }
-  // The switch: the development document is the authority the session resolver reads, and the state record's context is the selection the shell displays and whose revision the caller presents next. Both move in one transaction, so a response that started in the old context cannot be mistaken for
-  // the new one's — the fence the client raises around its cache is backed by a single atomic write.
+  if (resolution === "stay") return unchanged({ operationId: input.operationId, revision: observed.revision });
   return runMutation<SelectContextPayload, SelectContextResult>({
     sessionId: acting.sessionId,
     input,
@@ -202,43 +158,20 @@ export async function selectContext(input: MutationInput<SelectContextPayload>, 
     },
     apply: (context) => {
       const meta = context.docs.meta;
-      if (!isRecord(meta)) {
-        // Unreachable: the runner resolved this session from this same document, so a development document that is not an object would have been refused before the transaction opened. If it ever were reached, no selection can become authoritative, so nothing changed.
-        return { changed: false };
-      }
+      if (!isRecord(meta)) return { changed: false };
       const stateRecord = isRecord(context.docs.state) ? context.docs.state : undefined;
       const stored = stateRecord === undefined ? undefined : storedContextRecord(stateRecord);
       const revision = stored === undefined ? input.expectedRevision : nextRevision(stored.revision);
       context.docs.meta = { ...meta, selectedContext: { ...target } };
       if (stateRecord !== undefined && stored !== undefined) context.docs.state = { ...stateRecord, context: { ...stored, selectedOrganizationId: target.organizationId, selectedMinistryId: target.ministryId, selectedSupportSubjectId: target.supportSubjectId, revision } };
-      const result: SelectContextResult = { organizationId: target.organizationId, ministryId: target.ministryId, supportSubjectId: target.supportSubjectId, revision, unsavedWork: resolution ?? "none" };
-      return { changed: true, revision, result };
+      return { changed: true, revision, result: { organizationId: target.organizationId, ministryId: target.ministryId, supportSubjectId: target.supportSubjectId, revision, unsavedWork: resolution ?? "none" } };
     },
   });
 }
 function controlRefusal(operationId: string, refusal: SessionControlRefusal, field: string): MutationOutcome {
-  switch (refusal.code) {
-    case "meta-unreadable":
-      return developmentDocumentUnavailable(operationId);
-    case "unknown-session":
-      return denied({ operationId, reasonCode: "session-unavailable" });
-    case "unknown-scenario":
-    case "invalid-offset":
-    case "out-of-range-offset":
-      return invalid({ operationId, fields: { [field]: [refusal.message] } });
-  }
+  return refusal.code === "meta-unreadable" ? developmentDocumentUnavailable(operationId) : refusal.code === "unknown-session" ? denied({ operationId, reasonCode: "session-unavailable" }) : invalid({ operationId, fields: { [field]: [refusal.message] } });
 }
-function failurePlanRefusal(operationId: string, refusal: FailurePlanRefusal): MutationOutcome {
-  switch (refusal.code) {
-    case "unknown-target":
-      return invalid({ operationId, fields: { "target.name": [refusal.message] } });
-    case "mode-not-demonstrable-on-target":
-      return invalid({ operationId, fields: { mode: [refusal.message] } });
-    case "malformed-plan":
-    case "already-armed":
-      return invalid({ operationId, fields: { [ROOT_FIELD_KEY]: [refusal.message] } });
-  }
-}
+const failurePlanRefusal = (operationId: string, refusal: FailurePlanRefusal): MutationOutcome => invalid({ operationId, fields: { [refusal.code === "unknown-target" ? "target.name" : refusal.code === "mode-not-demonstrable-on-target" ? "mode" : ROOT_FIELD_KEY]: [refusal.message] } });
 const MILLISECOND_NANOSECONDS = 1_000_000n;
 function clockOffsetMilliseconds(instantText: string): number | undefined {
   if (typeof instantText !== "string" || instantText.length === 0) return undefined;
@@ -278,7 +211,6 @@ export async function setClock(input: MutationInput<SetClockPayload>, source?: S
   const request = { sessionId: acting.sessionId, principalId: acting.principalId, input, schema: setClockPayloadSchema, name: "setClock", developmentControl: "setClock" };
   const probe = await probeDevelopmentDocument(request);
   if (probe.kind !== "document") return probe.kind === "answer" ? probe.outcome : developmentDocumentUnavailable(probe.operationId);
-  // The probe validated this reading, so the conversion cannot fail here; the branch restates the same refusal rather than letting an undefined offset reach the clock.
   const offsetMilliseconds = clockOffsetMilliseconds(input.payload.offsetIso);
   if (offsetMilliseconds === undefined) return invalid({ operationId: input.operationId, fields: { offsetIso: [CLOCK_READING_MESSAGE] } });
   if (probe.meta.clockOffsetMs === offsetMilliseconds) return unchanged({ operationId: input.operationId, revision: probe.revision });
@@ -307,37 +239,26 @@ export async function advanceClock(input: MutationInput<AdvanceClockPayload>, so
   const result: AdvanceClockResult = { bySeconds: input.payload.bySeconds, clockOffsetMs: applied.value.clockOffsetMs };
   return recordDevelopmentChange(request, { revision: devStateRevision(applied.value, acting.principalId), result });
 }
-/** The failure to arm, and the one call it is demonstrated on. */
 export type ArmingFailurePlanPayload = { readonly mode: FailureMode; readonly target: { readonly kind: FailureTargetKind; readonly name: string } };
-/** The disarm: the payload form that clears the armed failure and leaves every record as it stands. */
 export type DisarmingFailurePlanPayload = { readonly plan: null };
 export type SetFailurePlanPayload = ArmingFailurePlanPayload | DisarmingFailurePlanPayload;
 export type SetFailurePlanResult = { readonly mode: FailureMode; readonly target: { readonly kind: FailureTargetKind; readonly name: string }; readonly armedAt: string };
 const FAILURE_MODES = ["denied", "conflict", "unknown"] as const satisfies readonly FailureMode[];
 const FAILURE_TARGET_KINDS = ["read", "mutation"] as const satisfies readonly FailureTargetKind[];
-function isDemonstrableTargetName(name: string): boolean {
-  return DEMONSTRABLE_TARGETS.some((target) => target.name === name);
-}
+const isDemonstrableTargetName = (name: string): boolean => DEMONSTRABLE_TARGETS.some((target) => target.name === name);
 const DEMONSTRABLE_TARGET_MESSAGE = `A target names the call a failure is demonstrated on: ${DEMONSTRABLE_TARGETS.map((target) => target.name).join(", ")}.`;
 const DISARM_PLAN_MEMBER = "plan";
 const armFailurePlanPayloadSchema: z.ZodType<ArmingFailurePlanPayload> = z.strictObject({ mode: z.enum(FAILURE_MODES), target: z.strictObject({ kind: z.enum(FAILURE_TARGET_KINDS), name: z.string().refine(isDemonstrableTargetName, DEMONSTRABLE_TARGET_MESSAGE) }) });
 const disarmFailurePlanPayloadSchema: z.ZodType<DisarmingFailurePlanPayload> = z.strictObject({ plan: z.null() });
 const setFailurePlanPayloadSchema: z.ZodType<SetFailurePlanPayload> = z.custom<SetFailurePlanPayload>().superRefine((payload, ctx) => {
   const parsed = isRecord(payload) && Object.hasOwn(payload, DISARM_PLAN_MEMBER) ? disarmFailurePlanPayloadSchema.safeParse(payload) : armFailurePlanPayloadSchema.safeParse(payload);
-  if (!parsed.success) {
-    for (const issue of parsed.error.issues) {
-      // The branch's own message and field path are what a caller acts on; the machine code belongs to the schema library, and an `invalid` outcome is keyed by the path and read for the message.
-      ctx.addIssue({ code: "custom", message: issue.message, path: issue.path });
-    }
-  }
+  if (!parsed.success) for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", message: issue.message, path: issue.path });
 });
 /** Arms one simulated failure on one named read or mutation, or disarms the armed one, for this session only, and answers one of the eight outcomes. */
 export async function setFailurePlan(input: MutationInput<SetFailurePlanPayload>, source?: SessionSource): Promise<MutationOutcome> {
   const acting = await actingSessionContext(source);
-  const request = { sessionId: acting.sessionId, principalId: acting.principalId, input, schema: setFailurePlanPayloadSchema, name: "setFailurePlan", developmentControl: "setFailurePlan" };
-  const probe = await probeDevelopmentDocument(request);
+  const probe = await probeDevelopmentDocument({ sessionId: acting.sessionId, principalId: acting.principalId, input, schema: setFailurePlanPayloadSchema, name: "setFailurePlan", developmentControl: "setFailurePlan" });
   if (probe.kind !== "document") return probe.kind === "answer" ? probe.outcome : developmentDocumentUnavailable(probe.operationId);
-  // The disarm states the absence of a plan, so there is nothing to stamp and nothing to arm: the document is written back with the plan cleared. A document that already holds no plan would produce no change and is answered as such (AAP 0.7.1, `unchanged`).
   if ("plan" in input.payload) {
     const disarmed = disarmFailurePlan();
     if (probe.meta.failurePlan === EMPTY_FAILURE_PLAN) return unchanged({ operationId: input.operationId, revision: probe.revision });
@@ -347,7 +268,6 @@ export async function setFailurePlan(input: MutationInput<SetFailurePlanPayload>
   const { mode, target } = input.payload;
   const armed = probe.meta.failurePlan;
   if (armed !== null && armed.mode === mode && armed.target.kind === target.kind && armed.target.name === target.name) return unchanged({ operationId: input.operationId, revision: probe.revision });
-  // The instant the plan is stamped with is this session's own scenario instant, derived from the offset its document persists, so a plan armed from one session never records another session's clock position.
   const armedAt = instantAt(probe.meta.clockOffsetMs).toString();
   const arming = armFailurePlan(probe.meta.failurePlan, { mode, target, armedAt });
   if (!arming.ok) return failurePlanRefusal(input.operationId, arming.error);
@@ -356,11 +276,9 @@ export async function setFailurePlan(input: MutationInput<SetFailurePlanPayload>
   const result: SetFailurePlanResult = { mode: plan.mode, target: { kind: plan.target.kind, name: plan.target.name }, armedAt: plan.armedAt };
   return writeFailurePlan(acting, input, plan, devStateRevision(armedDocument, acting.principalId), result);
 }
-/** A seed reset states nothing: there is nothing a caller can choose about it. */
 export type ResetSeedPayload = Record<string, never>;
 export type ResetSeedResult = { readonly seededSessions: readonly string[]; readonly removedSessions: readonly string[]; readonly clockOffsetMs: number; readonly partners: number; readonly seedInstant: string };
 const resetSeedPayloadSchema: z.ZodType<ResetSeedPayload> = z.custom<ResetSeedPayload>((value) => isRecord(value) && Object.keys(value).length === 0, "A seed reset states no fields: it discards every stored session and lays every seeded session down again, so there is nothing to choose.");
-/** The revision token the re-seeded documents publish for one session, or `undefined` when the document the reset laid down cannot be read; a store fault throws here, so the mutation answers it as … */
 async function seededDevStateRevision(sessionId: string, principalId: string): Promise<string | undefined> {
   const documents = await readSession(sessionId);
   if (documents === undefined) return undefined;
@@ -386,10 +304,5 @@ export async function resetSeed(input: MutationInput<ResetSeedPayload>, source?:
   } catch {
     revision = undefined;
   }
-  if (revision === undefined) {
-    // The reset replaced the state the caller presented a revision for, so the only token this answer can carry is the one the seeded document now produces; the caller's own pre-reset token names a state the store no longer holds and would answer its next mutation as a stale revision. A document
-    // this boundary has not read yields no token at all: the reset did happen, so the answer is the store's outage — never a fabricated revision, and never a denial of the effect.
-    return resetStoreUnavailable(input.operationId);
-  }
-  return recordDevelopmentChange(request, { revision, result, created: summary.seededSessions });
+  return revision === undefined ? resetStoreUnavailable(input.operationId) : recordDevelopmentChange(request, { revision, result, created: summary.seededSessions });
 }

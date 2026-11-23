@@ -1,13 +1,10 @@
-/** Contact import, step four: record the worker's decision about one row at a time, and produce the summary the shared review step renders before anything is accepted. */
 import { z } from "zod";
-import { IMPORT_FIELD_IDS, IMPORT_FIELD_VOCABULARY, type ImportConfirmedMapping, ImportFieldId } from "./map";
-import { IMPORT_MAX_CELL_CODE_POINTS, type ImportRowFaultKind, ParsedCsvFile, ParsedCsvRow } from "./parse";
-import { suggestMatches, validateRows, type ImportIssueCode, ImportMatchCandidate, ImportMatchReference, ImportPreservedReason, ImportRowVerdict, ImportValidatedRow, ImportValidation } from "./validate";
-/** The four decisions a worker can take about one row, and the whole vocabulary of the step: a new private entry, reuse of an authorized identity, a skip, or nothing yet. */
+import { IMPORT_FIELD_IDS, IMPORT_FIELD_VOCABULARY, ImportFieldId, type ImportConfirmedMapping } from "./map";
+import { IMPORT_MAX_CELL_CODE_POINTS, ParsedCsvFile, ParsedCsvRow, type ImportRowFaultKind } from "./parse";
+import { suggestMatches, validateRows, ImportMatchCandidate, ImportMatchReference, ImportPreservedReason, ImportRowVerdict, ImportValidatedRow, ImportValidation, type ImportIssueCode } from "./validate";
 export type ImportDecisionKind = "create" | "reuse" | "skip" | "unresolved";
 export const IMPORT_DECISION_KINDS: readonly ImportDecisionKind[] = ["create", "reuse", "skip", "unresolved"];
 export type ImportCellCorrectionInput = { readonly columnNumber: number; readonly value: string };
-/** A cell the worker rewrote, as recorded: the field the column supplied at that moment, so the summary counts corrections per field without re-reading a mapping that may since have changed. */
 export type ImportRecordedCorrection = { readonly columnNumber: number; readonly fieldId: ImportFieldId; readonly value: string };
 export type ImportCreateDecision = { readonly kind: "create"; readonly rowNumber: number; readonly verdict: ImportRowVerdict; readonly corrections: readonly ImportRecordedCorrection[] };
 export type ImportReuseDecision = { readonly kind: "reuse"; readonly rowNumber: number; readonly verdict: ImportRowVerdict; readonly candidate: ImportMatchReference; readonly corrections: readonly ImportRecordedCorrection[] };
@@ -19,27 +16,24 @@ export type ImportReuseDecisionInput = { readonly kind: "reuse"; readonly rowNum
 export type ImportSkipDecisionInput = { readonly kind: "skip"; readonly rowNumber: number; readonly reason?: string };
 export type ImportUnresolvedDecisionInput = { readonly kind: "unresolved"; readonly rowNumber: number };
 export type ImportDecisionInput = ImportCreateDecisionInput | ImportReuseDecisionInput | ImportSkipDecisionInput | ImportUnresolvedDecisionInput;
-/** The members one decision carries whatever its kind, so a decision already held can be echoed back as the input a client posts. */
 export type ImportDecisionEcho = { readonly kind: ImportDecisionKind; readonly rowNumber: number; readonly corrections: readonly ImportCellCorrectionInput[]; readonly candidate: ImportMatchReference | null; readonly reason: string };
 /** The one input shape a client posts for a decision of this kind, carrying only the members that kind takes. */
-export function decisionInputOf(echo: ImportDecisionEcho): ImportDecisionInput {
-  switch (echo.kind) {
-    case "create":
-      return { kind: "create", rowNumber: echo.rowNumber, corrections: echo.corrections };
-    case "reuse":
-      // A reuse is a decision about one named identity, so with no reference to reuse the row is echoed as undecided rather than as a decision that is refused.
-      return echo.candidate === null ? { kind: "unresolved", rowNumber: echo.rowNumber } : { kind: "reuse", rowNumber: echo.rowNumber, candidate: { ...echo.candidate }, corrections: echo.corrections };
-    case "skip":
-      return { kind: "skip", rowNumber: echo.rowNumber, reason: echo.reason };
-    case "unresolved":
-      return { kind: "unresolved", rowNumber: echo.rowNumber };
-  }
-}
+const DECISION_INPUT_BUILDERS: Readonly<Record<ImportDecisionKind, (echo: ImportDecisionEcho) => ImportDecisionInput>> = {
+  create: (echo) => ({ kind: "create", rowNumber: echo.rowNumber, corrections: echo.corrections }),
+  reuse: (echo) => (echo.candidate === null ? { kind: "unresolved", rowNumber: echo.rowNumber } : { kind: "reuse", rowNumber: echo.rowNumber, candidate: { ...echo.candidate }, corrections: echo.corrections }),
+  skip: (echo) => ({ kind: "skip", rowNumber: echo.rowNumber, reason: echo.reason }),
+  unresolved: (echo) => ({ kind: "unresolved", rowNumber: echo.rowNumber }),
+};
+export const decisionInputOf = (echo: ImportDecisionEcho): ImportDecisionInput => DECISION_INPUT_BUILDERS[echo.kind](echo);
 /** The input that records a decision this import already holds, so a read publishes exactly what acceptance takes. */
-export function recordedDecisionInputOf(decision: ImportRowDecision): ImportDecisionInput {
-  const corrections = decision.kind === "create" || decision.kind === "reuse" ? decision.corrections.map((correction) => ({ columnNumber: correction.columnNumber, value: correction.value })) : [];
-  return decisionInputOf({ kind: decision.kind, rowNumber: decision.rowNumber, corrections, candidate: decision.kind === "reuse" ? decision.candidate : null, reason: decision.kind === "skip" ? decision.workerReason : "" });
-}
+export const recordedDecisionInputOf = (decision: ImportRowDecision): ImportDecisionInput =>
+  decisionInputOf({
+    kind: decision.kind,
+    rowNumber: decision.rowNumber,
+    corrections: decision.kind === "create" || decision.kind === "reuse" ? decision.corrections.map((correction) => ({ columnNumber: correction.columnNumber, value: correction.value })) : [],
+    candidate: decision.kind === "reuse" ? decision.candidate : null,
+    reason: decision.kind === "skip" ? decision.workerReason : "",
+  });
 export type ImportFileFingerprint = { readonly checksum: string; readonly columnCount: number; readonly dataRowCount: number };
 export type ImportDecisionSet = { readonly fingerprint: ImportFileFingerprint; readonly decisions: readonly ImportRowDecision[] };
 export type ImportDecisionRefusalCode =
@@ -56,7 +50,7 @@ export type ImportDecisionRefusalCode =
   | "no-reusable-candidate"
   | "candidate-not-suggested";
 export type ImportDecisionRefusal = { readonly code: ImportDecisionRefusalCode; readonly rowNumber: number | null; readonly columnNumbers: readonly number[]; readonly message: string };
-/** What a decision and a summary are checked against: the file as parsed, the mapping the worker confirmed, the validation of that file, and the existing contacts the service resolved in the. */
+const refusalOf = (code: ImportDecisionRefusalCode, rowNumber: number | null, columnNumbers: readonly number[], message: string): ImportDecisionRefusal => ({ code, rowNumber, columnNumbers, message });
 export type ImportDecisionContext = { readonly file: ParsedCsvFile; readonly mapping: ImportConfirmedMapping; readonly validation: ImportValidation; readonly candidates: readonly ImportMatchCandidate[] };
 export type ImportRecordDecisionResult = { readonly ok: true; readonly set: ImportDecisionSet; readonly decision: ImportRowDecision; readonly changed: boolean } | { readonly ok: false; readonly refusal: ImportDecisionRefusal };
 const FINGERPRINT_TAG = "csv-1";
@@ -65,7 +59,6 @@ const FNV_OFFSET = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
 const SECOND_SEED = 0x9747b28c;
 const SECOND_PRIME = 0x85ebca6b;
-
 function hashRound(text: string, seed: number, prime: number): number {
   let hash = seed >>> 0;
   for (let index = 0; index < text.length; index += 1) {
@@ -75,11 +68,7 @@ function hashRound(text: string, seed: number, prime: number): number {
   return hash >>> 0;
 }
 const hex8 = (value: number): string => value.toString(16).padStart(8, "0");
-function checksumOf(text: string): string {
-  const high = hashRound(text, SECOND_SEED, SECOND_PRIME);
-  const low = hashRound(text, FNV_OFFSET, FNV_PRIME);
-  return `${FINGERPRINT_TAG}-${hex8(high)}${hex8(low)}`;
-}
+const checksumOf = (text: string): string => `${FINGERPRINT_TAG}-${hex8(hashRound(text, SECOND_SEED, SECOND_PRIME))}${hex8(hashRound(text, FNV_OFFSET, FNV_PRIME))}`;
 const framedPart = (part: string): string => `${part.length}:${part}`;
 /** The content fingerprint of a parsed file: its headers and every cell in row order, each length framed, hashed once here. */
 export function fingerprintOf(file: ParsedCsvFile): ImportFileFingerprint {
@@ -91,25 +80,24 @@ export function fingerprintOf(file: ParsedCsvFile): ImportFileFingerprint {
   }
   return { checksum: checksumOf(parts.join(PART_SEPARATOR)), columnCount: file.headers.length, dataRowCount: file.rows.length };
 }
-/** The empty decision set for a file: no row decided, and every row therefore unresolved. */
 export const createDecisionSet = (file: ParsedCsvFile): ImportDecisionSet => ({ fingerprint: fingerprintOf(file), decisions: [] });
 const sameFingerprint = (left: ImportFileFingerprint, right: ImportFileFingerprint): boolean => left.checksum === right.checksum && left.columnCount === right.columnCount && left.dataRowCount === right.dataRowCount;
+const contextRefusal = (set: ImportDecisionSet, context: ImportDecisionContext): ImportDecisionRefusal | null => staleFileRefusal(set, context.file) ?? contextMismatchRefusal(context);
 /** Null when the set describes this exact file, and the `file-changed` refusal when it does not. */
 export function staleFileRefusal(set: ImportDecisionSet, file: ParsedCsvFile): ImportDecisionRefusal | null {
   const current = fingerprintOf(file);
   if (sameFingerprint(set.fingerprint, current)) return null;
   const recorded = set.fingerprint;
-  return {
-    code: "file-changed",
-    rowNumber: null,
-    columnNumbers: [],
-    message: `These decisions were recorded against a different version of this file: it held ${recorded.dataRowCount} data row(s) in ${recorded.columnCount} column(s) then, and holds ${current.dataRowCount} in ${current.columnCount} now. A changed file needs a fresh review, so choose the file again and decide about its rows.`,
-  };
+  return refusalOf(
+    "file-changed",
+    null,
+    [],
+    `These decisions were recorded against a different version of this file: it held ${recorded.dataRowCount} data row(s) in ${recorded.columnCount} column(s) then, and holds ${current.dataRowCount} in ${current.columnCount} now. A changed file needs a fresh review, so choose the file again and decide about its rows.`,
+  );
 }
 function contextMismatchRefusal(context: ImportDecisionContext): ImportDecisionRefusal | null {
   const { file, validation } = context;
-  const aligned = validation.rows.length === file.rows.length && validation.rows.every((row, index) => file.rows[index]?.rowNumber === row.rowNumber);
-  if (aligned) return null;
+  if (validation.rows.length === file.rows.length && validation.rows.every((row, index) => file.rows[index]?.rowNumber === row.rowNumber)) return null;
   return { code: "context-mismatch", rowNumber: null, columnNumbers: [], message: `The validation offered for this file describes ${validation.rows.length} row(s) and the file holds ${file.rows.length}. Validate this file again, then decide about its rows.` };
 }
 const CORRECTION_SCHEMA = z.object({ columnNumber: z.number().int().min(1), value: z.string() });
@@ -125,37 +113,31 @@ type ParseFailure = { readonly issues: readonly { readonly path: readonly Proper
 export function recordDecision(set: ImportDecisionSet, input: ImportDecisionInput, context: ImportDecisionContext): ImportRecordDecisionResult {
   const parsed = DECISION_INPUT_SCHEMA.safeParse(input);
   if (!parsed.success) return { ok: false, refusal: unreadableDecisionRefusal(parsed.error) };
-  const stale = staleFileRefusal(set, context.file);
-  if (stale !== null) return { ok: false, refusal: stale };
-  const mismatch = contextMismatchRefusal(context);
-  if (mismatch !== null) return { ok: false, refusal: mismatch };
+  const refused = contextRefusal(set, context);
+  if (refused !== null) return { ok: false, refusal: refused };
   const data = parsed.data;
   const rowNumber = data.rowNumber;
   const row = context.file.rows.find((candidate) => candidate.rowNumber === rowNumber);
   const validated = context.validation.rows.find((candidate) => candidate.rowNumber === rowNumber);
   if (row === undefined || validated === undefined) return { ok: false, refusal: rowNotFoundRefusal(rowNumber, context.file.rows.length) };
   if (data.kind === "unresolved") return withDecision(set, { kind: "unresolved", rowNumber, verdict: validated.verdict });
-  // A skip needs no correction and no candidate: it is always permitted, and it records the row's own problem beside the worker's reason so a skipped row still says what it left behind.
   if (data.kind === "skip") return withDecision(set, { kind: "skip", rowNumber, verdict: validated.verdict, workerReason: (data.reason ?? "").trim(), rowProblem: rowProblemOf(validated) });
   const corrections = data.corrections ?? [];
   const checked = checkCorrections(corrections, row, validated, context);
   if (!checked.ok) return { ok: false, refusal: checked.refusal };
   const revalidated = revalidateRow(row, corrections, validated, context);
   if (revalidated === null) return { ok: false, refusal: correctionNotCheckedRefusal(rowNumber) };
-  // The blocking problem outranks the intent: a row still unclear after its corrections can only be skipped or left unresolved, and recording it as accepted would drop it later, silently.
   if (revalidated.verdict === "needs-correction") return { ok: false, refusal: corrections.length === 0 ? rowNeedsCorrectionRefusal(rowNumber, revalidated) : correctionNotClearingRefusal(rowNumber, revalidated) };
   if (data.kind === "reuse") {
     const suggestions = suggestMatches(revalidated, context.candidates).suggestions;
     if (suggestions.length === 0) return { ok: false, refusal: noReusableCandidateRefusal(rowNumber) };
-    const offered = suggestions.some((candidate) => sameReference(candidate.reference, data.candidate));
-    if (!offered) return { ok: false, refusal: candidateNotSuggestedRefusal(rowNumber, suggestions.length) };
+    if (!suggestions.some((candidate) => sameReference(candidate.reference, data.candidate))) return { ok: false, refusal: candidateNotSuggestedRefusal(rowNumber, suggestions.length) };
     return withDecision(set, { kind: "reuse", rowNumber, verdict: revalidated.verdict, candidate: { system: data.candidate.system, reference: data.candidate.reference }, corrections: checked.corrections });
   }
   return withDecision(set, { kind: "create", rowNumber, verdict: revalidated.verdict, corrections: checked.corrections });
 }
 function withDecision(set: ImportDecisionSet, decision: ImportRowDecision): ImportRecordDecisionResult {
   const standing = set.decisions.find((candidate) => candidate.rowNumber === decision.rowNumber);
-  // Both objects are built here key by key, so serialising them compares the same fields in the same order: identical decisions compare equal, and a changed one cannot.
   if (standing !== undefined && JSON.stringify(standing) === JSON.stringify(decision)) return { ok: true, set, decision: standing, changed: false };
   const decisions = set.decisions
     .filter((candidate) => candidate.rowNumber !== decision.rowNumber)
@@ -168,48 +150,30 @@ function rowProblemOf(validated: ImportValidatedRow): string | null {
   const issue = validated.issues[0];
   if (issue !== undefined) return issue.message;
   const fault = validated.faults[0];
-  if (fault !== undefined) return fault.message;
-  return null;
+  return fault !== undefined ? fault.message : null;
 }
 const problemCountOf = (validated: ImportValidatedRow): number => validated.issues.length + validated.faults.length;
 function problemColumnsOf(validated: ImportValidatedRow): number[] {
-  const columns: number[] = [];
-  for (const issue of validated.issues) if (issue.columnNumber !== null && !columns.includes(issue.columnNumber)) columns.push(issue.columnNumber);
-  for (const fault of validated.faults) if (fault.columnNumber !== null && !columns.includes(fault.columnNumber)) columns.push(fault.columnNumber);
-  return columns.sort((left, right) => left - right);
+  const named = [...validated.issues.map((issue) => issue.columnNumber), ...validated.faults.map((fault) => fault.columnNumber)];
+  return [...new Set(named.flatMap((columnNumber) => (columnNumber === null ? [] : [columnNumber])))].sort((left, right) => left - right);
 }
 function unreadableDecisionRefusal(error: ParseFailure): ImportDecisionRefusal {
-  const places: string[] = [];
-  for (const issue of error.issues) {
-    const place = issue.path.map((part) => String(part)).join(".");
-    if (place.length > 0 && !places.includes(place)) places.push(place);
-  }
+  const places = [...new Set(error.issues.map((issue) => issue.path.map((part) => String(part)).join(".")).filter((place) => place.length > 0))];
   const where = places.length === 0 ? "its own shape" : places.join(", ");
   const first = error.issues[0];
-  const detail = first === undefined ? "" : `: ${first.message}`;
-  return { code: "decision-invalid", rowNumber: null, columnNumbers: [], message: `This decision could not be read at ${where}${detail}. A decision names one data row of this file and what to do with that row.` };
+  return { code: "decision-invalid", rowNumber: null, columnNumbers: [], message: `This decision could not be read at ${where}${first === undefined ? "" : `: ${first.message}`}. A decision names one data row of this file and what to do with that row.` };
 }
-const rowNotFoundRefusal = (rowNumber: number, rowCount: number): ImportDecisionRefusal => ({ code: "row-not-found", rowNumber, columnNumbers: [], message: `Row ${rowNumber} is not one of this file's ${rowCount} data row(s). Decide about a row the file actually holds.` });
-function rowNeedsCorrectionRefusal(rowNumber: number, validated: ImportValidatedRow): ImportDecisionRefusal {
-  return { code: "row-needs-correction", rowNumber, columnNumbers: problemColumnsOf(validated), message: `Row ${rowNumber} cannot be accepted as it stands: it has ${problemCountOf(validated)} problem(s). ${rowProblemOf(validated) ?? ""} Correct the cell and decide again, or skip the row.` };
-}
-function correctionNotClearingRefusal(rowNumber: number, validated: ImportValidatedRow): ImportDecisionRefusal {
-  return {
-    code: "correction-not-clearing",
-    rowNumber,
-    columnNumbers: problemColumnsOf(validated),
-    message: `Row ${rowNumber} was corrected and still has ${problemCountOf(validated)} problem(s) that stop it being accepted. ${rowProblemOf(validated) ?? ""} Supply a correction for every cell named there, or skip the row.`,
-  };
-}
-const correctionNotCheckedRefusal = (rowNumber: number): ImportDecisionRefusal => ({ code: "correction-not-clearing", rowNumber, columnNumbers: [], message: `Row ${rowNumber} could not be re-checked after the correction, so it cannot be accepted as corrected. Choose the file again and confirm the mapping for it.` });
-function noReusableCandidateRefusal(rowNumber: number): ImportDecisionRefusal {
-  return { code: "no-reusable-candidate", rowNumber, columnNumbers: [], message: `Row ${rowNumber} shares no usable value with a contact you can reuse, so there is nothing to attach it to. Create a new private entry for this row instead, or skip it.` };
-}
-function candidateNotSuggestedRefusal(rowNumber: number, offeredCount: number): ImportDecisionRefusal {
-  return { code: "candidate-not-suggested", rowNumber, columnNumbers: [], message: `Row ${rowNumber} was offered ${offeredCount} contact(s) it could reuse, and that reference is not one of them. Choose one of the contacts proposed for this row, create a new private entry, or skip it.` };
-}
+const rowNotFoundRefusal = (rowNumber: number, rowCount: number): ImportDecisionRefusal => refusalOf("row-not-found", rowNumber, [], `Row ${rowNumber} is not one of this file's ${rowCount} data row(s). Decide about a row the file actually holds.`);
+const rowNeedsCorrectionRefusal = (rowNumber: number, validated: ImportValidatedRow): ImportDecisionRefusal =>
+  refusalOf("row-needs-correction", rowNumber, problemColumnsOf(validated), `Row ${rowNumber} cannot be accepted as it stands: it has ${problemCountOf(validated)} problem(s). ${rowProblemOf(validated) ?? ""} Correct the cell and decide again, or skip the row.`);
+const correctionNotClearingRefusal = (rowNumber: number, validated: ImportValidatedRow): ImportDecisionRefusal =>
+  refusalOf("correction-not-clearing", rowNumber, problemColumnsOf(validated), `Row ${rowNumber} was corrected and still has ${problemCountOf(validated)} problem(s) that stop it being accepted. ${rowProblemOf(validated) ?? ""} Supply a correction for every cell named there, or skip the row.`);
+const correctionNotCheckedRefusal = (rowNumber: number): ImportDecisionRefusal => refusalOf("correction-not-clearing", rowNumber, [], `Row ${rowNumber} could not be re-checked after the correction, so it cannot be accepted as corrected. Choose the file again and confirm the mapping for it.`);
+const noReusableCandidateRefusal = (rowNumber: number): ImportDecisionRefusal => refusalOf("no-reusable-candidate", rowNumber, [], `Row ${rowNumber} shares no usable value with a contact you can reuse, so there is nothing to attach it to. Create a new private entry for this row instead, or skip it.`);
+const candidateNotSuggestedRefusal = (rowNumber: number, offeredCount: number): ImportDecisionRefusal =>
+  refusalOf("candidate-not-suggested", rowNumber, [], `Row ${rowNumber} was offered ${offeredCount} contact(s) it could reuse, and that reference is not one of them. Choose one of the contacts proposed for this row, create a new private entry, or skip it.`);
 type CorrectionCheck = { readonly ok: true; readonly corrections: readonly ImportRecordedCorrection[] } | { readonly ok: false; readonly refusal: ImportDecisionRefusal };
-const refusedCorrection = (code: ImportDecisionRefusalCode, rowNumber: number, columnNumbers: readonly number[], message: string): CorrectionCheck => ({ ok: false, refusal: { code, rowNumber, columnNumbers, message } });
+const refusedCorrection = (code: ImportDecisionRefusalCode, rowNumber: number, columnNumbers: readonly number[], message: string): CorrectionCheck => ({ ok: false, refusal: refusalOf(code, rowNumber, columnNumbers, message) });
 function checkCorrections(input: readonly ImportCellCorrectionInput[], row: ParsedCsvRow, validated: ImportValidatedRow, context: ImportDecisionContext): CorrectionCheck {
   const byColumn = new Map<number, string>();
   for (const correction of input) {
@@ -253,13 +217,9 @@ function revalidateRow(row: ParsedCsvRow, corrections: readonly ImportCellCorrec
   const revalidated = validateRows({ ...context.file, rows: [{ rowNumber: row.rowNumber, cells }], dataRowCount: 1, rowFaults: faults }, context.mapping);
   return revalidated.rows[0] ?? null;
 }
-function fieldAtColumn(mapping: ImportConfirmedMapping, columnNumber: number): ImportFieldId | null {
-  const assignment = mapping.assignments.find((candidate) => candidate.columnIndex === columnNumber);
-  return assignment === undefined ? null : assignment.fieldId;
-}
+const fieldAtColumn = (mapping: ImportConfirmedMapping, columnNumber: number): ImportFieldId | null => mapping.assignments.find((candidate) => candidate.columnIndex === columnNumber)?.fieldId ?? null;
 const headerAt = (headers: readonly string[], columnNumber: number): string => headers[columnNumber - 1] ?? "";
 const codePointCount = (value: string): number => [...value].length;
-/** Why a row cannot be accepted as it stands: a value the file could not supply, a shape the parse measured, or a reuse the comparison no longer offers. */
 export type ImportBlockingReasonCode = ImportIssueCode | ImportRowFaultKind | "reuse-not-offered";
 const BLOCKING_REASON_ORDER: readonly ImportBlockingReasonCode[] = ["name-missing", "email-not-complete", "phone-not-a-number", "postal-not-an-address", "ragged-row", "cell-too-long", "reuse-not-offered"];
 const BLOCKING_REASON_LABELS: Readonly<Record<ImportBlockingReasonCode, string>> = {
@@ -275,10 +235,8 @@ export type ImportDecisionCounts = { readonly create: number; readonly reuse: nu
 export type ImportBlockedReasonCount = { readonly code: ImportBlockingReasonCode; readonly label: string; readonly count: number };
 export type ImportCorrectionCount = { readonly fieldId: ImportFieldId; readonly label: string; readonly count: number };
 export type ImportPreservedColumnSummary = { readonly columnNumber: number; readonly header: string; readonly reason: ImportPreservedReason; readonly statesConsent: boolean; readonly cellCount: number };
-/** What acceptance will not create, stated as data rather than as a sentence the view has to trust. */
 export type ImportDecisionFacts = { readonly memberships: 0; readonly consentRecords: 0; readonly audienceMembers: 0; readonly preservedColumnsCreateNothing: true };
 export type ImportDecisionSummaryRow = { readonly rowNumber: number; readonly decisionKind: ImportDecisionKind; readonly verdict: ImportRowVerdict; readonly blockedReasons: readonly ImportBlockingReasonCode[]; readonly correctedFields: readonly ImportFieldId[] };
-/** Everything the review step shows before the worker accepts anything: how the rows divide, what still stops them, what was corrected and where, what is carried and what is only kept, and the. */
 export interface ImportDecisionSummary {
   readonly fingerprint: ImportFileFingerprint;
   readonly totalRowCount: number;
@@ -299,10 +257,8 @@ export type ImportSummaryResult = { readonly ok: true; readonly summary: ImportD
 type PreservedColumnTally = { columnNumber: number; header: string; reason: ImportPreservedReason; statesConsent: boolean; cellCount: number };
 /** Counts the decision set against the file it belongs to, refusing rather than describing a file the set was not taken against. */
 export function summariseDecisions(set: ImportDecisionSet, context: ImportDecisionContext): ImportSummaryResult {
-  const stale = staleFileRefusal(set, context.file);
-  if (stale !== null) return { ok: false, refusal: stale };
-  const mismatch = contextMismatchRefusal(context);
-  if (mismatch !== null) return { ok: false, refusal: mismatch };
+  const refused = contextRefusal(set, context);
+  if (refused !== null) return { ok: false, refusal: refused };
   const decisionByRow = new Map<number, ImportRowDecision>();
   for (const decision of set.decisions) decisionByRow.set(decision.rowNumber, decision);
   const kindCounts: Record<ImportDecisionKind, number> = { create: 0, reuse: 0, skip: 0, unresolved: 0 };
@@ -317,7 +273,6 @@ export function summariseDecisions(set: ImportDecisionSet, context: ImportDecisi
     const decision = decisionByRow.get(validated.rowNumber);
     const decisionKind: ImportDecisionKind = decision === undefined ? "unresolved" : decision.kind;
     kindCounts[decisionKind] += 1;
-    // A row carrying corrections is judged on the corrected row, because that is the row acceptance would create; reporting the problems of text the worker already fixed would keep the review step asking for a correction that has been made.
     const effective = effectiveRowOf(validated, decision, context);
     const blockedReasons = blockedReasonsOf(effective, decision, context.candidates);
     for (const reason of blockedReasons) blockedCounts.set(reason, (blockedCounts.get(reason) ?? 0) + 1);
@@ -334,38 +289,32 @@ export function summariseDecisions(set: ImportDecisionSet, context: ImportDecisi
     tallyPreservedColumns(preservedColumns, validated);
     rows.push({ rowNumber: validated.rowNumber, decisionKind, verdict: effective.verdict, blockedReasons, correctedFields: IMPORT_FIELD_IDS.filter((fieldId) => correctedFields.includes(fieldId)) });
   }
-  const blockedReasons: ImportBlockedReasonCount[] = [];
-  for (const code of BLOCKING_REASON_ORDER) {
-    const count = blockedCounts.get(code);
-    if (count === undefined) continue;
-    blockedReasons.push({ code, label: BLOCKING_REASON_LABELS[code], count });
-  }
-  const corrections: ImportCorrectionCount[] = [];
-  for (const fieldId of IMPORT_FIELD_IDS) {
-    const count = correctionCounts.get(fieldId);
-    if (count === undefined) continue;
-    corrections.push({ fieldId, label: labelOf(fieldId), count });
-  }
+  const blockedReasons = countedEntries(BLOCKING_REASON_ORDER, blockedCounts, (code, count) => ({ code, label: BLOCKING_REASON_LABELS[code], count }));
+  const corrections = countedEntries(IMPORT_FIELD_IDS, correctionCounts, (fieldId, count) => ({ fieldId, label: labelOf(fieldId), count }));
   const preserved = [...preservedColumns.values()].sort((left, right) => left.columnNumber - right.columnNumber).map((column) => ({ ...column }));
-  return {
-    ok: true,
-    summary: {
-      fingerprint: set.fingerprint,
-      totalRowCount: rows.length,
-      counts: { ...kindCounts, total: rows.length },
-      blockedRowCount: rows.filter((row) => row.blockedReasons.length > 0).length,
-      blockedReasons,
-      corrections,
-      correctionCount,
-      restrictionsPreserved,
-      restrictionsCarried,
-      preservedColumns: preserved,
-      preservedColumnCount: preserved.length,
-      consentLookingColumnCount: preserved.filter((column) => column.statesConsent).length,
-      facts: { memberships: 0, consentRecords: 0, audienceMembers: 0, preservedColumnsCreateNothing: true },
-      rows,
-    },
+  const summary: ImportDecisionSummary = {
+    fingerprint: set.fingerprint,
+    totalRowCount: rows.length,
+    counts: { ...kindCounts, total: rows.length },
+    blockedRowCount: rows.filter((row) => row.blockedReasons.length > 0).length,
+    blockedReasons,
+    corrections,
+    correctionCount,
+    restrictionsPreserved,
+    restrictionsCarried,
+    preservedColumns: preserved,
+    preservedColumnCount: preserved.length,
+    consentLookingColumnCount: preserved.filter((column) => column.statesConsent).length,
+    facts: { memberships: 0, consentRecords: 0, audienceMembers: 0, preservedColumnsCreateNothing: true },
+    rows,
   };
+  return { ok: true, summary };
+}
+function countedEntries<Key, Entry>(order: readonly Key[], counts: ReadonlyMap<Key, number>, entry: (key: Key, count: number) => Entry): Entry[] {
+  return order.flatMap((key) => {
+    const count = counts.get(key);
+    return count === undefined ? [] : [entry(key, count)];
+  });
 }
 function effectiveRowOf(validated: ImportValidatedRow, decision: ImportRowDecision | undefined, context: ImportDecisionContext): ImportValidatedRow {
   if (decision === undefined) return validated;
@@ -383,7 +332,6 @@ function blockedReasonsOf(validated: ImportValidatedRow, decision: ImportRowDeci
     for (const issue of validated.issues) found.add(issue.code);
     for (const fault of validated.faults) found.add(fault.kind);
   }
-  // A reuse decided earlier can stop being offered when the mapping or the caller's candidates change, so the offer is re-read here rather than trusted from the moment it was recorded.
   if (decision !== undefined && decision.kind === "reuse") {
     const suggestions = suggestMatches(validated, candidates).suggestions;
     if (!suggestions.some((candidate) => sameReference(candidate.reference, decision.candidate))) found.add("reuse-not-offered");
@@ -401,8 +349,4 @@ function tallyPreservedColumns(columns: Map<number, PreservedColumnTally>, valid
     held.cellCount += 1;
   }
 }
-function labelOf(fieldId: ImportFieldId): string {
-  const field = IMPORT_FIELD_VOCABULARY.find((candidate) => candidate.id === fieldId);
-  return field === undefined ? fieldId : field.label;
-}
-// What this file deliberately does not do: nothing here subscribes anyone, creates a membership, records consent, adds a gift, a commitment, a task or an interaction, copies a note body, merges or overwrites a record, or produces any effect at all — the service's `acceptImportRows` is the only caller that may act on a decision. Nothing here decides whether a reference may be reused (a candidate arrives with the reuse fact the service resolved and this module only checks the named reference is one of them), cancellation belongs to `receipt.ts`, and no message claims the file is safe: a successful local parse is not a safety qualification.
+const labelOf = (fieldId: ImportFieldId): string => IMPORT_FIELD_VOCABULARY.find((candidate) => candidate.id === fieldId)?.label ?? fieldId;

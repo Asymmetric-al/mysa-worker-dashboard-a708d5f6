@@ -11,17 +11,10 @@ function parseItemSafely(item: unknown): HomeItemParseResult {
   try {
     return parseHomeItem(item);
   } catch {
-    // Second line of defence: an item whose fields cannot be read stays listed rather than disappearing.
     return { ok: false };
   }
 }
-function ItemText({ className, value }: { readonly className: string; readonly value: string }): ReactElement {
-  return (
-    <p className={className}>
-      <bdi>{value}</bdi>
-    </p>
-  );
-}
+const ItemText = ({ className, value }: { readonly className: string; readonly value: string }): ReactElement => <bdi className={className}>{value}</bdi>;
 function reasonLabelOf(reasonCode: string): string {
   const code = homeReasonCodeSchema.safeParse(reasonCode);
   return code.success ? REASON_LABELS[code.data] : UNKNOWN_REASON_LABEL;
@@ -33,7 +26,6 @@ export default function HomeItemRow(props: { item: unknown; variant: HomeSection
   if (!parsed.ok) {
     return (
       <li data-slot="home-item-row" data-home-variant={variant} data-item-state="incomplete" className={rowClassName(variant)}>
-        {/* A labelled status region rather than `StateNotice`: no kind of that component describes an item whose own fields did not arrive, its empty and loading arms would nest a heading and an empty-state block inside a list item, and `<output>` carries the `status` role itself. */}
         <output className="flex min-w-0 flex-col gap-1">
           <span className="text-sm font-medium">{INCOMPLETE_ITEM_COPY.title}</span>
           <span className="text-sm text-muted-foreground text-pretty wrap-anywhere">{INCOMPLETE_ITEM_COPY.body}</span>
@@ -45,10 +37,7 @@ export default function HomeItemRow(props: { item: unknown; variant: HomeSection
   }
   const view = parsed.item;
   const leadsWithReason = variant === "attention";
-  // Surfaced only in Unfinished work, where it separates a resumable draft from a release.
   const lifecycle = variant === "unfinished-work" ? view.lifecycle : undefined;
-  const showsState = view.statusWord !== undefined || lifecycle !== undefined;
-  const detail = view.detail === undefined || view.detail.trim().length === 0 ? undefined : view.detail;
   const destination = (
     <Link href={view.destination.href} className={cn("inline-flex min-h-6 min-w-6 w-fit max-w-full flex-wrap items-center gap-x-1.5 text-start underline-offset-4 hover:underline", variant === "information" ? "text-sm font-normal" : "text-sm font-medium")}>
       <bdi className="text-pretty wrap-anywhere">{view.title}</bdi>
@@ -58,9 +47,7 @@ export default function HomeItemRow(props: { item: unknown; variant: HomeSection
   const reason = (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
       <Badge variant="secondary">{reasonLabelOf(view.reasonCode)}</Badge>
-      <p className="min-w-0 text-sm text-pretty wrap-anywhere">
-        <bdi>{view.reason}</bdi>
-      </p>
+      <bdi className="min-w-0 text-sm text-pretty wrap-anywhere">{view.reason}</bdi>
     </div>
   );
   return (
@@ -68,14 +55,14 @@ export default function HomeItemRow(props: { item: unknown; variant: HomeSection
       {leadsWithReason ? reason : null}
       {destination}
       {leadsWithReason ? null : reason}
-      {showsState ? (
+      {view.statusWord !== undefined || lifecycle !== undefined ? (
         <div className="flex min-w-0 flex-col items-start gap-1">
           {view.statusWord === undefined ? null : <StatusBadge label={view.statusWord} />}
           {lifecycle === undefined ? null : <DraftStatus state={lifecycle} />}
         </div>
       ) : null}
       {view.simulatedEffect === undefined ? null : <SimulationLabel effect={view.simulatedEffect} />}
-      {detail === undefined ? null : <ItemText className="text-xs text-muted-foreground text-pretty wrap-anywhere" value={detail} />}
+      {view.detail === undefined || view.detail.trim().length === 0 ? null : <ItemText className="text-xs text-muted-foreground text-pretty wrap-anywhere" value={view.detail} />}
     </li>
   );
 }

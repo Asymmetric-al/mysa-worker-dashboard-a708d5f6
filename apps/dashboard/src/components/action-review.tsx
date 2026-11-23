@@ -1,6 +1,6 @@
 "use client";
-/** The one review-then-accept step, and the one owner of an attempt's identity. */
-import { useCallback, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { hasSettled, intentKeyOf, mayReplay, useAttemptedMutation, type MutationSubmit } from "@/components/attempt";
 import OperationResult from "@/components/operation-result";
 import SimulationLabel, { type SimulatedEffect } from "@/components/simulation-label";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
-import { newOperationId } from "@/lib/ids";
 import type { MutationInput } from "@/modules/data-service/envelope";
-import { isOutcome, outcomeFromError, type MutationOutcome } from "@/modules/data-service/outcome";
+import type { MutationOutcome } from "@/modules/data-service/outcome";
+export { attemptForIntent, intentKeyOf, mayReplay, reappliableRevision, useReviewedMutation } from "@/components/attempt";
+export type { MutationSubmit, ReviewedAttempt, UseReviewedMutationResult } from "@/components/attempt";
 const CONTAINMENT_SENTENCE = "Confirming applies this change once. Nothing outside the summary above changes: this step sends " + "no notice, creates no financial record and subscribes no one unless the summary names it.";
 const CONFIRM_EFFECT_SENTENCE = "It takes effect as soon as you confirm it.";
 const SETTLED_SENTENCE = "This step is complete for this attempt, and the result below is its record. Changing what this " + "step would apply begins a new attempt with its own identity.";
@@ -19,129 +20,6 @@ const COUNT_CLASS = "tabular-figures font-medium text-foreground";
 const STEP_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 /** The heading level a step renders at when the caller states none. */
 export type ReviewHeadingLevel = keyof typeof STEP_HEADING_TAG;
-export type ReviewedAttempt = { readonly operationId: string; readonly intent: string | null };
-/** Renders a value as a canonical string so two intents can be compared exactly. */
-function canonicalIntent(value: unknown): string {
-  if (value === null || value === undefined) return "null";
-  switch (typeof value) {
-    case "string":
-      return JSON.stringify(value);
-    case "number":
-      return Number.isFinite(value) ? String(value) : JSON.stringify(String(value));
-    case "boolean":
-      return value ? "true" : "false";
-    case "object":
-      break;
-    default:
-      return JSON.stringify(String(value));
-  }
-  if (Array.isArray(value)) return `[${value.map((entry) => canonicalIntent(entry)).join(",")}]`;
-  const record = value as Readonly<Record<string, unknown>>;
-  const fields = Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalIntent(record[key])}`);
-  return `{${fields.join(",")}}`;
-}
-/** The stable fingerprint of one intent: the context, the revision the caller saw, and the payload. */
-export const intentKeyOf = (input: Omit<MutationInput<unknown>, "operationId">): string => canonicalIntent(input);
-/** The identity an attempt must carry, given the identity already held and the intent submitted now. */
-export function attemptForIntent(current: ReviewedAttempt | null, intent: string, mint: () => string = newOperationId): ReviewedAttempt {
-  if (current !== null && current.intent === intent) return current;
-  return { operationId: mint(), intent };
-}
-/** Whether an outcome leaves the same operation worth replaying. */
-export const mayReplay = (outcome: MutationOutcome | null): boolean => outcome !== null && (outcome.outcome === "unavailable" || outcome.outcome === "unknown");
-/** The revision a conflict's preserved input may be re-applied against, or `null` when there is no conflict to re-apply. */
-export const reappliableRevision = (outcome: MutationOutcome | null): string | null => (outcome !== null && outcome.outcome === "conflict" ? outcome.currentRevision : null);
-export type MutationSubmit<P> = (input: MutationInput<P>) => Promise<MutationOutcome>;
-export type UseReviewedMutationResult<P> = {
-  /** The identity of the attempt in flight or the one that last settled, and `null` before the first submission: an identity names an attempt that was made. */
-  readonly operationId: string | null;
-  /** `true` only while a request is in flight, so the caller can state the busy condition once. */
-  readonly pending: boolean;
-  readonly outcome: MutationOutcome | null;
-  readonly reviewedIntent: string | null;
-  submit(input: Omit<MutationInput<P>, "operationId">): Promise<MutationOutcome>;
-  retry(): Promise<MutationOutcome | null>;
-  reapply(): Promise<MutationOutcome | null>;
-  reset(): void;
-};
-/** Owns the attempt identity, the in-flight fence and the last outcome of one reviewed mutation. */
-export function useReviewedMutation<P = unknown>(submit: MutationSubmit<P>): UseReviewedMutationResult<P> {
-  const submitRef = useRef(submit);
-  useEffect(() => {
-    submitRef.current = submit;
-  }, [submit]);
-
-  const [attempt, setAttempt] = useState<ReviewedAttempt | null>(null);
-  const attemptRef = useRef<ReviewedAttempt | null>(null);
-  const [pending, setPending] = useState(false);
-  const pendingRef = useRef(false);
-  const [outcome, setOutcome] = useState<MutationOutcome | null>(null);
-  const outcomeRef = useRef<MutationOutcome | null>(null);
-  const [reviewedIntent, setReviewedIntent] = useState<string | null>(null);
-  const inputRef = useRef<Omit<MutationInput<P>, "operationId"> | null>(null);
-  const inFlightRef = useRef<Promise<MutationOutcome> | null>(null);
-  const adopt = useCallback((next: ReviewedAttempt | null): ReviewedAttempt | null => {
-    attemptRef.current = next;
-    setAttempt(next);
-    return next;
-  }, []);
-  const submitInput = useCallback(
-    (input: Omit<MutationInput<P>, "operationId">, reviewsInput = true): Promise<MutationOutcome> => {
-      const running = inFlightRef.current;
-      if (running !== null) return running;
-      const intent = intentKeyOf(input);
-      if (reviewsInput) setReviewedIntent(intent);
-      const identity = attemptForIntent(attemptRef.current, intent);
-      adopt(identity);
-      inputRef.current = input;
-      pendingRef.current = true;
-      setPending(true);
-      const request: MutationInput<P> = { operationId: identity.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload };
-      const finish = (result: MutationOutcome): MutationOutcome => {
-        pendingRef.current = false;
-        outcomeRef.current = result;
-        setPending(false);
-        setOutcome(result);
-        return result;
-      };
-      const run = (async (): Promise<MutationOutcome> => {
-        try {
-          const answered: unknown = await submitRef.current(request);
-          return finish(isOutcome(answered) ? answered : outcomeFromError(identity.operationId, answered));
-        } catch (error) {
-          return finish(outcomeFromError(identity.operationId, error));
-        }
-      })();
-      const tracked: Promise<MutationOutcome> = run.finally(() => {
-        inFlightRef.current = null;
-      });
-      inFlightRef.current = tracked;
-      return tracked;
-    },
-    [adopt],
-  );
-  const retry = useCallback(async (): Promise<MutationOutcome | null> => {
-    const input = inputRef.current;
-    return input === null || pendingRef.current || !mayReplay(outcomeRef.current) ? null : submitInput(input);
-  }, [submitInput]);
-  const reapply = useCallback(async (): Promise<MutationOutcome | null> => {
-    const input = inputRef.current;
-    const revision = reappliableRevision(outcomeRef.current);
-    if (input === null || revision === null || pendingRef.current) return null;
-    return submitInput({ ...input, expectedRevision: revision }, false);
-  }, [submitInput]);
-  const reset = useCallback((): void => {
-    if (pendingRef.current) return;
-    adopt(null);
-    inputRef.current = null;
-    outcomeRef.current = null;
-    setOutcome(null);
-    setReviewedIntent(null);
-  }, [adopt]);
-  return { operationId: attempt === null ? null : attempt.operationId, pending, outcome, reviewedIntent, submit: submitInput, retry, reapply, reset };
-}
 export type ActionReviewSelection = { readonly count: number; readonly noun: string; readonly excluded?: number };
 export type ActionReviewProps<P = unknown> = {
   readonly title: string;
@@ -159,10 +37,7 @@ export type ActionReviewProps<P = unknown> = {
   readonly onSettled?: (outcome: MutationOutcome) => void;
   readonly fieldLabels?: Readonly<Record<string, string | undefined>>;
   readonly headingLevel?: ReviewHeadingLevel;
-  /**
-   * A choice this step's own input carries, rendered with the step rather than in a second surface beside it: the
-   * control belongs to the reviewed intent, so changing it changes the intent and begins a new attempt's identity.
-   */
+  /** A choice this step's own input carries, rendered with the step rather than in a second surface beside it: the control belongs to the reviewed intent, so changing it changes the intent and begins a new attempt's identity. */
   readonly children?: ReactNode;
   readonly className?: string;
 };
@@ -184,14 +59,14 @@ function SelectionSummary({ selection }: { readonly selection: ActionReviewSelec
 }
 /** The one review-then-accept step. */
 export function ActionReview<P = unknown>({ title, description, consequence, confirmLabel, cancelLabel = "Cancel", onCancel, consequential = false, simulationEffect, selection, input, submit, checkResult, onSettled, fieldLabels, headingLevel = 2, children, className }: ActionReviewProps<P>): ReactElement {
-  const { operationId, pending, outcome, reviewedIntent, submit: dispatchSubmit, retry, reapply } = useReviewedMutation<P>(submit);
+  const { operationId, pending, outcome, reviewedIntent, submit: dispatchSubmit, retry, reapplyOnConflict } = useAttemptedMutation<P>(submit, onSettled);
   const titleId = useId();
   const emptySelectionId = useId();
   const [dialogOpen, setDialogOpen] = useState(false);
   const resultRef = useRef<HTMLDivElement | null>(null);
   const reviewed = reviewedIntent === intentKeyOf(input);
   const current = reviewed ? outcome : null;
-  const settled = current !== null && (current.outcome === "accepted" || current.outcome === "alreadyAccepted" || current.outcome === "unchanged");
+  const settled = reviewed && hasSettled(outcome);
   const nothingSelected = selection !== undefined && selection.count <= 0;
   const confirmUnavailable = pending || nothingSelected;
   const state = pending ? "working" : settled ? "settled" : "review";
@@ -199,36 +74,17 @@ export function ActionReview<P = unknown>({ title, description, consequence, con
     if (current === null || current.outcome === "invalid") return;
     resultRef.current?.focus();
   }, [current]);
-  const settle = useCallback(
-    async (run: () => Promise<MutationOutcome | null>): Promise<void> => {
-      const result = await run();
-      if (result !== null) onSettled?.(result);
-    },
-    [onSettled],
-  );
   const confirm = (): void => {
     setDialogOpen(false);
-    void settle(() => dispatchSubmit(input));
+    void dispatchSubmit(input);
   };
-  const replay = (): void => {
-    void settle(retry);
-  };
-  const applyAgain = (): void => {
-    void settle(reapply);
-  };
+  const replay = (): void => void retry();
+  const applyAgain = (): void => void reapplyOnConflict();
   const confirmText = pending ? `${confirmLabel} — working` : confirmLabel;
   const describedByEmptySelection = nothingSelected ? emptySelectionId : undefined;
   const Heading = STEP_HEADING_TAG[headingLevel];
   return (
-    <section
-      aria-labelledby={titleId}
-      aria-busy={pending ? true : undefined}
-      data-slot="action-review"
-      data-state={state}
-      /** The identity this step submitted under, written once an attempt exists: a browser test asserting that a repeated press produced one effect reads it here. */
-      data-operation-id={operationId ?? undefined}
-      className={cn("flex min-w-0 flex-col gap-4", className)}
-    >
+    <section aria-labelledby={titleId} aria-busy={pending ? true : undefined} data-slot="action-review" data-state={state} data-operation-id={operationId ?? undefined} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
@@ -262,7 +118,6 @@ export function ActionReview<P = unknown>({ title, description, consequence, con
                     <AlertDialogContent>
                       <AlertDialogHeader>
                         <AlertDialogTitle>{confirmLabel}</AlertDialogTitle>
-                        {/* The description element is itself a paragraph, so each sentence is a span laid out as a block: nesting paragraphs would be invalid markup. */}
                         <AlertDialogDescription className="flex flex-col gap-2">
                           <span className="font-medium text-foreground">{title}</span>
                           <span>{CONFIRM_EFFECT_SENTENCE}</span>

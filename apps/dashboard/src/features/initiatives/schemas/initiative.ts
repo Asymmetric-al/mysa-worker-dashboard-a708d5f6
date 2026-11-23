@@ -4,9 +4,7 @@ export const civilDateSchema = z
   .string()
   .trim()
   .superRefine((value, ctx) => {
-    if (parseCivilDate(value).status === "refused") {
-      ctx.addIssue({ code: "custom", message: "Enter a real calendar date as YYYY-MM-DD." });
-    }
+    if (parseCivilDate(value).status === "refused") ctx.addIssue({ code: "custom", message: "Enter a real calendar date as YYYY-MM-DD." });
   });
 /** Builds a trimmed text field whose length is bounded in Unicode code points. */
 export function boundedTextSchema(maxCodePoints: number, messages: { readonly required: string; readonly tooLong: string }): z.ZodString {
@@ -26,19 +24,13 @@ export const createInitiativePayloadSchema = z
   .object({
     name: boundedTextSchema(200, { required: "Give the initiative a name.", tooLong: "Keep the name to 200 characters or fewer." }),
     purpose: boundedTextSchema(2000, { required: "Describe what this initiative is for.", tooLong: "Keep the purpose to 2,000 characters or fewer." }),
-    // An opaque principal reference inside the acting scope. A name or an email address never establishes identity, so neither is accepted in its place.
     responsiblePrincipalId: z.string().trim().min(1, "Choose the person responsible for this initiative."),
-    // The acting ministry travels in the mutation's scope, so a body may never name a context the caller is not admitted to; omit the key rather than sending null.
     period: z.object({ startOn: civilDateSchema, endOn: civilDateSchema }).strict().optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
-    // A date that names no day is already refused on its own field, so the period is ordered only when both ends name real days: otherwise the ordering message would blame the order for a value the calendar refused.
     if (value.period === undefined) return;
     if (parseCivilDate(value.period.startOn).status === "refused" || parseCivilDate(value.period.endOn).status === "refused") return;
-    if (value.period.endOn < value.period.startOn) {
-      ctx.addIssue({ code: "custom", message: "Choose an end date on or after the start date.", path: ["period", "endOn"] });
-    }
+    if (value.period.endOn < value.period.startOn) ctx.addIssue({ code: "custom", message: "Choose an end date on or after the start date.", path: ["period", "endOn"] });
   });
-export type CivilDateString = z.infer<typeof civilDateSchema>;
 export type CreateInitiativePayload = z.infer<typeof createInitiativePayloadSchema>;

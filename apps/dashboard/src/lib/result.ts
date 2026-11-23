@@ -13,10 +13,6 @@ export function err<E>(error: E): Result<never, E> {
 export function isOk<T, E>(result: Result<T, E>): result is { readonly ok: true; readonly value: T } {
   return result.ok;
 }
-/** Maps the success branch only, leaving the failure branch exactly as it was. */
-export function mapResult<T, U, E>(result: Result<T, E>, map: (value: T) => U): Result<U, E> {
-  return result.ok ? ok(map(result.value)) : err(result.error);
-}
 /** Proves a closed union was handled exhaustively: a `switch` that misses a member fails to compile at this call, and a value that reaches it any other way is reported rather than ignored. */
 export function assertNever(value: never, message?: string): never {
   throw new Error(`${message ?? "Unexpected variant"}: ${String(value)}`);

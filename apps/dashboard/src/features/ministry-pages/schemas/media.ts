@@ -1,13 +1,9 @@
 import { z } from "zod";
-import { mutationInputSchema, type MutationInput } from "@/modules/data-service/envelope";
+import { mutationInputSchema } from "@/modules/data-service/envelope";
 import type { PlacementTargetPayload as ServicePlacementTargetPayload, RegisterMediaAssetPayload as ServiceRegisterMediaAssetPayload } from "@/modules/data-service/mutations/content";
-// Opaque references: an identifier names a record, never a file or a link
 const ORIGIN_PREFIXES = ["data:", "blob:", "http:", "https:"] as const;
 const RECORD_REFERENCE_MESSAGE = "Use the record's own identity, not a file path or a link.";
-function carriesAddress(value: string): boolean {
-  const lowered = value.toLowerCase();
-  return ORIGIN_PREFIXES.some((prefix) => lowered.startsWith(prefix)) || value.includes("/") || value.includes("\\") || value.includes("..");
-}
+const carriesAddress = (value: string): boolean => ORIGIN_PREFIXES.some((prefix) => value.toLowerCase().startsWith(prefix)) || value.includes("/") || value.includes("\\") || value.includes("..");
 function opaqueReference(message: string) {
   return z
     .string({ error: message })
@@ -19,7 +15,6 @@ function opaqueReference(message: string) {
     });
 }
 const KINDS = ["image", "video"] as const;
-// The service's own bounds and vocabularies, repeated here because it declares them privately
 const PLACEMENT_TEXT_MAX_CHARS = 4_000;
 const UPLOAD_NAME_MAX_CHARS = 255;
 const CAPTION_LABEL_MAX_CHARS = 120;
@@ -62,20 +57,13 @@ export const registerMediaAssetPayloadSchema: z.ZodType<ServiceRegisterMediaAsse
     transcript: z.strictObject({ text: z.string({ error: "State the transcript, or leave it out." }).min(1, "State the transcript, or leave it out.") }).optional(),
   })
   .superRefine((payload, ctx) => {
-    if (payload.kind === "image" && (payload.altText ?? payload.placement?.altText) === undefined) {
-      ctx.addIssue({ code: "custom", path: ["altText"], message: "An image needs alternative text describing what it shows before it can be placed, so describe it and choose the file again." });
-    }
-    if (payload.kind === "image" && payload.captions !== undefined) {
-      ctx.addIssue({ code: "custom", path: ["captions"], message: "A caption track belongs to a video, so an image carries none." });
-    }
-    if (payload.poster !== undefined && payload.kind !== "video") {
-      ctx.addIssue({ code: "custom", path: ["poster"], message: "A poster belongs to a video, so an image carries none." });
-    }
+    if (payload.kind === "image" && (payload.altText ?? payload.placement?.altText) === undefined) ctx.addIssue({ code: "custom", path: ["altText"], message: "An image needs alternative text describing what it shows before it can be placed, so describe it and choose the file again." });
+    if (payload.kind === "image" && payload.captions !== undefined) ctx.addIssue({ code: "custom", path: ["captions"], message: "A caption track belongs to a video, so an image carries none." });
+    if (payload.poster !== undefined && payload.kind !== "video") ctx.addIssue({ code: "custom", path: ["poster"], message: "A poster belongs to a video, so an image carries none." });
   });
 export const registerMediaAssetInputSchema = mutationInputSchema(registerMediaAssetPayloadSchema);
 export type Placement = z.infer<typeof placementSchema>;
 export type RegisterMediaAssetPayload = z.infer<typeof registerMediaAssetPayloadSchema>;
-export type RegisterMediaAssetInput = MutationInput<RegisterMediaAssetPayload>;
 const draftTargetFields = { draftRevisionId: opaqueReference(RECORD_REFERENCE_MESSAGE).optional(), variantId: opaqueReference(RECORD_REFERENCE_MESSAGE).optional() } as const;
 function refuseMissingDraftTarget(payload: { readonly draftRevisionId?: string; readonly variantId?: string }, ctx: z.RefinementCtx): void {
   if (payload.draftRevisionId !== undefined || payload.variantId !== undefined) return;
@@ -84,11 +72,6 @@ function refuseMissingDraftTarget(payload: { readonly draftRevisionId?: string; 
 const placementTargetPayloadSchema: z.ZodType<ServicePlacementTargetPayload> = z
   .strictObject({ ...draftTargetFields, placementId: opaqueReference(RECORD_REFERENCE_MESSAGE), assetId: opaqueReference("Use the prepared asset, not a file path or a link.").optional(), placement: placementSchema.optional() })
   .superRefine(refuseMissingDraftTarget);
-export const replacePlacementPayloadSchema = placementTargetPayloadSchema;
-export const replacePlacementInputSchema = mutationInputSchema(replacePlacementPayloadSchema);
-export type ReplacePlacementPayload = z.infer<typeof replacePlacementPayloadSchema>;
-export type ReplacePlacementInput = MutationInput<ReplacePlacementPayload>;
 export const removePlacementPayloadSchema = placementTargetPayloadSchema;
 export const removePlacementInputSchema = mutationInputSchema(removePlacementPayloadSchema);
 export type RemovePlacementPayload = z.infer<typeof removePlacementPayloadSchema>;
-export type RemovePlacementInput = MutationInput<RemovePlacementPayload>;

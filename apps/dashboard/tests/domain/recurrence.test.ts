@@ -3,20 +3,18 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { Temporal } from "temporal-polyfill";
 import { newOperationId } from "@/lib/ids";
 import { type MutationInput, type ReadAction, type Scope, mutations, reads } from "@/modules/data-service";
-import { resolveSession } from "@/modules/data-service/authorize";
 import { isOutcome, type AcceptedOutcome, type ConflictOutcome, type InvalidOutcome, type MutationOutcome } from "@/modules/data-service/outcome";
 import { DEFAULT_SESSION_ID, type SeededSessionDocuments, seed } from "@/modules/dev-runtime/seed";
 import { advanceClock, setClock } from "@/modules/dev-runtime/scenario";
 import { resetSession } from "@/modules/store/repository";
 import { now } from "@/modules/time/clock";
 import { REPEAT_PROFILES, SERIES_STATES, type SeriesRule, monthlyOnDay, nextOccurrences, validateSeriesRule } from "@/modules/time/recurrence";
+import { expectEnvelope, expectOutcomeFor, firstSaying, firstWhere, required, requiredSaying, throwing } from "../helpers/answers";
+import { scopeOf } from "../helpers/fixtures";
 const SESSION_ID = "domain-recurrence";
 const PLANNING_ZONE = "Europe/London";
-const DISPLAY_ZONE = "Europe/London";
 const SEED_DAY = "2026-11-20";
 const WEEK_AFTER_SEED_DAY = "2026-11-27";
-const TWO_WEEKS_AFTER_SEED_DAY = "2026-12-04";
-const THREE_WEEKS_AFTER_SEED_DAY = "2026-12-11";
 const THREE_WEEKS_MS = 21 * 24 * 60 * 60 * 1000;
 const NO_STORED_REVISION = "nothing-stored-yet";
 type SeriesEnvelope = Extract<Awaited<ReturnType<typeof reads.series.readSeries>>, { kind: "envelope" }>["envelope"];
@@ -27,12 +25,8 @@ type CreateSeriesPayload = Parameters<typeof mutations.series.createSeries>[0]["
 type ResolveMissedPlanPayload = Parameters<typeof mutations.series.resolveMissedPlan>[0]["payload"];
 let seededDocuments: SeededSessionDocuments | undefined;
 let seededScope: Scope | undefined;
-function day(value: string): Temporal.PlainDate {
-  return Temporal.PlainDate.from(value);
-}
-function todayInPlanningZone(): string {
-  return now().toZonedDateTimeISO(PLANNING_ZONE).toPlainDate().toString();
-}
+const day = (value: string): Temporal.PlainDate => Temporal.PlainDate.from(value);
+const todayInPlanningZone = (): string => now().toZonedDateTimeISO(PLANNING_ZONE).toPlainDate().toString();
 async function laySeededDocuments(): Promise<void> {
   if (seededDocuments === undefined) throw new Error("No seeded documents were built, so this case has no world to start from.");
   await resetSession(SESSION_ID, { state: structuredClone(seededDocuments.state), operations: structuredClone(seededDocuments.operations), meta: structuredClone(seededDocuments.meta) });
@@ -42,98 +36,34 @@ async function restoreSeedInstant(): Promise<void> {
   if (!restored.ok) throw new Error(`Restoring the scenario clock to the seed instant failed: ${restored.error.message}`);
 }
 beforeAll(async () => {
-  const sessions = await seed();
-  const established = sessions.find((candidate) => candidate.sessionId === DEFAULT_SESSION_ID);
-  if (established === undefined) throw new Error(`The seed lays down no session ${JSON.stringify(DEFAULT_SESSION_ID)}, so no recurrence case has a world to start from.`);
+  const established = firstSaying(await seed(), "sessionId", DEFAULT_SESSION_ID, `The seed lays down no session ${JSON.stringify(DEFAULT_SESSION_ID)}, so no recurrence case has a world to start from.`);
   seededDocuments = established.documents;
   await laySeededDocuments();
-  const resolved = await resolveSession({ sessionId: SESSION_ID });
-  if (!resolved.ok) throw new Error(`The seeded session did not resolve, so no case has an authority to act under: ${JSON.stringify(resolved.refusal)}`);
-  if (resolved.session.selected === null) throw new Error("The seeded established worker selects no context, so no series could be created under an authority it never chose.");
-  seededScope = resolved.session.selected;
+  seededScope = await scopeOf({ sessionId: SESSION_ID });
 });
 beforeEach(async () => {
   await laySeededDocuments();
   await restoreSeedInstant();
 });
-afterEach(async () => {
-  await restoreSeedInstant();
-});
-function authority(): Scope {
-  if (seededScope === undefined) throw new Error("The seeded session's authority was not resolved before this case started.");
-  return seededScope;
-}
-function source(): { sessionId: string } {
-  return { sessionId: SESSION_ID };
-}
-function inputOf<P>(payload: P, expectedRevision: string): MutationInput<P> {
-  return { operationId: newOperationId(), scope: authority(), expectedRevision, payload };
-}
-function untyped<P>(payload: Record<string, unknown>): P {
-  return payload as unknown as P;
-}
-function outcomeOf(result: MutationOutcome): MutationOutcome {
-  if (!isOutcome(result)) throw new Error(`A mutation answered with something outside the closed outcome set: ${JSON.stringify(result)}`);
-  return result;
-}
-function acceptedOf(result: MutationOutcome, what: string): AcceptedOutcome {
-  const outcome = outcomeOf(result);
-  if (outcome.outcome !== "accepted") throw new Error(`${what} was refused rather than accepted: ${JSON.stringify(outcome)}`);
-  return outcome;
-}
-function invalidOutcomeOf(result: MutationOutcome, what: string): InvalidOutcome {
-  const outcome = outcomeOf(result);
-  expect(outcome.outcome, `${what} must be refused as invalid`).toBe("invalid");
-  if (outcome.outcome !== "invalid") throw new Error(`${what} answered ${outcome.outcome} rather than invalid: ${JSON.stringify(outcome)}`);
-  return outcome;
-}
-function conflictOutcomeOf(result: MutationOutcome, what: string): ConflictOutcome {
-  const outcome = outcomeOf(result);
-  expect(outcome.outcome, `${what} must be a conflict rather than a second effect`).toBe("conflict");
-  if (outcome.outcome !== "conflict") throw new Error(`${what} answered ${outcome.outcome} rather than conflict: ${JSON.stringify(outcome)}`);
-  return outcome;
-}
-async function taskRows(list: TaskListName = "all"): Promise<readonly TaskListRow[]> {
-  const result = await reads.work.listTasks({ list, displayTimeZone: DISPLAY_ZONE, pageSize: 200 }, source());
-  if (result.kind !== "envelope") throw new Error(`The ${JSON.stringify(list)} task list could not be read: ${JSON.stringify(result)}`);
-  return result.envelope.data.tasks;
-}
-async function rowsOfSeries(seriesId: string, list: TaskListName = "all"): Promise<readonly TaskListRow[]> {
-  return (await taskRows(list)).filter((row) => row.seriesId === seriesId);
-}
-async function seriesEnvelopeOf(seriesId: string): Promise<SeriesEnvelope> {
-  const result = await reads.series.readSeries({ seriesId }, source());
-  if (result.kind !== "envelope") throw new Error(`The series ${JSON.stringify(seriesId)} could not be read: ${JSON.stringify(result)}`);
-  return result.envelope;
-}
-async function seriesReadingOf(seriesId: string): Promise<SeriesReading> {
-  return (await seriesEnvelopeOf(seriesId)).data;
-}
-async function interactionTotal(): Promise<number> {
-  const result = await reads.interactions.readInteractions({}, source());
-  if (result.kind !== "envelope") throw new Error(`Recorded activity could not be read: ${JSON.stringify(result)}`);
-  return result.envelope.data.total;
-}
-function actionOf(actions: readonly ReadAction[], name: string): ReadAction {
-  const found = actions.find((candidate) => candidate.name === name);
-  if (found === undefined) throw new Error(`The read offers no ${JSON.stringify(name)} action. It offers ${JSON.stringify(actions.map((candidate) => candidate.name))}.`);
-  return found;
-}
-function occurrenceOf(reading: SeriesReading): TaskListRow {
-  const occurrence = reading.currentOccurrence;
-  if (occurrence === null) throw new Error("This series names no current occurrence, so the case has no date to answer.");
-  return occurrence;
-}
-function weeklyRule(firstDueOn: string): SeriesRule {
-  return { profile: "weekly", interval: 1, firstDueOn: day(firstDueOn), planningTimeZone: PLANNING_ZONE, end: { kind: "ongoing-personal-policy" } };
-}
-function monthlyRule(firstDueOn: string, dayOfMonth: number): SeriesRule {
-  return { profile: "monthlyOnDay", interval: 1, dayOfMonth, firstDueOn: day(firstDueOn), planningTimeZone: PLANNING_ZONE, end: { kind: "ongoing-personal-policy" } };
-}
-interface CreatedSeries {
-  readonly seriesId: string;
-  readonly occurrenceId: string;
-}
+afterEach(async () => await restoreSeedInstant());
+const authority = (): Scope => requiredSaying(seededScope, "The seeded session's authority was not resolved before this case started.");
+const source = (): { sessionId: string } => ({ sessionId: SESSION_ID });
+const inputOf = <P>(payload: P, expectedRevision: string): MutationInput<P> => ({ operationId: newOperationId(), scope: authority(), expectedRevision, payload });
+const untyped = <P>(payload: Record<string, unknown>): P => payload as unknown as P;
+const outcomeOf = (result: MutationOutcome): MutationOutcome => (isOutcome(result) ? result : throwing(`A mutation answered with something outside the closed outcome set: ${JSON.stringify(result)}`));
+const acceptedOf = (result: MutationOutcome, what: string): AcceptedOutcome => expectOutcomeFor(result, "accepted", what);
+const invalidOutcomeOf = (result: MutationOutcome, what: string): InvalidOutcome => expectOutcomeFor(result, "invalid", what);
+const conflictOutcomeOf = (result: MutationOutcome, what: string): ConflictOutcome => expectOutcomeFor(result, "conflict", what);
+const taskRows = async (list: TaskListName = "all"): Promise<readonly TaskListRow[]> => expectEnvelope(await reads.work.listTasks({ list, displayTimeZone: "Europe/London", pageSize: 200 }, source()), `the ${list} task list`).data.tasks;
+const rowsOfSeries = async (seriesId: string, list: TaskListName = "all"): Promise<readonly TaskListRow[]> => (await taskRows(list)).filter((row) => row.seriesId === seriesId);
+const seriesEnvelopeOf = async (seriesId: string): Promise<SeriesEnvelope> => expectEnvelope(await reads.series.readSeries({ seriesId }, source()), `the series ${seriesId}`);
+const seriesReadingOf = async (seriesId: string): Promise<SeriesReading> => (await seriesEnvelopeOf(seriesId)).data;
+const interactionTotal = async (): Promise<number> => expectEnvelope(await reads.interactions.readInteractions({}, source()), "recorded activity").data.total;
+const actionOf = (actions: readonly ReadAction[], name: string): ReadAction => firstWhere(actions, "name", name, `the "${name}" action of a read`);
+const occurrenceOf = (reading: SeriesReading): TaskListRow => required(reading.currentOccurrence, "the current occurrence of a series");
+const weeklyRule = (firstDueOn: string): SeriesRule => ({ profile: "weekly", interval: 1, firstDueOn: day(firstDueOn), planningTimeZone: PLANNING_ZONE, end: { kind: "ongoing-personal-policy" } });
+const monthlyRule = (firstDueOn: string, dayOfMonth: number): SeriesRule => ({ profile: "monthlyOnDay", interval: 1, dayOfMonth, firstDueOn: day(firstDueOn), planningTimeZone: PLANNING_ZONE, end: { kind: "ongoing-personal-policy" } });
+type CreatedSeries = { readonly seriesId: string; readonly occurrenceId: string };
 function createdSeriesOf(outcome: AcceptedOutcome): CreatedSeries {
   const [seriesId, occurrenceId] = outcome.created ?? [];
   if (seriesId === undefined || occurrenceId === undefined) throw new Error(`createSeries was accepted without naming both the series and its date: ${JSON.stringify(outcome)}`);
@@ -147,7 +77,14 @@ async function createMonthlyOnDaySeries(title: string, firstDueOn: string, dayOf
   const outcome = acceptedOf(await mutations.series.createSeries(inputOf({ title, profile: "monthlyOnDay", dayOfMonth, firstDueOn, planningTimeZone, ongoingPolicy: true }, NO_STORED_REVISION), source()), `createSeries ${JSON.stringify(title)}`);
   return createdSeriesOf(outcome);
 }
-
+/** A weekly series whose actionable occurrence is completed, read back with the successor that completion admitted. */
+async function completedWeeklyRound(): Promise<{ readonly created: CreatedSeries; readonly completed: AcceptedOutcome; readonly before: SeriesEnvelope; readonly successor: TaskListRow }> {
+  const created = await createWeeklySeries("Weekly call round", SEED_DAY);
+  const firstOccurrence = occurrenceOf(await seriesReadingOf(created.seriesId));
+  const completed = acceptedOf(await mutations.work.completeTask(inputOf({ taskId: firstOccurrence.taskId }, firstOccurrence.revision), source()), "completeTask");
+  const before = await seriesEnvelopeOf(created.seriesId);
+  return { created, completed, before, successor: occurrenceOf(before.data) };
+}
 describe("the repeat profile set is closed", () => {
   it("offers exactly the five profiles, so a sixth cannot appear silently", () => {
     expect(REPEAT_PROFILES).toHaveLength(5);
@@ -195,7 +132,6 @@ describe("the repeat profile set is closed", () => {
     expect(Object.keys(refused.fields)).toEqual(["interval"]);
   });
 });
-
 describe("a missing day of the month resolves to the last day of that month, and says so", () => {
   it.each([
     { resolved: "day 31 in a 28-day February to the 28th", year: 2027, date: "2027-02-28", resolvedDay: 28 },
@@ -204,10 +140,7 @@ describe("a missing day of the month resolves to the last day of that month, and
     const resolution = monthlyOnDay(year, 2, 31);
     expect(resolution.status).toBe("resolved");
     if (resolution.status !== "resolved") return;
-    expect(resolution.date.toString()).toBe(date);
-    expect(resolution.requestedDay).toBe(31);
-    expect(resolution.resolvedDay).toBe(resolvedDay);
-    expect(resolution.lastDayOfMonthResolved).toBe(true);
+    expect([resolution.date.toString(), resolution.requestedDay, resolution.resolvedDay, resolution.lastDayOfMonthResolved]).toEqual([date, 31, resolvedDay, true]);
   });
   it.each([
     { month: 4, expected: "2027-04-30" },
@@ -218,65 +151,58 @@ describe("a missing day of the month resolves to the last day of that month, and
     const resolution = monthlyOnDay(2027, month, 31);
     expect(resolution.status).toBe("resolved");
     if (resolution.status !== "resolved") return;
-    expect(resolution.date.toString()).toBe(expected);
-    expect(resolution.resolvedDay).toBe(30);
-    expect(resolution.lastDayOfMonthResolved).toBe(true);
+    expect([resolution.date.toString(), resolution.resolvedDay, resolution.lastDayOfMonthResolved]).toEqual([expected, 30, true]);
   });
   it("records that no resolution was made when the month has a 31st", () => {
     const resolution = monthlyOnDay(2027, 5, 31);
     expect(resolution.status).toBe("resolved");
     if (resolution.status !== "resolved") return;
-    expect(resolution.date.toString()).toBe("2027-05-31");
-    expect(resolution.resolvedDay).toBe(31);
-    expect(resolution.lastDayOfMonthResolved).toBe(false);
+    expect([resolution.date.toString(), resolution.resolvedDay, resolution.lastDayOfMonthResolved]).toEqual(["2027-05-31", 31, false]);
   });
   it("refuses a month or a day the calendar does not have rather than adjusting it", () => {
-    expect(monthlyOnDay(2027, 13, 1)).toEqual({ status: "refused", reason: "invalid-month" });
-    expect(monthlyOnDay(2027, 1, 32)).toEqual({ status: "refused", reason: "invalid-day" });
+    expect([monthlyOnDay(2027, 13, 1), monthlyOnDay(2027, 1, 32)]).toEqual([
+      { status: "refused", reason: "invalid-month" },
+      { status: "refused", reason: "invalid-day" },
+    ]);
   });
   it("discloses the seeded day-31 series' month-end date through the service", async () => {
     const reading = await seriesReadingOf("series-month-end-support-review");
-    expect(reading.rule.dayOfMonth).toBe(31);
-    expect(occurrenceOf(reading).dueOn).toBe("2026-11-30");
+    expect([reading.rule.dayOfMonth, occurrenceOf(reading).dueOn]).toEqual([31, "2026-11-30"]);
   });
   it("keeps a due date a civil date, so a change of zone cannot rebase it", async () => {
     const london = await createMonthlyOnDaySeries("Month-end review, London", "2027-01-31", 31, PLANNING_ZONE);
     const auckland = await createMonthlyOnDaySeries("Month-end review, Auckland", "2027-01-31", 31, "Pacific/Auckland");
     const londonReading = await seriesReadingOf(london.seriesId);
     const aucklandReading = await seriesReadingOf(auckland.seriesId);
-    expect(occurrenceOf(londonReading).dueOn).toBe("2027-01-31");
-    expect(occurrenceOf(aucklandReading).dueOn).toBe("2027-01-31");
+    expect([occurrenceOf(londonReading).dueOn, occurrenceOf(aucklandReading).dueOn]).toEqual(["2027-01-31", "2027-01-31"]);
     expect(occurrenceOf(londonReading).dueOn).toMatch(/^\d{4}-\d{2}-\d{2}$/u);
     expect(londonReading.preview).toEqual(aucklandReading.preview);
     expect(londonReading.preview.status).toBe("preview");
     if (londonReading.preview.status !== "preview") return;
-    expect(londonReading.preview.dates).toEqual(["2027-01-31", "2027-02-28", "2027-03-31"]);
-    expect(londonReading.preview.monthDayResolutions).toEqual([{ dueOn: "2027-02-28", requestedDay: 31, resolvedDay: 28 }]);
+    expect([londonReading.preview.dates, londonReading.preview.monthDayResolutions]).toEqual([["2027-01-31", "2027-02-28", "2027-03-31"], [{ dueOn: "2027-02-28", requestedDay: 31, resolvedDay: 28 }]]);
   });
 });
-
 describe("exactly one occurrence is actionable, and the dates after it are previews", () => {
   it("previews the next three dates as dates the plan would use, resolving each month-day it has to", () => {
     const preview = nextOccurrences(monthlyRule("2027-01-31", 31), day("2027-01-31"), 3);
     expect(preview.status).toBe("preview");
     if (preview.status !== "preview") return;
-    expect(preview.dates.map((date) => date.toString())).toEqual(["2027-02-28", "2027-03-31", "2027-04-30"]);
-    expect(preview.monthDayResolutions.map((resolution) => resolution.resolvedDay)).toEqual([28, 30]);
+    expect([preview.dates.map((date) => date.toString()), preview.monthDayResolutions.map((resolution) => resolution.resolvedDay)]).toEqual([
+      ["2027-02-28", "2027-03-31", "2027-04-30"],
+      [28, 30],
+    ]);
   });
   it("classifies one occurrence as actionable and the next three dates as previews in the same read", async () => {
     const created = await createMonthlyOnDaySeries("Month-end support review", "2027-01-31", 31);
     const reading = await seriesReadingOf(created.seriesId);
     const occurrence = occurrenceOf(reading);
-    expect(reading.actionableOccurrenceId).toBe(created.occurrenceId);
-    expect(occurrence.taskId).toBe(created.occurrenceId);
-    expect(reading.preview.status).toBe("preview");
+    expect([reading.actionableOccurrenceId, occurrence.taskId, reading.preview.status]).toEqual([created.occurrenceId, created.occurrenceId, "preview"]);
     if (reading.preview.status !== "preview") return;
     expect(reading.preview.dates).toHaveLength(3);
     expect(reading.preview.dates[0]).toBe(occurrence.dueOn);
     const rows = await rowsOfSeries(created.seriesId);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.taskId).toBe(reading.actionableOccurrenceId);
-    expect(rows[0]?.status).toBe("open");
+    expect([rows[0]?.taskId, rows[0]?.status]).toEqual([reading.actionableOccurrenceId, "open"]);
     const previewDates = new Set(reading.preview.dates);
     expect(rows.filter((row) => row.dueOn !== null && previewDates.has(row.dueOn))).toHaveLength(1);
   });
@@ -289,10 +215,7 @@ describe("exactly one occurrence is actionable, and the dates after it are previ
     expect(await interactionTotal()).toBe(interactionsBefore);
     const after = await seriesReadingOf(created.seriesId);
     const successor = occurrenceOf(after);
-    expect(successor.taskId).toBe(completed.created?.[0]);
-    expect(successor.dueOn).toBe(WEEK_AFTER_SEED_DAY);
-    expect(successor.status).toBe("open");
-    expect(after.actionableOccurrenceId).toBe(successor.taskId);
+    expect([successor.taskId, successor.dueOn, successor.status, after.actionableOccurrenceId]).toEqual([completed.created?.[0], WEEK_AFTER_SEED_DAY, "open", successor.taskId]);
     const rows = await rowsOfSeries(created.seriesId);
     expect(rows).toHaveLength(2);
     expect(rows.filter((row) => row.status === "completed")).toHaveLength(1);
@@ -310,9 +233,7 @@ describe("exactly one occurrence is actionable, and the dates after it are previ
     expect(skipped.created).toHaveLength(1);
     const after = await seriesReadingOf(created.seriesId);
     const successor = occurrenceOf(after);
-    expect(successor.taskId).toBe(skipped.created?.[0]);
-    expect(successor.dueOn).toBe(WEEK_AFTER_SEED_DAY);
-    expect(successor.status).toBe("open");
+    expect([successor.taskId, successor.dueOn, successor.status]).toEqual([skipped.created?.[0], WEEK_AFTER_SEED_DAY, "open"]);
     const rows = await rowsOfSeries(created.seriesId);
     expect(rows).toHaveLength(2);
     const answered = rows.find((row) => row.taskId === occurrence.taskId);
@@ -325,21 +246,18 @@ describe("exactly one occurrence is actionable, and the dates after it are previ
     expect(rowsAfter.filter((row) => row.status === "open")).toHaveLength(1);
   });
 });
-
 describe("several missed dates produce a plan that needs review, not an overdue stack", () => {
   it("reports the review after three missed dates with exactly the three resolutions it offers", async () => {
     expect(todayInPlanningZone()).toBe(SEED_DAY);
     const created = await createWeeklySeries("Monday review of the working list", SEED_DAY);
     const fresh = await seriesReadingOf(created.seriesId);
-    expect(fresh.planReview.state).toBe("on-track");
-    expect(fresh.actionableOccurrenceId).toBe(created.occurrenceId);
-    const advanced = await advanceClock(SESSION_ID, THREE_WEEKS_MS);
-    expect(advanced.ok).toBe(true);
-    expect(todayInPlanningZone()).toBe(THREE_WEEKS_AFTER_SEED_DAY);
+    expect([fresh.planReview.state, fresh.actionableOccurrenceId]).toEqual(["on-track", created.occurrenceId]);
+    expect([(await advanceClock(SESSION_ID, THREE_WEEKS_MS)).ok, todayInPlanningZone()]).toEqual([true, "2026-12-11"]);
     const reading = await seriesEnvelopeOf(created.seriesId);
-    expect(reading.data.planReview.state).toBe("needs-review");
-    expect(reading.data.planReview.missedDateCount).toBe(3);
-    expect(reading.data.planReview.missedDates).toEqual([SEED_DAY, WEEK_AFTER_SEED_DAY, TWO_WEEKS_AFTER_SEED_DAY]);
+    expect([[reading.data.planReview.state, reading.data.planReview.missedDateCount], reading.data.planReview.missedDates]).toEqual([
+      ["needs-review", 3],
+      [SEED_DAY, WEEK_AFTER_SEED_DAY, "2026-12-04"],
+    ]);
     expect(reading.data.planReview.resolutions).toHaveLength(3);
     expect([...reading.data.planReview.resolutions]).toEqual(["keep-this-occurrence", "move-next-date-forward", "stop-series"]);
     expect(actionOf(reading.actions, "resolveMissedPlan").available).toBe(true);
@@ -358,39 +276,26 @@ describe("several missed dates produce a plan that needs review, not an overdue 
     const resolved = acceptedOf(await mutations.series.resolveMissedPlan(inputOf({ occurrenceId: occurrence.taskId, resolution: "keep-this-occurrence" }, occurrence.revision), source()), "resolveMissedPlan");
     expect(resolved.changed).toContain(created.seriesId);
     const after = await seriesReadingOf(created.seriesId);
-    expect(after.planReview.recordedPlanNeedsReview).toBe(false);
-    expect(occurrenceOf(after).status).toBe("open");
+    expect([after.planReview.recordedPlanNeedsReview, occurrenceOf(after).status]).toEqual([false, "open"]);
     expect(await rowsOfSeries(created.seriesId)).toHaveLength(1);
     expect(await interactionTotal()).toBe(interactionsBefore);
   });
 });
-
 describe("this occurrence and this-and-future are two different changes", () => {
   it("changes this occurrence alone, leaving the rule and the completed history untouched", async () => {
-    const created = await createWeeklySeries("Weekly call round", SEED_DAY);
-    const firstOccurrence = occurrenceOf(await seriesReadingOf(created.seriesId));
-    const completed = acceptedOf(await mutations.work.completeTask(inputOf({ taskId: firstOccurrence.taskId }, firstOccurrence.revision), source()), "completeTask");
-    const before = await seriesEnvelopeOf(created.seriesId);
-    const successor = occurrenceOf(before.data);
+    const { created, completed, before, successor } = await completedWeeklyRound();
     const historyBefore = (await rowsOfSeries(created.seriesId)).find((row) => row.status === "completed");
     const edited = acceptedOf(await mutations.series.editOccurrence(inputOf({ occurrenceId: successor.taskId, title: "Call round, moved by hand", note: "Speak to the warden first." }, successor.revision), source()), "editOccurrence");
     expect(edited.changed).toContain(successor.taskId);
     const after = await seriesEnvelopeOf(created.seriesId);
-    expect(occurrenceOf(after.data).title).toBe("Call round, moved by hand");
-    expect(occurrenceOf(after.data).note).toBe("Speak to the warden first.");
-    expect(after.data.rule).toEqual(before.data.rule);
-    expect(after.data.effectiveRevisions).toEqual(before.data.effectiveRevisions);
+    expect([[occurrenceOf(after.data).title, occurrenceOf(after.data).note], after.data.rule, after.data.effectiveRevisions]).toEqual([["Call round, moved by hand", "Speak to the warden first."], before.data.rule, before.data.effectiveRevisions]);
     expect(after.revision).toBe(before.revision);
     const historyAfter = (await rowsOfSeries(created.seriesId)).find((row) => row.status === "completed");
     expect(historyAfter).toEqual(historyBefore);
     expect(historyAfter?.revision).toBe(completed.revision);
   });
   it("creates a prospective rule revision at an explicit boundary and rewrites nothing before it", async () => {
-    const created = await createWeeklySeries("Weekly call round", SEED_DAY);
-    const firstOccurrence = occurrenceOf(await seriesReadingOf(created.seriesId));
-    const completed = acceptedOf(await mutations.work.completeTask(inputOf({ taskId: firstOccurrence.taskId }, firstOccurrence.revision), source()), "completeTask");
-    const before = await seriesEnvelopeOf(created.seriesId);
-    const successor = occurrenceOf(before.data);
+    const { created, completed, before, successor } = await completedWeeklyRound();
     expect(successor.dueOn).toBe(WEEK_AFTER_SEED_DAY);
     expect(before.data.effectiveRevisions).toHaveLength(1);
     const edited = acceptedOf(await mutations.series.editThisAndFuture(inputOf({ seriesId: created.seriesId, effectiveFrom: WEEK_AFTER_SEED_DAY, profile: "everyNWeeks", interval: 3 }, before.revision), source()), "editThisAndFuture");
@@ -398,29 +303,18 @@ describe("this occurrence and this-and-future are two different changes", () => 
     const after = await seriesEnvelopeOf(created.seriesId);
     const revisions = after.data.effectiveRevisions;
     expect(revisions).toHaveLength(2);
-    expect(revisions[0]?.effectiveFrom).toBe(SEED_DAY);
-    expect(revisions[0]?.rule.profile).toBe("weekly");
-    expect(revisions[1]?.effectiveFrom).toBe(WEEK_AFTER_SEED_DAY);
-    expect(revisions[1]?.rule.profile).toBe("everyNWeeks");
-    expect(revisions[1]?.rule.interval).toBe(3);
-    expect(after.data.rule).toEqual(revisions[1]?.rule);
-    expect(revisions[1]?.effectiveFrom).toBe(successor.dueOn);
-    expect(Temporal.PlainDate.compare(day(SEED_DAY), day(WEEK_AFTER_SEED_DAY))).toBe(-1);
+    expect([[revisions[0]?.effectiveFrom, revisions[0]?.rule.profile, revisions[1]?.effectiveFrom, revisions[1]?.rule.profile, revisions[1]?.rule.interval], after.data.rule]).toEqual([[SEED_DAY, "weekly", WEEK_AFTER_SEED_DAY, "everyNWeeks", 3], revisions[1]?.rule]);
+    expect([revisions[1]?.effectiveFrom, Temporal.PlainDate.compare(day(SEED_DAY), day(WEEK_AFTER_SEED_DAY))]).toEqual([successor.dueOn, -1]);
     const history = (await rowsOfSeries(created.seriesId)).find((row) => row.status === "completed");
-    expect(history?.dueOn).toBe(SEED_DAY);
-    expect(history?.revision).toBe(completed.revision);
+    expect([history?.dueOn, history?.revision]).toEqual([SEED_DAY, completed.revision]);
   });
   it("refuses a boundary that is not prospective, so completed history cannot be re-planned", async () => {
-    const created = await createWeeklySeries("Weekly call round", SEED_DAY);
-    const firstOccurrence = occurrenceOf(await seriesReadingOf(created.seriesId));
-    acceptedOf(await mutations.work.completeTask(inputOf({ taskId: firstOccurrence.taskId }, firstOccurrence.revision), source()), "completeTask");
-    const before = await seriesEnvelopeOf(created.seriesId);
+    const { created, before } = await completedWeeklyRound();
     const refused = outcomeOf(await mutations.series.editThisAndFuture(inputOf({ seriesId: created.seriesId, effectiveFrom: SEED_DAY, profile: "everyNWeeks", interval: 2 }, before.revision), source()));
     expect(refused.outcome).toBe("unchanged");
     expect((await seriesEnvelopeOf(created.seriesId)).data.effectiveRevisions).toHaveLength(1);
   });
 });
-
 describe("pausing, resuming and stopping a series", () => {
   it("pauses future admission while the outstanding occurrence keeps its state, and resumes without a backfill", async () => {
     const created = await createWeeklySeries("Weekly call round", SEED_DAY);
@@ -428,21 +322,15 @@ describe("pausing, resuming and stopping a series", () => {
     const occurrence = occurrenceOf(before.data);
     acceptedOf(await mutations.series.pauseSeries(inputOf({ seriesId: created.seriesId }, before.revision), source()), "pauseSeries");
     const paused = await seriesEnvelopeOf(created.seriesId);
-    expect(paused.data.state).toBe("paused");
-    expect(paused.data.admitsFurtherOccurrences).toBe(false);
+    expect([paused.data.state, paused.data.admitsFurtherOccurrences]).toEqual(["paused", false]);
     expect(paused.data.actionableOccurrenceId).toBeNull();
-    expect(paused.data.currentOccurrence?.taskId).toBe(occurrence.taskId);
-    expect(paused.data.currentOccurrence?.status).toBe("open");
-    expect(paused.data.currentOccurrence?.dueOn).toBe(occurrence.dueOn);
-    expect(paused.data.planReview.state).toBe("not-admitting");
-    expect(actionOf(paused.actions, "skipOccurrence").available).toBe(false);
+    expect([paused.data.currentOccurrence?.taskId, paused.data.currentOccurrence?.status, paused.data.currentOccurrence?.dueOn, paused.data.planReview.state, actionOf(paused.actions, "skipOccurrence").available]).toEqual([occurrence.taskId, "open", occurrence.dueOn, "not-admitting", false]);
     const skippedWhilePaused = outcomeOf(await mutations.series.skipOccurrence(inputOf({ occurrenceId: occurrence.taskId }, occurrence.revision), source()));
     expect(skippedWhilePaused.outcome).toBe("unchanged");
     expect(await rowsOfSeries(created.seriesId)).toHaveLength(1);
     acceptedOf(await mutations.series.resumeSeries(inputOf({ seriesId: created.seriesId }, paused.revision), source()), "resumeSeries");
     const resumed = await seriesEnvelopeOf(created.seriesId);
-    expect(resumed.data.state).toBe("active");
-    expect(resumed.data.actionableOccurrenceId).toBe(occurrence.taskId);
+    expect([resumed.data.state, resumed.data.actionableOccurrenceId]).toEqual(["active", occurrence.taskId]);
     expect(await rowsOfSeries(created.seriesId)).toHaveLength(1);
     expect(resumed.data.preview.status).toBe("preview");
   });
@@ -453,16 +341,12 @@ describe("pausing, resuming and stopping a series", () => {
     const stopped = acceptedOf(await mutations.series.stopSeries(inputOf({ seriesId: created.seriesId, unfinishedWork: "keep" }, before.revision), source()), "stopSeries");
     expect(stopped.changed).toContain(created.seriesId);
     const reading = await seriesEnvelopeOf(created.seriesId);
-    expect(reading.data.state).toBe("stopped");
-    expect(reading.data.admitsFurtherOccurrences).toBe(false);
+    expect([reading.data.state, reading.data.admitsFurtherOccurrences]).toEqual(["stopped", false]);
     expect(reading.data.currentOccurrence).toBeNull();
     expect(reading.data.leftBehind).toHaveLength(1);
-    expect(reading.data.leftBehind[0]?.taskId).toBe(occurrence.taskId);
-    expect(reading.data.leftBehind[0]?.status).toBe("open");
+    expect([reading.data.leftBehind[0]?.taskId, reading.data.leftBehind[0]?.status]).toEqual([occurrence.taskId, "open"]);
     expect(reading.data.leftBehind[0]?.status).not.toBe("completed");
-    expect(reading.data.preview.status).toBe("not-admitted");
-    expect(actionOf(reading.actions, "resumeSeries").available).toBe(false);
-    expect(actionOf(reading.actions, "stopSeries").available).toBe(false);
+    expect([reading.data.preview.status, actionOf(reading.actions, "resumeSeries").available, actionOf(reading.actions, "stopSeries").available]).toEqual(["not-admitted", false, false]);
   });
   it("cancels unfinished work when that is the stated disposition, and still claims nothing was done", async () => {
     const created = await createWeeklySeries("Weekly call round", SEED_DAY);
@@ -483,36 +367,25 @@ describe("pausing, resuming and stopping a series", () => {
     const stopped = acceptedOf(await mutations.series.stopSeries(inputOf({ seriesId: created.seriesId, unfinishedWork: "keep" }, staleRevision), source()), "stopSeries");
     expect(stopped.revision).not.toBe(staleRevision);
     const stalePause = conflictOutcomeOf(await mutations.series.pauseSeries(inputOf({ seriesId: created.seriesId }, staleRevision), source()), "pauseSeries with the revision read before the stop");
-    expect(stalePause.reason).toBe("stale-revision");
-    expect(stalePause.currentRevision).toBe(stopped.revision);
-    expect(stalePause.preservedInput).toEqual({ seriesId: created.seriesId });
+    expect([[stalePause.reason, stalePause.currentRevision], stalePause.preservedInput]).toEqual([["stale-revision", stopped.revision], { seriesId: created.seriesId }]);
     conflictOutcomeOf(await mutations.series.resumeSeries(inputOf({ seriesId: created.seriesId }, staleRevision), source()), "resumeSeries with the revision read before the stop");
     conflictOutcomeOf(await mutations.series.editThisAndFuture(inputOf({ seriesId: created.seriesId, effectiveFrom: WEEK_AFTER_SEED_DAY, profile: "everyNWeeks", interval: 2 }, staleRevision), source()), "editThisAndFuture with the revision read before the stop");
     const afterStale = await seriesEnvelopeOf(created.seriesId);
     expect(afterStale.data.state).toBe("stopped");
     expect(afterStale.data.effectiveRevisions).toHaveLength(1);
-    const current = outcomeOf(await mutations.series.resumeSeries(inputOf({ seriesId: created.seriesId }, stopped.revision), source()));
-    expect(current.outcome).toBe("unchanged");
+    expect(outcomeOf(await mutations.series.resumeSeries(inputOf({ seriesId: created.seriesId }, stopped.revision), source())).outcome).toBe("unchanged");
     const afterCurrent = await seriesEnvelopeOf(created.seriesId);
-    expect(afterCurrent.data.state).toBe("stopped");
-    expect(afterCurrent.data.admitsFurtherOccurrences).toBe(false);
+    expect([afterCurrent.data.state, afterCurrent.data.admitsFurtherOccurrences]).toEqual(["stopped", false]);
   });
   it("keeps paused and stopped distinct: a paused series resumes, a stopped one cannot", async () => {
     expect(SERIES_STATES).toHaveLength(3);
     expect([...SERIES_STATES]).toEqual(["active", "paused", "stopped"]);
     const paused = await seriesEnvelopeOf("series-fortnightly-newsletter");
-    expect(paused.data.state).toBe("paused");
-    expect(actionOf(paused.actions, "resumeSeries").available).toBe(true);
+    expect([paused.data.state, actionOf(paused.actions, "resumeSeries").available]).toEqual(["paused", true]);
     const stopped = await seriesEnvelopeOf("series-visit-round");
-    expect(stopped.data.state).toBe("stopped");
-    expect(actionOf(stopped.actions, "resumeSeries").available).toBe(false);
-    expect(actionOf(stopped.actions, "pauseSeries").available).toBe(false);
-    expect(actionOf(stopped.actions, "editThisAndFuture").available).toBe(false);
+    expect([stopped.data.state, actionOf(stopped.actions, "resumeSeries").available, actionOf(stopped.actions, "pauseSeries").available, actionOf(stopped.actions, "editThisAndFuture").available]).toEqual(["stopped", false, false, false]);
     const resumed = outcomeOf(await mutations.series.resumeSeries(inputOf({ seriesId: "series-fortnightly-newsletter" }, paused.revision), source()));
-    expect(resumed.outcome).toBe("accepted");
-    expect((await seriesReadingOf("series-fortnightly-newsletter")).state).toBe("active");
-    const stoppedResume = outcomeOf(await mutations.series.resumeSeries(inputOf({ seriesId: "series-visit-round" }, stopped.revision), source()));
-    expect(stoppedResume.outcome).toBe("unchanged");
-    expect((await seriesReadingOf("series-visit-round")).state).toBe("stopped");
+    expect([resumed.outcome, (await seriesReadingOf("series-fortnightly-newsletter")).state]).toEqual(["accepted", "active"]);
+    expect([outcomeOf(await mutations.series.resumeSeries(inputOf({ seriesId: "series-visit-round" }, stopped.revision), source())).outcome, (await seriesReadingOf("series-visit-round")).state]).toEqual(["unchanged", "stopped"]);
   });
 });

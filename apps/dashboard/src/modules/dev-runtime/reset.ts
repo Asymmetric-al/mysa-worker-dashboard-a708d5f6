@@ -1,4 +1,3 @@
-/** The reset operation: every session the store holds is discarded and every seeded session is laid down again from the deterministic seed, leaving the process clock at the seed instant. */
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isSafeSessionId } from "@/lib/session-cookie";
@@ -22,11 +21,7 @@ function assertSeedableSessionIds(sessionIds: readonly string[]): void {
     claimedSessionIds.add(sessionId);
   }
 }
-function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
-  if (left.byteLength !== right.byteLength) return false;
-  for (let index = 0; index < left.byteLength; index += 1) if (left[index] !== right[index]) return false;
-  return true;
-}
+const sameBytes = (left: Uint8Array, right: Uint8Array): boolean => left.byteLength === right.byteLength && left.every((byte, index) => byte === right[index]);
 const disagreement = (entry: SeededMediaBytes, expected: string, observed: string, nextStep: string): Error =>
   new Error(`Cannot lay down the seeded media bytes for ${entry.assetId} ${entry.renditionId}: the record that serves them states ${expected}, and the bytes produced from ${entry.fixture} give ${observed}. ${nextStep}`);
 function assertRecordClaimsVerifiedBytes(entry: SeededMediaBytes, asset: SeededMediaAsset): void {
@@ -111,12 +106,7 @@ async function materialiseSeededRendition(entry: SeededMediaBytes, asset: Seeded
     await writeMediaBytes(bytesRef, fixtureBytes);
     return;
   }
-  const prepared = await prepareDisplayImage({
-    bytes: fixtureBytes,
-    assetId: entry.assetId,
-    // The original's own file name, so the pipeline's leak check proves the served bytes carry no copy of it.
-    sourceName: entry.fixture,
-  });
+  const prepared = await prepareDisplayImage({ bytes: fixtureBytes, assetId: entry.assetId, sourceName: entry.fixture });
   if (prepared.ok === false) throw new Error(`Cannot lay down the seeded media bytes for ${entry.assetId} ${entry.renditionId}: the image pipeline refused the committed original ${entry.fixture} (${prepared.code}: ${prepared.message}). Restore the fixture with \`bun scripts/make-media-fixtures.mjs --check\`.`);
   assertImageMatchesRecord(entry, asset, rendition, prepared);
   if (prepared.tagVerification.residualTags.length > 0) throw disagreement(entry, "a display rendition with no residual metadata", `residual tags ${JSON.stringify([...prepared.tagVerification.residualTags])}`, "Re-author the original so the pipeline can strip it, or correct the asset's tagVerification in the seed.");
@@ -136,19 +126,14 @@ async function materialiseSeededMedia(sessions: readonly SeededSessionWithDocume
 /** Discards every stored session, re-seeds every seeded one, returns the process clock to the seed instant, and reports what the run did. */
 export async function resetSeed(): Promise<ResetSummary> {
   const existingSessionIds = await listSessionIds();
-  // One build of the whole world per reset, before the first write: every session comes from the same deterministic pass, and a seed that throws leaves the stored sessions as they were.
   const sessions = await seed();
   const seededSessionIds = sessions.map((session) => session.sessionId);
   assertSeedableSessionIds(seededSessionIds);
-  const seededIdSet = new Set(seededSessionIds);
-  let partners = 0;
-  for (const session of sessions) partners += session.documents.state.partners.length;
-  // Every byte the store owns, before the sessions that name them: an upload whose record is about to be discarded must not survive, and a byte from an earlier custody layout is named by nothing at all.
+  const partners = sessions.reduce((total, session) => total + session.documents.state.partners.length, 0);
   await removeAllMedia();
   for (const sessionId of existingSessionIds) await resetSession(sessionId);
   for (const session of sessions) await resetSession(session.sessionId, session.documents);
   await materialiseSeededMedia(sessions);
-  // Last, so a reset that threw above never claims a clock it did not restore.
   setClockOffset(0);
-  return { seededSessions: seededSessionIds, removedSessions: existingSessionIds.filter((sessionId) => !seededIdSet.has(sessionId)), clockOffsetMs: 0, partners, seedInstant: SEED_INSTANT.toJSON() };
+  return { seededSessions: seededSessionIds, removedSessions: existingSessionIds.filter((sessionId) => !new Set(seededSessionIds).has(sessionId)), clockOffsetMs: 0, partners, seedInstant: SEED_INSTANT.toJSON() };
 }

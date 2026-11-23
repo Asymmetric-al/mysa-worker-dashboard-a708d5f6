@@ -1,8 +1,7 @@
 import { z } from "zod";
 import { isRecord } from "@/lib/guards";
 import { mutationInputSchema, type MutationInput } from "@/modules/data-service/envelope";
-/** The largest clock amount these schemas accept, in seconds — roughly ten years. */
-export const CLOCK_OFFSET_GUARD_SECONDS = 315_360_000;
+/** The largest clock amount these schemas accept, in seconds — roughly ten years. */ export const CLOCK_OFFSET_GUARD_SECONDS = 315_360_000;
 const DEV_SCHEMA_MESSAGES = {
   actionRequired: "A development request names the action it asks for, so send the control's own action with the rest of the request.",
   identifierRequired: "This change names no record, so choose the value it applies to and submit again.",
@@ -24,16 +23,14 @@ const advanceClockPayloadSchema = z.strictObject({
   bySeconds: z.number({ error: DEV_SCHEMA_MESSAGES.clockAmountNotWhole }).int({ error: DEV_SCHEMA_MESSAGES.clockAmountNotWhole }).positive({ error: DEV_SCHEMA_MESSAGES.clockAmountOutOfRange }).max(CLOCK_OFFSET_GUARD_SECONDS, { error: DEV_SCHEMA_MESSAGES.clockAmountOutOfRange }),
 });
 const resetSeedPayloadSchema = z.strictObject({});
-export type DevRequest<Action extends DevMutationName, Payload> = MutationInput<Payload> & { readonly action: Action };
-function requestProjectionOf(raw: unknown, action: DevMutationName): Record<string, unknown> | undefined {
-  if (!isRecord(raw) || raw.action !== action) {
-    return undefined;
-  }
+export type DevRequest<Action extends string, Payload> = MutationInput<Payload> & { readonly action: Action };
+function requestProjectionOf(raw: unknown, action: string): Record<string, unknown> | undefined {
+  if (!isRecord(raw) || raw.action !== action) return undefined;
   const projection: Record<string, unknown> = { ...raw };
   delete projection.action;
   return projection;
 }
-function developmentRequestSchema<Action extends DevMutationName, Payload>(action: Action, payload: z.ZodType<Payload>): z.ZodType<DevRequest<Action, Payload>> {
+function developmentRequestSchema<Action extends string, Payload>(action: Action, payload: z.ZodType<Payload>): z.ZodType<DevRequest<Action, Payload>> {
   return z
     .looseObject({ action: z.literal(action, { error: DEV_SCHEMA_MESSAGES.actionRequired }) })
     .transform((raw): unknown => requestProjectionOf(raw, action))
@@ -49,42 +46,27 @@ export const resetSeedRequestSchema = developmentRequestSchema("resetSeed", rese
 export type AdvertisedFailureArming = { mode: string; target: AdvertisedFailureTarget };
 export type AdvertisedFailureDisarm = { plan: null };
 export type AdvertisedFailurePlanPayload = AdvertisedFailureArming | AdvertisedFailureDisarm;
-/** Validates setFailurePlan against the modes and targets the caller's development read advertises. */
-export function makeSetFailurePlanRequestSchema(advertised: AdvertisedFailurePlan) {
+/** Validates setFailurePlan against the modes and targets the caller's development read advertises. */ export function makeSetFailurePlanRequestSchema(advertised: AdvertisedFailurePlan) {
   const armPlanSchema: z.ZodType<AdvertisedFailureArming> = z
     .strictObject({
       mode: z.string({ error: DEV_SCHEMA_MESSAGES.failureModeRequired }).min(1, DEV_SCHEMA_MESSAGES.failureModeRequired),
       target: z.strictObject({ kind: z.enum(["read", "mutation"], { error: DEV_SCHEMA_MESSAGES.failureTargetKindInvalid }), name: z.string({ error: DEV_SCHEMA_MESSAGES.failureTargetNameRequired }).min(1, DEV_SCHEMA_MESSAGES.failureTargetNameRequired) }),
     })
     .superRefine((plan, ctx) => {
-      // Each refusal lands on its own field path, so the form places the message against the control
-      // that offered the value rather than against the whole payload.
-      if (!advertised.modes.includes(plan.mode)) {
-        ctx.addIssue({ code: "custom", path: ["mode"], message: DEV_SCHEMA_MESSAGES.failureModeNotAdvertised });
-      }
+      if (!advertised.modes.includes(plan.mode)) ctx.addIssue({ code: "custom", path: ["mode"], message: DEV_SCHEMA_MESSAGES.failureModeNotAdvertised });
       const isAdvertisedTarget = advertised.targets.some((target) => target.kind === plan.target.kind && target.name === plan.target.name);
-      if (!isAdvertisedTarget) {
-        ctx.addIssue({ code: "custom", path: ["target", "name"], message: DEV_SCHEMA_MESSAGES.failureTargetNotAdvertised });
-      }
+      if (!isAdvertisedTarget) ctx.addIssue({ code: "custom", path: ["target", "name"], message: DEV_SCHEMA_MESSAGES.failureTargetNotAdvertised });
     });
-  const disarmPlanSchema: z.ZodType<AdvertisedFailureDisarm> = z.strictObject({ plan: z.null({ error: DEV_SCHEMA_MESSAGES.failurePlanDisarmNotAbsent }) });
   const planSchema: z.ZodType<AdvertisedFailurePlanPayload> = z.custom<AdvertisedFailurePlanPayload>().superRefine((payload, ctx) => {
-    const parsed = typeof payload === "object" && payload !== null && Object.hasOwn(payload, "plan") ? disarmPlanSchema.safeParse(payload) : armPlanSchema.safeParse(payload);
+    const parsed = typeof payload === "object" && payload !== null && Object.hasOwn(payload, "plan") ? z.strictObject({ plan: z.null({ error: DEV_SCHEMA_MESSAGES.failurePlanDisarmNotAbsent }) }).safeParse(payload) : armPlanSchema.safeParse(payload);
     if (!parsed.success) {
-      for (const issue of parsed.error.issues) {
-        // The form's own message and field path are what a caller acts on; the machine code belongs to
-        // the schema library, and an `invalid` outcome is keyed by the path and read for the message.
-        ctx.addIssue({ code: "custom", message: issue.message, path: issue.path });
-      }
+      for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", message: issue.message, path: issue.path });
     }
   });
   return developmentRequestSchema("setFailurePlan", planSchema);
 }
-export type SetScenarioRequest = z.infer<typeof setScenarioRequestSchema>;
-export type SetClockRequest = z.infer<typeof setClockRequestSchema>;
-export type AdvanceClockRequest = z.infer<typeof advanceClockRequestSchema>;
-export type SetFailurePlanRequest = z.infer<ReturnType<typeof makeSetFailurePlanRequestSchema>>;
-export type ResetSeedRequest = z.infer<typeof resetSeedRequestSchema>;
-/** The five development mutations this family sends, verb-first and identical to the service's names. */
-export const DEV_MUTATION_NAMES = ["setScenario", "setClock", "advanceClock", "setFailurePlan", "resetSeed"] as const;
+/** The five development mutations this family sends, verb-first and identical to the service's names. */ export const DEV_MUTATION_NAMES = ["setScenario", "setClock", "advanceClock", "setFailurePlan", "resetSeed"] as const;
 export type DevMutationName = (typeof DEV_MUTATION_NAMES)[number];
+/** Every action these transports send: the five service mutations, and the session switch, which has no `mutations.dev.*` counterpart because the identity a browser acts as is its own cookie's fact. */ export type DevTransportAction = DevMutationName | "selectPersona";
+const selectPersonaPayloadSchema = z.strictObject({ personaId: opaqueIdentifierSchema });
+/** The switch names one seeded persona of the roster the development read lists, and the handler grants this browser's cookie rather than storing anything. */ export const selectPersonaRequestSchema = developmentRequestSchema("selectPersona", selectPersonaPayloadSchema);

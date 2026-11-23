@@ -1,10 +1,7 @@
-/** Contact import reads: the proposal a worker is reviewing, and the recoverable receipt of an acceptance looked up by its operation identity. */
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { isRecord } from "@/lib/guards";
-import { logger } from "@/lib/logger";
 import { compareCodeUnits } from "@/lib/ordering";
-import { assertNever } from "@/lib/result";
 import { decisionInputOf, fingerprintOf, recordedDecisionInputOf, type ImportDecisionInput, type ImportDecisionKind, type ImportDecisionSummary } from "@/modules/import/decide";
 import { IMPORT_FIELD_VOCABULARY, suggestMapping, type ImportFieldId, type ImportSuggestedMapping } from "@/modules/import/map";
 import { IMPORT_LIMIT_DESCRIPTORS, parseCsv, type ImportLimitId, type ImportLimitUnit } from "@/modules/import/parse";
@@ -30,7 +27,6 @@ import { instantAt } from "@/modules/time/clock";
 import { assertScope, readResultOfRefusal, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
 import {
   IMPORT_ROW_DECISIONS,
-  buildEnvelope,
   importProposalRecordSchema,
   operationRecordSchema,
   partnerRecordSchema,
@@ -50,26 +46,21 @@ import {
   type RecordedValueState,
   type Scope,
 } from "../envelope";
-// The review record and the reuse-candidate projection are declared once, by the module that writes them.
 import { candidatesOf, importReviewRecordSchema, type ImportReviewRecord } from "../mutations/import";
-import { LOCAL_STORE_SYSTEM, denied, unavailable, type DenialReason, type ReadResult } from "../outcome";
+import { LOCAL_STORE_SYSTEM, type ReadResult } from "../outcome";
+import { answerOf, deniedRead, storeUnavailableRead } from "./frame";
 const DECISION_LABELS: Readonly<Record<ImportRowDecision, string>> = { "new-private-entry": "Create a new private entry", "reuse-authorized-identity": "Reuse an authorized identity", skip: "Skip the row", unresolved: "Leave unresolved" };
 const ROW_STATE_LABELS: Readonly<Record<ImportRowState, string>> = { accepted: "Accepted", "already-accepted": "Accepted by an earlier attempt", skipped: "Skipped", "needs-review": "Needs review", failed: "Failed" };
 const DECISION_OPTIONS: readonly ImportDecisionOption[] = Object.freeze(IMPORT_ROW_DECISIONS.map((value) => Object.freeze({ value, label: DECISION_LABELS[value] })));
 const PROPOSAL_REVIEW_DETAIL: ImportProposalReviewDetail = Object.freeze({
   recorded: Object.freeze(["column-mapping", "row-decisions", "row-results", "summary"]),
-  // Nothing of the review step's material is merely absent from this read any more: each item is either held
-  // by the stored record above or derived beside it at read time, so the list of things the record does not
-  // carry is empty rather than a list of facts a caller would look for and not find.
   notRecorded: Object.freeze([]),
   message:
     "The saved proposal holds the columns a field is supplied from, the decision recorded about each row, any row result already recorded, and the summary acceptance is reviewed against. The per-row cells, the per-field issues, the preserved cells and restrictions, and the duplicate-contact suggestions are derived at read time from the file the review stored and the mapping it confirmed. When no review material is shown, it could not be derived — no mapping was confirmed for this file yet, or its stored text no longer reads as the file that was reviewed — and its absence there means it could not be derived, never that none was found.",
 });
-const READ_ATTEMPT_ID = "read";
 const PROPOSAL_SOURCE_REFERENCE = "import-proposal";
 const RECEIPT_SEARCH_DEPTH = 4;
 const IMPORT_COVERAGE: Coverage = Object.freeze({ from: null, to: null, state: "complete" });
-// The stored documents these reads open, validated before any of them is trusted. A store written before this read existed holds no review member, which is an absence rather than a fault; a member that is present and cannot be read as this build writes it fails the whole document, so a damaged review is never quietly treated as one that was never stored.
 const importStateDocumentSchema = z.object({ importProposals: z.array(importProposalRecordSchema), importReviews: z.array(importReviewRecordSchema).optional(), partners: z.array(partnerRecordSchema).optional() });
 const operationLedgerDocumentSchema = z.object({ entries: z.array(operationRecordSchema).optional(), records: z.record(z.string().min(1), operationRecordSchema).optional() });
 function ledgerEntriesOf(document: z.infer<typeof operationLedgerDocumentSchema>): readonly OperationRecord[] | null {
@@ -85,61 +76,42 @@ function ledgerEntriesOf(document: z.infer<typeof operationLedgerDocumentSchema>
   }
   return [...byId.values()];
 }
-// What the read got out of the documents: null when a document cannot be read as this build records it, which the read answers with `unavailable` rather than an empty answer, and an empty list when the member is simply absent. `partners` has no absence to report: a document that offers no contact offers no candidate for comparison, and nothing is invented for a caller to reuse.
 type ImportDocuments = { readonly proposals: readonly ImportProposalRecord[] | null; readonly reviews: readonly ImportReviewRecord[] | null; readonly partners: readonly PartnerRecord[]; readonly entries: readonly OperationRecord[] | null };
-/** Paging of a per-row detail list. */
 export type ImportPagingInput = { readonly page?: number; readonly pageSize?: number };
-/** The paging a read actually applied, so a surface states the window it is showing. */
 export type ImportRowWindow = { readonly page: number; readonly pageSize: number; readonly total: number; readonly pageCount: number };
-/** A result state a row can be filtered by, plus the state of a row nothing has been recorded for. */
 export type ImportRowFilterState = ImportRowState | "not-recorded";
-/** One filter a caller may apply to the per-row detail. */
 export type ImportRowFilter = { readonly decision?: ImportRowDecision; readonly state?: ImportRowFilterState };
-/** One displayed limit, with this file's measured value in the limit's own unit beside it. */
 export type ImportLimitView = { readonly id: ImportLimitId; readonly label: string; readonly value: number; readonly unit: ImportLimitUnit; readonly refusesWholeFile: boolean; readonly boundary: string; readonly measured: number | null };
-/** One column of the file, addressed by position so a repeated header stays a distinct column. */
 export type ImportProposalColumnView = { readonly columnIndex: number; readonly header: string; readonly occurrence: number; readonly field: string | null; readonly fieldLabel: string | null; readonly ignored: boolean };
-/** A header text carried by more than one column, with every position that carries it. */
 export type ImportRepeatedHeaderView = { readonly header: string; readonly columnIndexes: readonly number[] };
-/** A decision the review step offers, with the wording it shows beside it. */
 export type ImportDecisionOption = { readonly value: ImportRowDecision; readonly label: string };
-/** Where a row of a proposal sends the worker next, as data rather than as a URL. */
 export type ImportProposalRowRoute = { readonly kind: "partner"; readonly partnerId: string } | { readonly kind: "correction"; readonly rowNumber: number };
-/** One row of a proposal: its decision, whatever result is already recorded, and the route to it. */
 export type ImportProposalRowView = { readonly rowNumber: number; readonly decision: ImportRowDecision; readonly decisionLabel: string } & { readonly reuseTargetPartnerId: string | null; readonly state: ImportRowState | null; readonly stateLabel: string | null } & {
   readonly reason: string | null;
   readonly route: ImportProposalRowRoute | null;
 };
-/** One row's review material, derived at read time from the file the review stored and the mapping it confirmed. */
 export type ImportProposalRowReview = { readonly rowNumber: number; readonly verdict: ImportRowVerdict } & { readonly issues: readonly ImportFieldIssue[]; readonly mappedCells: readonly ImportMappedCell[]; readonly preservedCells: readonly ImportPreservedCell[] } & {
   readonly restrictions: readonly ImportRestriction[];
   readonly suggestions: readonly ImportMatchSuggestion[];
   /** The other rows of this same file this row looks like, or `null` when nothing in the file resembles it: a look-alike signal derived once for the whole file, and neither a verdict nor a decision. */
   readonly duplicateLooking: ImportDuplicateLooking | null;
 };
-/**
- * What the review step reads: the file's fingerprint, the mapping suggestion, the validation counts and one entry per returned row. The counts are `null` until a mapping is confirmed, because a count is a fact about a mapping and there is none to count yet: the Map step reads the suggestion and the fingerprint from the file the review stored, and no cell, issue, restriction or count is stated about a mapping the worker has not chosen.
- */
+/** What the review step reads: the file's fingerprint, the mapping suggestion, the validation counts and one entry per returned row. */
 export type ImportProposalReviewView = { readonly fileFingerprint: string; readonly suggestion: ImportSuggestedMapping } & { readonly counts: ImportValidationCounts | null; readonly problems: readonly ImportValidationProblem[] } & { readonly rows: readonly ImportProposalRowReview[] };
-/** How the file's rows divide, stated per decision so nothing is aggregated into one "contacts" number. */
 export type ImportProposalSummaryView = { readonly create: number; readonly reuse: number; readonly skip: number; readonly unresolved: number; readonly needsReview: number; readonly rowCount: number; readonly decisionsRecorded: number };
-/** What the stored proposal holds of the review step's detail, and what the read derives beside it instead of storing a second copy. */
 export type ImportProposalReviewDetail = { readonly recorded: readonly string[]; readonly notRecorded: readonly string[]; readonly message: string };
-/** Everything a proposal read returns: the file, its limits, its mapping, its rows, its summary, the decisions it holds, the stored record and the review material derived from it. */
 export interface ImportProposalView {
   readonly importOperationId: string;
   readonly processedAt: string | null;
   readonly inFlight: boolean;
   readonly revision: string;
   readonly file: { readonly name: string; readonly bytes: number; readonly rowCount: number; readonly columnCount: number };
-  /** The fingerprint of the reviewed file's content, which an acceptance carries back as `fileFingerprint`. */
   readonly fileFingerprint: string;
   readonly limits: readonly ImportLimitView[];
   readonly columns: readonly ImportProposalColumnView[];
   readonly ignoredColumnIndexes: readonly number[];
   readonly repeatedHeaders: readonly ImportRepeatedHeaderView[];
   readonly decisions: readonly ImportDecisionOption[];
-  /** The decisions this import already holds, in the input shape an acceptance posts back. */
   readonly recordedDecisions: readonly ImportDecisionInput[];
   readonly summary: ImportProposalSummaryView;
   readonly rows: readonly ImportProposalRowView[];
@@ -148,34 +120,24 @@ export interface ImportProposalView {
   readonly record: ImportProposalRecord;
   readonly review: ImportProposalReviewView | null;
 }
-/** What a caller may ask a proposal read for. */
 export type ReadImportProposalInput = ImportPagingInput & ImportRowFilter & { readonly importOperationId?: string; readonly session?: SessionSource };
-/** What the receipt's confirmed mapping says one column supplies. */
 export type ImportReceiptAssignmentView = { readonly columnIndex: number; readonly fieldId: ImportFieldId; readonly fieldLabel: string };
-/** A column the confirmed mapping does not use, with the factual reason it was left out. */
 export type ImportReceiptIgnoredColumnView = { readonly columnIndex: number; readonly header: string; readonly occurrence: number; readonly reason: string; readonly message: string };
-/** The mapping acceptance was reviewed under, so a receipt explains which column became which field. */
 export type ImportReceiptMappingView = { readonly columnCount: number; readonly assignments: readonly ImportReceiptAssignmentView[]; readonly fields: readonly ImportFieldId[] } & { readonly declined: readonly ImportFieldId[]; readonly unmapped: readonly ImportFieldId[] } & {
   readonly ignored: readonly ImportReceiptIgnoredColumnView[];
 };
-/** One row's result: what happened to it, why, and where the worker can go next. */
 export type ImportReceiptRowView = { readonly rowNumber: number; readonly decision: ImportRowDecision; readonly decisionLabel: string; readonly state: ImportRowState; readonly stateLabel: string; readonly reasonCode: string; readonly reason: string; readonly route: ImportResultRoute | null };
-/** The summary acceptance was reviewed against, as the receipt recorded it. */
 export type ImportReceiptSummaryView = { readonly create: number; readonly reuse: number; readonly skip: number; readonly unresolved: number; readonly rowCount: number } & { readonly blockedRowCount: number } & {
   readonly blockedReasons: readonly { readonly code: string; readonly label: string; readonly count: number }[];
 } & { readonly corrections: readonly { readonly fieldId: string; readonly label: string; readonly count: number }[] } & { readonly correctionCount: number; readonly restrictionsPreserved: number; readonly restrictionsCarried: number };
-/** What a cancellation did: the accepted rows it left in place and the rows it stopped. */
 export type ImportReceiptCancellationView = { readonly cancelledAt: string; readonly acceptedRowsRetained: number; readonly stoppedRows: number };
-/** The recoverable receipt of one acceptance: the file it read, the mapping and decisions it was accepted under, the summary it was reviewed against, one result per data row, the counts those. */
 export interface ImportReceiptView {
   readonly importOperationId: string;
   readonly processedAt: string;
   readonly revision: string;
   readonly file: { readonly name: string; readonly bytes: number; readonly rowCount: number; readonly columnCount: number };
-  /** The fingerprint of the file this acceptance read, which an acceptance of it carries back. */
   readonly fileFingerprint: string;
   readonly mapping: ImportReceiptMappingView;
-  /** The decisions acceptance was reviewed with, in the input shape a further acceptance posts back. */
   readonly recordedDecisions: readonly ImportDecisionInput[];
   readonly counts: { readonly accepted: number; readonly alreadyAccepted: number; readonly skipped: number; readonly needsReview: number; readonly failed: number; readonly total: number };
   readonly summary: ImportReceiptSummaryView;
@@ -184,52 +146,27 @@ export interface ImportReceiptView {
   readonly cancelled: boolean;
   readonly cancellation: ImportReceiptCancellationView | null;
 }
-/** What a caller may ask a receipt read for: the operation identity, plus how to show its rows. */
 export type ReadImportReceiptInput = ImportPagingInput & ImportRowFilter & { readonly session?: SessionSource };
 type ScopeResolution = { readonly ok: true; readonly session: ResolvedSession; readonly scope: Scope } | { readonly ok: false; readonly result: ReadResult<never> };
 async function resolveReadScope(source: SessionSource | undefined): Promise<ScopeResolution> {
   const resolution = await resolveSession(source);
   if (!resolution.ok) return { ok: false, result: readResultOfRefusal(resolution.refusal) };
   const { session } = resolution;
-  if (session.selected === null) {
-    // A session that has selected no context is not admitted to act anywhere yet, so the read is refused rather than run against an invented scope. The refusal names the caller's relationship and nothing about what was asked for.
-    return { ok: false, result: importDenied("not-admitted") };
-  }
+  if (session.selected === null) return { ok: false, result: deniedRead("not-admitted") };
   const decision = assertScope(session, session.selected);
-  if (!decision.ok) return { ok: false, result: { kind: "denied", denied: decision.denial } };
-  return { ok: true, session, scope: session.selected };
-}
-function importDenied(reason: DenialReason = "no-permission"): ReadResult<never> {
-  return { kind: "denied", denied: denied({ operationId: READ_ATTEMPT_ID, reasonCode: reason }) };
-}
-function importUnavailable(job: string, reference: string, guidance: string): ReadResult<never> {
-  const source = { system: LOCAL_STORE_SYSTEM, reference };
-  logger.sourceUnavailable({ job, source });
-  return { kind: "unavailable", unavailable: unavailable({ operationId: READ_ATTEMPT_ID, source, guidance }) };
+  return !decision.ok ? { ok: false, result: { kind: "denied", denied: decision.denial } } : { ok: true, session, scope: session.selected };
 }
 async function readImportDocuments(sessionId: string): Promise<ImportDocuments | undefined> {
-  try {
-    const documents = await readSession(sessionId);
-    if (documents === undefined) return undefined;
-    const state = importStateDocumentSchema.safeParse(documents.state);
-    const ledger = operationLedgerDocumentSchema.safeParse(documents.operations);
-    return { proposals: state.success ? state.data.importProposals : null, reviews: state.success ? (state.data.importReviews ?? []) : null, partners: state.success ? (state.data.partners ?? []) : [], entries: ledger.success ? ledgerEntriesOf(ledger.data) : null };
-  } catch {
-    // A corrupt or unreadable document means the store cannot answer. The refusal says that and nothing more: naming the document, the path or the fault would disclose where records live.
-    return undefined;
-  }
+  const documents = await readSession(sessionId).catch(() => undefined);
+  if (documents === undefined) return undefined;
+  const state = importStateDocumentSchema.safeParse(documents.state);
+  const ledger = operationLedgerDocumentSchema.safeParse(documents.operations);
+  return { proposals: state.success ? state.data.importProposals : null, reviews: state.success ? (state.data.importReviews ?? []) : null, partners: state.success ? (state.data.partners ?? []) : [], entries: ledger.success ? ledgerEntriesOf(ledger.data) : null };
 }
-// Ownership: a proposal belongs to the scope its operation was recorded under
 type OwnedProposal = { readonly record: ImportProposalRecord; readonly entry: OperationRecord };
 /** The ledger as a lookup keyed by the identity each entry is recorded under, built once per read and shared by everything that resolves an identity through it. */
-function ledgerIndex(entries: readonly OperationRecord[]): ReadonlyMap<string, OperationRecord> {
-  return new Map(entries.map((entry): [string, OperationRecord] => [entry.operationId, entry]));
-}
-/**
- * The proposals this scope owns, each with the ledger entry that records it. The ledger is indexed by operation
- * identity once per read instead of being scanned once per proposal: it grows with every mutation of the session, so
- * this read's cost has to follow the proposals it lists rather than the length of that ledger.
- */
+const ledgerIndex = (entries: readonly OperationRecord[]): ReadonlyMap<string, OperationRecord> => new Map(entries.map((entry): [string, OperationRecord] => [entry.operationId, entry]));
+/** The proposals this scope owns, each with the ledger entry that records it. */
 function ownedProposals(documents: ImportDocuments, scope: Scope, entryByOperationId: ReadonlyMap<string, OperationRecord>): OwnedProposal[] {
   const { proposals, entries } = documents;
   if (proposals === null || entries === null) return [];
@@ -243,26 +180,15 @@ function ownedProposals(documents: ImportDocuments, scope: Scope, entryByOperati
 }
 function newestFirst(left: OwnedProposal, right: OwnedProposal): number {
   const byInstant = Temporal.Instant.compare(Temporal.Instant.from(right.entry.at), Temporal.Instant.from(left.entry.at));
-  if (byInstant !== 0) return byInstant;
-  return compareCodeUnits(right.entry.operationId, left.entry.operationId);
+  return byInstant !== 0 ? byInstant : compareCodeUnits(right.entry.operationId, left.entry.operationId);
 }
-/**
- * The import an attempt recorded finding: the import identity the result a same-scope ledger entry stores carries.
- * An attempt that answered `unchanged` writes no proposal of its own, so its entry is the only thing that names the
- * import it found. Only a result stating a non-empty string identity resolves; every other shape resolves to nothing,
- * so no other stored value can be used to name a proposal.
- */
+/** The import an attempt recorded finding: the import identity the result a same-scope ledger entry stores carries. An attempt that answered `unchanged` writes no proposal of its own, so its entry is the only thing that names the import it found. */
 function foundImportIdOf(entry: OperationRecord | undefined, scope: Scope): string | null {
   if (entry === undefined || !sameScope(entry.scope, scope) || !isRecord(entry.result)) return null;
   const importOperationId = entry.result["importOperationId"];
   return typeof importOperationId === "string" && importOperationId.length > 0 ? importOperationId : null;
 }
-/**
- * The proposal a requested identity names: the proposal recorded under it, or the import an attempt that answered
- * `unchanged` recorded finding. Both are resolved inside the owned proposals, so the scope check every proposal read
- * makes is the one that decides reachability and the identity's own entry proves nothing on its own; an identity that
- * names neither resolves to nothing.
- */
+/** The proposal a requested identity names: the proposal recorded under it, or the import an attempt that answered `unchanged` recorded finding. */
 function proposalNamedBy(owned: readonly OwnedProposal[], requested: string, found: string | null): ImportProposalRecord | undefined {
   let throughAttempt: ImportProposalRecord | undefined;
   for (const proposal of owned) {
@@ -279,15 +205,8 @@ function pagedRows<T>(rows: readonly T[], paging: ImportPagingInput): { readonly
   const start = (page - 1) * pageSize;
   return { rows: rows.slice(start, start + pageSize), window: { page, pageSize, total: rows.length, pageCount } };
 }
-function measuredState(value: number | null): RecordedValueState {
-  if (value === null) return "unknown";
-  return value === 0 ? "zero" : "value";
-}
-function matchesRowFilter(decision: ImportRowDecision, state: ImportRowState | null, filter: ImportRowFilter): boolean {
-  if (filter.decision !== undefined && decision !== filter.decision) return false;
-  if (filter.state !== undefined && (state ?? "not-recorded") !== filter.state) return false;
-  return true;
-}
+const measuredState = (value: number | null): RecordedValueState => (value === null ? "unknown" : value === 0 ? "zero" : "value");
+const matchesRowFilter = (decision: ImportRowDecision, state: ImportRowState | null, filter: ImportRowFilter): boolean => (filter.decision !== undefined && decision !== filter.decision ? false : filter.state !== undefined && (state ?? "not-recorded") !== filter.state ? false : true);
 function fieldLabelOf(fieldId: string): string | null {
   const field = IMPORT_FIELD_VOCABULARY.find((candidate) => candidate.id === fieldId);
   return field === undefined ? null : field.label;
@@ -301,26 +220,12 @@ function indexProposal(record: ImportProposalRecord): ProposalIndex {
   for (const result of record.results) if (isReportedRow(result.rowNumber, rowCount) && !results.has(result.rowNumber)) results.set(result.rowNumber, result);
   return { decisions, results };
 }
-function isReportedRow(rowNumber: number, rowCount: number): boolean {
-  return Number.isInteger(rowNumber) && rowNumber >= 1 && rowNumber <= rowCount;
-}
+const isReportedRow = (rowNumber: number, rowCount: number): boolean => Number.isInteger(rowNumber) && rowNumber >= 1 && rowNumber <= rowCount;
 function limitViewsOf(fileMeta: ImportFileMetaRecord): readonly ImportLimitView[] {
   return IMPORT_LIMIT_DESCRIPTORS.map((descriptor) => ({ id: descriptor.id, label: descriptor.label, value: descriptor.value, unit: descriptor.unit, refusesWholeFile: descriptor.refusesWholeFile, boundary: descriptor.boundary, measured: measuredValueOf(descriptor.id, fileMeta) }));
 }
-function measuredValueOf(limitId: ImportLimitId, fileMeta: ImportFileMetaRecord): number | null {
-  switch (limitId) {
-    case "file-bytes":
-      return fileMeta.bytes;
-    case "data-rows":
-      return fileMeta.rowCount;
-    case "columns":
-      return fileMeta.columnCount;
-    case "cell-code-points":
-      return null;
-    default:
-      return assertNever(limitId, "import limit id");
-  }
-}
+const MEASURED_LIMIT_VALUES: Readonly<Record<ImportLimitId, (fileMeta: ImportFileMetaRecord) => number | null>> = { "file-bytes": (fileMeta) => fileMeta.bytes, "data-rows": (fileMeta) => fileMeta.rowCount, columns: (fileMeta) => fileMeta.columnCount, "cell-code-points": () => null };
+const measuredValueOf = (limitId: ImportLimitId, fileMeta: ImportFileMetaRecord): number | null => MEASURED_LIMIT_VALUES[limitId](fileMeta);
 type ProposalColumns = { readonly columns: readonly ImportProposalColumnView[]; readonly ignoredColumnIndexes: readonly number[]; readonly repeatedHeaders: readonly ImportRepeatedHeaderView[] };
 function columnsOf(record: ImportProposalRecord): ProposalColumns {
   const occurrences = new Map<string, number>();
@@ -334,9 +239,7 @@ function columnsOf(record: ImportProposalRecord): ProposalColumns {
     const positions = positionsByHeader.get(column.header);
     if (positions === undefined) {
       positionsByHeader.set(column.header, [column.columnIndex]);
-    } else {
-      positions.push(column.columnIndex);
-    }
+    } else positions.push(column.columnIndex);
   }
   const repeatedHeaders: ImportRepeatedHeaderView[] = [];
   for (const [header, columnIndexes] of positionsByHeader) if (columnIndexes.length > 1) repeatedHeaders.push({ header, columnIndexes: [...columnIndexes] });
@@ -370,63 +273,33 @@ function proposalRowsOf(record: ImportProposalRecord, index: ProposalIndex): rea
   }
   return rows;
 }
-function proposalRouteOf(rowNumber: number, state: ImportRowState | null, partnerId: string | null): ImportProposalRowRoute | null {
-  switch (state) {
-    case null:
-    case "skipped":
-      return null;
-    case "accepted":
-    case "already-accepted":
-      return partnerId === null ? null : { kind: "partner", partnerId };
-    case "needs-review":
-    case "failed":
-      return { kind: "correction", rowNumber };
-    default:
-      return assertNever(state, "import row state");
-  }
-}
-// The review material, derived here rather than stored a second time. The stored proposal record keeps the mapping, the decision about each row, any row result and the summary; the cells that supplied a value, the cells kept for correction, the per-field issues, the preserved restrictions and the duplicate-contact suggestions are re-derived from the file the review holds and the mapping it confirmed, so one file has one stored record and the review a caller reads is the same material the acceptance was summarised from. The mapping suggestion and the file's fingerprint need no confirmed mapping at all, so the Map step reads them from the same derivation.
+const PROPOSAL_ROUTES: Readonly<Record<ImportRowState, (rowNumber: number, partnerId: string | null) => ImportProposalRowRoute | null>> = {
+  skipped: () => null,
+  accepted: (_rowNumber, partnerId) => (partnerId === null ? null : { kind: "partner", partnerId }),
+  "already-accepted": (_rowNumber, partnerId) => (partnerId === null ? null : { kind: "partner", partnerId }),
+  "needs-review": (rowNumber) => ({ kind: "correction", rowNumber }),
+  failed: (rowNumber) => ({ kind: "correction", rowNumber }),
+};
+const proposalRouteOf = (rowNumber: number, state: ImportRowState | null, partnerId: string | null): ImportProposalRowRoute | null => (state === null ? null : PROPOSAL_ROUTES[state](rowNumber, partnerId));
 async function proposalReviewOf(stored: ImportReviewRecord | undefined, window: readonly ImportProposalRowView[], partners: readonly PartnerRecord[]): Promise<ImportProposalReviewView | null> {
-  // No stored review supplies no derivation: the text the proposal was measured from was never kept, so
-  // there is nothing to suggest a mapping from and nothing to derive a cell from.
-  if (stored === undefined) {
-    return null;
-  }
+  if (stored === undefined) return null;
   const parsed = await parseCsv(stored.text);
-  // A stored text that no longer parses, or that no longer measures the rows and columns the record
-  // numbers, describes a different file from the one the record belongs to, so its rows cannot be tied to
-  // the row numbers this read returns and nothing is derived from it.
-  if (!parsed.ok || parsed.file.columnCount !== stored.columnCount || parsed.file.dataRowCount !== stored.rowCount) {
-    return null;
-  }
+  if (!parsed.ok || parsed.file.columnCount !== stored.columnCount || parsed.file.dataRowCount !== stored.rowCount) return null;
   const file = parsed.file;
   const fileFingerprint = fingerprintOf(file).checksum;
   const suggestion = suggestMapping(file);
   const mapping = stored.mapping;
-  // The Map step reads before any mapping is confirmed, and the two facts it needs — the suggestion and the
-  // fingerprint — are properties of the file the review stored, so they are derived. The cells, the
-  // per-field issues, the preserved cells and the duplicate-contact suggestions are statements about a
-  // mapping the worker has not chosen yet, so no row is reported and no count is stated, rather than a row
-  // or a zero being invented for one.
-  if (mapping === null) {
-    return { fileFingerprint, suggestion, counts: null, problems: [], rows: [] };
-  }
+  if (mapping === null) return { fileFingerprint, suggestion, counts: null, problems: [], rows: [] };
   const validation = validateRows(file, mapping);
-  // The rows are compared with each other once for the whole file rather than once per returned row: a look-alike pair can
-  // straddle two windows, and the answer is a property of the file the worker is importing.
+  // The rows are compared with each other once for the whole file rather than once per returned row: a look-alike pair can straddle two windows, and the answer is a property of the file the worker is importing.
   const duplicateLooking = flagDuplicateLookingRows(validation.rows);
-  // Reuse candidates are the contacts this session already holds, projected once by the mutation that writes
-  // them; an absent partners member offers none, because a candidate is never invented.
   const candidates = candidatesOf(partners);
   const validatedByRow = new Map(validation.rows.map((row) => [row.rowNumber, row] as const));
   const rows: ImportProposalRowReview[] = [];
   for (const row of window) {
     const validated = validatedByRow.get(row.rowNumber);
-    // A returned row the derived file does not carry is not reported as a row with nothing wrong: the
-    // whole derivation is unavailable, which the null says plainly.
-    if (validated === undefined) {
-      return null;
-    }
+    // A returned row the derived file does not carry is not reported as a row with nothing wrong: the whole derivation is unavailable, which the null says plainly.
+    if (validated === undefined) return null;
     rows.push({
       rowNumber: validated.rowNumber,
       verdict: validated.verdict,
@@ -440,28 +313,9 @@ async function proposalReviewOf(stored: ImportReviewRecord | undefined, window: 
   }
   return { fileFingerprint, suggestion, counts: validation.counts, problems: validation.problems, rows };
 }
-function decisionKindOf(decision: ImportRowDecision): ImportDecisionKind {
-  switch (decision) {
-    case "new-private-entry":
-      return "create";
-    case "reuse-authorized-identity":
-      return "reuse";
-    case "skip":
-      return "skip";
-    case "unresolved":
-      return "unresolved";
-    default:
-      return assertNever(decision, "import row decision");
-  }
-}
-/** The existing identity a stored reuse decision points at, and `null` for a decision that reuses nothing. */
-function storedCandidateOf(decision: ImportRowDecisionRecord): ImportMatchReference | null {
-  if (decision.candidate !== null) return { ...decision.candidate };
-  if (decision.decision !== "reuse-authorized-identity" || decision.targetPartnerId === null) return null;
-  // A decision recorded before the reference was kept beside the row: this build records every reusable candidate against the local store, so the identifier it stored there is the reference to echo back.
-  return { system: LOCAL_STORE_SYSTEM, reference: decision.targetPartnerId };
-}
-/** The decisions a stored proposal holds, in row order and in the input shape acceptance posts back. */
+const DECISION_KINDS: Readonly<Record<ImportRowDecision, ImportDecisionKind>> = { "new-private-entry": "create", "reuse-authorized-identity": "reuse", skip: "skip", unresolved: "unresolved" };
+const decisionKindOf = (decision: ImportRowDecision): ImportDecisionKind => DECISION_KINDS[decision];
+const storedCandidateOf = (decision: ImportRowDecisionRecord): ImportMatchReference | null => (decision.candidate !== null ? { ...decision.candidate } : decision.decision !== "reuse-authorized-identity" || decision.targetPartnerId === null ? null : { system: LOCAL_STORE_SYSTEM, reference: decision.targetPartnerId });
 function recordedDecisionInputsOf(decisions: ReadonlyMap<number, ImportRowDecisionRecord>): readonly ImportDecisionInput[] {
   return [...decisions.values()]
     .sort((left, right) => left.rowNumber - right.rowNumber)
@@ -485,10 +339,9 @@ function proposalValueStates(record: ImportProposalRecord, summary: ImportPropos
   return states;
 }
 function proposalActions(summary: ImportProposalSummaryView): readonly ReadAction[] {
-  const acceptable = summary.create + summary.reuse;
   return [
     { name: "setRowDecision", available: true },
-    acceptable > 0 ? { name: "acceptImportRows", available: true } : { name: "acceptImportRows", available: false, reason: "No row is decided for a new entry or a reuse yet, so there is nothing to accept. Decide about a row, or skip it, before importing." },
+    summary.create + summary.reuse > 0 ? { name: "acceptImportRows", available: true } : { name: "acceptImportRows", available: false, reason: "No row is decided for a new entry or a reuse yet, so there is nothing to accept. Decide about a row, or skip it, before importing." },
     { name: "cancelImport", available: true },
   ];
 }
@@ -527,21 +380,8 @@ function receiptRowsOf(receipt: ImportReceipt): readonly ImportReceiptRowView[] 
     return { rowNumber: result.rowNumber, decision, decisionLabel: DECISION_LABELS[decision], state: result.state, stateLabel: ROW_STATE_LABELS[result.state], reasonCode: result.reasonCode, reason: result.reason, route: result.route };
   });
 }
-function rowDecisionOf(kind: ImportDecisionKind): ImportRowDecision {
-  switch (kind) {
-    case "create":
-      return "new-private-entry";
-    case "reuse":
-      return "reuse-authorized-identity";
-    case "skip":
-      return "skip";
-    case "unresolved":
-      return "unresolved";
-    default:
-      return assertNever(kind, "contact import decision kind");
-  }
-}
-/** The decisions a receipt recorded, in row order, once per row, in the input shape acceptance posts back. */
+const ROW_DECISIONS: Readonly<Record<ImportDecisionKind, ImportRowDecision>> = { create: "new-private-entry", reuse: "reuse-authorized-identity", skip: "skip", unresolved: "unresolved" };
+const rowDecisionOf = (kind: ImportDecisionKind): ImportRowDecision => ROW_DECISIONS[kind];
 function receiptDecisionInputsOf(receipt: ImportReceipt): readonly ImportDecisionInput[] {
   const seen = new Set<number>();
   const inputs: ImportDecisionInput[] = [];
@@ -582,14 +422,12 @@ function receiptValueStates(receipt: ImportReceipt, summary: ImportReceiptSummar
 }
 function receiptActions(receipt: ImportReceipt): readonly ReadAction[] {
   if (receipt.cancellation !== null) return [{ name: "cancelImport", available: false, reason: "This import was already cancelled, and the rows it stopped stay stopped. Nothing is recalled, and no row is applied again from this receipt." }];
-  const unapplied = receipt.counts.total - receipt.counts.accepted - receipt.counts.alreadyAccepted;
-  return unapplied > 0 ? [{ name: "cancelImport", available: true }] : [{ name: "cancelImport", available: false, reason: "Every row of this file was accepted, so there is nothing left for a cancellation to stop and nothing to recall." }];
+  return receipt.counts.total - receipt.counts.accepted - receipt.counts.alreadyAccepted > 0 ? [{ name: "cancelImport", available: true }] : [{ name: "cancelImport", available: false, reason: "Every row of this file was accepted, so there is nothing left for a cancellation to stop and nothing to recall." }];
 }
 function findStoredReceipt(value: unknown, importOperationId: string, depth = 0): ImportReceiptRead | null {
   if (depth > RECEIPT_SEARCH_DEPTH || value === null || value === undefined) return null;
   if (isRecord(value) && value["receiptFormat"] === IMPORT_RECEIPT_FORMAT) return readStoredReceipt(value, importOperationId);
-  const children: readonly unknown[] = Array.isArray(value) ? value : isRecord(value) ? Object.values(value) : [];
-  for (const child of children) {
+  for (const child of Array.isArray(value) ? value : isRecord(value) ? Object.values(value) : []) {
     const found = findStoredReceipt(child, importOperationId, depth + 1);
     if (found !== null) return found;
   }
@@ -601,9 +439,9 @@ export async function readImportProposal(input: ReadImportProposalInput = {}): P
   if (!resolved.ok) return resolved.result;
   const { session, scope } = resolved;
   const documents = await readImportDocuments(session.sessionId);
-  if (documents === undefined) return importUnavailable("read-import-proposal", PROPOSAL_SOURCE_REFERENCE, "The store could not be read for this session, so no import proposal can be shown. Try again once the store answers; this request changed nothing.");
+  if (documents === undefined) return storeUnavailableRead("read-import-proposal", PROPOSAL_SOURCE_REFERENCE, "The store could not be read for this session, so no import proposal can be shown. Try again once the store answers; this request changed nothing.");
   if (documents.proposals === null || documents.reviews === null || documents.entries === null) {
-    return importUnavailable(
+    return storeUnavailableRead(
       "read-import-proposal",
       PROPOSAL_SOURCE_REFERENCE,
       "This session's import proposal cannot be read as this build records it, so no proposal is shown rather than an empty one. Start the import again; nothing that was already accepted is affected, and a finished import is read from its receipt by operation identity.",
@@ -612,37 +450,32 @@ export async function readImportProposal(input: ReadImportProposalInput = {}): P
   const entryByOperationId = ledgerIndex(documents.entries);
   const owned = ownedProposals(documents, scope, entryByOperationId);
   const requested = input.importOperationId;
-  // Only the current proposal is returned: the newest in-flight one when no identity is named, and never a superseded proposal of the same scope, which is not enumerated at all. A named identity may be the proposal's own or the identity of an attempt that answered `unchanged` and recorded the import it found, so it is resolved through that attempt's entry too: the review such an attempt found stays reachable by the only identity its caller holds. The resolution never reaches past the owned proposals, so a proposal this caller may not see stays unreachable however it is named, and an identity that names nothing answers exactly as one that never existed.
+  // Only the current proposal is returned, and a named identity may be the proposal's own or an attempt that answered `unchanged` and recorded the import it found, so it is resolved through that attempt's entry too: the review such an attempt found stays reachable by the only identity its caller holds. The resolution never reaches past the owned proposals, so an identity that names nothing answers exactly as one that never existed.
   const record = requested === undefined ? owned.find((proposal) => proposal.record.processedAt === null)?.record : proposalNamedBy(owned, requested, foundImportIdOf(entryByOperationId.get(requested), scope));
   if (record === undefined) {
-    // An absent proposal is not an empty proposal: a named identity the caller cannot reach answers exactly as one that never existed, and a caller with nothing in flight is told so plainly.
     return requested === undefined
-      ? importUnavailable("read-import-proposal", PROPOSAL_SOURCE_REFERENCE, "No import proposal is in flight for this context: none has been started, or the one that was has already been accepted and is read from its receipt by operation identity. Choose a file to start an import.")
-      : importDenied();
+      ? storeUnavailableRead("read-import-proposal", PROPOSAL_SOURCE_REFERENCE, "No import proposal is in flight for this context: none has been started, or the one that was has already been accepted and is read from its receipt by operation identity. Choose a file to start an import.")
+      : deniedRead("no-permission");
   }
   const index = indexProposal(record);
   const columns = columnsOf(record);
   const limits = limitViewsOf(record.fileMeta);
   const summary = proposalSummaryOf(record, index);
-  const matching = proposalRowsOf(record, index).filter((row) => matchesRowFilter(row.decision, row.state, input));
-  const paged = pagedRows(matching, input);
-  const storedReview = documents.reviews.find((candidate) => candidate.importOperationId === record.importOperationId);
-  // One parse, one validation pass and one suggestion per returned row: the window bounds the work, and a
-  // file of at most five thousand rows is the most any of them can be.
-  const review = await proposalReviewOf(storedReview, paged.rows, documents.partners);
+  const paged = pagedRows(
+    proposalRowsOf(record, index).filter((row) => matchesRowFilter(row.decision, row.state, input)),
+    input,
+  );
+  const review = await proposalReviewOf(
+    documents.reviews.find((candidate) => candidate.importOperationId === record.importOperationId),
+    paged.rows,
+    documents.partners,
+  );
   const view: ImportProposalView = {
     importOperationId: record.importOperationId,
     processedAt: record.processedAt,
     inFlight: record.processedAt === null,
     revision: record.revision,
-    file: {
-      // Display metadata exactly as the record holds it: never a path, never parsed, never evidence of the file's type, which the import module established from the bytes before a row was read.
-      name: record.fileMeta.name,
-      bytes: record.fileMeta.bytes,
-      rowCount: record.fileMeta.rowCount,
-      columnCount: record.fileMeta.columnCount,
-    },
-    // The content fingerprint the record was written with: this is the value an acceptance presents, so the file a worker reviewed can be the file an acceptance names without guessing at an identity.
+    file: { name: record.fileMeta.name, bytes: record.fileMeta.bytes, rowCount: record.fileMeta.rowCount, columnCount: record.fileMeta.columnCount },
     fileFingerprint: record.fingerprint.checksum,
     limits,
     columns: columns.columns,
@@ -657,51 +490,40 @@ export async function readImportProposal(input: ReadImportProposalInput = {}): P
     record,
     review,
   };
-  const envelope = buildEnvelope({
+  return answerOf(scope, instantAt(session.clockOffsetMs).toString(), {
     data: view,
-    scope,
     source: { system: LOCAL_STORE_SYSTEM, reference: record.importOperationId },
     revision: record.revision,
-    asOf: instantAt(session.clockOffsetMs).toString(),
     coverage: IMPORT_COVERAGE,
     valueStates: proposalValueStates(record, summary, limits, paged.window),
     actions: proposalActions(summary),
   });
-  return { kind: "envelope", envelope };
 }
 /** Reads the recoverable receipt of one import acceptance by its operation identity: what became of each data row, where to go next, and the counts those results add up to. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readImportReceipt(importOperationId: string, input: ReadImportReceiptInput = {}): Promise<ReadResult<ReadEnvelope<ImportReceiptView>>> {
   const resolved = await resolveReadScope(input.session);
   if (!resolved.ok) return resolved.result;
   const { session, scope } = resolved;
-  if (importOperationId.length === 0) return importDenied();
+  if (importOperationId.length === 0) return deniedRead("no-permission");
   const documents = await readImportDocuments(session.sessionId);
-  if (documents === undefined) return importUnavailable("read-import-receipt", importOperationId, "The store could not be read for this session, so this import operation's receipt cannot be shown. Try again once the store answers; reading a receipt applies nothing, so nothing changed.");
+  if (documents === undefined) return storeUnavailableRead("read-import-receipt", importOperationId, "The store could not be read for this session, so this import operation's receipt cannot be shown. Try again once the store answers; reading a receipt applies nothing, so nothing changed.");
   if (documents.entries === null)
-    return importUnavailable("read-import-receipt", importOperationId, "This session's operation ledger cannot be read as this build records it, so this receipt cannot be shown rather than shown as empty. Do not repeat the import: the rows it already applied are recorded, and this read applies nothing.");
-  // Ownership is the ledger entry's own scope. An identity that belongs to another scope and one that
-  // was never recorded answer with the same refusal, so neither can be used to learn that a record
-  // exists, and no row count, file name or size travels with the refusal.
-  //
-  // One import identity can be recorded by more than one attempt — the proposal that started it and
-  // the acceptance that finished it — so every in-scope entry under this identity is searched for the
-  // receipt it carries, in the order the ledger holds them, rather than only the first.
+    return storeUnavailableRead("read-import-receipt", importOperationId, "This session's operation ledger cannot be read as this build records it, so this receipt cannot be shown rather than shown as empty. Do not repeat the import: the rows it already applied are recorded, and this read applies nothing.");
   const ownedEntries = documents.entries.filter((candidate) => candidate.operationId === importOperationId && sameScope(candidate.scope, scope));
-  if (ownedEntries.length === 0) return importDenied();
+  if (ownedEntries.length === 0) return deniedRead("no-permission");
   let stored: ImportReceiptRead | null = null;
   for (const entry of ownedEntries) {
     stored = findStoredReceipt(entry.result, importOperationId);
     if (stored !== null) break;
   }
-  if (stored === null || stored.kind === "not-found") return importDenied();
-  if (stored.kind === "unavailable") {
-    // The document is this caller's own and cannot be trusted, which is an outage rather than an absence: reporting it as absent would invite the very repetition a receipt exists to prevent.
-    return importUnavailable("read-import-receipt", importOperationId, stored.reason);
-  }
+  if (stored === null || stored.kind === "not-found") return deniedRead("no-permission");
+  if (stored.kind === "unavailable") return storeUnavailableRead("read-import-receipt", importOperationId, stored.reason);
   const receipt = stored.receipt;
   const summary = receiptSummaryOf(receipt);
-  const matching = receiptRowsOf(receipt).filter((row) => matchesRowFilter(row.decision, row.state, input));
-  const paged = pagedRows(matching, input);
+  const paged = pagedRows(
+    receiptRowsOf(receipt).filter((row) => matchesRowFilter(row.decision, row.state, input)),
+    input,
+  );
   const cancellation = receipt.cancellation;
   const view: ImportReceiptView = {
     importOperationId: receipt.importOperationId,
@@ -718,28 +540,5 @@ export async function readImportReceipt(importOperationId: string, input: ReadIm
     cancelled: cancellation !== null,
     cancellation: cancellation === null ? null : { cancelledAt: cancellation.cancelledAt, acceptedRowsRetained: cancellation.acceptedRowsRetained, stoppedRows: cancellation.stoppedRows },
   };
-  const envelope = buildEnvelope({
-    data: view,
-    scope,
-    source: { system: LOCAL_STORE_SYSTEM, reference: receipt.importOperationId },
-    revision: view.revision,
-    asOf: instantAt(session.clockOffsetMs).toString(),
-    coverage: IMPORT_COVERAGE,
-    valueStates: receiptValueStates(receipt, summary, paged.window),
-    actions: receiptActions(receipt),
-  });
-  return { kind: "envelope", envelope };
+  return answerOf(scope, instantAt(session.clockOffsetMs).toString(), { data: view, source: { system: LOCAL_STORE_SYSTEM, reference: receipt.importOperationId }, revision: view.revision, coverage: IMPORT_COVERAGE, valueStates: receiptValueStates(receipt, summary, paged.window), actions: receiptActions(receipt) });
 }
-// What these reads deliberately do not do
-//
-// Nothing here applies a row, re-applies one, mints an operation identity, records a decision or a
-// receipt, writes to the store, opens a file or re-reads the uploaded bytes: parsing, mapping,
-// validation, decisions and the receipt belong to `modules/import/*`, and acceptance, persistence and
-// the ledger belong to the named mutations. A read never turns uncertainty into a resend, and no result
-// it returns offers a retry that would repeat an effect.
-//
-// Nothing here creates a membership, a consent record, an audience entry, a gift, a commitment, a task,
-// an interaction or a note, and no field these reads return carries one: the proposal record holds none,
-// the receipt's permission-shaped tallies are not projected, and a column headed like a subscription
-// statement stays preserved data in the stored record. A file name is display metadata and evidence of
-// nothing, and no message here claims the file was safe or qualified by its local parse.

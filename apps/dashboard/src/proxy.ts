@@ -15,8 +15,7 @@ export default function proxy(request: NextRequest): NextResponse {
   const carriedSessionId = readSessionId(request.cookies.get(SESSION_COOKIE)?.value);
   if (carriedSessionId !== undefined) return NextResponse.next();
   if (!isDevelopment()) return NextResponse.next();
-  // The request's own cookie header is extended rather than replaced, so every other cookie the browser carries still reaches the render that is about to resolve this session.
-  const headers = new Headers(request.headers);
+  const headers = new Headers(request.headers); // The request's own cookie header is extended rather than replaced, so every other cookie the browser carries still reaches the render that is about to resolve this session.
   const carriedCookieHeader = headers.get("cookie");
   headers.set("cookie", carriedCookieHeader === undefined ? `${SESSION_COOKIE}=${DEFAULT_SESSION_ID}` : `${carriedCookieHeader}; ${SESSION_COOKIE}=${DEFAULT_SESSION_ID}`);
   const response = NextResponse.next({ request: { headers } });

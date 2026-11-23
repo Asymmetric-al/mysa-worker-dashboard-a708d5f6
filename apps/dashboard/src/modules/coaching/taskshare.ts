@@ -1,7 +1,5 @@
-/** The one reviewed, coach-readable summary of a shared task — and the rule that withholds it the moment the task's reviewed meaning changes. */
 import { err, ok, type Result } from "../../lib/result";
 import type { CivilDate, CivilDayStart, DatePrecision } from "../time/civil";
-/** The maximum length of a reviewed shared-task description, in Unicode code points. */
 export const TASK_SUMMARY_MAX_CODE_POINTS = 240;
 export type ScenarioInstant = Extract<CivilDayStart, { status: "resolved" }>["instant"];
 export type TaskStatus = "open" | "completed" | "reopened" | "cancelled";
@@ -21,42 +19,27 @@ export type SuccessorSharingRequest = { readonly share: TaskShare; readonly occu
 export type SelectedSuccessorOccurrence = { readonly occurrenceId: string; readonly reviewedFingerprint: string };
 export type TaskShareReadStateInput = { readonly share: TaskShare | undefined; readonly currentFingerprint: string | undefined; readonly sourceAvailable: boolean };
 type FingerprintVerdict = "current" | "missing" | "changed";
-
-function fingerprintVerdict(reviewedFingerprint: string | undefined, currentFingerprint: string | undefined): FingerprintVerdict {
-  if (reviewedFingerprint === undefined || currentFingerprint === undefined) return "missing";
-  return reviewedFingerprint === currentFingerprint ? "current" : "changed";
-}
+const fingerprintVerdict = (reviewedFingerprint: string | undefined, currentFingerprint: string | undefined): FingerprintVerdict => (reviewedFingerprint === undefined || currentFingerprint === undefined ? "missing" : reviewedFingerprint === currentFingerprint ? "current" : "changed");
 export function reviewTaskSummary(description: string, now: ScenarioInstant): Result<ReviewedTaskSummary, TaskShareRefusal> {
   if (description.trim() === "") return err({ outcome: "refused", reason: "description-empty" });
   const codePoints = Array.from(description).length;
-  if (codePoints > TASK_SUMMARY_MAX_CODE_POINTS) return err({ outcome: "refused", reason: "description-too-long", codePoints, limit: TASK_SUMMARY_MAX_CODE_POINTS });
-  return ok({ description, codePoints, reviewedAt: now });
+  return codePoints > TASK_SUMMARY_MAX_CODE_POINTS ? err({ outcome: "refused", reason: "description-too-long", codePoints, limit: TASK_SUMMARY_MAX_CODE_POINTS }) : ok({ description, codePoints, reviewedAt: now });
 }
 export function safeTaskSummary(input: SafeTaskSummaryInput): Result<SafeTaskSummary, TaskShareRefusal> {
   if (input.state === "removed") return err({ outcome: "refused", reason: "not-shared" });
   if (!input.sourceAvailable) return err({ outcome: "refused", reason: "unavailable" });
   const verdict = fingerprintVerdict(input.reviewedFingerprint, input.currentFingerprint);
   if (verdict === "missing") return err({ outcome: "refused", reason: "not-reviewed" });
-  if (verdict === "changed") {
-    return ok({ state: "needs-review" });
-  }
-  return ok({ state: "shared", description: input.description, dueDate: input.dueDate, status: input.status });
+  return verdict === "changed" ? ok({ state: "needs-review" }) : ok({ state: "shared", description: input.description, dueDate: input.dueDate, status: input.status });
 }
-export function taskShareReadState(input: TaskShareReadStateInput): TaskShareSummaryState {
-  if (input.share === undefined || input.share.state === "removed") return "removed";
-  if (!input.sourceAvailable) return "unavailable";
-  return fingerprintVerdict(input.share.reviewedFingerprint, input.currentFingerprint) === "current" ? "shared" : "needs-review";
-}
+export const taskShareReadState = (input: TaskShareReadStateInput): TaskShareSummaryState =>
+  input.share === undefined || input.share.state === "removed" ? "removed" : !input.sourceAvailable ? "unavailable" : fingerprintVerdict(input.share.reviewedFingerprint, input.currentFingerprint) === "current" ? "shared" : "needs-review";
 /** Authorises a share to cover a recurring task's next occurrence — only when the worker selected that occurrence explicitly. */
 export function selectSuccessorForSharing(request: SuccessorSharingRequest): Result<SelectedSuccessorOccurrence, TaskShareRefusal> {
   if (request.share.state !== "shared") return err({ outcome: "refused", reason: "not-shared" });
   if (request.expectedRevision !== request.share.revision) return err({ outcome: "refused", reason: "stale-revision" });
   if (request.occurrenceId === request.share.occurrenceId) return err({ outcome: "refused", reason: "occurrence-already-shared" });
-  if (request.selectedOccurrenceId !== request.occurrenceId) return err({ outcome: "refused", reason: "successor-needs-fresh-selection" });
-  return ok({ occurrenceId: request.occurrenceId, reviewedFingerprint: request.share.reviewedFingerprint });
+  return request.selectedOccurrenceId !== request.occurrenceId ? err({ outcome: "refused", reason: "successor-needs-fresh-selection" }) : ok({ occurrenceId: request.occurrenceId, reviewedFingerprint: request.share.reviewedFingerprint });
 }
-export function stopTaskShare(input: StopTaskShareInput, now: ScenarioInstant): Result<TaskShare, TaskShareRefusal> {
-  if (input.share.state !== "shared") return err({ outcome: "refused", reason: "not-shared" });
-  if (input.expectedRevision !== input.share.revision) return err({ outcome: "refused", reason: "stale-revision" });
-  return ok({ ...input.share, state: "removed", revision: input.share.revision + 1, withdrawnAt: now });
-}
+export const stopTaskShare = (input: StopTaskShareInput, now: ScenarioInstant): Result<TaskShare, TaskShareRefusal> =>
+  input.share.state !== "shared" ? err({ outcome: "refused", reason: "not-shared" }) : input.expectedRevision !== input.share.revision ? err({ outcome: "refused", reason: "stale-revision" }) : ok({ ...input.share, state: "removed", revision: input.share.revision + 1, withdrawnAt: now });

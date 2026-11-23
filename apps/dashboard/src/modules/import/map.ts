@@ -1,223 +1,105 @@
-/** Contact import, step two: propose which column of a parsed CSV could supply which contact field, and turn that suggestion into a mapping the worker has confirmed. */
 import type { ParsedCsvFile } from "./parse";
 export type ImportFieldId = "display-name" | "name-given" | "name-family" | "name-organization" | "contact-email" | "contact-phone" | "contact-postal" | "restriction" | "tag" | "source-reference";
 export type ImportFieldTarget = "displayName" | "nameParts" | "contactMethods" | "restrictions" | "tags" | "source";
 export type ImportContactKind = "email" | "phone" | "postal";
-
-export interface ImportFieldDescriptor {
-  readonly id: ImportFieldId;
-  readonly label: string;
-  readonly target: ImportFieldTarget;
-  readonly contactKind: ImportContactKind | null;
-  readonly cardinality: "single" | "multi";
-  readonly repeatableAcrossColumns: boolean;
-  readonly aliases: readonly string[];
-  readonly note: string;
-}
-export const IMPORT_FIELD_VOCABULARY: readonly ImportFieldDescriptor[] = [
-  {
-    id: "display-name",
-    label: "Display name",
-    target: "displayName",
-    contactKind: null,
-    cardinality: "single",
-    repeatableAcrossColumns: false,
-    aliases: ["name", "display name", "displayname", "full name", "fullname", "contact name", "preferred name"],
-    note: "The name the contact is shown under. It is a label, not an identity: two contacts with the same name stay two contacts.",
-  },
-  { id: "name-given", label: "Given name", target: "nameParts", contactKind: null, cardinality: "single", repeatableAcrossColumns: false, aliases: ["first name", "firstname", "given name", "givenname", "forename"], note: "One part of a person's name, kept as it arrived; it is not used to match a person to a record." },
-  {
-    id: "name-family",
-    label: "Family name",
-    target: "nameParts",
-    contactKind: null,
-    cardinality: "single",
-    repeatableAcrossColumns: false,
-    aliases: ["last name", "lastname", "family name", "familyname", "surname"],
-    note: "One part of a person's name, kept as it arrived; sharing a family name proves no household and no relationship.",
-  },
-  {
-    id: "name-organization",
-    label: "Organization name",
-    target: "nameParts",
-    contactKind: null,
-    cardinality: "single",
-    repeatableAcrossColumns: false,
-    aliases: ["organization", "organisation", "organization name", "organisation name", "church", "church name", "company", "company name", "congregation"],
-    note: "The name of an organization or church record, never a person's name part: a church is one partner record and its people are separate records.",
-  },
-  {
-    id: "contact-email",
-    label: "Email",
-    target: "contactMethods",
-    contactKind: "email",
-    cardinality: "multi",
-    repeatableAcrossColumns: true,
-    aliases: ["email", "e mail", "email address", "e mail address", "primary email", "secondary email", "work email", "home email", "other email", "email 1", "email 2"],
-    note: "A contact method of kind email, held as data on the record. It never joins records, and it is not consent to receive any publication.",
-  },
-  {
-    id: "contact-phone",
-    label: "Phone",
-    target: "contactMethods",
-    contactKind: "phone",
-    cardinality: "multi",
-    repeatableAcrossColumns: true,
-    aliases: ["phone", "phone number", "telephone", "telephone number", "tel", "mobile", "mobile phone", "mobile number", "cell", "cell phone", "work phone", "home phone", "phone 1", "phone 2"],
-    note: "A contact method of kind phone, held as data exactly as it arrived. The import reads no format and dials nothing.",
-  },
-  {
-    id: "contact-postal",
-    label: "Postal address",
-    target: "contactMethods",
-    contactKind: "postal",
-    cardinality: "multi",
-    repeatableAcrossColumns: true,
-    aliases: ["address", "postal address", "mailing address", "street", "street address", "address line 1", "address line 2", "city", "town", "state", "province", "region", "county", "postal code", "postcode", "post code", "zip", "zip code", "country"],
-    note: "A contact method of kind postal. Each mapped column contributes one value; the import never composes an address out of several columns and never geocodes one.",
-  },
-  {
-    id: "restriction",
-    label: "Contact restriction",
-    target: "restrictions",
-    contactKind: null,
-    cardinality: "multi",
-    repeatableAcrossColumns: true,
-    aliases: ["restriction", "restrictions", "contact restriction", "contact restrictions", "do not contact", "do not email", "do not mail", "do not call", "no contact"],
-    note: "A negative contact instruction the record carries, kept as text. It is a contactability instruction, not a consent decision for any publisher and purpose.",
-  },
-  { id: "tag", label: "Tag", target: "tags", contactKind: null, cardinality: "multi", repeatableAcrossColumns: true, aliases: ["tag", "tags", "tag list", "tags list", "label", "labels"], note: "The worker's own label for their own sorting. A tag is not a stage, an initiative membership or an audience." },
-  {
-    id: "source-reference",
-    label: "Source reference",
-    target: "source",
-    contactKind: null,
-    cardinality: "single",
-    repeatableAcrossColumns: false,
-    aliases: ["source id", "source reference", "source ref", "sourceid", "external id", "external reference", "contact id", "record id", "crm id", "constituent id", "supporter id"],
-    note: "An opaque reference the source system used for this contact, carried as text exactly as it arrived: never parsed, never a join key, and leading zeros are part of the value.",
-  },
+export type ImportFieldDescriptor = { readonly id: ImportFieldId; readonly label: string; readonly target: ImportFieldTarget; readonly contactKind: ImportContactKind | null; readonly cardinality: "single" | "multi"; readonly repeatableAcrossColumns: boolean; readonly aliases: readonly string[]; readonly note: string };
+type ImportFieldRow = readonly [ImportFieldId, string, ImportFieldTarget, ImportContactKind | null, readonly string[], string];
+const MULTI_VALUE_TARGETS: ReadonlySet<ImportFieldTarget> = new Set<ImportFieldTarget>(["contactMethods", "restrictions", "tags"]);
+const IMPORT_FIELD_ROWS: readonly ImportFieldRow[] = [
+  ["display-name", "Display name", "displayName", null, ["name", "display name", "displayname", "full name", "fullname", "contact name", "preferred name"], "The name the contact is shown under. It is a label, not an identity: two contacts with the same name stay two contacts."],
+  ["name-given", "Given name", "nameParts", null, ["first name", "firstname", "given name", "givenname", "forename"], "One part of a person's name, kept as it arrived; it is not used to match a person to a record."],
+  ["name-family", "Family name", "nameParts", null, ["last name", "lastname", "family name", "familyname", "surname"], "One part of a person's name, kept as it arrived; sharing a family name proves no household and no relationship."],
+  [
+    "name-organization",
+    "Organization name",
+    "nameParts",
+    null,
+    ["organization", "organisation", "organization name", "organisation name", "church", "church name", "company", "company name", "congregation"],
+    "The name of an organization or church record, never a person's name part: a church is one partner record and its people are separate records.",
+  ],
+  [
+    "contact-email",
+    "Email",
+    "contactMethods",
+    "email",
+    ["email", "e mail", "email address", "e mail address", "primary email", "secondary email", "work email", "home email", "other email", "email 1", "email 2"],
+    "A contact method of kind email, held as data on the record. It never joins records, and it is not consent to receive any publication.",
+  ],
+  [
+    "contact-phone",
+    "Phone",
+    "contactMethods",
+    "phone",
+    ["phone", "phone number", "telephone", "telephone number", "tel", "mobile", "mobile phone", "mobile number", "cell", "cell phone", "work phone", "home phone", "phone 1", "phone 2"],
+    "A contact method of kind phone, held as data exactly as it arrived. The import reads no format and dials nothing.",
+  ],
+  [
+    "contact-postal",
+    "Postal address",
+    "contactMethods",
+    "postal",
+    ["address", "postal address", "mailing address", "street", "street address", "address line 1", "address line 2", "city", "town", "state", "province", "region", "county", "postal code", "postcode", "post code", "zip", "zip code", "country"],
+    "A contact method of kind postal. Each mapped column contributes one value; the import never composes an address out of several columns and never geocodes one.",
+  ],
+  [
+    "restriction",
+    "Contact restriction",
+    "restrictions",
+    null,
+    ["restriction", "restrictions", "contact restriction", "contact restrictions", "do not contact", "do not email", "do not mail", "do not call", "no contact"],
+    "A negative contact instruction the record carries, kept as text. It is a contactability instruction, not a consent decision for any publisher and purpose.",
+  ],
+  ["tag", "Tag", "tags", null, ["tag", "tags", "tag list", "tags list", "label", "labels"], "The worker's own label for their own sorting. A tag is not a stage, an initiative membership or an audience."],
+  [
+    "source-reference",
+    "Source reference",
+    "source",
+    null,
+    ["source id", "source reference", "source ref", "sourceid", "external id", "external reference", "contact id", "record id", "crm id", "constituent id", "supporter id"],
+    "An opaque reference the source system used for this contact, carried as text exactly as it arrived: never parsed, never a join key, and leading zeros are part of the value.",
+  ],
 ];
+const fieldDescriptorOf = ([id, label, target, contactKind, aliases, note]: ImportFieldRow): ImportFieldDescriptor => ({ id, label, target, contactKind, cardinality: MULTI_VALUE_TARGETS.has(target) ? "multi" : "single", repeatableAcrossColumns: MULTI_VALUE_TARGETS.has(target), aliases, note });
+export const IMPORT_FIELD_VOCABULARY: readonly ImportFieldDescriptor[] = IMPORT_FIELD_ROWS.map(fieldDescriptorOf);
 export const IMPORT_FIELD_IDS: readonly ImportFieldId[] = IMPORT_FIELD_VOCABULARY.map((field) => field.id);
-
 function vocabularyField(fieldId: ImportFieldId): ImportFieldDescriptor {
   const field = IMPORT_FIELD_VOCABULARY.find((candidate) => candidate.id === fieldId);
-  if (field === undefined) {
-    // Unreachable: ImportFieldId is exactly the id union of the table above, so a miss means the two were edited apart; failing loudly beats returning a mapping with a field it cannot name.
-    throw new Error(`import field "${fieldId}" is missing from the vocabulary`);
-  }
+  if (field === undefined) throw new Error(`import field "${fieldId}" is missing from the vocabulary`);
   return field;
 }
 const COMBINING_MARKS = /\p{M}+/gu;
 const WORD_BREAKS = /[-_]+/gu;
 const WHITESPACE_RUNS = /\s+/gu;
-/** Folds a header into the form the alias table is written in: compatibility-decomposed so that full-width forms (`ＥＭＡＩＬ`) and accented spellings (`Émail`) meet their plain ASCII spelling. */
 export const normaliseHeader = (header: string): string => header.normalize("NFKD").replace(COMBINING_MARKS, "").replace(WORD_BREAKS, " ").toLowerCase().replace(WHITESPACE_RUNS, " ").trim();
 const headerWords = (normalised: string): readonly string[] => (normalised.length === 0 ? [] : normalised.split(" "));
-function containsWordSequence(words: readonly string[], sequence: readonly string[]): boolean {
-  if (sequence.length === 0 || sequence.length > words.length) return false;
-  for (let start = 0; start + sequence.length <= words.length; start += 1) {
-    let matched = true;
-    for (let offset = 0; offset < sequence.length; offset += 1) {
-      if (words[start + offset] !== sequence[offset]) {
-        matched = false;
-        break;
-      }
-    }
-    if (matched) return true;
-  }
-  return false;
-}
+const containsWordSequence = (words: readonly string[], sequence: readonly string[]): boolean => sequence.length > 0 && sequence.length <= words.length && words.some((_, start) => start + sequence.length <= words.length && sequence.every((word, offset) => words[start + offset] === word));
 const CONSENT_WORDS: readonly string[] = ["subscribed", "unsubscribed", "subscribe", "unsubscribe", "subscription", "subscriptions", "consent", "consents", "consented", "newsletter", "marketing", "optin", "optout"];
-const CONSENT_PHRASES: readonly (readonly string[])[] = [
-  ["opt", "in"],
-  ["opt", "out"],
-  ["opted", "in"],
-  ["opted", "out"],
-  ["opt", "status"],
-  ["can", "email"],
-  ["can", "mail"],
-  ["can", "contact"],
-  ["can", "call"],
-  ["may", "email"],
-  ["may", "contact"],
-  ["permission", "to", "email"],
-  ["email", "permission"],
-  ["mail", "permission"],
-  ["email", "status"],
-];
-const EXCLUDED_TOPIC_WORDS: readonly string[] = [
-  "gift",
-  "gifts",
-  "giving",
-  "donation",
-  "donations",
-  "donated",
-  "amount",
-  "amounts",
-  "total",
-  "totals",
-  "balance",
-  "revenue",
-  "stewardship",
-  "commitment",
-  "commitments",
-  "pledge",
-  "pledges",
-  "recurring",
-  "refund",
-  "refunds",
-  "note",
-  "notes",
-  "interaction",
-  "interactions",
-  "meeting",
-  "meetings",
-  "task",
-  "tasks",
-  "referral",
-  "referrals",
-  "initiative",
-  "initiatives",
-  "membership",
-  "memberships",
-  "audience",
-  "audiences",
-  "segment",
-  "segments",
-  "household",
-  "households",
-];
-function matchConsent(normalised: string): string | null {
+const CONSENT_TOPIC_PHRASES = "opt in|opt out|opted in|opted out|opt status|can email|can mail|can contact|can call|may email|may contact|permission to email|email permission|mail permission|email status";
+const CONSENT_PHRASES: readonly (readonly string[])[] = CONSENT_TOPIC_PHRASES.split("|").map((phrase) => phrase.split(" "));
+const EXCLUDED_TOPIC_TEXT =
+  "gift gifts giving donation donations donated amount amounts total totals balance revenue stewardship commitment commitments pledge pledges recurring refund refunds note notes interaction interactions meeting meetings task tasks referral referrals initiative initiatives membership memberships audience audiences segment segments household households";
+const EXCLUDED_TOPIC_WORDS: readonly string[] = EXCLUDED_TOPIC_TEXT.split(" ");
+const firstNamedWord = (words: readonly string[], names: readonly string[]): string | null => words.find((word) => names.includes(word)) ?? null;
+const matchConsent = (normalised: string): string | null => {
   const words = headerWords(normalised);
-  for (const word of words) if (CONSENT_WORDS.includes(word)) return word;
-  for (const phrase of CONSENT_PHRASES) if (containsWordSequence(words, phrase)) return phrase.join(" ");
-  return null;
-}
-function matchExcludedTopic(normalised: string): string | null {
-  const words = headerWords(normalised);
-  for (const word of words) if (EXCLUDED_TOPIC_WORDS.includes(word)) return word;
-  return null;
-}
+  return firstNamedWord(words, CONSENT_WORDS) ?? CONSENT_PHRASES.find((candidate) => containsWordSequence(words, candidate))?.join(" ") ?? null;
+};
+const matchExcludedTopic = (normalised: string): string | null => firstNamedWord(headerWords(normalised), EXCLUDED_TOPIC_WORDS);
 export type ImportColumnIgnoreReason = "blank-header" | "unrecognised-header" | "consent-preserved-as-data" | "excluded-topic" | "field-declined" | "not-chosen";
 export type ImportIgnoredColumn = { readonly index: number; readonly header: string; readonly occurrence: number; readonly reason: ImportColumnIgnoreReason; readonly message: string };
 type HeaderReading = { readonly kind: "field"; readonly fieldId: ImportFieldId } | { readonly kind: "ignored"; readonly reason: ImportColumnIgnoreReason; readonly message: string };
+const ignoredReading = (reason: ImportColumnIgnoreReason, message: string): HeaderReading => ({ kind: "ignored", reason, message });
 function readHeader(header: string): HeaderReading {
   const text = header.trim();
-  if (text.length === 0) return { kind: "ignored", reason: "blank-header", message: "This column has no header text, so nothing is known about what it holds and it is left out of the mapping. Name the column in the file and choose the file again." };
+  if (text.length === 0) return ignoredReading("blank-header", "This column has no header text, so nothing is known about what it holds and it is left out of the mapping. Name the column in the file and choose the file again.");
   const normalised = normaliseHeader(text);
   const consent = matchConsent(normalised);
-  if (consent !== null) return { kind: "ignored", reason: "consent-preserved-as-data", message: `Kept exactly as it arrived and never mapped: "${consent}" is a subscription or consent statement, which this import does not read. A subscription flag is not consent, and importing a contact never subscribes anyone.` };
+  if (consent !== null) return ignoredReading("consent-preserved-as-data", `Kept exactly as it arrived and never mapped: "${consent}" is a subscription or consent statement, which this import does not read. A subscription flag is not consent, and importing a contact never subscribes anyone.`);
   const topic = matchExcludedTopic(normalised);
-  if (topic !== null) {
-    return {
-      kind: "ignored",
-      reason: "excluded-topic",
-      message: `Left out of the mapping: "${topic}" names a fact this contact import never produces — money or a commitment, an activity record or a task, a referral, an initiative membership or an audience. Its values are not read, and the column keeps its place in the file.`,
-    };
-  }
+  if (topic !== null)
+    return ignoredReading("excluded-topic", `Left out of the mapping: "${topic}" names a fact this contact import never produces — money or a commitment, an activity record or a task, a referral, an initiative membership or an audience. Its values are not read, and the column keeps its place in the file.`);
   for (const field of IMPORT_FIELD_VOCABULARY) if (field.aliases.includes(normalised)) return { kind: "field", fieldId: field.id };
-  return { kind: "ignored", reason: "unrecognised-header", message: `No contact field matches "${text}", so the column is left out of the mapping. Rename the header in the file, or choose a field for this column deliberately.` };
+  return ignoredReading("unrecognised-header", `No contact field matches "${text}", so the column is left out of the mapping. Rename the header in the file, or choose a field for this column deliberately.`);
 }
 export type ImportColumnMapping = { readonly index: number; readonly header: string; readonly occurrence: number; readonly normalisedHeader: string; readonly suggestedField: ImportFieldId | null };
 export type ImportFieldClaim = { readonly fieldId: ImportFieldId; readonly columnIndexes: readonly number[] };
@@ -236,7 +118,6 @@ export interface ImportSuggestedMapping {
 export function suggestMapping(file: ParsedCsvFile): ImportSuggestedMapping {
   const columns: ImportColumnMapping[] = [];
   const ignored: ImportIgnoredColumn[] = [];
-  // Keyed by field id, which is a closed vocabulary — never by header text.
   const claimedByField = new Map<ImportFieldId, number[]>();
   file.headers.forEach((header, offset) => {
     const index = offset + 1;
@@ -249,52 +130,33 @@ export function suggestMapping(file: ParsedCsvFile): ImportSuggestedMapping {
     if (claimed === undefined) claimedByField.set(reading.fieldId, [index]);
     else claimed.push(index);
   });
-  const claims: ImportFieldClaim[] = [];
-  for (const fieldId of IMPORT_FIELD_IDS) {
+  const claims: ImportFieldClaim[] = IMPORT_FIELD_IDS.flatMap((fieldId) => {
     const columnIndexes = claimedByField.get(fieldId);
-    if (columnIndexes !== undefined) {
-      // A copy, so a caller cannot mutate the suggestion through the returned claim.
-      claims.push({ fieldId, columnIndexes: [...columnIndexes] });
-    }
-  }
-  const ambiguous: ImportFieldAmbiguity[] = [];
-  for (const claim of claims) {
+    return columnIndexes === undefined ? [] : [{ fieldId, columnIndexes: [...columnIndexes] }];
+  });
+  const ambiguous: ImportFieldAmbiguity[] = claims.flatMap((claim) => {
     const field = vocabularyField(claim.fieldId);
-    if (field.cardinality !== "single" || claim.columnIndexes.length < 2) continue;
-    ambiguous.push({ fieldId: claim.fieldId, columnIndexes: [...claim.columnIndexes], message: `Columns ${listPositions(claim.columnIndexes)} all look like "${field.label}", which holds a single value. Choose the column to use, or decline the field.` });
-  }
+    return field.cardinality !== "single" || claim.columnIndexes.length < 2 ? [] : [{ fieldId: claim.fieldId, columnIndexes: [...claim.columnIndexes], message: `Columns ${listPositions(claim.columnIndexes)} all look like "${field.label}", which holds a single value. Choose the column to use, or decline the field.` }];
+  });
   const unmapped = IMPORT_FIELD_IDS.filter((fieldId) => !claimedByField.has(fieldId));
   return { columnCount: columns.length, columns, claims, ambiguous, ignored, unmapped, repeatedHeaders: repeatedHeadersOf(file.headers) };
 }
-function occurrenceOf(headers: readonly string[], offset: number, header: string): number {
-  let occurrence = 1;
-  for (let earlier = 0; earlier < offset; earlier += 1) if (headers[earlier] === header) occurrence += 1;
-  return occurrence;
+const occurrenceOf = (headers: readonly string[], offset: number, header: string): number => headers.slice(0, offset).filter((earlier) => earlier === header).length + 1;
+const repeatedHeadersOf = (headers: readonly string[]): ImportRepeatedHeader[] => uniqueInOrder(headers).flatMap((header) => (headers.filter((candidate) => candidate === header).length > 1 ? [{ header, columnIndexes: headers.flatMap((candidate, offset) => (candidate === header ? [offset + 1] : [])) }] : []));
+/** One readable list of the values in the order given, each named once: "a", "a and b", "a, b and c", and an empty string when there is nothing to name. */
+export function listOf(values: readonly string[]): string {
+  const unique = uniqueInOrder(values);
+  const [first] = unique;
+  if (first === undefined) return "";
+  return unique.length === 1 ? first : `${unique.slice(0, -1).join(", ")} and ${unique[unique.length - 1] ?? ""}`;
 }
-function repeatedHeadersOf(headers: readonly string[]): ImportRepeatedHeader[] {
-  const repeated: ImportRepeatedHeader[] = [];
-  headers.forEach((header, offset) => {
-    const seenEarlier = headers.slice(0, offset).some((earlier) => earlier === header);
-    if (seenEarlier) return;
-    const columnIndexes: number[] = [];
-    headers.forEach((candidate, candidateOffset) => {
-      if (candidate === header) columnIndexes.push(candidateOffset + 1);
-    });
-    if (columnIndexes.length > 1) repeated.push({ header, columnIndexes });
-  });
-  return repeated;
+/** The values in the order they arrived, each kept once: the one de-duplication every import step states its lists with. */
+export function uniqueInOrder<Value>(values: readonly Value[]): Value[] {
+  const unique: Value[] = [];
+  for (const value of values) if (!unique.includes(value)) unique.push(value);
+  return unique;
 }
-function listPositions(columnIndexes: readonly number[]): string {
-  const [first] = columnIndexes;
-  if (first === undefined) return "none";
-  if (columnIndexes.length === 1) return String(first);
-  const head = columnIndexes
-    .slice(0, -1)
-    .map((columnIndex) => String(columnIndex))
-    .join(", ");
-  const last = columnIndexes[columnIndexes.length - 1];
-  return `${head} and ${String(last)}`;
-}
+const listPositions = (columnIndexes: readonly number[]): string => listOf(columnIndexes.map(String)) || "none";
 export type ImportMappingDecision = { readonly kind: "choose"; readonly fieldId: ImportFieldId; readonly columnIndexes: readonly number[] } | { readonly kind: "decline"; readonly fieldId: ImportFieldId };
 export type ImportFieldAssignment = { readonly fieldId: ImportFieldId; readonly columnIndex: number };
 export type ImportConfirmedMapping = { readonly columnCount: number; readonly assignments: readonly ImportFieldAssignment[]; readonly fields: readonly ImportFieldId[]; readonly declined: readonly ImportFieldId[]; readonly unmapped: readonly ImportFieldId[]; readonly ignored: readonly ImportIgnoredColumn[] };
@@ -304,19 +166,17 @@ export type ImportConfirmMappingResult = { readonly ok: true; readonly mapping: 
 /** Confirms a suggestion, applying the worker's decisions, and returns either the explicit mapping or every problem that stops it. */
 export function confirmMapping(suggestion: ImportSuggestedMapping, decisions: readonly ImportMappingDecision[] = []): ImportConfirmMappingResult {
   const refusals: ImportMappingRefusal[] = [];
-  const decisionByField = decisionsByField(decisions, refusals);
   const assignmentByField = new Map<ImportFieldId, number[]>();
   const declined: ImportFieldId[] = [];
   for (const fieldId of IMPORT_FIELD_IDS) {
     const field = vocabularyField(fieldId);
-    const decision = decisionByField.get(fieldId);
+    const decision = decisionsByField(decisions, refusals).get(fieldId);
     if (decision?.kind === "decline") {
       declined.push(fieldId);
       continue;
     }
     if (decision?.kind === "choose") {
-      // A position named twice is one position: the confirmed mapping holds one pair per field and column, and repeating it never widens what the file supplies.
-      const chosen = uniquePositions(decision.columnIndexes);
+      const chosen = uniqueInOrder(decision.columnIndexes);
       if (chosen.length === 0) {
         refusals.push({ code: "decision-empty", fieldId, columnIndexes: [], message: `No column was chosen for "${field.label}". Choose at least one column, or decline the field so leaving it out is deliberate.` });
         continue;
@@ -385,41 +245,21 @@ function decisionsByField(decisions: readonly ImportMappingDecision[], refusals:
   }
   return byField;
 }
-function uniquePositions(columnIndexes: readonly number[]): number[] {
-  const unique: number[] = [];
-  for (const columnIndex of columnIndexes) if (!unique.includes(columnIndex)) unique.push(columnIndex);
-  return unique;
-}
 const ascending = (columnIndexes: readonly number[]): number[] => [...columnIndexes].sort((left, right) => left - right);
-function blockedColumn(column: ImportColumnMapping, ignoredColumns: readonly ImportIgnoredColumn[]): ImportIgnoredColumn | null {
-  if (column.suggestedField !== null) return null;
-  const recorded = ignoredColumns.find((candidate) => candidate.index === column.index);
-  if (recorded === undefined) return null;
-  const blocked = recorded.reason === "blank-header" || recorded.reason === "consent-preserved-as-data" || recorded.reason === "excluded-topic";
-  return blocked ? recorded : null;
-}
+const BLOCKING_IGNORE_REASONS: ReadonlySet<ImportColumnIgnoreReason> = new Set<ImportColumnIgnoreReason>(["blank-header", "consent-preserved-as-data", "excluded-topic"]);
+const blockedColumn = (column: ImportColumnMapping, ignoredColumns: readonly ImportIgnoredColumn[]): ImportIgnoredColumn | null => (column.suggestedField === null ? (ignoredColumns.find((candidate) => candidate.index === column.index && BLOCKING_IGNORE_REASONS.has(candidate.reason)) ?? null) : null);
 function ignoredColumnsFor(suggestion: ImportSuggestedMapping, assignmentByField: ReadonlyMap<ImportFieldId, readonly number[]>, declined: readonly ImportFieldId[]): ImportIgnoredColumn[] {
-  const usedColumns: number[] = [];
-  for (const columnIndexes of assignmentByField.values()) usedColumns.push(...columnIndexes);
-  const ignored: ImportIgnoredColumn[] = [];
-  for (const column of suggestion.columns) {
-    if (usedColumns.includes(column.index)) continue;
+  const usedColumns = [...assignmentByField.values()].flat();
+  return suggestion.columns.flatMap((column): ImportIgnoredColumn[] => {
+    if (usedColumns.includes(column.index)) return [];
     const recorded = suggestion.ignored.find((candidate) => candidate.index === column.index);
-    if (recorded !== undefined) {
-      ignored.push(recorded);
-      continue;
-    }
+    if (recorded !== undefined) return [recorded];
     const fieldId = column.suggestedField;
-    if (fieldId === null) continue;
+    if (fieldId === null) return [];
     const field = vocabularyField(fieldId);
-    if (declined.includes(fieldId)) {
-      ignored.push({ index: column.index, header: column.header, occurrence: column.occurrence, reason: "field-declined", message: `Left out because you chose not to import "${field.label}".` });
-      continue;
-    }
+    if (declined.includes(fieldId)) return [{ index: column.index, header: column.header, occurrence: column.occurrence, reason: "field-declined", message: `Left out because you chose not to import "${field.label}".` }];
     const takenBy = assignmentByField.get(fieldId);
     const instead = takenBy === undefined || takenBy.length === 0 ? "" : ` It is supplied by column ${listPositions(ascending(takenBy))} instead.`;
-    ignored.push({ index: column.index, header: column.header, occurrence: column.occurrence, reason: "not-chosen", message: `Not used in the confirmed mapping: column ${column.index} could supply "${field.label}" and was not chosen.${instead}` });
-  }
-  return ignored;
+    return [{ index: column.index, header: column.header, occurrence: column.occurrence, reason: "not-chosen", message: `Not used in the confirmed mapping: column ${column.index} could supply "${field.label}" and was not chosen.${instead}` }];
+  });
 }
-// What this file deliberately does not do: a mapping describes columns, never people. Nothing here compares two cell values, suggests a row matches an existing contact, or says a row will "update" one — reuse is a decision the worker makes in `decide.ts` on a suggestion from `validate.ts` — and no message claims the file is safe: a successful local parse is not a safety qualification.

@@ -5,15 +5,13 @@ function decodeSegment(segment: string): string {
   try {
     return decodeURIComponent(segment);
   } catch {
-    // A malformed escape (`%`, `%ZZ`, a truncated UTF-8 sequence) does not decode into a different file name for the framework either, so the segment is judged in the form it arrived in.
-    return segment;
+    return segment; // A malformed escape (`%`, `%ZZ`, a truncated UTF-8 sequence) does not decode into a different file name for the framework either, so the segment is judged in the form it arrived in.
   }
 }
 function unwrapEncodedPath(rawPath: string): string {
   let path = rawPath;
   for (let pass = 0; pass < MAX_DECODE_PASSES; pass += 1) {
-    // Decoding segment by segment keeps one malformed escape from hiding the well-formed escapes beside it: only the segment that carries it stays as it stands.
-    const decoded = path.split("/").map(decodeSegment).join("/");
+    const decoded = path.split("/").map(decodeSegment).join("/"); // Decoding segment by segment keeps one malformed escape from hiding the well-formed escapes beside it: only the segment that carries it stays as it stands.
     if (decoded === path) return path;
     path = decoded;
   }

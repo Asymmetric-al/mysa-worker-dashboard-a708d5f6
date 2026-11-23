@@ -1,5 +1,4 @@
 "use client";
-/** The single surface for the eight states that are not a result. */
 import Link from "next/link";
 import { CircleAlertIcon, CloudOffIcon, LanguagesIcon, ShieldAlertIcon, SquarePenIcon, TriangleAlertIcon } from "lucide-react";
 import { useRef, useState, type ReactElement, type ReactNode } from "react";
@@ -12,6 +11,10 @@ import { cn } from "@/lib/cn";
 import { formatSourceReference, type SourceReference } from "@/lib/ids";
 import type { Coverage, CoverageState } from "@/modules/data-service/envelope";
 import type { DenialReason } from "@/modules/data-service/outcome";
+import { NOTICE_HEADING_TAG, nestedNoticeHeadingLevel, type NoticeHeadingLevel } from "@/lib/notice-heading";
+
+export { NOTICE_HEADING_TAG, nestedNoticeHeadingLevel };
+export type { NoticeHeadingLevel };
 /** Every state this component renders, listed once so the closed set has a runtime form as well as a type. */
 export const NOTICE_KINDS = ["empty", "loading", "unavailable", "unknown", "denied", "refused", "partial-coverage", "language-unavailable"] as const;
 /** One state a surface can be in instead of showing a result. */
@@ -19,19 +22,10 @@ export type NoticeKind = (typeof NOTICE_KINDS)[number];
 /** An in-page command a notice may run. */
 export type NoticeHandler = () => void | Promise<void>;
 /** The one call to action a notice offers. */
-export interface NoticeAction {
-  readonly label: string;
-  readonly href?: string;
-  readonly onClick?: NoticeHandler;
-}
+export type NoticeAction = { readonly label: string; readonly href?: string; readonly onClick?: NoticeHandler };
 /** A re-request of the work that produced the notice. */
-export interface NoticeRetry {
-  readonly label: string;
-  readonly onClick: NoticeHandler;
-}
-/** The heading levels a surrounding page can need; the level is the caller's, not the notice's. */
-export type NoticeHeadingLevel = 1 | 2 | 3 | 4;
-export interface StateNoticeProps {
+export type NoticeRetry = { readonly label: string; readonly onClick: NoticeHandler };
+export type StateNoticeProps = {
   readonly kind: NoticeKind;
   readonly title: string;
   readonly description?: string;
@@ -44,43 +38,20 @@ export interface StateNoticeProps {
   readonly headingLevel?: NoticeHeadingLevel;
   readonly loadingLines?: number;
   readonly className?: string;
-}
-const HEADING_TAG: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4">> = { 1: "h1", 2: "h2", 3: "h3", 4: "h4" };
+};
 const LOADING_LINE_WIDTHS = ["w-full", "w-2/3", "w-4/5", "w-1/2"] as const;
-
 const MAX_LOADING_LINES = 12;
-
 const DEFAULT_LOADING_LINES = 3;
-
 type AlertNoticeKind = Exclude<NoticeKind, "empty" | "loading">;
-
-interface AlertContent {
-  readonly icon: ReactElement;
-  readonly body: ReactNode;
-}
-interface AlertContentInput {
-  readonly kind: AlertNoticeKind;
-  readonly description: string | undefined;
-  readonly source: SourceReference | undefined;
-  readonly retry: NoticeRetry | undefined;
-  readonly operationId: string | undefined;
-  readonly coverage: Coverage | undefined;
-  readonly reasonCode: DenialReason | undefined;
-}
+type AlertContent = { readonly icon: ReactElement; readonly body: ReactNode };
+type AlertContentInput = { readonly kind: AlertNoticeKind; readonly description: string | undefined; readonly source: SourceReference | undefined; readonly retry: NoticeRetry | undefined; readonly operationId: string | undefined; readonly coverage: Coverage | undefined; readonly reasonCode: DenialReason | undefined };
 function NoticeHeading({ level, children }: { readonly level: NoticeHeadingLevel; readonly children: ReactNode }): ReactElement {
-  const Tag = HEADING_TAG[level];
+  const Tag = NOTICE_HEADING_TAG[level];
   return <Tag>{children}</Tag>;
 }
 const NOTICE_CONTROL_CLASS = "h-auto max-w-full whitespace-normal";
-
 const NOTICE_CONTROL_HEIGHT: Readonly<Record<"default" | "sm", string>> = { default: "min-h-9 py-2", sm: "min-h-8 py-1.5" };
-interface NoticeButtonProps {
-  readonly action: NoticeAction;
-  readonly variant: "default" | "outline";
-  readonly size: "default" | "sm";
-  readonly pending: boolean;
-  readonly onRun: (() => void) | undefined;
-}
+type NoticeButtonProps = { readonly action: NoticeAction; readonly variant: "default" | "outline"; readonly size: "default" | "sm"; readonly pending: boolean; readonly onRun: (() => void) | undefined };
 function NoticeButton({ action, variant, size, pending, onRun }: NoticeButtonProps): ReactElement | null {
   const controlClass = cn(NOTICE_CONTROL_CLASS, NOTICE_CONTROL_HEIGHT[size]);
   if (action.href !== undefined) {
@@ -90,9 +61,7 @@ function NoticeButton({ action, variant, size, pending, onRun }: NoticeButtonPro
       </Link>
     );
   }
-  if (onRun === undefined) {
-    return null;
-  }
+  if (onRun === undefined) return null;
   return (
     <Button type="button" variant={variant} size={size} disabled={pending} onClick={onRun} className={controlClass}>
       {pending ? <Spinner /> : null}
@@ -101,12 +70,9 @@ function NoticeButton({ action, variant, size, pending, onRun }: NoticeButtonPro
   );
 }
 const COVERAGE_DATE_CLASS = "whitespace-nowrap";
-
 function CoverageGapSentence({ coverage }: { readonly coverage: Coverage }): ReactNode {
   const { from, to } = coverage;
-  if (from === null && to === null) {
-    return "The source stated neither a start nor an end for the period its records cover.";
-  }
+  if (from === null && to === null) return "The source stated neither a start nor an end for the period its records cover.";
   if (to === null) {
     return (
       <>
@@ -127,16 +93,11 @@ function CoverageGapSentence({ coverage }: { readonly coverage: Coverage }): Rea
     </>
   );
 }
-function CoverageCompletenessSentence({ state }: { readonly state: CoverageState }): string {
-  switch (state) {
-    case "complete":
-      return "The source reports that period as fully covered, so a total over it covers all of the period.";
-    case "partial":
-      return "The source reports that period as only partly covered, so every total here is an incomplete subtotal rather than a whole-period figure.";
-    case "unknown":
-      return "Whether the source covers that whole period is not known, so every total here is an incomplete subtotal rather than a whole-period figure.";
-  }
-}
+const COVERAGE_COMPLETENESS: Readonly<Record<CoverageState, string>> = {
+  complete: "The source reports that period as fully covered, so a total over it covers all of the period.",
+  partial: "The source reports that period as only partly covered, so every total here is an incomplete subtotal rather than a whole-period figure.",
+  unknown: "Whether the source covers that whole period is not known, so every total here is an incomplete subtotal rather than a whole-period figure.",
+};
 function CoverageSummary({ coverage }: { readonly coverage: Coverage | undefined }): ReactElement {
   if (coverage === undefined) {
     return (
@@ -151,9 +112,7 @@ function CoverageSummary({ coverage }: { readonly coverage: Coverage | undefined
       <p>
         <CoverageGapSentence coverage={coverage} />
       </p>
-      <p>
-        <CoverageCompletenessSentence state={coverage.state} />
-      </p>
+      <p>{COVERAGE_COMPLETENESS[coverage.state]}</p>
     </>
   );
 }
@@ -248,17 +207,13 @@ export function StateNotice({ kind, title, description, action, source, retry, o
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
   const run = (handler: NoticeHandler, returnFocusToNotice: boolean): void => {
-    if (pendingRef.current) {
-      return;
-    }
+    if (pendingRef.current) return;
     pendingRef.current = true;
     setPending(true);
     const settle = (): void => {
       pendingRef.current = false;
       setPending(false);
-      if (returnFocusToNotice) {
-        regionRef.current?.focus();
-      }
+      if (returnFocusToNotice) regionRef.current?.focus();
     };
     let result: void | Promise<void>;
     try {
@@ -276,16 +231,7 @@ export function StateNotice({ kind, title, description, action, source, retry, o
   const busy = pending ? true : undefined;
   if (kind === "empty") {
     return (
-      <Empty
-        ref={regionRef}
-        role="alert"
-        aria-busy={busy}
-        tabIndex={-1}
-        // A phone width cannot spare the design system's large empty-state padding: at 320 CSS px
-        // it would leave a text column narrower than a word. The padding steps down on narrow
-        // surfaces and is unchanged from the small breakpoint upwards.
-        className={cn("p-6 sm:p-12", className)}
-      >
+      <Empty ref={regionRef} role="alert" aria-busy={busy} tabIndex={-1} className={cn("p-6 sm:p-12", className)}>
         <EmptyHeader>
           <EmptyTitle>
             <NoticeHeading level={headingLevel}>{title}</NoticeHeading>
@@ -304,11 +250,6 @@ export function StateNotice({ kind, title, description, action, source, retry, o
     const lines = Math.min(Math.max(Math.trunc(loadingLines), 1), MAX_LOADING_LINES);
     return (
       <div ref={regionRef} aria-busy={true} tabIndex={-1} className={cn("flex w-full flex-col gap-3 rounded-lg border border-dashed border-border p-6", className)}>
-        {/*
-          The status line is deliberately not a heading. It exists only while the region is busy,
-          so a heading here would add a heading to the page's outline and remove it again on every
-          load; `aria-busy` and this visible line state the condition without that churn.
-        */}
         <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
           <Spinner />
           <span>{title}</span>
@@ -323,16 +264,8 @@ export function StateNotice({ kind, title, description, action, source, retry, o
     );
   }
   const { icon, body } = renderAlertContent({ kind, description, source, retry, operationId, coverage, reasonCode });
-  const buttons: ReactElement[] = [];
-  if (action !== undefined) {
-    const actionButton = <NoticeButton key="action" action={action} variant="default" size="sm" pending={pending} onRun={runAction} />;
-    if (actionButton !== null) {
-      buttons.push(actionButton);
-    }
-  }
-  if (retry !== undefined) {
-    buttons.push(<NoticeButton key="retry" action={retry} variant="outline" size="sm" pending={pending} onRun={runRetry} />);
-  }
+  const actionButton = action === undefined ? null : <NoticeButton key="action" action={action} variant="default" size="sm" pending={pending} onRun={runAction} />;
+  const buttons = [actionButton, retry === undefined ? null : <NoticeButton key="retry" action={retry} variant="outline" size="sm" pending={pending} onRun={runRetry} />].filter((button) => button !== null);
   return (
     <Alert ref={regionRef} role={kind === "unavailable" ? "alert" : "status"} aria-busy={busy} tabIndex={-1} className={className}>
       {icon}

@@ -1,5 +1,4 @@
 "use client";
-/** The one video playback surface in the application. */
 import Image from "next/image";
 import { FilmIcon, TriangleAlertIcon } from "lucide-react";
 import { useId, useState, type ReactElement } from "react";
@@ -39,16 +38,14 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const transcriptId = useId();
-  // Read once into consts so every handler below keeps the narrowing its own guard establishes.
   const playableSrc = src;
-  const retry = onRetry;
   const trackList = captions ?? [];
   const defaultTrackIndex = trackList.findIndex((track) => track.default === true);
   const hasTranscript = transcript !== undefined && transcript.trim() !== "";
   const playbackFailed = playableSrc !== undefined && failedSrc === playableSrc;
   const handleRetry = (): void => {
     setFailedSrc(null);
-    if (retry !== undefined) retry();
+    if (onRetry !== undefined) onRetry();
   };
   function renderPosterFrame(): ReactElement {
     return (
@@ -57,20 +54,15 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
       </div>
     );
   }
-  function renderRetry() {
-    return retry === undefined ? undefined : { label: "Try loading the video again", onClick: handleRetry };
-  }
   function renderChooseAnotherFile(): ReactElement | null {
-    if (retry === undefined) return null;
+    if (onRetry === undefined) return null;
     return (
       <Button type="button" variant="outline" size="sm" onClick={handleRetry}>
         Choose another file
       </Button>
     );
   }
-  function renderUnavailable(description: string): ReactElement {
-    return <StateNotice kind="unavailable" title="This video is unavailable" description={description} retry={renderRetry()} />;
-  }
+  const renderUnavailable = (description: string): ReactElement => <StateNotice kind="unavailable" title="This video is unavailable" description={description} retry={onRetry === undefined ? undefined : { label: "Try loading the video again", onClick: handleRetry }} />;
   function renderRejected(): ReactElement {
     return (
       <Alert variant="destructive">
@@ -128,30 +120,14 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
     );
   }
   function renderSurface(): ReactElement {
-    switch (state) {
-      case "ready":
-        return renderPlayable();
-      case "selected":
-        return renderSelected();
-      case "preparing":
-        return renderPreparing();
-      case "rejected":
-        return renderRejected();
-      case "cancelled":
-        return renderCancelled();
-      case "unavailable":
-        return renderUnavailable(UNAVAILABLE_COPY);
-    }
+    const surfaces: Readonly<Record<MediaPreparationState, () => ReactElement>> = { ready: renderPlayable, selected: renderSelected, preparing: renderPreparing, rejected: renderRejected, cancelled: renderCancelled, unavailable: () => renderUnavailable(UNAVAILABLE_COPY) };
+    return surfaces[state]();
   }
   function renderMeta(): ReactElement | null {
     if (credit === undefined && language === undefined) return null;
     return (
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-        {credit === undefined ? null : (
-          <span>
-            <bdi>{credit}</bdi>
-          </span>
-        )}
+        {credit === undefined ? null : <bdi>{credit}</bdi>}
         {language === undefined ? null : (
           <span>
             Language: <bdi>{language}</bdi>
@@ -184,6 +160,7 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
       </div>
     );
   }
+  // The card states its direction and so does the provider, so a portalled descendant of the player follows the edition's direction rather than the page's.
   return (
     <DirectionProvider direction={direction}>
       <Card dir={direction} data-slot="video-player" data-state={state} className={cn("w-full", className)}>

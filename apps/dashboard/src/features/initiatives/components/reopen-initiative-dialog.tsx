@@ -1,18 +1,18 @@
 "use client";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from "react";
-import ActionReview, { type MutationSubmit } from "@/components/action-review";
+import ActionReview from "@/components/action-review";
 import FormField, { fieldErrorsFromInvalid, type FieldErrorLookup } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
-import { assertNever } from "@/lib/result";
-import type { MutationOutcome, Scope, reads } from "@/modules/data-service";
+import type { MutationOutcome, reads } from "@/modules/data-service";
 import { CLOSURE_COPY, INITIATIVE_STATE_COPY, MEMBERSHIP_STATE_COPY, REQUESTED_TERMS_COPY, dispositionFallback } from "../copy";
-import { useReopenInitiative } from "../hooks/use-initiative-mutations";
+import { useAttemptSubmit, useReopenInitiative } from "../hooks/use-initiative-mutations";
 import type { ReopenInitiativePayload } from "../schemas/closure";
+import DiscardConfirmation from "./discard-confirmation";
+import { StatedInstant } from "./figures";
 type InitiativeEnvelope = Extract<Awaited<ReturnType<typeof reads.outreach.readInitiative>>, { readonly kind: "envelope" }>["envelope"];
 type InitiativeDetail = InitiativeEnvelope["data"];
 type InitiativeView = InitiativeDetail["initiative"];
@@ -41,30 +41,18 @@ const REOPEN_COPY = {
 } as const;
 const DIALOG_TITLE = CLOSURE_COPY.reopenHeading;
 const CONFIRM_LABEL = CLOSURE_COPY.reopenHeading;
-/** What the read says about the closure, in the reader's words — never a claim stronger than the read. */
-function lifecycleNoteOf(lifecycle: InitiativeLifecycle): string {
-  switch (lifecycle) {
-    case "closed":
-      return "The initiative is closed now. That closure is the record this attempt adds to rather than replaces.";
-    case "reopened":
-      return "This initiative was closed before and reopened. That earlier closure is the history this attempt keeps.";
-    case "open":
-      return "The read states this initiative is already open, so reopening it has nothing to apply and the attempt will answer so.";
-  }
-}
-function exclusionInstantOf(entry: WorkingListEntry): string | null {
-  let instant: string | null = null;
-  for (const step of entry.history) if (step.state === "excluded") instant = step.at;
-  return instant;
-}
-function EvidenceFact({ term, children }: { readonly term: string; readonly children: ReactElement }): ReactElement {
-  return (
-    <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-      <dt className="text-muted-foreground">{term}</dt>
-      <dd className="min-w-0 wrap-anywhere">{children}</dd>
-    </div>
-  );
-}
+const LIFECYCLE_NOTE: Readonly<Record<InitiativeLifecycle, string>> = {
+  closed: "The initiative is closed now. That closure is the record this attempt adds to rather than replaces.",
+  reopened: "This initiative was closed before and reopened. That earlier closure is the history this attempt keeps.",
+  open: "The read states this initiative is already open, so reopening it has nothing to apply and the attempt will answer so.",
+};
+const exclusionInstantOf = (entry: WorkingListEntry): string | null => entry.history.reduce<string | null>((at, step) => (step.state === "excluded" ? step.at : at), null);
+const EvidenceFact = ({ term, children }: { readonly term: string; readonly children: ReactElement }): ReactElement => (
+  <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+    <dt className="text-muted-foreground">{term}</dt>
+    <dd className="min-w-0 wrap-anywhere">{children}</dd>
+  </div>
+);
 function PreservedExclusion({ entry }: { readonly entry: WorkingListEntry }): ReactElement {
   const instant = exclusionInstantOf(entry);
   return (
@@ -72,12 +60,7 @@ function PreservedExclusion({ entry }: { readonly entry: WorkingListEntry }): Re
       <bdi>{entry.partnerDisplayName}</bdi>
       {instant === null ? null : (
         <>
-          <span aria-hidden="true">{" — "}</span>
-          <bdi>
-            <time className="tabular-figures" dateTime={instant}>
-              {instant}
-            </time>
-          </bdi>
+          <span aria-hidden="true">{" — "}</span> <StatedInstant value={instant} />
         </>
       )}
     </li>
@@ -88,7 +71,6 @@ function PreservedEvidence({ detail }: { readonly detail: InitiativeDetail }): R
   const initiative = detail.initiative;
   const excluded = detail.workingList.items.filter((entry) => entry.state === "excluded");
   const exclusionCount = initiative.memberStates.excluded;
-  // A closure the read records no disposition for is shown as unstated: the raw token is never rendered in its place, and no disposition is guessed for a record that carries none.
   const disposition = initiative.closureDisposition === null ? REQUESTED_TERMS_COPY.notStated : dispositionFallback(initiative.closureDisposition);
   return (
     <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3">
@@ -103,7 +85,7 @@ function PreservedEvidence({ detail }: { readonly detail: InitiativeDetail }): R
           <bdi>{disposition}</bdi>
         </EvidenceFact>
         <EvidenceFact term={REOPEN_COPY.earlierClosureTerm}>
-          <span className="text-pretty">{lifecycleNoteOf(initiative.lifecycle)}</span>
+          <span className="text-pretty">{LIFECYCLE_NOTE[initiative.lifecycle]}</span>
         </EvidenceFact>
         <EvidenceFact term={MEMBERSHIP_STATE_COPY.excluded.label}>
           <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
@@ -132,176 +114,84 @@ function PreservedEvidence({ detail }: { readonly detail: InitiativeDetail }): R
     </section>
   );
 }
-type ReopenAttempt = { readonly submit: MutationSubmit<ReopenInitiativePayload> };
-function useReopenAttempt(scope: Scope): ReopenAttempt {
-  const reopen = useReopenInitiative(scope);
-  const waiting = useRef<{ readonly resolve: (outcome: MutationOutcome) => void } | null>(null);
-  const state = reopen.state;
-  const settled = state.status === "settled" ? state.outcome : null;
-  useEffect(() => {
-    if (settled === null) return;
-    const pending = waiting.current;
-    if (pending === null) return;
-    waiting.current = null;
-    pending.resolve(settled);
-  }, [settled]);
-  const dispatch = reopen.submit;
-  const submit = useCallback<MutationSubmit<ReopenInitiativePayload>>(
-    (input) =>
-      new Promise<MutationOutcome>((resolve) => {
-        waiting.current = { resolve };
-        dispatch({ operationId: input.operationId, expectedRevision: input.expectedRevision, payload: input.payload });
-      }),
-    [dispatch],
-  );
-  return { submit };
-}
-function reopensBy(outcome: MutationOutcome): boolean {
-  switch (outcome.outcome) {
-    case "accepted":
-      return true;
-    case "alreadyAccepted":
-      return true;
-    case "unchanged":
-      return false;
-    case "conflict":
-      return false;
-    case "denied":
-      return false;
-    case "invalid":
-      return false;
-    case "unavailable":
-      return false;
-    case "unknown":
-      return false;
-    default:
-      return assertNever(outcome, "Unhandled reopen outcome");
-  }
-}
+const REOPENING_OUTCOMES: ReadonlySet<MutationOutcome["outcome"]> = new Set<MutationOutcome["outcome"]>(["accepted", "alreadyAccepted"]);
 type DialogPhase = "review" | "confirming-discard";
 type AttemptProgress = { readonly attempted: boolean; readonly reopened: boolean };
 const INITIAL_PROGRESS: AttemptProgress = { attempted: false, reopened: false };
 const FIELD_LABELS: Readonly<Record<string, string>> = { initiativeId: "Initiative", reason: REOPEN_COPY.reasonLabel };
-export interface ReopenInitiativeDialogProps {
-  readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
-  readonly initiativeId: string;
-  readonly envelope: InitiativeEnvelope;
-  readonly onReopened?: () => void;
-}
+export type ReopenInitiativeDialogProps = { readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly initiativeId: string; readonly envelope: InitiativeEnvelope; readonly onReopened?: () => void };
 type CloseGuard = () => boolean;
-interface ReopenInitiativeBodyProps {
-  readonly initiativeId: string;
-  readonly envelope: InitiativeEnvelope;
-  readonly registerCloseGuard: (guard: CloseGuard | null) => void;
-  readonly onClose: () => void;
-  readonly onReopened?: () => void;
-}
+type ReopenInitiativeBodyProps = { readonly initiativeId: string; readonly envelope: InitiativeEnvelope; readonly registerCloseGuard: (guard: CloseGuard | null) => void; readonly onClose: () => void; readonly onReopened?: () => void };
 function ReopenInitiativeBody({ initiativeId, envelope, registerCloseGuard, onClose, onReopened }: ReopenInitiativeBodyProps): ReactElement {
-  const { submit } = useReopenAttempt(envelope.scope);
+  const submit = useAttemptSubmit(useReopenInitiative(envelope.scope));
   const [reason, setReason] = useState("");
   const [phase, setPhase] = useState<DialogPhase>("review");
   const [progress, setProgress] = useState<AttemptProgress>(INITIAL_PROGRESS);
   const [fieldErrors, setFieldErrors] = useState<FieldErrorLookup | null>(null);
   const [expectedRevision] = useState(envelope.revision);
-  /** The payload states the initiative and, only when one was typed, the reason: an empty reason is left out entirely rather than sent as a blank string, so no later reader can take one as a note. */
   const payload = useMemo<ReopenInitiativePayload>(() => (reason.trim() === "" ? { initiativeId } : { initiativeId, reason: reason.trim() }), [initiativeId, reason]);
   const input = useMemo(() => ({ scope: envelope.scope, expectedRevision, payload }), [envelope.scope, expectedRevision, payload]);
   const handleSettled = useCallback(
     (outcome: MutationOutcome): void => {
       setFieldErrors(outcome.outcome === "invalid" ? fieldErrorsFromInvalid(outcome) : null);
-      const reopened = reopensBy(outcome);
+      const reopened = REOPENING_OUTCOMES.has(outcome.outcome);
       setProgress({ attempted: true, reopened });
       if (reopened) onReopened?.();
     },
     [onReopened],
   );
   const keepOpenForUnsentReason = useCallback((): boolean => {
-    if (phase === "review" && !progress.attempted && reason.trim() !== "") {
-      setPhase("confirming-discard");
-      return true;
-    }
-    return false;
+    const unsent = phase === "review" && !progress.attempted && reason.trim() !== "";
+    if (unsent) setPhase("confirming-discard");
+    return unsent;
   }, [phase, progress.attempted, reason]);
   const requestClose = useCallback((): void => {
-    if (keepOpenForUnsentReason()) return;
-    onClose();
+    if (!keepOpenForUnsentReason()) onClose();
   }, [keepOpenForUnsentReason, onClose]);
-  /** The modal substrate's own ways out — the close control, Escape and the backdrop — reach the wrapper, which asks the open body first, so a typed reason is never discarded by a keystroke. */
   useEffect(() => {
     registerCloseGuard(keepOpenForUnsentReason);
-    return () => {
-      registerCloseGuard(null);
-    };
+    return () => registerCloseGuard(null);
   }, [keepOpenForUnsentReason, registerCloseGuard]);
   const initiative = envelope.data.initiative;
-  const mismatched = initiative.initiativeId !== initiativeId;
-  function renderDiscardQuestion(): ReactElement {
-    return (
-      <div className="flex min-w-0 flex-col gap-3">
-        <p className="text-sm text-pretty">{REOPEN_COPY.discardBody}</p>
-        <DialogFooter>
-          <Button
-            type="button"
-            onClick={() => {
-              setPhase("review");
-            }}
-          >
-            {REOPEN_COPY.keepEditingLabel}
-          </Button>
-          <Button type="button" variant="outline" onClick={onClose}>
-            {REOPEN_COPY.discardLabel}
-          </Button>
-        </DialogFooter>
-      </div>
-    );
-  }
-  function renderReview(): ReactElement {
-    return (
-      <>
-        <PreservedEvidence detail={envelope.data} />
-        <FormField name="reason" label={REOPEN_COPY.reasonLabel} description={REOPEN_COPY.reasonDescription} optionalHint error={fieldErrors?.byField.reason}>
-          {(field) => <Textarea id={field.id} name="reason" rows={3} value={reason} aria-describedby={field.describedBy} aria-invalid={field.invalid ? true : undefined} onChange={(event) => setReason(event.currentTarget.value)} />}
-        </FormField>
-        <ActionReview<ReopenInitiativePayload>
-          title={REOPEN_COPY.reviewHeading}
-          headingLevel={3}
-          consequential
-          description={
-            <>
-              <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-                <bdi className="font-medium text-foreground">{initiative.name}</bdi>
-                <span>{CLOSURE_COPY.reopenHelp}</span>
-              </p>
-              <p>
-                {`${REOPEN_COPY.reasonTerm}: `}
-                <bdi>{reason.trim() === "" ? REOPEN_COPY.noReason : reason.trim()}</bdi>
-              </p>
-            </>
-          }
-          consequence={
-            <>
-              <p>{CLOSURE_COPY.historyPreservedNote}</p>
-              <p>{REOPEN_COPY.exclusionsKept}</p>
-            </>
-          }
-          confirmLabel={CONFIRM_LABEL}
-          onCancel={requestClose}
-          input={input}
-          submit={submit}
-          onSettled={handleSettled}
-          fieldLabels={FIELD_LABELS}
-        />
-        {progress.reopened ? <output className="block text-sm text-pretty">{REOPEN_COPY.reopenedStatement}</output> : null}
-      </>
-    );
-  }
-  function renderBody(): ReactElement {
-    if (mismatched) {
-      return <p className="text-sm text-pretty text-muted-foreground">{REOPEN_COPY.mismatchBody}</p>;
-    }
-    return phase === "confirming-discard" ? renderDiscardQuestion() : renderReview();
-  }
+  const renderDiscardQuestion = (): ReactElement => <DiscardConfirmation title={DIALOG_TITLE} body={REOPEN_COPY.discardBody} keepEditingLabel={REOPEN_COPY.keepEditingLabel} discardLabel={REOPEN_COPY.discardLabel} onKeepEditing={() => setPhase("review")} onDiscard={onClose} />;
+  const renderReview = (): ReactElement => (
+    <>
+      <PreservedEvidence detail={envelope.data} />
+      <FormField name="reason" label={REOPEN_COPY.reasonLabel} description={REOPEN_COPY.reasonDescription} optionalHint error={fieldErrors?.byField.reason}>
+        {(field) => <Textarea id={field.id} name="reason" rows={3} value={reason} aria-describedby={field.describedBy} aria-invalid={field.invalid ? true : undefined} onChange={(event) => setReason(event.currentTarget.value)} />}
+      </FormField>
+      <ActionReview<ReopenInitiativePayload>
+        title={REOPEN_COPY.reviewHeading}
+        headingLevel={3}
+        consequential
+        description={
+          <>
+            <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+              <bdi className="font-medium text-foreground">{initiative.name}</bdi>
+              <span>{CLOSURE_COPY.reopenHelp}</span>
+            </p>
+            <p>
+              {`${REOPEN_COPY.reasonTerm}: `}
+              <bdi>{reason.trim() === "" ? REOPEN_COPY.noReason : reason.trim()}</bdi>
+            </p>
+          </>
+        }
+        consequence={
+          <>
+            <p>{CLOSURE_COPY.historyPreservedNote}</p> <p>{REOPEN_COPY.exclusionsKept}</p>
+          </>
+        }
+        confirmLabel={CONFIRM_LABEL}
+        onCancel={requestClose}
+        input={input}
+        submit={submit}
+        onSettled={handleSettled}
+        fieldLabels={FIELD_LABELS}
+      />
+      {progress.reopened ? <output className="block text-sm text-pretty">{REOPEN_COPY.reopenedStatement}</output> : null}
+    </>
+  );
+  const renderBody = (): ReactElement => (initiative.initiativeId !== initiativeId ? <p className="text-sm text-pretty text-muted-foreground">{REOPEN_COPY.mismatchBody}</p> : phase === "confirming-discard" ? renderDiscardQuestion() : renderReview());
   return <div className="flex min-w-0 flex-col gap-5">{renderBody()}</div>;
 }
 /** The confirmed reopen of a closed initiative. The wrapper owns the modal substrate and the decision to close, and nothing else: the subscription to the family's mutation, the field, the review step and the receipt all live in the body, whose lifetime is the visit. */
@@ -321,9 +211,7 @@ export function ReopenInitiativeDialog({ open, onOpenChange, initiativeId, envel
     },
     [onOpenChange],
   );
-  const close = useCallback((): void => {
-    onOpenChange(false);
-  }, [onOpenChange]);
+  const close = useCallback((): void => onOpenChange(false), [onOpenChange]);
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent data-slot="reopen-initiative-dialog">

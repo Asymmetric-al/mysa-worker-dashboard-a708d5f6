@@ -1,17 +1,5 @@
 "use client";
-/**
- * The publisher's audience for the one purpose this release keeps memberships for: the four membership
- * states with the read's own whole-result counts, every exclusion reason, the not-consent statement, and
- * one page of members.
- *
- * Every figure here is the read's. The surface prints the counts the envelope carries for the whole
- * result and the one page it returned, and it narrows nothing: `readAudience` accepts a publisher, a
- * page and a page size and answers the whole purpose audience, so a filter offered here could only be
- * applied to the loaded page while the pager kept stating the whole-result window — a claim this
- * surface would have no way to keep. Filtering, ordering, paging and counting stay the service's. The
- * page window travels in the address, so opening a member and returning reopens the page the reader left.
- */
-import { useCallback, useMemo, useState, type ReactElement } from "react";
+import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import RecordList, { useRecordListWindow, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import StateNotice from "@/components/state-notice";
 import StatusBadge, { MEMBERSHIP_STATUS, statusBadgeProps, VALUE_STATE_WORDS } from "@/components/status-badge";
@@ -20,45 +8,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ELIGIBLE_HEADING, EXCLUDED_HEADING, EXCLUSION_REASON_COPY, MEMBERSHIP_COLUMN_HEADINGS, MEMBERSHIP_STATE_DESCRIPTIONS, NOT_CONSENT_STATEMENT, PURPOSE_LABEL } from "@/features/audience/copy/membership";
 import { useAudience, type AudienceEnvelope } from "../hooks/use-audience-reads";
 import { cn } from "@/lib/cn";
+import { countFormatOf } from "@/lib/count-format";
+import { DEFAULT_PAGE_SIZE, FIRST_PAGE, offeredPageSize } from "@/lib/page-window";
 import type { Scope, ValueState } from "@/modules/data-service/envelope";
 import type { FieldMessages, ReadResult } from "@/modules/data-service/outcome";
-// The shapes this surface reads, taken from the read rather than restated
-/** One member as the read projects it: the membership, the state it is in at the read's instant, the person's own reading language and the reason it is excluded. The address the membership stores is deliberately not part of the projection. */
 type MembershipMember = AudienceEnvelope["data"]["members"][number];
-/** The publisher's audience: whole-result counts, the four state counts, every exclusion reason, and one page of members. */
 type MembershipView = AudienceEnvelope["data"];
-/** The exclusion reasons the copy module words, and the four membership states it describes. */
 type ExclusionReasonKey = keyof typeof EXCLUSION_REASON_COPY;
 type MembershipStateKey = keyof typeof MEMBERSHIP_STATE_DESCRIPTIONS;
-// The read states its own order for these, and the copy module's declaration order is that order
 const EXCLUSION_REASON_ORDER = Object.keys(EXCLUSION_REASON_COPY) as readonly ExclusionReasonKey[];
 const MEMBERSHIP_STATE_ORDER = Object.keys(MEMBERSHIP_STATE_DESCRIPTIONS) as readonly MembershipStateKey[];
-// Fixed values
-/** The noun the preset's own pager, empty notice and selection summary state. */
-const ITEM_NOUN = "members";
-const FIRST_PAGE = 1;
-const DEFAULT_PAGE_SIZE = 50;
-const MAX_PAGE_SIZE = 200;
-/** The row sizes this surface offers: the application's 50-row default and its 200-row cap, which are the sizes the preset's pager states. */
-const PAGE_SIZES: readonly number[] = [DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE];
 const NO_COLUMNS_HIDDEN: RecordListQueryState["columnVisibility"] = {};
-/** The counts are whole-result figures, so they are grouped the way every other figure on the application is: in the interface locale the route states. That locale is a viewer choice, so the formatter is keyed by it and the constructor is paid once per locale rather than once per formatted count. */
-const COUNT_FORMATS = new Map<string, Intl.NumberFormat>();
-/** The whole-number formatter for the interface locale the composing route states. */
-function countFormatOf(locale: string): Intl.NumberFormat {
-  const known = COUNT_FORMATS.get(locale);
-  if (known !== undefined) {
-    return known;
-  }
-  const made = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
-  COUNT_FORMATS.set(locale, made);
-  return made;
-}
-/** The one statement this surface adds to the copy module: the read projects the audience without the address a membership stores, so the column states that absence rather than inventing a value. */
-const ADDRESS_NOT_IN_PROJECTION = "No address in this projection";
-/** What a column says when the record itself states nothing for it: a blank cell reads as a rendering fault, and a word the copy module does not own would invent a state the membership is not in. */
-const NOT_STATED = "Not stated";
-/** The wording the copy module does not own, gathered once so this file states no sentence twice. */
 const SURFACE_COPY = {
   loadingTitle: "Reading this publisher's audience",
   loadingBody: "The counts, the states and the members are on their way; nothing is shown as empty or zero until the read answers.",
@@ -73,44 +33,22 @@ const SURFACE_COPY = {
   eligibleFigureLabel: "Eligible memberships",
   excludedFigureLabel: "Excluded memberships",
 } as const;
-// Reading the read's own numbers
-/** The state the read recorded for one field path, and `unknown` for a path it stated nothing about: a number the read did not state is never printed as one. */
-function statedState(valueStates: Readonly<Record<string, ValueState>>, path: string): ValueState {
-  return valueStates[path] ?? "unknown";
-}
-/** The largest offered row size at or below a stated one, so the window this surface asks the read for is a window its own pager can also state. */
-function offeredPageSize(requested: number): number {
-  if (!Number.isFinite(requested)) return DEFAULT_PAGE_SIZE;
-  const stated = Math.trunc(requested);
-  let offered = DEFAULT_PAGE_SIZE;
-  for (const size of PAGE_SIZES) {
-    if (size <= stated) offered = size;
-  }
-  return offered;
-}
-/** A record value rendered as the record states it, or as the fact that it states nothing — never as a blank cell a reader could take for a rendering fault. */
+const statedState = (valueStates: Readonly<Record<string, ValueState>>, path: string): ValueState => valueStates[path] ?? "unknown";
 function StatedValue({ value, mono = false }: { readonly value: string; readonly mono?: boolean }): ReactElement {
   const stated = value.trim();
-  if (stated === "") {
-    return <span className="text-muted-foreground">{NOT_STATED}</span>;
-  }
-  return mono ? <bdi className="mono-identifier">{stated}</bdi> : <bdi>{stated}</bdi>;
+  return stated === "" ? <span className="text-muted-foreground">Not stated</span> : mono ? <bdi className="mono-identifier">{stated}</bdi> : <bdi>{stated}</bdi>;
 }
-/** A count rendered from the value state its own read recorded, so a genuine zero stays a number while an unknown, withheld or unavailable count never becomes one. */
 function CountFigure({ count, state, locale }: { readonly count: number; readonly state: ValueState; readonly locale: string }): ReactElement {
-  if (!Number.isFinite(count)) {
-    // A count that is not a number is never printed as one; it is reported as the unknown it is.
-    return <StatusBadge {...statusBadgeProps(VALUE_STATE_WORDS, "unknown")} />;
-  }
-  const countFormat = countFormatOf(locale);
+  if (!Number.isFinite(count)) return <StatusBadge {...statusBadgeProps(VALUE_STATE_WORDS, "unknown")} />;
+  const format = countFormatOf(locale);
   switch (state) {
     case "value":
     case "zero":
-      return <span className="tabular-figures">{countFormat.format(count)}</span>;
+      return <span className="tabular-figures">{format.format(count)}</span>;
     case "incomplete-subtotal":
       return (
         <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-          <span className="tabular-figures">{countFormat.format(count)}</span>
+          <span className="tabular-figures">{format.format(count)}</span>
           <StatusBadge {...statusBadgeProps(VALUE_STATE_WORDS, "incomplete-subtotal")} />
         </span>
       );
@@ -120,145 +58,91 @@ function CountFigure({ count, state, locale }: { readonly count: number; readonl
       return <StatusBadge {...statusBadgeProps(VALUE_STATE_WORDS, state)} />;
   }
 }
-/** Every message a refusal keyed by field path, in one sentence a notice can state. */
-function refusalSummary(fields: FieldMessages): string {
-  const messages: string[] = [];
-  for (const [field, fieldMessages] of Object.entries(fields)) {
-    for (const message of fieldMessages) {
-      messages.push(`${field}: ${message}`);
-    }
-  }
-  return messages.length === 0 ? SURFACE_COPY.refusedTitle : messages.join(" ");
-}
-/** The one figure a counts block states first, with the phrase that names which count it is for a screen reader. */
-function CountHeadline({ label, count, state, locale }: { readonly label: string; readonly count: number; readonly state: ValueState; readonly locale: string }): ReactElement {
-  return (
-    <p className="flex flex-wrap items-baseline gap-2">
-      <span className="text-2xl font-semibold tracking-tight">
-        <span className="sr-only">{`${label}: `}</span>
-        <CountFigure count={count} state={state} locale={locale} />
-      </span>
-    </p>
-  );
-}
-// The counts panel
-interface MembershipCountsProps {
-  readonly view: MembershipView;
-  readonly valueStates: Readonly<Record<string, ValueState>>;
-  /** The interface locale every count in this panel is formatted in, stated by the route that composes the surface. */
-  readonly locale: string;
-  readonly className?: string;
-}
-/** The whole-result counts the read states: eligible and excluded totals, the four state counts with the eligibility each sentence states, and every exclusion reason with its own count. */
-function MembershipCounts({ view, valueStates, locale, className }: MembershipCountsProps): ReactElement {
-  return (
-    <div data-slot="membership-counts" className={cn("grid gap-3 lg:grid-cols-2", className)}>
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <h2 className="font-heading text-base font-medium">{ELIGIBLE_HEADING}</h2>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <CountHeadline label={SURFACE_COPY.eligibleFigureLabel} count={view.counts.eligible} state={statedState(valueStates, "counts.eligible")} locale={locale} />
-          <ul className="flex flex-col gap-2.5">
-            {MEMBERSHIP_STATE_ORDER.map((state) => {
-              const description = MEMBERSHIP_STATE_DESCRIPTIONS[state];
-              return (
-                <li key={state} className="flex flex-col gap-1">
-                  <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <StatusBadge {...statusBadgeProps(MEMBERSHIP_STATUS, state)} />
-                    <span>
-                      <CountFigure count={view.memberStates[state]} state={statedState(valueStates, `memberStates.${state}`)} locale={locale} />
-                    </span>
-                    <span className="text-muted-foreground">{description.eligibleSuffix}</span>
-                  </p>
-                  <p className="max-w-prose text-pretty text-xs leading-snug text-muted-foreground">{description.description}</p>
-                </li>
-              );
-            })}
-          </ul>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <h2 className="font-heading text-base font-medium">{EXCLUDED_HEADING}</h2>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <CountHeadline label={SURFACE_COPY.excludedFigureLabel} count={view.counts.excluded} state={statedState(valueStates, "counts.excluded")} locale={locale} />
-          <ul className="flex flex-col gap-2">
-            {EXCLUSION_REASON_ORDER.map((reason) => (
-              <li key={reason} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+const refusalSummary = (fields: FieldMessages): string =>
+  Object.entries(fields)
+    .flatMap(([field, fieldMessages]) => fieldMessages.map((message) => `${field}: ${message}`))
+    .join(" ") || SURFACE_COPY.refusedTitle;
+type CountCardProps = { readonly heading: string; readonly figureLabel: string; readonly count: number; readonly state: ValueState; readonly locale: string; readonly children: ReactNode };
+const CountCard = ({ heading, figureLabel, count, state, locale, children }: CountCardProps): ReactElement => (
+  <Card>
+    <CardHeader>
+      <CardTitle>
+        <h2 className="font-heading text-base font-medium">{heading}</h2>
+      </CardTitle>
+    </CardHeader>
+    <CardContent className="flex flex-col gap-3">
+      <p className="flex flex-wrap items-baseline gap-2">
+        <span className="text-2xl font-semibold tracking-tight">
+          <span className="sr-only">{`${figureLabel}: `}</span>
+          <CountFigure count={count} state={state} locale={locale} />
+        </span>
+      </p>
+      {children}
+    </CardContent>
+  </Card>
+);
+type MembershipCountsProps = { readonly view: MembershipView; readonly valueStates: Readonly<Record<string, ValueState>>; readonly locale: string; readonly className?: string };
+const MembershipCounts = ({ view, valueStates, locale, className }: MembershipCountsProps): ReactElement => (
+  <div data-slot="membership-counts" className={cn("grid gap-3 lg:grid-cols-2", className)}>
+    <CountCard heading={ELIGIBLE_HEADING} figureLabel={SURFACE_COPY.eligibleFigureLabel} count={view.counts.eligible} state={statedState(valueStates, "counts.eligible")} locale={locale}>
+      <ul className="flex flex-col gap-2.5">
+        {MEMBERSHIP_STATE_ORDER.map((state) => {
+          const description = MEMBERSHIP_STATE_DESCRIPTIONS[state];
+          return (
+            <li key={state} className="flex flex-col gap-1">
+              <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <StatusBadge {...statusBadgeProps(MEMBERSHIP_STATUS, state)} />
                 <span>
-                  <CountFigure count={view.excludedByReason[reason]} state={statedState(valueStates, `excludedByReason.${reason}`)} locale={locale} />
+                  <CountFigure count={view.memberStates[state]} state={statedState(valueStates, `memberStates.${state}`)} locale={locale} />
                 </span>
-                <span className="max-w-prose text-pretty text-xs leading-snug text-muted-foreground">{EXCLUSION_REASON_COPY[reason]}</span>
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-// The surface
-/** The union a route hands this surface: the envelope its read produced, or the denial, outage or refusal it answered with, so a server-side refusal renders as the refusal it is rather than as an audience. */
+                <span className="text-muted-foreground">{description.eligibleSuffix}</span>
+              </p>
+              <p className="max-w-prose text-pretty text-xs leading-snug text-muted-foreground">{description.description}</p>
+            </li>
+          );
+        })}
+      </ul>
+    </CountCard>
+    <CountCard heading={EXCLUDED_HEADING} figureLabel={SURFACE_COPY.excludedFigureLabel} count={view.counts.excluded} state={statedState(valueStates, "counts.excluded")} locale={locale}>
+      <ul className="flex flex-col gap-2">
+        {EXCLUSION_REASON_ORDER.map((reason) => (
+          <li key={reason} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span>
+              <CountFigure count={view.excludedByReason[reason]} state={statedState(valueStates, `excludedByReason.${reason}`)} locale={locale} />
+            </span>
+            <span className="max-w-prose text-pretty text-xs leading-snug text-muted-foreground">{EXCLUSION_REASON_COPY[reason]}</span>
+          </li>
+        ))}
+      </ul>
+    </CountCard>
+  </div>
+);
+const columnOf = (id: string, header: string, cell: (member: MembershipMember) => ReactNode, enableHiding = true): RecordListColumnDef<MembershipMember> => ({ id, header, enableSorting: false, enableHiding, cell: (context) => cell(context.row.original) });
+const identityCell = (member: MembershipMember): ReactNode => {
+  const name = (member.displayName ?? "").trim();
+  return name === "" ? <bdi className="mono-identifier">{member.recipientId}</bdi> : <bdi>{name}</bdi>;
+};
 type MembershipSource = AudienceEnvelope | ReadResult<AudienceEnvelope>;
-export interface MembershipTableProps {
-  /** What the route's read produced, taken as it stands: nothing here re-derives it, re-counts it or fills in what it omits. */
-  readonly envelope: MembershipSource;
-  /** The authority the route read under. Every browser read of this surface is issued under the same scope. */
-  readonly scope: Scope;
-  /** The interface locale this surface formats its counts in, stated by the route that composes it. */
-  readonly locale: string;
-  readonly className?: string;
-}
-/** The union the route handed over, as the one result shape this surface renders. An envelope carries no `kind` member, so the two arms are told apart without guessing. */
-function asReadResult(value: MembershipSource): ReadResult<AudienceEnvelope> {
-  return "kind" in value ? value : { kind: "envelope", envelope: value };
-}
-
-/** The publisher's audience for this purpose: the read's whole-result counts and one page of members, with every state the read can answer in kept distinct. */
-export function MembershipTable({ envelope, scope, locale, className }: MembershipTableProps): ReactElement {
-  const initial = useMemo(() => asReadResult(envelope), [envelope]);
+export type MembershipTableProps = { readonly envelope: MembershipSource; readonly scope: Scope; /** The interface locale this surface formats its counts in, stated by the route that composes it. */ readonly locale: string; readonly className?: string };
+/** The publisher's audience for this purpose: the read's whole-result counts and one page of members, with every state the read can answer in kept distinct. */ export function MembershipTable({ envelope, scope, locale, className }: MembershipTableProps): ReactElement {
+  const initial = useMemo<ReadResult<AudienceEnvelope>>(() => ("kind" in envelope ? envelope : { kind: "envelope", envelope }), [envelope]);
   const initialWindow = initial.kind === "envelope" ? initial.envelope.data.page : undefined;
-  // The last page the server's answer states, when it states any: a page the address names beyond it is
-  // corrected to it, so the query, the rows, the caption and the pager always describe one window. The bound
-  // is the read's own page count, never a count taken here.
+  // The window the read states is the window this surface opens on, inside the pages that exist. The address owns it from then on, so opening a member and returning reopens the page the reader left.
   const openingLastPage = initialWindow === undefined || initialWindow.total === 0 ? undefined : Math.max(FIRST_PAGE, initialWindow.pageCount);
-  // The window the read states is the window this surface opens on, inside the pages that exist; the address owns
-  // it from then on, so opening a member and returning reopens the page the reader left rather than the first one.
   const listWindow = useRecordListWindow({ page: openingLastPage === undefined ? FIRST_PAGE : Math.min(Math.max(FIRST_PAGE, initialWindow?.page ?? FIRST_PAGE), openingLastPage), pageSize: initialWindow?.pageSize ?? DEFAULT_PAGE_SIZE });
   const page = openingLastPage === undefined ? listWindow.page : Math.min(listWindow.page, openingLastPage);
   const pageSize = offeredPageSize(listWindow.pageSize);
   const setWindow = listWindow.setWindow;
-  // The columns a worker shows are presentation only, so they stay in this component rather than the address.
-  const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(NO_COLUMNS_HIDDEN);
-  // The query this surface controls is exactly the query the read declares — a page and its size — plus
-  // the publisher the server resolved, so the browser read answers for the same audience. No order is
-  // held here because the read states its own and offers no sort parameter.
+  const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(NO_COLUMNS_HIDDEN); // The columns a worker shows are presentation only, so they stay in this component rather than in the address.
   const publisherId = initial.kind === "envelope" ? initial.envelope.data.publisherId : null;
   const audienceQuery = useMemo<{ readonly page: number; readonly pageSize: number; readonly publisherId?: string }>(() => ({ page, pageSize, ...(publisherId === null ? {} : { publisherId }) }), [publisherId, page, pageSize]);
   const audience = useAudience({ scope, query: audienceQuery });
-  // The server's answer stands in while the browser read has no answer of its own, and only for the
-  // window it describes: a page change must never be presented under the previous page's rows, so the
-  // fallback stops the moment the asked-for window differs from the envelope's own.
-  const initialDescribesAskedWindow = initial.kind !== "envelope" || (initial.envelope.data.page.page === page && initial.envelope.data.page.pageSize === pageSize);
-  const read: ReadResult<AudienceEnvelope> | undefined = audience.data ?? (initialDescribesAskedWindow ? initial : undefined);
+  const read: ReadResult<AudienceEnvelope> | undefined = audience.data ?? (initial.kind !== "envelope" || (initial.envelope.data.page.page === page && initial.envelope.data.page.pageSize === pageSize) ? initial : undefined);
   const statedPage = read !== undefined && read.kind === "envelope" ? read.envelope.data.page : undefined;
-  // The last page the read states, when it states any: a request for a page beyond it is answered with
-  // the last page that exists rather than an empty window under a pager that says otherwise. The bound
-  // comes from the read's own page count, never from a count taken here.
   const lastStatedPage = statedPage === undefined || statedPage.total === 0 ? undefined : Math.max(FIRST_PAGE, statedPage.pageCount);
   const handleQueryStateChange = useCallback(
     (next: RecordListQueryState) => {
-      // The read answers members in its own order and declares no sort parameter, so no column offers a
-      // sort and no order is ever stated here. Visibility is presentation only: hiding a column narrows
-      // what is shown of a row, never which rows the read returned, so it stays in this component while the
-      // window is written to the address.
-      const requestedPage = Math.max(FIRST_PAGE, Math.trunc(next.page));
+      const requestedPage = Math.max(FIRST_PAGE, Math.trunc(next.page)); // The read answers members in its own order and declares no sort parameter, so no order is ever stated here: the window is written to the address and the columns stay in this component.
       setColumnVisibility(next.columnVisibility);
       setWindow({ page: lastStatedPage === undefined ? requestedPage : Math.min(requestedPage, lastStatedPage), pageSize: offeredPageSize(next.pageSize) });
     },
@@ -267,84 +151,25 @@ export function MembershipTable({ envelope, scope, locale, className }: Membersh
   const purpose = read !== undefined && read.kind === "envelope" ? read.envelope.data.purpose : null;
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<MembershipMember>>>(
     () => [
-      {
-        id: "identity",
-        header: MEMBERSHIP_COLUMN_HEADINGS.identity,
-        enableSorting: false,
-        // The row's name is never the one column a worker can hide: a row with no identity is unusable.
-        enableHiding: false,
-        cell: (context) => {
-          const member = context.row.original;
-          const name = member.displayName === null ? "" : member.displayName.trim();
-          // A membership the source states no display name for is identified by the opaque recipient
-          // reference a notification result records it under — never by an address, which this read does
-          // not project and which establishes no identity in any case.
-          return name === "" ? <bdi className="mono-identifier">{member.recipientId}</bdi> : <bdi>{name}</bdi>;
-        },
-      },
-      {
-        id: "emailValue",
-        header: MEMBERSHIP_COLUMN_HEADINGS.emailValue,
-        enableSorting: false,
-        // The read projects the audience without the address a membership stores, so the column states
-        // that absence rather than repeating a value the projection does not carry.
-        cell: () => <span className="text-muted-foreground text-pretty">{ADDRESS_NOT_IN_PROJECTION}</span>,
-      },
-      { id: "state", header: MEMBERSHIP_COLUMN_HEADINGS.state, enableSorting: false, cell: (context) => <StatusBadge {...statusBadgeProps(MEMBERSHIP_STATUS, context.row.original.state)} /> },
-      {
-        id: "languagePreference",
-        header: MEMBERSHIP_COLUMN_HEADINGS.languagePreference,
-        enableSorting: false,
-        // The person's reading language stands on its own column: it records no consent, proves no
-        // address and confirms nothing, so it is never merged into the state or the purpose beside it.
-        cell: (context) => <StatedValue value={context.row.original.languagePreference} />,
-      },
-      { id: "purpose", header: MEMBERSHIP_COLUMN_HEADINGS.purpose, enableSorting: false, cell: () => (purpose === null ? null : PURPOSE_LABEL[purpose]) },
-      {
-        id: "since",
-        header: MEMBERSHIP_COLUMN_HEADINGS.since,
-        enableSorting: false,
-        // The acceptance instant is printed exactly as the record states it, in the offset it was
-        // recorded with. Rebasing it into a display zone here would state another instant than the one the
-        // membership holds.
-        cell: (context) => {
-          const acceptedOn = context.row.original.acceptedOn;
-          return <StatedValue value={acceptedOn ?? ""} mono />;
-        },
-      },
-      {
-        id: "exclusionReason",
-        header: MEMBERSHIP_COLUMN_HEADINGS.exclusionReason,
-        enableSorting: false,
-        // An eligible member is excluded by nothing, so the cell states nothing rather than a word the
-        // copy module does not own or a fabricated "none" that reads like a reason.
-        cell: (context) => {
-          const reason = context.row.original.exclusionReason;
-          return reason === null ? null : <span className="text-pretty">{EXCLUSION_REASON_COPY[reason]}</span>;
-        },
-      },
+      columnOf("identity", MEMBERSHIP_COLUMN_HEADINGS.identity, identityCell, false),
+      columnOf("emailValue", MEMBERSHIP_COLUMN_HEADINGS.emailValue, () => <span className="text-muted-foreground text-pretty">No address in this projection</span>),
+      columnOf("state", MEMBERSHIP_COLUMN_HEADINGS.state, (member) => <StatusBadge {...statusBadgeProps(MEMBERSHIP_STATUS, member.state)} />),
+      columnOf("languagePreference", MEMBERSHIP_COLUMN_HEADINGS.languagePreference, (member) => <StatedValue value={member.languagePreference} />),
+      columnOf("purpose", MEMBERSHIP_COLUMN_HEADINGS.purpose, () => (purpose === null ? null : PURPOSE_LABEL[purpose])),
+      columnOf("since", MEMBERSHIP_COLUMN_HEADINGS.since, (member) => <StatedValue value={member.acceptedOn ?? ""} mono />),
+      columnOf("exclusionReason", MEMBERSHIP_COLUMN_HEADINGS.exclusionReason, (member) => (member.exclusionReason === null ? null : <span className="text-pretty">{EXCLUSION_REASON_COPY[member.exclusionReason]}</span>)),
     ],
     [purpose],
   );
-  const retry = {
-    label: SURFACE_COPY.retry,
-    onClick: (): void => {
-      void audience.refetch();
-    },
-  };
+  const retry = { label: SURFACE_COPY.retry, onClick: (): void => void audience.refetch() };
   let content: ReactElement;
   if (read === undefined) {
-    // The read has not answered, so nothing is counted and no empty result is implied.
     content = <StateNotice kind="loading" title={SURFACE_COPY.loadingTitle} description={SURFACE_COPY.loadingBody} headingLevel={2} loadingLines={6} />;
   } else if (read.kind === "denied") {
-    // A denial states no count, no title and no size: the answer is the same whether or not anything
-    // exists in the scope this session may not read, so no block of this surface renders beside it.
     content = <StateNotice kind="denied" title={SURFACE_COPY.deniedTitle} reasonCode={read.denied.reasonCode} headingLevel={2} />;
   } else if (read.kind === "unavailable") {
     content = <StateNotice kind="unavailable" title={SURFACE_COPY.unavailableTitle} description={read.unavailable.guidance} source={read.unavailable.source} retry={retry} headingLevel={2} />;
   } else if (read.kind === "refused") {
-    // The request this surface sent is not one the read admits: the source behind it answered, so the
-    // refusal's own field messages are the answer rather than an empty audience.
     content = <StateNotice kind="refused" title={SURFACE_COPY.refusedTitle} description={refusalSummary(read.refused.fields)} headingLevel={2} />;
   } else {
     const stated = read.envelope;
@@ -362,15 +187,10 @@ export function MembershipTable({ envelope, scope, locale, className }: Membersh
         </div>
         <MembershipCounts view={view} valueStates={stated.valueStates} locale={locale} />
         <p className="max-w-prose text-pretty text-sm text-muted-foreground">{NOT_CONSENT_STATEMENT}</p>
-        {/* No busy skeleton is handed to the preset below: the rows it receives are the ones the read
-            answered with, so a placeholder would hide data that exists. A window with no rows yet is the
-            loading state above rather than a skeleton drawn over this one. */}
         {view.page.total === 0 ? (
-          // Nobody holds a membership for this purpose: that is a genuine zero on every count above, and it
-          // is stated as the empty collection it is rather than as an outage or an unknown.
           <StateNotice kind="empty" title={SURFACE_COPY.emptyTitle} description={SURFACE_COPY.emptyBody} headingLevel={2} />
         ) : (
-          <RecordList<MembershipMember> label={MEMBERSHIP_COLUMN_HEADINGS.caption} columns={columns} rows={view.members} rowCount={view.page.total} queryState={{ sort: [], page, pageSize, columnVisibility }} onQueryStateChange={handleQueryStateChange} getRowId={(row) => row.membershipId} itemNoun={ITEM_NOUN} />
+          <RecordList<MembershipMember> label={MEMBERSHIP_COLUMN_HEADINGS.caption} columns={columns} rows={view.members} rowCount={view.page.total} queryState={{ sort: [], page, pageSize, columnVisibility }} onQueryStateChange={handleQueryStateChange} getRowId={(row) => row.membershipId} itemNoun="members" />
         )}
       </div>
     );

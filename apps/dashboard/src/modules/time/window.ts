@@ -1,37 +1,23 @@
-/** The fixed time boundaries of the worker dashboard: the referral New window, the referral continuation window, the coaching share cutoff, the notification usefulness window and the confirmation window, and the accepted source zone the referral windows are resolved in. */
 import { Temporal } from "temporal-polyfill";
-import { type CivilDate, type CivilDayStart, type DatePrecision, civilDateAt, isPreciseDate, startOfCivilDay } from "./civil";
-/** How long an immediate notification stays useful after the instant it was intended for: a whole number of elapsed hours. */
+import { civilDateAt, isPreciseDate, startOfCivilDay, type CivilDate, type CivilDayStart, type DatePrecision } from "./civil";
 export const NOTIFICATION_USEFULNESS_HOURS = 24;
 export const CONFIRMATION_WINDOW_HOURS = 168;
-/**
- * The accepted source zone every referral window is resolved in.
- *
- * An introduction date is a calendar date in one declared zone, so the endpoint the New window expires
- * at resolves the same way whoever reads it and whatever zone they display the date in. The zone is a
- * fixed property of the rule rather than a per-reader choice: this module owns it because it owns the
- * window arithmetic that depends on it, and both the development seed and the surfaces that record an
- * introduction read it from here rather than stating a second copy of it.
- */
+/** The accepted source zone every referral window is resolved in: an introduction date is a calendar date in one declared zone, so the endpoint the New window expires at resolves the same way whoever reads it, and the seed and the surfaces that record an introduction read it from here rather than stating a second copy. */
 export const REFERRAL_SOURCE_ZONE = "Europe/London";
 const SECONDS_PER_DAY = 86_400;
-/** How a resolved civil midnight is reported, taken from the civil module's own union so this declaration cannot drift from the one that produces it. */
 export type MidnightResolution = Extract<CivilDayStart, { status: "resolved" }>["resolution"];
 export type WindowRefusalReason = "invalid-days" | "invalid-zone" | "invalid-date";
 const MONTH_NAMES = { 1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June", 7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December" } as const;
 type MonthNumber = keyof typeof MONTH_NAMES;
 function nominalWordingFor(date: CivilDate): string {
   const isoDate = date.withCalendar("iso8601");
-  // A Temporal plain date's ISO month is always 1..12, so the lookup cannot miss; the assertion states that invariant instead of adding a fallback label that could never be the right month.
-  const monthName = MONTH_NAMES[isoDate.month as MonthNumber];
-  return `Active through ${isoDate.day} ${monthName} ${isoDate.year}`;
+  return `Active through ${isoDate.day} ${MONTH_NAMES[isoDate.month as MonthNumber]} ${isoDate.year}`;
 }
 const isStrictlyBefore = (now: Temporal.Instant, boundary: Temporal.Instant): boolean => Temporal.Instant.compare(now, boundary) < 0;
 type ElapsedDeadline = { deadlineInstant: Temporal.Instant; within: boolean; remainingMilliseconds: number };
 function elapsedDeadlineAt(anchor: Temporal.Instant, hours: number, now: Temporal.Instant): ElapsedDeadline {
   const deadlineInstant = anchor.add({ hours });
-  if (!isStrictlyBefore(now, deadlineInstant)) return { deadlineInstant, within: false, remainingMilliseconds: 0 };
-  return { deadlineInstant, within: true, remainingMilliseconds: deadlineInstant.epochMilliseconds - now.epochMilliseconds };
+  return !isStrictlyBefore(now, deadlineInstant) ? { deadlineInstant, within: false, remainingMilliseconds: 0 } : { deadlineInstant, within: true, remainingMilliseconds: deadlineInstant.epochMilliseconds - now.epochMilliseconds };
 }
 function addCivilDays(date: CivilDate, days: number): CivilDate | undefined {
   try {
@@ -52,17 +38,20 @@ export function newWindowEnd(input: { originalIntroductionOn: CivilDate; datePre
   if (nominalLastIncludedOn === undefined || exclusiveEndpointDate === undefined) return { status: "refused", reason: "invalid-date" };
   const endpoint = startOfCivilDay(exclusiveEndpointDate, sourceZone);
   if (endpoint.status === "refused") return { status: "refused", reason: "invalid-zone" };
-  const nominalMidnight = exclusiveEndpointDate.toPlainDateTime(Temporal.PlainTime.from("00:00"));
-  const resolvedLocal = endpoint.instant.toZonedDateTimeISO(sourceZone).toPlainDateTime();
-  return { status: "bounded", nominalLastIncludedOn, nominalWording: nominalWordingFor(nominalLastIncludedOn), resolvedEndInstant: endpoint.instant, resolution: endpoint.resolution, nominalDisagreesWithResolved: Temporal.PlainDateTime.compare(resolvedLocal, nominalMidnight) !== 0 };
+  return {
+    status: "bounded",
+    nominalLastIncludedOn,
+    nominalWording: nominalWordingFor(nominalLastIncludedOn),
+    resolvedEndInstant: endpoint.instant,
+    resolution: endpoint.resolution,
+    nominalDisagreesWithResolved: Temporal.PlainDateTime.compare(endpoint.instant.toZonedDateTimeISO(sourceZone).toPlainDateTime(), exclusiveEndpointDate.toPlainDateTime(Temporal.PlainTime.from("00:00"))) !== 0,
+  };
 }
-/** Where a referral stands at one instant: Active, Expired, undecided because it has no deadline, or refused because the window it carries could not be evaluated. */
 export type ReferralWindowStatus = { status: "active" } | { status: "expired" } | { status: "no-deadline" } | { status: "refused"; reason: WindowRefusalReason };
 /** Where a referral stands at one instant: */
 export function referralWindowState(input: { windowEnd: Temporal.Instant | undefined; now: Temporal.Instant }): ReferralWindowStatus {
   const { windowEnd, now } = input;
-  if (windowEnd === undefined) return { status: "no-deadline" };
-  return isStrictlyBefore(now, windowEnd) ? { status: "active" } : { status: "expired" };
+  return windowEnd === undefined ? { status: "no-deadline" } : isStrictlyBefore(now, windowEnd) ? { status: "active" } : { status: "expired" };
 }
 export type ReferralCycleState = { consumed: boolean; predecessorId?: string; successorId?: string };
 export type ContinuedWindowEnd = { status: "bounded"; endInstant: Temporal.Instant; elapsedSeconds: number } | { status: "refused"; reason: "invalid-days" | "already-consumed" };
@@ -77,11 +66,9 @@ export function continuedWindowEnd(input: { acceptedAt: Temporal.Instant; days: 
     const endInstant = acceptedAt.add({ seconds: elapsedSeconds });
     return { status: "bounded", endInstant, elapsedSeconds };
   } catch {
-    // Only a duration beyond the representable instant range can reach this, which no stored policy produces; it is refused rather than thrown so a caller still presents a value.
     return { status: "refused", reason: "invalid-days" };
   }
 }
-/** The outcome of computing a coaching share cutoff: the exclusive cutoff instant, or a refusal. */
 export type ShareCutoff =
   | { status: "bounded"; cutoffInstant: Temporal.Instant; limitedBy: "source"; sourceLimitInstant: Temporal.Instant; shareThroughCutoffInstant: Temporal.Instant }
   | { status: "bounded"; cutoffInstant: Temporal.Instant; limitedBy: "share-through" }
@@ -100,11 +87,9 @@ export function shareCutoff(input: { shareThroughDate: CivilDate; frozenZone: st
 /** Reads back the Share-through civil day a frozen coaching cutoff implies, in the zone it was frozen in: the inverse of {@link shareCutoff}. */
 export function shareThroughDateOfCutoff(input: { cutoffInstant: Temporal.Instant; frozenZone: string }): CivilDate | null {
   const dayOfCutoff = civilDateAt(input.cutoffInstant, input.frozenZone);
-  if (dayOfCutoff.status === "refused") return null;
-  return addCivilDays(dayOfCutoff.date, -1) ?? null;
+  return dayOfCutoff.status === "refused" ? null : (addCivilDays(dayOfCutoff.date, -1) ?? null);
 }
 export type ShareWindowStatus = { status: "open" } | { status: "closed"; reason: "cutoff-reached" };
-/** Judges whether a share window is open at `now`: open while `now` is strictly before the cutoff, and closed from the cutoff instant onwards, because a read at the cutoff is denied. */
 export const shareWindowOpenAt = (input: { cutoffInstant: Temporal.Instant; now: Temporal.Instant }): ShareWindowStatus => (isStrictlyBefore(input.now, input.cutoffInstant) ? { status: "open" } : { status: "closed", reason: "cutoff-reached" });
 export type NotificationDeadlineResult = { status: "within-usefulness"; deadlineInstant: Temporal.Instant; remainingMilliseconds: number } | { status: "past-usefulness"; deadlineInstant: Temporal.Instant };
 /** Checks whether an immediate notification request is still useful at `now`, counted in elapsed hours from the instant it was intended for (`NOTIFICATION_USEFULNESS_HOURS`). */

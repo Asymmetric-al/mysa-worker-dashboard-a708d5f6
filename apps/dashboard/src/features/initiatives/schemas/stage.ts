@@ -5,6 +5,4 @@ export const setStagePayloadSchema = z.strictObject({
   stage: z.string().trim().min(1, "Choose a stage from the approved list, or clear the stage.").nullable(),
 });
 export type StagePayload = z.infer<typeof setStagePayloadSchema>;
-export function isAdmittedStage(admitted: readonly string[], value: string | null): boolean {
-  return value === null ? true : admitted.includes(value);
-}
+export const isAdmittedStage = (admitted: readonly string[], value: string | null): boolean => (value === null ? true : admitted.includes(value));

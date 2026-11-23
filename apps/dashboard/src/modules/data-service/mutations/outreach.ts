@@ -1,4 +1,3 @@
-/** The outreach mutations: the twelve named commands that create and maintain an initiative's reviewed working list, the versioned Requests presented inside it, and the referral cycles that record an … */
 import { Temporal } from "temporal-polyfill";
 import { ZodError, z } from "zod";
 import { sameSourceReference, type SourceReference } from "@/lib/ids";
@@ -7,20 +6,16 @@ import { isKnownCurrency } from "@/modules/money/currency";
 import { instantAt } from "@/modules/time/clock";
 import { DATE_PRECISIONS, parseCivilDate, serialiseCivilDate, startOfCivilDay, type CivilDate } from "@/modules/time/civil";
 import { continuedWindowEnd, newWindowEnd, referralWindowState } from "@/modules/time/window";
-import { assertScope, outcomeOfRefusal, resolveSession, type ResolvedSession, type ScopeDecision, type SessionSource } from "../authorize";
+import { assertScope, type ResolvedSession, type ScopeDecision, type SessionSource } from "../authorize";
 import { INITIATIVE_STAGES, REQUEST_RESPONSE_KINDS, initiativeMemberRecordSchema, initiativeRecordSchema, moneySchema, partnerRecordSchema, referralCycleRecordSchema, requestRecordSchema, sessionContextRecordSchema, taskRecordSchema } from "../envelope";
-import type { InitiativeMemberRecord, InitiativeRecord, MutationInput, ReferralCycleRecord, RequestPresentation, RequestRecord, RequestResponse, RequestResponseKind, RequestTerms, Scope } from "../envelope";
-import { runMutation, type ApplyResult, type CurrentTarget, type MutationContext } from "../operations";
-import { UNIDENTIFIED_ATTEMPT, denied, type MutationOutcome, type MutationResult, type PerItemResult } from "../outcome";
+import type { InitiativeMemberRecord, InitiativeRecord, MutationInput, ReferralCycleRecord, RequestPresentation, RequestRecord, RequestResponse, RequestResponseKind, RequestTerms, Scope, StoredRecord } from "../envelope";
+import { openMutation, refuseDenied, runMutation, type ApplyResult, type CurrentTarget, type MutationContext } from "../operations";
+import { denied, type MutationOutcome, type MutationResult, type PerItemResult } from "../outcome";
 const FIRST_REVISION = "rev-1";
-
 const REVISION_COUNTER = /^(?<prefix>.*-)(?<counter>\d+)$/u;
-
 const REFERRAL_NEW_WINDOW_DAYS = 14;
 const REFERRAL_CONTINUATION_DAYS = 30;
-
 const MAX_SELECTED_PARTNERS = 200;
-
 const CORRUPT_DOCUMENT_FAULT = "CorruptJsonError";
 function boundedTextSchema(maxCodePoints: number, messages: { readonly required: string; readonly tooLong: string }): z.ZodString {
   return z
@@ -30,14 +25,10 @@ function boundedTextSchema(maxCodePoints: number, messages: { readonly required:
       const length = Array.from(value).length;
       if (length === 0) {
         context.addIssue({ code: "custom", message: messages.required });
-      } else if (length > maxCodePoints) {
-        context.addIssue({ code: "custom", message: messages.tooLong });
-      }
+      } else if (length > maxCodePoints) context.addIssue({ code: "custom", message: messages.tooLong });
     });
 }
-function identifierFieldSchema(message: string): z.ZodString {
-  return z.string().trim().min(1, message);
-}
+const identifierFieldSchema = (message: string): z.ZodString => z.string().trim().min(1, message);
 const civilDateSchema: z.ZodType<CivilDate> = z
   .string()
   .trim()
@@ -59,10 +50,8 @@ const outreachStateSchema = z.looseObject({
   referrals: z.array(referralCycleRecordSchema),
   tasks: z.array(taskRecordSchema),
 });
-type OutreachState = z.infer<typeof outreachStateSchema>;
-
+type OutreachState = StoredRecord<z.infer<typeof outreachStateSchema>>;
 type StoredDocuments = MutationContext["docs"];
-
 class StoredRecordsUnreadable extends Error {
   constructor() {
     super("The stored outreach records cannot be read as this build's records, so nothing was changed. Reset the development seed from Settings to restore the known dataset.");
@@ -86,12 +75,8 @@ function nextRevision(revision: string): string {
   const advanced = Number(counter) + 1;
   return Number.isSafeInteger(advanced) ? `${prefix}${String(advanced)}` : `${revision}-2`;
 }
-function recordIdFor(kind: string, operationId: string): string {
-  return `${kind}-${operationId}`;
-}
-function commandInstant(session: ResolvedSession): Temporal.Instant {
-  return instantAt(session.clockOffsetMs);
-}
+const recordIdFor = (kind: string, operationId: string): string => `${kind}-${operationId}`;
+const commandInstant = (session: ResolvedSession): Temporal.Instant => instantAt(session.clockOffsetMs);
 function readInstant(value: string): Temporal.Instant | undefined {
   try {
     return Temporal.Instant.from(value);
@@ -102,13 +87,7 @@ function readInstant(value: string): Temporal.Instant | undefined {
 function refuseField(path: string, message: string): never {
   throw new ZodError([{ code: "custom", message, path: [path] }]);
 }
-type RefusalResult = { readonly refused: MutationOutcome };
-
-function refuseDenied(operationId: string): RefusalResult {
-  return { refused: denied({ operationId, reasonCode: "no-permission" }) };
-}
 type PayloadState<P> = { readonly validated: true; readonly payload: P } | { readonly validated: false };
-
 type OutreachMutation<P, R extends MutationResult> = {
   readonly schema: z.ZodType<P>;
   readonly name: string;
@@ -116,31 +95,14 @@ type OutreachMutation<P, R extends MutationResult> = {
   readonly readCurrent?: (documents: StoredDocuments, payload: P, scope: Scope) => CurrentTarget;
   readonly apply: (context: MutationContext, payload: P, scope: Scope) => ApplyResult<R>;
 };
-function attemptIdOf(input: unknown): string {
-  if (typeof input === "object" && input !== null) {
-    const candidate: unknown = Reflect.get(input, "operationId");
-    if (typeof candidate === "string" && candidate.length > 0) return candidate;
-  }
-  return UNIDENTIFIED_ATTEMPT;
-}
 async function runOutreachMutation<P, R extends MutationResult>(input: MutationInput<unknown>, source: SessionSource | undefined, plan: OutreachMutation<P, R>): Promise<MutationOutcome> {
   const parsed = plan.schema.safeParse(input.payload);
   const pending: PayloadState<P> = parsed.success ? { validated: true, payload: parsed.data } : { validated: false };
   const scope = input.scope;
-  // `runMutation` serialises its transaction by session, so the session an attempt acts for has to be established before one opens; the runner then resolves it again authoritatively and refuses a request that claims a session it did not come from. A session that cannot be established is
-  // refused here, before any record is looked at, so the attempt learns nothing it asked about.
-  let sessionId: string;
-  try {
-    const resolution = await resolveSession(source);
-    if (!resolution.ok) return outcomeOfRefusal(resolution.refusal, attemptIdOf(input));
-    sessionId = resolution.session.sessionId;
-  } catch {
-    // A request scope that cannot yield its cookie leaves no session to establish, which is the one refusal the resolver names for that case.
-    return denied({ operationId: attemptIdOf(input), reasonCode: "session-unavailable" });
-  }
+  const opening = await openMutation(input, source);
+  if (!opening.ok) return opening.outcome;
   return runMutation<P, R>({
-    sessionId,
-    // A browser posts JSON, so the payload arrives untyped. The runner validates both the envelope and this payload before either hook reads them, and the assertion states the type that validation establishes rather than a claim about the bytes that arrived.
+    sessionId: opening.sessionId,
     input: input as MutationInput<P>,
     schema: plan.schema,
     name: plan.name,
@@ -150,12 +112,9 @@ async function runOutreachMutation<P, R extends MutationResult>(input: MutationI
   });
 }
 type InitiativeAccess = { readonly kind: "found"; readonly initiative: InitiativeRecord } | { readonly kind: "refused" };
-
 function initiativeAccessOf(state: OutreachState, initiativeId: string, session: ResolvedSession, scope: Scope): InitiativeAccess {
   const initiative = state.initiatives.find((row) => row.initiativeId === initiativeId);
-  if (initiative === undefined) return { kind: "refused" };
-  if (initiative.ministryContextId !== scope.ministryId) return { kind: "refused" };
-  return initiative.responsiblePrincipalId === session.principalId ? { kind: "found", initiative } : { kind: "refused" };
+  return initiative === undefined ? { kind: "refused" } : initiative.ministryContextId !== scope.ministryId ? { kind: "refused" } : initiative.responsiblePrincipalId === session.principalId ? { kind: "found", initiative } : { kind: "refused" };
 }
 type RequestAccess = { readonly kind: "found"; readonly request: RequestRecord; readonly initiative: InitiativeRecord } | { readonly kind: "refused" };
 function requestAccessOf(state: OutreachState, requestId: string, session: ResolvedSession, scope: Scope): RequestAccess {
@@ -170,22 +129,17 @@ function memberOf(state: OutreachState, initiativeId: string, memberId: string):
   const member = index === -1 ? undefined : state.initiativeMembers[index];
   return member === undefined ? undefined : { index, member };
 }
-function recordTarget(revision: string, value: unknown): CurrentTarget {
-  return { kind: "record", revision, value };
-}
+const recordTarget = (revision: string, value: unknown): CurrentTarget => ({ kind: "record", revision, value });
 function initiativeTargetOf(documents: StoredDocuments, initiativeId: string, scope: Scope): CurrentTarget {
-  const state = readState(documents);
-  const initiative = state.initiatives.find((row) => row.initiativeId === initiativeId);
-  if (initiative === undefined || initiative.ministryContextId !== scope.ministryId) return { kind: "absent" };
-  return recordTarget(initiative.revision, initiative);
+  const initiative = readState(documents).initiatives.find((row) => row.initiativeId === initiativeId);
+  return initiative === undefined || initiative.ministryContextId !== scope.ministryId ? { kind: "absent" } : recordTarget(initiative.revision, initiative);
 }
 function requestTargetOf(documents: StoredDocuments, requestId: string, scope: Scope): CurrentTarget {
   const state = readState(documents);
   const request = state.requests.find((row) => row.requestId === requestId);
   if (request === undefined) return { kind: "absent" };
   const initiative = state.initiatives.find((row) => row.initiativeId === request.initiativeId);
-  if (initiative === undefined || initiative.ministryContextId !== scope.ministryId) return { kind: "absent" };
-  return recordTarget(request.revision, request);
+  return initiative === undefined || initiative.ministryContextId !== scope.ministryId ? { kind: "absent" } : recordTarget(request.revision, request);
 }
 function memberTargetOf(documents: StoredDocuments, initiativeId: string, memberId: string, scope: Scope): CurrentTarget {
   const state = readState(documents);
@@ -198,9 +152,7 @@ const createInitiativePayloadSchema = z
   .strictObject({
     name: boundedTextSchema(200, { required: "Give the initiative a name.", tooLong: "Keep the name to 200 characters or fewer." }),
     purpose: boundedTextSchema(2000, { required: "Describe what this initiative is for.", tooLong: "Keep the purpose to 2,000 characters or fewer." }),
-    // An opaque principal reference inside the acting scope: a name or an email address never establishes identity, so neither is accepted in its place. Omitted, it defaults to the caller.
     responsiblePrincipalId: z.string().trim().min(1, "Choose the person responsible for this initiative.").optional(),
-    // The acting ministry travels in the mutation's scope, so a body never names a context the caller is not admitted to; the period is a pair of civil dates and carries no time of day or zone.
     period: z.strictObject({ startOn: civilDateSchema, endOn: civilDateSchema }).optional(),
   })
   .superRefine((value, context) => {
@@ -209,17 +161,12 @@ const createInitiativePayloadSchema = z
   });
 type CreateInitiativePayload = z.infer<typeof createInitiativePayloadSchema>;
 /** Creates one finite piece of outreach in the ministry the caller is acting in. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function createInitiative(input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> {
-  return runOutreachMutation<CreateInitiativePayload, MutationResult>(input, source, { schema: createInitiativePayloadSchema, name: "createInitiative", apply: applyCreateInitiative });
-}
+export const createInitiative = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> => runOutreachMutation<CreateInitiativePayload, MutationResult>(input, source, { schema: createInitiativePayloadSchema, name: "createInitiative", apply: applyCreateInitiative });
 function applyCreateInitiative(context: MutationContext, payload: CreateInitiativePayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
   const { session } = context;
   const responsiblePrincipalId = payload.responsiblePrincipalId ?? session.principalId;
-  if (responsiblePrincipalId !== session.principalId) {
-    // Admission lets a colleague read a ministry's initiatives; it does not hand one over, and this release records no delegation that would.
-    refuseField("responsiblePrincipalId", "Only the acting principal may be responsible for an initiative in this release, because it carries no delegation.");
-  }
+  if (responsiblePrincipalId !== session.principalId) refuseField("responsiblePrincipalId", "Only the acting principal may be responsible for an initiative in this release, because it carries no delegation.");
   const initiativeId = recordIdFor("initiative", context.operationId);
   const period = payload.period === undefined ? null : { from: serialiseCivilDate(payload.period.startOn), to: serialiseCivilDate(payload.period.endOn) };
   const initiative: InitiativeRecord = { initiativeId, name: payload.name, purpose: payload.purpose, ministryContextId: scope.ministryId, responsiblePrincipalId: session.principalId, period, state: "open", closureDisposition: null, revision: FIRST_REVISION };
@@ -237,19 +184,14 @@ const addMembersPayloadSchema = z
   .superRefine((payload, context) => {
     const seen = new Set<string>();
     payload.partnerIds.forEach((partnerId, index) => {
-      if (seen.has(partnerId)) {
-        // The path points at the repeated entry, so a picker marks that chip rather than the whole list.
-        context.addIssue({ code: "custom", path: ["partnerIds", index], message: "Remove the duplicate partner from this selection." });
-        return;
-      }
+      if (seen.has(partnerId)) return context.addIssue({ code: "custom", path: ["partnerIds", index], message: "Remove the duplicate partner from this selection." });
       seen.add(partnerId);
     });
   });
 type AddMembersPayload = z.infer<typeof addMembersPayloadSchema>;
 /** Adds explicitly selected, eligible partners to an initiative's reviewed working list. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function addMembers(input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> {
-  return runOutreachMutation<AddMembersPayload, MutationResult>(input, source, { schema: addMembersPayloadSchema, name: "addMembers", readCurrent: (documents, payload, scope) => initiativeTargetOf(documents, payload.initiativeId, scope), apply: applyAddMembers });
-}
+export const addMembers = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+  runOutreachMutation<AddMembersPayload, MutationResult>(input, source, { schema: addMembersPayloadSchema, name: "addMembers", readCurrent: (documents, payload, scope) => initiativeTargetOf(documents, payload.initiativeId, scope), apply: applyAddMembers });
 function applyAddMembers(context: MutationContext, payload: AddMembersPayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
   const { session } = context;
@@ -267,7 +209,6 @@ function applyAddMembers(context: MutationContext, payload: AddMembersPayload, s
   for (const partnerId of payload.partnerIds) {
     const partner = partners.get(partnerId);
     if (partner === undefined || partner.audience !== "shared") {
-      // A partner this roster does not carry, or the worker's own private preparation, is never approached: private preparation is a different record class from a shared relationship.
       items.push({ targetId: partnerId, state: "excluded", reasonCode: "not-eligible", reason: "This partner is not one this working list can include." });
       continue;
     }
@@ -290,14 +231,7 @@ function applyAddMembers(context: MutationContext, payload: AddMembersPayload, s
       continue;
     }
     const revision = nextRevision(existing.revision);
-    members[index] = {
-      ...existing,
-      state: "included",
-      // Selecting a removed partner again puts them back on the working list, so the field that names the instant a member was returned to it is stamped here too; the history keeps the whole account either way.
-      returnedAt: at,
-      history: [...existing.history, { state: "included", at, byPrincipalId: session.principalId, reason: "Added back to the reviewed working list." }],
-      revision,
-    };
+    members[index] = { ...existing, state: "included", returnedAt: at, history: [...existing.history, { state: "included", at, byPrincipalId: session.principalId, reason: "Added back to the reviewed working list." }], revision };
     changedIds.push(existing.memberId);
     items.push({ targetId: partnerId, state: "accepted", revision });
     changed = true;
@@ -310,14 +244,12 @@ function applyAddMembers(context: MutationContext, payload: AddMembersPayload, s
 const removeMemberPayloadSchema = z.strictObject({
   initiativeId: identifierFieldSchema("This change is missing the initiative it belongs to; reopen the initiative and try again."),
   memberId: identifierFieldSchema("This change is missing the working-list member it belongs to; reload the working list and try again."),
-  // Leaving the key out is a valid removal; a blank reason is not silently treated as absent.
   reason: boundedTextSchema(500, { required: "Enter a reason or leave the reason empty.", tooLong: "Keep the reason to 500 characters or fewer." }).optional(),
 });
 type RemoveMemberPayload = z.infer<typeof removeMemberPayloadSchema>;
 /** Removes one partner from an initiative's reviewed working list. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function removeMember(input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> {
-  return runOutreachMutation<RemoveMemberPayload, MutationResult>(input, source, { schema: removeMemberPayloadSchema, name: "removeMember", readCurrent: (documents, payload, scope) => memberTargetOf(documents, payload.initiativeId, payload.memberId, scope), apply: applyRemoveMember });
-}
+export const removeMember = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+  runOutreachMutation<RemoveMemberPayload, MutationResult>(input, source, { schema: removeMemberPayloadSchema, name: "removeMember", readCurrent: (documents, payload, scope) => memberTargetOf(documents, payload.initiativeId, payload.memberId, scope), apply: applyRemoveMember });
 function applyRemoveMember(context: MutationContext, payload: RemoveMemberPayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
   const { session } = context;
@@ -331,13 +263,7 @@ function applyRemoveMember(context: MutationContext, payload: RemoveMemberPayloa
   const at = commandInstant(session).toString();
   const revision = nextRevision(member.revision);
   const members = [...state.initiativeMembers];
-  members[index] = {
-    ...member,
-    state: "removed",
-    // `returnedAt` names the instant a removed member was returned to the working list, so a removal neither stamps nor clears it; the removal instant lives in the history.
-    history: [...member.history, { state: "removed", at, byPrincipalId: session.principalId, reason: payload.reason ?? null }],
-    revision,
-  };
+  members[index] = { ...member, state: "removed", history: [...member.history, { state: "removed", at, byPrincipalId: session.principalId, reason: payload.reason ?? null }], revision };
   const initiativeRevision = nextRevision(access.initiative.revision);
   writeState(context.docs, state, { initiatives: state.initiatives.map((row) => (row.initiativeId === access.initiative.initiativeId ? { ...row, revision: initiativeRevision } : row)), initiativeMembers: members });
   return { changed: true, revision, result: { initiativeId: access.initiative.initiativeId, memberId: member.memberId, state: "removed" }, changedIds: [member.memberId] };
@@ -345,9 +271,8 @@ function applyRemoveMember(context: MutationContext, payload: RemoveMemberPayloa
 const returnMemberPayloadSchema = z.strictObject({ initiativeId: identifierFieldSchema("This change is missing the initiative it belongs to; reopen the initiative and try again."), memberId: identifierFieldSchema("This change is missing the working-list member it belongs to; reload the working list and try again.") });
 type ReturnMemberPayload = z.infer<typeof returnMemberPayloadSchema>;
 /** Returns one removed partner to an initiative's reviewed working list. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function returnMember(input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> {
-  return runOutreachMutation<ReturnMemberPayload, MutationResult>(input, source, { schema: returnMemberPayloadSchema, name: "returnMember", readCurrent: (documents, payload, scope) => memberTargetOf(documents, payload.initiativeId, payload.memberId, scope), apply: applyReturnMember });
-}
+export const returnMember = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+  runOutreachMutation<ReturnMemberPayload, MutationResult>(input, source, { schema: returnMemberPayloadSchema, name: "returnMember", readCurrent: (documents, payload, scope) => memberTargetOf(documents, payload.initiativeId, payload.memberId, scope), apply: applyReturnMember });
 function applyReturnMember(context: MutationContext, payload: ReturnMemberPayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
   const { session } = context;
@@ -373,9 +298,8 @@ const setStagePayloadSchema = z.strictObject({
 });
 type SetStagePayload = z.infer<typeof setStagePayloadSchema>;
 /** Records one human assessment of where a working-list member stands. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function setStage(input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> {
-  return runOutreachMutation<SetStagePayload, MutationResult>(input, source, { schema: setStagePayloadSchema, name: "setStage", readCurrent: (documents, payload, scope) => memberTargetOf(documents, payload.initiativeId, payload.memberId, scope), apply: applySetStage });
-}
+export const setStage = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+  runOutreachMutation<SetStagePayload, MutationResult>(input, source, { schema: setStagePayloadSchema, name: "setStage", readCurrent: (documents, payload, scope) => memberTargetOf(documents, payload.initiativeId, payload.memberId, scope), apply: applySetStage });
 function applySetStage(context: MutationContext, payload: SetStagePayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
   const { session } = context;
@@ -389,29 +313,13 @@ function applySetStage(context: MutationContext, payload: SetStagePayload, scope
   const at = commandInstant(session).toString();
   const revision = nextRevision(member.revision);
   const members = [...state.initiativeMembers];
-  members[index] = {
-    ...member,
-    stage: payload.stage,
-    history: [
-      ...member.history,
-      {
-        // An assessment is not a change of state, so the entry repeats the state the member already stands in and names the stage in the reason: the history is the only place this record keeps an account of what was assessed and when.
-        state: member.state,
-        at,
-        byPrincipalId: session.principalId,
-        reason: payload.stage === null ? "Stage cleared." : `Stage recorded as ${payload.stage}.`,
-      },
-    ],
-    revision,
-  };
+  members[index] = { ...member, stage: payload.stage, history: [...member.history, { state: member.state, at, byPrincipalId: session.principalId, reason: payload.stage === null ? "Stage cleared." : `Stage recorded as ${payload.stage}.` }], revision };
   const initiativeRevision = nextRevision(access.initiative.revision);
   writeState(context.docs, state, { initiatives: state.initiatives.map((row) => (row.initiativeId === access.initiative.initiativeId ? { ...row, revision: initiativeRevision } : row)), initiativeMembers: members });
   return { changed: true, revision, result: { initiativeId: access.initiative.initiativeId, memberId: member.memberId, stage: payload.stage }, changedIds: [member.memberId] };
 }
 const RESPONSE_KIND_INPUT = [...REQUEST_RESPONSE_KINDS, "needs clarification"] as const;
-
 type ResponseKindInput = (typeof RESPONSE_KIND_INPUT)[number];
-
 const responseKindSchema: z.ZodType<RequestResponseKind> = z.enum(RESPONSE_KIND_INPUT, { error: "Choose how this Request was answered from the recorded responses." }).transform((kind: ResponseKindInput) => (kind === "needs clarification" ? "needs-clarification" : kind));
 const requestedTermsSchema = z
   .strictObject({
@@ -428,48 +336,32 @@ const requestedTermsSchema = z
       if (hasMoneyField) context.addIssue({ code: "custom", path: ["nonFinancial"], message: "A non-financial ask carries no amount, currency, cadence or term." });
       return;
     }
-    if (!hasMoneyField) {
-      context.addIssue({ code: "custom", path: ["nonFinancial"], message: "Choose requested financial terms (currency and amount) or describe a non-financial ask." });
-      return;
-    }
+    if (!hasMoneyField) return context.addIssue({ code: "custom", path: ["nonFinancial"], message: "Choose requested financial terms (currency and amount) or describe a non-financial ask." });
     if (terms.currency === undefined) {
       context.addIssue({ code: "custom", path: ["currency"], message: "Choose the currency for the requested amount." });
-    } else if (!isKnownCurrency(terms.currency)) {
-      // An amount in a currency whose exponent this build does not hold cannot be stated exactly, and the one money rule forbids defaulting it to two decimals.
-      context.addIssue({ code: "custom", path: ["currency"], message: "Choose a currency whose minor unit this build knows, so the requested amount is exact." });
-    }
+    } else if (!isKnownCurrency(terms.currency)) context.addIssue({ code: "custom", path: ["currency"], message: "Choose a currency whose minor unit this build knows, so the requested amount is exact." });
     if (terms.minorUnits === undefined) {
       context.addIssue({ code: "custom", path: ["minorUnits"], message: "Enter the requested amount in minor units." });
-    } else if (terms.minorUnits <= 0) {
-      context.addIssue({ code: "custom", path: ["minorUnits"], message: "Enter an amount greater than zero; a non-financial ask carries no amount." });
-    }
+    } else if (terms.minorUnits <= 0) context.addIssue({ code: "custom", path: ["minorUnits"], message: "Enter an amount greater than zero; a non-financial ask carries no amount." });
   });
 type RequestedTermsPayload = z.infer<typeof requestedTermsSchema>;
-
 function storedTermsOf(terms: RequestedTermsPayload): RequestTerms {
   const version = typeof terms.version === "number" ? `terms-v${String(terms.version)}` : terms.version;
   if (terms.nonFinancial !== undefined) return { version, money: null, nonFinancial: terms.nonFinancial.description };
   const { currency, minorUnits } = terms;
-  if (currency === undefined || minorUnits === undefined) {
-    // The terms schema requires both for a financial ask, so this is unreachable; refusing keeps the type honest and fails closed rather than writing an amount with no currency.
-    refuseField("currency", "Choose the currency for the requested amount.");
-  }
-  const amount = moneySchema.parse({ currency, minorUnits });
-  return { version, money: { amount, cadence: terms.cadence ?? null, term: terms.term ?? null }, nonFinancial: null };
+  if (currency === undefined || minorUnits === undefined) refuseField("currency", "Choose the currency for the requested amount.");
+  return { version, money: { amount: moneySchema.parse({ currency, minorUnits }), cadence: terms.cadence ?? null, term: terms.term ?? null }, nonFinancial: null };
 }
 export const draftRequestPayloadSchema = z.strictObject({
   initiativeId: identifierFieldSchema("This change is missing the initiative it belongs to; reopen the initiative and try again."),
   recipientPartnerId: identifierFieldSchema("Choose the person or organization this request is for."),
-  // A separate opaque reference: an organization representative is its own record, so this is never derived from, compared with, or defaulted to the recipient.
   representedOrganizationId: identifierFieldSchema("Choose the organization this person represents, or leave it empty.").optional(),
   purpose: boundedTextSchema(2000, { required: "Describe the purpose of this request.", tooLong: "Keep the purpose to 2,000 characters or fewer." }),
   terms: requestedTermsSchema,
 });
 type DraftRequestPayload = z.infer<typeof draftRequestPayloadSchema>;
 /** Drafts one independently answerable Request inside an initiative. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function draftRequest(input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> {
-  return runOutreachMutation<DraftRequestPayload, MutationResult>(input, source, { schema: draftRequestPayloadSchema, name: "draftRequest", apply: applyDraftRequest });
-}
+export const draftRequest = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> => runOutreachMutation<DraftRequestPayload, MutationResult>(input, source, { schema: draftRequestPayloadSchema, name: "draftRequest", apply: applyDraftRequest });
 function applyDraftRequest(context: MutationContext, payload: DraftRequestPayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
   const access = initiativeAccessOf(state, payload.initiativeId, context.session, scope);
@@ -485,19 +377,7 @@ function applyDraftRequest(context: MutationContext, payload: DraftRequestPayloa
   }
   const terms = storedTermsOf(payload.terms);
   const requestId = recordIdFor("request", context.operationId);
-  const request: RequestRecord = {
-    requestId,
-    initiativeId: initiative.initiativeId,
-    recipientPartnerId: payload.recipientPartnerId,
-    representedOrganizationId: payload.representedOrganizationId ?? null,
-    purpose: payload.purpose,
-    terms,
-    presentation: null,
-    response: null,
-    // Work a Response later suggests is recorded by the task family, never inferred into the ask.
-    nextWorkIds: [],
-    revision: FIRST_REVISION,
-  };
+  const request: RequestRecord = { requestId, initiativeId: initiative.initiativeId, recipientPartnerId: payload.recipientPartnerId, representedOrganizationId: payload.representedOrganizationId ?? null, purpose: payload.purpose, terms, presentation: null, response: null, nextWorkIds: [], revision: FIRST_REVISION };
   const initiativeRevision = nextRevision(initiative.revision);
   writeState(context.docs, state, { initiatives: state.initiatives.map((row) => (row.initiativeId === initiative.initiativeId ? { ...row, revision: initiativeRevision } : row)), requests: [...state.requests, request] });
   return { changed: true, revision: FIRST_REVISION, result: { requestId, initiativeId: initiative.initiativeId, termsVersion: terms.version }, created: [requestId] };
@@ -511,22 +391,17 @@ export const presentRequestPayloadSchema = z.strictObject({
 });
 type PresentRequestPayload = z.infer<typeof presentRequestPayloadSchema>;
 /** Records the actual presentation of a named terms version. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function presentRequest(input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> {
-  return runOutreachMutation<PresentRequestPayload, MutationResult>(input, source, { schema: presentRequestPayloadSchema, name: "presentRequest", readCurrent: (documents, payload, scope) => requestTargetOf(documents, payload.requestId, scope), apply: applyPresentRequest });
-}
+export const presentRequest = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+  runOutreachMutation<PresentRequestPayload, MutationResult>(input, source, { schema: presentRequestPayloadSchema, name: "presentRequest", readCurrent: (documents, payload, scope) => requestTargetOf(documents, payload.requestId, scope), apply: applyPresentRequest });
 function applyPresentRequest(context: MutationContext, payload: PresentRequestPayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
   const access = requestAccessOf(state, payload.requestId, context.session, scope);
-  if (access.kind === "refused") return refuseDenied(context.operationId);
-  return presentRequestFor(context.docs, state, access, payload);
+  return access.kind === "refused" ? refuseDenied(context.operationId) : presentRequestFor(context.docs, state, access, payload);
 }
 function presentRequestFor(documents: StoredDocuments, state: OutreachState, access: Extract<RequestAccess, { kind: "found" }>, payload: PresentRequestPayload): ApplyResult<MutationResult> {
   const { request, initiative } = access;
   if (payload.initiativeId !== undefined && payload.initiativeId !== request.initiativeId) refuseField("initiativeId", "This Request belongs to a different initiative.");
-  if (initiative.state === "closed") {
-    // Closure fences new solicitation, and presenting is the moment an ask reaches a person. An answer to an ask already presented stays recordable — `recordRequestResponse` does not consult closure, because closing fences asking rather than the respondent's own reply.
-    refuseField("initiativeId", "This initiative is closed, so no new solicitation may be presented.");
-  }
+  if (initiative.state === "closed") refuseField("initiativeId", "This initiative is closed, so no new solicitation may be presented.");
   const presentation: RequestPresentation = { presentedOn: serialiseCivilDate(payload.presentedOn), manner: payload.manner, versionRef: payload.versionRef };
   const existing = request.presentation;
   if (existing !== null) {
@@ -540,25 +415,21 @@ function presentRequestFor(documents: StoredDocuments, state: OutreachState, acc
 }
 const responseFactsSchema = z.strictObject({ kind: responseKindSchema, respondentId: identifierFieldSchema("Name the person who gave this answer."), standingEvidence: z.string().trim().nullable(), termsVersionRef: identifierFieldSchema("Record which terms version this answer responds to.") });
 type ResponseFactsPayload = z.infer<typeof responseFactsSchema>;
-
 function normaliseResponsePayload(value: unknown): unknown {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
   const fields: Record<string, unknown> = { ...(value as Record<string, unknown>) };
   if ("response" in fields) return fields;
   const { kind, respondentId, standingEvidence, termsVersionRef, ...rest } = fields;
-  if (kind === undefined && respondentId === undefined && termsVersionRef === undefined) return fields;
-  return { ...rest, response: { kind, respondentId, standingEvidence: standingEvidence ?? null, termsVersionRef } };
+  return kind === undefined && respondentId === undefined && termsVersionRef === undefined ? fields : { ...rest, response: { kind, respondentId, standingEvidence: standingEvidence ?? null, termsVersionRef } };
 }
-/** The `recordRequestResponse` payload: the Request and the named respondent's answer, in the nested shape or the flat one this normalises into it. */
 export const recordRequestResponsePayloadSchema = z.preprocess(
   normaliseResponsePayload,
   z.strictObject({ initiativeId: identifierFieldSchema("This answer is missing the initiative it belongs to; reopen the initiative and try again.").optional(), requestId: identifierFieldSchema("This answer is missing the request it belongs to; reopen the request and try again."), response: responseFactsSchema }),
 );
 type RecordRequestResponsePayload = z.infer<typeof recordRequestResponsePayloadSchema>;
 /** Records the named respondent's own answer to one Request, bound to the terms version it answers. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function recordRequestResponse(input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> {
-  return runOutreachMutation<RecordRequestResponsePayload, MutationResult>(input, source, { schema: recordRequestResponsePayloadSchema, name: "recordRequestResponse", readCurrent: (documents, payload, scope) => requestTargetOf(documents, payload.requestId, scope), apply: applyRecordRequestResponse });
-}
+export const recordRequestResponse = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+  runOutreachMutation<RecordRequestResponsePayload, MutationResult>(input, source, { schema: recordRequestResponsePayloadSchema, name: "recordRequestResponse", readCurrent: (documents, payload, scope) => requestTargetOf(documents, payload.requestId, scope), apply: applyRecordRequestResponse });
 function applyRecordRequestResponse(context: MutationContext, payload: RecordRequestResponsePayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
   const access = requestAccessOf(state, payload.requestId, context.session, scope);
@@ -591,16 +462,14 @@ export const closeInitiativePayloadSchema = z
     if (payload.disposition === undefined && payload.handoff.kind !== "eligible-handoff") context.addIssue({ code: "custom", path: ["disposition"], message: "Say how this initiative closes: choose a disposition, or name who takes over the unfinished work." });
   });
 type CloseInitiativePayload = z.infer<typeof closeInitiativePayloadSchema>;
-
 function closureDispositionOf(payload: CloseInitiativePayload): string {
   const handoff = payload.handoff;
   const handoffText = handoff.kind === "eligible-handoff" ? `Handed off to ${handoff.toPrincipalId}: ${handoff.note}` : `No handoff needed: ${handoff.reason}`;
   return payload.disposition === undefined ? handoffText : `${payload.disposition} — ${handoffText}`;
 }
 /** Closes an initiative's solicitation, recording how its unfinished work is dealt with. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function closeInitiative(input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> {
-  return runOutreachMutation<CloseInitiativePayload, MutationResult>(input, source, { schema: closeInitiativePayloadSchema, name: "closeInitiative", readCurrent: (documents, payload, scope) => initiativeTargetOf(documents, payload.initiativeId, scope), apply: applyCloseInitiative });
-}
+export const closeInitiative = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+  runOutreachMutation<CloseInitiativePayload, MutationResult>(input, source, { schema: closeInitiativePayloadSchema, name: "closeInitiative", readCurrent: (documents, payload, scope) => initiativeTargetOf(documents, payload.initiativeId, scope), apply: applyCloseInitiative });
 function applyCloseInitiative(context: MutationContext, payload: CloseInitiativePayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
   const access = initiativeAccessOf(state, payload.initiativeId, context.session, scope);
@@ -620,16 +489,14 @@ function applyCloseInitiative(context: MutationContext, payload: CloseInitiative
   writeState(context.docs, state, { initiatives: state.initiatives.map((row) => (row.initiativeId === initiative.initiativeId ? { ...row, state: "closed", closureDisposition, revision } : row)) });
   return { changed: true, revision, result: { initiativeId: initiative.initiativeId, state: "closed", closureDisposition, openWorkCount: items.length }, changedIds: [initiative.initiativeId], items };
 }
-/** The `reopenInitiative` payload: the initiative and an optional reason, which travels back in the result rather than being stored. */
 export const reopenInitiativePayloadSchema = z.strictObject({
   initiativeId: identifierFieldSchema("This change is missing the initiative it belongs to; reopen the initiative and try again."),
   reason: boundedTextSchema(500, { required: "Enter a reason or leave the reason empty.", tooLong: "Keep the reason to 500 characters or fewer." }).optional(),
 });
 type ReopenInitiativePayload = z.infer<typeof reopenInitiativePayloadSchema>;
 /** Reopens a closed initiative for further solicitation. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function reopenInitiative(input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> {
-  return runOutreachMutation<ReopenInitiativePayload, MutationResult>(input, source, { schema: reopenInitiativePayloadSchema, name: "reopenInitiative", readCurrent: (documents, payload, scope) => initiativeTargetOf(documents, payload.initiativeId, scope), apply: applyReopenInitiative });
-}
+export const reopenInitiative = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+  runOutreachMutation<ReopenInitiativePayload, MutationResult>(input, source, { schema: reopenInitiativePayloadSchema, name: "reopenInitiative", readCurrent: (documents, payload, scope) => initiativeTargetOf(documents, payload.initiativeId, scope), apply: applyReopenInitiative });
 function applyReopenInitiative(context: MutationContext, payload: ReopenInitiativePayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
   const access = initiativeAccessOf(state, payload.initiativeId, context.session, scope);
@@ -637,22 +504,8 @@ function applyReopenInitiative(context: MutationContext, payload: ReopenInitiati
   const { initiative } = access;
   if (initiative.state === "open") return { changed: false };
   const revision = nextRevision(initiative.revision);
-  writeState(context.docs, state, {
-    initiatives: state.initiatives.map((row) =>
-      row.initiativeId === initiative.initiativeId
-        ? // `closureDisposition` is deliberately preserved: it is the record of the earlier close,
-          // and the lifecycle a read reports is derived from it.
-          { ...row, state: "open", revision }
-        : row,
-    ),
-  });
-  return {
-    changed: true,
-    revision,
-    // The record keeps no reopen note, so the stated reason travels back in the result rather than being validated and dropped.
-    result: { initiativeId: initiative.initiativeId, state: "open", reason: payload.reason ?? null },
-    changedIds: [initiative.initiativeId],
-  };
+  writeState(context.docs, state, { initiatives: state.initiatives.map((row) => (row.initiativeId === initiative.initiativeId ? { ...row, state: "open", revision } : row)) });
+  return { changed: true, revision, result: { initiativeId: initiative.initiativeId, state: "open", reason: payload.reason ?? null }, changedIds: [initiative.initiativeId] };
 }
 const recordIntroductionPayloadSchema = z
   .strictObject({
@@ -667,22 +520,14 @@ const recordIntroductionPayloadSchema = z
       if (payload.originalIntroductionOn !== null && payload.originalIntroductionOn !== undefined) context.addIssue({ code: "custom", path: ["originalIntroductionOn"], message: "An unknown introduction date states no date at all, rather than a guessed one a later reader would treat as evidence." });
       return;
     }
-    if (payload.originalIntroductionOn === null || payload.originalIntroductionOn === undefined) {
-      context.addIssue({ code: "custom", path: ["originalIntroductionOn"], message: "State the date the introduction actually happened on." });
-      return;
-    }
+    if (payload.originalIntroductionOn === null || payload.originalIntroductionOn === undefined) return context.addIssue({ code: "custom", path: ["originalIntroductionOn"], message: "State the date the introduction actually happened on." });
     if (payload.datePrecision !== "date") return;
-    // The window's arithmetic and the zone's DST rule are the boundary module's; asking it here is how a written introduction is refused before anything is stored, when its zone cannot be resolved.
     const window = newWindowEnd({ originalIntroductionOn: payload.originalIntroductionOn, datePrecision: payload.datePrecision, sourceZone: payload.sourceZone, days: REFERRAL_NEW_WINDOW_DAYS });
-    if (window.status === "refused") {
-      context.addIssue({ code: "custom", path: ["sourceZone"], message: window.reason === "invalid-zone" ? "Choose a time zone this build can resolve, so the window can be stated exactly." : "This introduction date cannot be given a window; check the date and try again." });
-    }
+    if (window.status === "refused") context.addIssue({ code: "custom", path: ["sourceZone"], message: window.reason === "invalid-zone" ? "Choose a time zone this build can resolve, so the window can be stated exactly." : "This introduction date cannot be given a window; check the date and try again." });
   });
 type RecordIntroductionPayload = z.infer<typeof recordIntroductionPayloadSchema>;
 /** Records the original introduction date of one referral cycle, with the precision it is known to. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function recordIntroduction(input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> {
-  return runOutreachMutation<RecordIntroductionPayload, MutationResult>(input, source, { schema: recordIntroductionPayloadSchema, name: "recordIntroduction", apply: applyRecordIntroduction });
-}
+export const recordIntroduction = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> => runOutreachMutation<RecordIntroductionPayload, MutationResult>(input, source, { schema: recordIntroductionPayloadSchema, name: "recordIntroduction", apply: applyRecordIntroduction });
 function applyRecordIntroduction(context: MutationContext, payload: RecordIntroductionPayload): ApplyResult<MutationResult> {
   const state = readState(context.docs);
   const partner = state.partners.find((row) => row.partnerId === payload.partnerId);
@@ -709,19 +554,12 @@ function applyRecordIntroduction(context: MutationContext, payload: RecordIntrod
 }
 const continueReferralPayloadSchema = z.strictObject({ referralId: identifierFieldSchema("This change is missing the referral it belongs to; reload the referral and try again.") });
 type ContinueReferralPayload = z.infer<typeof continueReferralPayloadSchema>;
-
-function continuationOfferedFor(session: ResolvedSession): boolean {
-  return isScenarioId(session.scenarioId) && scenarioFlagsFor(session.scenarioId).continuationSetting === "on";
-}
 function continuationAuthority(session: ResolvedSession, input: MutationInput<unknown>): ScopeDecision {
   const admitted = assertScope(session, input.scope);
-  if (!admitted.ok) return admitted;
-  // Worker continuation is off by default, so withholding it is a capability this session does not hold rather than a fault in the request.
-  return continuationOfferedFor(session) ? { ok: true } : { ok: false, denial: denied({ operationId: input.operationId, reasonCode: "capability-absent" }) };
+  return !admitted.ok ? admitted : isScenarioId(session.scenarioId) && scenarioFlagsFor(session.scenarioId).continuationSetting === "on" ? { ok: true } : { ok: false, denial: denied({ operationId: input.operationId, reasonCode: "capability-absent" }) };
 }
 function referralTargetOf(documents: StoredDocuments, referralId: string): CurrentTarget {
-  const state = readState(documents);
-  const cycle = state.referrals.find((row) => row.referralId === referralId);
+  const cycle = readState(documents).referrals.find((row) => row.referralId === referralId);
   return cycle === undefined ? { kind: "absent" } : recordTarget(cycle.revision, cycle);
 }
 /** Continues one ordinarily expired referral cycle, producing at most one successor. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
@@ -740,36 +578,21 @@ function applyContinueReferral(context: MutationContext, payload: ContinueReferr
   if (cycle === undefined) refuseField("referralId", "This referral is not one this session holds.");
   if (cycle.windowKind !== "new") refuseField("referralId", "This cycle is itself a continuation, and an introduction carries at most one continuation.");
   const successorId = `${cycle.referralId}-continued`;
-  // The cycle's existing successor, if any, is what the window module judges the cycle by: the one-successor guard belongs to the engine rather than to a check repeated here.
-  const existingSuccessor = state.referrals.find((row) => row.predecessorId === cycle.referralId);
   if (cycle.datePrecision !== "date") refuseField("referralId", "The introduction date is not precise enough to have had a window, so there is nothing to continue.");
   if (cycle.windowEnd === null) refuseField("referralId", "This referral states no window endpoint, so there is nothing to continue.");
   const windowEnd = readInstant(cycle.windowEnd);
   if (windowEnd === undefined) refuseField("referralId", "The window this referral carries could not be evaluated, so no continuation is offered.");
   const now = commandInstant(context.session);
   const status = referralWindowState({ windowEnd, now });
-  switch (status.status) {
-    case "active":
-      refuseField("referralId", "This referral's window has not ended, so there is nothing to continue.");
-    case "no-deadline":
-      refuseField("referralId", "The introduction date is not precise enough to have had a window, so there is nothing to continue.");
-    case "refused":
-      refuseField("referralId", "The window this referral carries could not be evaluated, so no continuation is offered.");
-    case "expired":
-      break;
-  }
-  const continued = continuedWindowEnd({ acceptedAt: now, days: REFERRAL_CONTINUATION_DAYS, cycle: { consumed: cycle.consumed, predecessorId: cycle.predecessorId ?? undefined, successorId: existingSuccessor?.referralId } });
+  if (status.status === "active") refuseField("referralId", "This referral's window has not ended, so there is nothing to continue.");
+  if (status.status === "no-deadline") refuseField("referralId", "The introduction date is not precise enough to have had a window, so there is nothing to continue.");
+  if (status.status === "refused") refuseField("referralId", "The window this referral carries could not be evaluated, so no continuation is offered.");
+  const continued = continuedWindowEnd({ acceptedAt: now, days: REFERRAL_CONTINUATION_DAYS, cycle: { consumed: cycle.consumed, predecessorId: cycle.predecessorId ?? undefined, successorId: state.referrals.find((row) => row.predecessorId === cycle.referralId)?.referralId } });
   if (continued.status === "refused") {
-    if (continued.reason === "already-consumed") {
-      // A cycle that already carries a successor produces no second one, and nothing is written: the answer is `unchanged` at the revision the caller now sees.
-      return { changed: false };
-    }
+    if (continued.reason === "already-consumed") return { changed: false };
     refuseField("referralId", "This continuation cannot be bounded from the instant it would be accepted.");
   }
-  if (state.referrals.some((row) => row.referralId === successorId)) {
-    // The engine's own `already-consumed` refusal above is the active guard against a second cycle for one introduction; this identity check, derived from the predecessor, is the last defence behind it for a cycle stored without the flag.
-    return { changed: false };
-  }
+  if (state.referrals.some((row) => row.referralId === successorId)) return { changed: false };
   const consumedRevision = nextRevision(cycle.revision);
   const successor: ReferralCycleRecord = {
     referralId: successorId,

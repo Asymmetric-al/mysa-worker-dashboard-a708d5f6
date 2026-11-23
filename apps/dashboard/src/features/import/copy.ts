@@ -1,20 +1,11 @@
-/**
- * The contact-import family's only wording: the five steps of the journey, the four limits a file is held to before anything is read, the vocabulary of the four row decisions and the five row results, the facts the acceptance summary states, the framing of a refused file, the words the choose-file and selectively-accept step bodies add around those, the words the validate-and-review and results bodies and the journey's own frame add around the material the read derived, and the one address that reads a completed operation back by its identity.
- */
 import type { SimulatedEffect } from "@/components/simulation-label";
 import type { ImportRowWindow } from "@/modules/data-service/reads/import";
 import type { ImportDecisionKind } from "@/modules/import/decide";
-import type { ImportLimitDescriptor, ImportLimitId } from "@/modules/import/parse";
+import type { ImportLimitId } from "@/modules/import/parse";
 import { IMPORT_LIMIT_DESCRIPTORS } from "@/modules/import/parse";
 import type { ImportRowResultState } from "@/modules/import/receipt";
 import type { ImportDuplicateLooking, ImportRowVerdict } from "@/modules/import/validate";
-/**
- * The query parameter the journey's address uses to name one import operation: the page reads it on load, so a
- * reload restores the operation it names rather than starting again, and the surface writes it once it knows the
- * identity it is showing. It is stated in this module, which the server page and the client surface both import,
- * because a Server Component cannot read a value out of a client module.
- */
-export const IMPORT_OPERATION_PARAM = "operation";
+/** The query parameter the journey's address uses to name one import operation: */ export const IMPORT_OPERATION_PARAM = "operation";
 export type ImportStepId = "choose-file" | "map" | "review" | "accept" | "results";
 export type ImportStep = { readonly id: ImportStepId; readonly title: string; readonly description: string; readonly reopenLabel: string };
 const STEP_ORDER = ["choose-file", "map", "review", "accept", "results"] as const satisfies readonly ImportStepId[];
@@ -30,8 +21,7 @@ export const STEPS: readonly ImportStep[] = STEP_ORDER.map((id) => ({ id, ...STE
 export const stepIndex = (id: ImportStepId): number => STEP_ORDER.indexOf(id);
 export const stepTitle = (id: ImportStepId): string => STEP_COPY[id].title;
 export const stepLabel = (id: ImportStepId): string => `Step ${stepIndex(id) + 1} of ${STEPS.length}`;
-/** What an `aria-live="polite"` region announces when the journey moves to a step: the position and the name together, so a screen-reader user hears where they are without having to find it. */
-export const stepAnnouncement = (id: ImportStepId): string => `${stepLabel(id)}: ${stepTitle(id)}`;
+/** What an `aria-live="polite"` region announces when the journey moves to a step: the position and the name together, so a screen-reader user hears where they are without having to find it. */ export const stepAnnouncement = (id: ImportStepId): string => `${stepLabel(id)}: ${stepTitle(id)}`;
 export type LimitRowKey = "size" | "rows" | "columns" | "cell";
 export type LimitRow = { readonly key: LimitRowKey; readonly label: string; readonly value: string; readonly message: string };
 const LIMIT_ROW_KEY_BY_ID = { "file-bytes": "size", "data-rows": "rows", columns: "columns", "cell-code-points": "cell" } as const satisfies Readonly<Record<ImportLimitId, LimitRowKey>>;
@@ -52,9 +42,8 @@ const LIMIT_WORDING: Readonly<Record<ImportLimitId, (value: number) => { value: 
   columns: (value) => ({ value: `${formatCount(value)} columns`, message: `At most ${formatCount(value)} columns. A header row with more is refused before anything is imported from the file.` }),
   "cell-code-points": (value) => ({ value: `${formatCount(value)} characters per cell`, message: `At most ${formatCount(value)} characters in one cell. A longer cell refuses its own row only, so the rest of the file can still be imported.` }),
 });
-const limitWording = (descriptor: ImportLimitDescriptor): { value: string; message: string } => LIMIT_WORDING[descriptor.id](descriptor.value);
 export const LIMIT_ROWS: readonly LimitRow[] = IMPORT_LIMIT_DESCRIPTORS.map((descriptor) => {
-  const wording = limitWording(descriptor);
+  const wording = LIMIT_WORDING[descriptor.id](descriptor.value);
   return { key: LIMIT_ROW_KEY_BY_ID[descriptor.id], label: descriptor.label, value: wording.value, message: wording.message };
 });
 export type DecisionCopyEntry = { readonly label: string; readonly description: string; readonly consequence: string };
@@ -103,8 +92,7 @@ export const ACCEPTANCE_NOTICE: readonly AcceptanceNoticeItem[] = [
 ];
 export const REFUSAL_FRAMING = { title: "This file was not processed", lead: "Nothing was imported and no record changed. The reason is shown as this application reported it." } as const;
 export const TABLE_LABELS = { mapping: "Imported columns and field mapping", review: "Rows awaiting a decision", results: "Per-row import results" } as const;
-/** Step two's own wording: one record so the label set lives beside the family's other copy. */
-export const MAPPING_COPY = {
+/** Step two's own wording: one record so the label set lives beside the family's other copy. */ export const MAPPING_COPY = {
   suggestedField: "No field suggested",
   noHeading: "This column has no heading",
   notMapped: "Not mapped",
@@ -154,17 +142,7 @@ export const ACCEPTANCE_REVIEW_COPY = {
   confirmLabel: "Accept the reviewed rows",
   selectionNoun: "rows",
 } as const;
-// What step three's body says
-/**
- * The words the validate-and-review step states beside the material the read derived: the lead it is read
- * under, the heading of each column of its one per-row table, the statements an empty cell needs, the
- * labels its per-row controls carry, the window it is showing, and the framing of a decision the service
- * refused.
- *
- * A row's problems, mapped cells, kept cells, restrictions, suggestions and reasons are the domain's own
- * sentences, and every one of them is rendered exactly as it arrived rather than restated here.
- */
-export const REVIEW_COPY = {
+/** The words the validate-and-review step states beside the material the read derived: */ export const REVIEW_COPY = {
   lead: "Every row below is what the importer would make of this file: the values it would supply, the problems it states, the cells it keeps as data, the restrictions it carries and the contacts it proposes for reuse. Decide about each row on its own and record that decision; a recorded decision applies nothing by itself, and nothing reaches a contact until you accept the rows you decided.",
   column: {
     row: "Row",
@@ -206,56 +184,36 @@ export const REVIEW_COPY = {
   },
   material: { heading: "The per-row review material could not be derived", lead: "This is the read's own statement of what it could not derive. No row is shown as an empty or a ready row in its place." },
 } as const;
-/** A row's verdict as words, keyed by the domain's own closed union so a verdict added or renamed there fails to compile here instead of rendering unexplained. */
-export const REVIEW_VERDICT_WORDS: Record<ImportRowVerdict, string> = { ready: "Ready", "needs-correction": "Needs correction" };
-/** The word a row's look-alike badge carries: it states that a row of this file resembles another row of it, which is a signal to read and never a verdict, a merge or a decision. */
-export const REVIEW_DUPLICATE_WORD = "Duplicate-looking";
-/** The name of the control that opens one row's review material, so the disclosure carries its row number and is never one of many unnamed controls. */
-export function reviewMaterialSummaryLabel(rowNumber: number): string {
-  return `Review material for row ${rowNumber}`;
-}
-/** The sentence naming the other rows of the file one row looks like, what was compared, and that nothing was merged or decided. */
-export function reviewDuplicateLookingSentence(duplicate: ImportDuplicateLooking): string {
-  const others = duplicate.otherRowNumbers.map((rowNumber) => `row ${rowNumber}`);
-  const named = others.length === 1 ? (others[0] ?? "") : `${others.slice(0, -1).join(", ")} and ${others[others.length - 1] ?? ""}`;
-  return `Row ${duplicate.rowNumber} carries the same name, "${duplicate.name}", as ${named} of this file, and no email address, phone number or source reference is shared between them. Nothing was merged and nothing was decided: each row keeps its own verdict and its own decision, and no contact you already hold was compared.`;
-}
-/** The accessible name of one row's decision control: the row number is part of the name, so the control is never one of many unnamed selects. */
-export function reviewDecisionLabel(rowNumber: number): string {
-  return `Decision about row ${rowNumber}`;
-}
-/** The label of the control that records one row's decision. */
-export function reviewDecisionSubmitLabel(rowNumber: number): string {
-  return `Record the decision about row ${rowNumber}`;
-}
-/** What that control says while its decision is being recorded. */
-export function reviewDecisionPendingLabel(rowNumber: number): string {
-  return `Recording the decision about row ${rowNumber}…`;
-}
-/** The label of the control that names which proposed contact a reused row attaches to. */
-export function reviewCandidateLabel(rowNumber: number): string {
-  return `Contact row ${rowNumber} would reuse`;
-}
-/** The label of one correction, naming the row and the heading of the column it corrects. */
-export function reviewCorrectionLabel(rowNumber: number, header: string): string {
-  return header.trim() === "" ? `Row ${rowNumber}: corrected value for the blank heading` : `Row ${rowNumber}: corrected value for "${header}"`;
-}
-/** The label of the optional reason a skipped row carries. */
-export function reviewSkipReasonLabel(rowNumber: number): string {
-  return `Why row ${rowNumber} is skipped (optional)`;
-}
-/** The sentence beside the one per-row table, stating which window of the file it holds. */
-export function reviewWindowSentence(window: ImportRowWindow): string {
-  if (window.total === 0) {
-    return "This file holds no data row to review.";
-  }
+/** A row's verdict as words, keyed by the domain's own closed union so a verdict added or renamed there fails to compile here instead of rendering unexplained. */ export const REVIEW_VERDICT_WORDS: Record<ImportRowVerdict, string> = { ready: "Ready", "needs-correction": "Needs correction" };
+/** What a row of this file resembling another row of it says: the badge's word, the name its disclosure carries, and the sentence naming the other rows — none of which is a verdict, a merge or a decision. */
+export const REVIEW_DUPLICATE_COPY = {
+  word: "Duplicate-looking",
+  /** The name of the control that opens one row's review material, so the disclosure carries its row number and is never one of many unnamed controls. */
+  summaryLabel: (rowNumber: number): string => `Review material for row ${rowNumber}`,
+  /** The sentence naming the other rows of the file one row looks like, what was compared, and that nothing was merged or decided. */
+  sentence: (duplicate: ImportDuplicateLooking): string => {
+    const others = duplicate.otherRowNumbers.map((rowNumber) => `row ${rowNumber}`);
+    const named = others.length === 1 ? (others[0] ?? "") : `${others.slice(0, -1).join(", ")} and ${others[others.length - 1] ?? ""}`;
+    return `Row ${duplicate.rowNumber} carries the same name, "${duplicate.name}", as ${named} of this file, and no email address, phone number or source reference is shared between them. Nothing was merged and nothing was decided: each row keeps its own verdict and its own decision, and no contact you already hold was compared.`;
+  },
+} as const;
+export const reviewDecisionLabel = (rowNumber: number): string => `Decision about row ${rowNumber}`;
+export const reviewDecisionSubmitLabel = (rowNumber: number): string => `Record the decision about row ${rowNumber}`;
+export const reviewDecisionPendingLabel = (rowNumber: number): string => `Recording the decision about row ${rowNumber}…`;
+export const reviewCandidateLabel = (rowNumber: number): string => `Contact row ${rowNumber} would reuse`;
+export const reviewCorrectionLabel = (rowNumber: number, header: string): string => (header.trim() === "" ? `Row ${rowNumber}: corrected value for the blank heading` : `Row ${rowNumber}: corrected value for "${header}"`);
+export const reviewSkipReasonLabel = (rowNumber: number): string => `Why row ${rowNumber} is skipped (optional)`;
+/** The sentence beside a per-row table, stating which window of the operation's rows it holds. */ const windowSentence = (window: ImportRowWindow, whenEmpty: string, noun: string): string => {
+  if (window.total === 0) return whenEmpty;
   const first = (window.page - 1) * window.pageSize + 1;
   const last = Math.min(window.page * window.pageSize, window.total);
-  return `Showing rows ${first}\u2013${last} of ${window.total} in this file.`;
-}
-// What step five's body says
-/** The words the results step states around the per-row outcomes the read reported: the lead it is read under, the operation's own identity and the address that reads it back, the facts about the file, the labels of the counts acceptance decided, and the headings and columns of its one per-row table. */
-export const RESULTS_COPY = {
+  return `Showing rows ${first}\u2013${last} of ${window.total} in this ${noun}.`;
+};
+export const reviewWindowSentence = (window: ImportRowWindow): string => windowSentence(window, "This file holds no data row to review.", "file");
+export const resultWindowSentence = (window: ImportRowWindow): string => windowSentence(window, "This import reports no data row.", "import");
+/** The receipt address of one import operation: this page's own address, naming the operation by the identity it was read back by, so the link, the address the step states and the address the copy control writes are one string. */
+export const importReceiptHref = (operationId: string): string => `/partners/import?${IMPORT_OPERATION_PARAM}=${encodeURIComponent(operationId)}`;
+/** The words the results step states around the per-row outcomes the read reported: the lead it is read under, the facts about the file, the labels of the counts acceptance decided, and the headings and columns of its one per-row table. */ export const RESULTS_COPY = {
   lead: "This is the result of one import operation, read back by its own identity. Each row below states what became of it and why; a row that became a contact can be opened from here, and a row that was not applied says so instead of offering a control.",
   operationHeading: "The operation this import belongs to",
   operationLabels: { identity: "Operation identity", receiptAddress: "Receipt address" },
@@ -277,38 +235,10 @@ export const RESULTS_COPY = {
 } as const;
 /** One heading per row result state, keyed by the domain's own closed union, so the counts and the rows name each state the same way. */
 export const RESULT_STATE_HEADINGS: Record<ImportRowResultState, string> = { accepted: "Rows accepted", "already-accepted": "Rows accepted by an earlier attempt", skipped: "Rows skipped", "needs-review": "Rows still needing review", failed: "Rows that failed" };
-/** The link label for a row that became or extended a contact, naming the row it came from. */
-export function resultPartnerLinkLabel(rowNumber: number): string {
-  return `Open the contact that row ${rowNumber} became`;
-}
-/** The statement beside a row that was not applied, naming the row and leaving the reason to the row's own reason. */
-export function resultCorrectionStatement(rowNumber: number): string {
-  return `Row ${rowNumber} was not applied. Its own reason above states why, and the decisions of a processed import cannot be changed here.`;
-}
-/** The sentence above the stop control, stating how many rows nothing has been applied to yet. */
-export function resultStoppableRowSentence(count: number): string {
-  return count === 1 ? "One row of this import was left alone and can still be stopped." : `${count} rows of this import were left alone and can still be stopped.`;
-}
-/** The sentence beside the results table, stating which window of the operation's rows it holds. */
-export function resultWindowSentence(window: ImportRowWindow): string {
-  if (window.total === 0) {
-    return "This import reports no data row.";
-  }
-  const first = (window.page - 1) * window.pageSize + 1;
-  const last = Math.min(window.page * window.pageSize, window.total);
-  return `Showing rows ${first}\u2013${last} of ${window.total} in this import.`;
-}
-/**
- * The receipt address of one import operation: this page's own address, naming the operation by the identity it was
- * read back by. It is built here so the link, the address the step states and the address the copy control writes are
- * one string, and so it matches the parameter the journey writes into the address and the server page reads on load.
- */
-export function importReceiptHref(operationId: string): string {
-  return `/partners/import?${IMPORT_OPERATION_PARAM}=${encodeURIComponent(operationId)}`;
-}
-// The journey's own frame
-/** The words the journey frame states around the five steps: the page's heading and lead, the control that starts another import, the stop-this-import review, and what a reload of this page can and cannot resume. */
-export const JOURNEY_COPY = {
+export const resultPartnerLinkLabel = (rowNumber: number): string => `Open the contact that row ${rowNumber} became`;
+export const resultCorrectionStatement = (rowNumber: number): string => `Row ${rowNumber} was not applied. Its own reason above states why, and the decisions of a processed import cannot be changed here.`;
+export const resultStoppableRowSentence = (count: number): string => (count === 1 ? "One row of this import was left alone and can still be stopped." : `${count} rows of this import were left alone and can still be stopped.`);
+/** The words the journey frame states around the five steps: the page's heading and lead, the control that starts another import, the stop-this-import review, and what a reload of this page can and cannot resume. */ export const JOURNEY_COPY = {
   heading: "Import contacts",
   lead: "Bring one UTF-8 CSV file of contacts in: choose the file, confirm what each column supplies, decide about every row, and accept only the rows you decided. Each accepted row becomes a private preparation entry of your own; nothing is merged with an existing contact, nobody is subscribed and no audience membership is created.",
   reading: "Reading the import from the local data service\u2026",

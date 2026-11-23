@@ -6,18 +6,10 @@ const DEVELOPMENT_DATA_NOTICE = "Every record is synthetic and every external ef
 export type DevBannerProps = { scenarioId?: string; className?: string };
 /** The persistent **Development data** label: the single statement that this application shows synthetic development data and simulated external effects, present on every surface — signed in. */
 export function DevBanner({ scenarioId, className }: DevBannerProps) {
-  // A blank identifier names no scenario, so it renders nothing at all rather than an empty "scenario:" prefix that looks like a value failed to load.
   const scenario = scenarioId?.trim() ?? "";
   return (
-    <div
-      className={cn(
-        // `flex-wrap` with a column gap is what keeps the label explicit at 320 CSS px: the notice and the scenario move onto their own lines instead of being clipped, and no width here can push the page sideways.
-        "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs",
-        className,
-      )}
-    >
+    <div className={cn("flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs", className)}>
       <Badge variant="secondary">
-        {/* Decorative: the words beside it carry the meaning, so the icon is hidden from assistive technology and only marks the label for a sighted reader. */}
         <FlaskConicalIcon aria-hidden="true" data-icon="inline-start" />
         Development data
       </Badge>

@@ -19,18 +19,7 @@ const FIELD_LABELS = { basis: "Basis", grain: "Grain", period: "Period", currenc
 const NOT_STATED = "Not stated by this read";
 const UNSTATED_BOUNDARY = "a date the source does not state";
 const VARIANT_TYPOGRAPHY: Readonly<Record<Variant, string>> = { screen: "leading-relaxed", print: "leading-relaxed print:text-xs print:leading-snug print:break-inside-avoid" };
-function isolatedTemplate(template: string, values: Readonly<Record<string, string>>): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  for (const [index, segment] of templateSegments(template, values).entries()) {
-    if (typeof segment === "string") {
-      nodes.push(segment);
-      continue;
-    }
-    const { slot, value } = segment;
-    nodes.push(value === undefined ? `{${slot}}` : <bdi key={index}>{value}</bdi>);
-  }
-  return nodes;
-}
+const isolatedTemplate = (template: string, values: Readonly<Record<string, string>>): ReactNode[] => templateSegments(template, values).map((segment, index) => (typeof segment === "string" ? segment : segment.value === undefined ? `{${segment.slot}}` : <bdi key={index}>{segment.value}</bdi>));
 function listCurrencies(currencies: readonly string[], locale: string): string {
   try {
     return new Intl.ListFormat(locale, { style: "short", type: "unit" }).format(currencies);
@@ -38,8 +27,7 @@ function listCurrencies(currencies: readonly string[], locale: string): string {
     return currencies.join(", ");
   }
 }
-/** States the grain, basis, currencies, period, coverage and as-of of the envelope it is given; never decides any of them. */
-export function SnapshotStatement({ basis, currencies, period, coverage, asOf, isCurrentPeriod, locale, variant = "screen", className }: SnapshotStatementProps): ReactElement {
+/** States the grain, basis, currencies, period, coverage and as-of of the envelope it is given; never decides any of them. */ export function SnapshotStatement({ basis, currencies, period, coverage, asOf, isCurrentPeriod, locale, variant = "screen", className }: SnapshotStatementProps): ReactElement {
   const partition = listCurrencies(currencies, locale);
   const label = "font-medium";
   return (

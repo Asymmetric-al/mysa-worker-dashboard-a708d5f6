@@ -8,32 +8,15 @@ import type { ContentVariant, Release, TranslationSourceContext } from "@/module
 import { copy } from "../copy";
 type ContentDirection = ContentLocale["direction"];
 export type EditionView = { readonly locale: string; readonly direction: ContentDirection; readonly variant: ContentVariant; readonly release?: Release; readonly candidateId?: string; readonly translationSource?: TranslationSourceContext };
-export interface LocaleEditionSwitcherProps {
-  readonly editions: readonly EditionView[];
-  readonly selectedLocale: string;
-  readonly onSelectLocale: (locale: string) => void;
-  readonly onDirectionChange?: (direction: ContentDirection) => void;
-  readonly disabled?: boolean;
-  readonly className?: string;
-}
-function normaliseTag(tag: string): string {
-  return tag.trim().toLowerCase();
-}
-function findEdition(editions: readonly EditionView[], tag: string): EditionView | undefined {
-  const wanted = normaliseTag(tag);
-  if (wanted === "") return undefined;
-  return editions.find((edition) => normaliseTag(edition.locale) === wanted);
-}
-function localeEditionsOf(editions: readonly EditionView[]): readonly LocaleEdition[] {
-  return editions.map((edition) => ({ tag: edition.locale, direction: edition.direction, releaseId: edition.release?.releaseId }));
-}
+export type LocaleEditionSwitcherProps = { readonly editions: readonly EditionView[]; readonly selectedLocale: string; readonly onSelectLocale: (locale: string) => void; readonly onDirectionChange?: (direction: ContentDirection) => void; readonly disabled?: boolean; readonly className?: string };
+const normaliseTag = (tag: string): string => tag.trim().toLowerCase();
+const findEdition = (editions: readonly EditionView[], tag: string): EditionView | undefined => (normaliseTag(tag) === "" ? undefined : editions.find((edition) => normaliseTag(edition.locale) === normaliseTag(tag)));
+const localeEditionsOf = (editions: readonly EditionView[]): readonly LocaleEdition[] => editions.map((edition) => ({ tag: edition.locale, direction: edition.direction, releaseId: edition.release?.releaseId }));
 function variantOf(edition: EditionView): ContentVariant {
   if (edition.candidateId === undefined || edition.variant.candidateId !== undefined) return edition.variant;
   return { ...edition.variant, candidateId: edition.candidateId };
 }
-function evidenceOf(edition: EditionView): LifecycleEvidence | undefined {
-  return edition.translationSource === undefined ? undefined : { translationSource: edition.translationSource };
-}
+const evidenceOf = (edition: EditionView): LifecycleEvidence | undefined => (edition.translationSource === undefined ? undefined : { translationSource: edition.translationSource });
 /** The Page's language editions: the one control that changes which edition is being worked on, and the lifecycle state each admitted edition holds on its own. */
 export function LocaleEditionSwitcher({ editions, selectedLocale, onSelectLocale, onDirectionChange, disabled = false, className }: LocaleEditionSwitcherProps): ReactElement {
   const groupLabelId = useId();
@@ -50,8 +33,6 @@ export function LocaleEditionSwitcher({ editions, selectedLocale, onSelectLocale
     reportedDirection.current = selectedDirection;
     if (selectedDirection !== undefined) directionHandler.current?.(selectedDirection);
   }, [selectedDirection]);
-  const localeEditions = localeEditionsOf(editions);
-  const hasTranslation = editions.some((edition) => edition.translationSource !== undefined);
   return (
     <div data-slot="locale-edition-switcher" data-selected-locale={selectedEdition?.locale} data-selected-direction={selectedDirection} className={cn("flex min-w-0 flex-col gap-3 text-start", className)}>
       <fieldset disabled={disabled} aria-describedby={disabled ? disabledReasonId : undefined} className="min-w-0 border-0 p-0">
@@ -59,7 +40,7 @@ export function LocaleEditionSwitcher({ editions, selectedLocale, onSelectLocale
           {copy.editions.heading}
         </legend>
         <div className="flex min-w-0 flex-col gap-2">
-          <LocaleSwitcher locales={localeEditions} requested={selectedLocale} served={selectedEdition?.locale} unavailable={selectedEdition === undefined} onRequest={onSelectLocale} label={copy.editions.localeLabel} />
+          <LocaleSwitcher locales={localeEditionsOf(editions)} requested={selectedLocale} served={selectedEdition?.locale} unavailable={selectedEdition === undefined} onRequest={onSelectLocale} label={copy.editions.localeLabel} />
           <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">Switching language edition only changes which edition you are working on. It saves nothing, so nothing in this edition is written by choosing another.</p>
           {disabled ? (
             <p id={disabledReasonId} className="text-xs text-muted-foreground text-pretty wrap-anywhere">
@@ -75,15 +56,7 @@ export function LocaleEditionSwitcher({ editions, selectedLocale, onSelectLocale
             {editions.map((edition) => {
               const state = lifecycleOf(variantOf(edition), edition.release, evidenceOf(edition));
               return (
-                <li
-                  key={edition.locale}
-                  data-slot="locale-edition"
-                  data-locale={edition.locale}
-                  data-lifecycle-state={state}
-                  // A correlation for the surface and the browser journey, not decoration: it adds no chrome, because the shared switcher already names the edition being read.
-                  data-selected={selectedEdition?.locale === edition.locale ? "true" : undefined}
-                  className="flex min-w-0 flex-col gap-1"
-                >
+                <li key={edition.locale} data-slot="locale-edition" data-locale={edition.locale} data-lifecycle-state={state} data-selected={selectedEdition?.locale === edition.locale ? "true" : undefined} className="flex min-w-0 flex-col gap-1">
                   <bdi className="mono-identifier text-start text-xs text-muted-foreground">{edition.locale}</bdi>
                   <DraftStatus state={state} staleLocale={state === "stale-translation" ? edition.translationSource?.sourceVariant.locale.tag : undefined} />
                 </li>
@@ -91,7 +64,7 @@ export function LocaleEditionSwitcher({ editions, selectedLocale, onSelectLocale
             })}
           </ul>
           <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{copy.editions.fallbackNote}</p>
-          {hasTranslation ? <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{copy.editions.translationSourceNote}</p> : null}
+          {editions.some((edition) => edition.translationSource !== undefined) ? <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{copy.editions.translationSourceNote}</p> : null}
         </div>
       )}
     </div>

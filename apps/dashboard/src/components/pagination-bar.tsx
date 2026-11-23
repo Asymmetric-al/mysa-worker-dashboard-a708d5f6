@@ -5,27 +5,13 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink } from "@/components/ui/pagination";
 import { cn } from "@/lib/cn";
 const DEFAULT_PAGE_SIZE_OPTIONS: readonly number[] = [50, 200];
-
 const SMALLEST_DEFAULT_PAGE_SIZE = 50;
 const LARGEST_DEFAULT_PAGE_SIZE = 200;
-
 const PAGE_WINDOW_LIMIT = 7;
-
 const countFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-
 type PageToken = number | "gap";
 /** Props of {@link PaginationBar}. */
-export interface PaginationBarProps {
-  total: number;
-  page: number;
-  pageSize: number;
-  pageSizeOptions?: readonly number[];
-  onPageChange: (page: number) => void;
-  onPageSizeChange: (size: number) => void;
-  itemNoun: string;
-  disabled?: boolean;
-  className?: string;
-}
+export type PaginationBarProps = { total: number; page: number; pageSize: number; pageSizeOptions?: readonly number[]; onPageChange: (page: number) => void; onPageSizeChange: (size: number) => void; itemNoun: string; disabled?: boolean; className?: string };
 /** The only paging control in the application. */
 export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageChange, onPageSizeChange, itemNoun, disabled = false, className }: PaginationBarProps) {
   const pageSizeFieldId = useId();
@@ -34,48 +20,26 @@ export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageCh
   const currentPageSize = clampPageSize(pageSize, options);
   const pageCount = pageCountFor(totalCount, currentPageSize);
   const currentPage = clampPage(page, pageCount);
-  // The count line and the page size are stated at every result size, because a list must state
-  // its total and its page size: a result of ten rows still reads "Showing 1-10 of 10 gifts"
-  // beside the rows-per-page control. Only the page list waits for a second page, which the
-  // condition further down already asks of it, and a zero-row result still states "No <itemNoun>"
-  // so an empty result is never mistaken for a failed read.
   const firstRow = totalCount === 0 ? 0 : (currentPage - 1) * currentPageSize + 1;
   const lastRow = Math.min(currentPage * currentPageSize, totalCount);
   const countText = totalCount === 0 ? `No ${itemNoun}` : `Showing ${countFormat.format(firstRow)}\u2013${countFormat.format(lastRow)} of ${countFormat.format(totalCount)} ${itemNoun}`;
   function requestPage(requested: number): void {
-    if (disabled) {
-      return;
-    }
+    if (disabled) return;
     const nextPage = clampPage(requested, pageCount);
-    // A request for the page already open produces no change, so it dispatches nothing.
-    if (nextPage === currentPage) {
-      return;
-    }
+    if (nextPage === currentPage) return;
     onPageChange(nextPage);
   }
   function requestPageSize(requested: number): void {
-    if (disabled) {
-      return;
-    }
+    if (disabled) return;
     const nextPageSize = clampPageSize(requested, options);
-    if (nextPageSize === currentPageSize) {
-      return;
-    }
-    // Keep the reader on the row they were reading: the first visible row of the current window
-    // stays visible under the new size, unless the new size pushes it past the end of the result,
-    // in which case the page is clamped to the last one that exists.
+    if (nextPageSize === currentPageSize) return;
     const firstVisibleRow = (currentPage - 1) * currentPageSize;
     const nextPage = clampPage(Math.trunc(firstVisibleRow / nextPageSize) + 1, pageCountFor(totalCount, nextPageSize));
     onPageSizeChange(nextPageSize);
-    if (nextPage !== currentPage) {
-      onPageChange(nextPage);
-    }
+    if (nextPage !== currentPage) onPageChange(nextPage);
   }
   return (
     <div data-slot="pagination-bar" className={cn("flex flex-wrap items-center justify-between gap-x-4 gap-y-3", className)}>
-      {/* The live region is the visible count line itself — a native `output`, whose implicit
-          status role announces politely — so a page or size change is announced once as the new
-          range and never as a second message beside it. */}
       <output className="tabular-figures text-sm text-muted-foreground">
         {countText}
         {disabled ? <span className="sr-only"> Updating results.</span> : null}
@@ -86,16 +50,7 @@ export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageCh
             <Label htmlFor={pageSizeFieldId} className="text-muted-foreground">
               Rows per page
             </Label>
-            <NativeSelect
-              id={pageSizeFieldId}
-              size="sm"
-              className="w-20"
-              value={String(currentPageSize)}
-              disabled={disabled}
-              onChange={(event) => {
-                requestPageSize(Number(event.currentTarget.value));
-              }}
-            >
+            <NativeSelect id={pageSizeFieldId} size="sm" className="w-20" value={String(currentPageSize)} disabled={disabled} onChange={(event) => requestPageSize(Number(event.currentTarget.value))}>
               {options.map((option) => (
                 <NativeSelectOption key={option} value={String(option)}>
                   {countFormat.format(option)}
@@ -106,20 +61,9 @@ export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageCh
         ) : null}
         {pageCount > 1 ? (
           <Pagination aria-label={`Pagination, ${itemNoun}`} aria-busy={disabled || undefined} className="mx-0 w-auto">
-            {/* The page list wraps instead of overflowing: at 320 CSS px a full window of
-                nine controls is wider than the surface, and reflow must never be paid for by a
-                horizontally scrolling page. */}
             <PaginationContent className="flex-wrap justify-center">
               <PaginationItem>
-                <PaginationLink
-                  size="default"
-                  className="ps-2.5"
-                  aria-label={`Previous page of ${itemNoun}`}
-                  aria-disabled={currentPage === 1 || disabled || undefined}
-                  onClick={() => {
-                    requestPage(currentPage - 1);
-                  }}
-                >
+                <PaginationLink size="default" className="ps-2.5" aria-label={`Previous page of ${itemNoun}`} aria-disabled={currentPage === 1 || disabled || undefined} onClick={() => requestPage(currentPage - 1)}>
                   <DirectionalChevron direction="previous" />
                   <span className="hidden sm:inline">Previous</span>
                 </PaginationLink>
@@ -131,29 +75,14 @@ export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageCh
                   </PaginationItem>
                 ) : (
                   <PaginationItem key={token}>
-                    <PaginationLink
-                      isActive={token === currentPage}
-                      aria-label={`Page ${countFormat.format(token)} of ${countFormat.format(pageCount)}`}
-                      aria-disabled={disabled || undefined}
-                      onClick={() => {
-                        requestPage(token);
-                      }}
-                    >
+                    <PaginationLink isActive={token === currentPage} aria-label={`Page ${countFormat.format(token)} of ${countFormat.format(pageCount)}`} aria-disabled={disabled || undefined} onClick={() => requestPage(token)}>
                       {countFormat.format(token)}
                     </PaginationLink>
                   </PaginationItem>
                 ),
               )}
               <PaginationItem>
-                <PaginationLink
-                  size="default"
-                  className="pe-2.5"
-                  aria-label={`Next page of ${itemNoun}`}
-                  aria-disabled={currentPage === pageCount || disabled || undefined}
-                  onClick={() => {
-                    requestPage(currentPage + 1);
-                  }}
-                >
+                <PaginationLink size="default" className="pe-2.5" aria-label={`Next page of ${itemNoun}`} aria-disabled={currentPage === pageCount || disabled || undefined} onClick={() => requestPage(currentPage + 1)}>
                   <span className="hidden sm:inline">Next</span>
                   <DirectionalChevron direction="next" />
                 </PaginationLink>
@@ -183,57 +112,36 @@ function normalisePageSizeOptions(options: readonly number[] | undefined): numbe
 function clampPageSize(requested: number, options: readonly number[]): number {
   const smallest = options[0] ?? SMALLEST_DEFAULT_PAGE_SIZE;
   const largest = options[options.length - 1] ?? LARGEST_DEFAULT_PAGE_SIZE;
-  if (!Number.isFinite(requested)) {
-    return smallest;
-  }
+  if (!Number.isFinite(requested)) return smallest;
   const size = Math.trunc(requested);
-  if (size <= smallest) {
-    return smallest;
-  }
-  if (size >= largest) {
-    return largest;
-  }
+  if (size <= smallest) return smallest;
+  if (size >= largest) return largest;
   let offered = smallest;
-  for (const option of options) {
-    if (option <= size) {
-      offered = option;
-    }
-  }
+  for (const option of options) if (option <= size) offered = option;
   return offered;
 }
 function pageCountFor(total: number, pageSize: number): number {
-  if (total <= 0 || pageSize <= 0) {
-    return 1;
-  }
+  if (total <= 0 || pageSize <= 0) return 1;
   return Math.max(1, Math.ceil(total / pageSize));
 }
 function clampPage(requested: number, pageCount: number): number {
-  if (!Number.isFinite(requested)) {
-    return 1;
-  }
+  if (!Number.isFinite(requested)) return 1;
   const page = Math.trunc(requested);
-  if (page <= 1) {
-    return 1;
-  }
+  if (page <= 1) return 1;
   return page >= pageCount ? pageCount : page;
 }
 function pageWindow(current: number, pageCount: number): PageToken[] {
   const tokens: PageToken[] = [];
   if (pageCount <= PAGE_WINDOW_LIMIT) {
-    for (let page = 1; page <= pageCount; page += 1) {
-      tokens.push(page);
-    }
+    for (let page = 1; page <= pageCount; page += 1) tokens.push(page);
     return tokens;
   }
   const candidates = [...new Set([1, pageCount, current - 1, current, current + 1])].filter((page) => page >= 1 && page <= pageCount).sort((left, right) => left - right);
   let previous = 0;
   for (const page of candidates) {
-    if (previous !== 0 && page - previous > 1) {
-      tokens.push("gap");
-    }
+    if (previous !== 0 && page - previous > 1) tokens.push("gap");
     tokens.push(page);
     previous = page;
   }
   return tokens;
 }
-export default PaginationBar;

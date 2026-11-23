@@ -29,8 +29,7 @@ function SelectTrigger({ className, size = "default", children, ...props }: Sele
   );
 }
 function SelectContent({ className, children, side = "bottom", sideOffset = 4, align = "center", alignOffset = 0, alignItemWithTrigger = true, ...props }: SelectPrimitive.Popup.Props & Pick<SelectPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger">) {
-  // The direction provider is React context only, so portalled content would otherwise follow the page rather than the application. Stating it here keeps the select in that direction.
-  const direction = useDirection();
+  const direction = useDirection(); // The direction provider is React context only, so portalled content would otherwise follow the page rather than the application. Stating it here keeps the select in that direction.
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner side={side} sideOffset={sideOffset} align={align} alignOffset={alignOffset} alignItemWithTrigger={alignItemWithTrigger} className="isolate z-50">

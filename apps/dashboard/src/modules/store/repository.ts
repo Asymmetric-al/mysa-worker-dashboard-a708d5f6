@@ -1,4 +1,3 @@
-/** The store's read, transaction and reset surface: */
 import { stat } from "node:fs/promises";
 import { canonicalDigest, CorruptJsonError, existsOnDisk, readJson, removeIfExists, writeJsonAtomic } from "./atomic";
 import { DATA_ROOT, sessionPaths, type SessionDocumentKey, type SessionDocuments } from "./paths";
@@ -8,7 +7,7 @@ const WRITE_ORDER = ["workload", "meta", "operations", "state"] as const satisfi
 const DELETE_ORDER = ["state", "operations", "meta", "workload"] as const satisfies readonly SessionDocumentKey[];
 const DOCUMENT_KEYS = ["state", "operations", "meta", "workload"] as const satisfies readonly SessionDocumentKey[];
 const DOCUMENT_KEY_NAMES: readonly string[] = DOCUMENT_KEYS;
-/** Source bytes the memo may hold across every session: four times the generated workload's 67,229,868 bytes, so the session the published Gifts measurement reads stays resident while a handful of other sessions share the memo. */
+/** Source bytes the memo may hold across every session: four times the generated workload's own size, so the session the published measurement reads stays resident while a handful of others share the memo. */
 export const MEMO_BYTE_BUDGET = 4 * 67_229_868;
 /** How long the memo keeps an entry nothing has read: long enough that the reads behind one screen never re-parse, short enough that a session nobody is visiting gives its dataset back. */
 export const MEMO_IDLE_MS = 10 * 60 * 1000;
@@ -18,8 +17,7 @@ interface MemoizedDocuments {
   readonly sourceBytes: number;
   readonly readAtMs: number;
 }
-// Sessions in the order they were last read, which is the order they are dropped in. The memo is a cache in front of the disk and nothing else: every read of a session that is not here is answered by the session's files.
-const documentMemo = new Map<string, MemoizedDocuments>();
+const documentMemo = new Map<string, MemoizedDocuments>(); // Sessions in the order they were last read, which is the order they are dropped in: the memo is a cache in front of the disk and nothing else, so a session that is not here is answered by its files.
 let memoizedBytes = 0;
 interface DocumentSignature {
   readonly signature: string;
@@ -51,9 +49,7 @@ function remember(sessionId: string, entry: MemoizedDocuments): void {
   documentMemo.set(sessionId, entry);
   memoizedBytes += entry.sourceBytes;
   for (const [candidateId, candidate] of documentMemo) {
-    if (memoizedBytes <= MEMO_BYTE_BUDGET) break;
-    // The entry this call inserted is the newest, so the scan reaches it last and a session larger than the whole budget is kept rather than evicting every entry and then itself.
-    if (candidateId === sessionId) break;
+    if (memoizedBytes <= MEMO_BYTE_BUDGET || candidateId === sessionId) break; // The entry this call inserted is the newest, so the scan reaches it last and a session larger than the whole budget is kept rather than evicting every entry and then itself.
     memoizedBytes -= candidate.sourceBytes;
     documentMemo.delete(candidateId);
   }
@@ -89,16 +85,11 @@ export async function readSession(sessionId: string): Promise<SessionDocuments |
   const measured = await signatureOf(paths);
   const memoized = documentMemo.get(sessionId);
   if (memoized !== undefined && memoized.signature === measured.signature) {
-    // A hit costs the recency update and nothing else: the entry keeps the documents it already parsed and the bytes it already counted, and moves to the newest position so that the eviction order is the read order.
-    documentMemo.delete(sessionId);
-    const refreshed: MemoizedDocuments = { ...memoized, readAtMs: nowMs };
-    documentMemo.set(sessionId, refreshed);
-    return refreshed.documents;
+    remember(sessionId, { ...memoized, readAtMs: nowMs }); // A hit costs the recency update and nothing else: the entry keeps the documents it already parsed and the bytes it already counted, and moves to the newest position so the eviction order is the read order.
+    return memoized.documents;
   }
-  // The state document is the commit marker, so probing it alone answers "does this session exist?" and an absent session is refused without touching the other three documents.
   const state = await readJson(paths.state);
   if (state === undefined) {
-    // A document that is absent because the whole root is absent is a store that cannot answer, not a store that holds no such session. The two are told apart here, where the absence rule lives, so that no caller has to guess and no outage is reported as a missing record.
     if (!(await existsOnDisk(DATA_ROOT))) throw new StoreAbsentError(DATA_ROOT);
     forget(sessionId);
     return undefined;
@@ -135,37 +126,24 @@ export async function transact<T>(sessionId: string, writes: readonly SessionDoc
     try {
       const current = await readSession(sessionId);
       if (current === undefined) throw new SessionNotFoundError(sessionId);
-      // The callback mutates this draft, so a throw or a failed write leaves the stored documents untouched even when the callback had already changed the draft in place. Only a declared document is copied: every other one keeps the reference this transaction read, because a transaction cannot write it, and copying the generated dataset on every mutation would cost the whole of it for a write that touches none of it.
-      const draft: SessionDocuments = { ...current };
-      for (const key of DOCUMENT_KEYS) {
-        if (!declared.has(key)) continue;
-        const document = documentValue(current, key);
-        if (document !== undefined) draft[key] = structuredClone(document);
-      }
+      const draft: SessionDocuments = { ...current }; // Only a declared document is copied: every other one keeps the reference this transaction read, because a transaction cannot write it and copying the generated dataset on a mutation that touches none of it would cost the whole of it.
+      for (const key of DOCUMENT_KEYS) if (declared.has(key)) draft[key] = structuredClone(documentValue(current, key));
       const result = await fn(draft);
-      // The draft carries every document, and each one the write set does not name is the very object this transaction read, so the callback must treat it as read-only. A callback that assigns another value to one is refused here rather than having its change dropped, because a silently dropped change is the one outcome a write may never have. The check compares references, not contents: comparing contents is the whole-dataset traversal the write set exists to avoid.
-      for (const key of DOCUMENT_KEYS) {
-        if (declared.has(key)) continue;
-        if (documentValue(draft, key) !== documentValue(current, key)) throw new Error(`The transaction changed the "${key}" document, which its write set does not include: the change would never reach the disk, so it is refused rather than dropped.`);
-      }
+      // Each undeclared document is the very object this transaction read, so a callback that assigns another value to one is refused here rather than having its change dropped; the check compares references, never contents, which is the whole-dataset traversal the write set exists to avoid.
+      for (const key of DOCUMENT_KEYS) if (!declared.has(key) && documentValue(draft, key) !== documentValue(current, key)) throw new Error(`The transaction changed the "${key}" document, which its write set does not include: the change would never reach the disk, so it is refused rather than dropped.`);
       const paths = sessionPaths(sessionId);
-      // WRITE_ORDER keeps the state document last, so adding a declared key here never moves the commit marker a reader probes first.
+      // WRITE_ORDER keeps the state document last, so a declared key added here never moves the commit marker a reader probes first.
       for (const key of WRITE_ORDER) {
         if (!declared.has(key)) continue;
         const next = documentValue(draft, key);
-        if (next === undefined) {
-          // A document the draft no longer carries is left on disk: deleting is `resetSession`'s job, and a transaction that silently removed a workload would destroy the dataset behind it.
-          continue;
-        }
+        if (next === undefined) continue; // A document the draft no longer carries is left on disk: deleting is `resetSession`'s job, and a transaction that silently removed a workload would destroy the dataset behind it.
         const previous = documentValue(current, key);
-        // A digest is equal exactly when the two documents would serialise to the same bytes, so an unchanged document is never rewritten and no document is traversed twice to answer the question.
-        if (previous !== undefined && (previous === next || canonicalDigest(previous) === canonicalDigest(next))) continue;
+        if (previous !== undefined && (previous === next || canonicalDigest(previous) === canonicalDigest(next))) continue; // A digest is equal exactly when the two documents would serialise to the same bytes, so an unchanged document is never rewritten and no document is compared as two printed copies.
         await writeJsonAtomic(paths[key], next);
       }
       return result;
     } finally {
-      // Dropped on every path: a read answered from this entry could otherwise serve a document the callback changed, and an undeclared document is held here by its only reference.
-      forget(sessionId);
+      forget(sessionId); // Dropped on every path: a read answered from this entry could otherwise serve a document the callback changed.
     }
   });
 }
@@ -174,18 +152,12 @@ export async function resetSession(sessionId: string, documents?: SessionDocumen
   await withSessionLock(sessionId, async () => {
     const paths = sessionPaths(sessionId);
     if (documents === undefined) {
-      // Removing the commit marker first makes the session disappear in one step; a crash after it leaves orphan documents that the next reset clears and that `readSession` never reports.
       for (const key of DELETE_ORDER) await removeIfExists(paths[key]);
       forget(sessionId);
       return;
     }
-    for (const key of CORE_DOCUMENT_KEYS) {
-      if (documentValue(documents, key) === undefined) throw new Error(`Cannot reset session ${JSON.stringify(sessionId)}: the document set carries no "${key}" document, and a session without its state, operations and meta documents is not a session.`);
-    }
-    // Trim first, so no document of the previous set survives into the new one — a stale workload left behind would make two resets of the same set write different bytes.
-    for (const key of DELETE_ORDER) {
-      if (documentValue(documents, key) === undefined) await removeIfExists(paths[key]);
-    }
+    for (const key of CORE_DOCUMENT_KEYS) if (documentValue(documents, key) === undefined) throw new Error(`Cannot reset session ${JSON.stringify(sessionId)}: the document set carries no "${key}" document, and a session without its state, operations and meta documents is not a session.`);
+    for (const key of DELETE_ORDER) if (documentValue(documents, key) === undefined) await removeIfExists(paths[key]);
     for (const key of WRITE_ORDER) {
       const document = documentValue(documents, key);
       if (document !== undefined) await writeJsonAtomic(paths[key], document);

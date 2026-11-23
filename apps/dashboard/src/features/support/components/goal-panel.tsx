@@ -1,9 +1,8 @@
 "use client";
-/** The one support goal surface: the target amount, the currency it is stated in, the measure it counts, the civil day it took effect on, the revision a change must present, and its progress — … */
-import { useCallback, useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
-import type { ZodError } from "zod";
+import { useCallback, useId, useMemo, useState, type ChangeEvent, type ReactElement } from "react";
 import ActionReview from "@/components/action-review";
-import FormField, { fieldErrorsFromInvalid, FormErrorSummary, type FieldErrorLookup } from "@/components/form-field";
+import { factFrame } from "@/components/fact-list";
+import FormField, { fieldErrorsFromInvalid, fieldMessagesOf, FormErrorSummary, type FieldErrorLookup } from "@/components/form-field";
 import StateNotice from "@/components/state-notice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -14,10 +13,10 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import { assertNever } from "@/lib/result";
 import type { MutationInput, ReadEnvelope, Scope, ValueState } from "@/modules/data-service/envelope";
-import { ROOT_FIELD_KEY, type MutationOutcome } from "@/modules/data-service/outcome";
+import type { MutationOutcome } from "@/modules/data-service/outcome";
 import { exponentOf, UNKNOWN_CURRENCY } from "@/modules/money/currency";
 import { SUPPORT_BASIS } from "@/modules/support/basis";
-import { formatPercentageBasisPoints, GOAL_CAPABILITY, type GoalProgress } from "@/modules/support/goal";
+import { formatPercentageBasisPoints, GOAL_CAPABILITY, type GoalProgress, type GoalProgressState } from "@/modules/support/goal";
 import { EMPTY_STATES, GOAL_CURRENCY_CHOICE, GOAL_CURRENCY_UNSTATED, MEASURE_LABELS, NO_PERCENTAGE, type NoPercentageReason } from "../copy";
 import { useGoal, type GoalEnvelope } from "../hooks/use-goal";
 import { useSaveGoal, type GoalSaveFormPayload } from "../hooks/use-save-goal";
@@ -25,128 +24,63 @@ import { goalSavePayloadSchema } from "../schemas";
 import AmountValue from "./amount-value";
 import SnapshotStatement from "./snapshot-statement";
 type GoalFigure = NonNullable<GoalEnvelope["data"]["goal"]>;
-/** Props of {@link GoalPanel}. */
-export type GoalPanelProps = {
-  readonly scope: Scope;
-  readonly locale: string;
-  /** The display direction the route composition states; it is set on this block only, never on a child's styles. */
-  readonly dir?: "ltr" | "rtl";
-  readonly initialEnvelope?: ReadEnvelope<unknown>;
-  readonly className?: string;
-};
-const PANEL_TITLE = "Support goal";
-const PANEL_DESCRIPTION = "One target, set against received gifts on the one named basis this application measures. Changing the goal " + "changes only the goal: no gift, commitment, earlier report or public progress is written, and no message is " + "sent.";
-const READ_ONLY_FALLBACK_REASON = "This read states no goal-editing capability, so the goal is read-only here: no edit control is offered and a " + "save would be refused.";
-const UNEDITABLE_CURRENCY_TITLE = "This goal cannot be changed here";
-
-const UNEDITABLE_CURRENCY_BODY =
-  "The goal is stated in a currency this application holds no minor-unit precision for, so an amount in it cannot " + "be written exactly. No currency is substituted in its place and no exponent is assumed, so the goal stays " + "read-only until a source states it in a currency whose precision is known.";
-
+export type GoalPanelProps = { readonly scope: Scope; readonly locale: string; readonly dir?: "ltr" | "rtl"; readonly initialEnvelope?: ReadEnvelope<unknown>; readonly className?: string };
 const AMOUNT_LABEL = "Amount";
 const CURRENCY_LABEL = "Currency";
-const MEASURE_LABEL = "Measure";
 const EFFECTIVE_FROM_LABEL = "Effective from";
+const MEASURE_LABEL = "Measure";
 const FACT_LABELS = { amount: AMOUNT_LABEL, measure: MEASURE_LABEL, effectiveFrom: EFFECTIVE_FROM_LABEL, revision: "Revision" } as const;
 const FORM_LABELS: Readonly<Record<string, string>> = { amount: AMOUNT_LABEL, effectiveFrom: EFFECTIVE_FROM_LABEL, currency: CURRENCY_LABEL, measure: MEASURE_LABEL };
 const FORM_FIELD_ORDER = ["amount", "effectiveFrom", "currency", "measure"] as const;
 const CIVIL_DAY_NOTE = "a calendar day, with no time of day and no zone behind it";
-
+const UNEDITABLE_CURRENCY_BODY =
+  "The goal is stated in a currency this application holds no minor-unit precision for, so an amount in it cannot be written exactly. No currency is substituted in its place and no exponent is assumed, so the goal stays read-only until a source states it in a currency whose precision is known.";
 function goalEnvelopeOf(candidate: ReadEnvelope<unknown> | undefined): GoalEnvelope | undefined {
   if (candidate === undefined) return undefined;
   const data: unknown = candidate.data;
-  const shaped = typeof data === "object" && data !== null && "goal" in data && "progress" in data && "percentage" in data && "period" in data && "measure" in data && "canEditGoal" in data;
-  return shaped ? (candidate as GoalEnvelope) : undefined;
+  return typeof data === "object" && data !== null && "goal" in data && "progress" in data && "percentage" in data && "period" in data && "measure" in data && "canEditGoal" in data ? (candidate as GoalEnvelope) : undefined;
 }
-function fieldMessagesOf(error: ZodError): Readonly<Record<string, readonly string[]>> {
-  const messages: Record<string, string[]> = {};
-  for (const issue of error.issues) {
-    const path = issue.path.length === 0 ? ROOT_FIELD_KEY : issue.path.map((step) => String(step)).join(".");
-    const existing = messages[path];
-    if (existing === undefined) {
-      messages[path] = [issue.message];
-    } else if (!existing.includes(issue.message)) {
-      existing.push(issue.message);
-    }
-  }
-  return messages;
-}
-/** The state the read recorded for the goal's amount, defaulting to `unknown` so an unstated state is never shown as a figure. */
-function goalAmountStateOf(envelope: GoalEnvelope): ValueState {
-  return envelope.valueStates["goal.amount"] ?? "unknown";
-}
-/** One progress figure as a surface states it: the percentage only where one exists, and always the sentence that explains it. */
-interface ProgressPresentation {
-  readonly figure: string | null;
-  readonly sentence: string;
-}
-/** Why a percentage is absent, for the one state that does not carry its own reason. */
-function absentPercentageReason(goal: GoalFigure | null): NoPercentageReason {
-  if (goal === null) return "no-goal";
-  return goal.amount.minorUnits === 0 ? "zero-denominator" : "unknown-denominator";
-}
-/** Every progress state, each with its own figure and its own sentence — never a percentage nobody computed and never a bare `0%`. */
+const goalAmountStateOf = (envelope: GoalEnvelope): ValueState => envelope.valueStates["goal.amount"] ?? "unknown";
+type ProgressPresentation = { readonly figure: string | null; readonly sentence: string };
+const absentPercentageReason = (goal: GoalFigure | null): NoPercentageReason => (goal === null ? "no-goal" : goal.amount.minorUnits === 0 ? "zero-denominator" : "unknown-denominator");
 function progressPresentation(progress: GoalProgress, goal: GoalFigure | null, measureLabel: string, from: string, to: string): ProgressPresentation {
-  // The formatter runs once, and only for the two states the domain computes a percentage for: a
-  // paused, ended, incompatible or unknown figure carries none, and a percentage is never derived
-  // here from a state that states none.
-  const computed = progress.state === "value" || progress.state === "zero";
   const basisPoints = progress.percentageBasisPoints;
-  const figure = computed && basisPoints !== null ? formatPercentageBasisPoints(basisPoints) : null;
-  switch (progress.state) {
-    case "value":
-      if (figure === null) {
-        // A state that asserts a percentage but carries none is never explained away with an
-        // invented figure, so it falls back to the sentence that says why no percentage is shown.
-        return { figure: null, sentence: NO_PERCENTAGE.default };
-      }
-      return { figure, sentence: `The goal is ${figure} met over ${from} to ${to} on the ${measureLabel} measure. A figure above 100% is stated exactly as it was computed and is never capped.` };
-    case "zero":
-      return { figure, sentence: `No received support is recorded over ${from} to ${to}, so the goal is 0% met. That is a recorded zero and not an unknown figure.` };
-    case "no-goal":
-      return { figure: null, sentence: NO_PERCENTAGE["no-goal"] };
-    case "no-percentage":
-      return { figure: null, sentence: NO_PERCENTAGE[absentPercentageReason(goal)] };
-    case "incompatible":
-      return { figure: null, sentence: NO_PERCENTAGE["incompatible-measure"] };
-    case "paused":
-      return { figure: null, sentence: "This goal is paused, so no percentage is shown. A paused goal is not 0%: it is a goal the source is not measuring right now." };
-    case "ended":
-      return { figure: null, sentence: "This goal has ended, so no percentage is shown. An ended goal is not 0%." };
-    case "unavailable":
-      return { figure: null, sentence: "The source behind this percentage could not be read, so no percentage is shown. That is not 0% and it is not an absence of giving." };
-  }
+  const figure = (progress.state === "value" || progress.state === "zero") && basisPoints !== null ? formatPercentageBasisPoints(basisPoints) : null;
+  const stated: Readonly<Record<Exclude<GoalProgressState, "value" | "zero">, string>> = {
+    "no-goal": NO_PERCENTAGE["no-goal"],
+    "no-percentage": NO_PERCENTAGE[absentPercentageReason(goal)],
+    incompatible: NO_PERCENTAGE["incompatible-measure"],
+    paused: "This goal is paused, so no percentage is shown. A paused goal is not 0%: it is a goal the source is not measuring right now.",
+    ended: "This goal has ended, so no percentage is shown. An ended goal is not 0%.",
+    unavailable: "The source behind this percentage could not be read, so no percentage is shown. That is not 0% and it is not an absence of giving.",
+  };
+  // A state that asserts a percentage but carries none is never explained away with an invented figure, so it falls back to the sentence that says why no percentage is shown.
+  const sentence =
+    progress.state === "zero"
+      ? `No received support is recorded over ${from} to ${to}, so the goal is 0% met. That is a recorded zero and not an unknown figure.`
+      : progress.state === "value"
+        ? figure === null
+          ? NO_PERCENTAGE.default
+          : `The goal is ${figure} met over ${from} to ${to} on the ${measureLabel} measure. A figure above 100% is stated exactly as it was computed and is never capped.`
+        : stated[progress.state];
+  return { figure, sentence };
 }
-/** The precision a currency carries, stated as the rule the amount field enforces. */
 function precisionDescription(currency: string, exponent: number): string {
-  if (exponent === 0) {
-    return `Enter the amount in ${currency} as figures. ${currency} amounts have no decimal places, so a whole amount is the only exact one.`;
-  }
+  if (exponent === 0) return `Enter the amount in ${currency} as figures. ${currency} amounts have no decimal places, so a whole amount is the only exact one.`;
   const places = exponent === 1 ? "one decimal place" : `${exponent} decimal places`;
   return `Enter the amount in ${currency} as figures, with a full stop before the decimals. ${currency} amounts have ${places}, so a longer fraction is refused rather than rounded.`;
 }
-function Fact({ term, children }: { readonly term: string; readonly children: ReactNode }): ReactElement {
-  return (
-    <div className="flex flex-wrap items-baseline gap-x-1.5">
-      <dt className="font-medium">{term}</dt>
-      <dd className="min-w-0 break-words">{children}</dd>
-    </div>
-  );
-}
-/** The goal's own facts: the amount, the currency it is in, the measure it counts, the day it took effect and the revision a change must present. */
+const Fact = factFrame({ rowClassName: "flex flex-wrap items-baseline gap-x-1.5", termClassName: "font-medium", valueClassName: "min-w-0 break-words" });
 function GoalFacts({ goal, locale, measureLabel, valueState }: { readonly goal: GoalFigure; readonly locale: string; readonly measureLabel: string; readonly valueState: ValueState }): ReactElement {
   return (
     <dl className="grid gap-2 text-sm">
       <Fact term={FACT_LABELS.amount}>
         <span className="flex flex-wrap items-baseline gap-x-2">
           <AmountValue money={goal.amount} valueState={valueState} locale={locale} emphasis="headline" />
-          <span className="text-sm text-muted-foreground">
-            <bdi>{goal.amount.currency}</bdi>
-          </span>
+          <bdi className="text-sm text-muted-foreground">{goal.amount.currency}</bdi>
         </span>
       </Fact>
-      <Fact term={FACT_LABELS.measure}>
-        <bdi>{measureLabel}</bdi>
-      </Fact>
+      <Fact term={FACT_LABELS.measure} value={<bdi>{measureLabel}</bdi>} />
       <Fact term={FACT_LABELS.effectiveFrom}>
         <bdi>{goal.effectiveFrom}</bdi> <span className="text-muted-foreground">({CIVIL_DAY_NOTE})</span>
       </Fact>
@@ -159,41 +93,24 @@ function GoalFacts({ goal, locale, measureLabel, valueState }: { readonly goal: 
 function GoalComparison({ current, currentState, locale, amount, currency, effectiveFrom }: { readonly current: GoalFigure | null; readonly currentState: ValueState; readonly locale: string; readonly amount: string; readonly currency: string; readonly effectiveFrom: string }): ReactElement {
   return (
     <dl className="grid gap-1.5">
-      <div className="flex flex-wrap items-baseline gap-x-1.5">
-        <dt className="font-medium">Current goal</dt>
-        <dd>{current === null ? "No goal is set" : <AmountValue money={current.amount} valueState={currentState} locale={locale} />}</dd>
-      </div>
-      <div className="flex flex-wrap items-baseline gap-x-1.5">
-        <dt className="font-medium">This change</dt>
-        <dd>
-          <bdi>{amount.trim() === "" ? "an amount you have not entered yet" : amount}</bdi> <bdi>{currency.trim() === "" ? GOAL_CURRENCY_CHOICE.unchosen : currency}</bdi>
-        </dd>
-      </div>
-      <div className="flex flex-wrap items-baseline gap-x-1.5">
-        <dt className="font-medium">Effective from</dt>
-        <dd>{effectiveFrom.trim() === "" ? "a day you have not chosen yet" : <bdi>{effectiveFrom}</bdi>}</dd>
-      </div>
+      <Fact term="Current goal" value={current === null ? "No goal is set" : <AmountValue money={current.amount} valueState={currentState} locale={locale} />} />
+      <Fact term="This change">
+        <bdi>{amount.trim() === "" ? "an amount you have not entered yet" : amount}</bdi> <bdi>{currency.trim() === "" ? GOAL_CURRENCY_CHOICE.unchosen : currency}</bdi>
+      </Fact>
+      <Fact term="Effective from" value={effectiveFrom.trim() === "" ? "a day you have not chosen yet" : <bdi>{effectiveFrom}</bdi>} />
     </dl>
   );
 }
-interface GoalFormProps {
-  readonly envelope: GoalEnvelope;
-  readonly locale: string;
-  readonly onClose: () => void;
-  readonly onCheckResult: () => void;
-}
-/** The goal's one editing surface: four facts, the schema's own messages, a reviewed submit and the service's outcome. */
+type GoalFormProps = { readonly envelope: GoalEnvelope; readonly locale: string; readonly onClose: () => void; readonly onCheckResult: () => void };
 function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): ReactElement {
   const { data } = envelope;
   const goal = data.goal;
   const measureLabel = MEASURE_LABELS[data.measure];
-  // A stored goal is stated in its own currency. A first goal is stated in one of the currencies the read
-  // reports this subject's source stating: where the source states exactly one, the form states it as the
-  // fixed fact it is, and where it states more the caller chooses, so no currency is chosen for them.
-  const statedCurrencies = data.currencies;
+  // A stored goal is stated in its own currency. A first goal is stated in one of the currencies the read reports this
+  const statedCurrencies = data.currencies; // subject's source stating: where the source states exactly one it is stated as the fixed fact it is, and where it states more the caller chooses, so no currency is chosen for them.
   const [chosenCurrency, setChosenCurrency] = useState("");
   const statedSingle = statedCurrencies.length === 1 ? statedCurrencies[0] : undefined;
-  const stated = goal !== null ? undefined : (statedSingle ?? statedCurrencies.find((entry) => entry.currency === chosenCurrency));
+  const stated = goal === null ? (statedSingle ?? statedCurrencies.find((entry) => entry.currency === chosenCurrency)) : undefined;
   const choosingCurrency = goal === null && statedCurrencies.length > 1;
   const currency = goal === null ? (stated?.currency ?? "") : goal.amount.currency;
   const exponent = goal === null ? stated?.exponent : exponentOf(goal.amount.currency);
@@ -206,9 +123,6 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
   const [settled, setSettled] = useState(false);
   const saveGoal = useSaveGoal();
   const mutateGoal = saveGoal.mutateAsync;
-  // `measure` is deliberately absent: the payload schema fixes a goal to the one measure this release
-  // admits and supplies it itself, so stating it here would offer a choice the form cannot make and
-  // the service would only re-check. The measure is shown to the reader as a fact, never as a control.
   const payload = useMemo<GoalSaveFormPayload>(() => ({ currency, amount, effectiveFrom }), [currency, amount, effectiveFrom]);
   const clientErrors = useMemo<FieldErrorLookup | null>(() => {
     const checked = goalSavePayloadSchema.safeParse(payload);
@@ -226,8 +140,7 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
   };
   const markTouched = (): void => setTouched(true);
   if (goal === null && statedCurrencies.length === 0) {
-    // The source states no currency this application holds an exact precision for, so a first goal cannot
-    // be typed here: no currency is substituted in its place and no exponent is assumed.
+    // The source states no currency this application holds an exact precision for, so a first goal cannot be typed here.
     return (
       <Alert>
         <AlertTitle>{GOAL_CURRENCY_UNSTATED.title}</AlertTitle>
@@ -238,11 +151,15 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
   if (goal !== null && !currencyKnown) {
     return (
       <Alert>
-        <AlertTitle>{UNEDITABLE_CURRENCY_TITLE}</AlertTitle>
+        <AlertTitle>This goal cannot be changed here</AlertTitle>
         <AlertDescription>{UNEDITABLE_CURRENCY_BODY}</AlertDescription>
       </Alert>
     );
   }
+  const fields: readonly { readonly name: string; readonly label: string; readonly description: string; readonly type: "text" | "date"; readonly inputMode?: "decimal"; readonly autoComplete?: "off"; readonly value: string; readonly onChange: (value: string) => void }[] = [
+    { name: "amount", label: AMOUNT_LABEL, description: exponent === undefined ? GOAL_CURRENCY_CHOICE.awaitingCurrency : precisionDescription(currency, exponent), type: "text", inputMode: "decimal", autoComplete: "off", value: amount, onChange: setAmount },
+    { name: "effectiveFrom", label: EFFECTIVE_FROM_LABEL, description: `The day this goal takes effect on — ${CIVIL_DAY_NOTE}.`, type: "date", value: effectiveFrom, onChange: setEffectiveFrom },
+  ];
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <p className="text-sm text-pretty text-muted-foreground">
@@ -250,7 +167,7 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
       </p>
       {errors === null || errors.count === 0 ? null : <FormErrorSummary errors={errors} labels={FORM_LABELS} order={FORM_FIELD_ORDER} headingLevel={3} />}
       {choosingCurrency ? (
-        <FormField name="currency" label={CURRENCY_LABEL} description={GOAL_CURRENCY_CHOICE.guidance} error={errors?.byField.currency} required>
+        <FormField name="currency" label={CURRENCY_LABEL} description={GOAL_CURRENCY_CHOICE.guidance} error={errors?.byField["currency"]} required>
           {(field) => (
             <NativeSelect
               id={field.id}
@@ -260,7 +177,7 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
               aria-describedby={field.describedBy}
               aria-invalid={field.invalid ? true : undefined}
               onChange={(event) => {
-                setChosenCurrency(event.target.value);
+                setChosenCurrency(event.currentTarget.value);
                 setSettled(false);
               }}
               onBlur={markTouched}
@@ -275,42 +192,17 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
           )}
         </FormField>
       ) : null}
-      <FormField name="amount" label={AMOUNT_LABEL} description={exponent === undefined ? GOAL_CURRENCY_CHOICE.awaitingCurrency : precisionDescription(currency, exponent)} error={errors?.byField.amount} required>
-        {(field) => (
-          <Input
-            id={field.id}
-            name="amount"
-            type="text"
-            inputMode="decimal"
-            autoComplete="off"
-            value={amount}
-            aria-describedby={field.describedBy}
-            aria-invalid={field.invalid ? true : undefined}
-            onChange={(event) => {
-              setAmount(event.target.value);
+      {fields.map((entry) => (
+        <FormField key={entry.name} name={entry.name} label={entry.label} description={entry.description} error={errors?.byField[entry.name]} required>
+          {(field) => {
+            const onEntryChange = (event: ChangeEvent<HTMLInputElement>): void => {
+              entry.onChange(event.target.value);
               setSettled(false);
-            }}
-            onBlur={markTouched}
-          />
-        )}
-      </FormField>
-      <FormField name="effectiveFrom" label={EFFECTIVE_FROM_LABEL} description={`The day this goal takes effect on — ${CIVIL_DAY_NOTE}.`} error={errors?.byField.effectiveFrom} required>
-        {(field) => (
-          <Input
-            id={field.id}
-            name="effectiveFrom"
-            type="date"
-            value={effectiveFrom}
-            aria-describedby={field.describedBy}
-            aria-invalid={field.invalid ? true : undefined}
-            onChange={(event) => {
-              setEffectiveFrom(event.target.value);
-              setSettled(false);
-            }}
-            onBlur={markTouched}
-          />
-        )}
-      </FormField>
+            };
+            return <Input id={field.id} name={entry.name} type={entry.type} inputMode={entry.inputMode} autoComplete={entry.autoComplete} value={entry.value} aria-describedby={field.describedBy} aria-invalid={field.invalid ? true : undefined} onChange={onEntryChange} onBlur={markTouched} />;
+          }}
+        </FormField>
+      ))}
       {choosingCurrency ? null : (
         <p className="text-sm text-muted-foreground">
           The currency is <bdi>{currency}</bdi> and is not a free choice: it is the currency this support subject reports in, so the amount inherits a precision the source states rather than one this form assumes.
@@ -331,79 +223,27 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
         headingLevel={3}
       />
       {settled ? (
-        <div>
-          <Button type="button" variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </div>
+        <Button type="button" variant="outline" onClick={onClose}>
+          Close
+        </Button>
       ) : null}
     </div>
   );
 }
-/** The single goal surface: what the goal is, how far it has been met, and — only where the read permits it — the change. */
-export function GoalPanel({ scope, locale, dir, initialEnvelope, className }: GoalPanelProps): ReactElement {
+/** The single goal surface: what the goal is, how far it has been met, and — only where the read permits it — the change. */ export function GoalPanel({ scope, locale, dir, initialEnvelope, className }: GoalPanelProps): ReactElement {
   const titleId = useId();
   const seed = useMemo(() => goalEnvelopeOf(initialEnvelope), [initialEnvelope]);
   const query = useGoal({ scope, initialEnvelope: seed });
   const [editing, setEditing] = useState(false);
-  if (query.isPending) {
-    return <StateNotice kind="loading" title="Reading the support goal" headingLevel={3} className={className} />;
-  }
-  if (query.isError) {
-    // A read that never answered, or answered in a form none of the three arms describes, is the one
-    // failure the arm switch cannot state: it is reported as the outage it is, with the retry that
-    // re-requests it, and no status is read back out of the error to guess at another arm.
-    return (
-      <StateNotice
-        kind="unavailable"
-        title="The support goal could not be read"
-        description="The source behind the goal did not answer, so no amount, revision or percentage is shown in its place."
-        retry={{
-          label: "Read the goal again",
-          onClick: async () => {
-            await query.refetch();
-          },
-        }}
-        headingLevel={3}
-        className={className}
-      />
-    );
-  }
+  if (query.isPending) return <StateNotice kind="loading" title="Reading the support goal" headingLevel={3} className={className} />;
+  const refetch = { label: "Read the goal again", onClick: (): void => void query.refetch() };
+  if (query.isError) return <StateNotice kind="unavailable" title="The support goal could not be read" description="The source behind the goal did not answer, so no amount, revision or percentage is shown in its place." retry={refetch} headingLevel={3} className={className} />;
   const result = query.data;
-  if (result.kind === "denied") {
-    // A refusal is stated as a refusal: the arm's own reason code, and no amount, count or title
-    // beside it, because the answer is the same whether or not a goal exists in this context.
+  if (result.kind === "denied")
     return <StateNotice kind="denied" title="The support goal is not readable in this context" description="The goal, its amount and its progress are read under the selected context, and this session holds no authority for it." reasonCode={result.denied.reasonCode} headingLevel={3} className={className} />;
-  }
-  if (result.kind === "unavailable") {
-    // The source's own identity and retry guidance, never an outage worded over the arm that carries it.
-    return (
-      <StateNotice
-        kind="unavailable"
-        title="The support goal could not be read"
-        description={result.unavailable.guidance}
-        source={result.unavailable.source}
-        retry={{
-          label: "Read the goal again",
-          onClick: async () => {
-            await query.refetch();
-          },
-        }}
-        headingLevel={3}
-        className={className}
-      />
-    );
-  }
-  if (result.kind === "refused") {
-    // The request this panel's own read made is not one the goal read admits: the refusal names the field
-    // to correct, and no amount, revision or percentage is shown in place of either fact.
-    return <StateNotice kind="refused" title="This goal's request was refused" headingLevel={3} className={className} />;
-  }
-  if (result.kind !== "envelope") {
-    // A fourth arm added to the goal read's contract fails compilation here rather than rendering as a
-    // goal, so no unstated arm can ever fall through to the amount and the progress below.
-    return assertNever(result, "The goal read answered with an arm this panel does not render.");
-  }
+  if (result.kind === "unavailable") return <StateNotice kind="unavailable" title="The support goal could not be read" description={result.unavailable.guidance} source={result.unavailable.source} retry={refetch} headingLevel={3} className={className} />;
+  if (result.kind === "refused") return <StateNotice kind="refused" title="This goal's request was refused" headingLevel={3} className={className} />;
+  if (result.kind !== "envelope") return assertNever(result, "The goal read answered with an arm this panel does not render.");
   const envelope = result.envelope;
   const { data, actions } = envelope;
   const goal = data.goal;
@@ -417,9 +257,9 @@ export function GoalPanel({ scope, locale, dir, initialEnvelope, className }: Go
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
-            <h2 id={titleId}>{PANEL_TITLE}</h2>
+            <h2 id={titleId}>Support goal</h2>
           </CardTitle>
-          <CardDescription>{PANEL_DESCRIPTION}</CardDescription>
+          <CardDescription>{"One target, set against received gifts on the one named basis this application measures. Changing the goal changes only the goal: no gift, commitment, earlier report or public progress is written, and no message is sent."}</CardDescription>
           {canEdit && !showForm ? (
             <CardAction>
               <Button type="button" onClick={() => setEditing(true)}>
@@ -441,29 +281,18 @@ export function GoalPanel({ scope, locale, dir, initialEnvelope, className }: Go
             <h3 className="text-sm font-medium">Progress</h3>
             {progress.figure === null ? null : (
               <p className="flex flex-wrap items-baseline gap-x-2">
-                <span className="tabular-figures text-2xl font-semibold tracking-tight">
-                  <bdi>{progress.figure}</bdi>
-                </span>
+                <bdi className="tabular-figures text-2xl font-semibold tracking-tight">{progress.figure}</bdi>
                 <span className="text-sm text-muted-foreground">of the goal</span>
               </p>
             )}
             <p className="text-sm text-pretty text-muted-foreground">{progress.sentence}</p>
           </div>
           <SnapshotStatement basis={SUPPORT_BASIS} currencies={[goal === null ? envelope.coverage.currency : goal.amount.currency]} period={{ from: data.period.from, to: data.period.to }} coverage={envelope.coverage} asOf={envelope.asOf} isCurrentPeriod={data.period.state === "in-progress"} locale={locale} />
-          {canEdit ? null : <p className="text-sm text-pretty text-muted-foreground">{editAction?.reason ?? READ_ONLY_FALLBACK_REASON}</p>}
+          {canEdit ? null : <p className="text-sm text-pretty text-muted-foreground">{editAction?.reason ?? "This read states no goal-editing capability, so the goal is read-only here: no edit control is offered and a save would be refused."}</p>}
           {showForm ? (
             <>
               <Separator />
-              <GoalForm
-                envelope={envelope}
-                locale={locale}
-                onClose={() => {
-                  setEditing(false);
-                }}
-                onCheckResult={() => {
-                  void query.refetch();
-                }}
-              />
+              <GoalForm envelope={envelope} locale={locale} onClose={() => setEditing(false)} onCheckResult={() => void query.refetch()} />
             </>
           ) : null}
         </CardContent>

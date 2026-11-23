@@ -1,5 +1,4 @@
 "use client";
-/** The one shell for the two in-place presentations of a record: the column beside a list on a desktop, and the full-width sheet a phone shows. */
 import { XIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import RecordDetail, { type RecordDetailProps } from "@/components/record-detail";
@@ -8,12 +7,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { cn } from "@/lib/cn";
 import { useDismissableLayer, useModalFocusContainment, type DismissReason } from "@/lib/ui-sdk";
 export type SidePanelVariant = "desktop" | "phone";
-/**
- * The two ways a caller states the panel's body, of which it states exactly one: the shared record body as a `detail`
- * statement, which this shell lays out for the variant it presents, or a family's own body, which already carries its
- * own headings and its own layout for the presentation it lands in. A family body is the same one its direct route
- * renders, so the panel adds no second implementation of it.
- */
+/** The two ways a caller states the panel's body, of which it states exactly one: the shared record body as a `detail` statement, which this shell lays out for the variant it presents, or a family's own body, which already carries its own headings and its own layout for the presentation it lands in. A family body is the same one its direct route renders, so the panel adds no second implementation of it. */
 export type SidePanelDetailBody = { readonly detail: Omit<RecordDetailProps, "layout"> };
 export type SidePanelOwnBody = { readonly body: ReactNode };
 export type SidePanelChrome = { readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly variant: SidePanelVariant; readonly title: string; readonly returnFocusTo?: RefObject<HTMLElement | null>; readonly className?: string };
@@ -51,21 +45,16 @@ function focusWasReleased(): boolean {
   const active = document.activeElement;
   return active === null || active === document.body || !active.isConnected;
 }
-function toHeadingId(generated: string): string {
-  return `side-panel-${generated.replace(/[^a-zA-Z0-9_-]/g, "")}-title`;
-}
-/** The body this shell presents in the layout its variant is, from whichever of the two statements the caller made. */
-function panelBodyOf(props: SidePanelProps, layout: "panel" | "sheet"): ReactNode {
-  return "detail" in props ? <RecordDetail {...props.detail} layout={layout} /> : props.body;
-}
+const toHeadingId = (generated: string): string => `side-panel-${generated.replace(/[^a-zA-Z0-9_-]/g, "")}-title`;
 /** Presents one record beside a list on a desktop, or as a sheet on a phone. */
+/** The body this shell presents in the layout its variant is, from whichever of the two statements the caller made. */
+const panelBodyOf = (props: SidePanelProps, layout: "panel" | "sheet"): ReactNode => ("detail" in props ? <RecordDetail {...props.detail} layout={layout} /> : props.body);
 export function SidePanel(props: SidePanelProps) {
   const { open, onOpenChange, variant, title, returnFocusTo, className } = props;
   const generatedId = useId();
   const titleId = toHeadingId(generatedId);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
-  // The sheet's dialog element is kept as state so the containment binds the moment the dialog exists: the design system mounts its popup a render after opening, so a ref would still be empty and the modal surface would lose its Tab cycle.
   const [sheetElement, setSheetElement] = useState<HTMLDivElement | null>(null);
   const sheetRef = useMemo<RefObject<HTMLDivElement | null>>(() => ({ current: sheetElement }), [sheetElement]);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -77,14 +66,10 @@ export function SidePanel(props: SidePanelProps) {
     return remembered !== null && remembered.isConnected ? remembered : firstRecordListControl();
   }, [returnFocusTo]);
   const restoreFocus = useCallback(() => {
-    // A close that left focus on another real control released it deliberately; pulling it back would undo the activation the worker just made.
     if (!focusWasReleased()) return;
     resolveReturnTarget()?.focus();
   }, [resolveReturnTarget]);
-  const requestClose = useCallback(() => {
-    onOpenChange(false);
-  }, [onOpenChange]);
-  // Remembers the control that held focus while the panel was closed. The answer is needed at open time rather than at close time, because opening the panel moves focus into it and the row that started the visit is no longer the active element afterwards.
+  const requestClose = useCallback(() => onOpenChange(false), [onOpenChange]);
   useEffect(() => {
     if (open) return;
     const remember = (event: FocusEvent): void => {
@@ -94,7 +79,6 @@ export function SidePanel(props: SidePanelProps) {
     document.addEventListener("focusin", remember, true);
     return () => document.removeEventListener("focusin", remember, true);
   }, [open]);
-  // Focus moves to the heading as the panel opens and back out as it closes. The phone variant's containment hook places and returns focus for the sheet, so only the desktop column — which has no dialog to do either — is handled here.
   useEffect(() => {
     const wasOpen = wasOpenRef.current;
     wasOpenRef.current = open;
@@ -116,23 +100,12 @@ export function SidePanel(props: SidePanelProps) {
     },
     [requestClose, sheetRef],
   );
-  // The desktop column's dismissal: Escape and a press outside it, non-modal, so the press still reaches the list and the panel leaves no focus trap behind.
   useDismissableLayer({ open: open && variant === "desktop", layerRef: panelRef, onDismiss: handleDismiss });
-  // The phone sheet's containment: initial focus on the heading, Tab and Shift+Tab wrapped inside, Escape and outside presses dismissing, and focus returned on close — the design system supplies the dialog's semantics, this hook keeps the Tab cycle inside it.
   useModalFocusContainment({ open: open && variant === "phone", dialogRef: sheetRef, initialFocusRef: headingRef, onDismiss: handleSheetDismiss });
   if (variant === "phone") {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent
-          ref={setSheetElement}
-          side="bottom"
-          className={cn(PHONE_SURFACE_CLASS, className)}
-          // The dialog places no focus of its own: initial focus and the Tab cycle are the containment hook's in this component, so one behaviour has one owner and the surface never carries two sets of focus guards. Focus on the way out is the `finalFocus` step.
-          initialFocus={false}
-          // The sheet's dialog returns focus, at the moment its exiting surface stops holding the page; this shell decides only where. `true` keeps the dialog's own default when nothing on the surface can take focus, rather than stranding focus on the document.
-          finalFocus={() => resolveReturnTarget() ?? true}
-          data-side-panel="phone"
-        >
+        <SheetContent ref={setSheetElement} side="bottom" className={cn(PHONE_SURFACE_CLASS, className)} initialFocus={false} finalFocus={() => resolveReturnTarget() ?? true} data-side-panel="phone">
           <SheetHeader className={PHONE_HEADER_CLASS}>
             <SheetTitle ref={headingRef} tabIndex={-1} className="break-words">
               {title}
@@ -147,7 +120,6 @@ export function SidePanel(props: SidePanelProps) {
   return (
     <aside ref={panelRef} data-slot="side-panel" data-side-panel="desktop" aria-labelledby={titleId} className={cn(DESKTOP_SURFACE_CLASS, className)}>
       <div className={DESKTOP_HEADER_CLASS}>
-        {/* Focusable only programmatically: it is where the panel puts focus on open, and it is never a tab stop between the page and the body's own controls. */}
         <h2 id={titleId} ref={headingRef} tabIndex={-1} className={DESKTOP_HEADING_CLASS}>
           {title}
         </h2>

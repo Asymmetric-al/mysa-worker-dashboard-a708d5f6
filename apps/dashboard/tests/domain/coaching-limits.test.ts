@@ -18,16 +18,17 @@ import {
   type CheckInQuestion,
 } from "@/modules/coaching/checkin";
 import { TASK_SUMMARY_MAX_CODE_POINTS, reviewTaskSummary, safeTaskSummary, selectSuccessorForSharing, stopTaskShare as stopModelledTaskShare, taskShareReadState, type SafeTaskSummaryInput, type TaskShare, type TaskSummaryDueDate } from "@/modules/coaching/taskshare";
-import { resolvePeriodContaining, resolveTargetVersion, startProspectiveVersion, workerTargetProgress, type PeriodAnchor, type ResolvedPeriod, type TargetPeriod, type TargetRecord, type TargetVersion, type TargetVersionChange } from "@/modules/coaching/target";
-import { mutations, reads, type CoachingCheckInRecord, type CoachingTargetRecord, type Scope } from "@/modules/data-service";
-import { resolveSession, type SessionSource } from "@/modules/data-service/authorize";
+import { resolveTargetVersion, startProspectiveVersion, workerTargetProgress, type TargetVersionChange } from "@/modules/coaching/target";
+import { mutations, reads, type CoachingCheckInRecord, type Scope } from "@/modules/data-service";
+import type { SessionSource } from "@/modules/data-service/authorize";
 import { isOutcome, type MutationOutcome } from "@/modules/data-service/outcome";
 import { DEFAULT_SESSION_ID, SEEDED_PERSONAS, seed, type SeededSessionDocuments, type SeededSessionWithDocuments, type SessionStateDocument } from "@/modules/dev-runtime/seed";
 import { readSession, resetSession } from "@/modules/store/repository";
+import { expectEnvelope, firstSaying, firstWhere, requiredSaying, throwing } from "../helpers/answers";
+import { anchorOf, scopeOf, sessionOf, targetRecordOf, versionsOf, weekOf } from "../helpers/fixtures";
 const WORKER_SESSION = "domain-coaching-limits";
 const COACH_SESSION = "domain-coaching-limits-coach";
 const PAGING_SESSION = `${WORKER_SESSION}-paging`;
-const SEEDED_COACH_SESSION = "coach";
 const WORKER: SessionSource = { sessionId: WORKER_SESSION };
 const COACH: SessionSource = { sessionId: COACH_SESSION };
 const PAGING: SessionSource = { sessionId: PAGING_SESSION };
@@ -44,43 +45,21 @@ const REQUEST_CEILING_BYTES = 262_144;
 /** AAP 0.8.7's coaching list page size: 25 rows by default, clamped to 100 at most. */
 const PAGE_SIZE_DEFAULT = 25;
 const PAGE_SIZE_CAP = 100;
-const PAGING_HISTORY_LENGTH = 103;
-interface Ok<T> {
-  readonly ok: true;
-  readonly value: T;
-}
-interface Refused<E> {
-  readonly ok: false;
-  readonly error: E;
-}
-function valueOf<T, E>(result: Ok<T> | Refused<E>, what: string): T {
-  if (!result.ok) throw new Error(`${what} was refused: ${JSON.stringify(result.error)}`);
-  return result.value;
-}
-function refusalOf<T, E>(result: Ok<T> | Refused<E>, what: string): E {
-  if (result.ok) throw new Error(`${what} was accepted, and this case needs the refusal it should have received`);
-  return result.error;
-}
-function required<T>(value: T | null | undefined, what: string): T {
-  if (value === null || value === undefined) throw new Error(`${what} is missing, so this case has nothing to assert against`);
-  return value;
-}
-function scalarsOf(text: string): number {
-  return Array.from(text).reduce((total) => total + 1, 0);
-}
+type Ok<T> = { readonly ok: true; readonly value: T };
+type Refused<E> = { readonly ok: false; readonly error: E };
+const valueOf = <T, E>(result: Ok<T> | Refused<E>, what: string): T => (result.ok ? result.value : throwing(`${what} was refused: ${JSON.stringify(result.error)}`));
+const refusalOf = <T, E>(result: Ok<T> | Refused<E>, what: string): E => (result.ok ? throwing(`${what} was accepted, and this case needs the refusal it should have received`) : result.error);
+const required = <T>(value: T | null | undefined, what: string): T => (value === null || value === undefined ? throwing(`${what} is missing, so this case has nothing to assert against`) : value);
+const scalarsOf = (text: string): number => Array.from(text).reduce((total) => total + 1, 0);
 function codePoints(count: number, character = "\u{1D4B3}"): string {
   const text = character.repeat(count);
   const units = text.length;
   if (scalarsOf(text) !== count) throw new RangeError(`codePoints(${String(count)}) built ${String(scalarsOf(text))} code points`);
-  // `"𝒳".length` is 2, so an astral string's length is twice its code points: a limit measured in
-  // `.length` would refuse a value that a scalar-counted limit accepts.
+  // `"𝒳".length` is 2, so an astral string's length is twice its code points: a limit measured in `.length` would refuse a value that a scalar-counted limit accepts.
   if (character.length > 1 && units !== count * character.length) throw new RangeError(`codePoints(${String(count)}) built ${String(units)} UTF-16 units, not ${String(count * character.length)}`);
   return text;
 }
-const UTF8 = new TextEncoder();
-function bytesOf(value: unknown): number {
-  return UTF8.encode(JSON.stringify(value)).byteLength;
-}
+const bytesOf = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).byteLength;
 function payloadOfBytes(targetBytes: number): CheckInPayload {
   const texts: string[] = [];
   const payloadWith = (candidate: readonly string[]): CheckInPayload => ({ questions: [], answers: candidate.map((text) => ({ questionOrder: null, text })) });
@@ -97,84 +76,37 @@ function payloadOfBytes(targetBytes: number): CheckInPayload {
 }
 let world: { readonly worker: SeededSessionDocuments; readonly coach: SeededSessionDocuments };
 let scope: Scope;
-function documentsOf(sessions: readonly SeededSessionWithDocuments[], sessionId: string): SeededSessionDocuments {
-  const session = sessions.find((candidate) => candidate.sessionId === sessionId);
-  if (session === undefined) throw new Error(`The seed lays down no "${sessionId}" session, so this file has no world to start from`);
-  return session.documents;
-}
+const documentsOf = (sessions: readonly SeededSessionWithDocuments[], sessionId: string): SeededSessionDocuments => firstSaying(sessions, "sessionId", sessionId, `The seed lays down no "${sessionId}" session, so this file has no world to start from`).documents;
 async function layDownWorkerWorld(): Promise<void> {
   const { state, operations, meta } = world.worker;
   await resetSession(WORKER_SESSION, {
     meta,
     operations,
-    // A record set states the session that owns it, so the private session's own id is written into the
-    // document it holds rather than naming a session that is not the one reading it.
-    state: { ...state, context: { ...state.context, sessionId: WORKER_SESSION } },
+    state: { ...state, context: { ...state.context, sessionId: WORKER_SESSION } }, // A record set states the session that owns it, so the private session's own id is written into the document it holds rather than naming a session that is not the one reading it.
   });
 }
-async function scopeOf(source: SessionSource): Promise<Scope> {
-  const resolved = await resolveSession(source);
-  if (!resolved.ok) throw new Error(`The session "${source.sessionId}" could not be resolved, so no coaching case can act in it`);
-  const selected = resolved.session.selected;
-  if (selected === null) throw new Error(`The session "${source.sessionId}" has selected no context, so it holds no scope to share in`);
-  return selected;
-}
-async function storedState(): Promise<SessionStateDocument> {
-  const documents = await readSession(WORKER_SESSION);
-  if (documents === undefined) throw new Error(`The session "${WORKER_SESSION}" holds no documents, so nothing it accepted can be read back`);
-  return documents.state as SessionStateDocument;
-}
-async function storedCheckIn(checkInId: string): Promise<CoachingCheckInRecord> {
-  const record = (await storedState()).coachingCheckIns.find((candidate) => candidate.checkInId === checkInId);
-  if (record === undefined) throw new Error(`The session holds no check-in "${checkInId}"`);
-  return record;
-}
-async function storedCheckInIds(): Promise<readonly string[]> {
-  return (await storedState()).coachingCheckIns.map((checkIn) => checkIn.checkInId);
-}
+const storedState = async (): Promise<SessionStateDocument> => requiredSaying(await readSession(WORKER_SESSION), `The session "${WORKER_SESSION}" holds no documents, so nothing it accepted can be read back`).state as SessionStateDocument;
+const storedCheckIn = async (checkInId: string): Promise<CoachingCheckInRecord> => firstSaying((await storedState()).coachingCheckIns, "checkInId", checkInId, `The session holds no check-in "${checkInId}"`);
+const storedCheckInIds = async (): Promise<readonly string[]> => (await storedState()).coachingCheckIns.map((checkIn) => checkIn.checkInId);
 type OutcomeNamed<K extends MutationOutcome["outcome"]> = Extract<MutationOutcome, { readonly outcome: K }>;
-
 function outcomeNamed<K extends MutationOutcome["outcome"]>(outcome: MutationOutcome, name: K, what: string): OutcomeNamed<K> {
-  // The guard is asked as well as the discriminant, so a value that reached this test through JSON is
-  // narrowed by the same check the Route Handlers use rather than by a cast.
-  if (!isOutcome(outcome) || outcome.outcome !== name) throw new Error(`${what} answered ${JSON.stringify(outcome)} instead of "${name}"`);
+  if (!isOutcome(outcome) || outcome.outcome !== name) throw new Error(`${what} answered ${JSON.stringify(outcome)} instead of "${name}"`); // The guard is asked as well as the discriminant, so a value that reached this test through JSON is narrowed by the same check the Route Handlers use rather than by a cast.
   return outcome as OutcomeNamed<K>;
 }
-function firstCreated(outcome: { readonly created?: readonly string[] }, what: string): string {
-  return required(outcome.created?.at(0), `${what}'s created identifier`);
-}
+const firstCreated = (outcome: { readonly created?: readonly string[] }, what: string): string => required(outcome.created?.at(0), `${what}'s created identifier`);
 type CheckInAttempt<P> = { readonly operationId: string; readonly scope: Scope; readonly expectedRevision: string; readonly payload: P };
-
-function attempt<P>(payload: P, expectedRevision: string): CheckInAttempt<P> {
-  return { operationId: newOperationId(), scope, expectedRevision, payload };
-}
+const attempt = <P>(payload: P, expectedRevision: string): CheckInAttempt<P> => ({ operationId: newOperationId(), scope, expectedRevision, payload });
 async function saveCheckIn(payload: { readonly checkInId?: string; readonly questions?: readonly string[]; readonly answers: readonly string[] }, expectedRevision: string = FIRST_REVISION): Promise<MutationOutcome> {
   return mutations.coaching.saveCheckIn(attempt({ ...(payload.checkInId === undefined ? {} : { checkInId: payload.checkInId }), ...(payload.questions === undefined ? {} : { questions: [...payload.questions] }), answers: [...payload.answers] }, expectedRevision), WORKER);
 }
-async function shareCheckIn(checkInId: string, expectedRevision: string): Promise<MutationOutcome> {
-  return mutations.coaching.shareCheckIn(attempt({ checkInId }, expectedRevision), WORKER);
-}
-async function updateSharedCheckIn(checkInId: string, answers: readonly string[], expectedRevision: string): Promise<MutationOutcome> {
-  return mutations.coaching.updateSharedCheckIn(attempt({ checkInId, answers: [...answers] }, expectedRevision), WORKER);
-}
-async function withdrawCheckIn(checkInId: string, expectedRevision: string): Promise<MutationOutcome> {
-  return mutations.coaching.withdrawCheckIn(attempt({ checkInId }, expectedRevision), WORKER);
-}
-async function setModule(moduleKey: "task-summaries" | "check-ins", enabled: boolean, expectedRevision: string = FIRST_REVISION): Promise<MutationOutcome> {
-  return mutations.coaching.setModule(attempt({ grantId: ACTIVE_GRANT, moduleKey, enabled }, expectedRevision), WORKER);
-}
-async function shareTaskSummary(taskId: string, safeDescription: string, expectedRevision: string): Promise<MutationOutcome> {
-  return mutations.coaching.shareTaskSummary(attempt({ taskId, safeDescription }, expectedRevision), WORKER);
-}
-async function stopTaskShare(shareId: string, expectedRevision: string): Promise<MutationOutcome> {
-  return mutations.coaching.stopTaskShare(attempt({ shareId }, expectedRevision), WORKER);
-}
+const shareCheckIn = async (checkInId: string, expectedRevision: string): Promise<MutationOutcome> => mutations.coaching.shareCheckIn(attempt({ checkInId }, expectedRevision), WORKER);
+const updateSharedCheckIn = async (checkInId: string, answers: readonly string[], expectedRevision: string): Promise<MutationOutcome> => mutations.coaching.updateSharedCheckIn(attempt({ checkInId, answers: [...answers] }, expectedRevision), WORKER);
+const withdrawCheckIn = async (checkInId: string, expectedRevision: string): Promise<MutationOutcome> => mutations.coaching.withdrawCheckIn(attempt({ checkInId }, expectedRevision), WORKER);
+const setModule = async (moduleKey: "task-summaries" | "check-ins", enabled: boolean, expectedRevision: string = FIRST_REVISION): Promise<MutationOutcome> => mutations.coaching.setModule(attempt({ grantId: ACTIVE_GRANT, moduleKey, enabled }, expectedRevision), WORKER);
+const shareTaskSummary = async (taskId: string, safeDescription: string, expectedRevision: string): Promise<MutationOutcome> => mutations.coaching.shareTaskSummary(attempt({ taskId, safeDescription }, expectedRevision), WORKER);
+const stopTaskShare = async (shareId: string, expectedRevision: string): Promise<MutationOutcome> => mutations.coaching.stopTaskShare(attempt({ shareId }, expectedRevision), WORKER);
 /** A check-in whose answers are already stored, so a later case has a last-accepted value to compare against. */
-interface StoredDraft {
-  readonly checkInId: string;
-  readonly revision: string;
-  readonly answers: readonly string[];
-}
+type StoredDraft = { readonly checkInId: string; readonly revision: string; readonly answers: readonly string[] };
 async function draftWith(answers: readonly string[], questions: readonly string[] = []): Promise<StoredDraft> {
   const accepted = outcomeNamed(await saveCheckIn({ ...(questions.at(0) === undefined ? {} : { questions }), answers }), "accepted", "saveCheckIn");
   const checkInId = firstCreated(accepted, "saveCheckIn");
@@ -184,148 +116,94 @@ async function draftWith(answers: readonly string[], questions: readonly string[
   return { checkInId, revision: accepted.revision, answers: draft.answers.map((answer) => answer.text) };
 }
 type CoachReadResult = Awaited<ReturnType<typeof reads.coach.readCoachSubject>>;
-
 type CoachEnvelope = Extract<CoachReadResult, { readonly kind: "envelope" }>["envelope"];
-
 type CoachModule = CoachEnvelope["data"]["modules"][number];
-
 type CheckInsModule = Extract<CoachModule, { readonly module: "check-ins" }>;
-
 type SummariesModule = Extract<CoachModule, { readonly module: "task-summaries" }>;
-
 async function coachSubject(): Promise<CoachEnvelope> {
-  const workerDocuments = await readSession(WORKER_SESSION);
-  if (workerDocuments === undefined) throw new Error(`The session "${WORKER_SESSION}" holds no documents, so the coach has nothing to read`);
+  const workerDocuments = requiredSaying(await readSession(WORKER_SESSION), `The session "${WORKER_SESSION}" holds no documents, so the coach has nothing to read`);
   await resetSession(COACH_SESSION, { meta: world.coach.meta, operations: world.coach.operations, state: workerDocuments.state });
-  const result = await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT }, COACH);
-  if (result.kind !== "envelope") throw new Error(`The coach read answered "${result.kind}" instead of an admitted subject`);
-  return result.envelope;
+  const result = expectEnvelope(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT }, COACH), "the coach's subject read");
+  return result;
 }
-function checkInsModuleOf(envelope: CoachEnvelope): CheckInsModule | undefined {
-  return envelope.data.modules.find((view): view is CheckInsModule => view.module === "check-ins");
-}
-function summariesModuleOf(envelope: CoachEnvelope): SummariesModule | undefined {
-  return envelope.data.modules.find((view): view is SummariesModule => view.module === "task-summaries");
-}
+const checkInsModuleOf = (envelope: CoachEnvelope): CheckInsModule | undefined => envelope.data.modules.find((view): view is CheckInsModule => view.module === "check-ins");
+const summariesModuleOf = (envelope: CoachEnvelope): SummariesModule | undefined => envelope.data.modules.find((view): view is SummariesModule => view.module === "task-summaries");
 type TaskListData = Extract<Awaited<ReturnType<typeof reads.work.listTasks>>, { readonly kind: "envelope" }>["envelope"]["data"];
-
 type TaskRow = TaskListData["tasks"][number];
-
 async function taskRow(taskId: string): Promise<TaskRow> {
-  const result = await reads.work.listTasks({ list: "all", displayTimeZone: DISPLAY_ZONE }, WORKER);
-  if (result.kind !== "envelope") throw new Error(`The task list answered "${result.kind}" instead of an envelope`);
-  const row = result.envelope.data.tasks.find((candidate) => candidate.taskId === taskId);
-  if (row === undefined) throw new Error(`The task list holds no task "${taskId}"`);
+  const result = expectEnvelope(await reads.work.listTasks({ list: "all", displayTimeZone: DISPLAY_ZONE }, WORKER), "the task list");
+  const row = firstSaying(result.data.tasks, "taskId", taskId, `The task list holds no task "${taskId}"`);
   return row;
 }
 beforeAll(async () => {
   const sessions = await seed();
-  world = { worker: documentsOf(sessions, DEFAULT_SESSION_ID), coach: documentsOf(sessions, SEEDED_COACH_SESSION) };
+  world = { worker: documentsOf(sessions, DEFAULT_SESSION_ID), coach: documentsOf(sessions, "coach") };
 });
-
 beforeEach(async () => {
   await layDownWorkerWorld();
   scope = await scopeOf(WORKER);
 });
-
 afterAll(async () => {
-  // Every session this file writes is its own, so the store is left holding none of its fixtures.
-  await resetSession(WORKER_SESSION);
-  await resetSession(COACH_SESSION);
-  await resetSession(PAGING_SESSION);
+  for (const sessionId of [WORKER_SESSION, COACH_SESSION, PAGING_SESSION]) await resetSession(sessionId); // Every session this file writes is its own, so the store is left holding none of its fixtures.
 });
-function questionsOf(wordings: readonly string[]): readonly CheckInQuestion[] {
-  return wordings.map((wording, order) => ({ wording, order }));
-}
+const questionsOf = (wordings: readonly string[]): readonly CheckInQuestion[] => wordings.map((wording, order) => ({ wording, order }));
 function modulePayload(questions: readonly string[], answers: readonly string[]): CheckInPayload {
-  const standAlone = questions.at(0) === undefined;
-  return { questions: questions.map((wording, index) => ({ wording, order: index })), answers: answers.map((text, index) => ({ questionOrder: standAlone ? null : index, text })) };
+  return { questions: questions.map((wording, index) => ({ wording, order: index })), answers: answers.map((text, index) => ({ questionOrder: questions.at(0) === undefined ? null : index, text })) };
 }
-
 describe("the limits the release fixes", () => {
   it("states the five fixed limits in code points and bytes", () => {
-    expect(CHECKIN_MAX_QUESTIONS).toBe(5);
-    expect(CHECKIN_MAX_QUESTION_SCALARS).toBe(500);
-    expect(CHECKIN_MAX_ANSWER_SCALARS).toBe(4000);
-    // 256 KiB, the ceiling measured on the serialised request rather than on an answer.
-    expect(CHECKIN_MAX_REQUEST_BYTES).toBe(REQUEST_CEILING_BYTES);
-    expect(TASK_SUMMARY_MAX_CODE_POINTS).toBe(240);
+    expect([CHECKIN_MAX_QUESTIONS, CHECKIN_MAX_QUESTION_SCALARS, CHECKIN_MAX_ANSWER_SCALARS]).toEqual([5, 500, 4000]);
+    expect([CHECKIN_MAX_REQUEST_BYTES, TASK_SUMMARY_MAX_CODE_POINTS]).toEqual([REQUEST_CEILING_BYTES, 240]); // 256 KiB, the ceiling measured on the serialised request rather than on an answer.
   });
 });
 type TargetsData = Extract<Awaited<ReturnType<typeof reads.coaching.readTargets>>, { readonly kind: "envelope" }>["envelope"]["data"];
-
 async function layDownPagingWorld(): Promise<void> {
   const { state, operations, meta } = world.worker;
   const shape = required(state.coachingTargets.at(0), "the seeded target the paging history repeats");
   const eligible = state.coachingTargets.filter((record) => record.workerPrincipalId === shape.workerPrincipalId).length;
-  const clones = Array.from({ length: Math.max(0, PAGING_HISTORY_LENGTH - eligible) }, (_, index) => ({ ...shape, targetId: `${shape.targetId}-paging-${String(index)}`, versions: shape.versions.map((version) => ({ ...version, revisionId: `${version.revisionId}-paging-${String(index)}` })) }));
+  const clones = Array.from({ length: Math.max(0, 103 - eligible) }, (_, index) => ({ ...shape, targetId: `${shape.targetId}-paging-${String(index)}`, versions: shape.versions.map((version) => ({ ...version, revisionId: `${version.revisionId}-paging-${String(index)}` })) }));
   await resetSession(PAGING_SESSION, {
     meta,
     operations,
-    // As in the worker's session, the record set states the session that owns it rather than naming another.
-    state: { ...state, context: { ...state.context, sessionId: PAGING_SESSION }, coachingTargets: [...state.coachingTargets, ...clones] },
+    state: { ...state, context: { ...state.context, sessionId: PAGING_SESSION }, coachingTargets: [...state.coachingTargets, ...clones] }, // As in the worker's session, the record set states the session that owns it rather than naming another.
   });
 }
 async function pagingHistory(): Promise<readonly string[]> {
-  const resolution = await resolveSession(PAGING);
-  if (!resolution.ok) throw new Error(`The session "${PAGING_SESSION}" could not be resolved, so it holds no history to page`);
-  const documents = await readSession(PAGING_SESSION);
-  if (documents === undefined) throw new Error(`The session "${PAGING_SESSION}" holds no documents, so it holds no history to page`);
+  const resolution = await sessionOf(PAGING);
+  const documents = requiredSaying(await readSession(PAGING_SESSION), `The session "${PAGING_SESSION}" holds no documents, so it holds no history to page`);
   const { coachingTargets } = documents.state as SessionStateDocument;
-  const history = coachingTargets.filter((record) => record.workerPrincipalId === resolution.session.principalId);
+  const history = coachingTargets.filter((record) => record.workerPrincipalId === resolution.principalId);
   return history.map((record) => record.targetId);
 }
 async function pagingPage(query: { readonly page?: number; readonly pageSize?: number }): Promise<TargetsData> {
-  const result = await reads.coaching.readTargets(query, PAGING);
-  if (result.kind !== "envelope") throw new Error(`The targets read answered "${result.kind}" instead of an envelope`);
-  return result.envelope.data;
+  const result = expectEnvelope(await reads.coaching.readTargets(query, PAGING), "the targets read");
+  return result.data;
 }
 /** AAP 0.8.7 fixes the coaching list page size at 25 rows by default with a 100-row cap, and states that "eligible history is never truncated by the cap"; that is the value Criterion 16 rests on. */
 describe("the list page size", () => {
-  beforeAll(async () => {
-    await layDownPagingWorld();
-  });
+  beforeAll(async () => await layDownPagingWorld());
   it("pages 25 rows by default, clamps a larger request to 100, and loses no target to the cap", async () => {
     const history = await pagingHistory();
-    // The history has to cross both bounds for either clause to mean anything: past the 25-row default, and
-    // past the 100-row cap, so the capped request is answered with a full page of the same history.
-    expect(history.length).toBeGreaterThan(PAGE_SIZE_CAP);
+    expect(history.length).toBeGreaterThan(PAGE_SIZE_CAP); // The history has to cross both bounds for either clause to mean anything: past the 25-row default, and past the 100-row cap, so the capped request is answered with a full page of the same history.
     expect(new Set(history).size).toBe(history.length);
-    // The default: 25 rows, the cap named at 100, and a total that counts the whole eligible history rather
-    // than the page in hand. AAP 0.8.7 fixes the 25 and the 100.
-    const first = await pagingPage({});
-    expect(first.page.index).toBe(0);
-    expect(first.page.size).toBe(PAGE_SIZE_DEFAULT);
-    expect(first.targets.length).toBe(PAGE_SIZE_DEFAULT);
-    expect(first.page.cappedAt).toBe(PAGE_SIZE_CAP);
-    expect(first.page.total).toBe(history.length);
-    expect(first.page.totalPages).toBe(Math.ceil(history.length / PAGE_SIZE_DEFAULT));
+    const first = await pagingPage({}); // The default: 25 rows, the cap named at 100, and a total that counts the whole eligible history rather than the page in hand. AAP 0.8.7 fixes the 25 and the 100.
+    expect([first.page.index, first.page.size, first.targets.length, first.page.cappedAt, first.page.total, first.page.totalPages]).toEqual([0, PAGE_SIZE_DEFAULT, PAGE_SIZE_DEFAULT, PAGE_SIZE_CAP, history.length, Math.ceil(history.length / PAGE_SIZE_DEFAULT)]);
     expect(new Set(first.targets.map((target) => target.targetId)).size).toBe(PAGE_SIZE_DEFAULT);
     const capped = await pagingPage({ pageSize: 500 });
-    expect(capped.page.size).toBe(PAGE_SIZE_CAP);
-    expect(capped.targets.length).toBe(PAGE_SIZE_CAP);
-    expect(capped.page.total).toBe(history.length);
-    expect(capped.page.totalPages).toBe(Math.ceil(history.length / PAGE_SIZE_CAP));
-    // The history: walking every index the default size produces yields each eligible target exactly once,
-    // with none missing, so nothing falls off the end of the list however long it grows.
-    const walked: string[] = [];
+    expect([capped.page.size, capped.targets.length, capped.page.total, capped.page.totalPages]).toEqual([PAGE_SIZE_CAP, PAGE_SIZE_CAP, history.length, Math.ceil(history.length / PAGE_SIZE_CAP)]);
+    const walked: string[] = []; // The history: walking every index the default size produces yields each eligible target exactly once, with none missing, so nothing falls off the end of the list however long it grows.
     for (let index = 0; index < first.page.totalPages; index += 1) {
       const page = await pagingPage({ page: index });
       walked.push(...page.targets.map((target) => target.targetId));
     }
-    expect(walked.length).toBe(history.length);
-    expect(new Set(walked).size).toBe(history.length);
-    expect(new Set(walked)).toEqual(new Set(history));
-    // The page size is validated rather than trusted: zero and a fractional request each fall back to the
-    // 25-row default, so a malformed request reads a page instead of a zero-length one.
+    expect([[walked.length, new Set(walked).size], new Set(walked)]).toEqual([[history.length, history.length], new Set(history)]);
+    // The page size is validated rather than trusted: zero and a fractional request each fall back to the 25-row default, so a malformed request reads a page instead of a zero-length one.
     for (const pageSize of [0, 2.5]) {
       const held = await pagingPage({ pageSize });
-      expect(held.page.size).toBe(PAGE_SIZE_DEFAULT);
-      expect(held.targets.length).toBe(PAGE_SIZE_DEFAULT);
+      expect([held.page.size, held.targets.length]).toEqual([PAGE_SIZE_DEFAULT, PAGE_SIZE_DEFAULT]);
     }
   });
 });
-
 describe("the question set", () => {
   it("captures the wording and the order at editor start, and a later edit of the list never rewrites the capture", () => {
     const questions: CheckInQuestion[] = [
@@ -336,8 +214,10 @@ describe("the question set", () => {
     const captured = valueOf(captureQuestions(questions, SEEDED_AT), "captureQuestions");
     questions[1] = { wording: "Reworded after the editor opened", order: 1 };
     questions.push({ wording: "Added after the editor opened", order: 3 });
-    expect(captured.questions.map((question) => question.wording)).toEqual(["How did the week go?", "What would help next week?", "What will you leave undone?"]);
-    expect(captured.questions.map((question) => question.order)).toEqual([0, 1, 2]);
+    expect([captured.questions.map((question) => question.wording), captured.questions.map((question) => question.order)]).toEqual([
+      ["How did the week go?", "What would help next week?", "What will you leave undone?"],
+      [0, 1, 2],
+    ]);
     expect(captured.capturedAt.toString()).toBe(SEEDED_AT.toString());
   });
   it("accepts five questions and refuses a sixth by naming the limit, storing neither the sixth nor a shortened set", async () => {
@@ -345,19 +225,15 @@ describe("the question set", () => {
     const captured = valueOf(captureQuestions(five, SEEDED_AT), "captureQuestions at five questions");
     expect(captured.questions).toHaveLength(5);
     const six = questionsOf([...five.map((question) => question.wording), "A sixth question"]);
-    const sixRefusal = refusalOf(captureQuestions(six, SEEDED_AT), "captureQuestions at six questions");
-    const violation = required(sixRefusal.violations.at(0), "the question-count violation");
-    expect(violation.reason).toBe("too-many-questions");
-    expect(violation.measured).toBe(6);
-    expect(violation.limit).toBe(5);
+    const violation = required(refusalOf(captureQuestions(six, SEEDED_AT), "captureQuestions at six questions").violations.at(0), "the question-count violation");
+    expect([violation.reason, violation.measured, violation.limit]).toEqual(["too-many-questions", 6, 5]);
     const drafted = await draftWith(
       ["Five.", "Five.", "Five.", "Five.", "Five."],
       five.map((question) => question.wording),
     );
     const refused = outcomeNamed(await saveCheckIn({ checkInId: drafted.checkInId, questions: six.map((question) => question.wording), answers: ["Six.", "Six.", "Six.", "Six.", "Six.", "Six."] }, drafted.revision), "invalid", "the sixth question");
     const message = required(refused.fields.questions?.at(0), "the question-count refusal message");
-    expect(message).toContain("6");
-    expect(message).toContain("5");
+    for (const needle of ["6", "5"]) expect(message).toContain(needle);
     const after = await storedCheckIn(drafted.checkInId);
     expect(after.revision).toBe(drafted.revision);
     expect(after.privateDraft?.questions.map((question) => question.wording)).toEqual(five.map((question) => question.wording));
@@ -372,26 +248,19 @@ describe("the question set", () => {
     const stored = await storedCheckIn(drafted.checkInId);
     expect(required(stored.privateDraft?.questions.at(0), "the stored question").wording).toBe(atLimit);
     const over = codePoints(CHECKIN_MAX_QUESTION_SCALARS + 1);
-    const overRefusal = refusalOf(captureQuestions(questionsOf([over]), SEEDED_AT), "captureQuestions at 501 scalars");
-    const violation = required(overRefusal.violations.at(0), "the question-length violation");
-    expect(violation.reason).toBe("question-too-long");
-    expect(violation.measured).toBe(501);
-    expect(violation.limit).toBe(500);
+    const violation = required(refusalOf(captureQuestions(questionsOf([over]), SEEDED_AT), "captureQuestions at 501 scalars").violations.at(0), "the question-length violation");
+    expect([violation.reason, violation.measured, violation.limit]).toEqual(["question-too-long", 501, 500]);
     const refused = outcomeNamed(await saveCheckIn({ checkInId: drafted.checkInId, questions: [over], answers: ["It went well."] }, drafted.revision), "invalid", "the 501-scalar question");
     const message = required(refused.fields["questions[0].wording"]?.at(0), "the question-length refusal message");
-    expect(message).toContain("501");
-    expect(message).toContain("500");
+    for (const needle of ["501", "500"]) expect(message).toContain(needle);
     const after = await storedCheckIn(drafted.checkInId);
     expect(required(after.privateDraft?.questions.at(0), "the stored question after the refusal").wording).toBe(atLimit);
   });
 });
-
 describe("the answer ceiling", () => {
   it("accepts exactly 4,000 scalars built from astral characters and stores the answer character for character", async () => {
     const answer = codePoints(CHECKIN_MAX_ANSWER_SCALARS);
-    // 4,000 astral characters are 8,000 UTF-16 units: an answer within this limit is one a `.length`
-    // check would have refused.
-    expect(Array.from(answer)).toHaveLength(4000);
+    expect(Array.from(answer)).toHaveLength(4000); // 4,000 astral characters are 8,000 UTF-16 units: an answer within this limit is one a `.length` check would have refused.
     const drafted = await draftWith([answer], ["How did the week go?"]);
     const stored = required(drafted.answers.at(0), "the stored 4,000-scalar answer");
     expect(stored).toBe(answer);
@@ -404,21 +273,17 @@ describe("the answer ceiling", () => {
     const violations = validateCheckInRequest(modulePayload(["How did the week go?"], [over]));
     expect(violations.map((violation) => violation.reason)).toEqual(["answer-too-long"]);
     const violation = required(violations.at(0), "the answer-length violation");
-    expect(violation.measured).toBe(4001);
-    expect(violation.limit).toBe(4000);
+    expect([violation.measured, violation.limit]).toEqual([4001, 4000]);
     const refused = outcomeNamed(await saveCheckIn({ checkInId: drafted.checkInId, questions: ["How did the week go?"], answers: [over] }, drafted.revision), "invalid", "the 4,001-scalar answer");
     const message = required(refused.fields["answers[0].text"]?.at(0), "the answer-length refusal message");
-    expect(message).toContain("4001");
-    expect(message).toContain("4000");
+    for (const needle of ["4001", "4000"]) expect(message).toContain(needle);
     const after = await storedCheckIn(drafted.checkInId);
     expect(after.revision).toBe(drafted.revision);
     const storedText = required(after.privateDraft?.answers.at(0), "the stored answer after the refusal").text;
     expect(storedText).toBe(acceptedAnswer);
-    const truncated = Array.from(over).slice(0, CHECKIN_MAX_ANSWER_SCALARS).join("");
-    expect(storedText).not.toBe(truncated);
+    expect(storedText).not.toBe(Array.from(over).slice(0, CHECKIN_MAX_ANSWER_SCALARS).join(""));
   });
 });
-
 describe("the 256 KiB request ceiling", () => {
   it("accepts a request of exactly 256 KiB and refuses one byte more, naming the ceiling and the size", async () => {
     const atLimit = payloadOfBytes(REQUEST_CEILING_BYTES);
@@ -434,22 +299,19 @@ describe("the 256 KiB request ceiling", () => {
     expect(required(violations.at(0), "the request-size violation").measured).toBe(REQUEST_CEILING_BYTES + 1);
     const refused = outcomeNamed(await saveCheckIn({ answers: overLimit.answers.map((answer) => answer.text) }), "invalid", "the 256 KiB + 1 request");
     const message = required(refused.fields.request?.at(0), "the request-size refusal message");
-    expect(message).toContain(String(REQUEST_CEILING_BYTES + 1));
-    expect(message).toContain(String(REQUEST_CEILING_BYTES));
+    for (const needle of [String(REQUEST_CEILING_BYTES + 1), String(REQUEST_CEILING_BYTES)]) expect(message).toContain(needle);
     expect(await storedCheckInIds()).toEqual(beforeRefusal);
   });
   it("refuses a 4,001-scalar answer by the answer rule, not by the request ceiling", async () => {
     const over = codePoints(CHECKIN_MAX_ANSWER_SCALARS + 1);
     const payload = modulePayload([], [over]);
-    // The request is far inside the ceiling, so only the answer rule can refuse it.
-    expect(bytesOf(payload)).toBeLessThan(REQUEST_CEILING_BYTES);
+    expect(bytesOf(payload)).toBeLessThan(REQUEST_CEILING_BYTES); // The request is far inside the ceiling, so only the answer rule can refuse it.
     const violations = validateCheckInRequest(payload);
     expect(violations.map((violation) => violation.reason)).toEqual(["answer-too-long"]);
     const refused = outcomeNamed(await saveCheckIn({ answers: [over] }), "invalid", "the 4,001-scalar answer");
     expect(Object.keys(refused.fields)).toEqual(["answers[0].text"]);
   });
 });
-
 const REVIEWED_FINGERPRINT = "task-fingerprint-as-reviewed";
 const REVIEWED_DESCRIPTION = "Review the working list with Jo before the appeal starts";
 function modelledShare(overrides: Partial<TaskShare> = {}): TaskShare {
@@ -459,41 +321,32 @@ const SUMMARY_DUE_DATE: TaskSummaryDueDate = { kind: "dated", date: Temporal.Pla
 function summaryInput(overrides: Partial<SafeTaskSummaryInput> = {}): SafeTaskSummaryInput {
   return { state: "shared", description: codePoints(TASK_SUMMARY_MAX_CODE_POINTS), dueDate: SUMMARY_DUE_DATE, status: "open", reviewedFingerprint: REVIEWED_FINGERPRINT, currentFingerprint: REVIEWED_FINGERPRINT, sourceAvailable: true, ...overrides };
 }
-
 describe("the reviewed safe description", () => {
   it("accepts exactly 240 code points built from astral characters and refuses 241 with the count shown", async () => {
     const atLimit = codePoints(TASK_SUMMARY_MAX_CODE_POINTS);
     expect(Array.from(atLimit)).toHaveLength(240);
     const reviewed = valueOf(reviewTaskSummary(atLimit, SEEDED_AT), "reviewTaskSummary at 240 code points");
-    expect(reviewed.codePoints).toBe(240);
-    expect(reviewed.description).toBe(atLimit);
+    expect([reviewed.codePoints, reviewed.description]).toEqual([240, atLimit]);
     const over = codePoints(TASK_SUMMARY_MAX_CODE_POINTS + 1);
     const refusal = refusalOf(reviewTaskSummary(over, SEEDED_AT), "reviewTaskSummary at 241 code points");
     if (refusal.reason !== "description-too-long") throw new Error(`The 241-code-point description was refused as "${refusal.reason}" instead of by its length`);
-    expect(refusal.codePoints).toBe(241);
-    expect(refusal.limit).toBe(240);
+    expect([refusal.codePoints, refusal.limit]).toEqual([241, 240]);
     outcomeNamed(await setModule("task-summaries", true), "accepted", "enabling the task-summaries module");
     const row = await taskRow(PLAIN_TASK);
     const refused = outcomeNamed(await shareTaskSummary(PLAIN_TASK, over, row.revision), "invalid", "the 241-code-point description");
     const message = required(refused.fields.safeDescription?.at(0), "the description-length refusal message");
-    expect(message).toContain("241");
-    expect(message).toContain("240");
-    const summaries = summariesModuleOf(await coachSubject());
-    if (summaries === undefined) throw new Error("The coach read admitted no task-summaries module, so nothing can be asserted about what it shows");
+    for (const needle of ["241", "240"]) expect(message).toContain(needle);
+    const summaries = requiredSaying(summariesModuleOf(await coachSubject()), "The coach read admitted no task-summaries module, so nothing can be asserted about what it shows");
     expect(summaries.summaries).toHaveLength(0);
   });
   it("carries the reviewed description with the live due date and status, and nothing else of the task", () => {
     const summary = valueOf(safeTaskSummary(summaryInput()), "safeTaskSummary");
     if (summary.state !== "shared") throw new Error(`A summary whose reviewed wording still stands was withheld as "${summary.state}"`);
     expect(summary.description).toBe(codePoints(TASK_SUMMARY_MAX_CODE_POINTS));
-    expect(summary.dueDate).toEqual(SUMMARY_DUE_DATE);
-    expect(summary.status).toBe("open");
-    // The shape is the whole of what a coach may read, so the field list is asserted rather than sampled.
-    expect(Object.keys(summary).sort()).toEqual(["description", "dueDate", "state", "status"]);
+    expect([summary.dueDate, summary.status]).toEqual([SUMMARY_DUE_DATE, "open"]);
+    expect(Object.keys(summary).sort()).toEqual(["description", "dueDate", "state", "status"]); // The shape is the whole of what a coach may read, so the field list is asserted rather than sampled.
     const withheld: readonly string[] = ["title", "body", "note", "donor", "donorId", "amount", "money", "attachment", "attachmentId", "source", "sourceReference", "link", "url", "history", "privateHistory", "partnerId", "taskId"];
-    for (const field of withheld) {
-      expect(field in summary).toBe(false);
-    }
+    for (const field of withheld) expect(field in summary).toBe(false);
   });
   it("withholds the summary once the task's reviewed meaning changes, and returns it only on a fresh review", () => {
     const reviewed = summaryInput();
@@ -501,8 +354,7 @@ describe("the reviewed safe description", () => {
     const changed = valueOf(safeTaskSummary({ ...reviewed, currentFingerprint: `${REVIEWED_FINGERPRINT}-rewritten` }), "safeTaskSummary after the change");
     expect(changed.state).toBe("needs-review");
     expect(Object.keys(changed)).toEqual(["state"]);
-    // A share whose reviewed or current fingerprint is missing has not been reviewed at all, which is a
-    // refusal rather than a withheld summary: those are different facts and a surface says which it has.
+    // A share whose reviewed or current fingerprint is missing has not been reviewed at all, which is a refusal rather than a withheld summary: those are different facts and a surface says which it has.
     expect(refusalOf(safeTaskSummary({ ...reviewed, reviewedFingerprint: undefined }), "safeTaskSummary without a review").reason).toBe("not-reviewed");
     const reReviewed = valueOf(safeTaskSummary({ ...reviewed, description: "A shorter description reviewed against the new wording", reviewedFingerprint: `${REVIEWED_FINGERPRINT}-rewritten`, currentFingerprint: `${REVIEWED_FINGERPRINT}-rewritten` }), "safeTaskSummary reviewed again");
     expect(reReviewed.state).toBe("shared");
@@ -513,8 +365,7 @@ describe("the reviewed safe description", () => {
       taskShareReadState({ share: { ...shared, state: "removed" }, currentFingerprint: REVIEWED_FINGERPRINT, sourceAvailable: true }),
       taskShareReadState({ share: shared, currentFingerprint: REVIEWED_FINGERPRINT, sourceAvailable: false }),
     ];
-    expect(states).toEqual(["shared", "needs-review", "removed", "unavailable"]);
-    expect(new Set(states).size).toBe(4);
+    expect([states, new Set(states).size]).toEqual([["shared", "needs-review", "removed", "unavailable"], 4]);
   });
   it("requires a fresh selection for a recurring successor, never the predecessor's description", async () => {
     const share = modelledShare();
@@ -533,37 +384,22 @@ describe("the reviewed safe description", () => {
     const row = await taskRow(PLAIN_TASK);
     const shared = outcomeNamed(await shareTaskSummary(PLAIN_TASK, description, row.revision), "accepted", "shareTaskSummary");
     const shareId = firstCreated(shared, "shareTaskSummary");
-    const admitted = summariesModuleOf(await coachSubject());
-    if (admitted === undefined) throw new Error("The coach read admitted no task-summaries module, so nothing can be asserted about the summary");
-    const visible = required(
-      admitted.summaries.find((summary) => summary.shareId === shareId),
-      "the shared summary in the coach read",
-    );
-    expect(visible.state).toBe("shared");
-    expect(visible.description).toBe(description);
-    expect(visible.status).toBe(row.status);
-    expect(visible.dueDate).toEqual({ kind: "dated", date: required(row.dueOn, "the task's due date"), precision: "date" });
+    const admitted = requiredSaying(summariesModuleOf(await coachSubject()), "The coach read admitted no task-summaries module, so nothing can be asserted about the summary");
+    const visible = firstWhere(admitted.summaries, "shareId", shareId, "the shared summary in the coach read");
+    expect([[visible.state, visible.description, visible.status], visible.dueDate]).toEqual([["shared", description, row.status], { kind: "dated", date: required(row.dueOn, "the task's due date"), precision: "date" }]);
     // The task's reviewed meaning changes, so the summary is withheld rather than shown against the new wording.
     const editedRow = outcomeNamed(await mutations.work.editTask(attempt({ taskId: PLAIN_TASK, title: "Follow up with Jo about the visit and the appeal" }, row.revision), { sessionId: WORKER_SESSION }), "accepted", "editTask");
     expect(editedRow.revision).not.toBe(row.revision);
-    const withheld = required(
-      summariesModuleOf(await coachSubject())?.summaries.find((summary) => summary.shareId === shareId),
-      "the withheld summary in the coach read",
-    );
+    const withheld = firstWhere(summariesModuleOf(await coachSubject())?.summaries, "shareId", shareId, "the withheld summary in the coach read");
     expect(withheld.state).toBe("needs-review");
     expect(withheld.description).toBeNull();
     const beforeStop = await taskRow(PLAIN_TASK);
     outcomeNamed(await stopTaskShare(shareId, shared.revision), "accepted", "stopTaskShare");
-    const afterStop = summariesModuleOf(await coachSubject());
-    expect(afterStop?.summaries.some((summary) => summary.shareId === shareId)).toBe(false);
+    expect(summariesModuleOf(await coachSubject())?.summaries.some((summary) => summary.shareId === shareId)).toBe(false);
     const surviving = await taskRow(PLAIN_TASK);
-    expect(surviving.title).toBe(beforeStop.title);
-    expect(surviving.status).toBe(beforeStop.status);
-    expect(surviving.dueOn).toBe(beforeStop.dueOn);
-    expect(surviving.revision).toBe(beforeStop.revision);
+    expect([surviving.title, surviving.status, surviving.dueOn, surviving.revision]).toEqual([beforeStop.title, beforeStop.status, beforeStop.dueOn, beforeStop.revision]);
   });
 });
-
 describe("the private draft and the shared revision", () => {
   it("keeps them as two different identities, and changes the shared one only on an explicit update", async () => {
     const draftText = "Two good conversations and one difficult one.";
@@ -576,22 +412,14 @@ describe("the private draft and the shared revision", () => {
     const sharedRevisionId = required(afterShare.shared?.revisionId, "the shared revision id");
     expect(sharedRevisionId).not.toBe(privateRevisionId);
     expect(afterShare.privateDraft?.revisionId).toBe(privateRevisionId);
-    const admissions = checkInsModuleOf(await coachSubject());
-    if (admissions === undefined) throw new Error("The coach read admitted no check-ins module, so nothing can be asserted about the shared revision");
-    const readable = required(
-      admissions.sharedCheckIns.find((checkIn) => checkIn.revisionId === sharedRevisionId),
-      "the shared check-in in the coach read",
-    );
-    expect(readable.answers.map((answer) => answer.text)).toEqual([draftText]);
-    expect(admissions.sharedCheckIns.some((checkIn) => checkIn.revisionId === privateRevisionId)).toBe(false);
+    const admissions = requiredSaying(checkInsModuleOf(await coachSubject()), "The coach read admitted no check-ins module, so nothing can be asserted about the shared revision");
+    expect([firstWhere(admissions.sharedCheckIns, "revisionId", sharedRevisionId, "the shared check-in in the coach read").answers.map((answer) => answer.text), admissions.sharedCheckIns.some((checkIn) => checkIn.revisionId === privateRevisionId)]).toEqual([[draftText], false]);
     const updatedText = "Three good conversations, and the difficult one is planned for Tuesday.";
     const updated = outcomeNamed(await updateSharedCheckIn(drafted.checkInId, [updatedText], shared.revision), "accepted", "updateSharedCheckIn");
     expect(updated.revision).not.toBe(shared.revision);
     const afterUpdate = await storedCheckIn(drafted.checkInId);
     const changedShared = required(afterUpdate.shared, "the shared revision after the update");
-    // The shared revision is one slot whose identity a coach's entitlement names, so an update replaces
-    // its answers and advances the check-in's own revision rather than minting a second shared revision
-    // beside it. What a coach reads is therefore always the one revision this worker shares.
+    // The shared revision is one slot whose identity a coach's entitlement names, so an update replaces its answers and advances the check-in's own revision rather than minting a second shared revision beside it. What a coach reads is therefore always the one revision this worker shares.
     expect(changedShared.revisionId).toBe(sharedRevisionId);
     expect(changedShared.answers.map((answer) => answer.text)).toEqual([updatedText]);
     expect(afterUpdate.privateDraft?.revisionId).toBe(privateRevisionId);
@@ -603,10 +431,7 @@ describe("the private draft and the shared revision", () => {
     expect(afterPrivateSave.shared?.answers.map((answer) => answer.text)).toEqual([updatedText]);
     expect(afterPrivateSave.privateDraft?.revisionId).not.toBe(privateRevisionId);
     expect(afterPrivateSave.privateDraft?.answers.map((answer) => answer.text)).toEqual([privateText]);
-    const stillReadable = required(
-      checkInsModuleOf(await coachSubject())?.sharedCheckIns.find((checkIn) => checkIn.revisionId === sharedRevisionId),
-      "the shared check-in after a private save",
-    );
+    const stillReadable = firstWhere(checkInsModuleOf(await coachSubject())?.sharedCheckIns, "revisionId", sharedRevisionId, "the shared check-in after a private save");
     expect(stillReadable.answers.map((answer) => answer.text)).toEqual([updatedText]);
     expect(stillReadable.answers.map((answer) => answer.text)).not.toContain(privateText);
   });
@@ -617,11 +442,9 @@ describe("the private draft and the shared revision", () => {
     const withdrawn = valueOf(withdrawSharedCheckIn(shared.checkIn, shared.checkIn.revision, SEEDED_AT), "withdrawSharedCheckIn");
     const states = [checkInReadState(drafted.checkIn, "available"), checkInReadState(shared.checkIn, "available"), checkInReadState(withdrawn.checkIn, "available")];
     expect(states).toEqual(["private-draft", "shared", "withdrawn"]);
-    expect(new Set(states).size).toBe(3);
-    expect(checkInReadState(drafted.checkIn, "unavailable")).toBe("unavailable");
+    expect([new Set(states).size, checkInReadState(drafted.checkIn, "unavailable")]).toEqual([3, "unavailable"]);
   });
 });
-
 async function freshWorld(): Promise<void> {
   await layDownWorkerWorld();
   scope = await scopeOf(WORKER);
@@ -631,12 +454,10 @@ async function storedGrantState(): Promise<string> {
   return required(grant, "the relationship the case closed").state;
 }
 async function coachGrantState(): Promise<string> {
-  const documents = await readSession(COACH_SESSION);
-  if (documents === undefined) throw new Error(`The session "${COACH_SESSION}" holds no documents, so the coach's own act cannot be read back`);
+  const documents = requiredSaying(await readSession(COACH_SESSION), `The session "${COACH_SESSION}" holds no documents, so the coach's own act cannot be read back`);
   const grant = (documents.state as SessionStateDocument).coachingGrants.find((candidate) => candidate.grantId === ACTIVE_GRANT);
   return required(grant, "the relationship the coach left").state;
 }
-
 describe("withdrawal and the stop-type effects", () => {
   it("withdraws a shared check-in while an unrelated draft is invalid, and contains it from the coach read", async () => {
     const drafted = await draftWith(["A short answer."]);
@@ -646,18 +467,13 @@ describe("withdrawal and the stop-type effects", () => {
     const sharedRevisionId = required(beforeWithdrawal.shared?.revisionId, "the shared revision id");
     outcomeNamed(await saveCheckIn({ answers: [codePoints(CHECKIN_MAX_ANSWER_SCALARS + 1)] }), "invalid", "the over-limit check-in draft");
     outcomeNamed(await shareTaskSummary(PLAIN_TASK, codePoints(TASK_SUMMARY_MAX_CODE_POINTS + 1), (await taskRow(PLAIN_TASK)).revision), "invalid", "the over-limit description");
-    // Withdrawal is a containment act: like Stop showing me publicly, it never waits for another draft to
-    // be clean, because waiting would leave the shared text readable while the worker fixes something else.
+    // Withdrawal is a containment act: like Stop showing me publicly, it never waits for another draft to be clean, because waiting would leave the shared text readable while the worker fixes something else.
     const withdrawn = outcomeNamed(await withdrawCheckIn(drafted.checkInId, shared.revision), "accepted", "withdrawCheckIn");
     expect(withdrawn.revision).not.toBe(shared.revision);
     const afterWithdrawal = await storedCheckIn(drafted.checkInId);
-    expect(required(afterWithdrawal.shared, "the withdrawn shared revision").withdrawnAt).toBe(SEEDED_AT.toString());
-    expect(afterWithdrawal.privateDraft?.revisionId).toBe(privateRevisionId);
-    expect(afterWithdrawal.privateDraft?.answers.map((answer) => answer.text)).toEqual(["A short answer."]);
-    const admissions = checkInsModuleOf(await coachSubject());
-    if (admissions === undefined) throw new Error("The coach read admitted no check-ins module, so nothing can be asserted about the withdrawal");
-    expect(admissions.sharedCheckIns.some((checkIn) => checkIn.revisionId === sharedRevisionId)).toBe(false);
-    expect(admissions.sharedCheckIns.some((checkIn) => checkIn.revisionId === "check-in-week-46-shared-1")).toBe(true);
+    expect([[required(afterWithdrawal.shared, "the withdrawn shared revision").withdrawnAt, afterWithdrawal.privateDraft?.revisionId], afterWithdrawal.privateDraft?.answers.map((answer) => answer.text)]).toEqual([[SEEDED_AT.toString(), privateRevisionId], ["A short answer."]]);
+    const admissions = requiredSaying(checkInsModuleOf(await coachSubject()), "The coach read admitted no check-ins module, so nothing can be asserted about the withdrawal");
+    expect([admissions.sharedCheckIns.some((checkIn) => checkIn.revisionId === sharedRevisionId), admissions.sharedCheckIns.some((checkIn) => checkIn.revisionId === "check-in-week-46-shared-1")]).toEqual([false, true]);
   });
   it("keeps the six stop-type effects distinct", async () => {
     const effects: string[] = [];
@@ -670,8 +486,7 @@ describe("withdrawal and the stop-type effects", () => {
     const drafted = valueOf(savePrivateDraft(opened, modulePayload([], ["A short answer."]), 0, SEEDED_AT), "savePrivateDraft");
     const shared = valueOf(openSharedCheckIn(drafted.checkIn, drafted.checkIn.revision, [SEEDED_PERSONAS.coach.principalId], { kind: "ongoing" }, SEEDED_AT), "shareCheckIn");
     effects.push(checkInReadState(valueOf(withdrawSharedCheckIn(shared.checkIn, shared.checkIn.revision, SEEDED_AT), "withdrawSharedCheckIn").checkIn, "available"));
-    const removedShare = valueOf(stopModelledTaskShare({ share: modelledShare(), expectedRevision: 1 }, SEEDED_AT), "stopTaskShare");
-    effects.push(taskShareReadState({ share: removedShare, currentFingerprint: REVIEWED_FINGERPRINT, sourceAvailable: true }));
+    effects.push(taskShareReadState({ share: valueOf(stopModelledTaskShare({ share: modelledShare(), expectedRevision: 1 }, SEEDED_AT), "stopTaskShare"), currentFingerprint: REVIEWED_FINGERPRINT, sourceAvailable: true }));
     await freshWorld();
     outcomeNamed(await mutations.coaching.endCoaching(attempt({ grantId: ACTIVE_GRANT }, FIRST_REVISION), WORKER), "accepted", "endCoaching");
     effects.push(await storedGrantState());
@@ -683,66 +498,22 @@ describe("withdrawal and the stop-type effects", () => {
     outcomeNamed(await mutations.coaching.revokeGrant(attempt({ grantId: ACTIVE_GRANT }, FIRST_REVISION), WORKER), "accepted", "revokeGrant");
     effects.push(await storedGrantState());
     expect(effects).toHaveLength(6);
-    expect(new Set(effects).size).toBe(6);
-    expect(effects).toEqual(["not-admitted", "withdrawn", "removed", "ended", "left", "revoked"]);
+    expect([new Set(effects).size, effects]).toEqual([6, ["not-admitted", "withdrawn", "removed", "ended", "left", "revoked"]]);
   });
 });
-function targetPeriodOf(record: CoachingTargetRecord): TargetPeriod {
-  const { period } = record;
-  switch (period.kind) {
-    case "weekly":
-      return { kind: "weekly" };
-    case "monthly":
-      return { kind: "monthly" };
-    case "custom":
-      return { kind: "custom", start: Temporal.PlainDate.from(required(period.from ?? undefined, "the custom period's first day")), end: Temporal.PlainDate.from(required(period.to ?? undefined, "the custom period's last day")) };
-    default:
-      throw new Error(`The stored target period "${String(period.kind)}" is not one this file converts`);
-  }
-}
-function anchorOf(record: CoachingTargetRecord): PeriodAnchor {
-  return { period: targetPeriodOf(record), calendarStart: Temporal.PlainDate.from(record.calendarStart) };
-}
-function versionsOf(record: CoachingTargetRecord): readonly TargetVersion[] {
-  return record.versions.map((version) => ({
-    revisionId: version.revisionId,
-    effectiveFrom: Temporal.PlainDate.from(version.effectiveFrom),
-    ...(version.effectiveTo === null ? {} : { effectiveTo: Temporal.PlainDate.from(version.effectiveTo) }),
-    quantity: version.quantity,
-    measure: version.measure,
-    calendarStart: Temporal.PlainDate.from(version.calendarStart),
-  }));
-}
-function targetRecordOf(record: CoachingTargetRecord): TargetRecord {
-  return { targetId: record.targetId, privateLabel: record.privateLabel, measure: record.measure, quantity: record.quantity, period: targetPeriodOf(record), calendarStart: Temporal.PlainDate.from(record.calendarStart), homePlacement: record.homePlacement, state: record.state, versions: versionsOf(record) };
-}
-function weekOf(anchor: PeriodAnchor, day: Temporal.PlainDate): ResolvedPeriod {
-  const period = resolvePeriodContaining(anchor, day);
-  if (!period.ok) throw new Error(`The period containing ${day.toString()} did not resolve: ${period.error}`);
-  return period.value;
-}
-
 describe("a closed target period", () => {
   it("still renders against the version it was measured against after the quantity changes", () => {
-    const record = required(
-      world.worker.state.coachingTargets.find((target) => target.targetId === "target-conversations-weekly"),
-      "the seeded conversations target",
-    );
+    const record = firstWhere(world.worker.state.coachingTargets, "targetId", "target-conversations-weekly", "the seeded conversations target");
     const anchor = anchorOf(record);
     const versions = versionsOf(record);
-    const closedWeek = weekOf(anchor, Temporal.PlainDate.from("2026-11-05"));
-    const measuredUnder = valueOf(resolveTargetVersion(versions, closedWeek), "resolveTargetVersion for the closed week");
-    const before = workerTargetProgress({ target: targetRecordOf(record), version: measuredUnder, period: closedWeek, count: 2 });
+    const closedWeek = weekOf(record, Temporal.PlainDate.from("2026-11-05"));
+    const before = workerTargetProgress({ target: targetRecordOf(record), version: valueOf(resolveTargetVersion(versions, closedWeek), "resolveTargetVersion for the closed week"), period: closedWeek, count: 2 });
     const change: TargetVersionChange = { revisionId: "target-conversations-weekly-3", quantity: 7, measure: "conversations", calendarStart: anchor.calendarStart };
     const next = valueOf(startProspectiveVersion({ versions, anchor, change, effectiveFrom: Temporal.PlainDate.from("2026-11-16") }), "startProspectiveVersion");
-    // `coaching-grant.test.ts` asserts the version history's adjacency — no gap and no overlap between the
-    // prospective versions. This file asserts the same rule from the rendering side: the closed week still
-    // resolves and renders against the plan it was measured against, so a later quantity never rewrites it.
+    // `coaching-grant.test.ts` asserts the version history's adjacency — no gap and no overlap between the prospective versions. This file asserts the same rule from the rendering side: the closed week still resolves and renders against the plan it was measured against, so a later quantity never rewrites it.
     const after = workerTargetProgress({ target: targetRecordOf(record), version: valueOf(resolveTargetVersion(next, closedWeek), "resolveTargetVersion for the closed week after the change"), period: closedWeek, count: 2 });
-    expect(after.revisionId).toBe(before.revisionId);
-    expect(after.quantity).toBe(before.quantity);
-    const openWeek = weekOf(anchor, Temporal.PlainDate.from("2026-11-19"));
-    const openUnder = valueOf(resolveTargetVersion(next, openWeek), "resolveTargetVersion for the open week");
-    expect(workerTargetProgress({ target: targetRecordOf(record), version: openUnder, period: openWeek, count: 2 }).quantity).toBe(7);
+    expect([after.revisionId, after.quantity]).toEqual([before.revisionId, before.quantity]);
+    const openWeek = weekOf(record, Temporal.PlainDate.from("2026-11-19"));
+    expect(workerTargetProgress({ target: targetRecordOf(record), version: valueOf(resolveTargetVersion(next, openWeek), "resolveTargetVersion for the open week"), period: openWeek, count: 2 }).quantity).toBe(7);
   });
 });

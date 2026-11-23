@@ -94,46 +94,41 @@ function defaultHeader<TRow extends RowData>(context: HeaderContext<RecordListFe
 }
 function defaultCell<TRow extends RowData>(context: CellContext<RecordListFeatureSet, TRow, unknown>): ReactNode {
   const value = context.renderValue();
-  if (typeof value === "string") return value;
-  return typeof value === "number" ? String(value) : "";
+  return typeof value === "string" ? value : typeof value === "number" ? String(value) : "";
 }
 function SortIndicator({ direction }: { readonly direction: SortDirection | false }): ReactElement {
   const Icon = direction === "asc" ? ArrowUpIcon : direction === "desc" ? ArrowDownIcon : ChevronsUpDownIcon;
   return <Icon aria-hidden="true" className={cn("size-3.5 shrink-0", direction === false ? "text-muted-foreground" : "text-foreground")} />;
 }
 type ColumnVisibilityMenuProps = { readonly tableLabel: string; readonly items: ReadonlyArray<ColumnVisibilityItem>; readonly visibleCount: number; readonly onToggle: (columnId: string, visible: boolean) => void; readonly onShowAll: () => void };
-function ColumnVisibilityMenu({ tableLabel, items, visibleCount, onToggle, onShowAll }: ColumnVisibilityMenuProps): ReactElement {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
-        <Columns3Icon aria-hidden="true" />
-        Columns
-        <span className="sr-only"> shown in {tableLabel}</span>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-60">
-        <DropdownMenuLabel>Show columns</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {items.map((item) => {
-          // A visible column that is the only one left is disabled, so the rule is visible before it is hit rather than silently swallowing the click.
-          const hidesLastVisible = item.visible && visibleCount <= 1;
-          return (
-            <DropdownMenuCheckboxItem key={item.id} checked={item.visible} disabled={!item.canHide || hidesLastVisible} closeOnClick={false} onCheckedChange={(checked) => onToggle(item.id, checked)}>
-              {item.label}
-            </DropdownMenuCheckboxItem>
-          );
-        })}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => onShowAll()}>Show all columns</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+const ColumnVisibilityMenu = ({ tableLabel, items, visibleCount, onToggle, onShowAll }: ColumnVisibilityMenuProps): ReactElement => (
+  <DropdownMenu>
+    <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+      <Columns3Icon aria-hidden="true" />
+      Columns
+      <span className="sr-only"> shown in {tableLabel}</span>
+    </DropdownMenuTrigger>
+    <DropdownMenuContent align="end" className="w-60">
+      <DropdownMenuLabel>Show columns</DropdownMenuLabel>
+      <DropdownMenuSeparator />
+      {items.map((item) => {
+        const hidesLastVisible = item.visible && visibleCount <= 1;
+        return (
+          <DropdownMenuCheckboxItem key={item.id} checked={item.visible} disabled={!item.canHide || hidesLastVisible} closeOnClick={false} onCheckedChange={(checked) => onToggle(item.id, checked)}>
+            {item.label}
+          </DropdownMenuCheckboxItem>
+        );
+      })}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onClick={() => onShowAll()}>Show all columns</DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>
+);
 const EMPTY_SELECTION: ReadonlyArray<string> = [];
 const countFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 function normalisePageSize(pageSize: number): number {
-  if (!Number.isFinite(pageSize)) return FALLBACK_PAGE_SIZE;
   const whole = Math.trunc(pageSize);
-  return whole >= 1 ? whole : FALLBACK_PAGE_SIZE;
+  return Number.isFinite(pageSize) && whole >= 1 ? whole : FALLBACK_PAGE_SIZE;
 }
 /** The first page of a list's window, in the pager's own one-based numbering. */
 const FIRST_PAGE = 1;
@@ -152,25 +147,7 @@ function statedWindowNumber(search: ReadonlyURLSearchParams, name: string): numb
   const parsed = Number(stated);
   return Number.isSafeInteger(parsed) && parsed >= FIRST_PAGE ? parsed : undefined;
 }
-/**
- * The page window of a list a reader returns to, kept in the address rather than in the component.
- *
- * A list that holds its window in component state forgets it as soon as the reader opens a record: the return
- * renders a fresh component, so the reader lands on page one of a result they had already paged through. The
- * address survives that visit, a reload, a shared link and the browser's Back button, so it is the only owner of
- * `page` and `pageSize` here; the surface reads them back on every render and states no second copy.
- *
- * Both numbers are read at once: an address that states a page without a row size does not describe a window, so
- * the surface keeps the window it opens on rather than pairing a stated page with a row size nothing stated.
- *
- * `setWindow` writes both numbers and leaves every other parameter the page carries alone, because the window is
- * one fact about a page the address already describes; a column set is not part of it, since hiding a column
- * changes what is shown of a row and never which records the read returned.
- *
- * @param opening The window this surface opens on when the address states no window of its own — the window the
- *   server that composed the page read, so the first paint and the address agree.
- * @returns The window the address states, and the one way to change it.
- */
+/** The page window of a list a reader returns to, kept in the address rather than in the component: a window held in component state is forgotten as soon as the reader opens a record, while the address survives that visit, a reload, a shared link and Back, so it is the only owner of `page` and `pageSize` and no surface states a second copy. Both numbers are read at once, because an address that states a page without a row size does not describe a window; `setWindow` writes both and leaves every other parameter alone, and a column set is not part of the window, since hiding a column changes what is shown of a row and never which records the read returned. */
 export function useRecordListWindow(opening: RecordListWindow): RecordListWindow & { readonly setWindow: (next: RecordListWindow) => void } {
   const router = useRouter();
   const pathname = usePathname();
@@ -186,9 +163,7 @@ export function useRecordListWindow(opening: RecordListWindow): RecordListWindow
     (next: RecordListWindow): void => {
       const nextPage = wholeWindowNumber(next.page, page);
       const nextPageSize = wholeWindowNumber(next.pageSize, pageSize);
-      // A window that states what the address already states is no change, so nothing is rewritten and no
-      // history entry is made for a reader who clicked the page they were already on.
-      if (nextPage === page && nextPageSize === pageSize) return;
+      if (nextPage === page && nextPageSize === pageSize) return; // A window that states what the address already states is no change, so nothing is rewritten and no history entry is made for a reader who clicked the page they were already on.
       const params = new URLSearchParams(searchParams.toString());
       params.set(WINDOW_PARAM.page, String(nextPage));
       params.set(WINDOW_PARAM.pageSize, String(nextPageSize));
@@ -226,12 +201,10 @@ export function RecordList<TRow extends RowData>({
   const selectionEnabled = onSelectionChange !== undefined;
   const actionsEnabled = rowActions !== undefined;
   const selectedKeys = selectedIds ?? EMPTY_SELECTION;
-  // The feature's columns, bracketed by the preset's own two cells. Memoized because `useTable` rebuilds its column instances when the array identity changes, and a feature may well build its column array inline.
   const tableColumns = useMemo<RecordListColumnDef<TRow>[]>(
     () => [...(selectionEnabled ? [{ id: SELECT_COLUMN_ID, enableSorting: false, enableHiding: false }] : []), ...columns, ...(actionsEnabled ? [{ id: ACTIONS_COLUMN_ID, enableSorting: false, enableHiding: false }] : [])],
     [columns, selectionEnabled, actionsEnabled],
   );
-  // The controlled selection slice, derived one way from the ids the owner holds. v9 reads selection as a record of selected ids, so the identity is a record id and never a row position.
   const rowSelection = useMemo<RowSelectionState>(() => Object.fromEntries(selectedKeys.map((id) => [id, true])), [selectedKeys]);
   const pageSize = normalisePageSize(queryState.pageSize);
   const table = useTable({
@@ -240,30 +213,24 @@ export function RecordList<TRow extends RowData>({
     data: rows,
     getRowId,
     state: { sorting: queryState.sort, columnVisibility: queryState.columnVisibility, rowSelection, pagination: { pageIndex: Math.max(0, Math.trunc(queryState.page) - 1), pageSize } },
-    // Every stage belongs to the service. Manual pagination plus `rowCount` is also what makes `getRowCount()` report the whole result, so the pager can never print the size of one page.
     manualSorting: true,
     manualPagination: true,
     rowCount: Math.max(0, Math.trunc(rowCount)),
     enableMultiSort: false,
-    // A column states its own `header` and `cell`. Where it does not, the heading falls back to the column id and the body to the record's own value, so an unlabelled column of blank cells — which is both a rendering gap and an accessibility failure — cannot happen.
     defaultColumn: { header: defaultHeader, cell: defaultCell },
   });
-  // Read back through the controlled slice rather than the props, so the pager and the sort affordances below are describing the state the table actually holds.
   const pagination = table.state.pagination;
-  // Every row the body renders and every column it renders for each: read once, so the header, the selection control, the skeleton and the body all describe the same page.
   const bodyRows = table.getRowModel().rows;
   const visibleLeafColumns = table.getVisibleLeafColumns();
   const allOnPageSelected = table.getIsAllPageRowsSelected();
   const someOnPageSelected = table.getIsSomePageRowsSelected();
   const signature = querySignature(queryState);
   const signatureRef = useRef(signature);
-  // A selection belongs to the query that produced it. Once a filter, a sort, a page or a visible column set changes, the selected ids may name rows the worker can no longer see, so the selection is cleared rather than carried into an action over invisible records.
   useEffect(() => {
     if (signatureRef.current === signature) return;
     signatureRef.current = signature;
     if (onSelectionChange !== undefined && selectedKeys.length > 0) onSelectionChange([]);
   }, [signature, selectedKeys, onSelectionChange]);
-  // The latest query state this component dispatched, so two changes raised in one event — the pager asking for a new size and then for the page that keeps the first visible row in view — compose into one next state instead of the second overwriting the first from a stale prop.
   const latestQuery = useRef(queryState);
   useEffect(() => {
     latestQuery.current = queryState;
@@ -273,7 +240,6 @@ export function RecordList<TRow extends RowData>({
     latestQuery.current = next;
     onQueryStateChange(next);
   }
-  // The header cell is the only place a sort can start. It asks the library for the next order so a column's own descending-first and no-removal policies are honoured, then dispatches the new ordering to the service: nothing is sorted in the browser.
   function handleSort(column: Column<RecordListFeatureSet, TRow, unknown>): void {
     const next = column.getNextSortingOrder();
     const sort: SortingState = next === false ? [] : [{ id: column.id, desc: next === "desc" }];
@@ -284,15 +250,11 @@ export function RecordList<TRow extends RowData>({
     .filter((column) => column.id !== SELECT_COLUMN_ID && column.id !== ACTIONS_COLUMN_ID)
     .map((column) => ({ id: column.id, label: columnLabel(column), visible: column.getIsVisible(), canHide: column.getCanHide() }));
   const visibleDataColumnCount = visibilityItems.reduce((count, item) => (item.visible ? count + 1 : count), 0);
-  // Hiding a column changes what the worker can see of a selected row but not which rows exist, so the page stays where it is; the selection still clears, through the query signature above.
   function handleToggleColumn(columnId: string, visible: boolean): void {
     if (!visible && visibleDataColumnCount <= 1) return;
-    // Composed from the latest dispatched state rather than the prop, so two toggles cannot lose the first: the menu stays open while the reader shows and hides several columns.
     commitQuery({ columnVisibility: { ...latestQuery.current.columnVisibility, [columnId]: visible } });
   }
-  function handleShowAllColumns(): void {
-    commitQuery({ columnVisibility: {} });
-  }
+  const handleShowAllColumns = (): void => commitQuery({ columnVisibility: {} });
   const setSelection = (next: ReadonlySet<string>): void => onSelectionChange?.(Array.from(next));
   function handleRowSelectedChange(rowId: string, selected: boolean): void {
     const next = new Set(selectedKeys);
@@ -300,7 +262,6 @@ export function RecordList<TRow extends RowData>({
     else next.delete(rowId);
     setSelection(next);
   }
-  // The header control selects the rows this page holds — the rows the worker can actually see — and leaves anything selected elsewhere untouched. It is never a "select all matching rows" shortcut, because that would select records the worker has not looked at.
   function handleSelectAllOnPage(selected: boolean): void {
     const next = new Set(selectedKeys);
     for (const row of bodyRows)
@@ -312,9 +273,7 @@ export function RecordList<TRow extends RowData>({
   const loadingRowCount = Math.min(Math.max(LOADING_ROW_MINIMUM, pageSize), LOADING_ROW_MAXIMUM);
   const showTable = isLoading || bodyRows.length > 0;
   const resolvedStickyOffset = stickyOffset ?? DEFAULT_STICKY_OFFSET;
-  function rowLabelId(rowIndex: number): string {
-    return `${cellIdBase}-row-${rowIndex}-label`;
-  }
+  const rowLabelId = (rowIndex: number): string => `${cellIdBase}-row-${rowIndex}-label`;
   function selectionLabelFor(row: Row<RecordListFeatureSet, TRow>): { "aria-label"?: string; "aria-labelledby"?: string } {
     const name = rowLabel === undefined ? "" : rowLabel(row.original).trim();
     if (name !== "") return { "aria-label": `Select ${name}` };
@@ -344,12 +303,10 @@ export function RecordList<TRow extends RowData>({
   );
   return (
     <div data-slot="record-list" className={cn("flex flex-col gap-3", className)}>
-      {/* One persistent polite status region: it reports the busy condition as it starts, instead of mounting a live region that already holds its message, which a screen reader never reads. */}
       <output className="sr-only">{isLoading ? `Loading ${itemNoun}.` : ""}</output>
       {showTable ? (
         <>
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            {/* One persistent polite status line: it announces the selection as it changes and, while nothing is selected, states nothing rather than disappearing from the layout. */}
             <output className="text-sm text-muted-foreground">{selectionSummary}</output>
             {visibilityItems.length > 0 ? <ColumnVisibilityMenu tableLabel={label} items={visibilityItems} visibleCount={visibleDataColumnCount} onToggle={handleToggleColumn} onShowAll={handleShowAllColumns} /> : null}
           </div>
@@ -360,10 +317,7 @@ export function RecordList<TRow extends RowData>({
                 {table.getHeaderGroups().map((headerGroup) => (
                   <TableRow key={headerGroup.id} className="hover:bg-transparent">
                     {headerGroup.headers.map((header) => {
-                      if (header.isPlaceholder) {
-                        // Only a grouped header tree produces placeholders, which this preset cannot build; the empty cell keeps the grid aligned if one ever appears.
-                        return <TableHead key={header.id} scope="col" className={HEAD_CELL_CLASS} />;
-                      }
+                      if (header.isPlaceholder) return <TableHead key={header.id} scope="col" className={HEAD_CELL_CLASS} />;
                       const column = header.column;
                       if (column.id === SELECT_COLUMN_ID) {
                         return (
@@ -385,7 +339,6 @@ export function RecordList<TRow extends RowData>({
                       return (
                         <TableHead key={header.id} scope="col" aria-sort={canSort ? ariaSort : undefined} className={HEAD_CELL_CLASS}>
                           {canSort ? (
-                            // The design system's Button, not a click handler on the cell: Tab reaches it, Enter and Space activate it, and no drag takes part in sorting (WCAG 2.5.7); `size="sm"` is 32 CSS px, above the 24x24 floor of 2.5.8, and `-ms-3` aligns the label with the non-sortable headings.
                             <Button variant="ghost" size="sm" className="-ms-3 max-w-full focus-visible:ring-ring" onClick={() => handleSort(column)}>
                               <table.FlexRender header={header} />
                               <SortIndicator direction={sortDirection} />

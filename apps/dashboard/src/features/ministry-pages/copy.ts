@@ -1,4 +1,3 @@
-/** The Worker and Project Pages family's single wording module: what each family catalogue offers, why some fields cannot be edited here, how far a released edition reaches, and why a page can say … */
 import { REACH_STATUS } from "@/components/status-badge";
 import type { PresentationChoice } from "@/modules/content/document";
 import type { Reach } from "@/modules/content/reach";
@@ -8,15 +7,11 @@ import { PAGE_SECTION_TYPES, type PageSectionType } from "@/modules/data-service
 export type PageFamily = Exclude<VariantFamily, "update">;
 /** The two families, in the order the Pages surface lists them. */
 export const PAGE_FAMILIES: readonly PageFamily[] = ["worker-page", "project-page"];
-
 export type FamilyCopy = { readonly label: string; readonly description: string; readonly catalogueLabel: string };
 const FAMILIES: Record<PageFamily, FamilyCopy> = {
   "worker-page": { label: "Worker Page", description: "A public page about you and the ministry you serve, for people who want to know you.", catalogueLabel: "Sections for your Worker Page" },
   "project-page": { label: "Project Page", description: "A public page about one piece of work, what it needs and how it is going.", catalogueLabel: "Sections for your Project Page" },
 };
-// The eight section types are the stored record contract's own vocabulary, imported above so a catalogue
-// entry here and the type the service stores are added in one change rather than in two that can drift.
-
 export type CatalogueSectionCopy = { readonly label: string; readonly description: string; readonly managed: boolean };
 const CATALOGUE: Record<PageSectionType, CatalogueSectionCopy> = {
   introduction: { label: "Introduction", description: "A short opening that says who this page is about and who it is for.", managed: false },
@@ -41,7 +36,6 @@ type Treatment = PresentationChoice["treatment"];
 type Layout = PresentationChoice["layout"];
 type Alignment = PresentationChoice["alignment"];
 type ImageFit = PresentationChoice["imageFit"];
-
 const TREATMENT_COPY: Record<Treatment, PresentationOptionCopy> = { normal: { label: "Normal", description: "The section reads at the page's usual weight." }, emphasized: { label: "Emphasized", description: "The section stands out from those around it." } };
 const LAYOUT_COPY: Record<Layout, PresentationOptionCopy> = { "single-column": { label: "Single column", description: "The content runs in one column." }, "two-column-image-text": { label: "Two columns with image and text", description: "An image beside its text, and above it on a narrow screen." } };
 const ALIGNMENT_COPY: Record<Alignment, PresentationOptionCopy> = { start: { label: "Start", description: "Text begins at the leading edge of the reading direction." }, center: { label: "Center", description: "Text is centered inside the section." } };
@@ -54,9 +48,7 @@ const PRESENTATION_COPY = {
   outOfSetMessage: "The option chosen is not available for this section, so nothing was saved. Choose one of the options this section offers.",
   boundedNote: "Presentation is limited to the options a section offers; a page has no styles of its own.",
 } as const;
-function positionOption(position: number): string {
-  return `Position ${String(position)}`;
-}
+const positionOption = (position: number): string => `Position ${String(position)}`;
 const BUILDER_COPY = {
   outline: "Sections",
   fields: "Section fields",
@@ -80,9 +72,7 @@ const BUILDER_COPY = {
 } as const;
 /** The fields and sections a page shows but cannot change, because a source owns them. */
 export const MANAGED_FIELD_KEYS = ["page-subject", "legal-identity", "giving-binding", "support-progress", "source-supplied-section"] as const;
-
 export type ManagedFieldKey = (typeof MANAGED_FIELD_KEYS)[number];
-
 const LOCK_REASONS: Record<ManagedFieldKey, string> = {
   "page-subject": "Managed by the source record this page belongs to — the subject the page is about, and that record's identity, stay with the record and are edited there.",
   "legal-identity": "Managed by the Legal Entity record — the approved organization name and its registration details are held there, so they are shown here and cannot be changed on this page.",
@@ -93,9 +83,7 @@ const LOCK_REASONS: Record<ManagedFieldKey, string> = {
 const LOCK_COPY = { reasons: LOCK_REASONS, genericLockedReason: "This field is managed by its source, so it is shown read-only here.", lockedReadOnlyLabel: "Read-only" } as const;
 /** The four structural changes a section can be given, each reported on its own. */
 export const PAGE_SECTION_ACTIONS = ["added", "moved", "duplicated", "removed"] as const;
-
 export type PageSectionAction = (typeof PAGE_SECTION_ACTIONS)[number];
-
 const SECTION_ACTION_RESULTS: Record<PageSectionAction, string> = {
   added: "Section added to this draft edition. Adding a section releases nothing.",
   moved: "Section order changed in this draft edition.",
@@ -146,10 +134,7 @@ const RELEASE_COPY = {
   failedUnderPriorGoodHead: "Release failed for this edition. The edition released before it is unchanged and stays readable.",
   stillNeedsAttention: "Still needs attention",
 } as const;
-/** What a review link says in words a screen reader reads and its visible words do not: the language edition it belongs to, so two frozen candidates listed together are told apart. */
-function openCandidateHint(localeTag: string): string {
-  return `for the ${localeTag} language edition`;
-}
+const openCandidateHint = (localeTag: string): string => `for the ${localeTag} language edition`;
 const REVIEW_COPY = {
   heading: "Review",
   openCandidate: "Review this candidate",
@@ -166,8 +151,6 @@ const REACH_COPY: Record<Reach, ReachOptionCopy> = {
   listed: { label: REACH_STATUS.listed.label, explanation: "Anyone with the link can read it, and it appears in the public discovery index, where search engines may index it.", indexable: true },
 };
 function stopShowingResult(containedCount: number): string {
-  // The count is every language edition the Page has, because that is what containment covers. An edition with no
-  // release was never public, so calling the total "released editions" would overstate what was withdrawn.
   const editions = containedCount === 1 ? "the one language edition" : `all ${String(containedCount)} language editions`;
   return `Stop showing publicly applies to ${editions} of this Page. Any address that served it now answers a short notice that the page is no longer available.`;
 }

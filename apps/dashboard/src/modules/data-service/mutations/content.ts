@@ -1,13 +1,12 @@
-/** The twenty-three content and media mutations: everything the Ministry Updates family and the Worker and Project Page families change, and nothing that only reads. */
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { isRecord } from "@/lib/guards";
 import { compareCodeUnits } from "@/lib/ordering";
-import { UPDATE_EMAIL_PURPOSE, type MemberChoice, type MembershipRecord as DomainMembership } from "@/modules/audience/membership";
-import { eligibleRecipients, type EligibilityResult, type NotificationIntent as EligibilityIntent } from "@/modules/audience/resolve";
+import { UPDATE_EMAIL_PURPOSE } from "@/modules/audience/membership";
+import { eligibleRecipients, type NotificationIntent as EligibilityIntent, type EligibilityResult } from "@/modules/audience/resolve";
 import { parseDocument, presentationChoiceSchema, type ContentDocumentJson, type ContentSection, type DocumentIssue, type PresentationChoice } from "@/modules/content/document";
 import { directionOfTag } from "@/modules/content/locale";
-import { buildNotice, resolveRendition, type NoticeRecipient, type RenditionCandidate as NoticeRenditionCandidate } from "@/modules/content/notice";
+import { buildNotice, resolveRendition, type RenditionCandidate as NoticeRenditionCandidate, type NoticeRecipient } from "@/modules/content/notice";
 import { containEditions, decideReach, withdrawEdition } from "@/modules/content/reach";
 import { VARIANT_AUDIENCES, VARIANT_FAMILIES, admittedAudiences, applyDraftRevision, applyReleaseOutcome, applyReviewDecision, createRelease, createRevision, createVariant as buildVariant, freezeCandidate, isReleaseUnchanged, restoreAsNewDraft, revisionChecksum, variantKeyAllowed } from "@/modules/content/variant";
 import type { ContentRevision, ContentVariant, MediaPlacement, Release, VariantAudience, VariantFamily } from "@/modules/content/variant";
@@ -16,45 +15,27 @@ import { RENDITION_PURPOSES, acceptImage, acceptVideo, mediaStateReason, prepare
 import { instantAt } from "@/modules/time/clock";
 import { notificationDeadline } from "@/modules/time/window";
 import { canEdit, type ResolvedSession, type ScopeDecision } from "../authorize";
-import { PAGE_PRESET_IDS, PAGE_SECTION_TYPES, contentCaptionTrackRecordSchema, contentDocumentRecordSchema, contentVariantRecordSchema, mediaAssetRecordSchema, mediaPlacementRecordSchema, membershipRecordSchema, notificationIntentRecordSchema, notificationSendResultRecordSchema, principalIdSchema } from "../envelope";
-import { recordRevisionSchema, releaseRecordSchema, releaseReachSchema, sharePresentationRecordSchema, storedInstantSchema } from "../envelope";
+import { PAGE_PRESET_IDS, PAGE_SECTION_TYPES, contentDocumentRecordSchema, contentVariantRecordSchema, mediaAssetRecordSchema, membershipRecordSchema, notificationIntentRecordSchema, notificationSendResultRecordSchema, principalIdSchema } from "../envelope";
+import { recordRevisionSchema, releaseRecordSchema, storedContentRevisionRecordSchema, releaseReachSchema, storedInstantSchema } from "../envelope";
 import type { ContentCaptionTrackRecord, ContentDocumentRecord, ContentFamily, ContentVariantRecord, MediaAssetRecord, MediaAssetRenditionPurpose, MediaPlacementRecord, MembershipRecord as StoredMembership, MutationInput, PagePresetId, PageSectionType, PrincipalId, NotificationIntentRecord } from "../envelope";
-import type { NotificationRecipientOutcomeRecord, NotificationSendResultRecord, NotificationUnservedRecipientRecord, ReleaseReach, ReleaseRecord, Scope, SharePresentationRecord } from "../envelope";
+import type { NotificationRecipientOutcomeRecord, NotificationSendResultRecord, NotificationUnservedRecipientRecord, ReleaseReach, ReleaseRecord, Scope, SharePresentationRecord, StoredContentRevisionRecord, StoredRecord } from "../envelope";
 import { unknown, type MutationOutcome, type MutationResult, type PerItemResult } from "../outcome";
-import { runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName, type MutationPlan } from "../operations";
-/** How a candidate is meant to be released. */
+import { runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
+import { contentRevisionOf, contentVariantOf, membershipOf, storedInstantOf } from "../projection";
 export const PUBLISH_MODES = ["publish-only", "publish-and-notify"] as const;
 export type PublishMode = (typeof PUBLISH_MODES)[number];
-/** What one release attempt produced for one edition. */
 export const PER_VARIANT_RELEASE_STATES = ["released", "failed-prior-good-head", "needs-attention"] as const;
 export type PerVariantReleaseState = (typeof PER_VARIANT_RELEASE_STATES)[number];
-/** The decision a review of one frozen candidate has reached. */
 export const REVIEW_DECISIONS = ["submitted", "approved", "changes-requested", "rejected"] as const;
 export type ReviewDecision = (typeof REVIEW_DECISIONS)[number];
-
 type SectionFieldKeys = Readonly<Record<PageSectionType, readonly string[]>>;
 const SECTION_FIELD_KEYS: SectionFieldKeys = { introduction: ["heading", "body"], story: ["heading", "body"], prayer: ["heading", "body"], milestone: ["heading", "date", "body"], image: ["altText", "caption", "credit"], video: ["altText", "caption", "credit", "language"], giving: [], progress: [] };
 const MANAGED_SECTION_TYPES: ReadonlySet<string> = new Set<string>(["giving", "progress"]);
-
 const DEFAULT_PRESENTATION: PresentationChoice = { treatment: "normal", layout: "single-column", alignment: "start", imageFit: "cover" };
 const PAGE_PRESETS: Readonly<Record<PagePresetId, readonly PageSectionType[]>> = { "preset-opening-and-story": ["introduction", "story"], "preset-story-and-prayer": ["story", "prayer"] };
-
 const NOTICE_SENDER = Object.freeze({ name: "Update notices", address: "update-notice@example.invalid" });
 const UNNAMED_PUBLISHER = "";
-const storedContentRevisionSchema = z.object({
-  revisionId: z.string().min(1),
-  variantId: z.string().min(1),
-  body: z.unknown(),
-  mediaPlacements: z.array(mediaPlacementRecordSchema),
-  captions: z.array(contentCaptionTrackRecordSchema),
-  sharePresentation: sharePresentationRecordSchema,
-  contentChecksum: z.string().min(1),
-  authorPrincipalId: principalIdSchema,
-  createdAt: storedInstantSchema,
-  revision: recordRevisionSchema,
-});
-type StoredContentRevision = z.infer<typeof storedContentRevisionSchema>;
-
+type StoredContentRevision = StoredContentRevisionRecord;
 const contentReviewRecordSchema = z.object({
   candidateId: z.string().min(1),
   variantId: z.string().min(1),
@@ -67,15 +48,13 @@ const contentReviewRecordSchema = z.object({
   decidedByPrincipalId: z.string().min(1).nullable(),
   revision: recordRevisionSchema,
 });
-type ContentReviewRecord = z.infer<typeof contentReviewRecordSchema>;
-
+type ContentReviewRecord = StoredRecord<z.infer<typeof contentReviewRecordSchema>>;
 const mediaAssetDescriptorRecordSchema = z.object({ assetId: z.string().min(1), altText: z.string().min(1).nullable(), caption: z.string().min(1).nullable(), credit: z.string().min(1).nullable(), language: z.string().min(1).nullable(), revision: recordRevisionSchema });
-type MediaAssetDescriptorRecord = z.infer<typeof mediaAssetDescriptorRecordSchema>;
-
+type MediaAssetDescriptorRecord = StoredRecord<z.infer<typeof mediaAssetDescriptorRecordSchema>>;
 const contentMutationStateSchema = z.object({
   contentDocuments: z.array(contentDocumentRecordSchema),
   contentVariants: z.array(contentVariantRecordSchema),
-  contentRevisions: z.array(storedContentRevisionSchema),
+  contentRevisions: z.array(storedContentRevisionRecordSchema),
   releases: z.array(releaseRecordSchema),
   mediaAssets: z.array(mediaAssetRecordSchema),
   memberships: z.array(membershipRecordSchema),
@@ -97,10 +76,7 @@ type ContentMutationState = {
   readonly mediaAssetDescriptors: readonly MediaAssetDescriptorRecord[];
 };
 const INITIAL_REVISION_TOKEN = "rev-1";
-
-function newRecordId(prefix: string): string {
-  return `${prefix}-${globalThis.crypto.randomUUID()}`;
-}
+const newRecordId = (prefix: string): string => `${prefix}-${globalThis.crypto.randomUUID()}`;
 function nextRevision(current: string): string {
   const digits = /^(.*?)(\d+)$/u.exec(current);
   if (digits === null) return `${current}.1`;
@@ -108,29 +84,9 @@ function nextRevision(current: string): string {
   const ordinal = Number.parseInt(digits[2] ?? "", 10);
   return `${stem}${Number.isFinite(ordinal) ? ordinal + 1 : 1}`;
 }
-function revisionOrdinal(revision: string): number {
-  const digits = /(\d+)\s*$/u.exec(revision);
-  if (digits === null) return 1;
-  const parsed = Number.parseInt(digits[1] ?? "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-}
-function scenarioInstant(session: ResolvedSession): Temporal.Instant {
-  return instantAt(session.clockOffsetMs);
-}
-function instantOf(value: string | null | undefined): Temporal.Instant | undefined {
-  if (value === null || value === undefined || value.length === 0) return undefined;
-  try {
-    return Temporal.Instant.from(value);
-  } catch {
-    return undefined;
-  }
-}
-function invalidAt(issues: readonly DocumentIssue[]): z.ZodError {
-  return new z.ZodError(issues.map((issue) => ({ code: "custom" as const, path: issue.path.split("."), message: issue.message })));
-}
-function invalidField(path: string, message: string): z.ZodError {
-  return invalidAt([{ path, message }]);
-}
+const scenarioInstant = (session: ResolvedSession): Temporal.Instant => instantAt(session.clockOffsetMs);
+const invalidAt = (issues: readonly DocumentIssue[]): z.ZodError => new z.ZodError(issues.map((issue) => ({ code: "custom" as const, path: issue.path.split("."), message: issue.message })));
+const invalidField = (path: string, message: string): z.ZodError => invalidAt([{ path, message }]);
 function domainDocumentOf(record: ContentDocumentRecord): {
   readonly documentId: string;
   readonly family: VariantFamily;
@@ -142,51 +98,14 @@ function domainDocumentOf(record: ContentDocumentRecord): {
 } {
   return { documentId: record.documentId, family: record.family, kind: record.kind, sourceSubject: record.sourceSubject, siteId: record.siteId, ...(record.givingBinding === null ? {} : { givingBinding: record.givingBinding.designation }), managedFields: {} };
 }
-function domainVariantOf(record: ContentVariantRecord): ContentVariant {
-  return {
-    variantId: record.variantId,
-    documentId: record.documentId,
-    audience: record.audience,
-    locale: { tag: record.locale, direction: record.direction },
-    ...(record.draftRevisionId === null ? {} : { draftRevisionId: record.draftRevisionId }),
-    ...(record.candidateId === null ? {} : { candidateId: record.candidateId }),
-    ...(record.releaseHeadId === null ? {} : { releaseHeadId: record.releaseHeadId }),
-    ...(record.translationSource === null ? {} : { translationSource: { variantId: record.translationSource.variantId, revisionId: record.translationSource.revisionId } }),
-  };
-}
 function storedVariantOf(variant: ContentVariant, revision: string): ContentVariantRecord {
   const translationSource = variant.translationSource === undefined ? null : { variantId: variant.translationSource.variantId, revisionId: variant.translationSource.revisionId };
   const draftRevisionId = variant.draftRevisionId ?? null;
   return { variantId: variant.variantId, documentId: variant.documentId, audience: variant.audience, locale: variant.locale.tag, direction: variant.locale.direction, draftRevisionId, candidateId: variant.candidateId ?? null, releaseHeadId: variant.releaseHeadId ?? null, translationSource, revision };
 }
-function domainRevisionOf(record: StoredContentRevision, document: ContentDocumentJson): ContentRevision {
-  const captions: Record<string, string> = {};
-  const altText: Record<string, string> = {};
-  for (const placement of record.mediaPlacements) {
-    altText[placement.placementId] = placement.altText;
-    if (placement.caption !== null) captions[placement.placementId] = placement.caption;
-  }
-  return {
-    revisionId: record.revisionId,
-    variantId: record.variantId,
-    body: document,
-    sections: document.sections,
-    mediaPlacements: record.mediaPlacements.map((placement) => ({ placementId: placement.placementId, assetId: placement.assetId })),
-    captions,
-    altText,
-    sharePresentation: {
-      ...(record.sharePresentation.title.length === 0 ? {} : { title: record.sharePresentation.title }),
-      ...(record.sharePresentation.description.length === 0 ? {} : { description: record.sharePresentation.description }),
-      ...(record.sharePresentation.imageAssetId === null ? {} : { imageAssetId: record.sharePresentation.imageAssetId }),
-    },
-    contentChecksum: record.contentChecksum,
-    authorPrincipalId: record.authorPrincipalId,
-    createdAt: Temporal.Instant.from(record.createdAt),
-  };
-}
 function domainReleaseOf(record: ReleaseRecord, variant: ContentVariantRecord | undefined, state: ContentMutationState): Release {
   const released = state.contentRevisions.find((candidate) => candidate.revisionId === record.revisionId);
-  const withdrawnAt = instantOf(record.withdrawnAt);
+  const withdrawnAt = storedInstantOf(record.withdrawnAt);
   return {
     releaseId: record.releaseId,
     variantId: record.variantId,
@@ -200,42 +119,19 @@ function domainReleaseOf(record: ReleaseRecord, variant: ContentVariantRecord | 
     ...(record.supersededBy === null ? {} : { supersededBy: record.supersededBy }),
   };
 }
-function domainMembershipOf(record: StoredMembership, scope: Scope): DomainMembership {
-  const acceptedAt = instantOf(record.acceptedAt);
-  const confirmation = instantOf(record.confirmationDeadline);
-  const choice: MemberChoice = record.state === "off" || record.state === "restricted" ? "off" : "immediate";
-  return {
-    membershipId: record.membershipId,
-    scope: { organizationId: scope.organizationId, ministryId: scope.ministryId },
-    publisherId: record.publisherId,
-    purpose: record.purpose,
-    recipientId: record.membershipId,
-    email: record.email,
-    state: record.state,
-    choice,
-    languagePreference: record.languagePreference ?? "",
-    ...(acceptedAt === undefined ? {} : { acceptedAt }),
-    ...(acceptedAt !== undefined && record.state !== "awaiting-proof" ? { confirmedAt: acceptedAt } : {}),
-    ...(confirmation === undefined ? {} : { confirmationDeadline: confirmation }),
-    revision: revisionOrdinal(record.revision),
-  };
-}
 function editorialDecision(session: ResolvedSession, scope: Scope): ScopeDecision {
   const access = canEdit(session, { kind: "content-variant", scope });
   return access.allowed ? { ok: true } : { ok: false, denial: access.denial };
 }
-type EditorialSpec<P, R extends MutationResult> = Pick<MutationPlan<P, R>, "readCurrent" | "apply">;
+type EditorialSpec<P, R extends MutationResult> = { readonly readCurrent?: (documents: MutationContext["docs"], payload: P) => CurrentTarget; readonly apply: (context: MutationContext, payload: P) => ApplyResult<R> };
 function runEditorial<P, R extends MutationResult>(sessionId: string, input: MutationInput<P>, schema: z.ZodType<P>, name: MutationName, spec: EditorialSpec<P, R>): Promise<MutationOutcome> {
-  return runMutation<P, R>({ sessionId, input, schema, name, authorize: (session) => editorialDecision(session, input.scope), ...spec });
+  const { payload } = input;
+  const read = spec.readCurrent;
+  return runMutation<P, R>({ sessionId, input, schema, name, authorize: (session) => editorialDecision(session, input.scope), ...(read === undefined ? {} : { readCurrent: (documents: MutationContext["docs"]) => read(documents, payload) }), apply: (context) => spec.apply(context, payload) });
 }
 const UNRESOLVED_TARGET_REVISION = "no-such-record";
-
-function unresolvedTarget(): CurrentTarget {
-  return { kind: "record", revision: UNRESOLVED_TARGET_REVISION, value: null };
-}
-function recordTarget(revision: string, value: unknown): CurrentTarget {
-  return { kind: "record", revision, value };
-}
+const unresolvedTarget = (): CurrentTarget => ({ kind: "record", revision: UNRESOLVED_TARGET_REVISION, value: null });
+const recordTarget = (revision: string, value: unknown): CurrentTarget => ({ kind: "record", revision, value });
 class ContentStateReadError extends Error {
   constructor() {
     super("The content records in this session's state document cannot be read, so nothing was written and no record was guessed at.");
@@ -248,53 +144,36 @@ function openState(docs: { readonly state: unknown }): OpenedState {
   if (!isRecord(docs.state)) throw new ContentStateReadError();
   const parsed = contentMutationStateSchema.safeParse(docs.state);
   if (!parsed.success) throw new ContentStateReadError();
-  return {
-    raw: docs.state,
-    state: {
-      ...parsed.data,
-      // A session seeded before these two families existed still reads: the absent collection is a session with no recorded review and no registered description yet, not a damaged document.
-      contentReviews: parsed.data.contentReviews ?? [],
-      mediaAssetDescriptors: parsed.data.mediaAssetDescriptors ?? [],
-    },
-  };
+  return { raw: docs.state, state: { ...parsed.data, contentReviews: parsed.data.contentReviews ?? [], mediaAssetDescriptors: parsed.data.mediaAssetDescriptors ?? [] } };
 }
-function writeState(docs: { state: unknown }, opened: OpenedState, next: Partial<ContentMutationState>): void {
-  docs.state = { ...opened.raw, ...next };
+function writeState(docs: { state: unknown }, raw: Record<string, unknown>, next: Partial<ContentMutationState>): void {
+  docs.state = { ...raw, ...next };
 }
-function requireDocument(state: ContentMutationState, documentId: string): ContentDocumentRecord {
-  const record = state.contentDocuments.find((candidate) => candidate.documentId === documentId);
-  if (record === undefined) throw invalidField("documentId", "This action applies to a document this context does not hold.");
+/** The one record of a stored family this action names, refused against the field it named when the context holds no such record. */
+function requireRecord<T>(records: readonly T[], matches: (record: T) => boolean, field: string, message: string): T {
+  const record = records.find(matches);
+  if (record === undefined) throw invalidField(field, message);
   return record;
 }
-function requireVariant(state: ContentMutationState, variantId: string): ContentVariantRecord {
-  const record = state.contentVariants.find((candidate) => candidate.variantId === variantId);
-  if (record === undefined) throw invalidField("variantId", "This action applies to an edition this context does not hold.");
-  return record;
-}
-function requireRevision(state: ContentMutationState, revisionId: string): StoredContentRevision {
-  const record = state.contentRevisions.find((candidate) => candidate.revisionId === revisionId);
-  if (record === undefined) throw invalidField("revisionId", "This action applies to a revision this edition does not hold.");
-  return record;
-}
-function headReleaseOf(state: ContentMutationState, variant: ContentVariantRecord): ReleaseRecord | undefined {
-  if (variant.releaseHeadId === null) return undefined;
-  return state.releases.find((candidate) => candidate.releaseId === variant.releaseHeadId);
-}
-function releasesOfDocument(state: ContentMutationState, documentId: string): readonly ReleaseRecord[] {
-  const variantIds = new Set(state.contentVariants.filter((variant) => variant.documentId === documentId).map((variant) => variant.variantId));
-  return state.releases.filter((release) => variantIds.has(release.variantId));
-}
-function replaceVariant(variants: readonly ContentVariantRecord[], next: ContentVariantRecord): readonly ContentVariantRecord[] {
-  return variants.map((variant) => (variant.variantId === next.variantId ? next : variant));
-}
-function replaceRelease(releases: readonly ReleaseRecord[], next: ReleaseRecord): readonly ReleaseRecord[] {
-  return releases.map((release) => (release.releaseId === next.releaseId ? next : release));
-}
+const requireDocument = (state: ContentMutationState, documentId: string): ContentDocumentRecord => requireRecord(state.contentDocuments, (candidate) => candidate.documentId === documentId, "documentId", "This action applies to a document this context does not hold.");
+const requireVariant = (state: ContentMutationState, variantId: string): ContentVariantRecord => requireRecord(state.contentVariants, (candidate) => candidate.variantId === variantId, "variantId", "This action applies to an edition this context does not hold.");
+const requireRevision = (state: ContentMutationState, revisionId: string): StoredContentRevision => requireRecord(state.contentRevisions, (candidate) => candidate.revisionId === revisionId, "revisionId", "This action applies to a revision this edition does not hold.");
+const headReleaseOf = (state: ContentMutationState, variant: ContentVariantRecord): ReleaseRecord | undefined => (variant.releaseHeadId === null ? undefined : state.releases.find((candidate) => candidate.releaseId === variant.releaseHeadId));
+const releasesOfDocument = (state: ContentMutationState, documentId: string): readonly ReleaseRecord[] => state.releases.filter((release) => new Set(state.contentVariants.filter((variant) => variant.documentId === documentId).map((variant) => variant.variantId)).has(release.variantId));
+const replaceVariant = (variants: readonly ContentVariantRecord[], next: ContentVariantRecord): readonly ContentVariantRecord[] => variants.map((variant) => (variant.variantId === next.variantId ? next : variant));
+const replaceRelease = (releases: readonly ReleaseRecord[], next: ReleaseRecord): readonly ReleaseRecord[] => releases.map((release) => (release.releaseId === next.releaseId ? next : release));
 function storedReleaseOf(release: Release, revision: string, previous: ReleaseRecord | undefined): ReleaseRecord {
   const withdrawnAt = release.withdrawnAt ?? previous?.withdrawnAt ?? null;
   const supersededBy = release.supersededBy ?? previous?.supersededBy ?? null;
   const publishedAt = release.publishedAt.toString();
   return { releaseId: release.releaseId, variantId: release.variantId, revisionId: release.revisionId, audience: release.audience, locale: release.locale.tag, publishedAt, reach: release.reach, withdrawnAt: withdrawnAt === null ? null : withdrawnAt.toString(), supersededBy, revision };
+}
+function requireEditableSection(sections: readonly ContentSection[], sectionId: string): { readonly sections: readonly ContentSection[]; readonly index: number; readonly section: ContentSection } {
+  const index = sectionIndexOf(sections, sectionId);
+  const section = sections[index];
+  if (section === undefined) throw invalidField("sectionId", "This page holds no section by that identity.");
+  if (MANAGED_SECTION_TYPES.has(section.element)) throw invalidField("sectionId", MANAGED_SECTION_REFUSAL);
+  return { sections, index, section };
 }
 function requireSectionType(value: string): PageSectionType {
   const admitted = PAGE_SECTION_TYPES.find((type) => type === value);
@@ -302,9 +181,7 @@ function requireSectionType(value: string): PageSectionType {
   return admitted;
 }
 const RECORD_REFERENCE_MESSAGE = "This action applies to one record, so open the record again and retry rather than pasting an address.";
-
 const recordIdSchema = z.string({ error: RECORD_REFERENCE_MESSAGE }).trim().min(1, RECORD_REFERENCE_MESSAGE).max(160, RECORD_REFERENCE_MESSAGE);
-
 const localeTagSchema = z
   .string({ error: "State the content locale this edition is written in." })
   .trim()
@@ -315,11 +192,8 @@ const familySchema = z.enum(VARIANT_FAMILIES, { error: "A content document is an
 const audienceSchema = z.enum(VARIANT_AUDIENCES, { error: "Choose the audience this edition serves: public or approved supporters." });
 const publishModeSchema = z.enum(PUBLISH_MODES, { error: "Choose how this edition is released: publish only, or publish and notify now." });
 const reachSchema = releaseReachSchema;
-
 const PLACEMENT_TEXT_MAX_CHARS = 4_000;
-
 const optionalPlacementTextSchema = z.string().trim().max(PLACEMENT_TEXT_MAX_CHARS, `A placement field holds at most ${PLACEMENT_TEXT_MAX_CHARS} characters, so shorten it.`).optional();
-
 const placementTextSchema = z.strictObject({
   altText: z.string({ error: "Describe what this image or video shows." }).trim().min(1, "Describe what this image or video shows.").max(PLACEMENT_TEXT_MAX_CHARS, "Shorten the alternative text for this placement."),
   caption: optionalPlacementTextSchema,
@@ -338,31 +212,23 @@ const placementRefSchema = z.strictObject({
 const captionTrackPayloadSchema = z.strictObject({ assetId: recordIdSchema, language: localeTagSchema, label: z.string().trim().min(1).max(120).optional(), isDefault: z.boolean().optional() });
 const sharePresentationPayloadSchema = z.strictObject({ title: z.string().trim().max(200).optional(), description: z.string().trim().max(600).optional(), imageAssetId: recordIdSchema.nullable().optional(), imageAltText: z.string().trim().min(1).max(PLACEMENT_TEXT_MAX_CHARS).nullable().optional() });
 const sectionFieldsSchema = z.record(z.string(), z.string());
-
 const sectionPayloadSchema = z.strictObject({ element: z.string().trim().min(1, "A section states the catalogue element it was composed from."), fields: sectionFieldsSchema, presentation: presentationChoiceSchema, direction: z.enum(["ltr", "rtl"]).optional() });
 const draftTargetShape = { draftRevisionId: recordIdSchema.optional(), variantId: recordIdSchema.optional() } as const;
-function namesDraftTarget(payload: { readonly draftRevisionId?: string; readonly variantId?: string }): boolean {
-  return payload.draftRevisionId !== undefined || payload.variantId !== undefined;
-}
+const namesDraftTarget = (payload: { readonly draftRevisionId?: string; readonly variantId?: string }): boolean => payload.draftRevisionId !== undefined || payload.variantId !== undefined;
+const refuseUnnamedDraftTarget = (payload: { readonly draftRevisionId?: string; readonly variantId?: string }, ctx: z.RefinementCtx): void => {
+  if (!namesDraftTarget(payload)) ctx.addIssue({ code: "custom", path: ["draftRevisionId"], message: NO_DRAFT_TARGET_MESSAGE });
+};
 const NO_DRAFT_TARGET_MESSAGE = "Open the page's draft first: a section change names the draft revision it edits.";
 function resolveDraftDocument(input: { readonly body: unknown; readonly sections: readonly ContentSection[] | undefined }): { readonly status: "valid"; readonly document: ContentDocumentJson } | { readonly status: "invalid"; readonly issues: readonly DocumentIssue[] } {
   const parsed = parseDocument(input.body);
-  if (parsed.status === "invalid" || input.sections === undefined) return parsed;
-  return parseDocument({ ...parsed.document, sections: input.sections });
+  return parsed.status === "invalid" || input.sections === undefined ? parsed : parseDocument({ ...parsed.document, sections: input.sections });
 }
 const UNTITLED_SHARE_TITLE = "Untitled";
-/** The share presentation one save states, where a stated `null` image is the author clearing the image rather than the save leaving it unstated. */
+// The share presentation one save states, where a stated `null` image is the author clearing it rather than the save leaving it unstated.
 type StatedShare = { readonly title?: string; readonly description?: string; readonly imageAssetId?: string | null; readonly imageAltText?: string | null };
-/** The text one save states for a share field: a blank field is the author leaving the field out rather than emptying it. */
-function statedShareTextOf(value: string | undefined): string | undefined {
-  return value === undefined || value.trim().length === 0 ? undefined : value;
-}
-/**
- * The share presentation one revision stores. A body-only save changes the body and nothing else — one canonical Update
- * keeps the title and description its author gave it — so every field the save does not state is inherited from the
- * revision it supersedes. "Untitled" and the empty description are the fallbacks a first revision with nothing stated
- * gets, and a stated `null` image stays cleared rather than restoring the previous one.
- */
+// The text one save states for a share field: a blank field is the author leaving the field out rather than emptying it.
+const statedShareTextOf = (value: string | undefined): string | undefined => (value === undefined || value.trim().length === 0 ? undefined : value);
+/** The share presentation one revision stores. */
 function storedShareOf(share: StatedShare, previous: SharePresentationRecord | undefined): SharePresentationRecord {
   return {
     title: statedShareTextOf(share.title) ?? statedShareTextOf(previous?.title) ?? UNTITLED_SHARE_TITLE,
@@ -371,18 +237,10 @@ function storedShareOf(share: StatedShare, previous: SharePresentationRecord | u
     imageAltText: share.imageAltText ?? previous?.imageAltText ?? null,
   };
 }
-function storedContentEquals(left: StoredContentRevision, right: StoredContentRevision): boolean {
-  return (
-    left.contentChecksum === right.contentChecksum &&
-    JSON.stringify(left.mediaPlacements) === JSON.stringify(right.mediaPlacements) &&
-    JSON.stringify(left.captions) === JSON.stringify(right.captions) &&
-    JSON.stringify(left.sharePresentation) === JSON.stringify(right.sharePresentation) &&
-    JSON.stringify(left.body) === JSON.stringify(right.body)
-  );
-}
+const COMPARED_REVISION_MEMBERS = ["mediaPlacements", "captions", "sharePresentation", "body"] as const;
+const storedContentEquals = (left: StoredContentRevision, right: StoredContentRevision): boolean => left.contentChecksum === right.contentChecksum && COMPARED_REVISION_MEMBERS.every((member) => JSON.stringify(left[member]) === JSON.stringify(right[member]));
 type ResolvedPlacements = { readonly placements: readonly MediaPlacementRecord[]; readonly altText: Readonly<Record<string, string>>; readonly captions: Readonly<Record<string, string>>; readonly tracks: readonly ContentCaptionTrackRecord[]; readonly domain: readonly MediaPlacement[] };
 const UNPLACEABLE_ASSET = "This media asset is not one this edition may place, so choose an asset registered in this ministry.";
-
 function resolvePlacements(input: { readonly state: ContentMutationState; readonly session: ResolvedSession; readonly previous: readonly MediaPlacementRecord[]; readonly requested: readonly z.infer<typeof placementRefSchema>[] }): ResolvedPlacements {
   const placements: MediaPlacementRecord[] = [];
   const altText: Record<string, string> = {};
@@ -395,8 +253,7 @@ function resolvePlacements(input: { readonly state: ContentMutationState; readon
     const asset = input.state.mediaAssets.find((candidate) => candidate.assetId === requested.assetId);
     if (asset === undefined) throw invalidField(field, UNPLACEABLE_ASSET);
     const descriptor = input.state.mediaAssetDescriptors.find((candidate) => candidate.assetId === requested.assetId);
-    const readable = canEdit(input.session, { kind: "media-asset", scope: asset.scope });
-    if (!readable.allowed) throw invalidField(field, UNPLACEABLE_ASSET);
+    if (!canEdit(input.session, { kind: "media-asset", scope: asset.scope }).allowed) throw invalidField(field, UNPLACEABLE_ASSET);
     const purpose = requested.purpose ?? (asset.kind === "image" ? "display" : "playback");
     if (!asset.renditions.some((entry) => entry.purpose === purpose)) throw invalidField(field, `This asset has no ${purpose} rendition yet, so it cannot be placed for that purpose.`);
     const description = requested.altText ?? descriptor?.altText ?? undefined;
@@ -404,8 +261,7 @@ function resolvePlacements(input: { readonly state: ContentMutationState; readon
     const caption = requested.caption ?? descriptor?.caption ?? null;
     const credit = requested.credit ?? descriptor?.credit ?? null;
     const previousAtPosition = input.previous[index];
-    const reusableId = previousAtPosition !== undefined && previousAtPosition.assetId === asset.assetId ? previousAtPosition.placementId : undefined;
-    const placementId = requested.placementId ?? reusableId ?? newRecordId("placement");
+    const placementId = requested.placementId ?? (previousAtPosition !== undefined && previousAtPosition.assetId === asset.assetId ? previousAtPosition.placementId : undefined) ?? newRecordId("placement");
     if (usedPlacementIds.has(placementId)) throw invalidField(`mediaPlacements.${String(index)}.placementId`, "Two placements of this draft share one identity, so each placement needs its own.");
     usedPlacementIds.add(placementId);
     placements.push({ placementId, assetId: asset.assetId, sectionElement: requested.sectionElement ?? null, position: requested.position ?? index, altText: description, caption, credit });
@@ -426,9 +282,7 @@ function resolveCaptionTracks(input: { readonly state: ContentMutationState; rea
     return { assetId: asset.assetId, renditionId: rendition.renditionId, language: requested.language, label: requested.label ?? requested.language, isDefault: requested.isDefault ?? index === 0 };
   });
 }
-function principalIdOf(value: string): PrincipalId {
-  return principalIdSchema.parse(value);
-}
+const principalIdOf = (value: string): PrincipalId => principalIdSchema.parse(value);
 function storedRevisionOf(input: { readonly revision: ContentRevision; readonly placements: readonly MediaPlacementRecord[]; readonly tracks: readonly ContentCaptionTrackRecord[]; readonly statedShare: StatedShare; readonly previousShare: SharePresentationRecord | undefined }): StoredContentRevision {
   const sharePresentation = storedShareOf(input.statedShare, input.previousShare);
   const authorPrincipalId = principalIdOf(input.revision.authorPrincipalId);
@@ -447,32 +301,30 @@ function contentStateOrUndefined(docs: { readonly state: unknown }): OpenedState
     return undefined;
   }
 }
-function currentDocumentTarget(documents: { readonly state: unknown }, documentId: string): CurrentTarget {
-  const record = contentStateOrUndefined(documents)?.state.contentDocuments.find((candidate) => candidate.documentId === documentId);
-  return record === undefined ? unresolvedTarget() : recordTarget(record.revision, record);
-}
-function currentVariantTarget(documents: { readonly state: unknown }, variantId: string): CurrentTarget {
-  const variant = contentStateOrUndefined(documents)?.state.contentVariants.find((candidate) => candidate.variantId === variantId);
-  return variant === undefined ? unresolvedTarget() : recordTarget(variant.revision, variant);
-}
+const recordTargetOf = <T extends { readonly revision: string }>(record: T | undefined): CurrentTarget => (record === undefined ? unresolvedTarget() : recordTarget(record.revision, record));
+const currentDocumentTarget = (documents: { readonly state: unknown }, documentId: string | undefined): CurrentTarget => recordTargetOf(contentStateOrUndefined(documents)?.state.contentDocuments.find((candidate) => candidate.documentId === documentId));
+const currentVariantTarget = (documents: { readonly state: unknown }, variantId: string | undefined): CurrentTarget => recordTargetOf(contentStateOrUndefined(documents)?.state.contentVariants.find((candidate) => candidate.variantId === variantId));
 function currentRevisionTarget(documents: { readonly state: unknown }, revisionId: string | undefined): CurrentTarget {
   const state = contentStateOrUndefined(documents)?.state;
   const revision = revisionId === undefined ? undefined : state?.contentRevisions.find((candidate) => candidate.revisionId === revisionId);
-  const variant = revision === undefined ? undefined : state?.contentVariants.find((candidate) => candidate.variantId === revision.variantId);
-  return variant === undefined ? unresolvedTarget() : recordTarget(variant.revision, variant);
+  return recordTargetOf(revision === undefined ? undefined : state?.contentVariants.find((candidate) => candidate.variantId === revision.variantId));
 }
-function currentVariantDocumentTarget(documents: { readonly state: unknown }, variantId: string): CurrentTarget {
+function currentVariantDocumentTarget(documents: { readonly state: unknown }, variantId: string | undefined): CurrentTarget {
   const opened = contentStateOrUndefined(documents);
   const variant = opened?.state.contentVariants.find((candidate) => candidate.variantId === variantId);
-  const document = variant === undefined ? undefined : opened?.state.contentDocuments.find((candidate) => candidate.documentId === variant.documentId);
-  return document === undefined ? unresolvedTarget() : recordTarget(document.revision, document);
+  return recordTargetOf(variant === undefined ? undefined : opened?.state.contentDocuments.find((candidate) => candidate.documentId === variant.documentId));
 }
 function currentDraftTarget(documents: { readonly state: unknown }, payload: { readonly draftRevisionId?: string; readonly variantId?: string }): CurrentTarget {
   const opened = contentStateOrUndefined(documents);
   const variantId = payload.variantId ?? opened?.state.contentRevisions.find((candidate) => candidate.revisionId === payload.draftRevisionId)?.variantId;
-  const variant = variantId === undefined ? undefined : opened?.state.contentVariants.find((candidate) => candidate.variantId === variantId);
-  return variant === undefined ? unresolvedTarget() : recordTarget(variant.revision, variant);
+  return recordTargetOf(variantId === undefined ? undefined : opened?.state.contentVariants.find((candidate) => candidate.variantId === variantId));
 }
+type EditorialDocuments = MutationContext["docs"];
+const documentTarget = (documents: EditorialDocuments, payload: { readonly documentId: string }): CurrentTarget => currentDocumentTarget(documents, payload.documentId);
+const variantTarget = (documents: EditorialDocuments, payload: { readonly variantId: string }): CurrentTarget => currentVariantTarget(documents, payload.variantId);
+const variantDocumentTarget = (documents: EditorialDocuments, payload: { readonly variantId: string }): CurrentTarget => currentVariantDocumentTarget(documents, payload.variantId);
+const revisionTarget = (documents: EditorialDocuments, payload: { readonly revisionId: string }): CurrentTarget => currentRevisionTarget(documents, payload.revisionId);
+const draftTarget = (documents: EditorialDocuments, payload: { readonly draftRevisionId?: string; readonly variantId?: string }): CurrentTarget => currentDraftTarget(documents, payload);
 const createVariantPayloadSchema = z.strictObject({
   documentId: recordIdSchema,
   family: familySchema.optional(),
@@ -483,41 +335,37 @@ const createVariantPayloadSchema = z.strictObject({
 });
 export type CreateVariantPayload = z.infer<typeof createVariantPayloadSchema>;
 /** Creates one working edition of one document: an audience the family admits, in one exact content locale, with no draft, candidate or release yet. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function createVariant(sessionId: string, input: MutationInput<CreateVariantPayload>): Promise<MutationOutcome> {
-  return runEditorial(sessionId, input, createVariantPayloadSchema, "createVariant", { readCurrent: (documents) => currentDocumentTarget(documents, input.payload.documentId), apply: (context) => applyCreateVariant(context, input) });
-}
-function applyCreateVariant(context: MutationContext, input: MutationInput<CreateVariantPayload>): ApplyResult<MutationResult> {
-  const opened = openState(context.docs),
-    state = opened.state;
-  const document = requireDocument(state, input.payload.documentId);
-  if (input.payload.family !== undefined && input.payload.family !== document.family) throw invalidField("family", "An edition belongs to the family its document is, so choose the family from the document.");
-  const audience: VariantAudience = input.payload.audience ?? "public";
+export const createVariant = async (sessionId: string, input: MutationInput<CreateVariantPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, createVariantPayloadSchema, "createVariant", { readCurrent: documentTarget, apply: applyCreateVariant });
+function applyCreateVariant(context: MutationContext, payload: CreateVariantPayload): ApplyResult<MutationResult> {
+  const { raw, state } = openState(context.docs);
+  const document = requireDocument(state, payload.documentId);
+  if (payload.family !== undefined && payload.family !== document.family) throw invalidField("family", "An edition belongs to the family its document is, so choose the family from the document.");
+  const audience: VariantAudience = payload.audience ?? "public";
   if (!variantKeyAllowed(document.family, audience)) {
     const admitted = admittedAudiences(document.family);
     throw invalidField("audience", admitted.length === 0 ? `"${document.family}" is not a content family, so it admits no audience.` : `A ${document.family} admits ${admitted.join(" and ")} editions only.`);
   }
-  const locale = { tag: input.payload.locale, direction: input.payload.direction ?? directionOfTag(input.payload.locale) };
+  const locale = { tag: payload.locale, direction: payload.direction ?? directionOfTag(payload.locale) };
   let translationSource: { readonly variant: ContentVariant; readonly revision: ContentRevision } | undefined;
-  if (input.payload.translationSource !== undefined) {
-    const source = requireVariant(state, input.payload.translationSource.variantId);
-    const revision = requireRevision(state, input.payload.translationSource.revisionId);
-    translationSource = { variant: domainVariantOf(source), revision: domainRevisionOf(revision, requireParsedBody(revision)) };
+  if (payload.translationSource !== undefined) {
+    const source = requireVariant(state, payload.translationSource.variantId);
+    const revision = requireRevision(state, payload.translationSource.revisionId);
+    translationSource = { variant: contentVariantOf(source), revision: contentRevisionOf(revision, requireParsedBody(revision)) };
   }
   const created = buildVariant({
     variantId: newRecordId("variant"),
     document: domainDocumentOf(document),
     audience,
     locale,
-    existingVariants: state.contentVariants.filter((candidate) => candidate.documentId === document.documentId).map(domainVariantOf),
+    existingVariants: state.contentVariants.filter((candidate) => candidate.documentId === document.documentId).map(contentVariantOf),
     ...(translationSource === undefined ? {} : { translationSource }),
   });
   if (created.status === "invalid") throw invalidAt(created.issues);
-  writeState(context.docs, opened, {
+  writeState(context.docs, raw, {
     contentVariants: [...state.contentVariants, storedVariantOf(created.variant, INITIAL_REVISION_TOKEN)],
     contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)),
   });
-  const result = { variantId: created.variant.variantId, documentId: document.documentId };
-  return { changed: true, revision: nextRevision(document.revision), result, created: [created.variant.variantId] } satisfies ApplyResult<typeof result>;
+  return { changed: true, revision: nextRevision(document.revision), result: { variantId: created.variant.variantId, documentId: document.documentId }, created: [created.variant.variantId] } satisfies ApplyResult<{ variantId: string; documentId: string }>;
 }
 const saveDraftPayloadSchema = z
   .strictObject({
@@ -532,30 +380,23 @@ const saveDraftPayloadSchema = z
   .superRefine((payload, ctx) => {
     const resolved = resolveDraftDocument({ body: payload.body, sections: payload.sections });
     if (resolved.status === "valid") return;
-    for (const issue of resolved.issues) {
-      const segments = issue.path.split(".").filter((segment) => segment.length > 0);
-      ctx.addIssue({ code: "custom", path: ["body", ...segments], message: issue.message });
-    }
+    for (const issue of resolved.issues) ctx.addIssue({ code: "custom", path: ["body", ...issue.path.split(".").filter((segment) => segment.length > 0)], message: issue.message });
   });
 export type SaveDraftPayload = z.infer<typeof saveDraftPayloadSchema>;
 /** Saves one variant's working revision, validating the authored document through the content profile. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function saveDraft(sessionId: string, input: MutationInput<SaveDraftPayload>): Promise<MutationOutcome> {
-  return runEditorial(sessionId, input, saveDraftPayloadSchema, "saveDraft", { readCurrent: (documents) => currentVariantTarget(documents, input.payload.variantId), apply: (context) => applySaveDraft(context, input) });
-}
-function applySaveDraft(context: MutationContext, input: MutationInput<SaveDraftPayload>): ApplyResult<MutationResult> {
-  const opened = openState(context.docs),
-    state = opened.state;
-  const variant = requireVariant(state, input.payload.variantId);
+export const saveDraft = async (sessionId: string, input: MutationInput<SaveDraftPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, saveDraftPayloadSchema, "saveDraft", { readCurrent: variantTarget, apply: applySaveDraft });
+function applySaveDraft(context: MutationContext, payload: SaveDraftPayload): ApplyResult<MutationResult> {
+  const { raw, state } = openState(context.docs);
+  const variant = requireVariant(state, payload.variantId);
   const draftRevision = variant.draftRevisionId === null ? undefined : state.contentRevisions.find((candidate) => candidate.revisionId === variant.draftRevisionId);
-  // The revision this save supersedes: the edition's own draft, or the revision standing at its release head when the edition
-  // has no draft yet, because that is where a published edition's stated title, description and image live.
+  // The revision this save supersedes: the edition's own draft, or the revision standing at its release head when the edition has no draft yet, because that is where a published edition's stated title, description and image live.
   const headRevisionId = headReleaseOf(state, variant)?.revisionId;
   const supersededRevision = draftRevision ?? (headRevisionId === undefined ? undefined : state.contentRevisions.find((candidate) => candidate.revisionId === headRevisionId));
-  const resolved = resolveDraftDocument({ body: input.payload.body, sections: input.payload.sections });
+  const resolved = resolveDraftDocument({ body: payload.body, sections: payload.sections });
   if (resolved.status === "invalid") throw invalidAt(resolved.issues);
-  const resolvedPlacements = resolvePlacements({ state, session: context.session, previous: draftRevision?.mediaPlacements ?? [], requested: input.payload.mediaPlacements ?? [] });
-  const explicitTracks = resolveCaptionTracks({ state, requested: input.payload.captions ?? [] });
-  const requestedShare = input.payload.sharePresentation;
+  const resolvedPlacements = resolvePlacements({ state, session: context.session, previous: draftRevision?.mediaPlacements ?? [], requested: payload.mediaPlacements ?? [] });
+  const explicitTracks = resolveCaptionTracks({ state, requested: payload.captions ?? [] });
+  const requestedShare = payload.sharePresentation;
   const written = createRevision({
     revisionId: newRecordId("rev"),
     variantId: variant.variantId,
@@ -579,47 +420,35 @@ function applySaveDraft(context: MutationContext, input: MutationInput<SaveDraft
   const statedShare: StatedShare = requestedShare ?? written.revision.sharePresentation;
   const nextRecord: StoredContentRevision = storedRevisionOf({ revision: written.revision, placements: resolvedPlacements.placements, tracks: [...explicitTracks, ...resolvedPlacements.tracks], statedShare, previousShare: supersededRevision?.sharePresentation });
   if (draftRevision !== undefined && storedContentEquals(draftRevision, nextRecord)) return { changed: false };
-  const pointed = applyDraftRevision(domainVariantOf(variant), written.revision);
+  const pointed = applyDraftRevision(contentVariantOf(variant), written.revision);
   if (pointed.status === "invalid") throw invalidAt(pointed.issues);
-  writeState(context.docs, opened, { contentRevisions: [...state.contentRevisions, nextRecord], contentVariants: replaceVariant(state.contentVariants, storedVariantOf(pointed.variant, nextRevision(variant.revision))) });
+  writeState(context.docs, raw, { contentRevisions: [...state.contentRevisions, nextRecord], contentVariants: replaceVariant(state.contentVariants, storedVariantOf(pointed.variant, nextRevision(variant.revision))) });
   const result = { variantId: variant.variantId, revisionId: written.revision.revisionId, contentChecksum: written.revision.contentChecksum };
   return { changed: true, revision: nextRevision(variant.revision), result, created: [written.revision.revisionId], changedIds: [variant.variantId] } satisfies ApplyResult<typeof result>;
 }
 const submitForReviewPayloadSchema = z.strictObject({ variantId: recordIdSchema, revisionId: recordIdSchema, notifyMode: publishModeSchema.optional() });
 export type SubmitForReviewPayload = z.infer<typeof submitForReviewPayloadSchema>;
 /** Freezes one exact revision as the candidate under review and records the mode it is to be released in. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function submitForReview(sessionId: string, input: MutationInput<SubmitForReviewPayload>): Promise<MutationOutcome> {
-  return runEditorial(sessionId, input, submitForReviewPayloadSchema, "submitForReview", { readCurrent: (documents) => currentVariantTarget(documents, input.payload.variantId), apply: (context) => applySubmitForReview(context, input) });
-}
-function applySubmitForReview(context: MutationContext, input: MutationInput<SubmitForReviewPayload>): ApplyResult<MutationResult> {
-  const opened = openState(context.docs),
-    state = opened.state;
-  const variant = requireVariant(state, input.payload.variantId);
-  const revision = requireRevision(state, input.payload.revisionId);
+export const submitForReview = async (sessionId: string, input: MutationInput<SubmitForReviewPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, submitForReviewPayloadSchema, "submitForReview", { readCurrent: variantTarget, apply: applySubmitForReview });
+function applySubmitForReview(context: MutationContext, payload: SubmitForReviewPayload): ApplyResult<MutationResult> {
+  const { raw, state } = openState(context.docs);
+  const variant = requireVariant(state, payload.variantId);
+  const revision = requireRevision(state, payload.revisionId);
   if (revision.variantId !== variant.variantId) throw invalidField("revisionId", "A candidate freezes a revision of its own edition, and this revision belongs to another.");
   const existing = state.contentReviews.find((review) => review.candidateId === revision.revisionId);
   if (existing !== undefined && existing.decision !== "submitted") throw invalidField("revisionId", "This revision has already been reviewed, so a second review needs a new submission with a new revision.");
   if (existing !== undefined && variant.candidateId === revision.revisionId) return { changed: false };
   const at = scenarioInstant(context.session);
-  const frozen = freezeCandidate(domainVariantOf(variant), domainRevisionOf(revision, requireParsedBody(revision)), { candidateId: revision.revisionId, at });
+  const frozen = freezeCandidate(contentVariantOf(variant), contentRevisionOf(revision, requireParsedBody(revision)), { candidateId: revision.revisionId, at });
   if (frozen.status === "invalid") throw invalidAt(frozen.issues);
-  const notifyMode = input.payload.notifyMode ?? "publish-only";
-  const candidateId = frozen.candidate.candidateId;
-  const revisionId = revision.revisionId;
-  const variantId = variant.variantId;
-  const submittedAt = at.toString();
-  const decision = "submitted";
-  const note = null;
-  const decidedByPrincipalId = null;
-  const decidedAt = null;
-  const review: ContentReviewRecord = { candidateId, variantId, revisionId, notifyMode, decision, note, submittedAt, decidedAt, decidedByPrincipalId, revision: INITIAL_REVISION_TOKEN };
-  writeState(context.docs, opened, { contentVariants: replaceVariant(state.contentVariants, storedVariantOf(frozen.variant, nextRevision(variant.revision))), contentReviews: [...state.contentReviews, review] });
+  const notifyMode = payload.notifyMode ?? "publish-only";
+  const review: ContentReviewRecord = { candidateId: frozen.candidate.candidateId, variantId: variant.variantId, revisionId: revision.revisionId, notifyMode, decision: "submitted", note: null, submittedAt: at.toString(), decidedAt: null, decidedByPrincipalId: null, revision: INITIAL_REVISION_TOKEN };
+  writeState(context.docs, raw, { contentVariants: replaceVariant(state.contentVariants, storedVariantOf(frozen.variant, nextRevision(variant.revision))), contentReviews: [...state.contentReviews, review] });
   const result = { candidateId: frozen.candidate.candidateId, variantId: variant.variantId, revisionId: revision.revisionId, notifyMode: review.notifyMode };
   return { changed: true, revision: nextRevision(variant.revision), result, created: [frozen.candidate.candidateId], changedIds: [variant.variantId] } satisfies ApplyResult<typeof result>;
 }
 const reviewAnswerPayloadSchema = z.strictObject({ candidateId: recordIdSchema, notifyMode: publishModeSchema.optional(), note: z.string().trim().max(4_000).optional(), reason: z.string().trim().max(4_000).optional() });
 export type ReviewAnswerPayload = z.infer<typeof reviewAnswerPayloadSchema>;
-
 function requireReview(state: ContentMutationState, candidateId: string, field: string): ContentReviewRecord {
   const review = state.contentReviews.find((candidate) => candidate.candidateId === candidateId);
   if (review === undefined) throw invalidField(field, "No submission is open for review under this identity, so reopen the edition and submit it again.");
@@ -634,42 +463,34 @@ async function answerReview(input: { readonly sessionId: string; readonly mutati
     authorize: (session) => editorialDecision(session, input.mutation.scope),
     readCurrent: (documents) => currentRevisionTarget(documents, input.mutation.payload.candidateId),
     apply: (context) => {
-      const opened = openState(context.docs),
-        state = opened.state;
+      const { raw, state } = openState(context.docs);
       const review = requireReview(state, input.mutation.payload.candidateId, "candidateId");
       if (review.decision === input.decision) return { changed: false };
       if (review.decision !== "submitted") throw invalidField("candidateId", "This candidate has already been answered, so a further review needs a new submission.");
       const requestedMode = input.mutation.payload.notifyMode;
       if (requestedMode !== undefined && requestedMode !== review.notifyMode) throw invalidField("notifyMode", "A reviewer cannot change how this edition was submitted to be released, so a new submission is required.");
       const variant = requireVariant(state, review.variantId);
-      const decided = applyReviewDecision(domainVariantOf(variant), input.decision);
+      const decided = applyReviewDecision(contentVariantOf(variant), input.decision);
       if (decided.status === "invalid") throw invalidAt(decided.issues);
       const answered: ContentReviewRecord = { ...review, decision: input.decision, note: input.mutation.payload.note ?? input.mutation.payload.reason ?? null, decidedAt: scenarioInstant(context.session).toString(), decidedByPrincipalId: context.session.principalId, revision: nextRevision(review.revision) };
-      writeState(context.docs, opened, { contentVariants: replaceVariant(state.contentVariants, storedVariantOf(decided.variant, nextRevision(variant.revision))), contentReviews: state.contentReviews.map((candidate) => (candidate.candidateId === answered.candidateId ? answered : candidate)) });
+      writeState(context.docs, raw, { contentVariants: replaceVariant(state.contentVariants, storedVariantOf(decided.variant, nextRevision(variant.revision))), contentReviews: state.contentReviews.map((candidate) => (candidate.candidateId === answered.candidateId ? answered : candidate)) });
       const result = { candidateId: review.candidateId, variantId: review.variantId, revisionId: review.revisionId, decision: input.decision, notifyMode: review.notifyMode };
       return { changed: true, revision: nextRevision(variant.revision), result, changedIds: [review.variantId] } satisfies ApplyResult<typeof result>;
     },
   });
 }
 /** Approves one frozen candidate in a single step and keeps its recorded release mode. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function approveCandidate(sessionId: string, input: MutationInput<ReviewAnswerPayload>): Promise<MutationOutcome> {
-  return answerReview({ sessionId, mutation: input, name: "approveCandidate", decision: "approved" });
-}
+export const approveCandidate = async (sessionId: string, input: MutationInput<ReviewAnswerPayload>): Promise<MutationOutcome> => answerReview({ sessionId, mutation: input, name: "approveCandidate", decision: "approved" });
 /** Asks for changes on one frozen candidate, which clears the variant's submission so a second round is a new revision rather than a silent re-review. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function requestChanges(sessionId: string, input: MutationInput<ReviewAnswerPayload>): Promise<MutationOutcome> {
-  return answerReview({ sessionId, mutation: input, name: "requestChanges", decision: "changes-requested" });
-}
+export const requestChanges = async (sessionId: string, input: MutationInput<ReviewAnswerPayload>): Promise<MutationOutcome> => answerReview({ sessionId, mutation: input, name: "requestChanges", decision: "changes-requested" });
 /** Rejects one frozen candidate, under the same single-review rule as a request for changes. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function rejectCandidate(sessionId: string, input: MutationInput<ReviewAnswerPayload>): Promise<MutationOutcome> {
-  return answerReview({ sessionId, mutation: input, name: "rejectCandidate", decision: "rejected" });
-}
+export const rejectCandidate = async (sessionId: string, input: MutationInput<ReviewAnswerPayload>): Promise<MutationOutcome> => answerReview({ sessionId, mutation: input, name: "rejectCandidate", decision: "rejected" });
 const publishSelectionSchema = z.strictObject({ variantId: recordIdSchema, revisionId: recordIdSchema.optional(), mode: publishModeSchema.optional() });
 const publishVariantsPayloadSchema = z.strictObject({ documentId: recordIdSchema.optional(), candidateIds: z.array(recordIdSchema).min(1).optional(), variants: z.array(publishSelectionSchema).min(1).optional(), mode: publishModeSchema.optional() }).superRefine((payload, ctx) => {
   if (payload.candidateIds === undefined && payload.variants === undefined) ctx.addIssue({ code: "custom", path: ["candidateIds"], message: "Choose at least one edition to release, by its candidate or by the edition itself." });
   if (payload.candidateIds !== undefined && payload.variants !== undefined) ctx.addIssue({ code: "custom", path: ["variants"], message: "A release names its editions one way, by candidate or by edition, so remove one of the two lists." });
 });
 export type PublishVariantsPayload = z.infer<typeof publishVariantsPayloadSchema>;
-
 type ReleaseSelection = { readonly variantId: string; readonly revisionId?: string; readonly mode?: PublishMode };
 type ReleaseAttempt = { readonly variantId: string; readonly state: PerVariantReleaseState; readonly releaseId?: string; readonly revisionId?: string; readonly notifyMode?: PublishMode; readonly reasonCode?: string; readonly reason?: string };
 function releaseSelectionsOf(state: ContentMutationState, payload: PublishVariantsPayload): readonly ReleaseSelection[] {
@@ -677,8 +498,7 @@ function releaseSelectionsOf(state: ContentMutationState, payload: PublishVarian
   const selections: ReleaseSelection[] = [];
   for (const candidateId of payload.candidateIds ?? []) {
     const review = state.contentReviews.find((candidate) => candidate.candidateId === candidateId);
-    const byCandidate = state.contentVariants.find((variant) => variant.candidateId === candidateId);
-    const variantId = review?.variantId ?? byCandidate?.variantId;
+    const variantId = review?.variantId ?? state.contentVariants.find((variant) => variant.candidateId === candidateId)?.variantId;
     if (variantId === undefined) throw invalidField("candidateIds", "One selected candidate is not a submission this context holds, so reopen the review and choose it again.");
     selections.push({ variantId, revisionId: candidateId, ...(payload.mode === undefined ? {} : { mode: payload.mode }) });
   }
@@ -693,15 +513,11 @@ function noticeRenditionOf(state: ContentMutationState, revision: StoredContentR
   return undefined;
 }
 /** Publishes one revision of each selected edition, and reports what each edition's attempt produced. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function publishVariants(sessionId: string, input: MutationInput<PublishVariantsPayload>): Promise<MutationOutcome> {
-  return runEditorial(sessionId, input, publishVariantsPayloadSchema, "publishVariants", { apply: (context) => applyPublishVariants(context, input) });
-}
-function applyPublishVariants(context: MutationContext, input: MutationInput<PublishVariantsPayload>): ApplyResult<MutationResult> {
-  const opened = openState(context.docs),
-    state = opened.state;
-  const selections = releaseSelectionsOf(state, input.payload);
-  const firstVariant = requireVariant(state, selections[0]?.variantId ?? "");
-  const document = requireDocument(state, input.payload.documentId ?? firstVariant.documentId);
+export const publishVariants = async (sessionId: string, input: MutationInput<PublishVariantsPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, publishVariantsPayloadSchema, "publishVariants", { apply: applyPublishVariants });
+function applyPublishVariants(context: MutationContext, payload: PublishVariantsPayload): ApplyResult<MutationResult> {
+  const { raw, state } = openState(context.docs);
+  const selections = releaseSelectionsOf(state, payload);
+  const document = requireDocument(state, payload.documentId ?? requireVariant(state, selections[0]?.variantId ?? "").documentId);
   const at = scenarioInstant(context.session);
   const attempts: ReleaseAttempt[] = [];
   const createdReleases = new Map<string, ReleaseRecord>();
@@ -716,10 +532,7 @@ function applyPublishVariants(context: MutationContext, input: MutationInput<Pub
     const head = headReleaseOf(state, variant);
     const heldReview = variant.candidateId === null ? undefined : state.contentReviews.find((candidate) => candidate.candidateId === variant.candidateId);
     const revisionId = selection.revisionId ?? variant.candidateId ?? variant.draftRevisionId ?? undefined;
-    // A release is authorised by the approval of the revision it publishes. Once a release consumes the candidate
-    // for its own revision the edition holds no pointer, so the approval on record is found by the released
-    // revision itself: that record still states the mode the submission asked for, which is what keeps a
-    // Publish-only approval from being widened to Notify afterwards.
+    // A release is authorised by the approval of the revision it publishes. Once a release consumes the candidate for its own revision the edition holds no pointer, so the approval on record is found by the released revision itself: that record still states the mode the submission asked for, which keeps a Publish-only approval from being widened to Notify afterwards.
     const review = heldReview ?? (revisionId === undefined ? undefined : state.contentReviews.find((candidate) => candidate.candidateId === revisionId && candidate.decision === "approved"));
     if (review !== undefined && review.decision === "submitted") {
       attempts.push({ variantId: variant.variantId, state: "needs-attention", reasonCode: "awaiting-review", reason: "This edition is still awaiting its one review, so it cannot be released yet." });
@@ -734,7 +547,7 @@ function applyPublishVariants(context: MutationContext, input: MutationInput<Pub
       });
       continue;
     }
-    const requestedMode = selection.mode ?? input.payload.mode ?? review?.notifyMode;
+    const requestedMode = selection.mode ?? payload.mode ?? review?.notifyMode;
     if (review !== undefined && requestedMode !== undefined && requestedMode !== review.notifyMode) {
       attempts.push({ variantId: variant.variantId, state: "needs-attention", reasonCode: "notify-mode-not-approved", reason: "A reviewer cannot release this edition with a mode the submission did not ask for, so a new submission is required." });
       continue;
@@ -755,8 +568,7 @@ function applyPublishVariants(context: MutationContext, input: MutationInput<Pub
       continue;
     }
     const mediaUnavailable = revision.mediaPlacements.some((placement) => {
-      const asset = state.mediaAssets.find((candidate) => candidate.assetId === placement.assetId);
-      return asset === undefined;
+      return state.mediaAssets.find((candidate) => candidate.assetId === placement.assetId) === undefined;
     });
     if (mediaUnavailable) {
       attempts.push({
@@ -768,10 +580,8 @@ function applyPublishVariants(context: MutationContext, input: MutationInput<Pub
       });
       continue;
     }
-    const domainVariant = domainVariantOf(variant);
-    const domainRevision = domainRevisionOf(revision, parsed.document);
-    // The head is compared against the revision it published, never against the revision being released: "already publishes exactly this revision" is the only no-op, while another revision of the same edition is a new release that supersedes the head. `domainReleaseOf` reads the
-    // digest from the head's own revision, so the comparison uses what the head actually published.
+    const domainVariant = contentVariantOf(variant);
+    const domainRevision = contentRevisionOf(revision, parsed.document);
     const domainHead = head === undefined ? undefined : domainReleaseOf(head, variant, state);
     if (domainHead !== undefined && isReleaseUnchanged(domainHead, domainRevision)) {
       attempts.push({ variantId: variant.variantId, state: "released", releaseId: domainHead.releaseId, revisionId: domainHead.revisionId, notifyMode, reasonCode: "already-published", reason: "This edition already publishes exactly this revision; no second release was recorded." });
@@ -790,19 +600,13 @@ function applyPublishVariants(context: MutationContext, input: MutationInput<Pub
     attempts.push({ variantId: variant.variantId, state: "released", releaseId: built.release.releaseId, revisionId: built.release.revisionId, notifyMode });
   }
   if (createdReleases.size === 0) {
-    // An edition that already publishes exactly the selected revision is a no-op rather than a malformed payload, so an attempt in that state is never reported as a validation failure. A genuine refusal keeps its message at the path a release form already addresses, which is how
-    // each reason reaches the row it belongs to.
     const refusing = attempts.map((attempt, index) => ({ attempt, index })).filter(({ attempt }) => attempt.reasonCode !== "already-published");
-    if (refusing.length === 0) {
-      // Nothing was released and nothing needs to be: the document already stands at the state the payload asked for, so the answer is `unchanged` with no revision advance and no ledger entry.
-      return { changed: false };
-    }
+    if (refusing.length === 0) return { changed: false };
     const issues: DocumentIssue[] = refusing.map(({ attempt, index }) => ({ path: `variants.${String(index)}`, message: attempt.reason ?? "This edition could not be released." }));
     throw invalidAt(issues);
   }
-  const releases = state.releases.map((release) => supersededReleases.get(release.releaseId) ?? release);
-  writeState(context.docs, opened, {
-    releases: [...releases, ...createdReleases.values()],
+  writeState(context.docs, raw, {
+    releases: [...state.releases.map((release) => supersededReleases.get(release.releaseId) ?? release), ...createdReleases.values()],
     contentVariants: state.contentVariants.map((variant) => updatedVariants.get(variant.variantId) ?? variant),
     contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)),
   });
@@ -870,23 +674,18 @@ function alreadyCoveredOnDocument(state: ContentMutationState, publisherId: stri
   return covers[0];
 }
 /** Submits one immediate notice for one published edition of this publisher's Update email. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function requestNotification(sessionId: string, input: MutationInput<RequestNotificationPayload>): Promise<MutationOutcome> {
-  return runEditorial(sessionId, input, requestNotificationPayloadSchema, "requestNotification", { apply: (context) => applyRequestNotification(context, input) });
-}
-function applyRequestNotification(context: MutationContext, input: MutationInput<RequestNotificationPayload>): ApplyResult<MutationResult> {
-  const opened = openState(context.docs),
-    state = opened.state;
-  const document = requireDocument(state, input.payload.documentId);
+export const requestNotification = async (sessionId: string, input: MutationInput<RequestNotificationPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, requestNotificationPayloadSchema, "requestNotification", { apply: (context, payload) => applyRequestNotification(context, payload, input.scope) });
+function applyRequestNotification(context: MutationContext, payload: RequestNotificationPayload, scope: Scope): ApplyResult<MutationResult> {
+  const { raw, state } = openState(context.docs);
+  const document = requireDocument(state, payload.documentId);
   const at = scenarioInstant(context.session);
-  // A repeat names the notice it repeats, so the instant the notice was meant for is that record's own and a repeat
-  // can never move the window it stands in. The same window then refuses it once the 24 useful hours are spent.
-  const repeatRequested = input.payload.repeatOfIntentId !== undefined;
-  const repeated = repeatRequested ? state.notificationIntents.find((intent) => intent.intentId === input.payload.repeatOfIntentId) : undefined;
+  // A repeat names the notice it repeats, so the instant that notice was meant for is the record's own and a repeat can never move the window it stands in; the same window then refuses it once the 24 useful hours are spent.
+  const repeatRequested = payload.repeatOfIntentId !== undefined;
+  const repeated = repeatRequested ? state.notificationIntents.find((intent) => intent.intentId === payload.repeatOfIntentId) : undefined;
   if (repeatRequested && repeated === undefined) throw invalidField("repeatOfIntentId", "This request names no notice of this ministry, so there is no recorded failure for it to submit again.");
-  const intendedAt = repeated === undefined ? (input.payload.intendedAt === undefined ? at : Temporal.Instant.from(input.payload.intendedAt)) : Temporal.Instant.from(repeated.intendedAt);
+  const intendedAt = repeated === undefined ? (payload.intendedAt === undefined ? at : Temporal.Instant.from(payload.intendedAt)) : Temporal.Instant.from(repeated.intendedAt);
   if (notificationDeadline({ intendedAt, now: at }).status === "past-usefulness") throw invalidField("intendedAt", "This notice is past the 24 hours it stays useful for, so it cannot be submitted now and a new intent cannot revive it.");
-  const variantHead = input.payload.variantId === undefined ? undefined : headReleaseOf(state, requireVariant(state, input.payload.variantId));
-  const namedReleaseId = input.payload.releaseIds?.[0] ?? input.payload.releaseId ?? variantHead?.releaseId;
+  const namedReleaseId = payload.releaseIds?.[0] ?? payload.releaseId ?? (payload.variantId === undefined ? undefined : headReleaseOf(state, requireVariant(state, payload.variantId)))?.releaseId;
   if (namedReleaseId === undefined) throw invalidField("releaseId", "This edition publishes no release yet, so there is nothing to notify anyone about.");
   const release = state.releases.find((candidate) => candidate.releaseId === namedReleaseId);
   const releaseVariant = release === undefined ? undefined : state.contentVariants.find((candidate) => candidate.variantId === release.variantId);
@@ -894,27 +693,17 @@ function applyRequestNotification(context: MutationContext, input: MutationInput
   if (release.withdrawnAt !== null) throw invalidField("releaseId", "This edition is withdrawn, so there is nothing published to notify anyone about.");
   const publisherId = publisherOf(state);
   if (publisherId === undefined) throw invalidField("documentId", "This ministry holds no single Update audience, so there is no publisher a notice could speak for.");
-  const purpose = input.payload.purpose ?? UPDATE_EMAIL_PURPOSE;
+  const purpose = payload.purpose ?? UPDATE_EMAIL_PURPOSE;
   const existing = state.notificationIntents.find((intent) => intent.documentId === document.documentId && intent.releaseId === release.releaseId && intent.publisherId === publisherId && intent.purpose === purpose);
-  if (repeated !== undefined && (repeated.documentId !== document.documentId || repeated.releaseId !== release.releaseId || repeated.publisherId !== publisherId || repeated.purpose !== purpose)) {
+  if (repeated !== undefined && (repeated.documentId !== document.documentId || repeated.releaseId !== release.releaseId || repeated.publisherId !== publisherId || repeated.purpose !== purpose))
     throw invalidField("repeatOfIntentId", "This repeat names a notice of another edition or another publisher, so there is nothing here for it to submit again.");
-  }
-  if (existing !== undefined && repeated === undefined) {
-    // This publication's notice was already submitted: a second intent would be a second copy.
-    return { changed: false };
-  }
+  if (existing !== undefined && repeated === undefined) return { changed: false };
   // A repeat with nothing to repeat changes nothing: no intent is recorded for work that was never a definite failure.
-  if (repeated !== undefined && !state.notificationResults.some((result) => result.intentId === repeated.intentId && result.recipients.some((copy) => copy.state === "failed"))) {
-    return { changed: false };
-  }
-  // A repeat is the one case that reaches past that guard, and it is the case the dedupe rule names: the copies that
-  // definitely failed are attempted again under the intent's own identity, while every accepted or uncertain copy is
-  // recognised as already covered below and receives nothing. The earlier record is never rewritten, so it keeps
-  // stating the failure that was retried.
+  if (repeated !== undefined && !state.notificationResults.some((result) => result.intentId === repeated.intentId && result.recipients.some((copy) => copy.state === "failed"))) return { changed: false };
   const intentId = newRecordId("intent");
-  const acknowledged = input.payload.acknowledgedCeiling;
+  const acknowledged = payload.acknowledgedCeiling;
   const eligibility: EligibilityResult = eligibleRecipients({
-    memberships: state.memberships.filter((membership) => membership.publisherId === publisherId).map((membership) => domainMembershipOf(membership, input.scope)),
+    memberships: state.memberships.filter((membership) => membership.publisherId === publisherId).map((membership) => membershipOf(membership, scope)),
     publisherId,
     purpose: UPDATE_EMAIL_PURPOSE,
     intent: { intentId, acceptedAt: at, ...(acknowledged === undefined ? {} : { ceilingCount: acknowledged }) } satisfies EligibilityIntent,
@@ -939,7 +728,6 @@ function applyRequestNotification(context: MutationContext, input: MutationInput
   let unconfirmed = 0;
   let alreadyCovered = 0;
   let link = `/preview/${encodeURIComponent(document.documentId)}`;
-  // Every eligible recipient this intent does not serve is recorded as unserved, with the fact that accounts for them, so the ceiling below reconciles with the record: one copy for each recipient served, one entry for each one not.
   for (const recipient of eligibility.eligible) {
     const covering = alreadyCoveredOnDocument(state, publisherId, document.documentId, recipient.recipientId);
     if (covering !== undefined) {
@@ -954,20 +742,17 @@ function applyRequestNotification(context: MutationContext, input: MutationInput
       unserved.push({ recipientId: recipient.recipientId, reason: "no-eligible-rendition", renditionRefusal: pinned.reason });
       continue;
     }
-    // The message is constructed here, at submission time, so what would be submitted is the minimal link-only notice the receiving read renders — never protected prose, media, a poster, a transcript or an attachment.
     const notice: { readonly link: string } = buildNotice({ publisher: { displayName: UNNAMED_PUBLISHER }, purpose, pinned: pinned.rendition, sender: NOTICE_SENDER, link, ...(pinned.videoPoster === undefined ? {} : { videoPoster: pinned.videoPoster }) });
     link = notice.link.length === 0 ? link : notice.link;
     copies.push({ recipientId: recipient.recipientId, renditionId: pinned.rendition.renditionId ?? `edition:${pinned.rendition.releaseId}`, state: "accepted", at: at.toString() });
     recipients.push({ recipientId: recipient.recipientId, dedupeKey: recipient.dedupeKey });
   }
-  // A repeat that served nobody changes nothing: every failed copy of the notice it names is already covered by an
-  // accepted or uncertain one, so a second press of the same repeat records no notice that reached anyone.
+  // A repeat that served nobody changes nothing: every failed copy of the notice it names is already covered by an accepted or uncertain one, so a second press records no notice that reached anyone.
   if (repeated !== undefined && copies.length === 0) return { changed: false };
-  // The covered count is the audience this intent was accepted for — who the loop above served or recorded as unserved — never the smaller number the caller acknowledged, so the record agrees with the ceiling and a later signup can never expand it (`NotificationIntentRecord` in envelope.ts).
   const ceilingCount = eligibility.eligible.length;
   const intent: NotificationIntentRecord = { intentId, publisherId, purpose, documentId: document.documentId, releaseId: release.releaseId, intendedAt: intendedAt.toString(), ceilingCount, revision: INITIAL_REVISION_TOKEN };
   const sendResult: NotificationSendResultRecord = { sendResultId: newRecordId("send-result"), intentId, recipients: copies, unserved, recordedAt: at.toString(), revision: INITIAL_REVISION_TOKEN };
-  writeState(context.docs, opened, {
+  writeState(context.docs, raw, {
     notificationIntents: [...state.notificationIntents, intent],
     notificationResults: [...state.notificationResults, sendResult],
     contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)),
@@ -996,13 +781,9 @@ const documentPayloadSchema = z.strictObject({ documentId: recordIdSchema });
 export type DocumentPayload = z.infer<typeof documentPayloadSchema>;
 export type WithdrawalView = { readonly documentId: string; readonly withdrawnReleaseIds: readonly string[]; readonly newlyWithdrawnCount: number };
 /** Withdraws every release one document's Update editions hold. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function withdrawUpdate(sessionId: string, input: MutationInput<DocumentPayload>): Promise<MutationOutcome> {
-  return withdrawDocumentFamily(sessionId, input, "withdrawUpdate", (family) => family === "update");
-}
+export const withdrawUpdate = async (sessionId: string, input: MutationInput<DocumentPayload>): Promise<MutationOutcome> => withdrawDocumentFamily(sessionId, input, "withdrawUpdate", (family) => family === "update");
 /** Withdraws every release one document's Worker or Project Page editions hold, with the same guarantees as {@link withdrawUpdate} and the page families only. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function withdrawPage(sessionId: string, input: MutationInput<DocumentPayload>): Promise<MutationOutcome> {
-  return withdrawDocumentFamily(sessionId, input, "withdrawPage", (family) => family !== "update");
-}
+export const withdrawPage = async (sessionId: string, input: MutationInput<DocumentPayload>): Promise<MutationOutcome> => withdrawDocumentFamily(sessionId, input, "withdrawPage", (family) => family !== "update");
 async function withdrawDocumentFamily(sessionId: string, input: MutationInput<DocumentPayload>, name: string, admits: (family: ContentFamily) => boolean): Promise<MutationOutcome> {
   return runMutation({
     sessionId,
@@ -1012,8 +793,7 @@ async function withdrawDocumentFamily(sessionId: string, input: MutationInput<Do
     authorize: (session) => editorialDecision(session, input.scope),
     readCurrent: (documents) => currentDocumentTarget(documents, input.payload.documentId),
     apply: (context) => {
-      const opened = openState(context.docs),
-        state = opened.state;
+      const { raw, state } = openState(context.docs);
       const document = requireDocument(state, input.payload.documentId);
       if (!admits(document.family)) throw invalidField("documentId", "This document belongs to another content family, so its own withdrawal applies to it.");
       const at = scenarioInstant(context.session);
@@ -1022,18 +802,15 @@ async function withdrawDocumentFamily(sessionId: string, input: MutationInput<Do
       const withdrawnIds: string[] = [];
       const nextReleases = releases.map((release) => {
         const variant = state.contentVariants.find((candidate) => candidate.variantId === release.variantId);
-        const domain = domainReleaseOf(release, variant, state);
-        const withdrawal = withdrawEdition(domain, { at });
+        const withdrawal = withdrawEdition(domainReleaseOf(release, variant, state), { at });
         withdrawnIds.push(withdrawal.release.releaseId);
         if (release.withdrawnAt !== null) return release;
         newlyWithdrawn += 1;
         return storedReleaseOf(withdrawal.release, nextRevision(release.revision), release);
       });
       if (newlyWithdrawn === 0) return { changed: false };
-      // A withdrawal rewrites only this document's releases; every other document's releases in the session are
-      // carried through untouched, because withdrawing one document never removes another document's editions.
       const nextById = new Map(nextReleases.map((release) => [release.releaseId, release]));
-      writeState(context.docs, opened, { releases: state.releases.map((release) => nextById.get(release.releaseId) ?? release), contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)) });
+      writeState(context.docs, raw, { releases: state.releases.map((release) => nextById.get(release.releaseId) ?? release), contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)) });
       const result: WithdrawalView = { documentId: document.documentId, withdrawnReleaseIds: withdrawnIds, newlyWithdrawnCount: newlyWithdrawn };
       return { changed: true, revision: nextRevision(document.revision), result, changedIds: withdrawnIds } satisfies ApplyResult<typeof result>;
     },
@@ -1042,19 +819,15 @@ async function withdrawDocumentFamily(sessionId: string, input: MutationInput<Do
 const localeWithdrawalPayloadSchema = z.strictObject({ variantId: recordIdSchema });
 export type LocaleWithdrawalPayload = z.infer<typeof localeWithdrawalPayloadSchema>;
 /** Withdraws one locale edition and leaves every sibling released. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function withdrawLocale(sessionId: string, input: MutationInput<LocaleWithdrawalPayload>): Promise<MutationOutcome> {
-  return runEditorial(sessionId, input, localeWithdrawalPayloadSchema, "withdrawLocale", { readCurrent: (documents) => currentVariantDocumentTarget(documents, input.payload.variantId), apply: (context) => applyWithdrawLocale(context, input) });
-}
-function applyWithdrawLocale(context: MutationContext, input: MutationInput<LocaleWithdrawalPayload>): ApplyResult<MutationResult> {
-  const opened = openState(context.docs),
-    state = opened.state;
-  const variant = requireVariant(state, input.payload.variantId);
+export const withdrawLocale = async (sessionId: string, input: MutationInput<LocaleWithdrawalPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, localeWithdrawalPayloadSchema, "withdrawLocale", { readCurrent: variantDocumentTarget, apply: applyWithdrawLocale });
+function applyWithdrawLocale(context: MutationContext, payload: LocaleWithdrawalPayload): ApplyResult<MutationResult> {
+  const { raw, state } = openState(context.docs);
+  const variant = requireVariant(state, payload.variantId);
   const document = requireDocument(state, variant.documentId);
   const head = headReleaseOf(state, variant);
   if (head === undefined || head.withdrawnAt !== null) return { changed: false };
-  const withdrawal = withdrawEdition(domainReleaseOf(head, variant, state), { at: scenarioInstant(context.session) });
-  const stored = storedReleaseOf(withdrawal.release, nextRevision(head.revision), head);
-  writeState(context.docs, opened, { releases: replaceRelease(state.releases, stored), contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)) });
+  const stored = storedReleaseOf(withdrawEdition(domainReleaseOf(head, variant, state), { at: scenarioInstant(context.session) }).release, nextRevision(head.revision), head);
+  writeState(context.docs, raw, { releases: replaceRelease(state.releases, stored), contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)) });
   const result: WithdrawalView = { documentId: document.documentId, withdrawnReleaseIds: [stored.releaseId], newlyWithdrawnCount: 1 };
   return { changed: true, revision: nextRevision(document.revision), result, changedIds: [stored.releaseId] } satisfies ApplyResult<typeof result>;
 }
@@ -1062,13 +835,10 @@ const setReachPayloadSchema = z.strictObject({ documentId: recordIdSchema, reach
 export type SetReachPayload = z.infer<typeof setReachPayloadSchema>;
 export type ReachView = { readonly documentId: string; readonly reach: ReleaseReach; readonly releaseIds: readonly string[]; readonly changedCount: number };
 /** Changes how far one document's released editions reach: not public, public by link only, or listed. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function setReach(sessionId: string, input: MutationInput<SetReachPayload>): Promise<MutationOutcome> {
-  return runEditorial(sessionId, input, setReachPayloadSchema, "setReach", { readCurrent: (documents) => currentDocumentTarget(documents, input.payload.documentId), apply: (context) => applySetReach(context, input) });
-}
-function applySetReach(context: MutationContext, input: MutationInput<SetReachPayload>): ApplyResult<MutationResult> {
-  const opened = openState(context.docs),
-    state = opened.state;
-  const document = requireDocument(state, input.payload.documentId);
+export const setReach = async (sessionId: string, input: MutationInput<SetReachPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, setReachPayloadSchema, "setReach", { readCurrent: documentTarget, apply: applySetReach });
+function applySetReach(context: MutationContext, payload: SetReachPayload): ApplyResult<MutationResult> {
+  const { raw, state } = openState(context.docs);
+  const document = requireDocument(state, payload.documentId);
   const heads = state.contentVariants
     .filter((variant) => variant.documentId === document.documentId)
     .map((variant) => headReleaseOf(state, variant))
@@ -1077,7 +847,7 @@ function applySetReach(context: MutationContext, input: MutationInput<SetReachPa
   const nextReleases: ReleaseRecord[] = [];
   const releaseIds: string[] = [];
   for (const head of heads) {
-    const decision = decideReach(head.reach, input.payload.reach);
+    const decision = decideReach(head.reach, payload.reach);
     if (decision.status === "invalid") throw invalidField("reach", decision.reason);
     if (decision.status === "unchanged") continue;
     nextReleases.push({ ...head, reach: decision.reach, revision: nextRevision(head.revision) });
@@ -1085,18 +855,15 @@ function applySetReach(context: MutationContext, input: MutationInput<SetReachPa
   }
   if (nextReleases.length === 0) return { changed: false };
   const byId = new Map(nextReleases.map((release) => [release.releaseId, release]));
-  writeState(context.docs, opened, { releases: state.releases.map((release) => byId.get(release.releaseId) ?? release), contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)) });
-  const result: ReachView = { documentId: document.documentId, reach: input.payload.reach, releaseIds, changedCount: nextReleases.length };
+  writeState(context.docs, raw, { releases: state.releases.map((release) => byId.get(release.releaseId) ?? release), contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)) });
+  const result: ReachView = { documentId: document.documentId, reach: payload.reach, releaseIds, changedCount: nextReleases.length };
   return { changed: true, revision: nextRevision(document.revision), result, changedIds: releaseIds } satisfies ApplyResult<typeof result>;
 }
 /** Stops showing one document publicly: every edition, in every locale and audience, is withdrawn at one instant. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function stopShowingPublicly(sessionId: string, input: MutationInput<DocumentPayload>): Promise<MutationOutcome> {
-  return runEditorial(sessionId, input, documentPayloadSchema, "stopShowingPublicly", { readCurrent: (documents) => currentDocumentTarget(documents, input.payload.documentId), apply: (context) => applyStopShowingPublicly(context, input) });
-}
-function applyStopShowingPublicly(context: MutationContext, input: MutationInput<DocumentPayload>): ApplyResult<MutationResult> {
-  const opened = openState(context.docs),
-    state = opened.state;
-  const document = requireDocument(state, input.payload.documentId);
+export const stopShowingPublicly = async (sessionId: string, input: MutationInput<DocumentPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, documentPayloadSchema, "stopShowingPublicly", { readCurrent: documentTarget, apply: applyStopShowingPublicly });
+function applyStopShowingPublicly(context: MutationContext, payload: DocumentPayload): ApplyResult<MutationResult> {
+  const { raw, state } = openState(context.docs);
+  const document = requireDocument(state, payload.documentId);
   const at = scenarioInstant(context.session);
   const records = releasesOfDocument(state, document.documentId);
   const domains = records.map((release) =>
@@ -1106,8 +873,7 @@ function applyStopShowingPublicly(context: MutationContext, input: MutationInput
       state,
     ),
   );
-  const contained = containEditions(domains, { at });
-  const byId = new Map(contained.withdrawals.map((entry) => [entry.release.releaseId, entry]));
+  const byId = new Map(containEditions(domains, { at }).withdrawals.map((entry) => [entry.release.releaseId, entry]));
   let newlyWithdrawn = 0;
   const nextReleases = records.map((release) => {
     const withdrawal = byId.get(release.releaseId);
@@ -1116,30 +882,25 @@ function applyStopShowingPublicly(context: MutationContext, input: MutationInput
     return storedReleaseOf(withdrawal.release, nextRevision(release.revision), release);
   });
   if (newlyWithdrawn === 0) return { changed: false };
-  // The withdrawal rewrites only this document's releases; every other document's releases in the session are
-  // carried through untouched, because containment hides one Page and never removes another document's releases.
   const nextById = new Map(nextReleases.map((release) => [release.releaseId, release]));
-  writeState(context.docs, opened, { releases: state.releases.map((release) => nextById.get(release.releaseId) ?? release), contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)) });
+  writeState(context.docs, raw, { releases: state.releases.map((release) => nextById.get(release.releaseId) ?? release), contentDocuments: state.contentDocuments.map((candidate) => (candidate.documentId === document.documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate)) });
   const result: WithdrawalView = { documentId: document.documentId, withdrawnReleaseIds: records.map((release) => release.releaseId), newlyWithdrawnCount: newlyWithdrawn };
   return { changed: true, revision: nextRevision(document.revision), result, changedIds: records.map((release) => release.releaseId) } satisfies ApplyResult<typeof result>;
 }
 const restoreRevisionPayloadSchema = z.strictObject({ revisionId: recordIdSchema });
 export type RestoreRevisionPayload = z.infer<typeof restoreRevisionPayloadSchema>;
 /** Restores an earlier revision as a new draft, with a new identity, a new author and a new creation instant. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function restoreRevisionAsDraft(sessionId: string, input: MutationInput<RestoreRevisionPayload>): Promise<MutationOutcome> {
-  return runEditorial(sessionId, input, restoreRevisionPayloadSchema, "restoreRevisionAsDraft", { readCurrent: (documents) => currentRevisionTarget(documents, input.payload.revisionId), apply: (context) => applyRestoreRevisionAsDraft(context, input) });
-}
-function applyRestoreRevisionAsDraft(context: MutationContext, input: MutationInput<RestoreRevisionPayload>): ApplyResult<MutationResult> {
-  const opened = openState(context.docs),
-    state = opened.state;
-  const source = requireRevision(state, input.payload.revisionId);
+export const restoreRevisionAsDraft = async (sessionId: string, input: MutationInput<RestoreRevisionPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, restoreRevisionPayloadSchema, "restoreRevisionAsDraft", { readCurrent: revisionTarget, apply: applyRestoreRevisionAsDraft });
+function applyRestoreRevisionAsDraft(context: MutationContext, payload: RestoreRevisionPayload): ApplyResult<MutationResult> {
+  const { raw, state } = openState(context.docs);
+  const source = requireRevision(state, payload.revisionId);
   const variant = requireVariant(state, source.variantId);
   const document = requireDocument(state, variant.documentId);
-  const restored = restoreAsNewDraft(domainRevisionOf(source, requireParsedBody(source)), { authorPrincipalId: context.session.principalId, revisionId: newRecordId("rev"), at: scenarioInstant(context.session) });
+  const restored = restoreAsNewDraft(contentRevisionOf(source, requireParsedBody(source)), { authorPrincipalId: context.session.principalId, revisionId: newRecordId("rev"), at: scenarioInstant(context.session) });
   const record: StoredContentRevision = { ...source, revisionId: restored.revisionId, authorPrincipalId: principalIdOf(restored.authorPrincipalId), createdAt: restored.createdAt.toString(), revision: INITIAL_REVISION_TOKEN };
-  const pointed = applyDraftRevision(domainVariantOf(variant), restored);
+  const pointed = applyDraftRevision(contentVariantOf(variant), restored);
   if (pointed.status === "invalid") throw invalidAt(pointed.issues);
-  writeState(context.docs, opened, { contentRevisions: [...state.contentRevisions, record], contentVariants: replaceVariant(state.contentVariants, storedVariantOf(pointed.variant, nextRevision(variant.revision))) });
+  writeState(context.docs, raw, { contentRevisions: [...state.contentRevisions, record], contentVariants: replaceVariant(state.contentVariants, storedVariantOf(pointed.variant, nextRevision(variant.revision))) });
   const result = { revisionId: restored.revisionId, variantId: variant.variantId, documentId: document.documentId };
   return { changed: true, revision: nextRevision(variant.revision), result, created: [restored.revisionId], changedIds: [variant.variantId] } satisfies ApplyResult<typeof result>;
 }
@@ -1163,8 +924,7 @@ function draftTargetOf(state: ContentMutationState, payload: { readonly draftRev
   return { variant, revision, document, body: requireParsedBody(revision) };
 }
 function sectionIndexOf(sections: readonly ContentSection[], sectionId: string): number {
-  const prefixed = /^section-(\d+)$/u.exec(sectionId);
-  const numericText = prefixed?.[1] ?? (/^\d+$/u.test(sectionId) ? sectionId : undefined);
+  const numericText = /^section-(\d+)$/u.exec(sectionId)?.[1] ?? (/^\d+$/u.test(sectionId) ? sectionId : undefined);
   if (numericText !== undefined) {
     const index = Number.parseInt(numericText, 10);
     if (index >= 0 && index < sections.length) return index;
@@ -1175,12 +935,9 @@ function sectionIndexOf(sections: readonly ContentSection[], sectionId: string):
   return byElement;
 }
 const MANAGED_SECTION_REFUSAL = "This section is supplied by the source, so it is read-only here and cannot be added, moved, duplicated or removed.";
-
 function emptyFieldsFor(type: PageSectionType): Readonly<Record<string, string>> {
   const fields: Record<string, string> = {};
-  for (const key of SECTION_FIELD_KEYS[type]) {
-    fields[key] = "";
-  }
+  for (const key of SECTION_FIELD_KEYS[type]) fields[key] = "";
   return fields;
 }
 function writeDraftEdit(input: {
@@ -1198,26 +955,20 @@ function writeDraftEdit(input: {
     altText[placement.placementId] = placement.altText;
     if (placement.caption !== null) captions[placement.placementId] = placement.caption;
   }
-  const previous = domainRevisionOf(target.revision, target.body);
-  const edited: RevisionContentLike = { body, sections: body.sections, mediaPlacements: placements.map((placement) => ({ placementId: placement.placementId, assetId: placement.assetId })), captions, altText, sharePresentation: previous.sharePresentation };
-  const checksum = revisionChecksum(edited);
+  const checksum = revisionChecksum({ body, sections: body.sections, mediaPlacements: placements.map((placement) => ({ placementId: placement.placementId, assetId: placement.assetId })), captions, altText, sharePresentation: contentRevisionOf(target.revision, target.body).sharePresentation });
   const next: StoredContentRevision = { ...target.revision, body, mediaPlacements: [...placements], captions: [...tracks], contentChecksum: checksum, revision: nextRevision(target.revision.revision) };
   if (storedContentEquals(target.revision, next)) return { changed: false };
-  const nextVariants = replaceVariant(input.opened.state.contentVariants, storedVariantOf(domainVariantOf(target.variant), nextRevision(target.variant.revision)));
-  writeState(input.context.docs, input.opened, { contentRevisions: replaceRevision(input.opened.state.contentRevisions, next), contentVariants: nextVariants });
+  const nextVariants = replaceVariant(input.opened.state.contentVariants, storedVariantOf(contentVariantOf(target.variant), nextRevision(target.variant.revision)));
+  writeState(input.context.docs, input.opened.raw, { contentRevisions: replaceRevision(input.opened.state.contentRevisions, next), contentVariants: nextVariants });
   return { changed: true, revisionId: next.revisionId, revision: next.revision, documentId: target.document.documentId, variantId: target.variant.variantId };
 }
-type RevisionContentLike = Parameters<typeof revisionChecksum>[0];
-
-function replaceRevision(revisions: readonly StoredContentRevision[], next: StoredContentRevision): readonly StoredContentRevision[] {
-  return revisions.map((revision) => (revision.revisionId === next.revisionId ? next : revision));
-}
+const replaceRevision = (revisions: readonly StoredContentRevision[], next: StoredContentRevision): readonly StoredContentRevision[] => revisions.map((revision) => (revision.revisionId === next.revisionId ? next : revision));
 export type SectionEditView = { readonly documentId: string; readonly variantId: string; readonly revisionId: string; readonly revision: string; readonly sectionCount: number };
 type DraftTargetSelector = { readonly draftRevisionId?: string; readonly variantId?: string };
 type SectionChange<P> = (target: DraftTarget, payload: P) => readonly ContentSection[];
 async function editDraftSections<P extends DraftTargetSelector>(sessionId: string, mutation: MutationInput<P>, schema: z.ZodType<P>, name: string, change: SectionChange<P>): Promise<MutationOutcome> {
   return runEditorial(sessionId, mutation, schema, name, {
-    readCurrent: (documents) => currentDraftTarget(documents, mutation.payload),
+    readCurrent: draftTarget,
     apply: (context) => {
       const opened = openState(context.docs);
       const target = draftTargetOf(opened.state, mutation.payload);
@@ -1229,9 +980,7 @@ async function editDraftSections<P extends DraftTargetSelector>(sessionId: strin
     },
   });
 }
-const addSectionPayloadSchema = z.strictObject({ ...draftTargetShape, sectionType: z.string().trim().min(1, "Choose the section to add."), afterSectionId: recordIdSchema.optional() }).superRefine((payload, ctx) => {
-  if (!namesDraftTarget(payload)) ctx.addIssue({ code: "custom", path: ["draftRevisionId"], message: NO_DRAFT_TARGET_MESSAGE });
-});
+const addSectionPayloadSchema = z.strictObject({ ...draftTargetShape, sectionType: z.string().trim().min(1, "Choose the section to add."), afterSectionId: recordIdSchema.optional() }).superRefine(refuseUnnamedDraftTarget);
 export type AddSectionPayload = z.infer<typeof addSectionPayloadSchema>;
 /** Adds one section of an admitted catalogue type to a page draft, after a named section or at the end. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function addSection(sessionId: string, input: MutationInput<AddSectionPayload>): Promise<MutationOutcome> {
@@ -1244,36 +993,24 @@ export async function addSection(sessionId: string, input: MutationInput<AddSect
     return [...sections.slice(0, after), added, ...sections.slice(after)];
   });
 }
-const moveSectionPayloadSchema = z.strictObject({ ...draftTargetShape, sectionId: recordIdSchema, targetIndex: z.int({ error: "State the position this section moves to as a whole number." }).nonnegative("A position is zero or more, counting from the first section.") }).superRefine((payload, ctx) => {
-  if (!namesDraftTarget(payload)) ctx.addIssue({ code: "custom", path: ["draftRevisionId"], message: NO_DRAFT_TARGET_MESSAGE });
-});
+const moveSectionPayloadSchema = z.strictObject({ ...draftTargetShape, sectionId: recordIdSchema, targetIndex: z.int({ error: "State the position this section moves to as a whole number." }).nonnegative("A position is zero or more, counting from the first section.") }).superRefine(refuseUnnamedDraftTarget);
 export type MoveSectionPayload = z.infer<typeof moveSectionPayloadSchema>;
 /** Moves one section to an explicit position. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function moveSection(sessionId: string, input: MutationInput<MoveSectionPayload>): Promise<MutationOutcome> {
   return editDraftSections(sessionId, input, moveSectionPayloadSchema, "moveSection", (target, payload) => {
-    const sections = target.body.sections;
-    const from = sectionIndexOf(sections, payload.sectionId);
-    const moved = sections[from];
-    if (moved === undefined) throw invalidField("sectionId", "This page holds no section by that identity.");
-    if (MANAGED_SECTION_TYPES.has(moved.element)) throw invalidField("sectionId", MANAGED_SECTION_REFUSAL);
+    const { sections, index: from, section: moved } = requireEditableSection(target.body.sections, payload.sectionId);
     const destination = Math.min(payload.targetIndex, sections.length - 1);
     if (destination === from) return sections;
     const rest = sections.filter((_section, index) => index !== from);
     return [...rest.slice(0, destination), moved, ...rest.slice(destination)];
   });
 }
-const sectionReferencePayloadSchema = z.strictObject({ ...draftTargetShape, sectionId: recordIdSchema }).superRefine((payload, ctx) => {
-  if (!namesDraftTarget(payload)) ctx.addIssue({ code: "custom", path: ["draftRevisionId"], message: NO_DRAFT_TARGET_MESSAGE });
-});
+const sectionReferencePayloadSchema = z.strictObject({ ...draftTargetShape, sectionId: recordIdSchema }).superRefine(refuseUnnamedDraftTarget);
 export type SectionReferencePayload = z.infer<typeof sectionReferencePayloadSchema>;
 /** Copies one section, structure and content, immediately after itself. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function duplicateSection(sessionId: string, input: MutationInput<SectionReferencePayload>): Promise<MutationOutcome> {
   return editDraftSections(sessionId, input, sectionReferencePayloadSchema, "duplicateSection", (target, payload) => {
-    const sections = target.body.sections;
-    const index = sectionIndexOf(sections, payload.sectionId);
-    const source = sections[index];
-    if (source === undefined) throw invalidField("sectionId", "This page holds no section by that identity.");
-    if (MANAGED_SECTION_TYPES.has(source.element)) throw invalidField("sectionId", MANAGED_SECTION_REFUSAL);
+    const { sections, index, section: source } = requireEditableSection(target.body.sections, payload.sectionId);
     const copy: ContentSection = { element: source.element, fields: { ...source.fields }, presentation: { ...source.presentation }, ...(source.direction === undefined ? {} : { direction: source.direction }) };
     return [...sections.slice(0, index + 1), copy, ...sections.slice(index + 1)];
   });
@@ -1281,11 +1018,7 @@ export async function duplicateSection(sessionId: string, input: MutationInput<S
 /** Removes one section from a page draft. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function removeSection(sessionId: string, input: MutationInput<SectionReferencePayload>): Promise<MutationOutcome> {
   return editDraftSections(sessionId, input, sectionReferencePayloadSchema, "removeSection", (target, payload) => {
-    const sections = target.body.sections;
-    const index = sectionIndexOf(sections, payload.sectionId);
-    const section = sections[index];
-    if (section === undefined) throw invalidField("sectionId", "This page holds no section by that identity.");
-    if (MANAGED_SECTION_TYPES.has(section.element)) throw invalidField("sectionId", MANAGED_SECTION_REFUSAL);
+    const { sections, index } = requireEditableSection(target.body.sections, payload.sectionId);
     return sections.filter((_value, position) => position !== index);
   });
 }
@@ -1297,27 +1030,18 @@ export type SaveSectionFieldsPayload = z.infer<typeof saveSectionFieldsPayloadSc
 /** Saves one section's fields and its bounded presentation choices. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function saveSectionFields(sessionId: string, input: MutationInput<SaveSectionFieldsPayload>): Promise<MutationOutcome> {
   return editDraftSections(sessionId, input, saveSectionFieldsPayloadSchema, "saveSectionFields", (target, payload) => {
-    const sections = target.body.sections;
-    const index = sectionIndexOf(sections, payload.sectionId);
-    const section = sections[index];
-    if (section === undefined) throw invalidField("sectionId", "This page holds no section by that identity.");
-    if (MANAGED_SECTION_TYPES.has(section.element)) throw invalidField("sectionId", MANAGED_SECTION_REFUSAL);
+    const { sections, index, section } = requireEditableSection(target.body.sections, payload.sectionId);
     const admitted = SECTION_FIELD_KEYS[section.element as PageSectionType] ?? [];
-    for (const key of Object.keys(payload.fields ?? {})) {
-      if (!admitted.includes(key)) throw invalidField(`fields.${key}`, `This section type edits ${admitted.length === 0 ? "no field" : admitted.join(", ")}, so "${key}" is not one of them.`);
-    }
+    for (const key of Object.keys(payload.fields ?? {})) if (!admitted.includes(key)) throw invalidField(`fields.${key}`, `This section type edits ${admitted.length === 0 ? "no field" : admitted.join(", ")}, so "${key}" is not one of them.`);
     return sections.map((current, position) => (position === index ? { ...current, fields: { ...current.fields, ...payload.fields }, presentation: payload.presentation ?? current.presentation } : current));
   });
 }
-const applyPresetPayloadSchema = z.strictObject({ ...draftTargetShape, presetId: z.enum(PAGE_PRESET_IDS, { error: "Choose one of the presets this page catalogue proposes." }) }).superRefine((payload, ctx) => {
-  if (!namesDraftTarget(payload)) ctx.addIssue({ code: "custom", path: ["draftRevisionId"], message: NO_DRAFT_TARGET_MESSAGE });
-});
+const applyPresetPayloadSchema = z.strictObject({ ...draftTargetShape, presetId: z.enum(PAGE_PRESET_IDS, { error: "Choose one of the presets this page catalogue proposes." }) }).superRefine(refuseUnnamedDraftTarget);
 export type ApplyPresetPayload = z.infer<typeof applyPresetPayloadSchema>;
 /** Applies one catalogue preset: the sections it proposes are composed into the draft and nothing is published. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function applyPreset(sessionId: string, input: MutationInput<ApplyPresetPayload>): Promise<MutationOutcome> {
   return editDraftSections(sessionId, input, applyPresetPayloadSchema, "applyPreset", (target, payload) => {
-    const proposed = PAGE_PRESETS[payload.presetId] ?? [];
-    const added: ContentSection[] = proposed.map((type) => ({ element: type, fields: emptyFieldsFor(type), presentation: DEFAULT_PRESENTATION }));
+    const added: ContentSection[] = (PAGE_PRESETS[payload.presetId] ?? []).map((type) => ({ element: type, fields: emptyFieldsFor(type), presentation: DEFAULT_PRESENTATION }));
     return [...target.body.sections, ...added];
   });
 }
@@ -1325,23 +1049,21 @@ function decodeBase64Bytes(value: string, field: string): Uint8Array {
   try {
     const decoded = globalThis.atob(value.replace(/\s+/gu, ""));
     const bytes = new Uint8Array(decoded.length);
-    for (let index = 0; index < decoded.length; index += 1) {
-      bytes[index] = decoded.charCodeAt(index);
-    }
+    for (let index = 0; index < decoded.length; index += 1) bytes[index] = decoded.charCodeAt(index);
     return bytes;
   } catch {
     throw invalidField(field, "These bytes could not be read, so choose the file again.");
   }
 }
-function storedRenditionOf(rendition: MediaRendition, bytesRef: string): { readonly renditionId: string; readonly purpose: MediaAssetRenditionPurpose; readonly bytesRef: string; readonly mimeType: string } {
-  return { renditionId: rendition.renditionId, purpose: rendition.purpose, bytesRef, mimeType: rendition.mimeType };
+function refusalText(refusal: MediaRefusal): string {
+  const reason = mediaStateReason("rejected", refusal);
+  return reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`;
 }
+const storedRenditionOf = (rendition: MediaRendition, bytesRef: string): { readonly renditionId: string; readonly purpose: MediaAssetRenditionPurpose; readonly bytesRef: string; readonly mimeType: string } => ({ renditionId: rendition.renditionId, purpose: rendition.purpose, bytesRef, mimeType: rendition.mimeType });
 function storedProfileOf(check: MediaProfileCheck): { readonly container: string; readonly codec: string; readonly durationSeconds: number | null; readonly width: number; readonly height: number } {
   return check.kind === "image" ? { container: check.format, codec: check.format, durationSeconds: null, width: check.width, height: check.height } : { container: check.container, codec: check.codec, durationSeconds: check.durationS, width: check.width, height: check.height };
 }
-function storedVerificationOf(verification: MediaTagVerification): { readonly checked: boolean; readonly residualTags: readonly string[] } {
-  return { checked: verification.checked, residualTags: [...verification.residualTags] };
-}
+const storedVerificationOf = (verification: MediaTagVerification): { readonly checked: boolean; readonly residualTags: readonly string[] } => ({ checked: verification.checked, residualTags: [...verification.residualTags] });
 const uploadBytesSchema = z.strictObject({ bytesBase64: z.string().min(1, "Choose a file to upload."), name: z.string().min(1).max(255).optional() });
 const registerMediaAssetPayloadSchema = z
   .strictObject({
@@ -1375,47 +1097,30 @@ async function prepareRegisteredRenditions(payload: RegisterMediaAssetPayload, a
     payload.kind === "image"
       ? await acceptImage({ assetId, scope, sourceOriginalRef: { system: "local-upload", reference: assetId }, bytes, ...(payload.source.name === undefined ? {} : { sourceName: payload.source.name }), altText, ...(caption === null ? {} : { caption }) })
       : await acceptVideo({ assetId, scope, sourceOriginalRef: { system: "local-upload", reference: assetId }, bytes, ...(payload.source.name === undefined ? {} : { sourceName: payload.source.name }) });
-  if (accepted.state === "rejected") {
-    const reason = mediaStateReason("rejected", accepted);
-    throw invalidField("source", reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`);
-  }
+  if (accepted.state === "rejected") throw invalidField("source", refusalText(accepted));
   const renditions: MediaRendition[] = [...accepted.renditions];
   if (payload.poster !== undefined) {
     const poster = await prepareRendition({ assetId, purpose: "poster", bytes: decodeBase64Bytes(payload.poster.bytesBase64, "poster.bytesBase64"), altText: payload.poster.altText ?? altText, ...(payload.poster.name === undefined ? {} : { sourceName: payload.poster.name }) });
-    if (poster.state === "rejected") {
-      const reason = mediaStateReason("rejected", poster);
-      throw invalidField("poster", reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`);
-    }
+    if (poster.state === "rejected") throw invalidField("poster", refusalText(poster));
     renditions.push(poster.rendition);
   }
   if (payload.captions !== undefined) {
     const captions = await prepareRendition({ assetId, purpose: "captions", bytes: new TextEncoder().encode(payload.captions.vtt) });
-    if (captions.state === "rejected") {
-      const reason = mediaStateReason("rejected", captions);
-      throw invalidField("captions", reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`);
-    }
+    if (captions.state === "rejected") throw invalidField("captions", refusalText(captions));
     renditions.push(captions.rendition);
   }
   if (payload.transcript !== undefined) {
     const transcript = await prepareRendition({ assetId, purpose: "transcript", bytes: new TextEncoder().encode(payload.transcript.text) });
-    if (transcript.state === "rejected") {
-      const reason = mediaStateReason("rejected", transcript);
-      throw invalidField("transcript", reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`);
-    }
+    if (transcript.state === "rejected") throw invalidField("transcript", refusalText(transcript));
     renditions.push(transcript.rendition);
   }
   return { accepted, renditions, altText, caption };
 }
-function registeredAssetIdOf(result: MutationResult): string | undefined {
-  return isRecord(result) && typeof result.assetId === "string" ? result.assetId : undefined;
-}
 async function writeReplayedRegistration(sessionId: string, payload: RegisterMediaAssetPayload, scope: MediaAssetScope, result: MutationResult): Promise<void> {
-  const assetId = registeredAssetIdOf(result);
+  const assetId = isRecord(result) && typeof result.assetId === "string" ? result.assetId : undefined;
   if (assetId === undefined) return;
   const replayed = await prepareRegisteredRenditions(payload, assetId, scope);
-  for (const rendition of replayed.renditions) {
-    await writeMediaBytes(uploadedMediaReference(sessionId, assetId, rendition.renditionId, rendition.mimeType), rendition.bytes);
-  }
+  for (const rendition of replayed.renditions) await writeMediaBytes(uploadedMediaReference(sessionId, assetId, rendition.renditionId, rendition.mimeType), rendition.bytes);
 }
 /** Registers one uploaded image or video as a scoped asset with prepared renditions. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function registerMediaAsset(sessionId: string, input: MutationInput<RegisterMediaAssetPayload>): Promise<MutationOutcome> {
@@ -1428,77 +1133,55 @@ export async function registerMediaAsset(sessionId: string, input: MutationInput
     name: "registerMediaAsset",
     authorize: (session) => editorialDecision(session, input.scope),
     apply: async (context) => {
-      const opened = openState(context.docs),
-        state = opened.state;
+      const { raw, state } = openState(context.docs);
       const payload = input.payload;
       const assetId = newRecordId("asset");
-      const prepared = await prepareRegisteredRenditions(payload, assetId, scope);
-      const { accepted } = prepared;
-      const { altText, caption } = prepared;
+      const { accepted, renditions: preparedRenditions, altText, caption } = await prepareRegisteredRenditions(payload, assetId, scope);
       const credit = payload.credit ?? payload.placement?.credit ?? null;
       const language = payload.language ?? payload.placement?.language ?? null;
-      const renditions = prepared.renditions.map((rendition) => {
+      const renditions = preparedRenditions.map((rendition) => {
         const bytesRef = uploadedMediaReference(sessionId, assetId, rendition.renditionId, rendition.mimeType);
         pending.push({ bytesRef, bytes: rendition.bytes });
         return storedRenditionOf(rendition, bytesRef);
       });
-      const sourceOriginalRef = `${accepted.sourceOriginalRef.system}:${accepted.sourceOriginalRef.reference}`;
-      const tagVerification = storedVerificationOf(accepted.tagVerification);
-      const profileCheck = storedProfileOf(accepted.profileCheck);
-      const revision = INITIAL_REVISION_TOKEN;
-      const kind = accepted.kind;
-      const asset: MediaAssetRecord = { assetId, kind, profileCheck, sourceOriginalRef, renditions, scope: input.scope, tagVerification, revision };
+      const asset: MediaAssetRecord = {
+        assetId,
+        kind: accepted.kind,
+        profileCheck: storedProfileOf(accepted.profileCheck),
+        sourceOriginalRef: `${accepted.sourceOriginalRef.system}:${accepted.sourceOriginalRef.reference}`,
+        renditions,
+        scope: input.scope,
+        tagVerification: storedVerificationOf(accepted.tagVerification),
+        revision: INITIAL_REVISION_TOKEN,
+      };
       const descriptor: MediaAssetDescriptorRecord = { assetId, altText: altText.length === 0 ? null : altText, caption, credit, language, revision: INITIAL_REVISION_TOKEN };
-      writeState(context.docs, opened, { mediaAssets: [...state.mediaAssets, asset], mediaAssetDescriptors: [...state.mediaAssetDescriptors, descriptor] });
+      writeState(context.docs, raw, { mediaAssets: [...state.mediaAssets, asset], mediaAssetDescriptors: [...state.mediaAssetDescriptors, descriptor] });
       const result: RegisteredMediaAssetView = { assetId, kind: accepted.kind, state: "ready", altText: descriptor.altText, caption, language, renditions: renditions.map((rendition) => ({ renditionId: rendition.renditionId, purpose: rendition.purpose })) };
       return { changed: true, revision: asset.revision, result, created: [assetId] } satisfies ApplyResult<typeof result>;
     },
   });
-  // The bytes travel after the outcome, never inside `apply`. `accepted` means the record and its ledger entry are committed, so the references it states are the ones to write; `alreadyAccepted` means an earlier attempt committed them and this attempt is its replay; every other outcome changed nothing, so
-  // nothing is written and no byte is left that no record names. A write that fails after the commit is reported as `unknown`: the effect exists, the caller is told the acknowledgement is what was lost, and replaying the same operation id re-attempts the very same references.
   try {
     if (outcome.outcome === "accepted") {
-      for (const item of pending) {
-        await writeMediaBytes(item.bytesRef, item.bytes);
-      }
-    } else if (outcome.outcome === "alreadyAccepted") {
-      await writeReplayedRegistration(sessionId, input.payload, scope, outcome.result);
-    }
+      for (const item of pending) await writeMediaBytes(item.bytesRef, item.bytes);
+    } else if (outcome.outcome === "alreadyAccepted") await writeReplayedRegistration(sessionId, input.payload, scope, outcome.result);
   } catch {
     return unknown({ operationId: input.operationId });
   }
   return outcome;
 }
-const placementTargetPayloadSchema = z.strictObject({ ...draftTargetShape, placementId: recordIdSchema, assetId: recordIdSchema.optional(), placement: placementTextSchema.partial().optional() }).superRefine((payload, ctx) => {
-  if (!namesDraftTarget(payload)) ctx.addIssue({ code: "custom", path: ["draftRevisionId"], message: NO_DRAFT_TARGET_MESSAGE });
-});
+const placementTargetPayloadSchema = z.strictObject({ ...draftTargetShape, placementId: recordIdSchema, assetId: recordIdSchema.optional(), placement: placementTextSchema.partial().optional() }).superRefine(refuseUnnamedDraftTarget);
 export type PlacementTargetPayload = z.infer<typeof placementTargetPayloadSchema>;
-
 function placementRefOf(placement: MediaPlacementRecord): z.infer<typeof placementRefSchema> {
-  return {
-    placementId: placement.placementId,
-    assetId: placement.assetId,
-    ...(placement.sectionElement === null ? {} : { sectionElement: placement.sectionElement }),
-    position: placement.position,
-    altText: placement.altText,
-    ...(placement.caption === null ? {} : { caption: placement.caption }),
-    ...(placement.credit === null ? {} : { credit: placement.credit }),
-  };
+  const { placementId, assetId, position, altText } = placement;
+  return { placementId, assetId, ...(placement.sectionElement === null ? {} : { sectionElement: placement.sectionElement }), position, altText, ...(placement.caption === null ? {} : { caption: placement.caption }), ...(placement.credit === null ? {} : { credit: placement.credit }) };
 }
-function withoutTracksOf(tracks: readonly ContentCaptionTrackRecord[], remaining: readonly MediaPlacementRecord[]): readonly ContentCaptionTrackRecord[] {
-  const placed = new Set(remaining.map((placement) => placement.assetId));
-  return tracks.filter((track) => placed.has(track.assetId));
-}
+const withoutTracksOf = (tracks: readonly ContentCaptionTrackRecord[], remaining: readonly MediaPlacementRecord[]): readonly ContentCaptionTrackRecord[] => tracks.filter((track) => new Set(remaining.map((placement) => placement.assetId)).has(track.assetId));
 /** Replaces one placement of a draft with another admitted asset, or with a new description of the same asset. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function replacePlacement(sessionId: string, input: MutationInput<PlacementTargetPayload>): Promise<MutationOutcome> {
-  return runEditorial(sessionId, input, placementTargetPayloadSchema, "replacePlacement", { readCurrent: (documents) => currentDraftTarget(documents, input.payload), apply: (context) => applyReplacePlacement(context, input) });
-}
-function applyReplacePlacement(context: MutationContext, input: MutationInput<PlacementTargetPayload>): ApplyResult<MutationResult> {
+export const replacePlacement = async (sessionId: string, input: MutationInput<PlacementTargetPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, placementTargetPayloadSchema, "replacePlacement", { readCurrent: draftTarget, apply: applyReplacePlacement });
+function applyReplacePlacement(context: MutationContext, payload: PlacementTargetPayload): ApplyResult<MutationResult> {
   const opened = openState(context.docs);
-  const target = draftTargetOf(opened.state, input.payload);
-  const payload = input.payload;
-  const placeholder = target.revision.mediaPlacements.find((placement) => placement.placementId === payload.placementId);
-  if (placeholder === undefined) throw invalidField("placementId", "This draft holds no placement by that identity, so reopen the page and choose the placement again.");
+  const target = draftTargetOf(opened.state, payload);
+  if (target.revision.mediaPlacements.find((placement) => placement.placementId === payload.placementId) === undefined) throw invalidField("placementId", "This draft holds no placement by that identity, so reopen the page and choose the placement again.");
   const requested = target.revision.mediaPlacements.map((placement) => {
     if (placement.placementId !== payload.placementId) return placementRefOf(placement);
     return {
@@ -1516,13 +1199,11 @@ function applyReplacePlacement(context: MutationContext, input: MutationInput<Pl
   return { changed: true, revision: written.revision, result, changedIds: [written.revisionId] } satisfies ApplyResult<typeof result>;
 }
 /** Removes one placement from a draft. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function removePlacement(sessionId: string, input: MutationInput<PlacementTargetPayload>): Promise<MutationOutcome> {
-  return runEditorial(sessionId, input, placementTargetPayloadSchema, "removePlacement", { readCurrent: (documents) => currentDraftTarget(documents, input.payload), apply: (context) => applyRemovePlacement(context, input) });
-}
-function applyRemovePlacement(context: MutationContext, input: MutationInput<PlacementTargetPayload>): ApplyResult<MutationResult> {
+export const removePlacement = async (sessionId: string, input: MutationInput<PlacementTargetPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, placementTargetPayloadSchema, "removePlacement", { readCurrent: draftTarget, apply: applyRemovePlacement });
+function applyRemovePlacement(context: MutationContext, payload: PlacementTargetPayload): ApplyResult<MutationResult> {
   const opened = openState(context.docs);
-  const target = draftTargetOf(opened.state, input.payload);
-  const placementId = input.payload.placementId;
+  const target = draftTargetOf(opened.state, payload);
+  const placementId = payload.placementId;
   if (!target.revision.mediaPlacements.some((placement) => placement.placementId === placementId)) throw invalidField("placementId", "This draft holds no placement by that identity, so reopen the page and choose the placement again.");
   const placements = target.revision.mediaPlacements.filter((placement) => placement.placementId !== placementId);
   const written = writeDraftEdit({ context, opened, target, body: target.body, placements, tracks: withoutTracksOf(target.revision.captions, placements) });

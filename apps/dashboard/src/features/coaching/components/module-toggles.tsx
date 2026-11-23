@@ -1,22 +1,8 @@
 "use client";
-
-/**
- * The worker's control over the five coaching modules, and what each of them currently delivers.
- *
- * Scope: AAP 0.10.1's "five independently selected modules"; AAP 0.8.4's module rules — five modules
- * chosen independently, five distinct read states with `ended` never standing for `unavailable`, and
- * one unavailable module leaving the other four usable; AAP 0.7.1's `setModule`; AAP 0.6.3's
- * `POST /api/coaching/modules`. The closed module set comes from the domain, the words come from
- * `../copy`, the toggle is the design system's `Switch`, and every outcome is rendered by the shared
- * `OperationResult`, so this file adds no sixth module, no second toggle pattern and no second
- * vocabulary for a state.
- */
-
-import { CalendarXIcon, EyeOffIcon, TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type ReactElement } from "react";
 import ActionReview, { useReviewedMutation, type MutationSubmit } from "@/components/action-review";
 import OperationResult, { OUTCOME_HEADINGS } from "@/components/operation-result";
-import StateNotice, { type NoticeHeadingLevel } from "@/components/state-notice";
+import StateNotice from "@/components/state-notice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,215 +14,61 @@ import { MODULE_KEYS, type GrantLifecycleState, type ModuleKey, type ModuleReadS
 import type { Scope } from "@/modules/data-service/envelope";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
 import { COACHING_COPY, GRANT_STATE_COPY, MODULE_COMPLETE_COPY, MODULE_COPY, MODULE_READ_STATE_COPY, STOP_EFFECT_COPY, type StateCopy } from "../copy";
-import { useSetModule } from "../hooks/use-coaching-mutations";
-import { moduleChangePayloadSchema, type ModuleChangePayload } from "../schemas/module";
-
-// ---------------------------------------------------------------------------------------------
-// The words this surface owns
-//
-// The module names, their descriptions, the five state words, the complete-share word and the
-// lifecycle words all come from `../copy`, and the stop step's title, question, consequence and
-// assurance come from the one `STOP_EFFECT_COPY` entry for stopping a module. Only the sentences
-// nothing else states live here.
-// ---------------------------------------------------------------------------------------------
-
-const CARD_HEADING = "Modules you share";
-const INTRO_SENTENCE = "Modules start switched off, and each of the five is chosen on its own, so your coach can read only the ones you switch on.";
+import { useSetModule } from "../hooks/use-coaching";
+import { moduleChangePayloadSchema, type ModuleChangePayload } from "../schemas";
+import { ModuleReadStateNotice } from "./sharing-summary";
 const OFF_WORD = "Switched off";
-const OFF_SENTENCE = "This module is switched off, so your coach cannot read it. The work inside it stays exactly as it is, and switching it back on is the same deliberate act as switching it on the first time.";
-const BUSY_SENTENCE = "Applying this module change, and nothing else…";
 const INVITED_REASON = "Modules are chosen after the invitation is accepted: nothing is shared before that, so there is no selection to change yet.";
 const ACCEPTED_REASON = "The invitation is accepted and access is not live yet, so a module cannot be switched until it is. Accepting on its own makes no module readable.";
-const EXPIRED_CUTOFF_LEAD = "The share window closed at its frozen cutoff ";
-const EXPIRED_CUTOFF_TAIL = ", which has passed: no new read is admitted from that instant, and lifting a hold or changing a setting does not reopen it.";
-const NOT_SENT_TITLE = "This module change was not sent";
 const NOT_SENT_FALLBACK = "The change stated no coaching relationship it belongs to, so it was not sent.";
-const SET_INCOMPLETE_TITLE = "These five modules could not be stated";
 const SET_INCOMPLETE_DESCRIPTION =
   "This surface states exactly the five modules a grant can share, and it was handed a different set. No switch is offered, because a missing module would read as switched off when nothing said it was, and a sixth would be a module no grant shares. Nothing was changed and nothing is hidden: the set itself is what does not match.";
-/** The payload field names a refusal may name, in the words a worker reads. */
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { grantId: "Coaching relationship", moduleKey: "Module", enabled: "Sharing of this module" };
 const CARD_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
-/** The heading levels this surface renders at: the card's own, and the one step below it that every statement inside a row uses. */
 type RowHeadingLevel = 2 | 3 | 4;
 const ROW_HEADING_LEVEL: Readonly<Record<RowHeadingLevel, RowHeadingLevel>> = { 2: 3, 3: 4, 4: 4 };
 type StateVariant = "secondary" | "outline" | "destructive" | "ghost";
-/**
- * The tone each state's badge carries. Tone never carries the state on its own — the badge always
- * shows the state word from `MODULE_READ_STATE_COPY`, and the complete-share word from
- * `MODULE_COMPLETE_COPY` for a module whose content is whole — so a reader who cannot see the colour
- * reads the same distinct words in every state.
- */
 const STATE_VARIANT: Readonly<Record<ModuleReadState, StateVariant>> = { empty: "outline", partial: "secondary", withheld: "outline", unavailable: "destructive", ended: "secondary" };
 /** The tone a complete share carries: the secondary tone the sharing summary gives its own complete-share badge, so one reading looks the same on both surfaces. */
 const COMPLETE_VARIANT: StateVariant = "secondary";
-
-// ---------------------------------------------------------------------------------------------
-// The contract
-// ---------------------------------------------------------------------------------------------
-
-/** One of the five modules as the read reported it: whether the grant shares it, and what a coach can read in it now. */
-export type ModuleToggleEntry = {
-  readonly key: ModuleKey;
-  readonly enabled: boolean;
-  /**
-   * The state a coach meets in this module, or `null` when this read stated none for it. The domain
-   * answers `null` for a shared module whose content is complete — nothing held, missing or
-   * unavailable — and states no state at all for a module the grant does not share, which is why a
-   * switched-off module is never given an invented state either.
-   */
-  readonly readState: ModuleReadState | null;
-  readonly source?: SourceReference | null;
-};
-
+export type ModuleToggleEntry = { readonly key: ModuleKey; readonly enabled: boolean; readonly readState: ModuleReadState | null; readonly source?: SourceReference | null };
 export type ModuleTogglesProps = {
-  /** The relationship these modules belong to; the change names it, because a module is shared inside one grant. */
   readonly grantId: string;
   readonly modules: ReadonlyArray<ModuleToggleEntry>;
   readonly scope: Scope;
   readonly expectedRevision: string;
-  /** The grant's lifecycle state, which decides whether a module can be switched at all and why not when it cannot. */
   readonly grantState: GrantLifecycleState;
-  /** Display only: named when the window has closed, never compared with a clock in this file. */
   readonly cutoffInstant?: string | null;
   readonly onOutcome?: (outcome: MutationOutcome) => void;
   readonly onCheckResult?: () => void;
   readonly headingLevel?: 2 | 3 | 4;
   readonly className?: string;
 };
-
-/** Why a switch cannot be used, and the grant state that says so. */
-interface ShareGate {
-  readonly selectable: boolean;
-  readonly stateCopy: StateCopy | null;
-  readonly reason: string | null;
-  readonly cutoffInstant: string | null;
-}
-
+type ShareGate = { readonly selectable: boolean; readonly stateCopy: StateCopy | null; readonly reason: string | null; readonly cutoffInstant: string | null };
 const OPEN_GATE: ShareGate = { selectable: false, stateCopy: null, reason: null, cutoffInstant: null };
-
-/**
- * Reads the lifecycle state into the two things a switch needs to know: whether it may submit, and
- * the words that say why when it may not. `active` is the only state in which a module can be
- * switched, because it is the only one in which the service admits `setModule`.
- */
 function gateFor(grantState: GrantLifecycleState, cutoffInstant: string | null): ShareGate {
   const open: ShareGate = { ...OPEN_GATE, selectable: true };
   if (grantState === "active") return open;
   if (grantState === "invited") return { selectable: false, stateCopy: GRANT_STATE_COPY.invited, reason: INVITED_REASON, cutoffInstant: null };
   if (grantState === "accepted") return { selectable: false, stateCopy: GRANT_STATE_COPY.accepted, reason: ACCEPTED_REASON, cutoffInstant: null };
-  // Every remaining state closes the grant: revoked, expired, ended, left by the coach, or superseded
-  // before acceptance. Each keeps its own words, so no two of them are ever stated as one another.
   const closed = GRANT_STATE_COPY[grantState];
   return { selectable: false, stateCopy: closed, reason: null, cutoffInstant: grantState === "expired" ? cutoffInstant : null };
 }
-
-/** Whether the entries are exactly the closed set of five modules, each once. A rendering component reports anything else rather than throwing on data it did not produce. */
-function hasClosedModuleSet(modules: ReadonlyArray<ModuleToggleEntry>): boolean {
-  if (modules.length !== MODULE_KEYS.length) return false;
-  const seen = new Set<ModuleKey>();
-  for (const entry of modules) {
-    if (seen.has(entry.key)) return false;
-    seen.add(entry.key);
-  }
-  return MODULE_KEYS.every((key) => seen.has(key));
-}
-
-/** The entry for one module, or `undefined` for a set that was already refused. */
-function entryFor(modules: ReadonlyArray<ModuleToggleEntry>, key: ModuleKey): ModuleToggleEntry | undefined {
-  for (const entry of modules) {
-    if (entry.key === key) return entry;
-  }
-  return undefined;
-}
-
+const hasClosedModuleSet = (modules: ReadonlyArray<ModuleToggleEntry>): boolean => modules.length === MODULE_KEYS.length && new Set(modules.map((entry) => entry.key)).size === modules.length && MODULE_KEYS.every((key) => modules.some((entry) => entry.key === key));
+const entryFor = (modules: ReadonlyArray<ModuleToggleEntry>, key: ModuleKey): ModuleToggleEntry | undefined => modules.find((entry) => entry.key === key);
 /** The state word a row shows: the complete-share word for a switched-on module whose content is whole, the module's own state word while the read states one, and the plain fact that it is off when it is not shared. */
-function stateWordOf(entry: ModuleToggleEntry): string {
-  if (!entry.enabled) return OFF_WORD;
-  return entry.readState === null ? MODULE_COMPLETE_COPY.label : MODULE_READ_STATE_COPY[entry.readState].label;
-}
-
-/** The tone a row's badge carries, matching the word it shows: a complete share takes the tone the summary gives it rather than the outline tone of a state the read never stated. */
-function stateVariantOf(entry: ModuleToggleEntry): StateVariant {
-  if (!entry.enabled) return "ghost";
-  return entry.readState === null ? COMPLETE_VARIANT : STATE_VARIANT[entry.readState];
-}
-
-/** The row's `data-read-state`: what the read established, in the read's own vocabulary — `complete` for a switched-on module whose content is whole, the state while the read states one, and `not-stated` only for a module that is not shared, whose read states no module state at all. */
-function readStateAttributeOf(entry: ModuleToggleEntry): ModuleReadState | "complete" | "not-stated" {
-  if (!entry.enabled) return "not-stated";
-  return entry.readState ?? "complete";
-}
-
+const stateWordOf = (entry: ModuleToggleEntry): string => (!entry.enabled ? OFF_WORD : entry.readState === null ? MODULE_COMPLETE_COPY.label : MODULE_READ_STATE_COPY[entry.readState].label);
+const stateVariantOf = (entry: ModuleToggleEntry): StateVariant => (!entry.enabled ? "ghost" : entry.readState === null ? COMPLETE_VARIANT : STATE_VARIANT[entry.readState]);
+/** What the read established, in the read's own vocabulary: `complete` for a switched-on module whose content is whole, the state while the read states one, and `not-stated` only for a module that is not shared. */
+const readStateAttributeOf = (entry: ModuleToggleEntry): ModuleReadState | "complete" | "not-stated" => (!entry.enabled ? "not-stated" : (entry.readState ?? "complete"));
 type BuiltPayload = { readonly payload: ModuleChangePayload } | { readonly refusal: string };
-
-/**
- * The one change this surface sends, judged by the schema the route and the service judge it with
- * before anything leaves the browser. A refusal is named here as this view's own refused request, so
- * a change that could never be admitted produces no request at all.
- */
 function payloadForChange(grantId: string, moduleKey: ModuleKey, enabled: boolean): BuiltPayload {
   const parsed = moduleChangePayloadSchema.safeParse({ grantId, moduleKey, enabled });
   if (parsed.success) return { payload: parsed.data };
   const messages = parsed.error.issues.map((issue) => issue.message);
   return { refusal: messages.length === 0 ? NOT_SENT_FALLBACK : messages.join(" ") };
 }
-
-// ---------------------------------------------------------------------------------------------
-// One state, stated once per row
-// ---------------------------------------------------------------------------------------------
-
-/** The one statement a `partial`, `withheld` or `ended` module makes: its own word, its own words, and its own icon. */
-function StateAlert({ icon, copy }: { readonly icon: ReactElement; readonly copy: StateCopy }): ReactElement {
-  return (
-    // No alarm role: this sentence describes a state the read has already answered, so it states
-    // itself where it stands and in reading order rather than interrupting every time the row mounts.
-    <Alert role={undefined} className="min-w-0">
-      {icon}
-      <AlertTitle>{copy.label}</AlertTitle>
-      <AlertDescription>
-        <p>{copy.description}</p>
-      </AlertDescription>
-    </Alert>
-  );
-}
-
-/**
- * One module's read state. `empty` and `unavailable` are the notice's own states and are stated by
- * the one notice surface; `partial`, `withheld` and `ended` have no notice kind that means them, so
- * each states its own word and description with its own icon rather than being folded into another.
- */
-function StateStatement({ state, source, headingLevel }: { readonly state: ModuleReadState; readonly source: SourceReference | null; readonly headingLevel: NoticeHeadingLevel }): ReactElement {
-  const copy = MODULE_READ_STATE_COPY[state];
-  switch (state) {
-    case "empty":
-      return <StateNotice kind="empty" title={copy.label} description={copy.description} headingLevel={headingLevel} className="p-4 sm:p-4" />;
-    case "unavailable":
-      // The row names the source it could not read, so an outage is distinguishable from an ending
-      // that is stated in the same position by the same kind of control.
-      return <StateNotice kind="unavailable" title={copy.label} description={copy.description} source={source ?? undefined} headingLevel={headingLevel} />;
-    case "partial":
-      return <StateAlert icon={<TriangleAlertIcon aria-hidden="true" />} copy={copy} />;
-    case "withheld":
-      return <StateAlert icon={<EyeOffIcon aria-hidden="true" />} copy={copy} />;
-    case "ended":
-      return <StateAlert icon={<CalendarXIcon aria-hidden="true" />} copy={copy} />;
-  }
-}
-
-// ---------------------------------------------------------------------------------------------
-// The receipt for a change in this row
-// ---------------------------------------------------------------------------------------------
-
-interface ModuleReceiptProps {
-  readonly outcome: MutationOutcome;
-  readonly heading: string;
-  readonly onCheckResult?: (() => void) | undefined;
-  readonly onRetrySameWork?: (() => void) | undefined;
-  readonly onReapply?: (() => void) | undefined;
-}
-
-/** The one durable receipt of this row's attempt, focused when it appears so a keyboard user lands on the record of what happened. */
+type ModuleReceiptProps = { readonly outcome: MutationOutcome; readonly heading: string; readonly onCheckResult?: (() => void) | undefined; readonly onRetrySameWork?: (() => void) | undefined; readonly onReapply?: (() => void) | undefined };
 function ModuleReceipt({ outcome, heading, onCheckResult, onRetrySameWork, onReapply }: ModuleReceiptProps): ReactElement {
   const frameRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -248,11 +80,6 @@ function ModuleReceipt({ outcome, heading, onCheckResult, onRetrySameWork, onRea
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------------------------
-// One module: its switch, its state, and the two ways a change is made
-// ---------------------------------------------------------------------------------------------
-
 interface ModuleRowProps {
   readonly entry: ModuleToggleEntry;
   readonly grantId: string;
@@ -264,33 +91,19 @@ interface ModuleRowProps {
   readonly onOutcome: ((outcome: MutationOutcome) => void) | undefined;
   readonly onCheckResult: (() => void) | undefined;
 }
-
-/**
- * One module's row. Switching a module **on** is additive, so it is applied as it is asked for and
- * its receipt appears in place; switching one **off** is a stop, so it goes through the shared review
- * step first, which states in the copy's own words that the module stops being readable and that
- * nothing is deleted and nothing already seen can be recalled. That asymmetry is the whole of this
- * component's judgement: an addition needs no ceremony, a stop needs to be read before it is made.
- */
 function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowHeadingLevel, onOutcome, onCheckResult }: ModuleRowProps): ReactElement {
   const copy = MODULE_COPY[entry.key];
   const nameId = useId();
   const stateId = useId();
   const descriptionId = useId();
   const { mutateAsync: changeModule } = useSetModule();
-  // The hook owns the attempt's identity: a retry of the same intent replays the same operationId, so
-  // the ledger answers with the original result rather than applying the change twice.
   const submit = useCallback<MutationSubmit<ModuleChangePayload>>((input) => changeModule({ operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload }), [changeModule]);
   const direct = useReviewedMutation<ModuleChangePayload>(submit);
   const [stopIntent, setStopIntent] = useState<ModuleChangePayload | null>(null);
   const [settledStop, setSettledStop] = useState<MutationOutcome | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
-
   const blocked = !gate.selectable || direct.pending || stopIntent !== null;
-  const describedBy = gateId === null ? descriptionId : `${descriptionId} ${gateId}`;
-  const stateWord = stateWordOf(entry);
   const variant = stateVariantOf(entry);
-
   const runDirect = useCallback(
     (run: () => Promise<MutationOutcome | null>): void => {
       void run().then((outcome) => {
@@ -299,10 +112,7 @@ function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowH
     },
     [onOutcome],
   );
-
   const changeTo = (next: boolean): void => {
-    // The switch stays focusable while it cannot be used, so its name and its stated reason stay
-    // reachable; activation is refused here instead of by removing it from the keyboard order.
     if (blocked) return;
     setRefusal(null);
     const built = payloadForChange(grantId, entry.key, next);
@@ -320,13 +130,9 @@ function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowH
     direct.reset();
     runDirect(() => direct.submit({ scope, expectedRevision, payload: built.payload }));
   };
-
   const settleStop = useCallback(
     (outcome: MutationOutcome): void => {
       onOutcome?.(outcome);
-      // A stop that settled closes the review and leaves its receipt in the row; a conflict, a denial,
-      // an outage or an unconfirmed result keeps the review open, because its own recovery actions are
-      // the only honest next step and they belong to that step rather than to this row.
       if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") {
         setSettledStop(outcome);
         setStopIntent(null);
@@ -334,9 +140,7 @@ function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowH
     },
     [onOutcome],
   );
-
   const receipt = direct.outcome ?? settledStop;
-
   return (
     <div data-slot="module-toggle-row" data-module-key={entry.key} data-enabled={entry.enabled ? "true" : "false"} data-read-state={readStateAttributeOf(entry)} aria-busy={direct.pending ? true : undefined} className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -346,26 +150,20 @@ function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowH
           </span>
           <span id={stateId}>
             <Badge variant={variant}>
-              <bdi>{stateWord}</bdi>
+              <bdi>{stateWordOf(entry)}</bdi>
             </Badge>
           </span>
         </p>
-        <Switch checked={entry.enabled} onCheckedChange={changeTo} aria-labelledby={`${nameId} ${stateId}`} aria-describedby={describedBy} aria-disabled={blocked ? true : undefined} className="aria-disabled:opacity-60" />
+        <Switch checked={entry.enabled} onCheckedChange={changeTo} aria-labelledby={`${nameId} ${stateId}`} aria-describedby={gateId === null ? descriptionId : `${descriptionId} ${gateId}`} aria-disabled={blocked ? true : undefined} className="aria-disabled:opacity-60" />
       </div>
-      <p id={descriptionId} className="text-sm text-pretty text-muted-foreground">
-        {copy.description}
-      </p>
-      {direct.pending ? (
-        <output aria-live="polite" className="block text-sm text-muted-foreground">
-          {BUSY_SENTENCE}
-        </output>
-      ) : null}
-      {refusal === null ? null : <StateNotice kind="refused" title={NOT_SENT_TITLE} description={refusal} headingLevel={rowHeadingLevel} />}
+      <p {...{ id: descriptionId, className: "text-sm text-pretty text-muted-foreground" }}>{copy.description}</p>
+      {direct.pending ? <output {...{ "aria-live": "polite", className: "block text-sm text-muted-foreground" }}>{"Applying this module change, and nothing else…"}</output> : null}
+      {refusal === null ? null : <StateNotice kind="refused" title={"This module change was not sent"} description={refusal} headingLevel={rowHeadingLevel} />}
       {entry.enabled ? null : (
         <p className="text-sm text-pretty text-muted-foreground">
           <bdi>{OFF_WORD}</bdi>
           {": "}
-          {OFF_SENTENCE}
+          {"This module is switched off, so your coach cannot read it. The work inside it stays exactly as it is, and switching it back on is the same deliberate act as switching it on the first time."}
         </p>
       )}
       {entry.enabled && entry.readState === null ? (
@@ -375,7 +173,7 @@ function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowH
           {MODULE_COMPLETE_COPY.description}
         </p>
       ) : null}
-      {entry.enabled && entry.readState !== null ? <StateStatement state={entry.readState} source={entry.source ?? null} headingLevel={rowHeadingLevel} /> : null}
+      {entry.enabled && entry.readState !== null ? <ModuleReadStateNotice readState={entry.readState} source={entry.source ?? null} headingLevel={rowHeadingLevel} /> : null}
       {receipt === null ? null : (
         <ModuleReceipt
           outcome={receipt}
@@ -416,46 +214,25 @@ function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowH
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------------------------
-// The five modules
-// ---------------------------------------------------------------------------------------------
-
-/**
- * The worker's control over the five coaching modules: one switch per module, each submitting
- * `setModule` for that module alone, and each module's read state stated as the read's own answer —
- * the complete share for a module whose content is whole, then `empty`, `partial`, `withheld`,
- * `unavailable` and `ended` — never as words for one another. Switching a module off is a stop: it
- * ends future sharing of that module, deletes nothing, and cannot recall what a coach has already
- * seen; it therefore goes through the shared review step, while switching one on is applied directly
- * with its outcome recorded in the row. Every outcome is one of the shared eight, rendered in place,
- * and a module that cannot be switched says why in text.
- */
 export default function ModuleToggles({ grantId, modules, scope, expectedRevision, grantState, cutoffInstant, onOutcome, onCheckResult, headingLevel = 2, className }: ModuleTogglesProps): ReactElement {
   const headingId = useId();
   const gateId = useId();
   const CardHeading = CARD_HEADING_TAG[headingLevel];
   const cutoff = cutoffInstant === null || cutoffInstant === undefined || cutoffInstant.trim() === "" ? null : cutoffInstant;
   const gate = gateFor(grantState, cutoff);
-  if (!hasClosedModuleSet(modules)) {
-    // A rendering component does not throw on the data it was handed: a set that is not the closed
-    // five is this surface's own refused request, not a source outage, so `unavailable` — which states
-    // that the source behind a read is down — is deliberately not used here.
-    return <StateNotice kind="refused" title={SET_INCOMPLETE_TITLE} description={SET_INCOMPLETE_DESCRIPTION} headingLevel={headingLevel} className={className} />;
-  }
+  if (!hasClosedModuleSet(modules)) return <StateNotice kind="refused" title={"These five modules could not be stated"} description={SET_INCOMPLETE_DESCRIPTION} headingLevel={headingLevel} className={className} />;
   const rowHeadingLevel = ROW_HEADING_LEVEL[headingLevel];
   const rows = MODULE_KEYS.map((key) => ({ key, entry: entryFor(modules, key) }));
-  const gateReasonId = gate.stateCopy === null ? null : gateId;
   const stateCopy = gate.stateCopy;
   return (
     <Card data-slot="module-toggles" data-grant-state={grantState} className={cn("min-w-0", className)}>
       <CardHeader>
         <CardTitle>
-          <CardHeading id={headingId}>{CARD_HEADING}</CardHeading>
+          <CardHeading id={headingId}>{"Modules you share"}</CardHeading>
         </CardTitle>
         <CardDescription>
           <p>{COACHING_COPY.sharing.purpose}</p>
-          <p>{INTRO_SENTENCE}</p>
+          <p>{"Modules start switched off, and each of the five is chosen on its own, so your coach can read only the ones you switch on."}</p>
         </CardDescription>
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-3">
@@ -468,9 +245,9 @@ export default function ModuleToggles({ grantId, modules, scope, expectedRevisio
                 {gate.reason === null ? null : <p>{gate.reason}</p>}
                 {gate.cutoffInstant === null ? null : (
                   <p>
-                    {EXPIRED_CUTOFF_LEAD}
+                    {"The share window closed at its frozen cutoff "}
                     <bdi className="mono-identifier">{gate.cutoffInstant}</bdi>
-                    {EXPIRED_CUTOFF_TAIL}
+                    {", which has passed: no new read is admitted from that instant, and lifting a hold or changing a setting does not reopen it."}
                   </p>
                 )}
               </div>
@@ -482,7 +259,7 @@ export default function ModuleToggles({ grantId, modules, scope, expectedRevisio
             entry === undefined ? null : (
               <li key={key} className="flex min-w-0 flex-col gap-3">
                 {index === 0 ? null : <Separator />}
-                <ModuleRow entry={entry} grantId={grantId} scope={scope} expectedRevision={expectedRevision} gate={gate} gateId={gateReasonId} rowHeadingLevel={rowHeadingLevel} onOutcome={onOutcome} onCheckResult={onCheckResult} />
+                <ModuleRow entry={entry} grantId={grantId} scope={scope} expectedRevision={expectedRevision} gate={gate} gateId={gate.stateCopy === null ? null : gateId} rowHeadingLevel={rowHeadingLevel} onOutcome={onOutcome} onCheckResult={onCheckResult} />
               </li>
             ),
           )}

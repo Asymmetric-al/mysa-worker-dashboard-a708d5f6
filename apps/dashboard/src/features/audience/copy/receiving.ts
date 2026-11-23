@@ -11,10 +11,7 @@ export const REACH_COPY: Record<Reach, ReachOptionCopy> = {
 export const DISCOVERY_INDEX_COPY: { heading: string; description: string; emptyTitle: string; emptyDescription: string } = {
   heading: "Pages listed publicly",
   description:
-    "Only released editions that are listed publicly appear here. An edition shared only by link is " +
-    "absent on purpose rather than missing: it opens when someone gives you its link, and it is " +
-    "never listed on this page. An edition that has been withdrawn leaves this list, and its " +
-    "address answers a short notice instead.",
+    "Only released editions that are listed publicly appear here. An edition shared only by link is absent on purpose rather than missing: it opens when someone gives you its link, and it is never listed on this page. An edition that has been withdrawn leaves this list, and its address answers a short notice instead.",
   emptyTitle: "Nothing is listed publicly yet",
   emptyDescription: "Every released edition that is listed publicly appears on this page, so it is empty because " + "none is listed publicly at the moment. An edition shared only by link does not appear here by " + "design, and an edition still in draft is not released at all.",
 };

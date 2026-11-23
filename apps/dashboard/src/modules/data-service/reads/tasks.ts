@@ -1,24 +1,18 @@
-/** The three reads behind the Work job: the five task lists, the dated agenda, and one recurring series with the single occurrence it admits. */
 import { z } from "zod";
 import type { SourceReference } from "@/lib/ids";
-import { logger } from "@/lib/logger";
 import { compareCodeUnits } from "@/lib/ordering";
-import { readSession } from "@/modules/store/repository";
-import { clampPageSize } from "@/modules/support/report";
-import { instantAt } from "@/modules/time/clock";
 import { parseCivilDate, serialiseCivilDate, todayInZone, type CivilDate } from "@/modules/time/civil";
 import { missedPlan, nextOccurrences, type DisclosedMonthDayResolution, type PlanResolutions, type RepeatProfile, type SeriesEnd, type SeriesOccurrence, type SeriesRule, type SeriesState } from "@/modules/time/recurrence";
-import { assertScope, canEdit, canView, readResultOfRefusal, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
+import { canEdit, canView, type ResolvedSession, type SessionSource } from "../authorize";
 import {
-  buildEnvelope,
   principalIdSchema,
   project,
   taskRecordSchema,
   taskSeriesRecordSchema,
-  type Coverage,
   type PrincipalId,
   type ReadAction,
   type ReadEnvelope,
+  type RecordedValueState,
   type Scope,
   type SeriesEndRecord,
   type SeriesRuleRecord,
@@ -28,10 +22,10 @@ import {
   type TaskRecordStatus,
   type TaskSeriesRecord,
 } from "../envelope";
-import { LOCAL_STORE_SYSTEM, denied, unavailable, type DenialReason, type DeniedOutcome, type ReadResult } from "../outcome";
+import { LOCAL_STORE_SYSTEM, type ReadResult } from "../outcome";
+import { answerOf, collectionRevision, compareOptionalText, countState, deniedRead, openRead, pageWindow, readAction, readStoreDocument, sourceUnavailableRead, type ScenarioInstant } from "./frame";
 export type TaskListName = "today" | "upcoming" | "overdue" | "all" | "undated";
 export type TaskSortField = "dueOn" | "title" | "category" | "status";
-/** One ordering instruction, applied in the order the caller lists them. */
 export type TaskSort = { readonly field: TaskSortField; readonly direction: "asc" | "desc" };
 const TASK_SORT_FIELDS = ["dueOn", "title", "category", "status"] as const satisfies readonly TaskSortField[];
 const DEFAULT_TASK_SORT: readonly TaskSort[] = [
@@ -39,37 +33,13 @@ const DEFAULT_TASK_SORT: readonly TaskSort[] = [
   { field: "title", direction: "asc" },
 ];
 const PREVIEW_DATE_COUNT = 3;
-const READ_ATTEMPT_ID = "read";
 const TIME_ZONE_SYSTEM = "time-zone-database";
 const CALENDAR_SOURCE: SourceReference = { system: TIME_ZONE_SYSTEM, reference: "calendar" };
-const WORK_REFERENCE = "work";
+const WORK_SOURCE: SourceReference = { system: LOCAL_STORE_SYSTEM, reference: "work" };
 const STORE_UNREADABLE_GUIDANCE = "The local development store did not answer for this session's work, so nothing is shown in place of it. Retry the read, and reset the development data if it keeps failing.";
 const DOCUMENT_UNREADABLE_GUIDANCE = "This session's stored work could not be decoded, so nothing is shown in place of it. Reset the development data to restore the known seed.";
 const CALENDAR_UNREADABLE_GUIDANCE = "A date in this view cannot be evaluated, because the named time zone is not one this runtime resolves. No date is judged in an assumed zone, so choose a display time zone in Settings and read the view again.";
-type ScenarioInstant = ReturnType<typeof instantAt>;
-type ReadyRead = { readonly status: "ready"; readonly session: ResolvedSession; readonly scope: Scope; readonly instant: ScenarioInstant };
-type ReadOpening = ReadyRead | { readonly status: "refused"; readonly result: ReadResult<never> };
-function readDenial(reasonCode: DenialReason): DeniedOutcome {
-  return denied({ operationId: READ_ATTEMPT_ID, reasonCode });
-}
-function refused(result: ReadResult<never>): ReadOpening {
-  return { status: "refused", result };
-}
-async function openRead(source?: SessionSource): Promise<ReadOpening> {
-  const resolution = await resolveSession(source);
-  if (!resolution.ok) return refused(readResultOfRefusal(resolution.refusal));
-  const { session } = resolution;
-  const scope = session.selected;
-  if (scope === null) return refused({ kind: "denied", denied: readDenial("no-membership") });
-  const admitted = assertScope(session, scope);
-  if (!admitted.ok) return refused({ kind: "denied", denied: admitted.denial });
-  return { status: "ready", session, scope, instant: instantAt(session.clockOffsetMs) };
-}
-/**
- * One private tag as the write path stores it: a label one principal applied to one task, which only that
- * principal sees. The read decodes the family in its own schema so a list can state the tags its projection
- * carries, and a stored document predating the family decodes as a task with no tag rather than as unreadable.
- */
+// One private tag as the write path stores it: a label one principal applied to one task, which only that principal sees, so a stored document predating the family decodes as a task with no tag rather than as unreadable.
 type TaskTagRecord = { readonly taskId: string; readonly tag: string; readonly ownerPrincipalId: PrincipalId };
 const taskTagRecordSchema: z.ZodType<TaskTagRecord> = z.object({ taskId: z.string().min(1), tag: z.string().min(1), ownerPrincipalId: principalIdSchema });
 const storedTaskTagsSchema = z.array(taskTagRecordSchema).default([]);
@@ -77,48 +47,23 @@ const storedTasksSchema = z.object({ tasks: z.array(taskRecordSchema), taskTags:
 const storedWorkSchema = z.object({ tasks: z.array(taskRecordSchema), series: z.array(taskSeriesRecordSchema), taskTags: storedTaskTagsSchema });
 type DecodedRead<T> = { readonly status: "decoded"; readonly value: T } | { readonly status: "unavailable"; readonly result: ReadResult<never> };
 async function readWork<T>(options: { readonly session: ResolvedSession; readonly job: string; readonly schema: z.ZodType<T> }): Promise<DecodedRead<T>> {
-  const source: SourceReference = { system: LOCAL_STORE_SYSTEM, reference: WORK_REFERENCE };
-  let state: unknown;
-  try {
-    const documents = await readSession(options.session.sessionId);
-    if (documents === undefined) return { status: "unavailable", result: unavailableRead(options.job, source, STORE_UNREADABLE_GUIDANCE) };
-    state = documents.state;
-  } catch {
-    return { status: "unavailable", result: unavailableRead(options.job, source, STORE_UNREADABLE_GUIDANCE) };
-  }
-  const decoded = options.schema.safeParse(state);
-  if (!decoded.success) return { status: "unavailable", result: unavailableRead(options.job, source, DOCUMENT_UNREADABLE_GUIDANCE) };
-  return { status: "decoded", value: decoded.data };
-}
-function unavailableRead(job: string, source: SourceReference, guidance: string): ReadResult<never> {
-  logger.sourceUnavailable({ job, source: { system: source.system, reference: source.reference } });
-  return { kind: "unavailable", unavailable: unavailable({ operationId: READ_ATTEMPT_ID, source, guidance }) };
+  const stored = await readStoreDocument({ session: options.session, job: options.job, source: WORK_SOURCE, guidance: STORE_UNREADABLE_GUIDANCE });
+  if (!stored.ok) return { status: "unavailable", result: stored.result };
+  const decoded = options.schema.safeParse(stored.documents.state);
+  return !decoded.success ? { status: "unavailable", result: sourceUnavailableRead({ job: options.job, source: WORK_SOURCE, guidance: DOCUMENT_UNREADABLE_GUIDANCE }) } : { status: "decoded", value: decoded.data };
 }
 type ResolvedToday = { readonly status: "resolved"; readonly date: CivilDate; readonly text: string } | { readonly status: "unavailable"; readonly result: ReadResult<never> };
 function todayForRead(job: string, timeZone: string, instant: ScenarioInstant): ResolvedToday {
   const resolved = todayInZone(timeZone, instant);
-  if (resolved.status === "resolved") return { status: "resolved", date: resolved.date, text: serialiseCivilDate(resolved.date) };
-  return { status: "unavailable", result: unavailableRead(job, CALENDAR_SOURCE, CALENDAR_UNREADABLE_GUIDANCE) };
+  return resolved.status === "resolved" ? { status: "resolved", date: resolved.date, text: serialiseCivilDate(resolved.date) } : { status: "unavailable", result: sourceUnavailableRead({ job, source: CALENDAR_SOURCE, guidance: CALENDAR_UNREADABLE_GUIDANCE }) };
 }
-// Every order below comes from the shared code-unit comparator in `@/lib/ordering`.
-function compareOptionalText(left: string | null, right: string | null): number {
-  if (left === null && right === null) return 0;
-  if (left === null) return 1;
-  if (right === null) return -1;
-  return compareCodeUnits(left, right);
-}
-function compareTaskField(left: TaskRecord, right: TaskRecord, field: TaskSortField): number {
-  switch (field) {
-    case "dueOn":
-      return compareOptionalText(left.dueOn, right.dueOn);
-    case "title":
-      return compareCodeUnits(left.title, right.title);
-    case "category":
-      return compareOptionalText(left.category, right.category);
-    case "status":
-      return compareCodeUnits(left.status, right.status);
-  }
-}
+const TASK_FIELD_ORDERS: Readonly<Record<TaskSortField, (left: TaskRecord, right: TaskRecord) => number>> = {
+  dueOn: (left, right) => compareOptionalText(left.dueOn, right.dueOn),
+  title: (left, right) => compareCodeUnits(left.title, right.title),
+  category: (left, right) => compareOptionalText(left.category, right.category),
+  status: (left, right) => compareCodeUnits(left.status, right.status),
+};
+const compareTaskField = (left: TaskRecord, right: TaskRecord, field: TaskSortField): number => TASK_FIELD_ORDERS[field](left, right);
 function orderTasks(left: TaskRecord, right: TaskRecord, sort: readonly TaskSort[]): number {
   for (const instruction of sort) {
     const order = compareTaskField(left, right, instruction.field);
@@ -131,49 +76,9 @@ function normaliseSort(sort: readonly TaskSort[] | undefined): readonly TaskSort
   const accepted = sort.filter((instruction) => (TASK_SORT_FIELDS as readonly string[]).includes(instruction.field) && (instruction.direction === "asc" || instruction.direction === "desc"));
   return accepted.length === 0 ? DEFAULT_TASK_SORT : accepted;
 }
-type PageWindow = { readonly page: number; readonly pageSize: number; readonly pageCount: number; readonly start: number; readonly end: number };
-function pageWindow(total: number, requestedPage: number | undefined, requestedPageSize: number | undefined): PageWindow {
-  const pageSize = clampPageSize(requestedPageSize);
-  const pageCount = Math.ceil(total / pageSize);
-  const highest = Math.max(1, pageCount);
-  const asked = requestedPage === undefined || !Number.isFinite(requestedPage) ? 1 : Math.trunc(requestedPage);
-  const page = Math.min(Math.max(1, asked), highest);
-  const start = (page - 1) * pageSize;
-  return { page, pageSize, pageCount, start, end: start + pageSize };
-}
-function digest(value: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-function collectionRevision(family: string, members: readonly { readonly revision: string }[]): string {
-  const revisions = members.map((member) => member.revision).toSorted(compareCodeUnits);
-  return `${family}/${String(members.length)}/${digest(revisions.join("\u0000"))}`;
-}
-const WHOLE_COLLECTION_COVERAGE: Coverage = { from: null, to: null, state: "complete" };
-function isAwaitingAction(status: TaskRecordStatus): boolean {
-  return status === "open" || status === "reopened";
-}
-function action(name: string, available: boolean, reason = "This action is not available from this view."): ReadAction {
-  return available ? { name, available } : { name, available, reason };
-}
-function countState(count: number): "value" | "zero" {
-  return count === 0 ? "zero" : "value";
-}
+const isAwaitingAction = (status: TaskRecordStatus): boolean => status === "open" || status === "reopened";
 const TASK_LIST_NAMES = ["today", "upcoming", "overdue", "all", "undated"] as const satisfies readonly TaskListName[];
-function normaliseListName(list: TaskListName): TaskListName {
-  return (TASK_LIST_NAMES as readonly string[]).includes(list) ? list : "all";
-}
-/** Where a task's due date stands relative to "today" in the display zone the read was evaluated in. */
 export type TaskDateRelation = "today" | "future" | "past" | "undated";
-/**
- * One task as a list states it. `tags` are the private labels this session's principal applied to the task, and
- * only those: another principal's tag on the same task is dropped while the row is built, so the projection
- * never carries a field the caller may not see.
- */
 export type TaskListRow = { readonly taskId: string; readonly revision: string; readonly title: string; readonly category: string | null; readonly dueOn: string | null } & { readonly dateRelation: TaskDateRelation; readonly plannedTime: string | null; readonly timeZone: string | null; readonly kind: TaskKind } & {
   readonly status: TaskRecordStatus;
   readonly partnerId: string | null;
@@ -182,14 +87,7 @@ export type TaskListRow = { readonly taskId: string; readonly revision: string; 
 } & { readonly tags: readonly string[]; readonly note: string | null; readonly actions: readonly ReadAction[]; readonly selectable: boolean; readonly selectionReason?: string };
 const TASK_ROW_FIELDS = ["taskId", "revision", "title", "category", "dueOn", "plannedTime", "timeZone", "kind", "status", "partnerId", "initiativeId", "seriesId", "note"] as const;
 const OWNERSHIP_REASON = "This task belongs to another principal's work, so your session may read it but not change it.";
-/**
- * The private tags each task carries for one principal, keyed by task.
- *
- * A tag belongs to the principal who applied it, so it leaves the store only for that principal: the family is
- * filtered here, before the envelope exists, rather than in a component that would then hold what it may not
- * show. Labels are ordered by the shared code-unit comparator, so one stored set reads in one order on every
- * surface and in every render.
- */
+// A tag belongs to the principal who applied it, so it leaves the store only for that principal: the family is filtered here, before the envelope exists, and the labels are ordered by the shared code-unit comparator so one stored set reads in one order on every surface.
 function privateTagsByTask(tags: readonly TaskTagRecord[], principalId: PrincipalId): ReadonlyMap<string, readonly string[]> {
   const held = new Map<string, string[]>();
   for (const record of tags) {
@@ -200,11 +98,7 @@ function privateTagsByTask(tags: readonly TaskTagRecord[], principalId: Principa
   }
   return new Map([...held.entries()].map(([taskId, labels]) => [taskId, labels.toSorted(compareCodeUnits)]));
 }
-function dateRelationOf(dueOn: string | null, today: string): TaskDateRelation {
-  if (dueOn === null) return "undated";
-  if (dueOn === today) return "today";
-  return dueOn < today ? "past" : "future";
-}
+const dateRelationOf = (dueOn: string | null, today: string): TaskDateRelation => (dueOn === null ? "undated" : dueOn === today ? "today" : dueOn < today ? "past" : "future");
 function taskRow(options: { readonly task: TaskRecord; readonly session: ResolvedSession; readonly scope: Scope; readonly today: string; readonly privateTags: ReadonlyMap<string, readonly string[]> }): TaskListRow {
   const { task, session, scope, today } = options;
   const mayEdit = canEdit(session, { kind: "task", scope, ownerPrincipalId: task.ownerPrincipalId }).allowed;
@@ -215,10 +109,10 @@ function taskRow(options: { readonly task: TaskRecord; readonly session: Resolve
     dateRelation: dateRelationOf(task.dueOn, today),
     tags: options.privateTags.get(task.taskId) ?? [],
     actions: [
-      action("editTask", mayEdit, OWNERSHIP_REASON),
-      action("completeTask", mayEdit && awaiting, mayEdit ? (task.status === "cancelled" ? "This task is cancelled, so completing it is not available; create a new task for the work instead." : "This task is already completed, so it is reopened before it can be completed again.") : OWNERSHIP_REASON),
-      action("reopenTask", mayEdit && task.status === "completed", mayEdit ? "Only a completed task can be reopened." : OWNERSHIP_REASON),
-      action("cancelTask", mayEdit && awaiting, mayEdit ? "Only open work can be cancelled." : OWNERSHIP_REASON),
+      readAction("editTask", mayEdit, OWNERSHIP_REASON),
+      readAction("completeTask", mayEdit && awaiting, mayEdit ? (task.status === "cancelled" ? "This task is cancelled, so completing it is not available; create a new task for the work instead." : "This task is already completed, so it is reopened before it can be completed again.") : OWNERSHIP_REASON),
+      readAction("reopenTask", mayEdit && task.status === "completed", mayEdit ? "Only a completed task can be reopened." : OWNERSHIP_REASON),
+      readAction("cancelTask", mayEdit && awaiting, mayEdit ? "Only open work can be cancelled." : OWNERSHIP_REASON),
     ],
     selectable: mayEdit,
     ...(mayEdit ? {} : { selectionReason: OWNERSHIP_REASON }),
@@ -244,34 +138,25 @@ function inList(task: TaskRecord, list: TaskListName, today: string): boolean {
 }
 function listActions(selectableOnPage: boolean): readonly ReadAction[] {
   const bulkReason = "No row on this page can be changed from your session, so there is nothing to act on. Clear the filters or open a page holding your own work.";
-  return [action("createTask", true), action("bulkApplyTag", selectableOnPage, bulkReason), action("bulkRemoveTag", selectableOnPage, bulkReason), action("bulkCreateTasks", selectableOnPage, bulkReason), action("bulkCompleteTasks", selectableOnPage, bulkReason)];
+  return [readAction("createTask", true), readAction("bulkApplyTag", selectableOnPage, bulkReason), readAction("bulkRemoveTag", selectableOnPage, bulkReason), readAction("bulkCreateTasks", selectableOnPage, bulkReason), readAction("bulkCompleteTasks", selectableOnPage, bulkReason)];
 }
 /** Reads one of the five task lists for the session's selected context. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function listTasks(query: TaskListQuery, source?: SessionSource): Promise<ReadResult<ReadEnvelope<TaskListData>>> {
-  const opening = await openRead(source);
-  if (opening.status === "refused") return opening.result;
+  const opening = await openRead({ source, unselectedReason: "no-membership" });
+  if (!opening.ok) return opening.result;
   const today = todayForRead("listTasks", query.displayTimeZone, opening.instant);
   if (today.status === "unavailable") return today.result;
   const stored = await readWork({ session: opening.session, job: "listTasks", schema: storedTasksSchema });
   if (stored.status === "unavailable") return stored.result;
-  const list = normaliseListName(query.list);
-  const sort = normaliseSort(query.sort);
   const privateTags = privateTagsByTask(stored.value.taskTags, opening.session.principalId);
+  const list = (TASK_LIST_NAMES as readonly string[]).includes(query.list) ? query.list : "all";
+  const sort = normaliseSort(query.sort);
   const readable = stored.value.tasks.filter((task) => canView(opening.session, { kind: "task", scope: opening.scope, ownerPrincipalId: task.ownerPrincipalId }).allowed);
   const listed = readable.filter((task) => inList(task, list, today.text)).toSorted((left, right) => orderTasks(left, right, sort));
   const window = pageWindow(listed.length, query.page, query.pageSize);
   const rows = listed.slice(window.start, window.end).map((task) => taskRow({ task, session: opening.session, scope: opening.scope, today: today.text, privateTags }));
-  const envelope = buildEnvelope<TaskListData>({
-    data: { list, displayTimeZone: query.displayTimeZone, today: today.text, tasks: rows, total: listed.length, page: window.page, pageSize: window.pageSize, pageCount: window.pageCount },
-    scope: opening.scope,
-    source: { system: LOCAL_STORE_SYSTEM, reference: WORK_REFERENCE },
-    revision: collectionRevision("tasks", readable),
-    asOf: opening.instant.toString(),
-    coverage: WHOLE_COLLECTION_COVERAGE,
-    valueStates: { total: countState(listed.length), pageCount: countState(window.pageCount), today: "value" },
-    actions: listActions(rows.some((row) => row.selectable)),
-  });
-  return { kind: "envelope", envelope };
+  const data: TaskListData = { list, displayTimeZone: query.displayTimeZone, today: today.text, tasks: rows, total: listed.length, page: window.page, pageSize: window.pageSize, pageCount: window.pageCount };
+  return answerOf(opening.scope, opening.instant.toString(), { data, source: WORK_SOURCE, revision: collectionRevision("tasks", readable), valueStates: { total: countState(listed.length), pageCount: countState(window.pageCount), today: "value" }, actions: listActions(rows.some((row) => row.selectable)) });
 }
 export type AgendaQuery = { readonly displayTimeZone: string; readonly page?: number; readonly pageSize?: number };
 export type AgendaDay = { readonly dueOn: string; readonly label: string; readonly items: readonly TaskListRow[] };
@@ -280,8 +165,7 @@ function orderAgendaItems(left: TaskRecord, right: TaskRecord): number {
   const byDate = compareOptionalText(left.dueOn, right.dueOn);
   if (byDate !== 0) return byDate;
   const byTime = compareOptionalText(left.plannedTime, right.plannedTime);
-  if (byTime !== 0) return byTime;
-  return compareCodeUnits(left.taskId, right.taskId);
+  return byTime !== 0 ? byTime : compareCodeUnits(left.taskId, right.taskId);
 }
 function groupByDay(rows: readonly TaskListRow[]): readonly AgendaDay[] {
   const byDate = new Map<string, TaskListRow[]>();
@@ -290,16 +174,14 @@ function groupByDay(rows: readonly TaskListRow[]): readonly AgendaDay[] {
     const existing = byDate.get(row.dueOn);
     if (existing === undefined) {
       byDate.set(row.dueOn, [row]);
-    } else {
-      existing.push(row);
-    }
+    } else existing.push(row);
   }
   return [...byDate.entries()].map(([dueOn, items]) => ({ dueOn, label: dueOn, items }));
 }
 /** Reads the dated agenda for the session's selected context. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readAgenda(query: AgendaQuery, source?: SessionSource): Promise<ReadResult<ReadEnvelope<AgendaData>>> {
-  const opening = await openRead(source);
-  if (opening.status === "refused") return opening.result;
+  const opening = await openRead({ source, unselectedReason: "no-membership" });
+  if (!opening.ok) return opening.result;
   const today = todayForRead("readAgenda", query.displayTimeZone, opening.instant);
   if (today.status === "unavailable") return today.result;
   const stored = await readWork({ session: opening.session, job: "readAgenda", schema: storedTasksSchema });
@@ -310,22 +192,18 @@ export async function readAgenda(query: AgendaQuery, source?: SessionSource): Pr
   const window = pageWindow(dated.length, query.page, query.pageSize);
   const rows = dated.slice(window.start, window.end).map((task) => taskRow({ task, session: opening.session, scope: opening.scope, today: today.text, privateTags }));
   const days = groupByDay(rows);
-  const envelope = buildEnvelope<AgendaData>({
-    data: { displayTimeZone: query.displayTimeZone, today: today.text, days, dayCount: days.length, total: dated.length, page: window.page, pageSize: window.pageSize, pageCount: window.pageCount },
-    scope: opening.scope,
-    source: { system: LOCAL_STORE_SYSTEM, reference: WORK_REFERENCE },
+  const data: AgendaData = { displayTimeZone: query.displayTimeZone, today: today.text, days, dayCount: days.length, total: dated.length, page: window.page, pageSize: window.pageSize, pageCount: window.pageCount };
+  return answerOf(opening.scope, opening.instant.toString(), {
+    data,
+    source: WORK_SOURCE,
     revision: collectionRevision("tasks", readable),
-    asOf: opening.instant.toString(),
-    coverage: WHOLE_COLLECTION_COVERAGE,
     valueStates: { total: countState(dated.length), dayCount: countState(days.length), pageCount: countState(window.pageCount), today: "value" },
     actions: listActions(rows.some((row) => row.selectable)),
   });
-  return { kind: "envelope", envelope };
 }
 export type SeriesReadQuery = { readonly seriesId: string };
 export type SeriesRuleView = { readonly profile: RepeatProfile; readonly interval: number; readonly dayOfMonth: number | null; readonly firstDueOn: string; readonly planningTimeZone: string; readonly end: SeriesEndRecord };
 export type SeriesRevisionView = { readonly revisionId: string; readonly effectiveFrom: string; readonly rule: SeriesRuleView };
-/** One date whose day the rule had to resolve to the final day of its month. */
 export type SeriesPreviewResolution = { readonly dueOn: string; readonly requestedDay: number; readonly resolvedDay: number };
 export type SeriesPreviewView =
   | { readonly status: "preview"; readonly dates: readonly string[]; readonly dateCount: number; readonly monthDayResolutions: readonly SeriesPreviewResolution[] }
@@ -362,9 +240,7 @@ function toSeriesEnd(record: SeriesEndRecord): SeriesEnd | undefined {
     }
   }
 }
-function ruleViewOf(rule: SeriesRuleRecord): SeriesRuleView {
-  return project(rule, SERIES_RULE_FIELDS);
-}
+const ruleViewOf = (rule: SeriesRuleRecord): SeriesRuleView => project(rule, SERIES_RULE_FIELDS);
 function toSeriesRevisions(revisions: readonly SeriesRuleRevisionRecord[]): readonly SeriesRevisionView[] | undefined {
   const views: SeriesRevisionView[] = [];
   for (const revision of revisions) {
@@ -373,9 +249,7 @@ function toSeriesRevisions(revisions: readonly SeriesRuleRevisionRecord[]): read
   }
   return views;
 }
-function resolutionView(resolution: DisclosedMonthDayResolution): SeriesPreviewResolution {
-  return { dueOn: serialiseCivilDate(resolution.dueOn), requestedDay: resolution.requestedDay, resolvedDay: resolution.resolvedDay };
-}
+const resolutionView = (resolution: DisclosedMonthDayResolution): SeriesPreviewResolution => ({ dueOn: serialiseCivilDate(resolution.dueOn), requestedDay: resolution.requestedDay, resolvedDay: resolution.resolvedDay });
 function previewOf(options: { readonly series: TaskSeriesRecord; readonly rule: SeriesRule; readonly today: CivilDate }): SeriesPreviewView {
   if (options.series.state === "stopped") return { status: "not-admitted", reason: "stopped" };
   const preview = nextOccurrences(options.rule, options.today, PREVIEW_DATE_COUNT);
@@ -396,9 +270,7 @@ function planReviewOf(options: { readonly series: TaskSeriesRecord; readonly rul
   }
   const anchor = latest ?? options.rule.firstDueOn;
   const ahead = nextOccurrences(options.rule, anchor, PLAN_WALK_COUNT);
-  if (ahead.status === "preview") {
-    for (const date of ahead.dates) if (serialiseCivilDate(date) < serialiseCivilDate(options.today)) planned.push({ dueOn: date, status: "open" });
-  }
+  if (ahead.status === "preview") for (const date of ahead.dates) if (serialiseCivilDate(date) < serialiseCivilDate(options.today)) planned.push({ dueOn: date, status: "open" });
   const review = missedPlan({ rule: options.rule, occurrences: planned, now: options.instant });
   if (review.state === "on-track") return { state: "on-track", missedDates: [], missedDateCount: 0, resolutions: [], recordedPlanNeedsReview };
   const missedDates = review.missedDates.map(serialiseCivilDate);
@@ -409,35 +281,34 @@ function seriesActions(options: { readonly mayChangeSeries: boolean; readonly ma
   const paused = options.state === "paused";
   const mayAnswerOccurrence = options.mayChangeOccurrence && options.actionableOccurrenceId !== null;
   return [
-    action("editOccurrence", options.mayChangeOccurrence && options.hasCurrentOccurrence && !stopped, options.mayChangeOccurrence ? (stopped ? "The series is stopped, so it has no current date to change." : "This series names no current date, so there is nothing to change here.") : OWNERSHIP_REASON),
-    action(
+    readAction("editOccurrence", options.mayChangeOccurrence && options.hasCurrentOccurrence && !stopped, options.mayChangeOccurrence ? (stopped ? "The series is stopped, so it has no current date to change." : "This series names no current date, so there is nothing to change here.") : OWNERSHIP_REASON),
+    readAction(
       "skipOccurrence",
       mayAnswerOccurrence,
       options.mayChangeOccurrence ? (stopped ? "The series is stopped, so this date can be neither answered nor replaced." : paused ? "The series is paused, so answering this date would admit no next date; resume the series first." : "This series has no current date to answer.") : OWNERSHIP_REASON,
     ),
-    action("resolveMissedPlan", options.mayChangeOccurrence && options.needsReview, options.mayChangeOccurrence ? "The plan is not awaiting a review, so there is no missed-plan resolution to choose." : OWNERSHIP_REASON),
-    action("pauseSeries", options.mayChangeSeries && !stopped && !paused, options.mayChangeSeries ? (paused ? "The series is already paused." : "A stopped series cannot be paused or resumed.") : SERIES_OWNERSHIP_REASON),
-    action("resumeSeries", options.mayChangeSeries && paused, options.mayChangeSeries ? (stopped ? "A stopped series cannot be resumed." : "The series is already admitting dates.") : SERIES_OWNERSHIP_REASON),
-    action("stopSeries", options.mayChangeSeries && !stopped, options.mayChangeSeries ? "The series is already stopped." : SERIES_OWNERSHIP_REASON),
-    action("editThisAndFuture", options.mayChangeSeries && !stopped, options.mayChangeSeries ? "The series is stopped, so a change to its plan could no longer take effect." : SERIES_OWNERSHIP_REASON),
+    readAction("resolveMissedPlan", options.mayChangeOccurrence && options.needsReview, options.mayChangeOccurrence ? "The plan is not awaiting a review, so there is no missed-plan resolution to choose." : OWNERSHIP_REASON),
+    readAction("pauseSeries", options.mayChangeSeries && !stopped && !paused, options.mayChangeSeries ? (paused ? "The series is already paused." : "A stopped series cannot be paused or resumed.") : SERIES_OWNERSHIP_REASON),
+    readAction("resumeSeries", options.mayChangeSeries && paused, options.mayChangeSeries ? (stopped ? "A stopped series cannot be resumed." : "The series is already admitting dates.") : SERIES_OWNERSHIP_REASON),
+    readAction("stopSeries", options.mayChangeSeries && !stopped, options.mayChangeSeries ? "The series is already stopped." : SERIES_OWNERSHIP_REASON),
+    readAction("editThisAndFuture", options.mayChangeSeries && !stopped, options.mayChangeSeries ? "The series is stopped, so a change to its plan could no longer take effect." : SERIES_OWNERSHIP_REASON),
   ];
 }
 /** Reads one recurring series for the session's selected context. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readSeries(query: SeriesReadQuery, source?: SessionSource): Promise<ReadResult<ReadEnvelope<SeriesReading>>> {
-  const opening = await openRead(source);
-  if (opening.status === "refused") return opening.result;
+  const opening = await openRead({ source, unselectedReason: "no-membership" });
+  if (!opening.ok) return opening.result;
   const stored = await readWork({ session: opening.session, job: "readSeries", schema: storedWorkSchema });
   if (stored.status === "unavailable") return stored.result;
   const privateTags = privateTagsByTask(stored.value.taskTags, opening.session.principalId);
   const seriesId = query.seriesId.trim();
   const series = stored.value.series.find((candidate) => candidate.seriesId === seriesId);
-  if (series === undefined) return { kind: "denied", denied: readDenial("no-permission") };
+  if (series === undefined) return deniedRead("no-permission");
   const viewable = canView(opening.session, { kind: "series", scope: opening.scope, ownerPrincipalId: series.ownerPrincipalId });
   if (!viewable.allowed) return { kind: "denied", denied: viewable.denial };
-  const workSource: SourceReference = { system: LOCAL_STORE_SYSTEM, reference: WORK_REFERENCE };
   const rule = toSeriesRule(series.currentRule);
   const revisions = toSeriesRevisions(series.effectiveRevisions);
-  if (rule === undefined || revisions === undefined) return unavailableRead("readSeries", workSource, DOCUMENT_UNREADABLE_GUIDANCE);
+  if (rule === undefined || revisions === undefined) return sourceUnavailableRead({ job: "readSeries", source: WORK_SOURCE, guidance: DOCUMENT_UNREADABLE_GUIDANCE });
   const today = todayForRead("readSeries", rule.planningTimeZone, opening.instant);
   if (today.status === "unavailable") return today.result;
   const occurrences = stored.value.tasks.filter((task) => task.seriesId === series.seriesId && canView(opening.session, { kind: "task", scope: opening.scope, ownerPrincipalId: task.ownerPrincipalId }).allowed);
@@ -455,16 +326,8 @@ export async function readSeries(query: SeriesReadQuery, source?: SessionSource)
     : [];
   const mayChangeSeries = canEdit(opening.session, { kind: "series", scope: opening.scope, ownerPrincipalId: series.ownerPrincipalId }).allowed;
   const mayChangeOccurrence = named === undefined ? false : canEdit(opening.session, { kind: "task", scope: opening.scope, ownerPrincipalId: named.ownerPrincipalId }).allowed;
-  const previewDateCount = preview.status === "preview" ? preview.dateCount : 0;
-  const envelope = buildEnvelope<SeriesReading>({
-    data: { seriesId: series.seriesId, title: series.title, state: series.state, admitsFurtherOccurrences: series.state === "active", rule: ruleViewOf(series.currentRule), effectiveRevisions: revisions, today: today.text, currentOccurrence, actionableOccurrenceId, preview, planReview, leftBehind },
-    scope: opening.scope,
-    source: { system: LOCAL_STORE_SYSTEM, reference: series.seriesId },
-    revision: series.revision,
-    asOf: opening.instant.toString(),
-    coverage: WHOLE_COLLECTION_COVERAGE,
-    valueStates: { "preview.dateCount": countState(previewDateCount), "planReview.missedDateCount": countState(planReview.missedDateCount), "leftBehind.count": countState(leftBehind.length), today: "value" },
-    actions: seriesActions({ mayChangeSeries, mayChangeOccurrence, state: series.state, hasCurrentOccurrence: currentOccurrence !== null, actionableOccurrenceId, needsReview: planReview.state === "needs-review" }),
-  });
-  return { kind: "envelope", envelope };
+  const data: SeriesReading = { seriesId: series.seriesId, title: series.title, state: series.state, admitsFurtherOccurrences: series.state === "active", rule: ruleViewOf(series.currentRule), effectiveRevisions: revisions, today: today.text, currentOccurrence, actionableOccurrenceId, preview, planReview, leftBehind };
+  const valueStates: Readonly<Record<string, RecordedValueState>> = { "preview.dateCount": countState(preview.status === "preview" ? preview.dateCount : 0), "planReview.missedDateCount": countState(planReview.missedDateCount), "leftBehind.count": countState(leftBehind.length), today: "value" };
+  const actions = seriesActions({ mayChangeSeries, mayChangeOccurrence, state: series.state, hasCurrentOccurrence: currentOccurrence !== null, actionableOccurrenceId, needsReview: planReview.state === "needs-review" });
+  return answerOf(opening.scope, opening.instant.toString(), { data, source: { system: LOCAL_STORE_SYSTEM, reference: series.seriesId }, revision: series.revision, valueStates, actions });
 }

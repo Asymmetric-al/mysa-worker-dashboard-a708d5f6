@@ -1,4 +1,3 @@
-/** Draft, candidate and release identity for every Update and every Worker or Project Page: the one place in the application that decides what a variant is. */
 import type { Temporal } from "temporal-polyfill";
 import type { SourceReference } from "@/lib/ids";
 import { CONTENT_DIRECTIONS, CONTENT_PROFILE_VERSION, checksum, parseDocument, serialise, type ContentDirection, type ContentDocumentJson, type ContentSection, type DocumentIssue } from "@/modules/content/document";
@@ -20,14 +19,8 @@ export type TranslationSource = { readonly variantId: string; readonly revisionI
 export type ContentVariant = { readonly variantId: string; readonly documentId: string; readonly audience: VariantAudience; readonly locale: VariantLocale; readonly draftRevisionId?: string; readonly candidateId?: string; readonly releaseHeadId?: string; readonly translationSource?: TranslationSource };
 export type MediaPlacement = { readonly placementId: string; readonly assetId: string };
 export type SharePresentation = { readonly title?: string; readonly description?: string; readonly imageAssetId?: string };
-export interface RevisionContent {
-  readonly body: ContentDocumentJson;
-  readonly sections: readonly ContentSection[];
-  readonly mediaPlacements: readonly MediaPlacement[];
-  readonly captions: Readonly<Record<string, string>>;
-  readonly altText: Readonly<Record<string, string>>;
-  readonly sharePresentation: SharePresentation;
-}
+type TextRecord = Readonly<Record<string, string>>;
+export type RevisionContent = { readonly body: ContentDocumentJson; readonly sections: readonly ContentSection[]; readonly mediaPlacements: readonly MediaPlacement[]; readonly captions: TextRecord; readonly altText: TextRecord; readonly sharePresentation: SharePresentation };
 export type ContentRevision = RevisionContent & { readonly revisionId: string; readonly variantId: string; readonly contentChecksum: string; readonly authorPrincipalId: string; readonly createdAt: Temporal.Instant };
 export type ContentCandidate = { readonly candidateId: string; readonly variantId: string; readonly revisionId: string; readonly contentChecksum: string; readonly frozenAt: Temporal.Instant; readonly reviewRound: typeof REVIEW_STEPS_PER_CANDIDATE };
 export interface Release {
@@ -50,7 +43,6 @@ const isOneOf = <T extends string>(allowed: readonly T[], value: unknown): value
 const LANGUAGE_SUBTAG = /^[A-Za-z]{2,3}$/u;
 const REGISTERED_LANGUAGE_SUBTAG = /^[A-Za-z]{5,8}$/u;
 const GENERIC_SUBTAG = /^[A-Za-z0-9]{1,8}$/u;
-
 function localeTagProblem(tag: string): string | undefined {
   if (isBlank(tag)) return "A variant states its content locale as a BCP-47 language tag, for example en, fr-CA or ar.";
   const [language, ...subtags] = tag.split("-");
@@ -64,20 +56,12 @@ const ADMITTED_AUDIENCES: ReadonlyMap<VariantFamily, readonly VariantAudience[]>
   ["worker-page", ["public"]],
   ["project-page", ["public"]],
 ]);
-/** The audiences one family admits, in the order a surface lists them. */
 export const admittedAudiences = (family: VariantFamily): readonly VariantAudience[] => ADMITTED_AUDIENCES.get(family) ?? [];
-export function variantKeyAllowed(family: VariantFamily, audience: VariantAudience): boolean {
-  const admitted = ADMITTED_AUDIENCES.get(family);
-  return admitted !== undefined && admitted.includes(audience);
-}
+export const variantKeyAllowed = (family: VariantFamily, audience: VariantAudience): boolean => ADMITTED_AUDIENCES.get(family)?.includes(audience) ?? false;
 /** Whether a variant key — one document, one audience, one exact locale tag — is free among the document's existing variants, or which variant already holds it. */
 export function assertVariantKeyUnique(existing: readonly ContentVariant[], key: VariantKey): VariantKeyUniqueness {
-  for (const variant of existing) {
-    if (variant.documentId !== key.documentId) continue;
-    if (variant.audience !== key.audience) continue;
-    if (localeTagsMatch(variant.locale.tag, key.locale.tag)) return { status: "duplicate", conflictingVariantId: variant.variantId };
-  }
-  return { status: "unique" };
+  const holder = existing.find((variant) => variant.documentId === key.documentId && variant.audience === key.audience && localeTagsMatch(variant.locale.tag, key.locale.tag));
+  return holder === undefined ? { status: "unique" } : { status: "duplicate", conflictingVariantId: holder.variantId };
 }
 export type TranslationSourceEvidence = { readonly variant: ContentVariant; readonly revision: ContentRevision };
 export type CreateVariantInput = { readonly variantId: string; readonly document: ContentDocument; readonly audience: VariantAudience; readonly locale: VariantLocale; readonly existingVariants: readonly ContentVariant[]; readonly translationSource?: TranslationSourceEvidence };
@@ -93,12 +77,7 @@ export function createVariant(input: CreateVariantInput): CreateVariantResult {
   if (isBlank(document.siteId)) issues.push({ path: "document.siteId", message: "A document names the site it belongs to, because locale fallback resolves within one site." });
   if (isBlank(document.sourceSubject.system) || isBlank(document.sourceSubject.reference)) issues.push({ path: "document.sourceSubject", message: "A document states the source system and its opaque reference for the subject it belongs to." });
   if (document.givingBinding !== undefined && (isBlank(document.givingBinding.system) || isBlank(document.givingBinding.reference))) issues.push({ path: "document.givingBinding", message: "A giving binding is a source-qualified reference; an unqualified one would name no Designation." });
-  for (const value of Object.values(document.managedFields)) {
-    if (typeof value !== "string") {
-      issues.push({ path: "document.managedFields", message: "A managed field carries the source's text value, stated as a string." });
-      break;
-    }
-  }
+  if (Object.values(document.managedFields).some((value) => typeof value !== "string")) issues.push({ path: "document.managedFields", message: "A managed field carries the source's text value, stated as a string." });
   if (!isOneOf(VARIANT_AUDIENCES, input.audience)) {
     issues.push({ path: "audience", message: `A variant serves one of ${VARIANT_AUDIENCES.join(", ")}.` });
   } else if (!variantKeyAllowed(document.family, input.audience)) {
@@ -128,14 +107,13 @@ export function createVariant(input: CreateVariantInput): CreateVariantResult {
   return { status: "created", variant };
 }
 const DIGEST_PART_SEPARATOR = "\u0000";
-
 function sortedEntries(record: Readonly<Record<string, string>>): ReadonlyArray<readonly [string, string]> {
-  const entries: Array<readonly [string, string]> = [];
-  for (const key of Object.keys(record).sort()) {
-    const value = record[key];
-    if (value !== undefined) entries.push([key, value]);
-  }
-  return entries;
+  return Object.keys(record)
+    .sort()
+    .flatMap((key) => {
+      const value = record[key];
+      return value === undefined ? [] : [[key, value] as const];
+    });
 }
 const digestCarrier = (canonical: string, direction: ContentDirection): ContentDocumentJson => ({ type: "doc", profileVersion: CONTENT_PROFILE_VERSION, direction, content: [{ type: "paragraph", content: [{ type: "text", text: canonical }] }], sections: [] });
 /** The change-detection digest of one revision's content: the profile's checksum over the canonical serialisation of the document, the placements in authored order, the alternative-text and. */
@@ -181,10 +159,7 @@ export function createRevision(input: CreateRevisionInput): CreateRevisionResult
     } else placementIds.add(placement.placementId);
     if (isBlank(placement.assetId)) issues.push({ path: `mediaPlacements.${placement.placementId}.assetId`, message: "A placement names the media asset it shows." });
   }
-  for (const placementId of placementIds) {
-    const alternative = altText[placementId];
-    if (alternative === undefined || isBlank(alternative)) issues.push({ path: `altText.${placementId}`, message: "Every image and video placement states the alternative text a reader is given when the media itself cannot be seen." });
-  }
+  for (const placementId of placementIds) if (isBlank(altText[placementId] ?? "")) issues.push({ path: `altText.${placementId}`, message: "Every image and video placement states the alternative text a reader is given when the media itself cannot be seen." });
   for (const key of Object.keys(altText)) if (!placementIds.has(key)) issues.push({ path: `altText.${key}`, message: "Alternative text names a placement this revision does not place." });
   for (const key of Object.keys(captions)) if (!placementIds.has(key)) issues.push({ path: `captions.${key}`, message: "A caption names a placement this revision does not place." });
   if (issues.length > 0) return { status: "invalid", issues };
@@ -194,26 +169,16 @@ export function createRevision(input: CreateRevisionInput): CreateRevisionResult
 }
 export type RestoreDraftInput = { readonly authorPrincipalId: string; readonly revisionId: string; readonly at?: Temporal.Instant };
 /** Restores a revision as a new draft: a new identity, a new author and a new creation instant, with the body, sections, placements, captions, alternative text, share presentation and content. */
-export function restoreAsNewDraft(revision: ContentRevision, restored: RestoreDraftInput): ContentRevision {
-  return {
-    body: revision.body,
-    sections: revision.sections,
-    mediaPlacements: revision.mediaPlacements,
-    captions: revision.captions,
-    altText: revision.altText,
-    sharePresentation: revision.sharePresentation,
-    revisionId: restored.revisionId,
-    variantId: revision.variantId,
-    contentChecksum: revision.contentChecksum,
-    authorPrincipalId: restored.authorPrincipalId,
-    createdAt: restored.at ?? now(),
-  };
-}
+export const restoreAsNewDraft = (revision: ContentRevision, restored: RestoreDraftInput): ContentRevision => ({ ...revision, revisionId: restored.revisionId, authorPrincipalId: restored.authorPrincipalId, createdAt: restored.at ?? now() });
 /** Points the variant's draft at a revision of that same variant, and changes nothing else: the candidate pointer and the release head are carried through untouched, because saving a draft. */
+/** Every archive transition answers the same way: the problems it found, or the change it applied. */
+const transition = (issues: readonly DocumentIssue[], applied: () => VariantChange): VariantChange => (issues.length === 0 ? applied() : { status: "invalid", issues });
+const revisionProblem = (failed: boolean, path: string, message: string): DocumentIssue[] => (failed ? [{ path, message }] : []);
 export function applyDraftRevision(variant: ContentVariant, revision: ContentRevision): VariantChange {
-  if (isBlank(revision.revisionId)) return { status: "invalid", issues: [{ path: "revision.revisionId", message: "A draft revision states its own identity." }] };
-  if (revision.variantId !== variant.variantId) return { status: "invalid", issues: [{ path: "revision.variantId", message: "A draft revision belongs to the variant it was written for; this one belongs to another." }] };
-  return { status: "applied", variant: { ...variant, draftRevisionId: revision.revisionId } };
+  return transition(
+    [...revisionProblem(isBlank(revision.revisionId), "revision.revisionId", "A draft revision states its own identity."), ...revisionProblem(revision.variantId !== variant.variantId, "revision.variantId", "A draft revision belongs to the variant it was written for; this one belongs to another.")],
+    () => ({ status: "applied", variant: { ...variant, draftRevisionId: revision.revisionId } }),
+  );
 }
 export type FreezeCandidateInput = { readonly candidateId: string; readonly at?: Temporal.Instant };
 export type FreezeCandidateResult = { readonly status: "frozen"; readonly candidate: ContentCandidate; readonly variant: ContentVariant } | { readonly status: "invalid"; readonly issues: readonly DocumentIssue[] };
@@ -229,10 +194,8 @@ export function freezeCandidate(variant: ContentVariant, revision: ContentRevisi
   return { status: "frozen", candidate, variant: { ...variant, candidateId: candidate.candidateId } };
 }
 export function applyReviewDecision(variant: ContentVariant, decision: ReviewDecision): VariantChange {
-  if (variant.candidateId === undefined) return { status: "invalid", issues: [{ path: "candidateId", message: "A review decision answers a frozen candidate, and this variant has nothing under review." }] };
-  if (!isOneOf(REVIEW_DECISIONS, decision)) return { status: "invalid", issues: [{ path: "decision", message: `A review decision is ${REVIEW_DECISIONS.join(", ")}.` }] };
-  if (decision === "approved") return { status: "applied", variant };
-  return { status: "applied", variant: { ...variant, candidateId: undefined } };
+  const issues = [...revisionProblem(variant.candidateId === undefined, "candidateId", "A review decision answers a frozen candidate, and this variant has nothing under review."), ...revisionProblem(!isOneOf(REVIEW_DECISIONS, decision), "decision", `A review decision is ${REVIEW_DECISIONS.join(", ")}.`)];
+  return transition(issues, () => (decision === "approved" ? { status: "applied", variant } : { status: "applied", variant: { ...variant, candidateId: undefined } }));
 }
 export type CreateReleaseInput = { readonly releaseId: string; readonly variant: ContentVariant; readonly revision: ContentRevision; readonly reach?: ReleaseReach; readonly at?: Temporal.Instant };
 export type CreateReleaseResult = { readonly status: "created"; readonly release: Release } | { readonly status: "invalid"; readonly issues: readonly DocumentIssue[] };
@@ -248,13 +211,7 @@ export function createRelease(input: CreateReleaseInput): CreateReleaseResult {
   return { status: "created", release: { releaseId: input.releaseId, variantId: variant.variantId, revisionId: revision.revisionId, audience: variant.audience, locale: variant.locale, publishedAt: input.at ?? now(), reach, contentChecksum: revision.contentChecksum } };
 }
 export type ReleaseOutcome = { readonly status: "released"; readonly release: Release } | { readonly status: "failed"; readonly reason: string };
-/**
- * Whether a release publishes the exact revision this variant's frozen candidate names.
- *
- * A candidate is identified by the revision it froze, so the edition's candidate pointer and a release of that
- * same revision meet for one revision only: that is the release which answers the submission, which is why it
- * consumes the candidate and any other release leaves it standing.
- */
+// A release of the very revision the candidate froze consumes that candidate, because a candidate is identified by the revision it froze; a release of any other revision leaves it untouched, so a newer frozen submission beside an older release still reads as a submission.
 const releaseConsumesCandidate = (variant: ContentVariant, release: Release): boolean => variant.candidateId !== undefined && variant.candidateId === release.revisionId;
 export function applyReleaseOutcome(variant: ContentVariant, outcome: ReleaseOutcome, currentHead?: Release): VariantChange {
   if (outcome.status === "failed") return { status: "applied", variant };
@@ -267,15 +224,9 @@ export function applyReleaseOutcome(variant: ContentVariant, outcome: ReleaseOut
   if (!isOneOf(RELEASE_REACH_VALUES, release.reach)) issues.push({ path: "release.reach", message: `Reach is one of ${RELEASE_REACH_VALUES.join(", ")}.` });
   if (issues.length > 0) return { status: "invalid", issues };
   if (currentHead !== undefined && currentHead.releaseId === release.releaseId) return { status: "applied", variant };
-  // A release of the very revision the candidate froze consumes that candidate: the submitted revision is now
-  // the current release, so the edition states the publication its head carries instead of a submission nothing
-  // is waiting on. A release of any other revision leaves the candidate untouched, so a newer frozen submission
-  // standing beside an older release still reads as a submission.
   const advanced: ContentVariant = releaseConsumesCandidate(variant, release) ? { ...variant, releaseHeadId: release.releaseId, candidateId: undefined } : { ...variant, releaseHeadId: release.releaseId };
-  if (currentHead === undefined) return { status: "applied", variant: advanced };
-  return { status: "applied", variant: advanced, supersededRelease: { ...currentHead, supersededBy: release.releaseId } };
+  return currentHead === undefined ? { status: "applied", variant: advanced } : { status: "applied", variant: advanced, supersededRelease: { ...currentHead, supersededBy: release.releaseId } };
 }
-/** Whether a release still publishes exactly what a revision holds: true only when the revision belongs to the released variant and carries the released digest. */
 export const isReleaseUnchanged = (release: Release, revision: ContentRevision): boolean => release.variantId === revision.variantId && release.contentChecksum === revision.contentChecksum;
 export type TranslationSourceContext = { readonly sourceVariant: ContentVariant; readonly sourceRevision: ContentRevision };
 export type TranslationStaleness =
@@ -285,8 +236,6 @@ export type TranslationStaleness =
 export function translationStaleness(variant: ContentVariant, context: TranslationSourceContext): TranslationStaleness {
   const recorded = variant.translationSource;
   if (recorded === undefined) return { status: "none" };
-  const sourceIsNamed = recorded.variantId === context.sourceVariant.variantId;
-  const revisionIsCurrent = recorded.revisionId === context.sourceRevision.revisionId;
-  if (sourceIsNamed && revisionIsCurrent) return { status: "fresh", sourceRevisionId: context.sourceRevision.revisionId, sourceUpdatedAt: context.sourceRevision.createdAt };
+  if (recorded.variantId === context.sourceVariant.variantId && recorded.revisionId === context.sourceRevision.revisionId) return { status: "fresh", sourceRevisionId: context.sourceRevision.revisionId, sourceUpdatedAt: context.sourceRevision.createdAt };
   return { status: "stale", sourceRevisionId: context.sourceRevision.revisionId, sourceUpdatedAt: context.sourceRevision.createdAt, translatedFromRevisionId: recorded.revisionId };
 }

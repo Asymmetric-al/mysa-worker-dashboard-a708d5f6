@@ -1,4 +1,3 @@
-/** `/help` — the Help destination: guidance for the five retained workflows of the first release. */
 import type { Metadata } from "next";
 import Link from "next/link";
 import SimulationLabel from "@/components/simulation-label";
@@ -6,17 +5,12 @@ import { Separator } from "@/components/ui/separator";
 import { HelpContent } from "@/features/shell/components/help-content";
 const PAGE_TITLE = "Help";
 export const metadata: Metadata = { title: PAGE_TITLE, description: "Guidance for the workflows in this first release." };
-/** The table of contents' heading, which is also its `nav` landmark's accessible name. */
 const CONTENTS_ID = "on-this-page";
-const CONTENTS_HEADING = "On this page";
 const INTRODUCTION =
   "This page covers the five workflows of the first release and nothing outside them. Every record in the application is synthetic, and every external effect is simulated and labelled where you trigger it. The Development data label sits in the application shell on every screen, including this one, and cannot be dismissed.";
-const PAGE_COLUMN = "flex min-w-0 flex-col gap-6 text-start";
 const BODY_TEXT = "text-sm text-muted-foreground text-pretty wrap-anywhere";
-const SECTION_HEADING = "text-lg font-semibold text-pretty wrap-anywhere";
 const STEP_HEADING = "text-sm font-semibold text-pretty wrap-anywhere";
 const INLINE_LINK = "inline-flex min-h-6 items-center rounded-sm font-medium underline underline-offset-4";
-/** The page's sections, in the order it renders them: the five journeys first, then the label and its effects, the development controls, session and context, keyboard and display, and the limitations. */
 const SECTIONS = [
   { id: "journey-import-a-contact", label: "Add a contact and create the next task" },
   { id: "journey-giving-investigation", label: "Investigate a giving change and export it" },
@@ -33,21 +27,9 @@ type SectionEntry = (typeof SECTIONS)[number];
 type SectionId = SectionEntry["id"];
 type JourneyId = Extract<SectionId, `journey-${string}`>;
 type ProseSectionId = Exclude<SectionId, JourneyId | "simulated-effects" | "session-context-settings">;
-/** One destination a step offers: descriptive link text, and a route the shell's navigation lists. */
-interface StepLink {
-  readonly href: string;
-  readonly label: string;
-}
-interface JourneyStep {
-  readonly title: string;
-  readonly body: string;
-  readonly boundary: string;
-  readonly links?: readonly StepLink[];
-}
-interface Journey {
-  readonly heading: string;
-  readonly steps: readonly JourneyStep[];
-}
+type StepLink = { readonly href: string; readonly label: string };
+type JourneyStep = { readonly title: string; readonly body: string; readonly boundary: string; readonly links?: readonly StepLink[] };
+type Journey = { readonly heading: string; readonly steps: readonly JourneyStep[] };
 const JOURNEYS: Readonly<Record<JourneyId, Journey>> = {
   "journey-import-a-contact": {
     heading: "Import or add a contact → review context → log an actual interaction → create a next task.",
@@ -201,11 +183,6 @@ const JOURNEYS: Readonly<Record<JourneyId, Journey>> = {
     ],
   },
 };
-/** Where the persistent label sits, and what the five effect labels state between them. */
-const SIMULATED_INTRO = "The Development data label sits in the application shell on every screen, is not dismissible, and stays present on a denied, expired or unavailable surface too. Each of the five effects below is disclosed where you trigger it, and each sentence is the shared label's own.";
-/** The boundary all five labels add up to. */
-const SIMULATED_CLOSING = "Nothing outside this application changes: no mail leaves it, no payment is taken, and no third-party copy exists. A withdrawal stops this application serving an edition; it does not recall a copy that has already been seen.";
-/** The five simulated effects, each with the trigger point it is labelled at. */
 const SIMULATED_EFFECTS = [
   { effect: "mail-submission", title: "Mail submission", where: "Labelled when you request a notification for a publication, and again on the per-send result that follows it." },
   { effect: "publication-reach", title: "Publication reach", where: "Labelled on a release result, because what a release reaches is demonstrated in the receiving preview rather than published anywhere." },
@@ -213,15 +190,8 @@ const SIMULATED_EFFECTS = [
   { effect: "importer-safety", title: "Importer safety", where: "Labelled when you submit a file to the import journey, where a successful local parse says nothing about whether the file was safe." },
   { effect: "media-preparation", title: "Media preparation", where: "Labelled while an image or a video is prepared, here in the Update editor and in the Page builder." },
 ] as const;
-interface ProseItem {
-  readonly title: string;
-  readonly body: string;
-}
-interface ProseSection {
-  readonly intro: string;
-  readonly items: readonly ProseItem[];
-}
-/** The three sections that are prose rather than a journey, a label list or the shared Help content. */
+type ProseItem = { readonly title: string; readonly body: string };
+type ProseSection = { readonly intro: string; readonly items: readonly ProseItem[] };
 const PROSE_SECTIONS: Readonly<Record<ProseSectionId, ProseSection>> = {
   "development-controls": {
     intro: "The development panel switches the identity this session acts as and selects a scenario, a clock and a failure plan, and offers the same reset Settings offers. None of them is a permission, and none of them changes anything outside this session.",
@@ -267,67 +237,56 @@ const PROSE_SECTIONS: Readonly<Record<ProseSectionId, ProseSection>> = {
     ],
   },
 };
-function StepLinks({ links }: { readonly links: readonly StepLink[] }) {
-  return (
-    <p className="flex min-w-0 flex-wrap gap-x-4 gap-y-1">
-      {links.map((link) => (
-        <Link key={link.href} href={link.href} className={INLINE_LINK}>
-          {link.label}
-        </Link>
-      ))}
-    </p>
-  );
-}
-/** One journey's steps: what you do, what it produces, and the boundary that keeps the result honest. */
-function JourneySteps({ journey }: { readonly journey: Journey }) {
-  return (
-    <ol className="flex min-w-0 list-decimal flex-col gap-5 ps-5">
-      {journey.steps.map((step) => (
-        <li key={step.title} className="flex min-w-0 flex-col gap-1.5">
-          <h3 className={STEP_HEADING}>{step.title}</h3>
-          <p className={BODY_TEXT}>{step.body}</p>
-          <p className={BODY_TEXT}>{step.boundary}</p>
-          {step.links === undefined ? null : <StepLinks links={step.links} />}
+const StepLinks = ({ links }: { readonly links: readonly StepLink[] }) => (
+  <p className="flex min-w-0 flex-wrap gap-x-4 gap-y-1">
+    {links.map((link) => (
+      <Link key={link.href} href={link.href} className={INLINE_LINK}>
+        {link.label}
+      </Link>
+    ))}
+  </p>
+);
+const JourneySteps = ({ journey }: { readonly journey: Journey }) => (
+  <ol className="flex min-w-0 list-decimal flex-col gap-5 ps-5">
+    {journey.steps.map((step) => (
+      <li key={step.title} className="flex min-w-0 flex-col gap-1.5">
+        <h3 className={STEP_HEADING}>{step.title}</h3>
+        <p className={BODY_TEXT}>{step.body}</p>
+        <p className={BODY_TEXT}>{step.boundary}</p>
+        {step.links === undefined ? null : <StepLinks links={step.links} />}
+      </li>
+    ))}
+  </ol>
+);
+const SimulatedEffects = () => (
+  <>
+    <p className={BODY_TEXT}>{"The Development data label sits in the application shell on every screen, is not dismissible, and stays present on a denied, expired or unavailable surface too. Each of the five effects below is disclosed where you trigger it, and each sentence is the shared label's own."}</p>
+    <ul className="flex min-w-0 flex-col gap-5">
+      {SIMULATED_EFFECTS.map((item) => (
+        <li key={item.effect} className="flex min-w-0 flex-col gap-1.5">
+          <h3 className={STEP_HEADING}>{item.title}</h3>
+          <p className={BODY_TEXT}>{item.where}</p>
+          <SimulationLabel effect={item.effect} />
         </li>
       ))}
-    </ol>
-  );
-}
-function SimulatedEffects() {
-  return (
-    <>
-      <p className={BODY_TEXT}>{SIMULATED_INTRO}</p>
-      <ul className="flex min-w-0 flex-col gap-5">
-        {SIMULATED_EFFECTS.map((item) => (
-          <li key={item.effect} className="flex min-w-0 flex-col gap-1.5">
-            <h3 className={STEP_HEADING}>{item.title}</h3>
-            <p className={BODY_TEXT}>{item.where}</p>
-            <SimulationLabel effect={item.effect} />
-          </li>
-        ))}
-      </ul>
-      <p className={BODY_TEXT}>{SIMULATED_CLOSING}</p>
-    </>
-  );
-}
-function ProseBody({ section }: { readonly section: ProseSection }) {
-  return (
-    <>
-      <p className={BODY_TEXT}>{section.intro}</p>
-      <dl className="flex min-w-0 flex-col gap-4">
-        {section.items.map((item) => (
-          <div key={item.title} className="flex min-w-0 flex-col gap-1">
-            <dt className={STEP_HEADING}>{item.title}</dt>
-            <dd className={BODY_TEXT}>{item.body}</dd>
-          </div>
-        ))}
-      </dl>
-    </>
-  );
-}
-function isJourneyId(id: SectionId): id is JourneyId {
-  return id in JOURNEYS;
-}
+    </ul>
+    <p className={BODY_TEXT}>{"Nothing outside this application changes: no mail leaves it, no payment is taken, and no third-party copy exists. A withdrawal stops this application serving an edition; it does not recall a copy that has already been seen."}</p>
+  </>
+);
+const ProseBody = ({ section }: { readonly section: ProseSection }) => (
+  <>
+    <p className={BODY_TEXT}>{section.intro}</p>
+    <dl className="flex min-w-0 flex-col gap-4">
+      {section.items.map((item) => (
+        <div key={item.title} className="flex min-w-0 flex-col gap-1">
+          <dt className={STEP_HEADING}>{item.title}</dt>
+          <dd className={BODY_TEXT}>{item.body}</dd>
+        </div>
+      ))}
+    </dl>
+  </>
+);
+const isJourneyId = (id: SectionId): id is JourneyId => id in JOURNEYS;
 function sectionHeading(section: SectionEntry): string {
   if (!isJourneyId(section.id)) return section.label;
   return JOURNEYS[section.id].heading;
@@ -352,21 +311,20 @@ function sectionBody(section: SectionEntry) {
       return unhandledSection(section);
   }
 }
-/** Reports a section no content was written for; unreachable while `SECTIONS` and the switch agree. */
 function unhandledSection(section: never): never {
   throw new Error(`The Help page has no content for the section "${String(section)}".`);
 }
 /** The Help screen: one `h1`, the in-page contents, then every section in the one order the contents lists. */
 export default function HelpPage() {
   return (
-    <article className={PAGE_COLUMN}>
+    <article className="flex min-w-0 flex-col gap-6 text-start">
       <header className="flex min-w-0 flex-col gap-3">
         <h1 className="text-2xl font-semibold text-pretty wrap-anywhere">{PAGE_TITLE}</h1>
         <p className="max-w-prose text-sm text-muted-foreground text-pretty wrap-anywhere">{INTRODUCTION}</p>
       </header>
       <nav aria-labelledby={CONTENTS_ID} className="flex min-w-0 flex-col gap-2">
         <h2 id={CONTENTS_ID} className="text-base font-semibold">
-          {CONTENTS_HEADING}
+          {"On this page"}
         </h2>
         <ol className="flex min-w-0 list-decimal flex-col gap-1 ps-5">
           {SECTIONS.map((section) => (
@@ -382,8 +340,7 @@ export default function HelpPage() {
         <div key={section.id} className="flex min-w-0 flex-col gap-6">
           {index === 0 ? null : <Separator />}
           <section aria-labelledby={section.id} className="flex min-w-0 flex-col gap-3">
-            {/* Focusable, so an in-page link lands on the heading it names instead of scrolling past it. */}
-            <h2 id={section.id} tabIndex={-1} className={SECTION_HEADING}>
+            <h2 id={section.id} tabIndex={-1} className="text-lg font-semibold text-pretty wrap-anywhere">
               {sectionHeading(section)}
             </h2>
             {sectionBody(section)}

@@ -1,13 +1,8 @@
-/** Check-ins: the one capture, limit and revision model behind a worker's private check-in and the shared revision a named coach may read. */
 import type { CivilDate, CivilDayStart } from "../time/civil";
 import { err, ok, type Result } from "../../lib/result";
-/** Most questions one check-in may carry: five questions are accepted and a sixth is refused. */
 export const CHECKIN_MAX_QUESTIONS = 5;
-/** Longest question text, in Unicode scalar values: 500 are accepted and 501 are refused. */
 export const CHECKIN_MAX_QUESTION_SCALARS = 500;
-/** Longest answer text, in Unicode scalar values: 4,000 are accepted and 4,001 are refused. */
 export const CHECKIN_MAX_ANSWER_SCALARS = 4000;
-/** Largest check-in request, in bytes of its serialised JSON: 262,144 are accepted, 262,145 refused. */
 export const CHECKIN_MAX_REQUEST_BYTES = 262144;
 export type CheckInInstant = Extract<CivilDayStart, { readonly status: "resolved" }>["instant"];
 export type CheckInQuestion = { readonly wording: string; readonly order: number };
@@ -55,18 +50,13 @@ function answerViolations(questions: readonly CheckInQuestion[], answers: readon
   const violations: CheckInViolation[] = [];
   const capturedOrders = new Set(questions.map((question) => question.order));
   const answerCounts = new Map<number, number>();
-  for (const answer of answers) {
-    const order = answer.questionOrder;
-    if (order === null) continue;
-    answerCounts.set(order, (answerCounts.get(order) ?? 0) + 1);
-  }
+  for (const answer of answers) if (answer.questionOrder !== null) answerCounts.set(answer.questionOrder, (answerCounts.get(answer.questionOrder) ?? 0) + 1);
   const reportedDuplicates = new Set<number>();
   answers.forEach((answer, index) => {
     const order = answer.questionOrder;
     if (order !== null && !capturedOrders.has(order)) violations.push(violation(`answers[${index}].questionOrder`, "answer-without-question", order, questions.length, `Answer ${index + 1} answers question ${order}, and the captured question set holds no question at that order (${questions.length} captured).`));
     if (order !== null && capturedOrders.has(order)) {
       const count = answerCounts.get(order) ?? 1;
-      // Reported once per question rather than once per extra answer, so one duplicated question reads as one problem instead of a growing list.
       if (count > 1 && !reportedDuplicates.has(order)) {
         reportedDuplicates.add(order);
         violations.push(violation(`answers[${index}].questionOrder`, "duplicate-answer", count, 1, `Question ${order} has ${count} of 1 answers; a check-in answers each captured question at most once.`));
@@ -81,17 +71,14 @@ function answerViolations(questions: readonly CheckInQuestion[], answers: readon
 function violationsRefusal(violations: readonly CheckInViolation[]): CheckInRefusal | null {
   const [first, ...rest] = violations;
   if (first === undefined) return null;
-  const message = rest.length === 0 ? first.message : `${first.message} ${rest.length} further ${rest.length === 1 ? "issue is" : "issues are"} present in the same request.`;
-  return refusal(first.reason, message, violations);
+  return refusal(first.reason, rest.length === 0 ? first.message : `${first.message} ${rest.length} further ${rest.length === 1 ? "issue is" : "issues are"} present in the same request.`, violations);
 }
 function admittedPayload(payload: CheckInPayload): Result<CheckInPayload, CheckInRefusal> {
   const limitRefusal = violationsRefusal(validateCheckInRequest(payload));
   return limitRefusal === null ? ok(payload) : err(limitRefusal);
 }
-function staleRevisionRefusal(checkIn: CheckIn, expectedRevision: number): CheckInRefusal | null {
-  if (checkIn.revision === expectedRevision) return null;
-  return refusal("stale-revision", `This check-in changed while you were working: it is now at revision ${checkIn.revision} and this change was made against revision ${expectedRevision}. Nothing was written.`, [], { expected: expectedRevision, actual: checkIn.revision });
-}
+const staleRevisionRefusal = (checkIn: CheckIn, expectedRevision: number): CheckInRefusal | null =>
+  checkIn.revision === expectedRevision ? null : refusal("stale-revision", `This check-in changed while you were working: it is now at revision ${checkIn.revision} and this change was made against revision ${expectedRevision}. Nothing was written.`, [], { expected: expectedRevision, actual: checkIn.revision });
 const NON_SHARED_REFUSALS: Readonly<Record<Exclude<CheckInState, "shared">, CheckInRefusal>> = {
   "private-draft": refusal("not-shared", "This check-in has not been shared with a coach yet, so there is no shared revision to change. Share it first."),
   withdrawn: refusal("not-shared", "This check-in was withdrawn, so a coach can no longer read it and its shared revision is not changed. Write a new check-in instead."),
@@ -101,49 +88,26 @@ function sharedRevisionOf(checkIn: CheckIn): Result<CheckInSharedRevision, Check
   const state = checkInReadState(checkIn, AVAILABLE_SOURCE);
   if (state !== "shared") return err(NON_SHARED_REFUSALS[state]);
   const { shared } = checkIn;
-  // "shared" is derived from this field, so a shared state always carries it; the guard states the invariant rather than asserting it away.
-  if (shared === undefined) return err(NON_SHARED_REFUSALS["private-draft"]);
-  return ok(shared);
+  return shared === undefined ? err(NON_SHARED_REFUSALS["private-draft"]) : ok(shared);
 }
-function revisionsOf(checkIn: CheckIn): CheckInRevisions {
-  const { privateDraft, shared } = checkIn;
-  return { privateDraftRevisionId: privateDraft?.revisionId, sharedRevisionId: shared?.revisionId, sharedRevisionWithdrawnAt: shared?.withdrawnAt };
-}
+const revisionsOf = (checkIn: CheckIn): CheckInRevisions => ({ privateDraftRevisionId: checkIn.privateDraft?.revisionId, sharedRevisionId: checkIn.shared?.revisionId, sharedRevisionWithdrawnAt: checkIn.shared?.withdrawnAt });
 const accepted = (checkIn: CheckIn, changed: boolean, message: string): CheckInMutationAccepted => ({ checkIn, revisions: revisionsOf(checkIn), state: checkInReadState(checkIn, AVAILABLE_SOURCE), revision: checkIn.revision, changed, message });
 const freezeAnswers = (answers: readonly CheckInAnswer[]): readonly CheckInAnswer[] => Object.freeze(answers.map((answer) => Object.freeze({ questionOrder: answer.questionOrder, text: answer.text })));
-function sameQuestions(left: readonly CheckInQuestion[], right: readonly CheckInQuestion[]): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((question, index) => {
-    const other = right[index];
-    return other !== undefined && other.order === question.order && other.wording === question.wording;
-  });
+function sameSequence<Item>(left: readonly Item[], right: readonly Item[], same: (left: Item, right: Item) => boolean): boolean {
+  return (
+    left.length === right.length &&
+    left.every((entry, index) => {
+      const other = right[index];
+      return other !== undefined && same(entry, other);
+    })
+  );
 }
-function sameAnswers(left: readonly CheckInAnswer[], right: readonly CheckInAnswer[]): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((answer, index) => {
-    const other = right[index];
-    return other !== undefined && other.questionOrder === answer.questionOrder && other.text === answer.text;
-  });
-}
-function namedRecipients(recipients: readonly string[]): readonly string[] {
-  const named: string[] = [];
-  for (const recipient of recipients) {
-    if (recipient.trim().length === 0) continue;
-    if (!named.includes(recipient)) named.push(recipient);
-  }
-  return Object.freeze(named);
-}
-const privateRevisionId = (checkInId: string, revision: number): string => `${checkInId}:private:${revision}`;
-const sharedRevisionId = (checkInId: string, revision: number): string => `${checkInId}:shared:${revision}`;
+const sameQuestions = (left: readonly CheckInQuestion[], right: readonly CheckInQuestion[]): boolean => sameSequence(left, right, (a, b) => a.order === b.order && a.wording === b.wording);
+const sameAnswers = (left: readonly CheckInAnswer[], right: readonly CheckInAnswer[]): boolean => sameSequence(left, right, (a, b) => a.questionOrder === b.questionOrder && a.text === b.text);
+const namedRecipients = (recipients: readonly string[]): readonly string[] => Object.freeze([...new Set(recipients.filter((recipient) => recipient.trim().length > 0))]);
+const revisionIdOf = (checkInId: string, lane: "private" | "shared", revision: number): string => `${checkInId}:${lane}:${revision}`;
 /** Resolves the state a check-in is read in — `private-draft`, `shared`, `withdrawn` or `unavailable` — so "not shared yet", "shared", "withdrawn" and "the source could not be read" stay four. */
-export function checkInReadState(checkIn: CheckIn | null, sourceAvailability: CheckInSourceAvailability): CheckInState {
-  if (sourceAvailability === "unavailable") return "unavailable";
-  // A record that could not be loaded is a source that could not be read, never a check-in holding nothing: those are different facts and a surface has to say which one it has.
-  if (checkIn === null) return "unavailable";
-  const { shared } = checkIn;
-  if (shared === undefined) return "private-draft";
-  return shared.withdrawnAt === undefined ? "shared" : "withdrawn";
-}
+export const checkInReadState = (checkIn: CheckIn | null, sourceAvailability: CheckInSourceAvailability): CheckInState => (sourceAvailability === "unavailable" || checkIn === null ? "unavailable" : checkIn.shared === undefined ? "private-draft" : checkIn.shared.withdrawnAt === undefined ? "shared" : "withdrawn");
 /** Captures an optional question set — at most five questions of at most 500 scalars each — as a frozen deep copy stamped with the instant the editor opened; returns the captured set, or the. */
 export function captureQuestions(questions: readonly CheckInQuestion[], capturedAt: CheckInInstant): Result<CapturedQuestionSet, CheckInRefusal> {
   const captureRefusal = violationsRefusal(questionSetViolations(questions));
@@ -172,7 +136,7 @@ export function savePrivateDraft(checkIn: CheckIn, payload: CheckInPayload, expe
   const existing = checkIn.privateDraft;
   if (existing !== undefined && sameQuestions(existing.captured.questions, captured.value.questions) && sameAnswers(existing.answers, answers)) return ok(accepted(checkIn, false, "This private draft already holds that text, so nothing changed."));
   const revision = checkIn.revision + 1;
-  const next: CheckIn = { ...checkIn, revision, privateDraft: { revisionId: privateRevisionId(checkIn.checkInId, revision), captured: captured.value, answers, savedAt: now } };
+  const next: CheckIn = { ...checkIn, revision, privateDraft: { revisionId: revisionIdOf(checkIn.checkInId, "private", revision), captured: captured.value, answers, savedAt: now } };
   return ok(accepted(next, true, "The private draft is saved. It stays your own working text: a coach sees nothing until you share this check-in."));
 }
 /** Shares the saved private draft by creating the shared revision a named coach may read, recording the recipients and the share duration; returns the shared record, or the refusal (a stale. */
@@ -184,14 +148,12 @@ export function shareCheckIn(checkIn: CheckIn, expectedRevision: number, recipie
   if (draft === undefined) return err(refusal("no-private-draft", "There is no private draft to share yet. Save the draft, then share it."));
   const named = namedRecipients(recipients);
   if (named.length === 0) return err(refusal("no-recipients", "Name the coach who may read this check-in. A share that names nobody shares nothing."));
-  // The snapshot is measured again on its way out, so a draft stored before a limit was in force cannot become readable by a coach while it is over a limit.
   const admitted = admittedPayload({ questions: draft.captured.questions, answers: draft.answers });
   if (!admitted.ok) return err(admitted.error);
-  // The shared revision holds its own frozen copy rather than an alias of the private draft, so no later private save can reach the snapshot through the object the draft still references.
   const snapshot = captureQuestions(draft.captured.questions, draft.captured.capturedAt);
   if (!snapshot.ok) return err(snapshot.error);
   const revision = checkIn.revision + 1;
-  const next: CheckIn = { ...checkIn, revision, shared: { revisionId: sharedRevisionId(checkIn.checkInId, revision), captured: snapshot.value, answers: freezeAnswers(draft.answers), recipients: named, duration, sharedAt: now, updatedAt: now } };
+  const next: CheckIn = { ...checkIn, revision, shared: { revisionId: revisionIdOf(checkIn.checkInId, "shared", revision), captured: snapshot.value, answers: freezeAnswers(draft.answers), recipients: named, duration, sharedAt: now, updatedAt: now } };
   return ok(accepted(next, true, "This check-in is shared with the named coach for the recorded duration. Sharing sends no notification and creates no task; it makes the saved private revision readable."));
 }
 /** Changes the shared revision, which no other operation may, by replacing its answers; returns the updated record, or the refusal (a stale revision, not shared, or the violations that stopped. */
@@ -213,7 +175,6 @@ export function updateSharedCheckIn(checkIn: CheckIn, payload: CheckInPayload, e
 export function withdrawSharedCheckIn(checkIn: CheckIn, expectedRevision: number, now: CheckInInstant): CheckInMutation {
   const stale = staleRevisionRefusal(checkIn, expectedRevision);
   if (stale !== null) return err(stale);
-  // Withdrawing what is already withdrawn changes nothing, and saying so is more useful than a refusal: the intent is already satisfied.
   if (checkInReadState(checkIn, AVAILABLE_SOURCE) === "withdrawn") return ok(accepted(checkIn, false, "This check-in is already withdrawn, so nothing changed."));
   const shared = sharedRevisionOf(checkIn);
   if (!shared.ok) return err(shared.error);

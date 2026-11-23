@@ -4,82 +4,38 @@ import { useCallback, useId, useMemo, useState, type ReactElement } from "react"
 import ActionReview, { type MutationSubmit, type ReviewHeadingLevel } from "@/components/action-review";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
-import { assertNever } from "@/lib/result";
 import type { MutationInput, MutationOutcome, ReadAction, Scope, reads } from "@/modules/data-service";
 import { CONTINUE_COPY, CONTINUATION_WINDOW_COPY, EXPIRED_HISTORY_COPY, LIST_COPY, OUTCOME_COPY, STATUS_COPY, type ContinueUnavailableReason } from "../copy";
 import { useContinueReferral } from "../hooks/use-referral-mutations";
 import type { ContinueReferralPayload } from "../schemas";
-const CONTINUE_ACTION = "continueReferral";
-/** The one word the referral surfaces use for a cycle's index, taken from the permitted-history labels so the two cannot drift apart. */
 const CYCLE_TERM = EXPIRED_HISTORY_COPY.fieldLabels.cycleIndex;
 const DEFAULT_HEADING_LEVEL: ReviewHeadingLevel = 2;
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
-const ROOT_CLASS = "flex min-w-0 flex-col gap-4";
 const PANEL_CLASS = "flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3";
 const SENTENCE_CLASS = "text-sm text-pretty text-muted-foreground";
-const FACTS_CLASS = "flex min-w-0 flex-col gap-1.5 text-sm";
 const FACT_ROW_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2";
 const FACT_TERM_CLASS = "text-muted-foreground";
 const IDENTIFIER_CLASS = "mono-identifier min-w-0 wrap-anywhere";
-const SUCCESSOR_LINK_CLASS = "inline-flex min-h-target max-w-full items-center text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:underline";
-/** The referral detail route a successor link opens, taken from the family's own `/partners/referrals` address so the link stays inside the application's route tree. */
-const REFERRAL_DETAIL_ROUTE = "/partners/referrals";
-//
-// The service index re-exports `ReferralCycleRecord` but not the detail row the referral read answers
-// with, and a second restatement of that shape here would be a second owner of it. Taking it from the
-// read's own return type means a member that moves reaches this file as a compile error.
 type ReferralDetailReadResult = Awaited<ReturnType<typeof reads.referrals.readReferral>>;
 type ReferralDetailEnvelope = Extract<ReferralDetailReadResult, { readonly kind: "envelope" }>["envelope"];
 type ReferralDetailView = Extract<ReferralDetailEnvelope["data"], { readonly view: "detail" }>;
-/**
- * The cycle this action acts on: its identity and index, where its window stands, and what the read
- * resolved about the one continuation it can carry.
- *
- * These are exactly the members the narrow permitted Expired projection carries, so one action serves
- * the full detail body and the permitted history alike. The revision the command presents is the
- * envelope's own and is handed over separately, because that projection carries no revision of its own
- * and a value read from the row would have to be invented for it.
- */
+/** The cycle this action acts on: exactly the members the narrow permitted Expired projection carries, so one action serves the full detail body and the permitted history alike. The revision the command presents is the envelope's own and is handed over separately, because that projection carries no revision of its own. */
 export type ContinueReferralCycle = Pick<ReferralDetailView["referral"], "referralId" | "cycleIndex" | "datePrecision" | "windowKind" | "status" | "continuation">;
-/** The worker-continuation setting the read ran under, with the sentence it gives when it withholds the action. */
 export type ContinuePolicyFacts = ReferralDetailView["continuationPolicy"];
-/** The continuation values the read resolved, shown exactly as resolved. */
-export type ResolvedContinuation = {
-  /** The span the read resolved for this continuation, in elapsed seconds. */
-  readonly elapsedSeconds: number | null;
-  /** The instant the read resolved that span ends at. */
-  readonly endsAt: string | null;
-};
 export type ContinueReferralActionProps = {
-  /** The context the command is submitted in. The service re-resolves it and re-checks the resulting record, so this is a claim the caller makes and not an authority it grants. */
   readonly scope: Scope;
-  /** The cycle the action acts on. Only its identity travels in the command, so nothing else about it is restated here. */
   readonly referral: ContinueReferralCycle;
-  /** The revision the read that answered this cycle published, taken from its envelope rather than from the row so the permitted Expired projection can offer the one continuation it is eligible for. The command presents it, so a cycle that moved settles as a conflict rather than as an overwrite. */
+  /** The revision the read that answered this cycle published, taken from its envelope rather than from the row; the command presents it, so a cycle that moved settles as a conflict rather than as an overwrite. */
   readonly expectedRevision: string;
-  /** What the read resolved about the worker-continuation setting, including the sentence it gives when it withholds the action. */
   readonly continuationPolicy: ContinuePolicyFacts;
-  /** The `actions` the read's envelope published. Continue is offered only where one of them admits it. */
   readonly actions: readonly ReadAction[];
-  /** The values the read resolved for a continuation, where it resolved any. Displayed, never recomputed. */
-  readonly resolvedContinuation?: ResolvedContinuation | null;
-  /** Reads the result of an operation whose acknowledgement was lost. Recovery is by operation identity, so this re-reads rather than re-sending. */
   readonly onCheckResult?: () => void;
-  /** The heading level of this surface, so it nests under whatever heading the page around it reaches. */
   readonly headingLevel?: ReviewHeadingLevel;
-  /** The reading direction of the page, set on this block only. The review step inherits it, including its portalled dialog. */
   readonly dir?: "ltr" | "rtl";
   readonly className?: string;
 };
 type ContinueInput = Omit<MutationInput<ContinueReferralPayload>, "operationId">;
-/** What a settled continuation reported: the successor it created, and the end the service resolved for that successor. */
-type ReportedContinuation = { readonly successorId: string | null; readonly endsAt: string | null; readonly elapsedSeconds: number | null };
-function asRecord(value: unknown): Readonly<Record<string, unknown>> | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return null;
-  }
-  return value as Readonly<Record<string, unknown>>;
-}
+const asRecord = (value: unknown): Readonly<Record<string, unknown>> | null => (typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Readonly<Record<string, unknown>>) : null);
 function stringMember(record: Readonly<Record<string, unknown>>, key: string): string | null {
   const value = record[key];
   return typeof value === "string" && value.trim() !== "" ? value : null;
@@ -88,85 +44,39 @@ function numberMember(record: Readonly<Record<string, unknown>>, key: string): n
   const value = record[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
-function reportedContinuationOf(outcome: MutationOutcome | null): ReportedContinuation | null {
-  if (outcome === null || (outcome.outcome !== "accepted" && outcome.outcome !== "alreadyAccepted")) {
-    return null;
-  }
+function reportedContinuationOf(outcome: MutationOutcome | null): { readonly successorId: string | null; readonly endsAt: string | null; readonly elapsedSeconds: number | null } | null {
+  if (outcome === null || (outcome.outcome !== "accepted" && outcome.outcome !== "alreadyAccepted")) return null;
   const created = outcome.created?.find((id) => id.trim() !== "") ?? null;
   const stored = outcome.outcome === "alreadyAccepted" ? asRecord(outcome.result) : null;
-  const successorId = stored === null ? null : stringMember(stored, "successorId");
-  const endsAt = stored === null ? null : stringMember(stored, "windowEnd");
-  const elapsedSeconds = stored === null ? null : numberMember(stored, "elapsedSeconds");
-  const identified = successorId ?? created;
-  return identified === null ? null : { successorId: identified, endsAt, elapsedSeconds };
+  const identified = (stored === null ? null : stringMember(stored, "successorId")) ?? created;
+  return identified === null ? null : { successorId: identified, endsAt: stored === null ? null : stringMember(stored, "windowEnd"), elapsedSeconds: stored === null ? null : numberMember(stored, "elapsedSeconds") };
 }
+const STANDING_REASONS: Readonly<Partial<Record<ContinueReferralCycle["status"]["status"], ContinueUnavailableReason | null>>> = { active: "not-ordinarily-expired", "no-deadline": "precision-does-not-admit-a-deadline", refused: null };
 function classifiedReason(referral: ContinueReferralCycle, policy: ContinuePolicyFacts): ContinueUnavailableReason | null {
-  switch (referral.status.status) {
-    case "active":
-      return "not-ordinarily-expired";
-    case "no-deadline":
-      return "precision-does-not-admit-a-deadline";
-    case "refused":
-      return null;
-    case "expired":
-      break;
-  }
-  if (referral.windowKind !== "new" || referral.continuation.cycle.consumed || referral.continuation.cycle.successorId !== null) {
-    return "already-consumed";
-  }
-  if (referral.datePrecision !== "date") {
-    return "precision-does-not-admit-a-deadline";
-  }
+  const standing = STANDING_REASONS[referral.status.status];
+  if (standing !== undefined) return standing;
+  if (referral.windowKind !== "new" || referral.continuation.cycle.consumed || referral.continuation.cycle.successorId !== null) return "already-consumed";
+  if (referral.datePrecision !== "date") return "precision-does-not-admit-a-deadline";
   return policy.setting === "off" ? "worker-setting-off" : null;
 }
-function outcomeCommentary(outcome: MutationOutcome | null): string | null {
-  if (outcome === null) {
-    return null;
-  }
-  switch (outcome.outcome) {
-    case "accepted":
-    case "alreadyAccepted":
-      // The continued-window panel states what the attempt produced, and the receipt states the facts.
-      return null;
-    case "conflict":
-      return OUTCOME_COPY.conflict.detail;
-    case "unchanged":
-      return OUTCOME_COPY.unchanged.detail;
-    case "unknown":
-      return OUTCOME_COPY.unknown.detail;
-    case "denied":
-    case "invalid":
-    case "unavailable":
-      // Each of these is stated in full by the receipt, and a second sentence would suggest a
-      // second condition.
-      return null;
-    default:
-      return assertNever(outcome, "Unhandled Continue outcome");
-  }
-}
-/** The specific reason Continue is not offered, worded by the family's own closed record, so a reason added later fails to compile until it is worded there. */
-function UnavailableReason({ reason }: { readonly reason: ContinueUnavailableReason }): ReactElement {
-  return <p className={SENTENCE_CLASS}>{CONTINUE_COPY.unavailableReasons[reason]}</p>;
-}
+const OUTCOME_DETAIL: Readonly<Partial<Record<MutationOutcome["outcome"], string>>> = { conflict: OUTCOME_COPY.conflict.detail, unchanged: OUTCOME_COPY.unchanged.detail, unknown: OUTCOME_COPY.unknown.detail };
+const outcomeCommentary = (outcome: MutationOutcome | null): string | null => (outcome === null ? null : (OUTCOME_DETAIL[outcome.outcome] ?? null));
+const UnavailableReason = ({ reason }: { readonly reason: ContinueUnavailableReason }): ReactElement => <p className={SENTENCE_CLASS}>{CONTINUE_COPY.unavailableReasons[reason]}</p>;
 function CycleFacts({ referral }: { readonly referral: ContinueReferralCycle }): ReactElement {
   const standing = STATUS_COPY[referral.status.status];
   return (
-    <dl className={FACTS_CLASS}>
+    <dl className="flex min-w-0 flex-col gap-1.5 text-sm">
       <div className={FACT_ROW_CLASS}>
         <dt className={FACT_TERM_CLASS}>{CYCLE_TERM}</dt>
         <dd className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-          <span className="tabular-figures font-medium">
-            <bdi>{String(referral.cycleIndex)}</bdi>
-          </span>
+          <bdi className="tabular-figures font-medium">{String(referral.cycleIndex)}</bdi>
           <bdi className={IDENTIFIER_CLASS}>{referral.referralId}</bdi>
         </dd>
       </div>
       <div className={FACT_ROW_CLASS}>
         <dt className={FACT_TERM_CLASS}>{LIST_COPY.columns.status}</dt>
         <dd className="flex min-w-0 flex-col gap-1">
-          <span>
-            <Badge variant="outline">{standing.label}</Badge>
-          </span>
+          <Badge variant="outline">{standing.label}</Badge>
           <span className="min-w-0 text-pretty text-muted-foreground">{standing.description}</span>
         </dd>
       </div>
@@ -199,7 +109,7 @@ function ContinuedWindow({ labelId, successorId, endsAt, elapsedSeconds }: { rea
       </p>
       <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
         <span className={FACT_TERM_CLASS}>{EXPIRED_HISTORY_COPY.consumedLabels.continued}</span>
-        <Link href={`${REFERRAL_DETAIL_ROUTE}/${encodeURIComponent(successorId)}`} className={SUCCESSOR_LINK_CLASS}>
+        <Link href={`/partners/referrals/${encodeURIComponent(successorId)}`} className="inline-flex min-h-target max-w-full items-center text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:underline">
           <bdi className={IDENTIFIER_CLASS}>{successorId}</bdi>
         </Link>
       </p>
@@ -209,23 +119,16 @@ function ContinuedWindow({ labelId, successorId, endsAt, elapsedSeconds }: { rea
     </section>
   );
 }
-export function ContinueReferralAction({ scope, referral, expectedRevision, continuationPolicy, actions, resolvedContinuation = null, onCheckResult, headingLevel = DEFAULT_HEADING_LEVEL, dir, className }: ContinueReferralActionProps): ReactElement {
+export function ContinueReferralAction({ scope, referral, expectedRevision, continuationPolicy, actions, onCheckResult, headingLevel = DEFAULT_HEADING_LEVEL, dir, className }: ContinueReferralActionProps): ReactElement {
   const { mutateAsync } = useContinueReferral();
   const headingId = useId();
   const successorLabelId = useId();
   const [submitted, setSubmitted] = useState<ContinueInput | null>(null);
   const [settled, setSettled] = useState<MutationOutcome | null>(null);
-  const offered = actions.some((action) => action.name === CONTINUE_ACTION && action.available);
+  const offered = actions.some((action) => action.name === "continueReferral" && action.available);
   const liveInput = useMemo<ContinueInput>(() => ({ scope, expectedRevision, payload: { referralId: referral.referralId } }), [scope, expectedRevision, referral.referralId]);
-  // A successful Continue advances this cycle's revision and the page beside it re-reads. Holding the
-  // intent that was submitted, rather than the live one, is what keeps the receipt in place across
-  // that re-read: the review step shows a result only while the input it is handed matches the intent
-  // it reviewed, and the advanced revision would otherwise read as a different intention.
   const holdsReceipt = settled !== null && (settled.outcome === "accepted" || settled.outcome === "alreadyAccepted" || settled.outcome === "unchanged");
   const input = holdsReceipt && submitted !== null ? submitted : liveInput;
-  // The identity of the attempt is the review step's to mint: it mints one per intent and reuses it
-  // for a retry of the same work, which is what lets a replay answer `alreadyAccepted` instead of
-  // opening a second window.
   const submit = useCallback<MutationSubmit<ContinueReferralPayload>>(
     async (attempt: MutationInput<ContinueReferralPayload>): Promise<MutationOutcome> => {
       setSubmitted({ scope: attempt.scope, expectedRevision: attempt.expectedRevision, payload: attempt.payload });
@@ -237,12 +140,12 @@ export function ContinueReferralAction({ scope, referral, expectedRevision, cont
   const classified = classifiedReason(referral, continuationPolicy);
   const reported = reportedContinuationOf(settled);
   const successorId = reported?.successorId ?? referral.continuation.cycle.successorId ?? null;
-  const endsAt = reported?.endsAt ?? resolvedContinuation?.endsAt ?? null;
-  const elapsedSeconds = reported?.elapsedSeconds ?? resolvedContinuation?.elapsedSeconds ?? null;
+  const endsAt = reported?.endsAt ?? null;
+  const elapsedSeconds = reported?.elapsedSeconds ?? null;
   const commentary = outcomeCommentary(settled);
   const showReview = offered || settled !== null;
   return (
-    <div dir={dir} className={cn(ROOT_CLASS, className)}>
+    <div dir={dir} className={cn("flex min-w-0 flex-col gap-4", className)}>
       {showReview ? (
         <ActionReview<ContinueReferralPayload>
           title={CONTINUE_COPY.confirm.title}
@@ -261,9 +164,7 @@ export function ContinueReferralAction({ scope, referral, expectedRevision, cont
               <p>{CONTINUE_COPY.confirm.body(`${CYCLE_TERM} ${String(referral.cycleIndex)}`)}</p>
               <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                 <span className={FACT_TERM_CLASS}>{CYCLE_TERM}</span>
-                <span className="tabular-figures font-medium">
-                  <bdi>{String(referral.cycleIndex)}</bdi>
-                </span>
+                <bdi className="tabular-figures font-medium">{String(referral.cycleIndex)}</bdi>
                 <bdi className={IDENTIFIER_CLASS}>{referral.referralId}</bdi>
               </p>
             </div>

@@ -1,6 +1,6 @@
-/** Contact import, step three: turn the parsed rows and the confirmed mapping into per-row validation state with a readable reason for every problem. */
 import { z } from "zod";
-import { IMPORT_FIELD_IDS, IMPORT_FIELD_VOCABULARY, type ImportConfirmedMapping, ImportContactKind, ImportFieldId, ImportIgnoredColumn } from "./map";
+import { compareCodeUnits } from "@/lib/ordering";
+import { IMPORT_FIELD_IDS, IMPORT_FIELD_VOCABULARY, listOf, uniqueInOrder, ImportContactKind, ImportFieldId, ImportIgnoredColumn, type ImportConfirmedMapping } from "./map";
 import type { ImportRowFault, ParsedCsvFile, ParsedCsvRow } from "./parse";
 export type ImportRowVerdict = "ready" | "needs-correction";
 export type ImportIssueCode = "name-missing" | "email-not-complete" | "phone-not-a-number" | "postal-not-an-address";
@@ -45,18 +45,19 @@ const COMBINING_MARKS = /\p{M}+/gu;
 const NON_WORD = /[^\p{L}\p{N}]+/u;
 const labelOf = (fieldId: ImportFieldId): string => DESCRIPTOR_BY_FIELD.get(fieldId)?.label ?? fieldId;
 const contactKindOf = (fieldId: ImportFieldId): ImportContactKind | null => DESCRIPTOR_BY_FIELD.get(fieldId)?.contactKind ?? null;
+const fieldIssue = (rowNumber: number, code: ImportIssueCode, fieldId: ImportFieldId, columnNumber: number | null, header: string | null, value: string | null, message: string): ImportFieldIssue => ({ rowNumber, code, fieldId, label: labelOf(fieldId), columnNumber, header, value, message });
 /** Validates every data row of a parsed file against a confirmed mapping, returning one entry per row in file order and keyed by the row number `parse.ts` assigned: the value or a readable. */
 export function validateRows(parsed: ParsedCsvFile, confirmedMapping: ImportConfirmedMapping): ImportValidation {
   const problems: ImportValidationProblem[] = [];
   const ignoredByColumn = new Map(confirmedMapping.ignored.map((column) => [column.index, column] as const));
   const fields = orderedFields(confirmedMapping);
   const assignments = assignmentsByColumn(parsed, confirmedMapping, ignoredByColumn, problems);
-  const faultsByRow = faultsByRowNumber(parsed.rowFaults);
-  const rows = parsed.rows.map((row) => validateRow(row, { headers: parsed.headers, fields, assignments, ignoredByColumn, faults: faultsByRow.get(row.rowNumber) ?? [] }));
+  const rows = parsed.rows.map((row) => validateRow(row, { headers: parsed.headers, fields, assignments, ignoredByColumn, faults: faultsByRowNumber(parsed.rowFaults).get(row.rowNumber) ?? [] }));
   return { fields, rows, counts: countsOf(rows), problems };
 }
 type RowContext = { readonly headers: readonly string[]; readonly fields: readonly ImportFieldId[]; readonly assignments: ReadonlyMap<number, ImportFieldId>; readonly ignoredByColumn: ReadonlyMap<number, ImportIgnoredColumn>; readonly faults: readonly ImportRowFault[] };
 function validateRow(row: ParsedCsvRow, context: RowContext): ImportValidatedRow {
+  const { fields, faults } = context;
   const mappedCells: ImportMappedCell[] = [];
   const preservedCells: ImportPreservedCell[] = [];
   const issues: ImportFieldIssue[] = [];
@@ -71,16 +72,7 @@ function validateRow(row: ParsedCsvRow, context: RowContext): ImportValidatedRow
     if (trimmed.length === 0) return void preservedCells.push({ columnNumber, header, text: cell, reason: "blank-cell", statesConsent: false, message: `This cell is empty, so "${labelOf(fieldId)}" gets no value from row ${row.rowNumber}. The row keeps its place and no value is invented for it.` });
     const problem = valueProblem(fieldId, trimmed);
     if (problem !== null) {
-      issues.push({
-        rowNumber: row.rowNumber,
-        code: problem.code,
-        fieldId,
-        label: labelOf(fieldId),
-        columnNumber,
-        header,
-        value: cell,
-        message: `Row ${row.rowNumber}, column ${columnNumber} ("${header}"): "${trimmed}" is ${problem.what}: ${problem.detail}. Correct the value in the file and choose the file again, or skip this row.`,
-      });
+      issues.push(fieldIssue(row.rowNumber, problem.code, fieldId, columnNumber, header, cell, `Row ${row.rowNumber}, column ${columnNumber} ("${header}"): "${trimmed}" is ${problem.what}: ${problem.detail}. Correct the value in the file and choose the file again, or skip this row.`));
       preservedCells.push({ columnNumber, header, text: cell, reason: "rejected-value", statesConsent: false, message: `Kept exactly as it arrived so row ${row.rowNumber} can be corrected: "${trimmed}" is ${problem.what}: ${problem.detail}.` });
       return;
     }
@@ -91,35 +83,15 @@ function validateRow(row: ParsedCsvRow, context: RowContext): ImportValidatedRow
   });
   const nameIssue = nameIssueFor(row, context, mappedCells);
   if (nameIssue !== null) issues.push(nameIssue);
-  return {
-    rowNumber: row.rowNumber,
-    verdict: issues.length === 0 && context.faults.length === 0 ? "ready" : "needs-correction",
-    suppliedFields: context.fields,
-    mappedCells,
-    preservedCells,
-    restrictions,
-    tags,
-    issues,
-    faults: context.faults,
-    cellAccounting: { parsed: row.cells.length, mapped: mappedCells.length, preserved: preservedCells.length },
-  };
+  return { rowNumber: row.rowNumber, verdict: issues.length === 0 && faults.length === 0 ? "ready" : "needs-correction", suppliedFields: fields, mappedCells, preservedCells, restrictions, tags, issues, faults, cellAccounting: { parsed: row.cells.length, mapped: mappedCells.length, preserved: preservedCells.length } };
 }
 function nameIssueFor(row: ParsedCsvRow, context: RowContext, mappedCells: readonly ImportMappedCell[]): ImportFieldIssue | null {
-  const suppliesNameField = context.fields.some((fieldId) => NAME_FIELDS.has(fieldId));
-  if (!suppliesNameField) return null;
+  if (!context.fields.some((fieldId) => NAME_FIELDS.has(fieldId))) return null;
   if (mappedCells.some((cell) => NAME_FIELDS.has(cell.fieldId))) return null;
   const nameField = context.fields.find((fieldId) => NAME_FIELDS.has(fieldId));
   const columnNumber = nameField === undefined ? null : columnNumberFor(context.assignments, nameField);
-  return {
-    rowNumber: row.rowNumber,
-    code: "name-missing",
-    fieldId: nameField ?? "display-name",
-    label: nameField === undefined ? labelOf("display-name") : labelOf(nameField),
-    columnNumber,
-    header: columnNumber === null ? null : headerAt(context.headers, columnNumber),
-    value: null,
-    message: `Row ${row.rowNumber} supplies no name: give it a display name, or a given name and a family name, or an organization name. Correct the row in the file and choose the file again, or skip this row.`,
-  };
+  const header = columnNumber === null ? null : headerAt(context.headers, columnNumber);
+  return fieldIssue(row.rowNumber, "name-missing", nameField ?? "display-name", columnNumber, header, null, `Row ${row.rowNumber} supplies no name: give it a display name, or a given name and a family name, or an organization name. Correct the row in the file and choose the file again, or skip this row.`);
 }
 type ValueProblem = { readonly code: ImportIssueCode; readonly what: string; readonly detail: string };
 function valueProblem(fieldId: ImportFieldId, value: string): ValueProblem | null {
@@ -143,25 +115,15 @@ function emailDetail(value: string): string | null {
   const at = value.indexOf("@");
   if (at === -1) return "it has no @";
   if (value.indexOf("@", at + 1) !== -1) return "it has more than one @";
-  const local = value.slice(0, at);
   const domain = value.slice(at + 1);
-  if (local.length === 0) return "it has nothing before the @";
+  if (value.slice(0, at).length === 0) return "it has nothing before the @";
   if (domain.length === 0) return "it has nothing after the @";
   if (!domain.includes(".")) return "its domain has no dot";
   if (!DOMAIN.test(domain)) return "its domain has an empty part, or a part that begins or ends with a hyphen";
-  if (value.length > EMAIL_MAX_LENGTH) return `it is ${value.length} characters long, and an address is at most ${EMAIL_MAX_LENGTH}`;
-  return null;
+  return value.length > EMAIL_MAX_LENGTH ? `it is ${value.length} characters long, and an address is at most ${EMAIL_MAX_LENGTH}` : null;
 }
-function phoneDetail(value: string): string | null {
-  if (!DIGIT.test(value)) return "it has no digits";
-  if (LETTER.test(value)) return "it contains letters, so it may be a note rather than a number";
-  if (CONTROL.test(value)) return "it contains a control character";
-  return null;
-}
-function postalDetail(value: string): string | null {
-  if (!LETTER.test(value) && !DIGIT.test(value)) return "it holds no letters and no digits";
-  return null;
-}
+const phoneDetail = (value: string): string | null => (!DIGIT.test(value) ? "it has no digits" : LETTER.test(value) ? "it contains letters, so it may be a note rather than a number" : CONTROL.test(value) ? "it contains a control character" : null);
+const postalDetail = (value: string): string | null => (!LETTER.test(value) && !DIGIT.test(value) ? "it holds no letters and no digits" : null);
 function preservedOfUnmapped(columnNumber: number, header: string, text: string, ignored: ImportIgnoredColumn | undefined): ImportPreservedCell {
   const statesConsent = columnStatesConsent(header, ignored);
   const reason: ImportPreservedReason = statesConsent ? "consent-preserved" : ignored?.reason === "excluded-topic" ? "excluded-topic" : "unmapped-column";
@@ -171,19 +133,15 @@ function preservedOfUnmapped(columnNumber: number, header: string, text: string,
   return { columnNumber, header, text, reason, statesConsent, message };
 }
 const columnStatesConsent = (header: string, ignored: ImportIgnoredColumn | undefined): boolean => ignored?.reason === "consent-preserved-as-data" || looksLikeConsentHeader(header);
-function looksLikeConsentHeader(header: string): boolean {
-  const words = header
+const looksLikeConsentHeader = (header: string): boolean =>
+  header
     .normalize("NFKD")
     .replace(COMBINING_MARKS, "")
     .toLowerCase()
     .split(NON_WORD)
-    .filter((word) => word.length > 0);
-  return words.some((word) => CONSENT_HEADER_WORDS.includes(word));
-}
-function orderedFields(mapping: ImportConfirmedMapping): ImportFieldId[] {
-  const supplied = new Set<ImportFieldId>(mapping.fields);
-  return IMPORT_FIELD_IDS.filter((fieldId) => supplied.has(fieldId));
-}
+    .filter((word) => word.length > 0)
+    .some((word) => CONSENT_HEADER_WORDS.includes(word));
+const orderedFields = (mapping: ImportConfirmedMapping): ImportFieldId[] => IMPORT_FIELD_IDS.filter((fieldId) => new Set<ImportFieldId>(mapping.fields).has(fieldId));
 function assignmentsByColumn(parsed: ParsedCsvFile, mapping: ImportConfirmedMapping, ignoredByColumn: ReadonlyMap<number, ImportIgnoredColumn>, problems: ImportValidationProblem[]): Map<number, ImportFieldId> {
   const byColumn = new Map<number, ImportFieldId>();
   for (const assignment of mapping.assignments) {
@@ -199,8 +157,7 @@ function assignmentsByColumn(parsed: ParsedCsvFile, mapping: ImportConfirmedMapp
     }
     const ignored = ignoredByColumn.get(columnIndex);
     const header = headerAt(parsed.headers, columnIndex);
-    const blocked = columnStatesConsent(header, ignored) || ignored?.reason === "blank-header" || ignored?.reason === "excluded-topic";
-    if (blocked) {
+    if (columnStatesConsent(header, ignored) || ignored?.reason === "blank-header" || ignored?.reason === "excluded-topic") {
       problems.push({ code: "mapping-column-excluded", columnNumber: columnIndex, message: `Column ${columnIndex} ("${header}") cannot supply "${labelOf(fieldId)}", so it supplies nothing on any row: ${ignored?.message ?? "the column may not be mapped."}` });
       continue;
     }
@@ -209,40 +166,25 @@ function assignmentsByColumn(parsed: ParsedCsvFile, mapping: ImportConfirmedMapp
   return byColumn;
 }
 function faultsByRowNumber(faults: readonly ImportRowFault[]): ReadonlyMap<number, readonly ImportRowFault[]> {
-  const byRow = new Map<number, ImportRowFault[]>();
-  for (const fault of faults) {
-    const existing = byRow.get(fault.rowNumber);
-    if (existing === undefined) byRow.set(fault.rowNumber, [fault]);
-    else existing.push(fault);
-  }
+  const byRow = new Map<number, readonly ImportRowFault[]>();
+  for (const fault of faults) byRow.set(fault.rowNumber, [...(byRow.get(fault.rowNumber) ?? []), fault]);
   return byRow;
 }
 function countsOf(rows: readonly ImportValidatedRow[]): ImportValidationCounts {
-  let ready = 0;
-  let needsCorrection = 0;
-  let parsedCells = 0;
-  let mappedCells = 0;
-  let preservedCells = 0;
-  let consentMarkedCells = 0;
-  let restrictions = 0;
-  let tags = 0;
-  for (const row of rows) {
-    if (row.verdict === "ready") ready += 1;
-    else needsCorrection += 1;
-    parsedCells += row.cellAccounting.parsed;
-    mappedCells += row.cellAccounting.mapped;
-    preservedCells += row.cellAccounting.preserved;
-    consentMarkedCells += row.preservedCells.filter((cell) => cell.statesConsent).length;
-    restrictions += row.restrictions.length;
-    tags += row.tags.length;
-  }
-  return { ready, needsCorrection, parsedCells, mappedCells, preservedCells, consentMarkedCells, restrictions, tags };
+  const total = (count: (row: ImportValidatedRow) => number): number => rows.reduce((sum, row) => sum + count(row), 0);
+  return {
+    ready: total((row) => (row.verdict === "ready" ? 1 : 0)),
+    needsCorrection: total((row) => (row.verdict === "ready" ? 0 : 1)),
+    parsedCells: total((row) => row.cellAccounting.parsed),
+    mappedCells: total((row) => row.cellAccounting.mapped),
+    preservedCells: total((row) => row.cellAccounting.preserved),
+    consentMarkedCells: total((row) => row.preservedCells.filter((cell) => cell.statesConsent).length),
+    restrictions: total((row) => row.restrictions.length),
+    tags: total((row) => row.tags.length),
+  };
 }
 const headerAt = (headers: readonly string[], columnNumber: number): string => headers[columnNumber - 1] ?? "";
-function columnNumberFor(assignments: ReadonlyMap<number, ImportFieldId>, fieldId: ImportFieldId): number | null {
-  for (const [columnNumber, assigned] of assignments) if (assigned === fieldId) return columnNumber;
-  return null;
-}
+const columnNumberFor = (assignments: ReadonlyMap<number, ImportFieldId>, fieldId: ImportFieldId): number | null => [...assignments].find(([, assigned]) => assigned === fieldId)?.[0] ?? null;
 export type ImportMatchReference = { readonly system: string; readonly reference: string };
 export type ImportReuseRefusal = "out-of-scope" | "denied" | "archived";
 export type ImportReuseFact = { readonly permitted: true } | { readonly permitted: false; readonly reason: ImportReuseRefusal };
@@ -268,7 +210,6 @@ export function suggestMatches(row: ImportValidatedRow, candidates: readonly Imp
   const suggestions: ImportMatchSuggestion[] = [];
   for (const offered of candidates) {
     const candidate = readCandidate(offered);
-    // A candidate whose shape cannot be read, and a candidate this caller may not reuse, are both dropped without a trace: reporting either as "unavailable" would disclose that a record exists outside the caller's authority, which authorisation before enumeration forbids.
     if (candidate === null || !candidate.reuse.permitted) continue;
     const signals = signalsFor(row, candidate);
     if (signals.length === 0) continue;
@@ -287,24 +228,19 @@ export function suggestMatches(row: ImportValidatedRow, candidates: readonly Imp
   return { rowNumber: row.rowNumber, suggestions };
 }
 function signalsFor(row: ImportValidatedRow, candidate: ReadCandidate): ImportMatchSignal[] {
-  const signals: ImportMatchSignal[] = [];
   const seen = new Set<string>();
-  for (const { fieldId, kind } of MATCH_SIGNAL_FIELDS) {
-    if (!candidate.visibleFields.has(fieldId)) continue;
+  return MATCH_SIGNAL_FIELDS.flatMap(({ fieldId, kind }) => {
+    if (!candidate.visibleFields.has(fieldId)) return [];
     const existing = new Set((candidate.visibleValues.get(fieldId) ?? []).map((value) => comparableValue(kind, value)));
-    for (const cell of row.mappedCells) {
-      if (cell.fieldId !== fieldId) continue;
+    return row.mappedCells.flatMap((cell) => {
       const value = cell.value.trim();
-      if (value.length === 0) continue;
       const comparable = comparableValue(kind, value);
-      if (!existing.has(comparable)) continue;
       const key = `${kind}${KEY_SEPARATOR}${comparable}`;
-      if (seen.has(key)) continue;
+      if (cell.fieldId !== fieldId || value.length === 0 || !existing.has(comparable) || seen.has(key)) return [];
       seen.add(key);
-      signals.push({ kind, fieldId, value });
-    }
-  }
-  return signals;
+      return [{ kind, fieldId, value }];
+    });
+  });
 }
 function compareField(fieldId: ImportFieldId, candidate: ReadCandidate, incoming: ReadonlyMap<ImportFieldId, readonly string[]>): ImportFieldComparison {
   const label = labelOf(fieldId);
@@ -320,40 +256,24 @@ function compareField(fieldId: ImportFieldId, candidate: ReadCandidate, incoming
     if (existing.length === 0) return { ...base, differs, message: `That contact holds no ${lower}; this row supplies ${incomingShown}. Nothing has been applied.` };
     return { ...base, differs, message: `That contact holds ${existingShown}; this row supplies ${incomingShown}. The difference is shown so you can decide before accepting, and nothing has been applied.` };
   }
-  if (values.length === 0) return { ...base, differs, message: `Neither that contact nor this row holds a ${lower}, so there is nothing to compare.` };
-  return { ...base, differs, message: `That contact already holds ${existingShown}, the same as this row. Nothing was merged or changed.` };
+  return values.length === 0 ? { ...base, differs, message: `Neither that contact nor this row holds a ${lower}, so there is nothing to compare.` } : { ...base, differs, message: `That contact already holds ${existingShown}, the same as this row. Nothing was merged or changed.` };
 }
 function sameValues(left: readonly string[], right: readonly string[], fieldId: ImportFieldId): boolean {
   const first = uniqueSorted(left.map((value) => normaliseFor(fieldId, value)));
   const second = uniqueSorted(right.map((value) => normaliseFor(fieldId, value)));
-  if (first.length !== second.length) return false;
-  return first.every((value, index) => value === second[index]);
+  return first.length !== second.length ? false : first.every((value, index) => value === second[index]);
 }
 const normaliseFor = (fieldId: ImportFieldId, value: string): string => (signalKindOf(fieldId) === "email" ? foldAsciiLower(value.trim()) : value.trim());
-function signalKindOf(fieldId: ImportFieldId): ImportMatchSignalKind | null {
-  const signal = MATCH_SIGNAL_FIELDS.find((candidate) => candidate.fieldId === fieldId);
-  return signal === undefined ? null : signal.kind;
-}
-function comparableValue(kind: ImportMatchSignalKind, value: string): string {
-  const trimmed = value.trim();
-  return kind === "email" ? foldAsciiLower(trimmed) : trimmed;
-}
-function foldAsciiLower(value: string): string {
-  let folded = "";
-  for (const character of value) {
-    const code = character.codePointAt(0) ?? 0;
-    folded += code >= 0x41 && code <= 0x5a ? String.fromCodePoint(code + 0x20) : character;
-  }
-  return folded;
-}
+const signalKindOf = (fieldId: ImportFieldId): ImportMatchSignalKind | null => MATCH_SIGNAL_FIELDS.find((candidate) => candidate.fieldId === fieldId)?.kind ?? null;
+const comparableValue = (kind: ImportMatchSignalKind, value: string): string => (kind === "email" ? foldAsciiLower(value.trim()) : value.trim());
+/** The ASCII-only fold the import compares email values with: `A`–`Z` lowercased and every other character kept exactly. */
+const foldAsciiLower = (value: string): string => value.replace(/[A-Z]/gu, (character) => character.toLowerCase());
 function incomingValues(row: ImportValidatedRow): Map<ImportFieldId, string[]> {
   const byField = new Map<ImportFieldId, string[]>();
   for (const cell of row.mappedCells) {
     const trimmed = cell.value.trim();
     if (trimmed.length === 0) continue;
-    const held = byField.get(cell.fieldId);
-    if (held === undefined) byField.set(cell.fieldId, [trimmed]);
-    else held.push(trimmed);
+    byField.set(cell.fieldId, [...(byField.get(cell.fieldId) ?? []), trimmed]);
   }
   return byField;
 }
@@ -361,59 +281,55 @@ function readCandidate(offered: ImportMatchCandidate): ReadCandidate | null {
   const parsed = CANDIDATE_SCHEMA.safeParse(offered);
   if (!parsed.success) return null;
   const { reference, visibleFields, visibleValues, reuse } = parsed.data;
-  const readable: ImportFieldId[] = [];
-  for (const fieldId of visibleFields) {
-    const known = fieldIdOf(fieldId);
-    if (known === null) return null;
-    if (!readable.includes(known)) readable.push(known);
-  }
+  const knownFields = visibleFields.map(fieldIdOf);
+  if (knownFields.some((known) => known === null)) return null;
+  const readable = uniqueInOrder(knownFields.flatMap((known) => (known === null ? [] : [known])));
   const values = new Map<ImportFieldId, readonly string[]>();
   for (const [fieldId, list] of Object.entries(visibleValues)) {
     const known = fieldIdOf(fieldId);
-    // A value for a field the candidate does not declare readable is a fact without a permission behind it, so the candidate is excluded instead of the value quietly ignored.
     if (known === null || !readable.includes(known)) return null;
     values.set(known, [...list]);
   }
-  const reuseFact: ImportReuseFact = reuse.permitted ? { permitted: true } : { permitted: false, reason: reuse.reason };
-  return { reference: { system: reference.system, reference: reference.reference }, visibleFields: new Set(readable), visibleValues: values, reuse: reuseFact };
+  return { reference: { system: reference.system, reference: reference.reference }, visibleFields: new Set(readable), visibleValues: values, reuse: reuse.permitted ? { permitted: true } : { permitted: false, reason: reuse.reason } };
 }
-function fieldIdOf(value: string): ImportFieldId | null {
-  if (!KNOWN_FIELD_IDS.has(value)) return null;
-  return IMPORT_FIELD_IDS.find((fieldId) => fieldId === value) ?? null;
-}
-const byReference = (left: ImportMatchSuggestion, right: ImportMatchSuggestion): number => compareText(left.reference.system, right.reference.system) || compareText(left.reference.reference, right.reference.reference);
-function compareText(left: string, right: string): number {
-  if (left === right) return 0;
-  return left < right ? -1 : 1;
-}
-function uniqueSorted(values: readonly string[]): string[] {
-  const unique: string[] = [];
-  for (const value of values) if (!unique.includes(value)) unique.push(value);
-  return unique.sort(compareText);
-}
-function phraseList(phrases: readonly string[]): string {
-  const unique: string[] = [];
-  for (const phrase of phrases) if (!unique.includes(phrase)) unique.push(phrase);
-  const [first] = unique;
-  if (first === undefined) return "nothing";
-  if (unique.length === 1) return first;
-  const head = unique.slice(0, -1).join(", ");
-  const last = unique[unique.length - 1] ?? "";
-  return `${head} and ${last}`;
-}
+const fieldIdOf = (value: string): ImportFieldId | null => (!KNOWN_FIELD_IDS.has(value) ? null : (IMPORT_FIELD_IDS.find((fieldId) => fieldId === value) ?? null));
+const byReference = (left: ImportMatchSuggestion, right: ImportMatchSuggestion): number => compareCodeUnits(left.reference.system, right.reference.system) || compareCodeUnits(left.reference.reference, right.reference.reference);
+const uniqueSorted = (values: readonly string[]): string[] => uniqueInOrder(values).sort(compareCodeUnits);
+const phraseList = (phrases: readonly string[]): string => listOf(phrases) || "nothing";
 /** One row that looks like another row of the same file: the name they share, and the other rows of the file carrying it with no contact method in common. */
 export type ImportDuplicateLooking = { readonly rowNumber: number; readonly name: string; readonly otherRowNumbers: readonly number[] };
-// The forms a name is read from, in the order a row is believed: the label a contact is shown under, then the organization it
-// acts as, then its given and family names joined — so a row that carries a display name meets a row that carries the two parts.
-const NAME_FORMS: readonly (readonly ImportFieldId[])[] = [["display-name"], ["name-organization"], ["name-given", "name-family"]];
+const NAME_FORMS: readonly (readonly ImportFieldId[])[] = [["display-name"], ["name-organization"], ["name-given", "name-family"]]; // The forms a name is read from, in the order a row is believed: the label a contact is shown under, then the organization it acts as, then its given and family names joined.
 const NAME_SPACE = /\s+/gu;
-/**
- * Flags, per row of one file, the other rows of that file it looks like: the same comparable name, and no shared email
- * address, phone number or source reference. An empty map says nothing in the file resembles anything else in it.
- *
- * This is a look-alike signal for the worker to read, never a second rule over the rows: a row's verdict is the one
- * validation graded, no reuse candidate is offered (a candidate is a contact this session already holds), no reference is
- * created, and no decision and no count is touched. Both rows of a pair are named, because both look alike.
+const valuesOf = (row: ImportValidatedRow, fieldId: ImportFieldId): readonly string[] =>
+  row.mappedCells
+    .filter((cell) => cell.fieldId === fieldId)
+    .map((cell) => cell.value.trim())
+    .filter((value) => value.length > 0);
+// The name a row is compared by, from the first form it supplies in full; `null` when it supplies none, because a row nothing names is compared with nothing. Case and spacing fold so two spellings of one name meet, and nothing else does.
+function comparableNameOf(row: ImportValidatedRow): { readonly key: string; readonly text: string } | null {
+  for (const form of NAME_FORMS) {
+    const parts: string[] = [];
+    for (const fieldId of form) {
+      const value = valuesOf(row, fieldId).join(" ");
+      if (value.length === 0) break;
+      parts.push(value);
+    }
+    if (parts.length !== form.length) continue;
+    const text = parts.join(" ").replace(NAME_SPACE, " ").trim();
+    if (text.length > 0) return { key: text.toLowerCase(), text };
+  }
+  return null;
+}
+// Whether two rows already agree on a signal that names a contact method or a source record, compared as the matching over stored contacts compares it, so the two readings of one email address never disagree.
+function sharesSignal(left: ImportValidatedRow, right: ImportValidatedRow): boolean {
+  for (const { fieldId, kind } of MATCH_SIGNAL_FIELDS) {
+    const held = new Set(valuesOf(left, fieldId).map((value) => comparableValue(kind, value)));
+    if (held.size === 0) continue;
+    for (const value of valuesOf(right, fieldId)) if (held.has(comparableValue(kind, value))) return true;
+  }
+  return false;
+}
+/** Flags, per row of one file, the other rows of that file it looks like: the same comparable name and no shared email address, phone number or source reference. A look-alike signal for the worker to read, never a second rule over the rows — no verdict, candidate, reference, decision or count is touched, and both rows of a pair are named.
  */
 export function flagDuplicateLookingRows(rows: readonly ImportValidatedRow[]): ReadonlyMap<number, ImportDuplicateLooking> {
   const groups = new Map<string, { readonly name: string; readonly members: ImportValidatedRow[] }>();
@@ -428,47 +344,10 @@ export function flagDuplicateLookingRows(rows: readonly ImportValidatedRow[]): R
   for (const group of groups.values()) {
     if (group.members.length < 2) continue;
     for (const row of group.members) {
-      const otherRowNumbers: number[] = [];
-      for (const other of group.members) {
-        if (other.rowNumber !== row.rowNumber && !sharesSignal(row, other)) otherRowNumbers.push(other.rowNumber);
-      }
+      const otherRowNumbers = group.members.filter((other) => other.rowNumber !== row.rowNumber && !sharesSignal(row, other)).map((other) => other.rowNumber);
       if (otherRowNumbers.length === 0) continue;
       flagged.set(row.rowNumber, { rowNumber: row.rowNumber, name: group.name, otherRowNumbers: otherRowNumbers.sort((left, right) => left - right) });
     }
   }
   return flagged;
 }
-// The name a row is compared by, from the first form it supplies in full; `null` when it supplies no name at all, because a
-// row nothing names is compared with nothing. Case and spacing are folded so two spellings of one name meet, and nothing
-// else is: stripping an accent would claim two spellings are one person.
-function comparableNameOf(row: ImportValidatedRow): { readonly key: string; readonly text: string } | null {
-  for (const form of NAME_FORMS) {
-    const parts: string[] = [];
-    for (const fieldId of form) {
-      const value = valuesOf(row, fieldId).join(" ");
-      if (value.length === 0) break;
-      parts.push(value);
-    }
-    if (parts.length !== form.length) continue;
-    const text = parts.join(" ").replace(NAME_SPACE, " ").trim();
-    const key = text.toLowerCase();
-    if (key.length > 0) return { key, text };
-  }
-  return null;
-}
-// Whether two rows already agree on something that names a contact method or a source record, compared as the matching over
-// stored contacts compares them, so the two readings of "the same email address" never disagree.
-function sharesSignal(left: ImportValidatedRow, right: ImportValidatedRow): boolean {
-  for (const { fieldId, kind } of MATCH_SIGNAL_FIELDS) {
-    const held = new Set(valuesOf(left, fieldId).map((value) => comparableValue(kind, value)));
-    if (held.size === 0) continue;
-    for (const value of valuesOf(right, fieldId)) if (held.has(comparableValue(kind, value))) return true;
-  }
-  return false;
-}
-const valuesOf = (row: ImportValidatedRow, fieldId: ImportFieldId): readonly string[] =>
-  row.mappedCells
-    .filter((cell) => cell.fieldId === fieldId)
-    .map((cell) => cell.value.trim())
-    .filter((value) => value.length > 0);
-// What this file deliberately does not do: nothing here creates a consent record, a membership, an audience entry, a gift, a commitment, a task, an interaction, a note or an identity, and nothing here decides a row's fate — `decide.ts` records the worker's decision and `receipt.ts` records what happened at acceptance. No function authorises anything: permission arrives with a candidate as a fact the service resolved, and a candidate without that fact is excluded. Nothing claims the file is safe: a successful local parse is not a safety qualification.

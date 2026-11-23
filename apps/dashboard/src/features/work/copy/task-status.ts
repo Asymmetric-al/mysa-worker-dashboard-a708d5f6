@@ -13,7 +13,6 @@ export const TASK_KIND_LABELS: Record<TaskKind, string> = { default: "Task", mee
 export const PLANNED_TIME_LABEL = "Planned time";
 export const PLANNED_TIME_ZONE_LABEL = "Timezone for this time";
 export const PLANNED_MEETING_LABEL = "Planned";
-export const HELD_MEETING_LABEL = "Held";
 export const PLANNED_VERSUS_HELD_NOTE = "A planned time is a plan, and a meeting counts as held only once an interaction records that it happened.";
 export const COMPLETION_MEANS_NOTHING_NOTE = "Completing or reopening a task records no contact, payment, fulfilment or message.";
 export const CATEGORY_LABEL = "Category";
@@ -24,7 +23,6 @@ export const DUE_DATE_LABEL = "Due date";
 export const UNDATED_LABEL = "No due date";
 export const TASK_FIELD_MESSAGES = {
   titleRequired: "A task needs a title. Every other field is optional.",
-  // No count here on purpose: the limit belongs to the schema, and a repeated number would drift.
   categoryTooLong: "A category is a short label, so shorten this one to a few words.",
   dueDateInvalid: "A due date is a calendar date, so choose a real date or leave the field empty.",
   plannedTimeRequiresTimeZone: "A planned time needs the timezone it is stated in, so the time is never read as one in an assumed zone.",

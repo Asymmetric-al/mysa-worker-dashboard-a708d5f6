@@ -7,9 +7,7 @@ const rowCorrectionSchema: z.ZodType<ImportCellCorrectionInput> = z.strictObject
 const rowNumberSchema = z.number({ error: "rowNumber must be the number of a data row." }).int({ error: "rowNumber must be a whole number." }).min(1, { error: "rowNumber is 1-based, so it starts at 1." });
 const ROW_DECISION_SHAPES = {
   create: z.strictObject({ kind: z.literal("create"), rowNumber: rowNumberSchema, corrections: z.array(rowCorrectionSchema).optional() }),
-  // Named only by its opaque reference: whether it may be reused is the service's decision.
   reuse: z.strictObject({ kind: z.literal("reuse"), rowNumber: rowNumberSchema, candidate: sourceReferenceSchema, corrections: z.array(rowCorrectionSchema).optional() }),
-  // Optional and untrimmed here; the domain trims it and keeps the row's own problem beside it.
   skip: z.strictObject({ kind: z.literal("skip"), rowNumber: rowNumberSchema, reason: z.string().optional() }),
   unresolved: z.strictObject({ kind: z.literal("unresolved"), rowNumber: rowNumberSchema }),
 } satisfies Record<ImportDecisionKind, z.ZodObject>;

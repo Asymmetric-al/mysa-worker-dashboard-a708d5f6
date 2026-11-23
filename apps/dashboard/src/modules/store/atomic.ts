@@ -1,4 +1,3 @@
-/** The store's filesystem mechanism: one deterministic JSON serialiser, one canonical digest of a document's JSON form, one atomic temp-then-rename writer, one absence probe, one absence-aware reader and one tolerant single-document delete. */
 import { createHash, randomUUID } from "node:crypto";
 import { access, mkdir, open, readFile, rename, rm, type FileHandle } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -6,7 +5,6 @@ import { dirname } from "node:path";
 export class CorruptJsonError extends Error {
   readonly file: string;
   constructor(file: string, cause: unknown) {
-    // The message names the path but never quotes the bytes: a corrupt document may hold a private note body or a check-in answer, and this store is upstream of redaction.
     super(`Corrupt JSON document at ${file}: the bytes could not be decoded as JSON`, { cause });
     this.name = "CorruptJsonError";
     this.file = file;
@@ -17,28 +15,61 @@ export function serialiseJson(value: unknown): string {
   if (text === undefined) throw new Error("serialiseJson: the value is not JSON-serialisable (JSON.stringify produced no text)");
   return `${text}\n`;
 }
-/**
- * The canonical digest of a value's JSON form: two values share a digest exactly when `serialiseJson` would write the
- * same bytes for them. The encoding is fed to one hash as it is walked, so comparing a document with its draft costs
- * one traversal of that document rather than the key-sorted copy and the pretty-printed string a byte comparison needs.
- */
+/** The canonical digest of a value's JSON form: two values share a digest exactly when `serialiseJson` would write the same bytes for them. */
 export function canonicalDigest(value: unknown): string {
-  const writer = createCanonicalWriter(createHash("sha256"));
-  feedCanonicalJson(writer, value, new WeakSet<object>());
-  return writer.digest();
+  const tokens: string[] = [];
+  feedCanonicalJson(tokens, value, new WeakSet<object>());
+  return createHash("sha256").update(tokens.join("")).digest("hex");
 }
-/** Writes a document through a same-directory temp file and a rename, so a crash leaves the previous document or the new one; always writes, so change detection stays with the caller. */
-export async function writeJsonAtomic(file: string, value: unknown): Promise<void> {
-  // Serialising before any I/O is what keeps a rejected value from leaving behind a file, a temp file or a truncated document.
-  const contents = serialiseJson(value);
+function feedCanonicalJson(tokens: string[], value: unknown, ancestors: WeakSet<object>): void {
+  const type = typeof value;
+  if (type === "string" || type === "number" || type === "boolean") return void tokens.push(JSON.stringify(value));
+  if (type === "bigint") throw new TypeError(BIGINT_MESSAGE);
+  if (value === null) return void tokens.push("null");
+  if (typeof value !== "object") throw new TypeError(NO_JSON_FORM_MESSAGE);
+  const container: object = value;
+  if (ancestors.has(container)) throw new TypeError(CIRCULAR_MESSAGE);
+  if (!Array.isArray(container) && !isPlainObject(container)) {
+    const text = JSON.stringify(container); // A value that is not a plain object is left to `JSON.stringify`, as `sortKeysDeep` leaves it, so a Date keeps its ISO form and a Map stays the empty object it serialises to.
+    if (text === undefined) throw new TypeError(NO_JSON_FORM_MESSAGE);
+    return void tokens.push(text);
+  }
+  ancestors.add(container);
+  try {
+    if (Array.isArray(container)) {
+      tokens.push("[");
+      container.forEach((entry: unknown, index: number) => {
+        if (index > 0) tokens.push(",");
+        if (entry === undefined || typeof entry === "function" || typeof entry === "symbol") tokens.push("null");
+        else feedCanonicalJson(tokens, entry, ancestors);
+      });
+      tokens.push("]");
+      return;
+    }
+    tokens.push("{");
+    let first = true;
+    // Members are visited in the code-unit order `sortKeysDeep` sorts them into, and one with no JSON form is dropped exactly as `JSON.stringify` drops it.
+    for (const [key, entry] of Object.entries(container).sort(compareKeyEntries)) {
+      if (entry === undefined || typeof entry === "function" || typeof entry === "symbol") continue;
+      if (!first) tokens.push(",");
+      first = false;
+      tokens.push(JSON.stringify(key), ":");
+      feedCanonicalJson(tokens, entry, ancestors);
+    }
+    tokens.push("}");
+  } finally {
+    ancestors.delete(container);
+  }
+}
+/** Writes bytes through a same-directory temp file and a rename, so a crash leaves the previous file or the new one; always writes, so change detection stays with the caller. */
+export async function writeBytesAtomic(file: string, bytes: string | Uint8Array): Promise<void> {
   const directory = dirname(file);
   await mkdir(directory, { recursive: true });
-  // The temp file must share the target's directory: a rename across devices is a copy, which is not atomic.
   const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
   let handle: FileHandle | undefined;
   try {
     handle = await open(temporary, "w");
-    await handle.writeFile(contents, "utf8");
+    await handle.writeFile(bytes);
     await handle.sync();
     await handle.close();
     handle = undefined;
@@ -50,25 +81,19 @@ export async function writeJsonAtomic(file: string, value: unknown): Promise<voi
   }
   await syncDirectory(directory);
 }
+/** Writes a document through {@link writeBytesAtomic}, serialising it first so a rejected value leaves no file behind. */
+export const writeJsonAtomic = async (file: string, value: unknown): Promise<void> => writeBytesAtomic(file, serialiseJson(value));
 /** Reads a document: `undefined` only when the file is absent, and every other fault or corrupt body thrown. */
 export async function readJson<T = unknown>(file: string): Promise<T | undefined> {
   let bytes: Buffer;
   try {
     bytes = await readFile(file);
   } catch (error) {
-    // Absence is the only outcome that is not an error: it stays distinct from a fault and from a corrupt body, so no view can render unavailable as empty or as zero.
     if (isNotFound(error)) return undefined;
     throw error;
   }
-  let text: string;
   try {
-    // Strict decoding: invalid UTF-8 is an undecodable document, not a replacement-char one.
-    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch (error) {
-    throw new CorruptJsonError(file, error);
-  }
-  try {
-    return JSON.parse(text) as T;
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as T;
   } catch (error) {
     throw new CorruptJsonError(file, error);
   }
@@ -83,10 +108,10 @@ export async function existsOnDisk(target: string): Promise<boolean> {
     throw error;
   }
 }
-export async function removeIfExists(file: string): Promise<void> {
-  await rm(file, { force: true });
-}
+export const removeIfExists = async (file: string): Promise<void> => rm(file, { force: true });
 const CIRCULAR_MESSAGE = "Converting circular structure to JSON";
+const BIGINT_MESSAGE = "Do not know how to serialize a BigInt"; // The digest refuses with the wording `JSON.stringify` uses, so a value the writer would reject is rejected the same way rather than silently stored or compared.
+const NO_JSON_FORM_MESSAGE = "canonicalDigest: a value with no JSON form has no bytes to compare";
 function sortKeysDeep(value: unknown, ancestors: WeakSet<object>): unknown {
   if (Array.isArray(value)) {
     if (ancestors.has(value)) throw new TypeError(CIRCULAR_MESSAGE);
@@ -101,7 +126,6 @@ function sortKeysDeep(value: unknown, ancestors: WeakSet<object>): unknown {
   if (ancestors.has(value)) throw new TypeError(CIRCULAR_MESSAGE);
   ancestors.add(value);
   try {
-    // fromEntries, not bracket assignment: an own "__proto__" key parsed from a document must stay ordinary data instead of being taken as a prototype.
     return Object.fromEntries(
       Object.entries(value)
         .sort(compareKeyEntries)
@@ -111,110 +135,13 @@ function sortKeysDeep(value: unknown, ancestors: WeakSet<object>): unknown {
     ancestors.delete(value);
   }
 }
-function compareKeyEntries([left]: readonly [string, unknown], [right]: readonly [string, unknown]): number {
-  if (left < right) return -1;
-  return left > right ? 1 : 0;
-}
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null) return false;
-  const prototype: unknown = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-type JsonDigestHash = ReturnType<typeof createHash>;
-// The two refusals carry the wording `JSON.stringify` uses, so a value `writeJsonAtomic` would reject is rejected by the digest with the same answer rather than compared against a document.
-const BIGINT_MESSAGE = "Do not know how to serialize a BigInt";
-const NO_JSON_FORM_MESSAGE = "canonicalDigest: a value with no JSON form has no bytes to compare";
-// Encoded text reaches the hash one token at a time, so it is gathered first: a hash call per token costs several times the token's own encoding, while this bound keeps the buffer from ever holding a whole document.
-const DIGEST_BUFFER_LIMIT = 1 << 20;
-type CanonicalWriter = ReturnType<typeof createCanonicalWriter>;
-function createCanonicalWriter(hash: JsonDigestHash): { readonly write: (text: string) => void; readonly digest: () => string } {
-  const pending: string[] = [];
-  let pendingLength = 0;
-  const drain = (): void => {
-    if (pending.length === 0) return;
-    hash.update(pending.join(""));
-    pending.length = 0;
-    pendingLength = 0;
-  };
-  return {
-    write: (text) => {
-      pending.push(text);
-      pendingLength += text.length;
-      if (pendingLength >= DIGEST_BUFFER_LIMIT) drain();
-    },
-    digest: () => {
-      drain();
-      return hash.digest("hex");
-    },
-  };
-}
-function feedCanonicalJson(writer: CanonicalWriter, value: unknown, ancestors: WeakSet<object>): void {
-  const type = typeof value;
-  if (type === "string" || type === "number" || type === "boolean") {
-    // A scalar is encoded by JSON.stringify itself, so the digest agrees with the stored bytes on every case that encoding decides: -0 and 0 are one value, and a non-finite number is the null the serialiser writes for it.
-    writer.write(JSON.stringify(value));
-    return;
-  }
-  if (type === "bigint") throw new TypeError(BIGINT_MESSAGE);
-  if (typeof value !== "object") throw new TypeError(NO_JSON_FORM_MESSAGE);
-  if (value === null) {
-    writer.write("null");
-    return;
-  }
-  const container: object = value;
-  if (ancestors.has(container)) throw new TypeError(CIRCULAR_MESSAGE);
-  if (Array.isArray(container)) {
-    const items: readonly unknown[] = container;
-    ancestors.add(container);
-    try {
-      writer.write("[");
-      for (let index = 0; index < items.length; index += 1) {
-        if (index > 0) writer.write(",");
-        const entry: unknown = items[index];
-        // An array slot is never dropped, so a slot with no JSON form is written as the null JSON.stringify writes there and the slot count stays part of the document's identity.
-        if (entry === undefined || typeof entry === "function" || typeof entry === "symbol") writer.write("null");
-        else feedCanonicalJson(writer, entry, ancestors);
-      }
-      writer.write("]");
-    } finally {
-      ancestors.delete(container);
-    }
-    return;
-  }
-  if (!isPlainObject(container)) {
-    // `sortKeysDeep` leaves a value that is not a plain object to JSON.stringify, so that value's own encoding is already the one `serialiseJson` writes — a Date as its ISO string, a Map as an empty object — and a circular structure inside it is refused by the same call.
-    const text = JSON.stringify(container);
-    if (text === undefined) throw new TypeError(NO_JSON_FORM_MESSAGE);
-    writer.write(text);
-    return;
-  }
-  ancestors.add(container);
-  try {
-    // Members are visited in the code-unit order `sortKeysDeep` sorts them into, by the one comparator both walks use, so two objects that differ only in insertion order encode identically.
-    const members = Object.entries(container).sort(compareKeyEntries);
-    writer.write("{");
-    let firstMember = true;
-    for (const [key, entry] of members) {
-      // A member with no JSON form is dropped, exactly as JSON.stringify drops it, so an object that gained an undefined member still matches the document stored without one.
-      if (entry === undefined || typeof entry === "function" || typeof entry === "symbol") continue;
-      if (!firstMember) writer.write(",");
-      firstMember = false;
-      writer.write(JSON.stringify(key));
-      writer.write(":");
-      feedCanonicalJson(writer, entry, ancestors);
-    }
-    writer.write("}");
-  } finally {
-    ancestors.delete(container);
-  }
-}
+const compareKeyEntries = ([left]: readonly [string, unknown], [right]: readonly [string, unknown]): number => (left < right ? -1 : left > right ? 1 : 0);
+const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 async function ignoreFailure(operation: Promise<unknown> | undefined): Promise<void> {
   if (operation === undefined) return;
   try {
     await operation;
-  } catch {
-    // Deliberately ignored: see the doc comment above.
-  }
+  } catch {}
 }
 async function syncDirectory(directory: string): Promise<void> {
   try {
@@ -224,11 +151,6 @@ async function syncDirectory(directory: string): Promise<void> {
     } finally {
       await ignoreFailure(handle.close());
     }
-  } catch {
-    // The rename already put the new document in place; only its directory entry may be unflushed, which this platform does not let us force.
-  }
+  } catch {}
 }
-function isNotFound(error: unknown): boolean {
-  if (typeof error !== "object" || error === null || !("code" in error)) return false;
-  return error.code === "ENOENT";
-}
+const isNotFound = (error: unknown): boolean => (typeof error !== "object" || error === null || !("code" in error) ? false : error.code === "ENOENT");

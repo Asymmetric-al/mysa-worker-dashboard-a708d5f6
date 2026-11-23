@@ -40,8 +40,7 @@ export type DismissableLayerApi = { restoreFocus: () => void };
 export function useDismissableLayer(options: DismissableLayerOptions): DismissableLayerApi {
   const { open, layerRef, triggerRef, onDismiss, modal = false, topLayer = false } = options;
   const closeOnBlur = options.closeOnBlur ?? false;
-  // Handlers below read the newest callbacks and refs through this, so a parent render never forces the layer to unbind and rebind mid-interaction.
-  const latest = useRef({ onDismiss, triggerRef });
+  const latest = useRef({ onDismiss, triggerRef }); // Handlers below read the newest callbacks and refs through this, so a parent render never forces the layer to unbind and rebind mid-interaction.
   useEffect(() => {
     latest.current = { onDismiss, triggerRef };
   }, [onDismiss, triggerRef]);
@@ -55,8 +54,7 @@ export function useDismissableLayer(options: DismissableLayerOptions): Dismissab
       modal,
       topLayer,
       closeOnBlur,
-      // A press on the trigger is the caller's to handle, not an outside press.
-      contains: (target) => latest.current.triggerRef?.current?.contains(target) ?? false,
+      contains: (target) => latest.current.triggerRef?.current?.contains(target) ?? false, // A press on the trigger is the caller's to handle, not an outside press.
       onDismiss: (reason) => latest.current.onDismiss(toDismissReason(reason)),
     });
   }, [open, layerRef, modal, topLayer, closeOnBlur]);
@@ -90,12 +88,8 @@ function createRovingStore(initial: RovingConfig): RovingStore {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    setFanout: () => {
-      // Controlled state belongs to a primitive; a roving group has none.
-    },
-    follow: () => {
-      // Nothing writes this group's state from outside, so there is nothing to follow.
-    },
+    setFanout: () => {}, // Controlled state belongs to a primitive; a roving group has none.
+    follow: () => {}, // Nothing writes this group's state from outside, so there is nothing to follow.
     view: (_next, read) => read(),
   };
 }
@@ -112,8 +106,7 @@ function rovingConfigOf(options: RovingFocusOptions): RovingConfig {
 }
 /** Gives a list one tab stop and moves focus between its items with the arrow keys, Home and End; it never traps focus, so Tab leaves the group. */
 export function useRovingFocus(options: RovingFocusOptions = {}): RovingFocusApi {
-  // The SDK reads these options on each key press rather than while rendering, so the group's store carries them and the group itself is built once.
-  const [store] = useState<RovingStore>(() => createRovingStore(rovingConfigOf(options)));
+  const [store] = useState<RovingStore>(() => createRovingStore(rovingConfigOf(options))); // The SDK reads these options on each key press rather than while rendering, so the group's store carries them and the group itself is built once.
   useEffect(() => {
     store.setOptions(rovingConfigOf(options));
   }, [store, options]);
@@ -161,8 +154,7 @@ export function useRovingFocus(options: RovingFocusOptions = {}): RovingFocusApi
   });
   const getItemProps = useCallback(
     <Own extends Record<string, unknown> = Record<string, never>>(key: string, ownProps?: Own): RovingItemProps & Own => {
-      // The stop comes from React state so the item re-renders with it; the store's options only feed the SDK's own `claims` rule.
-      const state: RovingState = { stop: activeKey, options: store.get().options };
+      const state: RovingState = { stop: activeKey, options: store.get().options }; // The stop comes from React state so the item re-renders with it; the store's options only feed the SDK's own `claims` rule.
       // The behaviour's props come first, so the caller's own handlers run ahead of them and a refusal there skips the move, while the registering `ref` and the class names combine and a plain prop the caller repeats wins.
       const composed: Record<string, unknown> = mergeProps(
         {
@@ -200,8 +192,7 @@ export function useTypeahead(options: TypeaheadOptions): TypeaheadApi {
   const search = useMemo(() => createTypeahead(idleMs), [idleMs]);
   const onKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLElement>): boolean => {
-      // A text entry keeps every printable character: it filters, it does not jump.
-      if (!enabled || event.defaultPrevented || isTextEntry(event.target)) return false;
+      if (!enabled || event.defaultPrevented || isTextEntry(event.target)) return false; // A text entry keeps every printable character: it filters, it does not jump.
       if (event.ctrlKey || event.metaKey || event.altKey || isComposing(event)) return false;
       if (!isTypeaheadKey(event.nativeEvent)) return false;
       const items = labels();
@@ -210,8 +201,7 @@ export function useTypeahead(options: TypeaheadOptions): TypeaheadApi {
       const from = currentIndex?.() ?? 0;
       let index = search(event.key, offered, from);
       if (index < 0) {
-        // A buffer that stops matching must not swallow the next characters: drop it and let this one start a fresh query, as typeahead expects.
-        search.reset();
+        search.reset(); // A buffer that stops matching must not swallow the next characters: drop it and let this one start a fresh query, as typeahead expects.
         index = search(event.key, offered, from);
       }
       if (index < 0) return false;
@@ -236,8 +226,7 @@ export function useModalFocusContainment(options: ModalFocusContainmentOptions):
   useEffect(() => {
     latest.current = { onDismiss, triggerRef, initialFocusRef };
   }, [onDismiss, triggerRef, initialFocusRef]);
-  // Where focus came from, captured as the dialog opens: the trigger when the caller names one, else whatever held focus before the dialog took it.
-  const invoking = useRef<HTMLElement | null>(null);
+  const invoking = useRef<HTMLElement | null>(null); // Where focus came from, captured as the dialog opens: the trigger when the caller names one, else whatever held focus before the dialog took it.
   const restoreFocus = useCallback(() => {
     const target = invoking.current;
     invoking.current = null;

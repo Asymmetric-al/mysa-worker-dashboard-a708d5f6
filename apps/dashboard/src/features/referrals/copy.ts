@@ -24,7 +24,6 @@ export const INTRODUCED_BY_COPY = {
   cancelLabel: "Cancel",
 } as const;
 export type ReferralViewCopy = { readonly heading: string; readonly explanation: string; readonly empty: { readonly title: string; readonly body: string; readonly actionLabel: string | null } };
-/** The three lists, which answer three different questions and are never one filtered list. */
 const REFERRAL_VIEW_COPY = {
   active: { heading: "Active", explanation: "Introductions whose known date gives them a window that has not ended.", empty: { title: "Nothing is active right now", body: "No referral's window is open. Record an introduction when one is given to you.", actionLabel: RECORD_INTRODUCTION_LABEL } },
   "incomplete-date": {
@@ -59,23 +58,15 @@ export function listCountCaption(query: ReferralListQuery, total: number): strin
   const noun = total === 1 ? "referral" : "referrals";
   return `${heading}: ${total} ${noun} in the whole result.`;
 }
-/** The New window, worded so the calendar statement and the resolved instant are both visible. */
 export type WindowCopy = {
   readonly heading: string;
   readonly newWindowHeading: string;
-  /** "N calendar days", the length the release states for a New window. */
   readonly lengthDays: (days: number) => string;
-  /** Names the introduction date as day one, the fixed reading the whole window is counted from. */
   readonly dayOne: (dayOne: string) => string;
-  /** The nominal last included date, which is D plus N minus one as the calendar wording puts it. */
   readonly lastIncluded: (lastIncluded: string) => string;
-  /** The exclusive endpoint: the first valid instant starting the day after the last included date. */
   readonly exclusiveEndpoint: (endpoint: string, zone: string) => string;
-  /** States that the resolved end is fixed, so it is never recomputed by a later change of place or display. */
   readonly endpointResolvedOnce: string;
-  /** Shown when the window this referral carries could not be resolved. */
   readonly unresolvedWindow: string;
-  /** Shown for a referral that records no window at all, which is distinct from a window that cannot be read. */
   readonly noWindowRecorded: string;
 };
 export const WINDOW_COPY: WindowCopy = {
@@ -89,7 +80,6 @@ export const WINDOW_COPY: WindowCopy = {
   unresolvedWindow: "The window this referral carries could not be resolved, so no deadline is shown and no Active or Expired judgement is made; the reason is stated with it.",
   noWindowRecorded: "No window is recorded for this referral.",
 };
-/** How a disagreement between the calendar wording and the resolved instant is presented: as two labelled facts, never merged into one and never with the wording rewritten to match the instant. */
 export const NOMINAL_VS_RESOLVED = {
   heading: "Calendar wording and resolved end",
   nominalLabel: "Dates as written",
@@ -97,19 +87,7 @@ export const NOMINAL_VS_RESOLVED = {
   disagreementNote: "The calendar wording and the resolved moment disagree here. Both are shown: the resolved moment is what decides whether the window is Active or Expired, and the wording stands as it was written rather than being rewritten to match.",
   nominalUnavailable: "The calendar wording is not available for this referral, so only the resolved moment is shown.",
 } as const;
-/** The continuation window, which is the one place the family mixes two kinds of time. */
-export type ContinuationWindowCopy = {
-  readonly heading: string;
-  readonly explanation: string;
-  /** The resolved end of a continuation, stated as elapsed seconds after acceptance. */
-  readonly elapsedSeconds: (elapsedSeconds: number, endpoint: string) => string;
-  /** Why elapsed seconds and calendar days are not interchangeable here. */
-  readonly elapsedNotCalendar: string;
-  /** A cycle carries at most one continuation, so a second attempt is never a second window. */
-  readonly oneSuccessor: string;
-  /** Labels the cycle a continuation came from. */
-  readonly predecessorLabel: string;
-};
+export type ContinuationWindowCopy = { readonly heading: string; readonly explanation: string; readonly elapsedSeconds: (elapsedSeconds: number, endpoint: string) => string; readonly elapsedNotCalendar: string; readonly oneSuccessor: string; readonly predecessorLabel: string };
 export const CONTINUATION_WINDOW_COPY: ContinuationWindowCopy = {
   heading: "Continued window",
   explanation: "A continuation opens one further window on the same referral, measured from the moment you accept it.",
@@ -118,17 +96,9 @@ export const CONTINUATION_WINDOW_COPY: ContinuationWindowCopy = {
   oneSuccessor: "A cycle carries at most one continuation, so continuing it once is the whole of what it offers.",
   predecessorLabel: "Continued from",
 };
-/** The closed set of status words a referral can show. */
 export const REFERRAL_STATUS_WORDS = ["active", "expired", "no-deadline", "refused", "withdrawn", "revoked", "erased", "departed"] as const;
-/** One status word from {@link REFERRAL_STATUS_WORDS}. */
 export type ReferralStatusWord = (typeof REFERRAL_STATUS_WORDS)[number];
-/** The word a status shows, the sentence that explains it, and whether it is a source closure rather than a window's end. */
-export type ReferralStatusCopy = {
-  readonly label: string;
-  readonly description: string;
-  /** True for a closure the source recorded. Deciding this once here keeps every surface from deciding it again. */
-  readonly closureRecordedBySource: boolean;
-};
+export type ReferralStatusCopy = { readonly label: string; readonly description: string; readonly closureRecordedBySource: boolean };
 export const STATUS_COPY: Readonly<Record<ReferralStatusWord, ReferralStatusCopy>> = {
   active: { label: "Active", description: "The window on this introduction has not ended yet.", closureRecordedBySource: false },
   expired: { label: "Expired", description: "The window ended. This says where the window stands, and nothing about the person it introduced.", closureRecordedBySource: false },
@@ -139,9 +109,7 @@ export const STATUS_COPY: Readonly<Record<ReferralStatusWord, ReferralStatusCopy
   erased: { label: "Erased", description: "The source erased this record. An erasure is not an ordinary expiry, so nothing about the referral's details is reconstructed from it.", closureRecordedBySource: true },
   departed: { label: "Departed", description: "The source records that a person or organization involved has departed. A departure is not an ordinary expiry, and no window is judged from it.", closureRecordedBySource: true },
 };
-/** The one sentence that keeps the two halves of the vocabulary apart. */
 export const EXPIRY_VS_CLOSURE: string = "Expired means the window ended. Withdrawn, revoked, erased and departed are closures the source recorded, and they are never shown as an expiry or as an Active or Expired judgement.";
-/** The permitted Expired history: a narrow permission over history, which is a different thing from access to the partner record. */
 export const EXPIRED_HISTORY_COPY = {
   heading: "Permitted Expired history",
   explanation: "Ended referrals you are permitted to see as history. This is not access to the partner record.",
@@ -165,7 +133,6 @@ export const EXPIRED_HISTORY_COPY = {
   noWindowEndLabel: LIST_COPY.noWindowEndLabel,
   noMatchingHint: "A search here matches only the facts this list is permitted to show. No hidden field is ever used as a matching clue, so a search that finds nothing has told you nothing about what was withheld.",
 } as const;
-/** One fact a permitted Expired history does not carry, with the reason it is absent, so a surface shows why instead of an empty gap. */
 export type ForbiddenFieldCopy = { readonly field: string; readonly label: string; readonly reason: string };
 export const FORBIDDEN_FIELDS: readonly ForbiddenFieldCopy[] = [
   { field: "contactChannels", label: "Contact details", reason: "Contactability is a separate permission, and this history carries none of it." },
@@ -174,11 +141,8 @@ export const FORBIDDEN_FIELDS: readonly ForbiddenFieldCopy[] = [
   { field: "notes", label: "Notes", reason: "Notes are private preparation with their own audience, and no projection of them reaches this list." },
   { field: "financialData", label: "Financial information", reason: "Support is read on its own authorised basis elsewhere, never inferred from a referral's history." },
 ];
-/** Every reason the one further window a cycle can carry is not on offer, as a closed set. */
 export const CONTINUE_UNAVAILABLE_REASON_CODES = ["worker-setting-off", "not-ordinarily-expired", "no-current-responsibility", "no-current-permission", "no-continued-policy", "already-consumed", "precision-does-not-admit-a-deadline"] as const;
-/** One reason Continue is not offered, from {@link CONTINUE_UNAVAILABLE_REASON_CODES}. */
 export type ContinueUnavailableReason = (typeof CONTINUE_UNAVAILABLE_REASON_CODES)[number];
-/** What each reason says, worded so a reader learns the condition rather than being blamed for it. */
 export const UNAVAILABLE_REASONS: Readonly<Record<ContinueUnavailableReason, string>> = {
   "worker-setting-off": "The setting that allows a continued window is off, so an expired referral offers no Continue action.",
   "not-ordinarily-expired": "This referral's window has not ended, so there is nothing to continue.",
@@ -188,22 +152,8 @@ export const UNAVAILABLE_REASONS: Readonly<Record<ContinueUnavailableReason, str
   "already-consumed": "This cycle has already been continued once, and a referral carries at most one continuation.",
   "precision-does-not-admit-a-deadline": "The introduction date is not precise enough to have had a window, so there is nothing to continue.",
 };
-/** The confirmation a continuation passes through before it opens a window. */
-export type ContinueConfirmCopy = {
-  readonly title: string;
-  /** The body, naming the cycle it acts on by the label the envelope supplied. */
-  readonly body: (cycleLabel: string) => string;
-  readonly confirmLabel: string;
-  readonly cancelLabel: string;
-};
-export type ContinueCopy = {
-  readonly label: string;
-  /** What the action does, and the three things it does not do, in one sentence. */
-  readonly available: string;
-  readonly confirm: ContinueConfirmCopy;
-  readonly unavailableHeading: string;
-  readonly unavailableReasons: Readonly<Record<ContinueUnavailableReason, string>>;
-};
+export type ContinueConfirmCopy = { readonly title: string; readonly body: (cycleLabel: string) => string; readonly confirmLabel: string; readonly cancelLabel: string };
+export type ContinueCopy = { readonly label: string; readonly available: string; readonly confirm: ContinueConfirmCopy; readonly unavailableHeading: string; readonly unavailableReasons: Readonly<Record<ContinueUnavailableReason, string>> };
 export const CONTINUE_COPY: ContinueCopy = {
   label: "Continue this referral",
   available: "Continue opens one further window on this referral, and nothing else: it is not a new introduction, it records no consent for contact, and it counts no interaction or conversation.",
@@ -216,7 +166,6 @@ export const CONTINUE_COPY: ContinueCopy = {
   unavailableHeading: "Continue is not offered",
   unavailableReasons: UNAVAILABLE_REASONS,
 };
-/** What a referral result says beyond the shared receipt. */
 export const OUTCOME_COPY = {
   conflict: { detail: "This referral changed since you looked, so nothing was changed here. Compare the state it holds now with what you were about to do, then act on what you see." },
   unchanged: { detail: "Nothing changed, so nothing needs doing twice: a cycle carries at most one continuation, and an introduction already recorded stays as it was recorded." },

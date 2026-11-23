@@ -1,8 +1,5 @@
 import sharp, { type Metadata } from "sharp";
 import { ADMITTED_IMAGE_FORMATS, IMAGE_DISPLAY_MAX_EDGE_PX, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX, type AdmittedImageFormat, type AdmittedImageMimeType } from "./profile";
-
-// The image profile is declared once in `./profile`, which a browser surface may state; these re-exports
-// keep this module's own surface exactly as its consumers already use it.
 export { ADMITTED_IMAGE_FORMATS, IMAGE_DISPLAY_MAX_EDGE_PX, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX };
 export type { AdmittedImageFormat, AdmittedImageMimeType };
 const MIME_TYPES: Record<AdmittedImageFormat, AdmittedImageMimeType> = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
@@ -40,7 +37,6 @@ export const isAdmittedImageFormat = (format: string): format is AdmittedImageFo
 /** Validates an uploaded image against the admitted profile and produces the display rendition — the single image pipeline of this application, used for every image and for every poster. */
 export async function prepareDisplayImage(input: PrepareDisplayImageInput): Promise<ImagePreparationResult> {
   const { bytes } = input;
-  // The byte limit is a property of the upload, so it is settled before a decoder is given the bytes at all.
   if (bytes.byteLength > IMAGE_MAX_BYTES) return refuseTooLargeBytes();
   const sniffed = sniffImageKind(bytes);
   if (sniffed === "not-an-image") return refuseNotAnImage();
@@ -51,7 +47,6 @@ export async function prepareDisplayImage(input: PrepareDisplayImageInput): Prom
   } catch (error) {
     return refusalForDecodeFailure(error);
   }
-  // The header, not the file name and not the extension, establishes the family: a renamed file cannot pass.
   const format = header.format;
   if (!isAdmittedImageFormat(format)) return refuseUnsupportedFormat();
   if (declaredFrameCount(bytes, header, format) > 1) return refuseAnimated();
@@ -61,32 +56,16 @@ export async function prepareDisplayImage(input: PrepareDisplayImageInput): Prom
   try {
     prepared = await renderDisplayImage(bytes, format);
   } catch (error) {
-    // A body that passes the header check but not the decode — a truncated download, a corrupt tail — fails here, which is why the re-encode is part of validation and not only of rendering.
     return refusalForDecodeFailure(error);
   }
   const verification = await verifyPreparedImage(prepared, input.sourceName);
   if (verification.ok === false) return verification.refusal;
-  return {
-    ok: true,
-    bytes: prepared,
-    mimeType: MIME_TYPES[verification.format],
-    format: verification.format,
-    width: verification.width,
-    height: verification.height,
-    byteLength: prepared.byteLength,
-    profileCheck: { format, width: display.width, height: display.height },
-    tagVerification: { checked: true, residualTags: [] },
-  };
+  return { ok: true, bytes: prepared, mimeType: MIME_TYPES[verification.format], format: verification.format, width: verification.width, height: verification.height, byteLength: prepared.byteLength, profileCheck: { format, width: display.width, height: display.height }, tagVerification: VERIFIED_TAGS };
 }
+const VERIFIED_TAGS = { checked: true as const, residualTags: [] as string[] };
 function containsSourceName(bytes: Uint8Array, sourceName: string | undefined): boolean {
   const trimmed = sourceName?.trim() ?? "";
-  if (trimmed.length === 0) return false;
-  const candidates = new Set<string>([trimmed, basenameOf(trimmed)]);
-  for (const candidate of candidates) {
-    if (candidate.length < MIN_LEAK_NEEDLE_LENGTH) continue;
-    if (containsBytesIgnoringAsciiCase(bytes, utf8Bytes(candidate))) return true;
-  }
-  return false;
+  return [...new Set<string>([trimmed, basenameOf(trimmed)])].some((candidate) => candidate.length >= MIN_LEAK_NEEDLE_LENGTH && containsBytesIgnoringAsciiCase(bytes, utf8Bytes(candidate)));
 }
 function basenameOf(value: string): string {
   const separator = Math.max(value.lastIndexOf("/"), value.lastIndexOf("\\"));
@@ -110,82 +89,38 @@ function utf8Bytes(text: string): number[] {
 function containsBytesIgnoringAsciiCase(haystack: Uint8Array, needle: readonly number[]): boolean {
   const first = needle[0];
   if (first === undefined || needle.length > haystack.byteLength) return false;
-  const last = haystack.byteLength - needle.length;
-  for (let start = 0; start <= last; start += 1) {
-    const leading = haystack[start];
-    if (leading === undefined || lowerAscii(leading) !== lowerAscii(first)) continue;
-    let matched = true;
-    for (let offset = 1; offset < needle.length; offset += 1) {
-      const byte = haystack[start + offset];
-      const expected = needle[offset];
-      if (byte === undefined || expected === undefined || lowerAscii(byte) !== lowerAscii(expected)) {
-        matched = false;
-        break;
-      }
-    }
-    if (matched) return true;
+  for (let start = 0; start <= haystack.byteLength - needle.length; start += 1) {
+    if (lowerAscii(haystack[start] ?? 0) !== lowerAscii(first)) continue;
+    if (needle.every((expected, offset) => lowerAscii(haystack[start + offset] ?? 0) === lowerAscii(expected))) return true;
   }
   return false;
 }
 const lowerAscii = (byte: number): number => (byte >= 0x41 && byte <= 0x5a ? byte + 0x20 : byte);
-function bytesAsLatin1(bytes: Uint8Array, offset: number, length: number): string {
-  if (offset < 0 || length <= 0 || offset + length > bytes.byteLength) return "";
-  let text = "";
-  for (let index = offset; index < offset + length; index += 1) {
-    const byte = bytes[index];
-    if (byte === undefined) return "";
-    text += String.fromCharCode(byte);
-  }
-  return text;
-}
-function matchesAt(bytes: Uint8Array, offset: number, pattern: readonly number[]): boolean {
-  if (offset < 0 || offset + pattern.length > bytes.byteLength) return false;
-  for (let index = 0; index < pattern.length; index += 1) {
-    const byte = bytes[offset + index];
-    const expected = pattern[index];
-    if (byte === undefined || expected === undefined || byte !== expected) return false;
-  }
-  return true;
-}
+const bytesAsLatin1 = (bytes: Uint8Array, offset: number, length: number): string => (offset < 0 || length <= 0 || offset + length > bytes.byteLength ? "" : Array.from(bytes.slice(offset, offset + length), (byte) => String.fromCharCode(byte)).join(""));
+const matchesAt = (bytes: Uint8Array, offset: number, pattern: readonly number[]): boolean => offset >= 0 && offset + pattern.length <= bytes.byteLength && pattern.every((expected, index) => bytes[offset + index] === expected);
 function sniffImageKind(bytes: Uint8Array): SniffedImageKind {
-  if (bytes.byteLength === 0) return "not-an-image";
-  if (matchesAt(bytes, 0, JPEG_SIGNATURE)) return "jpeg";
-  if (matchesAt(bytes, 0, PNG_SIGNATURE)) return "png";
-  if (bytesAsLatin1(bytes, 0, 4) === "RIFF" && bytesAsLatin1(bytes, 8, 4) === "WEBP") return "webp";
-  if (looksLikeOtherImage(bytes)) return "other-image";
-  return "not-an-image";
+  return bytes.byteLength === 0 ? "not-an-image" : matchesAt(bytes, 0, JPEG_SIGNATURE) ? "jpeg" : matchesAt(bytes, 0, PNG_SIGNATURE) ? "png" : bytesAsLatin1(bytes, 0, 4) === "RIFF" && bytesAsLatin1(bytes, 8, 4) === "WEBP" ? "webp" : looksLikeOtherImage(bytes) ? "other-image" : "not-an-image";
 }
 function looksLikeOtherImage(bytes: Uint8Array): boolean {
   if (bytesAsLatin1(bytes, 0, 3) === "GIF") return true;
   if (bytesAsLatin1(bytes, 0, 4) === "II*\u0000" || bytesAsLatin1(bytes, 0, 4) === "MM\u0000*") return true;
   if (bytesAsLatin1(bytes, 4, 4) === "ftyp" && HEIF_BRANDS.includes(bytesAsLatin1(bytes, 8, 4))) return true;
-  if (matchesAt(bytes, 0, JPEG2000_SIGNATURE) || matchesAt(bytes, 0, JPEG2000_CODESTREAM_SIGNATURE)) return true;
-  if (matchesAt(bytes, 0, ICO_SIGNATURE)) return true;
-  if (bytesAsLatin1(bytes, 0, 2) === "BM" && bytesAsLatin1(bytes, 6, 2) === "\u0000\u0000") return true;
-  return looksLikeMarkup(bytes);
+  return matchesAt(bytes, 0, JPEG2000_SIGNATURE) || matchesAt(bytes, 0, JPEG2000_CODESTREAM_SIGNATURE) ? true : matchesAt(bytes, 0, ICO_SIGNATURE) ? true : bytesAsLatin1(bytes, 0, 2) === "BM" && bytesAsLatin1(bytes, 6, 2) === "\u0000\u0000" ? true : looksLikeMarkup(bytes);
 }
-function looksLikeMarkup(bytes: Uint8Array): boolean {
-  const head = bytesAsLatin1(bytes, 0, Math.min(MARKUP_HEAD_BYTES, bytes.byteLength));
-  return head
+const looksLikeMarkup = (bytes: Uint8Array): boolean =>
+  bytesAsLatin1(bytes, 0, Math.min(MARKUP_HEAD_BYTES, bytes.byteLength))
     .replace(/^\u00ef\u00bb\u00bf/, "")
     .trimStart()
     .startsWith("<");
-}
 function readUint32BigEndian(bytes: Uint8Array, offset: number): number | undefined {
   const first = bytes[offset];
   const second = bytes[offset + 1];
   const third = bytes[offset + 2];
   const fourth = bytes[offset + 3];
-  if (first === undefined || second === undefined || third === undefined || fourth === undefined) return undefined;
-  return ((first << 24) | (second << 16) | (third << 8) | fourth) >>> 0;
+  return first === undefined || second === undefined || third === undefined || fourth === undefined ? undefined : ((first << 24) | (second << 16) | (third << 8) | fourth) >>> 0;
 }
-function declaredFrameCount(bytes: Uint8Array, header: Metadata, format: AdmittedImageFormat): number {
-  const decodedFrames = header.pages ?? 1;
-  if (decodedFrames > 1) return decodedFrames;
-  return format === "png" ? pngFrameCount(bytes) : decodedFrames;
-}
+const declaredFrameCount = (bytes: Uint8Array, header: Metadata, format: AdmittedImageFormat): number => ((header.pages ?? 1) > 1 || format !== "png" ? (header.pages ?? 1) : pngFrameCount(bytes));
 function pngFrameCount(bytes: Uint8Array): number {
-  // After the 8-byte signature each chunk is a 4-byte length, a 4-byte type, the payload and a 4-byte CRC.
   let offset = PNG_SIGNATURE.length;
   let inspected = 0;
   while (offset + 8 <= bytes.byteLength && inspected < MAX_PNG_CHUNKS_INSPECTED) {
@@ -196,7 +131,6 @@ function pngFrameCount(bytes: Uint8Array): number {
       const frames = readUint32BigEndian(bytes, offset + 8);
       return frames === undefined ? 1 : frames;
     }
-    // `acTL` must precede the first `IDAT`, so the walk ends there or at the end of the file.
     if (type === "IDAT" || type === "IEND") return 1;
     offset += 12 + length;
     inspected += 1;
@@ -207,12 +141,10 @@ function displayDimensions(header: Metadata): { width: number; height: number } 
   const oriented: Metadata["autoOrient"] | undefined = header.autoOrient;
   if (oriented !== undefined && oriented.width > 0 && oriented.height > 0) return { width: oriented.width, height: oriented.height };
   const orientation = header.orientation;
-  const transposed = orientation === 5 || orientation === 6 || orientation === 7 || orientation === 8;
-  return transposed ? { width: header.height, height: header.width } : { width: header.width, height: header.height };
+  return orientation === 5 || orientation === 6 || orientation === 7 || orientation === 8 ? { width: header.height, height: header.width } : { width: header.width, height: header.height };
 }
 async function renderDisplayImage(bytes: Uint8Array, format: AdmittedImageFormat): Promise<Buffer> {
-  const oriented = sharp(bytes, { failOn: "error", limitInputPixels: DECODE_PIXEL_LIMIT }).autoOrient();
-  const bounded = oriented.resize({ width: IMAGE_DISPLAY_MAX_EDGE_PX, height: IMAGE_DISPLAY_MAX_EDGE_PX, fit: "inside", withoutEnlargement: true });
+  const bounded = sharp(bytes, { failOn: "error", limitInputPixels: DECODE_PIXEL_LIMIT }).autoOrient().resize({ width: IMAGE_DISPLAY_MAX_EDGE_PX, height: IMAGE_DISPLAY_MAX_EDGE_PX, fit: "inside", withoutEnlargement: true });
   switch (format) {
     case "jpeg":
       return bounded.jpeg({ quality: JPEG_QUALITY, progressive: true }).toBuffer();
@@ -251,14 +183,11 @@ const refuse = (code: ImageRefusalCode, message: string, action?: string): Image
 const refuseNotAnImage = (): ImagePreparationRefusal => refuse("not-an-image", "This file is not an image; only JPEG, PNG and still WebP images are accepted.", "Choose a JPEG, PNG or WebP image.");
 const refuseUnsupportedFormat = (): ImagePreparationRefusal => refuse("unsupported-format", "This image format is not accepted; only JPEG, PNG and still WebP images are accepted.", "Save the image as JPEG, PNG or WebP and choose it again.");
 const refuseAnimated = (): ImagePreparationRefusal => refuse("animated-not-admitted", "Animated images are not accepted; only a single still frame is.", "Export a still frame and choose it again.");
-function refuseTooLargeBytes(): ImagePreparationRefusal {
-  const limitMiB = IMAGE_MAX_BYTES / (1024 * 1024);
-  return refuse("too-large-bytes", `This image is larger than the ${limitMiB} MiB limit, so it was not processed.`, `Reduce the image to ${limitMiB} MiB or less and choose it again.`);
-}
+const refuseTooLargeBytes = (): ImagePreparationRefusal => refuse("too-large-bytes", `This image is larger than the ${IMAGE_MAX_BYTES / (1024 * 1024)} MiB limit, so it was not processed.`, `Reduce the image to ${IMAGE_MAX_BYTES / (1024 * 1024)} MiB or less and choose it again.`);
 const refuseTooLargeDimensions = (width: number, height: number): ImagePreparationRefusal =>
   refuse("too-large-dimensions", `This image is ${width} by ${height} pixels; the limit is ${IMAGE_MAX_EDGE_PX} pixels on either side.`, `Resize the image so neither side is over ${IMAGE_MAX_EDGE_PX} pixels and choose it again.`);
 function refusalForDecodeFailure(error: unknown): ImagePreparationRefusal {
-  const detail = error instanceof Error ? error.message : "";
-  if (/pixel limit/i.test(detail)) return refuse("too-large-dimensions", `This image declares more pixels than the ${IMAGE_MAX_EDGE_PX}-pixel-per-side limit allows, so it was not processed.`, `Resize the image so neither side is over ${IMAGE_MAX_EDGE_PX} pixels and choose it again.`);
+  if (/pixel limit/i.test(error instanceof Error ? error.message : ""))
+    return refuse("too-large-dimensions", `This image declares more pixels than the ${IMAGE_MAX_EDGE_PX}-pixel-per-side limit allows, so it was not processed.`, `Resize the image so neither side is over ${IMAGE_MAX_EDGE_PX} pixels and choose it again.`);
   return refuse("undecodable", "This image could not be decoded; the file may be damaged or incomplete.", "Try another copy of the image.");
 }

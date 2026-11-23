@@ -5,15 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { cn } from "@/lib/cn";
+import { languageNameOf } from "@/lib/language-name";
 import type { ContentLocale } from "@/modules/content/locale";
 type ContentDirection = ContentLocale["direction"];
 const DIRECTION_WORDS: Readonly<Record<ContentDirection, string>> = { ltr: "left to right", rtl: "right to left" };
-export interface LocaleEdition extends ContentLocale {
-  readonly endonym?: string;
-  readonly label?: string;
-  readonly releaseId?: string;
-  readonly isSiteDefault?: boolean;
-}
+export type LocaleEdition = ContentLocale & { readonly endonym?: string; readonly label?: string; readonly releaseId?: string; readonly isSiteDefault?: boolean };
 export type LocaleSwitcherProps = {
   readonly locales: readonly LocaleEdition[];
   readonly requested: string;
@@ -30,18 +26,6 @@ function findEdition(locales: readonly LocaleEdition[], tag: string | undefined)
   if (tag === undefined) return undefined;
   const wanted = normaliseTag(tag);
   return wanted === "" ? undefined : locales.find((locale) => normaliseTag(locale.tag) === wanted);
-}
-function languageNameOf(tag: string): string {
-  const trimmed = tag.trim();
-  if (trimmed === "") return "";
-  const language = (trimmed.split("-")[0] ?? trimmed).toLowerCase();
-  try {
-    const names = new Intl.DisplayNames([language], { type: "language" });
-    const name = names.of(language);
-    return name === undefined || name.trim() === "" ? trimmed : name;
-  } catch {
-    return trimmed;
-  }
 }
 function displayNameOf(edition: LocaleEdition): string {
   const endonym = edition.endonym?.trim() ?? "";
@@ -101,24 +85,20 @@ export function LocaleSwitcher({ locales, requested, served, fallbackOccurred = 
   }
   return (
     <div className={cn("flex min-w-0 flex-col gap-2", className)} data-slot="locale-switcher" data-served-locale={servedTag === "" ? undefined : servedTag} data-served-direction={servedDirection}>
-      {/* The visible label is also the accessible name: `htmlFor` binds it to the one control below. */}
       <Label htmlFor={selectId}>{label}</Label>
       <NativeSelect
         id={selectId}
         className="w-full max-w-full"
         value={servedTag}
-        // Disabled only when there is nothing to choose. An unavailable language that still has admitted alternatives keeps the control usable, because switching to one of them is the reader's recovery; the choice withheld is the requested language itself, which is never offered as an option.
         disabled={!hasEditions}
         aria-describedby={servedSentenceId}
         onChange={(event) => {
-          // Admission is re-checked against the list the control was given, so `onRequest` can only ever receive a tag that is in `locales` — a tampered or stale option value selects nothing rather than asking for an edition the reader may not read.
           const chosen = findEdition(locales, event.target.value);
           if (chosen === undefined) return;
           onRequest(chosen.tag);
         }}
       >
         {servedTag === "" ? (
-          // Named rather than blank, and `disabled` so it cannot be picked as if it were a language: an empty selection would otherwise read as a control that failed to load.
           <NativeSelectOption value="" disabled>
             {isUnavailable ? "No edition in the requested language" : "No language selected"}
           </NativeSelectOption>
@@ -129,19 +109,12 @@ export function LocaleSwitcher({ locales, requested, served, fallbackOccurred = 
           </NativeSelectOption>
         ))}
       </NativeSelect>
-      <output
-        id={servedSentenceId}
-        // `output` carries the implicit `status` role and a polite live region, `htmlFor` names the control it reports, and `aria-atomic` keeps the sentence whole; this is the component's only polite region, so no fact is announced twice.
-        htmlFor={selectId}
-        aria-atomic="true"
-        className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-start text-xs"
-      >
+      <output id={servedSentenceId} htmlFor={selectId} aria-atomic="true" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-start text-xs">
         {servedSentence}
       </output>
       {isUnavailable ? (
         <StateNotice
           kind="language-unavailable"
-          // The heading names the missing language and nothing else: no edition title, no count, no sibling language and no hint that another audience has one.
           title={requestedName === "" ? "Language unavailable" : `Language unavailable: ${requestedName}`}
           description={hasEditions ? "Choose another language from the list to read this edition in one you are permitted to read." : "No edition you are permitted to read exists in the language you asked for, and there is no other language to offer here."}
         />

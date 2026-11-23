@@ -32,25 +32,18 @@ const RECEIPT_HEADING: Readonly<Partial<Record<MutationOutcome["outcome"], strin
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 const PUBLICATION_LABEL: Readonly<Record<PublishEditionState, string>> = { released: "Revision released", "failed-with-prior-good-head": "Earlier revision still published", "needs-attention": "Earlier revision still published", withdrawn: "Revision withdrawn" };
 const NO_REVISION_STATE = "No revision is published for this edition.";
-/** Where the recorded per-send results of one submitted notice are read, named by that notice's own identity. */
+/** Where the recorded per-send results of one submitted notice are read, named by that notice's own identity rather than by whichever notice was submitted last. */
 const DELIVERY_PATH = "/communication/delivery";
 const NOTICE_IDENTITY_LABEL = "Notice submitted";
 const NOTICE_RESULTS_LINK = "Open the recorded results for this notice";
 const noticeResultsHrefOf = (intentId: string): string => `${DELIVERY_PATH}?intentId=${encodeURIComponent(intentId)}`;
-/** The link's own target size and wrapping, as the family's outlined links state them. */
 const NOTICE_LINK_CLASS = cn(buttonVariants({ variant: "outline", size: "sm" }), "h-auto min-h-8 max-w-full py-1.5 whitespace-normal");
-function synthesisOf(editions: readonly PublishedEdition[]): readonly VariantReleaseOutcome[] {
-  const evidence: VariantReleaseOutcome[] = [];
-  for (const edition of editions) {
-    if (edition.state === "withdrawn") continue;
-    if (edition.state === "released") {
-      if (edition.release !== undefined) evidence.push({ variantId: edition.variant.variantId, outcome: { status: "released", release: edition.release } });
-      continue;
-    }
-    evidence.push({ variantId: edition.variant.variantId, outcome: { status: "failed", reason: edition.reason?.trim() ?? "" } });
-  }
-  return evidence;
-}
+const synthesisOf = (editions: readonly PublishedEdition[]): readonly VariantReleaseOutcome[] =>
+  editions.flatMap((edition): readonly VariantReleaseOutcome[] => {
+    if (edition.state === "withdrawn") return [];
+    if (edition.state !== "released") return [{ variantId: edition.variant.variantId, outcome: { status: "failed", reason: edition.reason?.trim() ?? "" } }];
+    return edition.release === undefined ? [] : [{ variantId: edition.variant.variantId, outcome: { status: "released", release: edition.release } }];
+  });
 type EditionPublication = { readonly label: string; readonly revisionId: string };
 const publicationOf = (edition: PublishedEdition): EditionPublication | null => {
   const revisionId = edition.release?.revisionId.trim() ?? "";
@@ -75,9 +68,7 @@ const narrativeOf = (state: PublishEditionState, publishesRevision: boolean): st
 type EditionRowProps = { readonly edition: PublishedEdition; readonly synthesis: readonly VariantReleaseOutcome[]; readonly renderAction?: ((edition: PublishedEdition) => ReactNode) | undefined };
 function EditionRow({ edition, synthesis, renderAction }: EditionRowProps): ReactElement {
   const { variant, state } = edition;
-  const lifecycle = lifecycleOf(variant, edition.release, { synthesis });
   const audience = AUDIENCE_LABELS[variant.audience];
-  const localeName = LOCALE_DISPLAY_NAMES[variant.locale.tag] ?? variant.locale.tag;
   const publication = publicationOf(edition);
   const reason = edition.reason?.trim() ?? "";
   const reasonCode = edition.reasonCode?.trim() ?? "";
@@ -90,10 +81,10 @@ function EditionRow({ edition, synthesis, renderAction }: EditionRowProps): Reac
         <StatusBadge label={audience.label} srPrefix="Audience" />
         <span className="text-sm text-muted-foreground">
           <span className="sr-only">Language: </span>
-          <bdi>{localeName}</bdi>
+          <bdi>{LOCALE_DISPLAY_NAMES[variant.locale.tag] ?? variant.locale.tag}</bdi>
         </span>
       </p>
-      <DraftStatus state={lifecycle} />
+      <DraftStatus state={lifecycleOf(variant, edition.release, { synthesis })} />
       {publication === null ? (
         <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{NO_REVISION_STATE}</p>
       ) : (
@@ -119,11 +110,7 @@ function EditionRow({ edition, synthesis, renderAction }: EditionRowProps): Reac
             <StatusBadge {...SEND_STATUS[edition.notice.state]} srPrefix="Notice" />
             {noticeDetail === "" ? null : <span className="min-w-0 text-muted-foreground wrap-anywhere">{noticeDetail}</span>}
           </p>
-          {/*
-            The notice's own identity, where the answer stated one: the recorded outcomes are read under it, so the result
-            row names the notice it is about instead of describing whichever was submitted last. Acceptance is neither
-            delivery nor reading, so the link opens the recorded outcomes and claims nothing about arrival.
-          */}
+          {/* The notice's own identity, where the answer stated one: the recorded outcomes are read under it, and acceptance is neither delivery nor reading. */}
           {noticeIntentId === "" ? null : (
             <div className="flex min-w-0 flex-col gap-1 text-sm">
               <p className="min-w-0 wrap-anywhere">
@@ -143,7 +130,7 @@ function EditionRow({ edition, synthesis, renderAction }: EditionRowProps): Reac
     </li>
   );
 }
-export interface PublishResultsProps {
+export type PublishResultsProps = {
   readonly outcome: MutationOutcome;
   readonly editions?: readonly PublishedEdition[];
   readonly onCheckResult: (operationId: string) => void | Promise<void>;
@@ -152,7 +139,7 @@ export interface PublishResultsProps {
   readonly renderEditionAction?: (edition: PublishedEdition) => ReactNode;
   readonly headingLevel?: ReceiptHeadingLevel;
   readonly className?: string;
-}
+};
 export function PublishResults({ outcome, editions, onCheckResult, onReapply, fieldLabels, renderEditionAction, headingLevel = 2, className }: PublishResultsProps): ReactElement {
   const titleId = useId();
   const Heading = HEADING_TAG[headingLevel];

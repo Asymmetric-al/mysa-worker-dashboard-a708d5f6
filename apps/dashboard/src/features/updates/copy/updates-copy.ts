@@ -7,17 +7,12 @@ export const AUDIENCE_LABELS: Record<VariantAudience, { readonly label: string; 
   "approved-supporter": { label: "Approved supporters", whoReceives: "Only supporters this publisher has approved can open this variant." },
 };
 export const VARIANT_AXIS_NOTE =
-  "Each variant of an Update is one audience in one content locale. A public variant and an " +
-  "approved-supporter variant in the same locale are two distinct variants, and each keeps its own " +
-  "draft, candidate and release. The permitted pairings are exactly the ones the variant rule " +
-  "admits, so no audience-by-locale cross-product exists. A Page variant is a public locale edition, " +
-  "which is why the Pages family offers locales and no audience choice.";
+  "Each variant of an Update is one audience in one content locale. A public variant and an approved-supporter variant in the same locale are two distinct variants, and each keeps its own draft, candidate and release. The permitted pairings are exactly the ones the variant rule admits, so no audience-by-locale cross-product exists. A Page variant is a public locale edition, which is why the Pages family offers locales and no audience choice.";
 export const LOCALE_DISPLAY_NAMES: Readonly<Record<string, string | undefined>> = { en: "English", fr: "Français", ar: "العربية" } satisfies Record<string, string>;
 export const PUBLISH_MODE_LABELS: Record<PublishMode, { readonly label: string; readonly consequence: string }> = {
   "publish-only": { label: "Publish only", consequence: "Releases the exact frozen candidate and submits no notice." },
   "publish-and-notify-now": { label: "Publish and notify now", consequence: "Releases the exact frozen candidate and submits one notice for each eligible recipient." },
 };
-/** The one control that records how a submitted edition is to be released: its group name, and what submitting does with the choice. */
 export const SUBMISSION_RELEASE_MODE = {
   legend: "How this edition is to be released",
   description: "Submitting records this choice with the frozen candidate, and the reviewer who answers the candidate releases the " + "edition in the mode chosen here. Submitting itself publishes nothing and notifies nobody: the release this " + "describes happens only once the review is answered.",
@@ -31,10 +26,7 @@ export const SIMULATED_EFFECT_BY_TRIGGER: Record<"publish" | "notify", Simulated
 export const WITHDRAWAL_WORDING = {
   whatItDoes: "Withdrawal stops this application from serving that edition, so the address no longer shows the " + "content and the discovery index stops listing it. It works even while an unrelated draft of the " + "same Page is invalid, and it contains every locale edition of that Page.",
   whatItDoesNotDo:
-    "Withdrawal does not recall a notice that has already been submitted, does not remove a copy " +
-    "someone else holds or has already read, does not undo the record that the revision was once " +
-    "released, and cannot reverse a message that has already been accepted. It restores nothing " +
-    "either: restoring an earlier revision creates a new draft.",
+    "Withdrawal does not recall a notice that has already been submitted, does not remove a copy someone else holds or has already read, does not undo the record that the revision was once released, and cannot reverse a message that has already been accepted. It restores nothing either: restoring an earlier revision creates a new draft.",
 } as const;
 export const REVIEW_ROUND_NOTE = {
   oneStepWherePolicyRequires: "There is one review step, and it applies only where contributor policy requires review.",

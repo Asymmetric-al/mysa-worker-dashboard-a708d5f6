@@ -5,7 +5,6 @@ import { SAVED_VIEW_COPY } from "./privacy";
 export type SurfaceNoticeState = Exclude<NoticeKind, "loading" | "language-unavailable">;
 export type WithheldSurfaceState = "withheld";
 export type SurfaceState = SurfaceNoticeState | WithheldSurfaceState;
-export const SURFACE_STATES = ["empty", "unavailable", "unknown", "withheld", "denied", "refused", "partial-coverage"] as const satisfies readonly SurfaceState[];
 export const PARTNERS_SURFACES = ["roster", "saved-view", "partner-detail", "private-preparation", "interactions", "open-tasks", "support-history"] as const;
 export type PartnersSurface = (typeof PARTNERS_SURFACES)[number];
 export type StateCopy = { readonly title: string; readonly body: string; readonly actionLabel?: string; readonly secondaryActionLabel?: string };
@@ -91,8 +90,6 @@ export const SURFACE_STATE_COPY: Readonly<Record<PartnersSurface, Readonly<Recor
 };
 export type ValueStateCopy = { readonly phrase: string; readonly accessibleLabel: string; readonly explanation?: string };
 export const VALUE_STATE_COPY: Readonly<Record<ValueState, ValueStateCopy>> = {
-  // The surface renders the formatted amount itself and uses this entry as accessible-label context
-  // only; the phrase never stands in place of the number.
   value: { phrase: "Recorded", accessibleLabel: "A recorded value, taken from the source as it stands.", explanation: "The figure is a recorded value rather than an estimate, and it carries the coverage stated beside it." },
   zero: { phrase: "Zero recorded", accessibleLabel: "A recorded zero, which is a known value and not a missing one.", explanation: "The source established a zero. It is not unknown, not withheld and not unavailable." },
   unknown: { phrase: "Unknown", accessibleLabel: "Unknown, because the source did not supply this value.", explanation: "The source did not supply the value, so nothing is assumed and nothing is filled in to stand for it." },

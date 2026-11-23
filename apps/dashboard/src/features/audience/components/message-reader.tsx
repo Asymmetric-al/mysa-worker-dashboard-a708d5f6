@@ -14,13 +14,8 @@ export type MessageDirection = "ltr" | "rtl";
 const RENDERED_PROSE = cn(
   "text-sm leading-relaxed break-words [&_p]:mb-3 [&_p:last-child]:mb-0 [&_h2]:mt-5 [&_h2]:mb-2 [&_h2]:font-heading [&_h2]:text-base [&_h2]:font-medium [&_h2:first-child]:mt-0 [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:font-heading [&_h3]:text-sm [&_h3]:font-medium [&_h4]:mt-4 [&_h4]:mb-2 [&_h4]:font-heading [&_h4]:text-sm [&_h4]:font-medium [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:ps-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:ps-5 [&_li]:mb-1 [&_blockquote]:my-3 [&_blockquote]:border-s-2 [&_blockquote]:border-border [&_blockquote]:ps-3 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4 [&_strong]:font-semibold [&_em]:italic [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:text-xs [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3 [&_hr]:my-4 [&_hr]:border-border [&_img]:my-3 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg",
 );
-const TAB_LIST_LABEL = "Message rendering";
-const PROTECTED_LINK_LABEL = "Open the protected Update";
 export type ServerHtmlProps = { readonly html: string; readonly direction: MessageDirection; readonly lang?: string; readonly className?: string };
-export function ServerHtml({ html, direction, lang, className }: ServerHtmlProps): ReactElement | null {
-  if (html.trim().length === 0) return null;
-  return <RenderedContent html={html} direction={direction} lang={lang} className={cn(RENDERED_PROSE, className)} />;
-}
+export const ServerHtml = ({ html, direction, lang, className }: ServerHtmlProps): ReactElement | null => (html.trim().length === 0 ? null : <RenderedContent html={html} direction={direction} lang={lang} className={cn(RENDERED_PROSE, className)} />);
 export interface MessageReaderProps {
   readonly sender: string;
   readonly subject: string;
@@ -63,9 +58,7 @@ export function MessageReader({ sender, subject, asOfLabel, audienceLabel, audie
             </div>
           </div>
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <span className="break-words">
-              <bdi>{asOfLabel}</bdi>
-            </span>
+            <bdi className="break-words">{asOfLabel}</bdi>
             <span>
               <span className="sr-only">Language: </span>
               <bdi>{languageTag}</bdi>
@@ -78,7 +71,7 @@ export function MessageReader({ sender, subject, asOfLabel, audienceLabel, audie
             <ProtectedNotice href={noticeHref} />
           ) : (
             <Tabs defaultValue="html">
-              <TabsList aria-label={TAB_LIST_LABEL}>
+              <TabsList aria-label="Message rendering">
                 <TabsTrigger value="html">{INBOX_TAB_LABELS.html}</TabsTrigger>
                 <TabsTrigger value="plain">{INBOX_TAB_LABELS.plain}</TabsTrigger>
               </TabsList>
@@ -103,17 +96,15 @@ export function MessageReader({ sender, subject, asOfLabel, audienceLabel, audie
 }
 function ProtectedNotice({ href }: { readonly href?: string }): ReactElement {
   const link = href === undefined ? "" : href.trim();
-  // The one place a message value becomes a link: the shared guard decides it, and a refused destination is not rendered.
-  const linkIsFollowable = destinationProblemOf(link) === undefined;
   return (
     <div className="flex flex-col gap-2">
       <p className="font-medium">{PROTECTED_NOTICE_COPY.heading}</p>
       <p className="text-muted-foreground">{PROTECTED_NOTICE_COPY.description}</p>
-      {linkIsFollowable ? (
+      {destinationProblemOf(link) === undefined ? (
         <>
           <p>
             <a className="font-medium text-primary underline underline-offset-4" href={link}>
-              {PROTECTED_LINK_LABEL}
+              {"Open the protected Update"}
             </a>
           </p>
           <p className="text-muted-foreground">{PROTECTED_NOTICE_COPY.linkStatement}</p>

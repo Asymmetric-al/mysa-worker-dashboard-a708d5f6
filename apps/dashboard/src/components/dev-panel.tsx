@@ -1,7 +1,7 @@
 "use client";
-/** The one development control surface: the scenario this session runs in, the controllable clock, the single armed failure plan, and the destructive reset. */
 import { useCallback, useId, useRef, useState, type ReactElement } from "react";
-import ActionReview, { mayReplay, type ActionReviewProps, type MutationSubmit } from "@/components/action-review";
+import ActionReview, { type ActionReviewProps, type MutationSubmit } from "@/components/action-review";
+import { hasSettled, mayReplay } from "@/components/attempt";
 import OperationResult from "@/components/operation-result";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,7 +69,6 @@ function describeInstantWords(iso: string): string | null {
   try {
     return new Intl.DateTimeFormat(INSTANT_LOCALE, { dateStyle: "long", timeStyle: "long", timeZone: zoneOf(iso) }).format(milliseconds);
   } catch {
-    // A zone the runtime will not format states nothing rather than falling back to a guessed one.
     return null;
   }
 }
@@ -105,6 +104,8 @@ const CLOCK_INPUT_CLASS = "w-24 sm:w-28";
 const CLOCK_SELECT_CLASS = "w-full sm:w-auto";
 const CLOCK_HINT_CLASS = "text-sm text-pretty text-muted-foreground";
 const CLOCK_ERROR_CLASS = "text-sm text-pretty text-destructive";
+const OFFSET_HINT = "Units are elapsed time: a day here is 24 hours, and no unit on this panel is a calendar day. A negative offset places the instant before the seed.";
+const ADVANCE_HINT = "Advancing moves the instant forward by elapsed time only. 24 hours reaches the notification deadline exactly; 168 hours reaches the confirmation deadline exactly, which is where both are refused.";
 const chooseClockUnit = (value: string, select: (unit: ClockUnitId) => void): void => {
   const next = clockUnitFor(value);
   if (next !== undefined) select(next.id);
@@ -118,21 +119,57 @@ const RESET_DESCRIPTION =
   "discarded before the seeded ones are written, so a reset that fails part way can leave " +
   "sessions discarded or only partly written. Running it again restores the seeded world.";
 const RESET_CONSEQUENCE = "This discards the current synthetic store and cannot be undone from the interface. Nothing is " + "sent, published or charged: the reset replaces this application's own data only.";
-const isSettled = (outcome: MutationOutcome): boolean => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged";
+type ClockFieldCopy = { readonly legend: string; readonly field: string; readonly hint: string; readonly action: string };
+type ClockFieldState = { readonly idBase: string; readonly value: string; readonly unit: ClockUnitId; readonly error: string | null; readonly minimum?: number };
+type ClockFieldHandlers = { readonly onChange: (value: string) => void; readonly onUnit: (unit: ClockUnitId) => void; readonly onAction: () => void; readonly disabled: boolean };
+function ClockField(props: ClockFieldCopy & ClockFieldState & ClockFieldHandlers): ReactElement {
+  const { legend, field, hint, action, idBase, value, unit, error, minimum, onChange, onUnit, onAction, disabled } = props;
+  const unitId = `${idBase}-unit`;
+  const hintId = `${idBase}-hint`;
+  const errorId = `${idBase}-error`;
+  const describedBy = error === null ? hintId : `${hintId} ${errorId}`;
+  return (
+    <fieldset className="flex min-w-0 flex-col gap-3">
+      <legend className="text-sm font-medium">{legend}</legend>
+      <div className={CLOCK_ROW_CLASS}>
+        <div className={CLOCK_FIELD_CLASS}>
+          <Label htmlFor={idBase}>{field}</Label>
+          <Input id={idBase} type="number" inputMode="numeric" step={1} min={minimum} value={value} disabled={disabled} aria-invalid={error === null ? undefined : true} aria-describedby={describedBy} className={CLOCK_INPUT_CLASS} onChange={(event) => onChange(event.currentTarget.value)} />
+        </div>
+        <div className={CLOCK_FIELD_CLASS}>
+          <Label htmlFor={unitId}>Unit</Label>
+          <NativeSelect id={unitId} className={CLOCK_SELECT_CLASS} value={unit} disabled={disabled} onChange={(event) => chooseClockUnit(event.currentTarget.value, onUnit)}>
+            {CLOCK_UNITS.map((entry) => (
+              <NativeSelectOption key={entry.id} value={entry.id}>
+                {entry.plural}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </div>
+        <Button type="button" variant="secondary" disabled={disabled} onClick={onAction}>
+          {action}
+        </Button>
+      </div>
+      <p id={hintId} className={CLOCK_HINT_CLASS}>
+        {hint}
+      </p>
+      {error === null ? null : (
+        <p id={errorId} className={CLOCK_ERROR_CLASS}>
+          {error}
+        </p>
+      )}
+    </fieldset>
+  );
+}
+/** The development runtime's one control surface: scenario, clock, failure modes and reset. */
 export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, onSetFailurePlan, reset, className }: DevPanelProps): ReactElement {
   const idPrefix = useId();
   const titleId = `${idPrefix}-title`;
   const introId = `${idPrefix}-intro`;
   const scenarioSelectId = `${idPrefix}-scenario-select`;
   const scenarioHintId = `${idPrefix}-scenario-hint`;
-  const offsetId = `${idPrefix}-offset`;
-  const offsetUnitId = `${idPrefix}-offset-unit`;
-  const offsetHintId = `${idPrefix}-offset-hint`;
-  const offsetErrorId = `${idPrefix}-offset-error`;
-  const advanceId = `${idPrefix}-advance`;
-  const advanceUnitId = `${idPrefix}-advance-unit`;
-  const advanceHintId = `${idPrefix}-advance-hint`;
-  const advanceErrorId = `${idPrefix}-advance-error`;
+  const offsetBase = `${idPrefix}-offset`;
+  const advanceBase = `${idPrefix}-advance`;
   const targetHintId = `${idPrefix}-target-hint`;
   const [result, setResult] = useState<DevPanelResult | null>(null);
   const [pending, setPending] = useState<DevPanelAction | null>(null);
@@ -205,7 +242,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
     if (!plan.armed) return;
     void runAction("disarm-failure", "No failure is armed", () => onSetFailurePlan(null));
   };
-  const receiptHeading = result !== null && isSettled(result.outcome) ? result.settledHeading : null;
+  const receiptHeading = result !== null && hasSettled(result.outcome) ? result.settledHeading : null;
   const receiptRetry = result !== null && mayReplay(result.outcome) ? retryLastAttempt : undefined;
   return (
     <section data-slot="dev-panel" aria-labelledby={titleId} aria-describedby={introId} aria-busy={busy ? true : undefined} className={cn("flex min-w-0 flex-col gap-6", className)}>
@@ -299,89 +336,8 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
           <p className="text-sm text-pretty text-muted-foreground">{CLOCK_BOUNDARY_SENTENCE}</p>
           <p className="text-sm text-pretty text-muted-foreground">{CLOCK_IMMEDIATE_SENTENCE}</p>
           <Separator />
-          <fieldset className="flex min-w-0 flex-col gap-3">
-            <legend className="text-sm font-medium">Set the offset from the seed instant</legend>
-            <div className={CLOCK_ROW_CLASS}>
-              <div className={CLOCK_FIELD_CLASS}>
-                <Label htmlFor={offsetId}>Offset</Label>
-                <Input
-                  id={offsetId}
-                  type="number"
-                  inputMode="numeric"
-                  step={1}
-                  value={offsetValue}
-                  disabled={busy}
-                  aria-invalid={offsetError === null ? undefined : true}
-                  aria-describedby={offsetError === null ? offsetHintId : `${offsetHintId} ${offsetErrorId}`}
-                  className={CLOCK_INPUT_CLASS}
-                  onChange={(event) => setOffsetValue(event.currentTarget.value)}
-                />
-              </div>
-              <div className={CLOCK_FIELD_CLASS}>
-                <Label htmlFor={offsetUnitId}>Unit</Label>
-                <NativeSelect id={offsetUnitId} className={CLOCK_SELECT_CLASS} value={offsetUnit} disabled={busy} onChange={(event) => chooseClockUnit(event.currentTarget.value, setOffsetUnit)}>
-                  {CLOCK_UNITS.map((unit) => (
-                    <NativeSelectOption key={unit.id} value={unit.id}>
-                      {unit.plural}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
-              </div>
-              <Button type="button" variant="secondary" disabled={busy} onClick={applyClockOffset}>
-                Set the clock offset
-              </Button>
-            </div>
-            <p id={offsetHintId} className={CLOCK_HINT_CLASS}>
-              Units are elapsed time: a day here is 24 hours, and no unit on this panel is a calendar day. A negative offset places the instant before the seed.
-            </p>
-            {offsetError === null ? null : (
-              <p id={offsetErrorId} className={CLOCK_ERROR_CLASS}>
-                {offsetError}
-              </p>
-            )}
-          </fieldset>
-          <fieldset className="flex min-w-0 flex-col gap-3">
-            <legend className="text-sm font-medium">Advance the clock</legend>
-            <div className={CLOCK_ROW_CLASS}>
-              <div className={CLOCK_FIELD_CLASS}>
-                <Label htmlFor={advanceId}>Advance by</Label>
-                <Input
-                  id={advanceId}
-                  type="number"
-                  inputMode="numeric"
-                  step={1}
-                  min={1}
-                  value={advanceValue}
-                  disabled={busy}
-                  aria-invalid={advanceError === null ? undefined : true}
-                  aria-describedby={advanceError === null ? advanceHintId : `${advanceHintId} ${advanceErrorId}`}
-                  className={CLOCK_INPUT_CLASS}
-                  onChange={(event) => setAdvanceValue(event.currentTarget.value)}
-                />
-              </div>
-              <div className={CLOCK_FIELD_CLASS}>
-                <Label htmlFor={advanceUnitId}>Unit</Label>
-                <NativeSelect id={advanceUnitId} className={CLOCK_SELECT_CLASS} value={advanceUnit} disabled={busy} onChange={(event) => chooseClockUnit(event.currentTarget.value, setAdvanceUnit)}>
-                  {CLOCK_UNITS.map((unit) => (
-                    <NativeSelectOption key={unit.id} value={unit.id}>
-                      {unit.plural}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
-              </div>
-              <Button type="button" variant="secondary" disabled={busy} onClick={advanceClock}>
-                Advance the clock
-              </Button>
-            </div>
-            <p id={advanceHintId} className={CLOCK_HINT_CLASS}>
-              Advancing moves the instant forward by elapsed time only. 24 hours reaches the notification deadline exactly; 168 hours reaches the confirmation deadline exactly, which is where both are refused.
-            </p>
-            {advanceError === null ? null : (
-              <p id={advanceErrorId} className={CLOCK_ERROR_CLASS}>
-                {advanceError}
-              </p>
-            )}
-          </fieldset>
+          <ClockField legend="Set the offset from the seed instant" field="Offset" idBase={offsetBase} value={offsetValue} unit={offsetUnit} error={offsetError} hint={OFFSET_HINT} action="Set the clock offset" onChange={setOffsetValue} onUnit={setOffsetUnit} onAction={applyClockOffset} disabled={busy} />
+          <ClockField legend="Advance the clock" field="Advance by" idBase={advanceBase} minimum={1} value={advanceValue} unit={advanceUnit} error={advanceError} hint={ADVANCE_HINT} action="Advance the clock" onChange={setAdvanceValue} onUnit={setAdvanceUnit} onAction={advanceClock} disabled={busy} />
         </CardContent>
       </Card>
       <Card className="min-w-0">

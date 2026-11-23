@@ -1,5 +1,4 @@
 "use client";
-/** The one guard for a deliberate context change, and the one fence that makes it safe. */
 import { useQueryClient } from "@tanstack/react-query";
 import { TriangleAlertIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type ReactElement } from "react";
@@ -65,7 +64,6 @@ export function useContextFence({ scope, selectContext, copy }: ContextFenceOpti
   const queryClient = useQueryClient();
   const [isSwitching, setIsSwitching] = useState(false);
   const [lastResult, setLastResult] = useState<ContextSwitchResult | null>(null);
-  // The context a response must carry to still be current. During an attempt it names the context being moved to, so an envelope from the old one is stale even before the shell re-renders.
   const fenceRef = useRef<Scope>(scope);
   const switchingRef = useRef(false);
   const attemptRef = useRef<Promise<ContextSwitchResult> | null>(null);
@@ -80,30 +78,17 @@ export function useContextFence({ scope, selectContext, copy }: ContextFenceOpti
       setIsSwitching(true);
       setLastResult(null);
       try {
-        // 1. Nothing in flight from here on: a read that resolves later would be about the context being left, and this is where it is stopped rather than filtered out afterwards.
         await queryClient.cancelQueries();
-        // 2. Every envelope the previous context produced leaves the cache. This is the only clear in the application.
         queryClient.clear();
-        // 3. The fence moves before the request leaves, so a straggler is already stale.
         fenceRef.current = request.pendingScope;
-        const outcome = await selectContext({
-          operationId,
-          // The authority the caller holds now: the context it is switching away from. The payload names where it wants to go, and the service admits that selection too.
-          scope,
-          expectedRevision: request.expectedRevision,
-          payload: { organizationId: request.pendingScope.organizationId, ministryId: request.pendingScope.ministryId, supportSubjectId: request.pendingScope.supportSubjectId },
-        });
+        const outcome = await selectContext({ operationId, scope, expectedRevision: request.expectedRevision, payload: { organizationId: request.pendingScope.organizationId, ministryId: request.pendingScope.ministryId, supportSubjectId: request.pendingScope.supportSubjectId } });
         const switched = outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged";
-        if (!switched) {
-          // The context did not change, so the one on screen is current again and its responses are not stale.
-          fenceRef.current = scope;
-        }
+        if (!switched) fenceRef.current = scope;
         const summary = summariseOutcome(outcome, copy);
         const result: ContextSwitchResult = { requestedScope: request.pendingScope, operationId, switched, outcome, summary, announcement: announcementFor(summary) };
         setLastResult(result);
         return result;
       } catch {
-        // A fault past the service leaves the change's fate unknown: a reported result, never a success and never a reason to send it again under a fresh identity, since the attempt's id is what recovers it.
         fenceRef.current = scope;
         const outcome = unknownOutcome({ operationId });
         const summary = summariseOutcome(outcome, copy);
@@ -120,10 +105,7 @@ export function useContextFence({ scope, selectContext, copy }: ContextFenceOpti
   const switchContext = useCallback(
     async (request: ContextSwitchRequest): Promise<ContextSwitchResult> => {
       const running = attemptRef.current;
-      if (running !== null) {
-        // One attempt at a time: a second press asks for the same switch, so it is answered with the attempt already running rather than with a second effect.
-        return running;
-      }
+      if (running !== null) return running;
       const attempt = performSwitch(request);
       attemptRef.current = attempt;
       try {
@@ -157,16 +139,13 @@ const IDENTIFIER_CLASS = "mono-identifier break-all";
 export function ContextSwitchGuard({ copy, open, pendingScope, unsavedWork, onStay, onDiscard, onSaveAndSwitch, busy = false, className, pendingScopeLabel, outcome = null }: ContextSwitchGuardProps): ReactElement {
   const [pendingAction, setPendingAction] = useState<GuardAction | null>(null);
   const [actionFailure, setActionFailure] = useState<string | null>(null);
-  // Names the save note so the save action can carry it as its accessible description.
   const saveNoteId = useId();
-  // Read synchronously, so two presses in one frame cannot start two actions.
   const pendingRef = useRef<GuardAction | null>(null);
   const stayRef = useRef<HTMLButtonElement | null>(null);
   const busyNow = busy || pendingAction !== null;
   const handleOpenChange = useCallback(
     (nextOpen: boolean, details: { readonly cancel: () => void }): void => {
       if (nextOpen) return;
-      // Every dismissal the dialog performs itself — Escape, a press outside the panel — is refused while a switch is running, because the outcome has to be reported; Stay is the guard's own action and is always honoured.
       if (busyNow) {
         details.cancel();
         return;
@@ -191,7 +170,6 @@ export function ContextSwitchGuard({ copy, open, pendingScope, unsavedWork, onSt
             await onDiscard();
           }
         } catch {
-          // A thrown handler is a defect or a broken transport, and either way the honest answer is that the result is not known — never that the draft was discarded or the save landed.
           setActionFailure(action === "save" ? SAVE_FAILED : DISCARD_FAILED);
         } finally {
           pendingRef.current = null;
@@ -202,34 +180,20 @@ export function ContextSwitchGuard({ copy, open, pendingScope, unsavedWork, onSt
     [busy, onDiscard, onSaveAndSwitch],
   );
   const label = pendingScopeLabel?.trim() ?? "";
-  // The notice states the last thing that happened, once: a thrown action first, because it is the more recent fact, otherwise the outcome the caller passed in.
   const notice: OutcomeSummary | null = actionFailure !== null ? { tone: "refused", sentence: actionFailure } : outcome === null ? null : summariseOutcome(outcome, copy);
   return (
     <AlertDialog open={open && pendingScope !== null} onOpenChange={handleOpenChange}>
-      <AlertDialogContent
-        className={cn(className)}
-        // The panel states its own busy state, so a reader who asks what is happening is told once by the progress line rather than by a changed label on each action.
-        aria-busy={busyNow ? true : undefined}
-        // Modality is a fact here — focus is trapped and the surface behind is hidden from assistive technology — so it is declared rather than left for a reader to infer.
-        aria-modal="true"
-      >
+      <AlertDialogContent className={cn(className)} aria-busy={busyNow ? true : undefined} aria-modal="true">
         <AlertDialogHeader>
           {unsavedWork === undefined ? null : (
             <AlertDialogMedia>
-              {/* Decorative: the sentence beside it states that something is unsaved. */}
               <TriangleAlertIcon aria-hidden="true" />
             </AlertDialogMedia>
           )}
           <AlertDialogTitle>{copy.title}</AlertDialogTitle>
-          {/* The description element is itself a paragraph, so every line is a span laid out as a block: nesting a paragraph inside one is invalid markup and React reports it as a hydration error, while each sentence still reads as its own line. */}
           <AlertDialogDescription className="flex flex-col gap-2">
             <span>{copy.body}</span>
-            {label === "" ? null : (
-              // The context being switched to, named by the caller from the membership it read and isolated from the surrounding direction. A name only: the component adds no sentence of its own around it.
-              <span className="font-medium text-foreground">
-                <bdi>{label}</bdi>
-              </span>
-            )}
+            {label === "" ? null : <bdi className="font-medium text-foreground">{label}</bdi>}
             {unsavedWork === undefined ? null : (
               <>
                 <span>
@@ -242,20 +206,14 @@ export function ContextSwitchGuard({ copy, open, pendingScope, unsavedWork, onSt
           </AlertDialogDescription>
         </AlertDialogHeader>
         {busyNow ? (
-          // `<output>` is the element whose implicit role is `status`, so the progress line is a polite live region without stating a role the markup already carries.
           <output className="flex items-center gap-2 text-sm text-muted-foreground">
             <Spinner />
             {pendingAction === "save" ? "Saving your work before switching…" : "Switching context…"}
           </output>
         ) : null}
         {notice === null ? null : (
-          // The notice's own frame is the design system's `Alert`, whose default role would be `alert`; inside this `<output>` the surrounding element is the announcing region, so the frame is rendered as a plain surface and the status is announced once, politely.
           <output className="block">
-            <Alert
-              // A refusal is emphasised; an undetermined result is not dressed as a failure, because the effect may well have been applied. The sentence states which it is either way.
-              variant={notice.tone === "refused" ? "destructive" : "default"}
-              role={undefined}
-            >
+            <Alert variant={notice.tone === "refused" ? "destructive" : "default"} role={undefined}>
               <AlertDescription>
                 {notice.sentence}
                 {notice.detail === undefined ? null : (
@@ -269,13 +227,11 @@ export function ContextSwitchGuard({ copy, open, pendingScope, unsavedWork, onSt
           </output>
         )}
         {onSaveAndSwitch === undefined ? null : (
-          // A button label cannot carry this explanation, so the note sits beside the actions it belongs to and the save action names it as its accessible description.
           <span id={saveNoteId} className="block text-sm text-balance text-muted-foreground">
             {copy.saveNote}
           </span>
         )}
         <AlertDialogFooter>
-          {/* Stay is first in the DOM, so the dialog focuses it on open and Tab reaches it first; it is never disabled, and it is the guard's own action rather than the dialog's close control, so a press here always means Stay. */}
           <AlertDialogAction ref={stayRef} confirmVariant="outline" onClick={() => onStay()}>
             {copy.stayLabel}
           </AlertDialogAction>

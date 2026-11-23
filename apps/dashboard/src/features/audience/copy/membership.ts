@@ -1,5 +1,4 @@
-import { NON_CONSENT_EVIDENCE, type NonConsentEvidence } from "@/modules/audience/consent";
-import { UPDATE_EMAIL_PURPOSE, type AudiencePurpose, type MembershipState, type SourceMembershipDisposition } from "@/modules/audience/membership";
+import { UPDATE_EMAIL_PURPOSE, type AudiencePurpose, type MembershipState } from "@/modules/audience/membership";
 import type { ExclusionReason } from "@/modules/audience/resolve";
 type MembershipStateDescription = { readonly description: string; readonly eligibleSuffix: string };
 export const MEMBERSHIP_STATE_DESCRIPTIONS: Record<MembershipState, MembershipStateDescription> = {
@@ -27,10 +26,6 @@ export const EXCLUSION_REASON_COPY: Record<ExclusionReason, string> = {
   unqualified: "This row does not qualify for this publisher's Update email for this purpose, so it is excluded and never silently activated.",
   "signed-up-after-intent": "This person signed up after this notification's intent was accepted, and a late signup never expands an accepted ceiling, so this signup is not part of this send.",
 };
-export const SOURCE_DISPOSITION_COPY: Record<SourceMembershipDisposition, string> = {
-  held: "The source system holds this row back: the membership is excluded, it is never silently activated, and the disposition says nothing about what the person wants.",
-  unqualified: "The source system does not qualify this row for this purpose: the membership is excluded, it is never silently activated, and the disposition says nothing about what the person wants.",
-};
 export const ELIGIBLE_HEADING = "Eligible for this purpose";
 export const EXCLUDED_HEADING = "Excluded from this purpose";
 export const PURPOSE_LABEL: Record<AudiencePurpose, string> = { [UPDATE_EMAIL_PURPOSE]: "Update email" };
@@ -46,11 +41,3 @@ export const MEMBERSHIP_COLUMN_HEADINGS: MembershipColumnHeadingSet = {
   exclusionReason: "Reason for exclusion",
 };
 export const NOT_CONSENT_STATEMENT = "A subscribed-style flag, an imported row, a contact edit or an existing partner record is not consent to receive this publisher's Update email for this purpose.";
-const NON_CONSENT_HINT_COPY: Record<NonConsentEvidence, string> = {
-  "subscribed-column": "A subscribed column that arrived with a source row is a value in that row. The application records it and never treats it as consent.",
-  "contact-edit": "A contact created or edited in this application holds what a worker entered, and editing a permitted field is never consent to receive notices.",
-  "import-row": "An accepted import row creates or reuses a contact, and no imported row subscribes anyone to this publisher's Update email.",
-  "partner-record": "A partner record exists for the work it supports, and neither its existence nor anything a relationship suggests is consent.",
-  "language-preference": "A language preference describes how a person reads. Choosing a language is not consent to receive notices and does not prove the address can be read.",
-};
-export const NON_CONSENT_HINTS: readonly string[] = Object.freeze(NON_CONSENT_EVIDENCE.map((evidence) => NON_CONSENT_HINT_COPY[evidence]));

@@ -34,8 +34,7 @@ export const PROOF_FLOW_COPY = {
   expiryStatement: `The address can be confirmed within ${CONFIRMATION_WINDOW_HOURS} elapsed hours of accepting. The window is measured in elapsed hours from the moment you accept, and reloading this page, retrying or resending the message never extends it.`,
 };
 export function CONFIRMATION_DEADLINE_COPY(deadlineLabel: string, expired: boolean): string {
-  if (expired) return `The confirmation window closed at ${deadlineLabel}. A new request for notices starts a new window.`;
-  return `This address can be confirmed until ${deadlineLabel}.`;
+  return expired ? `The confirmation window closed at ${deadlineLabel}. A new request for notices starts a new window.` : `This address can be confirmed until ${deadlineLabel}.`;
 }
 export const PREFERENCES_ENTRY_COPY: { readonly description: string; readonly linkLabel: string } = {
   description:

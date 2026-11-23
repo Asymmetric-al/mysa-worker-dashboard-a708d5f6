@@ -1,13 +1,8 @@
-/** `POST /api/pages/release` — the four writes that carry one page edition from a frozen candidate to a released edition: */
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { assertNever } from "@/lib/result";
-import { mutationInputSchema, mutations, outcomeFromError, toResponse } from "@/modules/data-service";
-import { sessionIdOf } from "../../session-cookie";
-import { dispatch, jsonBodyOf, operationIdentityOf } from "../../handler";
-// The store writes through node:fs, so this handler never runs on the edge runtime.
+import { mutationInputSchema, mutations } from "@/modules/data-service";
+import { claimedWriteRoute, dispatch, type ClaimedWrite } from "../../handler";
 export const runtime = "nodejs";
-// Every mutation resolves the development session and the scenario clock per request.
 export const dynamic = "force-dynamic";
 const MESSAGES = { operationRequired: "State which step this request takes as payload.operation: submitForReview, approveCandidate, requestChanges or publishVariants.", bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload." } as const;
 type SubmitForReviewPayload = Parameters<typeof mutations.pages.submitForReview>[1]["payload"];
@@ -20,25 +15,13 @@ const approveCandidateBodySchema = mutationInputSchema(z.custom<Routed<ApproveCa
 const requestChangesBodySchema = mutationInputSchema(z.custom<Routed<RequestChangesPayload>>());
 const publishVariantsBodySchema = mutationInputSchema(z.custom<Routed<PublishVariantsPayload>>());
 const RELEASE_OPERATIONS = ["submitForReview", "approveCandidate", "requestChanges", "publishVariants"] as const;
+type ReleaseOperation = (typeof RELEASE_OPERATIONS)[number];
 const discriminantSchema = z.object({ payload: z.object({ operation: z.enum(RELEASE_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.bodyNotJson });
+const WRITES = {
+  submitForReview: (raw, { operationId, sessionId }) => dispatch(submitForReviewBodySchema, raw, operationId, "operation", (input) => mutations.pages.submitForReview(sessionId, input)),
+  approveCandidate: (raw, { operationId, sessionId }) => dispatch(approveCandidateBodySchema, raw, operationId, "operation", (input) => mutations.pages.approveCandidate(sessionId, input)),
+  requestChanges: (raw, { operationId, sessionId }) => dispatch(requestChangesBodySchema, raw, operationId, "operation", (input) => mutations.pages.requestChanges(sessionId, input)),
+  publishVariants: (raw, { operationId, sessionId }) => dispatch(publishVariantsBodySchema, raw, operationId, "operation", (input) => mutations.pages.publishVariants(sessionId, input)),
+} satisfies Readonly<Record<ReleaseOperation, ClaimedWrite>>;
 /** One step of the page release ladder, selected by `payload.operation`. */
-export async function POST(request: NextRequest): Promise<Response> {
-  const raw = await jsonBodyOf(request);
-  const operationId = operationIdentityOf(raw);
-  const sessionId = sessionIdOf(request);
-  const claimed = discriminantSchema.safeParse(raw);
-  if (!claimed.success) return toResponse(outcomeFromError(operationId, claimed.error));
-  switch (claimed.data.payload.operation) {
-    case "submitForReview":
-      return dispatch(submitForReviewBodySchema, raw, operationId, "operation", (input) => mutations.pages.submitForReview(sessionId, input));
-    case "approveCandidate":
-      return dispatch(approveCandidateBodySchema, raw, operationId, "operation", (input) => mutations.pages.approveCandidate(sessionId, input));
-    case "requestChanges":
-      return dispatch(requestChangesBodySchema, raw, operationId, "operation", (input) => mutations.pages.requestChanges(sessionId, input));
-    case "publishVariants":
-      return dispatch(publishVariantsBodySchema, raw, operationId, "operation", (input) => mutations.pages.publishVariants(sessionId, input));
-    default:
-      // Unreachable: the four steps above are the closed set the discriminant schema admits, so a fifth mutation fails to compile at this call instead of reaching the runtime.
-      return assertNever(claimed.data.payload.operation, "Unhandled page release mutation");
-  }
-}
+export const POST = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES);

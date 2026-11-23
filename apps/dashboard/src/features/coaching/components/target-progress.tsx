@@ -3,13 +3,13 @@ import { useMemo, type ReactElement } from "react";
 import { ChartFigure, type ChartPoint, type ChartSeries, type ChartTable } from "@/components/chart-figure";
 import { StateNotice } from "@/components/state-notice";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import type { TargetMeasure, TargetState } from "@/modules/coaching/target";
 import type { Coverage, ValueState } from "@/modules/data-service/envelope";
 import { serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
 import { COACHING_COPY, MEASURE_COPY, TARGET_STATE_COPY } from "../copy";
+import { Panel } from "./panel";
 export type TargetProgressProps = {
   readonly progress: {
     readonly measure: TargetMeasure;
@@ -30,8 +30,6 @@ type BanneredState = Exclude<TargetState, "no-target" | "unavailable">;
 const TARGET_FORM_HREF = "/coaching/targets#target-form";
 const SET_TARGET_LABEL = "Set a target";
 const COMPARISON_HEADING = "The four measures";
-const COMPARISON_DESCRIPTION = "Each measure is counted on its own from the activity you recorded, so a conversation inside a " + "call is counted as a conversation and the call remains one call.";
-const NO_SUM_NOTE = "These four are stated separately and are never added together, ranked or turned into a score: " + "none of them measures effort, and no worker is compared with another.";
 const TABLE_COLUMNS = [
   { key: "period", label: "Period" },
   { key: "dates", label: "Dates" },
@@ -41,42 +39,28 @@ type RecordedReading = { readonly word: string | null; readonly showsFigure: boo
 const RECORDED_READING: Readonly<Record<ValueState, RecordedReading>> = {
   value: { word: null, showsFigure: true, qualifier: null, sentence: null },
   zero: { word: TARGET_STATE_COPY["zero-recorded"].label, showsFigure: true, qualifier: null, sentence: TARGET_STATE_COPY["zero-recorded"].description },
-  unknown: { word: "Unknown", showsFigure: false, qualifier: null, sentence: "The activity source did not establish a count for this period, so no figure is stated. " + "Unknown is not a zero." },
-  withheld: { word: "Withheld", showsFigure: false, qualifier: null, sentence: "A count exists for this period but is not shown on this surface. Withheld is neither a zero " + "nor an empty period." },
+  unknown: { word: "Unknown", showsFigure: false, qualifier: null, sentence: "The activity source did not establish a count for this period, so no figure is stated. Unknown is not a zero." },
+  withheld: { word: "Withheld", showsFigure: false, qualifier: null, sentence: "A count exists for this period but is not shown on this surface. Withheld is neither a zero nor an empty period." },
   unavailable: { word: TARGET_STATE_COPY.unavailable.label, showsFigure: false, qualifier: null, sentence: TARGET_STATE_COPY.unavailable.description },
   "incomplete-subtotal": { word: "Incomplete subtotal", showsFigure: true, qualifier: "incomplete subtotal", sentence: COACHING_COPY.targets.partial },
 };
 const STATE_BADGE_VARIANT: Readonly<Record<BanneredState, "secondary" | "outline">> = { active: "secondary", ended: "secondary", paused: "outline", unplaced: "outline", "zero-recorded": "outline" };
-function datesOf(period: RecordedPeriod): string {
-  return `${serialiseCivilDate(period.periodStart)} to ${serialiseCivilDate(period.periodEnd)}`;
-}
+const datesOf = (period: RecordedPeriod): string => `${serialiseCivilDate(period.periodStart)} to ${serialiseCivilDate(period.periodEnd)}`;
 function recordedCell(period: RecordedPeriod): string {
   const reading = RECORDED_READING[period.valueState];
-  if (!reading.showsFigure || period.value === null) {
-    return reading.word ?? "";
-  }
+  if (!reading.showsFigure || period.value === null) return reading.word ?? "";
   const figure = String(period.value);
   return reading.qualifier === null ? figure : `${figure} (${reading.qualifier})`;
 }
 function rangeClause(coverage: Coverage): string {
   const { from, to } = coverage;
-  if (from !== null && to !== null) {
-    return ` from ${from} to ${to}`;
-  }
-  if (from !== null) {
-    return ` from ${from} onwards`;
-  }
-  if (to !== null) {
-    return ` up to ${to}`;
-  }
+  if (from !== null && to !== null) return ` from ${from} to ${to}`;
+  if (from !== null) return ` from ${from} onwards`;
+  if (to !== null) return ` up to ${to}`;
   return "";
 }
-function coverageSentence(coverage: Coverage): string {
-  return `Coverage is ${coverage.state}${rangeClause(coverage)}.`;
-}
-function statesAFigure(progress: Progress): boolean {
-  return progress.recorded.some((period) => RECORDED_READING[period.valueState].showsFigure);
-}
+const coverageSentence = (coverage: Coverage): string => `Coverage is ${coverage.state}${rangeClause(coverage)}.`;
+const statesAFigure = (progress: Progress): boolean => progress.recorded.some((period) => RECORDED_READING[period.valueState].showsFigure);
 function StateStatement({ state }: { readonly state: BanneredState }): ReactElement {
   const copy = TARGET_STATE_COPY[state];
   return (
@@ -86,9 +70,7 @@ function StateStatement({ state }: { readonly state: BanneredState }): ReactElem
     </div>
   );
 }
-function NoTargetNotice(): ReactElement {
-  return <StateNotice kind="empty" title={TARGET_STATE_COPY["no-target"].label} description={TARGET_STATE_COPY["no-target"].description} action={{ label: SET_TARGET_LABEL, href: TARGET_FORM_HREF }} headingLevel={2} />;
-}
+const NoTargetNotice = (): ReactElement => <StateNotice kind="empty" title={TARGET_STATE_COPY["no-target"].label} description={TARGET_STATE_COPY["no-target"].description} action={{ label: SET_TARGET_LABEL, href: TARGET_FORM_HREF }} headingLevel={2} />;
 function ProgressFigure({ progress, locale }: { readonly progress: Progress; readonly locale: string }): ReactElement {
   const measureLabel = MEASURE_COPY[progress.measure].label;
   const measureNoun = measureLabel.toLowerCase();
@@ -100,10 +82,7 @@ function ProgressFigure({ progress, locale }: { readonly progress: Progress; rea
     <ChartFigure
       title={`${measureLabel} recorded against a target of ${quantity}`}
       summary={
-        `${MEASURE_COPY[progress.measure].hint} ${coverageSentence(progress.coverage)} ` +
-        `As-of statement: ${progress.asOf}. Each point is the count recorded for one period: a ` +
-        "period is never filled in from its neighbour, and these counts are never turned into a " +
-        "percentage, a completion rate or a running total."
+        `${MEASURE_COPY[progress.measure].hint} ${coverageSentence(progress.coverage)} ` + `As-of statement: ${progress.asOf}. Each point is the count recorded for one period: a ` + "period is never filled in from its neighbour, and these counts are never turned into a percentage, a completion rate or a running total."
       }
       caption={`Bar chart of ${measureNoun} recorded per period${rangeClause(progress.coverage)}, ` + "with the same periods and figures in the data table below."}
       kind="bar"
@@ -116,53 +95,41 @@ function ProgressFigure({ progress, locale }: { readonly progress: Progress; rea
     />
   );
 }
-function ComparisonRegion({ rows }: { readonly rows: ReadonlyArray<ComparisonRow> }): ReactElement {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          <h2>{COMPARISON_HEADING}</h2>
-        </CardTitle>
-        <CardDescription>{COMPARISON_DESCRIPTION}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex min-w-0 flex-col gap-3">
-        <ul aria-label={COMPARISON_HEADING} className="flex min-w-0 flex-col gap-3">
-          {rows.map((row, index) => {
-            const reading = RECORDED_READING[row.valueState];
-            return (
-              <li key={`${row.measure}-${String(index)}`} className="flex min-w-0 flex-col gap-1">
-                {index === 0 ? null : <Separator />}
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium">{MEASURE_COPY[row.measure].label}</p>
-                  {reading.word === null ? null : <Badge variant="outline">{reading.word}</Badge>}
-                </div>
-                <p className="text-sm">
-                  {reading.showsFigure ? (
-                    <>
-                      Recorded <bdi className="tabular-figures">{String(row.recorded)}</bdi> against a target of <bdi className="tabular-figures">{String(row.target)}</bdi>.
-                    </>
-                  ) : (
-                    <>
-                      No count is stated for this measure against a target of <bdi className="tabular-figures">{String(row.target)}</bdi>.
-                    </>
-                  )}
-                </p>
-                <p className="text-sm text-balance text-muted-foreground">{MEASURE_COPY[row.measure].hint}</p>
-                {reading.sentence === null ? null : <p className="text-sm text-balance text-muted-foreground">{reading.sentence}</p>}
-              </li>
-            );
-          })}
-        </ul>
-        <p className="text-sm text-balance text-muted-foreground">{NO_SUM_NOTE}</p>
-      </CardContent>
-    </Card>
-  );
-}
+const ComparisonRegion = ({ rows }: { readonly rows: ReadonlyArray<ComparisonRow> }): ReactElement => (
+  <Panel headingLevel={2} title={COMPARISON_HEADING} description={"Each measure is counted on its own from the activity you recorded, so a conversation inside a call is counted as a conversation and the call remains one call."} contentClassName="flex min-w-0 flex-col gap-3">
+    <ul aria-label={COMPARISON_HEADING} className="flex min-w-0 flex-col gap-3">
+      {rows.map((row, index) => {
+        const reading = RECORDED_READING[row.valueState];
+        return (
+          <li key={`${row.measure}-${String(index)}`} className="flex min-w-0 flex-col gap-1">
+            {index === 0 ? null : <Separator />}
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <p className="text-sm font-medium">{MEASURE_COPY[row.measure].label}</p>
+              {reading.word === null ? null : <Badge variant="outline">{reading.word}</Badge>}
+            </div>
+            <p className="text-sm">
+              {reading.showsFigure ? (
+                <>
+                  Recorded <bdi className="tabular-figures">{String(row.recorded)}</bdi> against a target of <bdi className="tabular-figures">{String(row.target)}</bdi>.
+                </>
+              ) : (
+                <>
+                  No count is stated for this measure against a target of <bdi className="tabular-figures">{String(row.target)}</bdi>.
+                </>
+              )}
+            </p>
+            <p className="text-sm text-balance text-muted-foreground">{MEASURE_COPY[row.measure].hint}</p>
+            {reading.sentence === null ? null : <p className="text-sm text-balance text-muted-foreground">{reading.sentence}</p>}
+          </li>
+        );
+      })}
+    </ul>
+    <p className="text-sm text-balance text-muted-foreground">{"These four are stated separately and are never added together, ranked or turned into a score: none of them measures effort, and no worker is compared with another."}</p>
+  </Panel>
+);
 export default function TargetProgress({ progress, comparison, locale, className }: TargetProgressProps): ReactElement {
   const comparisonRows = comparison ?? [];
   const comparisonRegion = comparisonRows.length === 0 ? null : <ComparisonRegion rows={comparisonRows} />;
-  // A target with no plan at all, and a progress read that stated none, are the same outcome to the
-  // reader: the family's `no-target` words and a way to set one.
   if (progress === null || progress.state === "no-target") {
     return (
       <section className={cn("flex min-w-0 flex-col gap-4", className)} data-interface-locale={locale}>
@@ -171,9 +138,6 @@ export default function TargetProgress({ progress, comparison, locale, className
       </section>
     );
   }
-  // The outage notice replaces the state word rather than sitting beside it, and the figure is kept
-  // only when the read still recorded something to draw: an outage with nothing behind it must not be
-  // followed by a second notice over an empty plot.
   const showsFigure = progress.state !== "unavailable" || statesAFigure(progress);
   return (
     <section className={cn("flex min-w-0 flex-col gap-4", className)} data-interface-locale={locale}>

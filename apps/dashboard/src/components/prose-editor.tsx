@@ -1,6 +1,5 @@
 "use client";
-/** The one prose editing surface in the application, and the only place a Tiptap editor is constructed (AAP 0.3.4 "one editor surface, shared by both families"; 0.11.1; 0.4.4 gap 3). */
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactElement, type ReactNode } from "react";
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { EditorContent, useEditor, useEditorState, type Editor, type JSONContent } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
@@ -21,6 +20,7 @@ import { ROOT_FIELD_KEY, type ConflictOutcome, type DeniedOutcome, type FieldMes
 const AUTOSAVE_DELAY_MS = 600;
 const LIST_LIMIT = 4;
 const PREVIEW_LIMIT = 600;
+const PASTE_NOTICE = "Images and video are added with the toolbar buttons, so they are prepared, placed and saved with the content. Nothing was inserted here.";
 const EDITOR_PROSE_CLASS = cn(
   "min-h-40 w-full px-3 py-2.5 text-sm leading-6 text-foreground outline-none",
   "[&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
@@ -53,9 +53,7 @@ type SaveState = { readonly status: "idle" } | { readonly status: "saving" } | {
 type SaveAttempt = { readonly document: ContentDocumentJson; readonly revision: number; readonly digest: string };
 type PendingPaste = { readonly json: unknown; readonly text: string; readonly preview: string; readonly previewTruncated: boolean; readonly dropped: readonly string[]; readonly blocks: number; readonly from: number; readonly to: number };
 const toEditorContent = (nodes: readonly ContentBlockNode[]): JSONContent[] => JSON.parse(JSON.stringify(nodes)) as JSONContent[];
-function buildDocument(editor: Editor, direction: ContentDirection, sections: readonly ContentSection[]): unknown {
-  return { type: "doc", profileVersion: CONTENT_PROFILE_VERSION, direction, content: editor.getJSON().content ?? [], sections };
-}
+const buildDocument = (editor: Editor, direction: ContentDirection, sections: readonly ContentSection[]): unknown => ({ type: "doc", profileVersion: CONTENT_PROFILE_VERSION, direction, content: editor.getJSON().content ?? [], sections });
 function advanceRevision(current: number, revision: string): number {
   const parsed = Number(revision);
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : current + 1;
@@ -98,7 +96,6 @@ function fieldMessages(fields: FieldMessages): string[] {
   return lines;
 }
 type SaveFailureShape = { readonly halts: boolean; readonly tone: "default" | "destructive"; readonly retry?: SaveFailure["retry"]; readonly operationId?: string };
-/** One refusal, assembled once: every arm below states only what it adds to the shape. */
 const refusalOf = (kind: SaveFailureKind, message: string, details: readonly string[], shape: SaveFailureShape): SaveFailure => ({ kind, message, details, operationId: shape.operationId ?? null, halts: shape.halts, tone: shape.tone, retry: shape.retry ?? null });
 function describeFailure(outcome: ConflictOutcome | DeniedOutcome | InvalidOutcome | UnavailableOutcome | UnknownOutcome, attemptRevision: number): SaveFailure {
   switch (outcome.outcome) {
@@ -135,16 +132,7 @@ function unreadableFailure(issues: readonly DocumentIssue[]): SaveFailure {
 }
 type ToolbarControlProps = { readonly label: string; readonly icon: ReactNode; readonly onSelect: () => void; readonly pressed?: boolean; readonly disabled?: boolean };
 function ToolbarControl({ label, icon, onSelect, pressed, disabled }: ToolbarControlProps) {
-  const control =
-    pressed === undefined ? (
-      <Button type="button" variant="ghost" size="icon-sm" aria-label={label} disabled={disabled} onClick={onSelect}>
-        {icon}
-      </Button>
-    ) : (
-      <Toggle type="button" size="sm" aria-label={label} pressed={pressed} disabled={disabled} onPressedChange={onSelect}>
-        {icon}
-      </Toggle>
-    );
+  const control = pressed === undefined ? <Button {...{ type: "button", variant: "ghost", size: "icon-sm", "aria-label": label, disabled, onClick: onSelect }}>{icon}</Button> : <Toggle {...{ type: "button", size: "sm", "aria-label": label, pressed, disabled, onPressedChange: onSelect }}>{icon}</Toggle>;
   return (
     <Tooltip>
       <TooltipTrigger render={control} />
@@ -172,7 +160,11 @@ function EditorToolbar({ editor, onOpenLink, onRequestMedia }: EditorToolbarProp
       canRedo: current.can().redo(),
     }),
   });
-  const headingValue = active.heading === null ? [] : [String(active.heading)];
+  const chooseHeading = (next: readonly string[]): void => {
+    const level = headingLevelOf(next[0] ?? "");
+    if (level === undefined) editor.chain().focus().setParagraph().run();
+    else editor.chain().focus().setHeading({ level }).run();
+  };
   return (
     <fieldset aria-label="Text formatting" className="flex min-w-0 flex-wrap items-center gap-1 border-0 p-0">
       <ToolbarControl label="Bold" icon={<Bold aria-hidden="true" />} pressed={active.bold} onSelect={() => editor.chain().focus().toggleBold().run()} />
@@ -181,20 +173,7 @@ function EditorToolbar({ editor, onOpenLink, onRequestMedia }: EditorToolbarProp
       <ToolbarControl label="Strikethrough" icon={<Strikethrough aria-hidden="true" />} pressed={active.strike} onSelect={() => editor.chain().focus().toggleStrike().run()} />
       <ToolbarControl label="Code" icon={<Code aria-hidden="true" />} pressed={active.code} onSelect={() => editor.chain().focus().toggleCode().run()} />
       <Separator orientation="vertical" className="mx-0.5 h-6 self-center" />
-      <ToggleGroup
-        multiple={false}
-        value={headingValue}
-        onValueChange={(next) => {
-          const level = headingLevelOf(next[0] ?? "");
-          if (level === undefined) {
-            editor.chain().focus().setParagraph().run();
-            return;
-          }
-          editor.chain().focus().setHeading({ level }).run();
-        }}
-        size="sm"
-        aria-label="Heading level"
-      >
+      <ToggleGroup {...{ multiple: false, value: active.heading === null ? [] : [String(active.heading)], onValueChange: chooseHeading, size: "sm", "aria-label": "Heading level" }}>
         {ADMITTED_HEADING_LEVELS.map((level) => {
           const { label, Icon } = HEADING_PRESENTATION[level];
           return (
@@ -232,52 +211,68 @@ function EditorToolbar({ editor, onOpenLink, onRequestMedia }: EditorToolbarProp
     </fieldset>
   );
 }
+type EditorDialogProps = { readonly open: boolean; readonly onClose: () => void; readonly title: string; readonly description: string; readonly initialFocus: () => HTMLElement | null; readonly footer: ReactNode; readonly children: ReactNode };
+const EditorDialog = ({ open, onClose, title, description, initialFocus, footer, children }: EditorDialogProps): ReactNode => (
+  <Dialog
+    open={open}
+    onOpenChange={(next) => {
+      if (!next) onClose();
+    }}
+  >
+    <DialogContent initialFocus={initialFocus}>
+      <DialogHeader>
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription>{description}</DialogDescription>
+      </DialogHeader>
+      {children}
+      <DialogFooter>{footer}</DialogFooter>
+    </DialogContent>
+  </Dialog>
+);
 type PasteDecisionDialogProps = { readonly pending: PendingPaste | null; readonly onChoose: (decision: PasteDecision) => void };
+type NoticeAlertProps = { readonly variant?: "default" | "destructive"; readonly icon?: true; readonly title: string; readonly children: ReactNode; readonly dismissLabel: string; readonly onDismiss: () => void };
+const NoticeAlert = ({ variant = "default", icon, title, children, dismissLabel, onDismiss }: NoticeAlertProps): ReactElement => (
+  <Alert variant={variant}>
+    {icon === true ? <CircleAlert aria-hidden="true" /> : null}
+    <AlertTitle>{title}</AlertTitle>
+    <AlertDescription>{children}</AlertDescription>
+    <AlertAction>
+      <Button {...{ type: "button", variant: "ghost", size: "icon-xs", "aria-label": dismissLabel, onClick: onDismiss }}>
+        <X aria-hidden="true" />
+      </Button>
+    </AlertAction>
+  </Alert>
+);
 function PasteDecisionDialog({ pending, onChoose }: PasteDecisionDialogProps) {
   const preview = pending?.preview ?? "";
   const convertRef = useRef<HTMLButtonElement>(null);
   const plainTextRef = useRef<HTMLButtonElement>(null);
-  // A paste that carries no admitted structure has nothing to convert, so plain text becomes the action the dialog opens on rather than leaving a disabled primary button in front of the author.
   const canConvert = (pending?.blocks ?? 0) > 0;
+  const footer = (
+    <>
+      <Button {...{ type: "button", variant: "outline", onClick: () => onChoose("cancel") }}>Cancel</Button>
+      <Button {...{ ref: plainTextRef, type: "button", variant: canConvert ? "outline" : "default", onClick: () => onChoose("plain-text") }}>Insert as plain text</Button>
+      <Button {...{ ref: convertRef, type: "button", variant: canConvert ? "default" : "outline", onClick: () => onChoose("convert"), disabled: !canConvert }}>Convert to supported text</Button>
+    </>
+  );
+  const description = "Nothing is inserted until you choose. Formatting outside this editor's text profile is dropped, and direction-control characters are removed rather than stored.";
   return (
-    <Dialog
-      open={pending !== null}
-      onOpenChange={(open) => {
-        if (!open) onChoose("cancel");
-      }}
-    >
-      <DialogContent initialFocus={() => (canConvert ? convertRef.current : plainTextRef.current)}>
-        <DialogHeader>
-          <DialogTitle>Choose how to paste</DialogTitle>
-          <DialogDescription>Nothing is inserted until you choose. Formatting outside this editor&apos;s text profile is dropped, and direction-control characters are removed rather than stored.</DialogDescription>
-        </DialogHeader>
-        {pending === null ? null : (
-          <div className="grid gap-2">
-            <div className="max-h-40 overflow-y-auto rounded-lg border border-border bg-muted/40 p-3 text-xs break-words whitespace-pre-wrap">
-              <bdi>{preview === "" ? "This clipboard carries no text to preview." : preview}</bdi>
-            </div>
-            {pending.previewTruncated ? <p className="text-xs text-muted-foreground">The preview is shortened.</p> : null}
-            {pending.dropped.length === 0 ? null : (
-              <p className="text-xs text-muted-foreground">
-                Not kept: <bdi>{pending.dropped.join(", ")}</bdi>.
-              </p>
-            )}
-            {canConvert ? null : <p className="text-xs text-muted-foreground">Converting keeps only the supported structure, and this paste brings none of it, so it would insert nothing. Inserting it as plain text keeps the words.</p>}
+    <EditorDialog open={pending !== null} onClose={() => onChoose("cancel")} title="Choose how to paste" description={description} initialFocus={() => (canConvert ? convertRef.current : plainTextRef.current)} footer={footer}>
+      {pending === null ? null : (
+        <div className="grid gap-2">
+          <div className="max-h-40 overflow-y-auto rounded-lg border border-border bg-muted/40 p-3 text-xs break-words whitespace-pre-wrap">
+            <bdi>{preview === "" ? "This clipboard carries no text to preview." : preview}</bdi>
           </div>
-        )}
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onChoose("cancel")}>
-            Cancel
-          </Button>
-          <Button ref={plainTextRef} type="button" variant={canConvert ? "outline" : "default"} onClick={() => onChoose("plain-text")}>
-            Insert as plain text
-          </Button>
-          <Button ref={convertRef} type="button" variant={canConvert ? "default" : "outline"} onClick={() => onChoose("convert")} disabled={!canConvert}>
-            Convert to supported text
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          {pending.previewTruncated ? <p className="text-xs text-muted-foreground">The preview is shortened.</p> : null}
+          {pending.dropped.length === 0 ? null : (
+            <p className="text-xs text-muted-foreground">
+              Not kept: <bdi>{pending.dropped.join(", ")}</bdi>.
+            </p>
+          )}
+          {canConvert ? null : <p className="text-xs text-muted-foreground">Converting keeps only the supported structure, and this paste brings none of it, so it would insert nothing. Inserting it as plain text keeps the words.</p>}
+        </div>
+      )}
+    </EditorDialog>
   );
 }
 type LinkDestinationDialogProps = { readonly open: boolean; readonly href: string; readonly error: string | null; readonly onHrefChange: (href: string) => void; readonly onApply: () => void; readonly onCancel: () => void };
@@ -285,55 +280,31 @@ function LinkDestinationDialog({ open, href, error, onHrefChange, onApply, onCan
   const fieldId = useId();
   const errorId = useId();
   const fieldRef = useRef<HTMLInputElement>(null);
+  const changeHref = (event: ChangeEvent<HTMLInputElement>): void => onHrefChange(event.target.value);
+  const selectHref = (event: FocusEvent<HTMLInputElement>): void => event.currentTarget.select();
+  const submitOnEnter = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    onApply();
+  };
+  const footer = (
+    <>
+      <Button {...{ type: "button", variant: "outline", onClick: onCancel }}>Cancel</Button>
+      <Button {...{ type: "button", onClick: onApply }}>Apply link</Button>
+    </>
+  );
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) onCancel();
-      }}
-    >
-      <DialogContent initialFocus={() => fieldRef.current}>
-        <DialogHeader>
-          <DialogTitle>Link destination</DialogTitle>
-          <DialogDescription>An absolute http or https address, or a path beginning with /. A link opens only where the content is read, never inside this editor.</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-1.5">
-          <Label htmlFor={fieldId}>Web address</Label>
-          <Input
-            ref={fieldRef}
-            id={fieldId}
-            type="text"
-            inputMode="url"
-            autoComplete="off"
-            spellCheck={false}
-            value={href}
-            onChange={(event) => onHrefChange(event.target.value)}
-            onFocus={(event) => event.currentTarget.select()}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                onApply();
-              }
-            }}
-            aria-invalid={error !== null}
-            aria-describedby={error === null ? undefined : errorId}
-          />
-          {error === null ? null : (
-            <p id={errorId} className="text-xs text-destructive">
-              {error}
-            </p>
-          )}
-        </div>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button type="button" onClick={onApply}>
-            Apply link
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <EditorDialog open={open} onClose={onCancel} title="Link destination" description="An absolute http or https address, or a path beginning with /. A link opens only where the content is read, never inside this editor." initialFocus={() => fieldRef.current} footer={footer}>
+      <div className="grid gap-1.5">
+        <Label htmlFor={fieldId}>Web address</Label>
+        <Input ref={fieldRef} id={fieldId} type="text" inputMode="url" autoComplete="off" spellCheck={false} value={href} onChange={changeHref} onFocus={selectHref} onKeyDown={submitOnEnter} aria-invalid={error !== null} aria-describedby={error === null ? undefined : errorId} />
+        {error === null ? null : (
+          <p id={errorId} className="text-xs text-destructive">
+            {error}
+          </p>
+        )}
+      </div>
+    </EditorDialog>
   );
 }
 /** The single editing surface for Update prose and Page section prose. */
@@ -368,7 +339,6 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
     try {
       outcome = await propsRef.current.onSave(attempt.document, attempt.revision);
     } catch {
-      // A rejected promise is not one of the eight outcomes. The honest reading is that this surface does not know what happened, so the text stays and the author may save it again.
       outcome = null;
     }
     inFlightRef.current = false;
@@ -440,7 +410,6 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
         const hasFiles = clipboard.files.length > 0;
         if (html.trim() === "" && text.trim() === "" && !hasFiles) return false;
         if (html.trim() === "" && text.trim() === "") {
-          // Media is never a prose node: a pasted file is reported and routed to the picker instead of being dropped into the document, where it would vanish or bypass preparation.
           event.preventDefault();
           setMediaPasteNotice(true);
           return true;
@@ -448,7 +417,6 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
         let json: unknown;
         if (html.trim() !== "") {
           try {
-            // An inert document: no script runs and no resource is fetched while the clipboard is read, and the parse uses this editor's own schema, so the fragment offered to the choice is expressed in exactly the vocabulary the record accepts.
             const parsedHtml = new window.DOMParser().parseFromString(html, "text/html");
             json = ProseMirrorDOMParser.fromSchema(view.state.schema).parse(parsedHtml.body).toJSON();
           } catch {
@@ -470,16 +438,10 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
   });
   useEffect(() => {
     editorRef.current = editor;
-  }, [editor]);
-  useEffect(() => {
     propsRef.current = { direction, readOnly, onSave };
-  }, [direction, readOnly, onSave]);
-  useEffect(() => {
     sectionsRef.current = initialDocument.sections;
-  }, [initialDocument]);
-  useEffect(() => {
     revisionRef.current = expectedRevision;
-  }, [expectedRevision]);
+  }, [editor, direction, onSave, initialDocument, readOnly, expectedRevision]);
   useEffect(() => {
     if (editor === null) return;
     editor.setEditable(!readOnly);
@@ -488,7 +450,6 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
   useEffect(() => {
     if (editor === null) return;
     const handleUpdate = () => scheduleSave();
-    // A surface that loses focus with a save still pending does not wait out the debounce: leaving the field is the last moment this component knows the author has finished the sentence.
     const handleBlur = () => {
       if (timerRef.current === null) return;
       window.clearTimeout(timerRef.current);
@@ -517,16 +478,11 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
     const current = editorRef.current;
     setPendingPaste(null);
     if (current === null || current.isDestroyed) return;
-    if (decision === "cancel") {
-      current.commands.focus();
-      return;
-    }
+    if (decision === "cancel") return current.commands.focus();
     const result = admittedPasteDecision(decision, { json: pending?.json, text: pending?.text ?? "" });
     if (pending !== null) {
       const size = current.state.doc.content.size;
-      if (pending.from <= size && pending.to <= size) {
-        current.commands.setTextSelection({ from: pending.from, to: pending.to });
-      }
+      if (pending.from <= size && pending.to <= size) current.commands.setTextSelection({ from: pending.from, to: pending.to });
     }
     if (result.status === "plain-text") {
       current.chain().focus().insertContent(plainTextBlocks(result.content.text)).run();
@@ -534,10 +490,7 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
     }
     if (result.status === "converted") {
       const content = toEditorContent(result.content.content);
-      if (content.length === 0) {
-        current.commands.focus();
-        return;
-      }
+      if (content.length === 0) return current.commands.focus();
       current.chain().focus().insertContent(content).run();
     }
   }
@@ -574,6 +527,8 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
     if (saved) await flushRef.current();
   }
   const statusText = saveState.status === "saving" ? "Saving…" : saveState.status === "saved" ? "Saved" : saveState.status === "failed" ? "Not saved — the text in this editor is the only copy." : "";
+  const retryMode = saveState.status === "failed" ? saveState.retry : null;
+  // The editor states the direction to the provider as well as the section, so the portalled toolbar and dialogs it opens follow the edition's direction rather than the page's.
   return (
     <DirectionProvider direction={direction}>
       <section dir={direction} aria-labelledby={labelId} className="flex w-full min-w-0 flex-col gap-2">
@@ -588,26 +543,16 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
         <div className={cn("min-h-40 min-w-0 rounded-lg border border-input bg-input/30 motion-safe:transition-colors", "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring", readOnly && "border-transparent bg-transparent")}>
           <EditorContent editor={editor} />
         </div>
-        {/* `output` carries the status role natively, so the save state is announced once as it changes and is never proved by a notification that disappears. It stays mounted while idle, so the region exists before its text does. */}
         {readOnly ? null : (
           <output aria-live="polite" className="block min-h-4 text-xs text-muted-foreground">
             {statusText}
           </output>
         )}
         {contentIssue === null ? null : (
-          <Alert variant="destructive">
-            <CircleAlert aria-hidden="true" />
-            <AlertTitle>Some content could not be read</AlertTitle>
-            <AlertDescription>
-              <p>{contentIssue}</p>
-              <p>The rest of the text is here and can still be edited.</p>
-            </AlertDescription>
-            <AlertAction>
-              <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss the content message" onClick={() => setContentIssue(null)}>
-                <X aria-hidden="true" />
-              </Button>
-            </AlertAction>
-          </Alert>
+          <NoticeAlert {...{ variant: "destructive", icon: true, title: "Some content could not be read", dismissLabel: "Dismiss the content message", onDismiss: () => setContentIssue(null) }}>
+            <p>{contentIssue}</p>
+            <p>The rest of the text is here and can still be edited.</p>
+          </NoticeAlert>
         )}
         {saveState.status === "failed" ? (
           <Alert variant={saveState.tone}>
@@ -626,50 +571,16 @@ export function ProseEditor({ initialDocument, expectedRevision, direction, labe
                 </p>
               )}
             </AlertDescription>
-            {saveState.retry === null ? null : (
+            {retryMode === null ? null : (
               <AlertAction>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (saveState.retry === "check-result") {
-                      void checkResult();
-                      return;
-                    }
-                    void saveAgain();
-                  }}
-                >
-                  {saveState.retry === "check-result" ? "Check the result" : "Save again"}
-                </Button>
+                <Button {...{ type: "button", variant: "outline", size: "sm", onClick: () => void (retryMode === "check-result" ? checkResult() : saveAgain()) }}>{retryMode === "check-result" ? "Check the result" : "Save again"}</Button>
               </AlertAction>
             )}
           </Alert>
         ) : null}
-        {mediaPasteNotice ? (
-          <Alert>
-            <AlertTitle>A file was pasted</AlertTitle>
-            <AlertDescription>Images and video are added with the toolbar buttons, so they are prepared, placed and saved with the content. Nothing was inserted here.</AlertDescription>
-            <AlertAction>
-              <Button type="button" variant="ghost" size="icon-xs" aria-label="Dismiss the paste message" onClick={() => setMediaPasteNotice(false)}>
-                <X aria-hidden="true" />
-              </Button>
-            </AlertAction>
-          </Alert>
-        ) : null}
+        {mediaPasteNotice ? <NoticeAlert {...{ title: "A file was pasted", dismissLabel: "Dismiss the paste message", onDismiss: () => setMediaPasteNotice(false) }}>{PASTE_NOTICE}</NoticeAlert> : null}
         <PasteDecisionDialog pending={pendingPaste} onChoose={applyPendingPaste} />
-        <LinkDestinationDialog
-          open={linkDraft.open}
-          href={linkDraft.href}
-          error={linkDraft.error}
-          onHrefChange={(href) => {
-            setLinkDraft((draft) => ({ ...draft, href, error: null }));
-          }}
-          onApply={applyLink}
-          onCancel={() => {
-            setLinkDraft({ open: false, href: "", error: null });
-          }}
-        />
+        <LinkDestinationDialog open={linkDraft.open} href={linkDraft.href} error={linkDraft.error} onHrefChange={(href) => setLinkDraft((draft) => ({ ...draft, href, error: null }))} onApply={applyLink} onCancel={() => setLinkDraft({ open: false, href: "", error: null })} />
       </section>
     </DirectionProvider>
   );

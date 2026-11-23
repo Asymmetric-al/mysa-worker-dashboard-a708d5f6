@@ -47,4 +47,3 @@ export const SESSION_STATE_COPY: Record<SessionState, SessionStateEntry> = {
   },
   "no-access": { title: NO_ACCESS_RECOVERY.title, body: NO_ACCESS_RECOVERY.body, recoverySteps: NO_ACCESS_RECOVERY.steps, noticeKind: null },
 };
-export const SESSION_STATE_LABEL: Record<SessionState, string> = { "signed-in": "Signed in", unavailable: "Session unavailable", denied: "Access denied", expired: "Session expired", "no-access": "No account access" };

@@ -1,5 +1,4 @@
 "use client";
-/** The one durable receipt for a mutation outcome: the record of what happened that a person returns to. */
 import { useId, useRef, type ReactElement, type ReactNode } from "react";
 import { fieldErrorsFromInvalid, FormErrorSummary } from "@/components/form-field";
 import StatusBadge, { type StatusBadgeSpec } from "@/components/status-badge";
@@ -40,13 +39,10 @@ function describeValue(value: unknown): string {
     const text: unknown = JSON.stringify(value, null, 2);
     return typeof text === "string" ? text : NOT_STATED_TEXT;
   } catch {
-    // A cyclic or otherwise unserialisable value states nothing rather than failing the receipt.
     return NOT_STATED_TEXT;
   }
 }
-function Identifier({ value }: { readonly value: string }): ReactElement | null {
-  return value.trim() === "" ? null : <bdi className="mono-identifier">{value}</bdi>;
-}
+const Identifier = ({ value }: { readonly value: string }): ReactElement | null => (value.trim() === "" ? null : <bdi className="mono-identifier">{value}</bdi>);
 function IdentifierGroup({ label, ids }: { readonly label: string; readonly ids: readonly string[] | undefined }): ReactElement | null {
   const values = (ids ?? []).filter((id) => id.trim() !== "");
   if (values.length === 0) return null;
@@ -83,27 +79,21 @@ function ReceiptFacts({ revision, revisionLabel = "Revision", created, changed }
     </dl>
   );
 }
-function ValueBlock({ label, value }: { readonly label: string; readonly value: unknown }): ReactElement {
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <p className="text-sm font-medium">{label}</p>
-      <pre dir="ltr" className="min-w-0 rounded-lg bg-muted p-3 text-sm whitespace-pre-wrap wrap-anywhere text-foreground">
-        {describeValue(value)}
-      </pre>
-    </div>
-  );
-}
-function ReceiptButton({ label, variant, onSelect }: { readonly label: string; readonly variant: "default" | "outline"; readonly onSelect: () => void }): ReactElement {
-  return (
-    <Button type="button" variant={variant} size="sm" className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal" onClick={onSelect}>
-      {label}
-    </Button>
-  );
-}
+const ValueBlock = ({ label, value }: { readonly label: string; readonly value: unknown }): ReactElement => (
+  <div className="flex min-w-0 flex-col gap-1">
+    <p className="text-sm font-medium">{label}</p>
+    <pre dir="ltr" className="min-w-0 rounded-lg bg-muted p-3 text-sm whitespace-pre-wrap wrap-anywhere text-foreground">
+      {describeValue(value)}
+    </pre>
+  </div>
+);
+const ReceiptButton = ({ label, variant, onSelect }: { readonly label: string; readonly variant: "default" | "outline"; readonly onSelect: () => void }): ReactElement => (
+  <Button type="button" variant={variant} size="sm" className="h-auto min-h-8 max-w-full py-1.5 whitespace-normal" onClick={onSelect}>
+    {label}
+  </Button>
+);
 /** The word and tone of one per-item state, including a state the closed four do not name. */
-export function perItemStatus(state: string): StatusBadgeSpec {
-  return PER_ITEM_RESULT_STATUS[state as PerItemResultState] ?? { label: state.trim() === "" ? NOT_STATED_TEXT : state, tone: "muted" };
-}
+export const perItemStatus = (state: string): StatusBadgeSpec => PER_ITEM_RESULT_STATUS[state as PerItemResultState] ?? { label: state.trim() === "" ? NOT_STATED_TEXT : state, tone: "muted" };
 export type PerItemColumn = { readonly key: string; readonly label: string };
 const PER_ITEM_CELL_CLASS = "min-w-0 border-b border-border px-2 py-2 align-top text-start wrap-anywhere";
 const PER_ITEM_HEAD_CLASS = cn(PER_ITEM_CELL_CLASS, "font-medium text-muted-foreground");
@@ -127,7 +117,6 @@ export function PerItemResults({ items, columns = [], renderItemAction, heading 
         </p>
         <p className="text-sm text-muted-foreground">{PER_ITEM_MIXED_NOTE}</p>
       </div>
-      {/* Narrow: one labelled block per row, so nothing is squeezed into a column too narrow to hold a state word or an identifier. */}
       <ul aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2 sm:hidden">
         {rows.map((row) => (
           <li key={row.key} className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border p-3">
@@ -147,7 +136,6 @@ export function PerItemResults({ items, columns = [], renderItemAction, heading 
           </li>
         ))}
       </ul>
-      {/* Wide: the same rows as a table, so columns line up and rows can be compared. */}
       <table aria-labelledby={headingId} className="hidden w-full table-fixed border-collapse text-sm sm:table">
         <thead>
           <tr>
@@ -210,129 +198,113 @@ function unknownRecoverySentence(offersCheck: boolean, offersReplay: boolean): s
   if (offersReplay) return "Nothing here starts a second attempt: retrying sends this same operation, which answers with " + "its original result instead of repeating the effect.";
   return null;
 }
+const receipt = (summary: ReactNode, details: ReactNode): ReceiptBody => ({ summary, details });
 function receiptBody(outcome: ReceiptOutcome, context: ReceiptContext): ReceiptBody {
   switch (outcome.outcome) {
     case "accepted": {
       const items = outcome.items ?? [];
       const facts = hasFacts(outcome);
       const perItem = items.length === 0 ? null : <PerItemResults items={items} columns={context.perItemColumns} renderItemAction={context.renderItemAction} />;
-      return {
-        summary: (
+      return receipt(
+        <>
+          <p>The change was applied once, and it stays on this page as the record of it.</p>
+          <p>The revision below is what this record now stands at, and the next change has to present it.</p>
+        </>,
+        facts || perItem !== null ? (
           <>
-            <p>The change was applied once, and it stays on this page as the record of it.</p>
-            <p>The revision below is what this record now stands at, and the next change has to present it.</p>
+            {facts ? <ReceiptFacts revision={outcome.revision} created={outcome.created} changed={outcome.changed} /> : null}
+            {perItem}
           </>
-        ),
-        details:
-          facts || perItem !== null ? (
-            <>
-              {facts ? <ReceiptFacts revision={outcome.revision} created={outcome.created} changed={outcome.changed} /> : null}
-              {perItem}
-            </>
-          ) : null,
-      };
+        ) : null,
+      );
     }
     case "alreadyAccepted":
-      return {
-        summary: (
-          <>
-            <p>You sent this before, and the result stored for it came back unchanged: nothing was applied a second time and the revision did not advance.</p>
-            <p>What appears below is what the earlier submission produced, not a new effect.</p>
-          </>
-        ),
-        details: (
-          <>
-            {hasFacts(outcome) ? <ReceiptFacts revision={outcome.revision} /> : null}
-            <ValueBlock label="The result stored for this operation" value={outcome.result} />
-          </>
-        ),
-      };
+      return receipt(
+        <>
+          <p>You sent this before, and the result stored for it came back unchanged: nothing was applied a second time and the revision did not advance.</p>
+          <p>What appears below is what the earlier submission produced, not a new effect.</p>
+        </>,
+        <>
+          {hasFacts(outcome) ? <ReceiptFacts revision={outcome.revision} /> : null}
+          <ValueBlock label="The result stored for this operation" value={outcome.result} />
+        </>,
+      );
     case "unchanged":
-      return { summary: <p>Nothing needed changing, so nothing happened: no history entry and no activity record was created.</p>, details: hasFacts(outcome) ? <ReceiptFacts revision={outcome.revision} /> : null };
+      return receipt(<p>Nothing needed changing, so nothing happened: no history entry and no activity record was created.</p>, hasFacts(outcome) ? <ReceiptFacts revision={outcome.revision} /> : null);
     case "conflict": {
       const reapply = context.run(context.onReapply);
-      return {
-        summary: (
-          <>
-            <p>{outcome.reason === "stale-revision" ? "Someone else saved a change after you opened this record, so your change was not applied." : "This submission reused the identity of an earlier request with different content, so it was refused."}</p>
-            <p>Your input is kept exactly as you entered it, beside the value the record holds now, and nothing was overwritten in either direction.</p>
-            {reapply === undefined ? null : (
-              <div className="flex flex-wrap items-center gap-2">
-                <ReceiptButton label="Re-apply my input" variant="default" onSelect={reapply} />
-              </div>
-            )}
-          </>
-        ),
-        details: (
-          <>
-            <ReceiptFacts revision={outcome.currentRevision} revisionLabel="Current revision" />
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-              <ValueBlock label="The value the record holds now" value={outcome.current} />
-              <ValueBlock label="Your input, kept as you entered it" value={outcome.preservedInput} />
+      return receipt(
+        <>
+          <p>{outcome.reason === "stale-revision" ? "Someone else saved a change after you opened this record, so your change was not applied." : "This submission reused the identity of an earlier request with different content, so it was refused."}</p>
+          <p>Your input is kept exactly as you entered it, beside the value the record holds now, and nothing was overwritten in either direction.</p>
+          {reapply === undefined ? null : (
+            <div className="flex flex-wrap items-center gap-2">
+              <ReceiptButton label="Re-apply my input" variant="default" onSelect={reapply} />
             </div>
-          </>
-        ),
-      };
+          )}
+        </>,
+        <>
+          <ReceiptFacts revision={outcome.currentRevision} revisionLabel="Current revision" />
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <ValueBlock label="The value the record holds now" value={outcome.current} />
+            <ValueBlock label="Your input, kept as you entered it" value={outcome.preservedInput} />
+          </div>
+        </>,
+      );
     }
     case "denied":
-      return {
-        summary: (
-          <>
-            <p>This request was refused in the current session and scope, and nothing was changed.</p>
-            <p>
-              Reason <Identifier value={outcome.reasonCode} />.
-            </p>
-            <p>The answer is the same whether or not anything exists here, so nothing on this receipt states what you may not see.</p>
-          </>
-        ),
-        details: null,
-      };
+      return receipt(
+        <>
+          <p>This request was refused in the current session and scope, and nothing was changed.</p>
+          <p>
+            Reason <Identifier value={outcome.reasonCode} />.
+          </p>
+          <p>The answer is the same whether or not anything exists here, so nothing on this receipt states what you may not see.</p>
+        </>,
+        null,
+      );
     case "unavailable": {
       const retry = context.run(context.onRetrySameWork);
       const guidance = outcome.guidance.trim();
-      return {
-        summary: (
-          <>
-            <p>The source behind this work could not be reached, so this receipt reports the outage instead of an empty result or a zero.</p>
-            <p>
-              Source <bdi className="mono-identifier">{outcome.source.system}</bdi>, reference <bdi className="mono-identifier">{outcome.source.reference}</bdi>.
-            </p>
-            {guidance === "" ? null : <p>{outcome.guidance}</p>}
-            {retry === undefined ? null : (
-              <>
-                <p>Retrying re-requests this same operation, so the service answers with the original result if the change had already been applied.</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <ReceiptButton label="Retry the same request" variant="outline" onSelect={retry} />
-                </div>
-              </>
-            )}
-          </>
-        ),
-        details: null,
-      };
+      return receipt(
+        <>
+          <p>The source behind this work could not be reached, so this receipt reports the outage instead of an empty result or a zero.</p>
+          <p>
+            Source <bdi className="mono-identifier">{outcome.source.system}</bdi>, reference <bdi className="mono-identifier">{outcome.source.reference}</bdi>.
+          </p>
+          {guidance === "" ? null : <p>{outcome.guidance}</p>}
+          {retry === undefined ? null : (
+            <>
+              <p>Retrying re-requests this same operation, so the service answers with the original result if the change had already been applied.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <ReceiptButton label="Retry the same request" variant="outline" onSelect={retry} />
+              </div>
+            </>
+          )}
+        </>,
+        null,
+      );
     }
     case "unknown": {
       const check = context.run(context.onCheckResult);
       const retry = context.run(context.onRetrySameWork);
       const recovery = unknownRecoverySentence(check !== undefined, retry !== undefined);
-      return {
-        summary: (
-          <>
-            <p>This change may have been applied and its acknowledgement never arrived, so its result is not confirmed either way.</p>
-            <p>
-              Operation <Identifier value={outcome.operationId} />.
-            </p>
-            {recovery === null ? null : <p>{recovery}</p>}
-            {check === undefined && retry === undefined ? null : (
-              <div className="flex flex-wrap items-center gap-2">
-                {check === undefined ? null : <ReceiptButton label="Check the result" variant="default" onSelect={check} />}
-                {retry === undefined ? null : <ReceiptButton label="Retry the same request" variant="outline" onSelect={retry} />}
-              </div>
-            )}
-          </>
-        ),
-        details: null,
-      };
+      return receipt(
+        <>
+          <p>This change may have been applied and its acknowledgement never arrived, so its result is not confirmed either way.</p>
+          <p>
+            Operation <Identifier value={outcome.operationId} />.
+          </p>
+          {recovery === null ? null : <p>{recovery}</p>}
+          {check === undefined && retry === undefined ? null : (
+            <div className="flex flex-wrap items-center gap-2">
+              {check === undefined ? null : <ReceiptButton label="Check the result" variant="default" onSelect={check} />}
+              {retry === undefined ? null : <ReceiptButton label="Retry the same request" variant="outline" onSelect={retry} />}
+            </div>
+          )}
+        </>,
+        null,
+      );
     }
     default: {
       const unhandled: never = outcome;
@@ -399,7 +371,6 @@ export function OperationResult({ outcome, heading, headingLevel = 3, onCheckRes
         </CardTitle>
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-4">
-        {/* The frame is focusable so an action can return the keyboard position here, and the token layer's `:focus-visible` outline makes it visible; the receipt announces its own sentences once. */}
         <div ref={regionRef} role={OUTCOME_SEVERITY[outcome.outcome] === "assertive" ? "alert" : "status"} aria-labelledby={titleId} tabIndex={-1} className="flex min-w-0 flex-col gap-3 text-sm">
           {summary}
         </div>

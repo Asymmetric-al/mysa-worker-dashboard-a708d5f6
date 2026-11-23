@@ -1,5 +1,4 @@
 "use client";
-/** The one record detail body: the single composition every record opens into. */
 import Link from "next/link";
 import { Fragment, useId, type ReactNode } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -8,10 +7,9 @@ import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@/comp
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import StateNotice from "@/components/state-notice";
-import StatusBadge, { valueStateWord } from "@/components/status-badge";
+import StatusBadge from "@/components/status-badge";
 import { cn } from "@/lib/cn";
 import { formatSourceReference, type SourceReference } from "@/lib/ids";
-import type { ValueState } from "@/modules/data-service/envelope";
 /** The sections of a record body, in the only order they render. */
 export const RECORD_DETAIL_SECTIONS = ["contactMethods", "restrictions", "relationshipContext", "activity", "privateNotes", "openTasks", "supportHistory"] as const;
 export type RecordDetailSection = (typeof RECORD_DETAIL_SECTIONS)[number];
@@ -64,8 +62,6 @@ export type RecordDetailProps = {
   readonly isLoading?: boolean;
   readonly className?: string;
 };
-export type RecordDetailSupportFigure = { readonly label: string; readonly value: string; readonly valueState?: ValueState; readonly href?: string };
-export type RecordDetailFiguresProps = { readonly figures: readonly RecordDetailSupportFigure[]; readonly className?: string };
 const hasContent = (slot: ReactNode): boolean => slot !== undefined && slot !== null && slot !== false;
 function initialsOf(displayName: string): string {
   const words = displayName
@@ -78,48 +74,13 @@ function initialsOf(displayName: string): string {
   const initialOf = (word: string): string => Array.from(word)[0] ?? "";
   return `${initialOf(first)}${last === undefined ? "" : initialOf(last)}`.toUpperCase();
 }
-const STATE_KEEPS_THE_FIGURE: ReadonlySet<ValueState> = new Set<ValueState>(["value", "zero", "incomplete-subtotal"]);
-function toDomId(generated: string, suffix: string): string {
-  return `record-detail-${generated.replace(/[^a-zA-Z0-9_-]/g, "")}-${suffix}`;
-}
-/** The one rendering of financial figures inside a record body. */
-export function RecordDetailFigures({ figures, className }: RecordDetailFiguresProps) {
-  if (figures.length === 0) return null;
-  return (
-    <dl className={cn("flex flex-col gap-2 text-sm", className)}>
-      {figures.map((figure, index) => {
-        const state = figure.valueState;
-        const word = state === undefined ? undefined : valueStateWord(state);
-        const showsFigure = state === undefined || STATE_KEEPS_THE_FIGURE.has(state);
-        const amount = <bdi className="tabular-figures">{figure.value}</bdi>;
-        return (
-          <div key={`${figure.label}-${index}`} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <dt className="text-muted-foreground">{figure.label}</dt>
-            <dd className="flex flex-wrap items-baseline gap-2">
-              {showsFigure ? (
-                figure.href === undefined ? (
-                  amount
-                ) : (
-                  <Link className="underline-offset-4 hover:underline" href={figure.href}>
-                    {amount}
-                  </Link>
-                )
-              ) : null}
-              {word === undefined ? null : <StatusBadge label={word.label} tone={word.tone} srPrefix={figure.label} />}
-            </dd>
-          </div>
-        );
-      })}
-    </dl>
-  );
-}
+const toDomId = (generated: string, suffix: string): string => `record-detail-${generated.replace(/[^a-zA-Z0-9_-]/g, "")}-${suffix}`;
 /** The single record detail body described at the top of this file. */
 export function RecordDetail({ layout, identity, sections = {}, breadcrumb, status, actions, trailing, unavailable, isLoading = false, className }: RecordDetailProps) {
   const chrome = LAYOUT_CHROME[layout];
   const generatedId = useId();
   const identityHeadingId = toDomId(generatedId, "identity");
   const sectionsRegionId = toDomId(generatedId, "sections");
-  // The identity takes the surface's highest heading; every section sits one level below it, so the outline is valid in a route (`h1` then `h2`) and in a panel or sheet (`h2` then `h3`) without the component below ever having to guess which document it landed in.
   const IdentityHeading = chrome.headingLevel === 1 ? "h1" : "h2";
   const SectionHeading = chrome.headingLevel === 1 ? "h2" : "h3";
   const noticeHeadingLevel = chrome.headingLevel === 1 ? 2 : 3;
@@ -129,7 +90,6 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
   const showsSkipLink = !isLoading && presentSections.length > 0;
   return (
     <article aria-busy={isLoading ? true : undefined} aria-labelledby={identityHeadingId} className={cn(chrome.surface, className)}>
-      {/* First in the focus order, and never an action: a keyboard user reaches the record's sections before the breadcrumb's links or anything the actions bar holds. */}
       {showsSkipLink ? (
         <a href={`#${sectionsRegionId}`} className="sr-only rounded-md px-2 py-1 text-sm focus-visible:not-sr-only focus-visible:bg-background">
           {SKIP_TO_SECTIONS_LABEL}
@@ -154,7 +114,6 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
           <div className="flex items-start gap-3">
             <Avatar size={chrome.avatarSize} className="mt-0.5">
               {identity.avatarSrc !== undefined && identity.avatarSrc.length > 0 ? <AvatarImage src={identity.avatarSrc} alt="" /> : null}
-              {/* The heading beside it already names the record, so the initials are not announced twice; a name in any script is taken by code point rather than cut in half. */}
               <AvatarFallback aria-hidden="true">{initials.length > 0 ? initials : "?"}</AvatarFallback>
             </Avatar>
             <div className="flex min-w-0 flex-col gap-1">
@@ -163,16 +122,11 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
                   <bdi>{identity.displayName}</bdi>
                 </IdentityHeading>
               </CardTitle>
-              {identity.secondaryName !== undefined && identity.secondaryName.length > 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  <bdi>{identity.secondaryName}</bdi>
-                </p>
-              ) : null}
+              {identity.secondaryName !== undefined && identity.secondaryName.length > 0 ? <bdi className="text-sm text-muted-foreground">{identity.secondaryName}</bdi> : null}
               <CardDescription>{identity.kind}</CardDescription>
               {identity.reference !== undefined ? (
                 <p className="text-xs text-muted-foreground">
                   <span className="sr-only">Source reference: </span>
-                  {/* An opaque reference, never parsed and never a join key: a leading zero survives and a mixed-direction neighbour cannot reorder it. */}
                   <bdi className="mono-identifier">{formatSourceReference(identity.reference)}</bdi>
                 </p>
               ) : null}
@@ -184,7 +138,6 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
       {hasContent(actions) ? <div className={chrome.actionBar}>{actions}</div> : null}
       {unavailable !== undefined ? <StateNotice kind="unavailable" title={UNAVAILABLE_TITLE} description={UNAVAILABLE_DESCRIPTION} source={unavailable.source} retry={retry} headingLevel={noticeHeadingLevel} /> : null}
       {isLoading ? (
-        // Section-shaped, in the body's own order, and hidden from assistive technology because the region already states that it is busy. A loading body is never an empty one.
         <div aria-hidden="true" className="flex flex-col gap-4">
           {Array.from({ length: LOADING_SECTION_BLOCKS }, (_unused, index) => (
             <Fragment key={index}>
@@ -199,7 +152,6 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
           ))}
         </div>
       ) : (
-        // The skip link's destination. Focusable only programmatically, so the skip lands here without putting a stray tab stop between the actions and the first control of a section.
         <div id={sectionsRegionId} tabIndex={-1} className="flex flex-col gap-4">
           {presentSections.map((section, index) => {
             const headingId = `${sectionsRegionId}-${section}`;
@@ -223,8 +175,7 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
         </div>
       )}
       {hasContent(trailing) ? (
-        // After the sections region and inside the same surface: content that belongs to the record body but
-        // to no one section, so it appears in each of the three layouts without a second detail body.
+        // After the sections region and inside the same surface: content that belongs to the record body but to no one section, so it appears in each of the three layouts without a second detail body.
         <>
           <Separator />
           {trailing}

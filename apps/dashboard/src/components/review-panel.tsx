@@ -1,5 +1,4 @@
 "use client";
-/** The one review surface for both content families: the frozen revision a reviewer answers, and the single decision they can give it. */
 import { useId, useState, type ReactElement } from "react";
 import ActionReview from "@/components/action-review";
 import { LIFECYCLE_STATUS, type ContentLifecycleState, type LifecycleSpec } from "@/components/draft-status";
@@ -20,22 +19,15 @@ import type { MediaAssetRenditionPurpose, MutationInput, Scope } from "@/modules
 import type { MutationOutcome } from "@/modules/data-service/outcome";
 /** What a stored rendition is for, taken from the envelope's closed set rather than restated. */
 export type RenditionPurpose = MediaAssetRenditionPurpose;
-export interface CandidateMediaRendition {
-  readonly purpose: RenditionPurpose;
-  readonly url: string;
-}
-export interface RecordedCandidateDecision {
+export type CandidateMediaRendition = { readonly purpose: RenditionPurpose; readonly url: string };
+export type RecordedCandidateDecision = {
   readonly decision: ReviewDecision;
-  /** The principal identity that gave this answer, or `null` when the record states none. */
   readonly decidedByPrincipalId: string | null;
-  /** Whether the principal that gave this answer wrote the frozen revision it answers, as the read states the two identities. */
-  readonly decidedByAuthor: boolean;
-  /** The deciding instant as the record holds it, an ISO 8601 instant, or `null` when the record states none. */
+  /** Whether the principal that gave this answer wrote the frozen revision it answers, as the read states the two identities. */ readonly decidedByAuthor: boolean;
   readonly decidedAt: string | null;
-  /** The note the reviewer left for the author, or `null` when they left none. */
   readonly note: string | null;
-}
-export interface CandidateView {
+};
+export type CandidateView = {
   readonly variantId: string;
   readonly audience: VariantAudience;
   readonly locale: VariantLocale;
@@ -43,48 +35,21 @@ export interface CandidateView {
   readonly contentChecksum: string;
   readonly renderedHtml: string;
   readonly mediaRenditions: readonly CandidateMediaRendition[];
-  /** The state this edition's own records state — its draft, its candidate, its release head — derived through the one lifecycle implementation, so the badge never reports a decision in place of a fact … */
   readonly lifecycle: ContentLifecycleState;
   readonly staleTranslation?: boolean;
-  /** The decision the reviewer recorded for this candidate, as the read states it, or `null` while its record still stands at `submitted` — the one state in which the decision is the reviewer's to give. */
   readonly decisionRecord: RecordedCandidateDecision | null;
-  /**
-   * Whether the principal reading this page wrote the frozen revision, as the read states the two identities. The panel
-   * uses it to say whose answer a decision would be; it withholds no decision, because the service records the principal
-   * that answers and re-checks the answer on submit.
-   */
+  /** Whether the principal reading this page wrote the frozen revision, as the read states the two identities. The panel uses it to say whose answer a decision would be; it withholds no decision, because the service records the principal that answers and re-checks the answer on submit. */
   readonly reviewedByAuthor: boolean;
-}
-export interface ApprovedDecisionPayload {
-  readonly decision: "approved";
-  readonly variantId: string;
-  readonly revisionId: string;
-  readonly contentChecksum: string;
-}
+};
+export type ApprovedDecisionPayload = { readonly decision: "approved"; readonly variantId: string; readonly revisionId: string; readonly contentChecksum: string };
 /** A request for changes: the author needs to act, so a note is required and carried. */
-export interface ChangesRequestedDecisionPayload {
-  readonly decision: "changes-requested";
-  readonly variantId: string;
-  readonly revisionId: string;
-  readonly note: string;
-}
+export type ChangesRequestedDecisionPayload = { readonly decision: "changes-requested"; readonly variantId: string; readonly revisionId: string; readonly note: string };
 /** A rejection: the candidate ends, and the reason is carried so the author is not left guessing. */
-export interface RejectedDecisionPayload {
-  readonly decision: "rejected";
-  readonly variantId: string;
-  readonly revisionId: string;
-  readonly note: string;
-}
+export type RejectedDecisionPayload = { readonly decision: "rejected"; readonly variantId: string; readonly revisionId: string; readonly note: string };
 export type ReviewDecisionPayload = ApprovedDecisionPayload | ChangesRequestedDecisionPayload | RejectedDecisionPayload;
 export type ReviewFamily = "update" | "page";
-export interface ReviewSiblingStanding {
-  readonly variantId: string;
-  readonly audience: VariantAudience;
-  readonly locale: VariantLocale;
-  readonly lifecycle: ContentLifecycleState;
-  readonly heldPriorGoodRelease?: boolean;
-}
-export interface ReviewPanelProps {
+export type ReviewSiblingStanding = { readonly variantId: string; readonly audience: VariantAudience; readonly locale: VariantLocale; readonly lifecycle: ContentLifecycleState; readonly heldPriorGoodRelease?: boolean };
+export type ReviewPanelProps = {
   readonly family: ReviewFamily;
   readonly candidates: readonly CandidateView[];
   readonly activeVariantId: string;
@@ -96,34 +61,22 @@ export interface ReviewPanelProps {
   readonly expectedRevision: string;
   readonly onDecide: (input: MutationInput<ReviewDecisionPayload>) => Promise<MutationOutcome>;
   readonly siblingStanding?: readonly ReviewSiblingStanding[];
-  /** The level this panel's own title occupies on the page that composes it. */
   readonly headingLevel?: 1 | 2 | 3;
   readonly className?: string;
-}
+};
 /** The longest note a reviewer may leave. */
 export const REVIEW_NOTE_MAX_CHARS = 2000;
 const SHORT_CHECKSUM_LENGTH = 12;
 const PANEL_HEADING_TAG = { 1: "h1", 2: "h2", 3: "h3" } as const;
 const SUB_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 type SubHeadingLevel = keyof typeof SUB_HEADING_TAG;
-/** The level the panel's own sections take: one below its title, so the outline never skips a level. */
 const subHeadingLevelOf = (panelLevel: keyof typeof PANEL_HEADING_TAG): SubHeadingLevel => (panelLevel === 1 ? 2 : panelLevel === 2 ? 3 : 4);
-interface FamilyCopy {
-  readonly title: string;
-  readonly introduction: string;
-}
+type FamilyCopy = { readonly title: string; readonly introduction: string };
 const FAMILY_COPY: Readonly<Record<ReviewFamily, FamilyCopy>> = {
   update: { title: "Review this Update", introduction: "A review answers the exact revision the author submitted, for one audience and one language. " + "Approving it publishes nothing and notifies nobody: the release is a separate step, and a " + "simulated notice is separate again." },
   page: { title: "Review this Page", introduction: "A review answers the exact revision the author submitted for one language edition of this " + "Page. Approving it publishes nothing and makes the Page public to nobody: release, reach and " + "withdrawal stay separate steps on the Page's own surface." },
 };
-interface DecisionCopy {
-  readonly label: string;
-  readonly description: string;
-  readonly title: string;
-  readonly confirmLabel: string;
-  readonly consequential: boolean;
-  readonly consequence?: string;
-}
+type DecisionCopy = { readonly label: string; readonly description: string; readonly title: string; readonly confirmLabel: string; readonly consequential: boolean; readonly consequence?: string };
 const DECISION_COPY: Readonly<Record<ReviewDecision, DecisionCopy>> = {
   approved: { label: "Approve", description: "The frozen revision is approved for this audience and language and can be published as it " + "stands. Approval itself publishes nothing.", title: "Approve the frozen revision", confirmLabel: "Approve this revision", consequential: false },
   "changes-requested": {
@@ -142,17 +95,15 @@ const DECISION_COPY: Readonly<Record<ReviewDecision, DecisionCopy>> = {
     consequence: "The candidate is closed and this edition keeps whatever it published before. Nothing is " + "deleted, no release is withdrawn and no message is sent to anyone.",
   },
 };
-interface RecordedDecisionCopy {
-  readonly title: string;
-  readonly sentence: string;
-}
+type RecordedDecisionCopy = { readonly title: string; readonly sentence: string };
 const RECORDED_DECISION_COPY: Readonly<Record<ReviewDecision, RecordedDecisionCopy>> = {
   approved: { title: "This candidate is approved", sentence: "The reviewer's answer is recorded as an approval for this audience and language. Approval " + "publishes nothing and notifies nobody: releasing the edition is a separate step on its own " + "surface, and a simulated notice is separate again." },
   "changes-requested": { title: "A change to this candidate was requested", sentence: "The reviewer's answer is recorded as a request for changes, so the author's next attempt is a " + "new submission with a new revision. This candidate is answered, not re-reviewed, and its earlier " + "submission stays on record." },
   rejected: { title: "This candidate was rejected", sentence: "The reviewer's answer is recorded as a rejection, so this candidate ends and the author's next " + "attempt is a new submission. Nothing is deleted, no release is withdrawn and no message is sent " + "to anyone." },
 };
 const RENDITION_PURPOSE_WORDS: Readonly<Record<RenditionPurpose, string>> = { display: "Display image", playback: "Playback video", poster: "Poster image", captions: "Caption track", transcript: "Transcript" };
-/** This surface's vocabulary, declared once. */
+const FACT_LIST_CLASS = "grid min-w-0 gap-x-4 gap-y-2 text-sm sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]";
+const PART_HEADING_CLASS = "text-base font-medium text-pretty";
 const COPY = {
   notStated: "Not stated",
   recordedDecisionHeading: "The decision on record",
@@ -199,44 +150,22 @@ const COPY = {
   noteFieldLabels: { note: "Note for the author", reason: "Note for the author" },
   openRenditionPrefix: "Open the",
 } as const;
-function reviewDecisionOf(value: unknown): ReviewDecision | null {
-  if (typeof value !== "string") return null;
-  const named = REVIEW_DECISIONS.find((decision) => decision === value);
-  return named ?? null;
-}
-function lifecycleSpecOf(state: ContentLifecycleState): LifecycleSpec {
-  const spec: LifecycleSpec | undefined = LIFECYCLE_STATUS[state];
-  return spec ?? { label: String(state), tone: "muted", explanation: "" };
-}
-function shortChecksumOf(checksum: string): string {
-  const trimmed = checksum.trim();
-  if (trimmed.length <= SHORT_CHECKSUM_LENGTH) return trimmed;
-  return `${trimmed.slice(0, SHORT_CHECKSUM_LENGTH)}…`;
-}
-function escapeAttribute(value: string): string {
-  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-}
-function previewDocumentOf(html: string, locale: VariantLocale, title: string): string {
-  return "<!doctype html>" + `<html lang="${escapeAttribute(locale.tag)}" dir="${escapeAttribute(locale.direction)}">` + `<head><meta charset="utf-8"><title>${escapeAttribute(title)}</title></head>` + `<body>${html}</body>` + "</html>";
-}
-/** The lifecycle word the edition carries on this surface. */
-function lifecycleOfDecision(decision: ReviewDecision | null, edition: ContentLifecycleState): ContentLifecycleState {
-  return decision === "approved" ? "approved" : edition;
-}
-/** The decision word this candidate's record states, and `null` while it states none. */
-function decisionOf(candidate: CandidateView): ReviewDecision | null {
-  return candidate.decisionRecord === null ? null : candidate.decisionRecord.decision;
-}
-function variantTabsOf(candidates: readonly CandidateView[]): readonly VariantTab[] {
-  return candidates.map((candidate) => ({ variantId: candidate.variantId, audience: candidate.audience, locale: candidate.locale, lifecycle: lifecycleOfDecision(decisionOf(candidate), candidate.lifecycle) }));
-}
-function switcherFamilyOf(family: ReviewFamily): VariantFamily {
-  return family === "update" ? "update" : "worker-page";
-}
-function reviewableCandidatesOf(family: ReviewFamily, candidates: readonly CandidateView[]): readonly CandidateView[] {
-  const permitted = switcherFamilyOf(family);
-  return candidates.filter((candidate) => variantKeyAllowed(permitted, candidate.audience));
-}
+const REVIEW_DESCRIPTION = (
+  <>
+    <p className="text-pretty">{COPY.approvalIsPerVariantSentence}</p>
+    <p className="text-pretty">{COPY.approvalIsNotDeliverySentence}</p>
+  </>
+);
+const reviewDecisionOf = (value: unknown): ReviewDecision | null => (typeof value === "string" ? (REVIEW_DECISIONS.find((decision) => decision === value) ?? null) : null);
+const lifecycleSpecOf = (state: ContentLifecycleState): LifecycleSpec => LIFECYCLE_STATUS[state] ?? { label: String(state), tone: "muted", explanation: "" };
+const shortChecksumOf = (checksum: string): string => (checksum.trim().length <= SHORT_CHECKSUM_LENGTH ? checksum.trim() : `${checksum.trim().slice(0, SHORT_CHECKSUM_LENGTH)}…`);
+const escapeAttribute = (value: string): string => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+const previewDocumentOf = (html: string, locale: VariantLocale, title: string): string => "<!doctype html>" + `<html lang="${escapeAttribute(locale.tag)}" dir="${escapeAttribute(locale.direction)}">` + `<head><meta charset="utf-8"><title>${escapeAttribute(title)}</title></head>` + `<body>${html}</body>` + "</html>";
+const lifecycleOfDecision = (decision: ReviewDecision | null, edition: ContentLifecycleState): ContentLifecycleState => (decision === "approved" ? "approved" : edition);
+const decisionOf = (candidate: CandidateView): ReviewDecision | null => candidate.decisionRecord?.decision ?? null;
+const variantTabsOf = (candidates: readonly CandidateView[]): readonly VariantTab[] => candidates.map((candidate) => ({ variantId: candidate.variantId, audience: candidate.audience, locale: candidate.locale, lifecycle: lifecycleOfDecision(decisionOf(candidate), candidate.lifecycle) }));
+const switcherFamilyOf = (family: ReviewFamily): VariantFamily => (family === "update" ? "update" : "worker-page");
+const reviewableCandidatesOf = (family: ReviewFamily, candidates: readonly CandidateView[]): readonly CandidateView[] => candidates.filter((candidate) => variantKeyAllowed(switcherFamilyOf(family), candidate.audience));
 function decisionPayloadFor(decision: ReviewDecision, candidate: CandidateView, note: string): ReviewDecisionPayload {
   const identity = { variantId: candidate.variantId, revisionId: candidate.revisionId } as const;
   const trimmedNote = note.trim();
@@ -263,16 +192,12 @@ function FrozenRevision({ candidate, level }: { readonly candidate: CandidateVie
   const variant = candidate.variantId.trim();
   return (
     <section aria-labelledby={titleId} data-slot="review-frozen-revision" data-candidate-audience={candidate.audience} data-candidate-locale={candidate.locale.tag} className="flex min-w-0 flex-col gap-3">
-      <Heading id={titleId} className="text-base font-medium text-pretty">
-        {COPY.frozenHeading}
-      </Heading>
-      <dl className="grid min-w-0 gap-x-4 gap-y-2 text-sm sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
+      <Heading {...{ id: titleId, className: PART_HEADING_CLASS }}>{COPY.frozenHeading}</Heading>
+      <dl className={FACT_LIST_CLASS}>
         <dt className="text-muted-foreground">Edition</dt>
         <dd className="flex min-w-0 flex-wrap items-center gap-2">
           <StatusBadge label={audience.label} tone={audience.tone} />
-          <bdi lang={candidate.locale.tag} className="min-w-0 wrap-anywhere">
-            {candidate.locale.tag}
-          </bdi>
+          <bdi {...{ lang: candidate.locale.tag, className: "min-w-0 wrap-anywhere" }}>{candidate.locale.tag}</bdi>
         </dd>
         <dt className="text-muted-foreground">Variant</dt>
         <dd className="min-w-0 wrap-anywhere">{variant === "" ? <span className="text-muted-foreground">{COPY.notStated}</span> : <bdi className="mono-identifier">{variant}</bdi>}</dd>
@@ -280,25 +205,9 @@ function FrozenRevision({ candidate, level }: { readonly candidate: CandidateVie
         <dd className="min-w-0 wrap-anywhere">{revision === "" ? <span className="text-muted-foreground">{COPY.notStated}</span> : <bdi className="mono-identifier">{revision}</bdi>}</dd>
         <dt className="text-muted-foreground">Content checksum</dt>
         <dd className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-          {checksum === "" ? (
-            <span className="text-muted-foreground">{COPY.notStated}</span>
-          ) : (
-            <bdi id={checksumId} className="mono-identifier min-w-0 wrap-anywhere">
-              {shownChecksum}
-            </bdi>
-          )}
+          {checksum === "" ? <span className="text-muted-foreground">{COPY.notStated}</span> : <bdi {...{ id: checksumId, className: "mono-identifier min-w-0 wrap-anywhere" }}>{shownChecksum}</bdi>}
           {canShorten ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              className="min-h-target"
-              aria-expanded={fullChecksum}
-              aria-controls={checksumId}
-              onClick={() => {
-                setFullChecksum((shown) => !shown);
-              }}
-            >
+            <Button type="button" variant="ghost" size="xs" className="min-h-target" aria-expanded={fullChecksum} aria-controls={checksumId} onClick={() => setFullChecksum((shown) => !shown)}>
               {fullChecksum ? "Show the short checksum" : "Show the full checksum"}
             </Button>
           ) : null}
@@ -323,9 +232,7 @@ function PublishIntent({ notifyRequestedByAuthor, protectedNoticeScope, level }:
   const scope = protectedNoticeScope?.trim() ?? "";
   return (
     <section aria-labelledby={titleId} data-slot="review-publish-intent" data-notify-requested={notifyRequestedByAuthor ? "true" : "false"} className="flex min-w-0 flex-col gap-3">
-      <Heading id={titleId} className="text-base font-medium text-pretty">
-        {COPY.intentHeading}
-      </Heading>
+      <Heading {...{ id: titleId, className: PART_HEADING_CLASS }}>{COPY.intentHeading}</Heading>
       <div className="flex min-w-0 flex-col gap-2 text-sm">
         <p className="flex min-w-0 flex-wrap items-center gap-2">
           <StatusBadge label={notifyRequestedByAuthor ? COPY.notifyBadge : COPY.publishOnlyBadge} tone={notifyRequestedByAuthor ? "info" : "neutral"} />
@@ -348,9 +255,7 @@ function CandidatePreview({ candidate, level }: { readonly candidate: CandidateV
   const frameDocument = previewDocumentOf(candidate.renderedHtml, candidate.locale, frameTitle);
   return (
     <section aria-labelledby={titleId} data-slot="review-preview" className="flex min-w-0 flex-col gap-3">
-      <Heading id={titleId} className="text-base font-medium text-pretty">
-        {COPY.previewHeading}
-      </Heading>
+      <Heading {...{ id: titleId, className: PART_HEADING_CLASS }}>{COPY.previewHeading}</Heading>
       {candidate.renderedHtml.trim() === "" ? (
         <p className="text-sm text-muted-foreground text-pretty">{COPY.noRenderedBodyNotice}</p>
       ) : (
@@ -372,11 +277,7 @@ function CandidatePreview({ candidate, level }: { readonly candidate: CandidateV
               return (
                 <li key={`${rendition.purpose}-${rendition.url}`} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                   <span className="min-w-0 text-muted-foreground wrap-anywhere">{purpose}</span>
-                  {/* A supplied address, used as it stands. It opens away from this page so the
-                   * note a reviewer has typed is still here when they come back. */}
-                  <a href={rendition.url} target="_blank" rel="noreferrer" className="inline-flex min-h-target items-center underline underline-offset-4 wrap-anywhere">
-                    {`${COPY.openRenditionPrefix} ${purpose.toLowerCase()}`}
-                  </a>
+                  <a {...{ href: rendition.url, target: "_blank", rel: "noreferrer", className: "inline-flex min-h-target items-center underline underline-offset-4 wrap-anywhere" }}>{`${COPY.openRenditionPrefix} ${purpose.toLowerCase()}`}</a>
                 </li>
               );
             })}
@@ -394,9 +295,7 @@ function SiblingStanding({ standing, activeVariantId, level }: { readonly standi
   if (others.length === 0) return null;
   return (
     <section aria-labelledby={titleId} data-slot="review-sibling-standing" className="flex min-w-0 flex-col gap-3">
-      <Heading id={titleId} className="text-base font-medium text-pretty">
-        {COPY.siblingHeading}
-      </Heading>
+      <Heading {...{ id: titleId, className: PART_HEADING_CLASS }}>{COPY.siblingHeading}</Heading>
       <ul className="flex min-w-0 flex-col gap-3 text-sm">
         {others.map((edition) => {
           const audience = AUDIENCE_WORDS[edition.audience];
@@ -405,9 +304,7 @@ function SiblingStanding({ standing, activeVariantId, level }: { readonly standi
             <li key={edition.variantId} className="flex min-w-0 flex-col gap-1">
               <span className="flex min-w-0 flex-wrap items-center gap-2">
                 <StatusBadge label={audience.label} tone={audience.tone} />
-                <bdi lang={edition.locale.tag} className="min-w-0 wrap-anywhere">
-                  {edition.locale.tag}
-                </bdi>
+                <bdi {...{ lang: edition.locale.tag, className: "min-w-0 wrap-anywhere" }}>{edition.locale.tag}</bdi>
                 <StatusBadge label={lifecycle.label} tone={lifecycle.tone} />
               </span>
               {lifecycle.explanation.trim() === "" ? null : <span className="text-pretty text-muted-foreground">{lifecycle.explanation}</span>}
@@ -427,6 +324,13 @@ function DecisionStep({ candidate, scope, expectedRevision, onDecide, level }: {
   const copy = DECISION_COPY[decision];
   const requiresNote = decision !== "approved";
   const payload = decisionPayloadFor(decision, candidate, note);
+  const chooseDecision = (reported: unknown): void => {
+    const chosen = reviewDecisionOf(reported);
+    if (chosen !== null) setDecision(chosen);
+  };
+  const settleIfApplied = (outcome: MutationOutcome): void => {
+    if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") setSettled(true);
+  };
   return (
     <div data-slot="review-decision" data-decision={decision} data-answered={settled ? "true" : "false"} className="flex min-w-0 flex-col gap-5">
       {candidate.reviewedByAuthor ? (
@@ -439,20 +343,7 @@ function DecisionStep({ candidate, scope, expectedRevision, onDecide, level }: {
       ) : null}
       <FormFieldGroup legend={COPY.decisionLegend} name="review.decision" description={COPY.decisionDescription} required>
         {({ describedBy, invalid, required, legendId }) => (
-          <RadioGroup
-            value={decision}
-            onValueChange={(reported: unknown) => {
-              const chosen = reviewDecisionOf(reported);
-              if (chosen !== null) {
-                setDecision(chosen);
-              }
-            }}
-            disabled={settled}
-            aria-labelledby={legendId}
-            aria-describedby={describedBy}
-            aria-invalid={invalid}
-            aria-required={required}
-          >
+          <RadioGroup {...{ value: decision, onValueChange: chooseDecision, disabled: settled, "aria-labelledby": legendId, "aria-describedby": describedBy, "aria-invalid": invalid, "aria-required": required }}>
             {REVIEW_DECISIONS.map((option) => {
               const optionCopy = DECISION_COPY[option];
               const optionId = `${idPrefix}-decision-${option}`;
@@ -462,9 +353,7 @@ function DecisionStep({ candidate, scope, expectedRevision, onDecide, level }: {
                   <RadioGroupItem id={optionId} value={option} aria-label={optionCopy.label} aria-describedby={optionDescriptionId} className="mt-0.5" />
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="text-sm font-medium">{optionCopy.label}</span>
-                    <span id={optionDescriptionId} className="text-sm text-muted-foreground">
-                      {optionCopy.description}
-                    </span>
+                    <span {...{ id: optionDescriptionId, className: "text-sm text-muted-foreground" }}>{optionCopy.description}</span>
                   </span>
                 </label>
               );
@@ -474,44 +363,12 @@ function DecisionStep({ candidate, scope, expectedRevision, onDecide, level }: {
       </FormFieldGroup>
       <FormField label={COPY.noteLabel} name="review.note" description={requiresNote ? COPY.noteRequiredDescription : COPY.noteOptionalDescription} required={requiresNote} optionalHint={!requiresNote}>
         {(field) => (
-          <Textarea
-            id={field.id}
-            name="review.note"
-            value={note}
-            onChange={(event) => {
-              setNote(event.target.value);
-            }}
-            rows={4}
-            maxLength={REVIEW_NOTE_MAX_CHARS}
-            disabled={settled}
-            aria-describedby={field.describedBy}
-            aria-invalid={field.invalid}
-            aria-required={field.required}
-            className="min-h-24 text-foreground"
-          />
+          <Textarea id={field.id} name="review.note" value={note} onChange={(event) => setNote(event.target.value)} rows={4} maxLength={REVIEW_NOTE_MAX_CHARS} disabled={settled} aria-describedby={field.describedBy} aria-invalid={field.invalid} aria-required={field.required} className="min-h-24 text-foreground" />
         )}
       </FormField>
       {settled ? <p className="text-sm text-muted-foreground text-pretty">This candidate is answered, so its decision is fixed. Anything further comes from the author as a new submission with a new revision.</p> : null}
       <ActionReview<ReviewDecisionPayload>
-        title={copy.title}
-        description={
-          <>
-            <p className="text-pretty">{COPY.approvalIsPerVariantSentence}</p>
-            <p className="text-pretty">{COPY.approvalIsNotDeliverySentence}</p>
-          </>
-        }
-        consequence={copy.consequence}
-        confirmLabel={copy.confirmLabel}
-        consequential={copy.consequential}
-        input={{ scope, expectedRevision, payload }}
-        submit={onDecide}
-        fieldLabels={COPY.noteFieldLabels}
-        headingLevel={level}
-        onSettled={(outcome) => {
-          if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") {
-            setSettled(true);
-          }
-        }}
+        {...{ title: copy.title, description: REVIEW_DESCRIPTION, consequence: copy.consequence, confirmLabel: copy.confirmLabel, consequential: copy.consequential, input: { scope, expectedRevision, payload }, submit: onDecide, fieldLabels: COPY.noteFieldLabels, headingLevel: level, onSettled: settleIfApplied }}
       />
     </div>
   );
@@ -520,27 +377,18 @@ function RecordedDecision({ record, level }: { readonly record: RecordedCandidat
   const titleId = useId();
   const Heading = SUB_HEADING_TAG[level];
   const copy = RECORDED_DECISION_COPY[record.decision];
-  // The three facts the record holds about the answer itself. Each is stated as the record holds it and
-  // never filled in from the session reading the page: a reviewer recognises their own answer from the
-  // principal and the instant, and an author reads the words they were asked to act on.
   const principal = record.decidedByPrincipalId?.trim() ?? "";
   const instant = record.decidedAt?.trim() ?? "";
   const note = record.note?.trim() ?? "";
   return (
     <section aria-labelledby={titleId} data-slot="review-recorded-decision" data-decision={record.decision} className="flex min-w-0 flex-col gap-3">
-      <Heading id={titleId} className="text-base font-medium text-pretty">
-        {COPY.recordedDecisionHeading}
-      </Heading>
+      <Heading {...{ id: titleId, className: PART_HEADING_CLASS }}>{COPY.recordedDecisionHeading}</Heading>
       <Alert variant="default" role={undefined}>
         <AlertTitle>{copy.title}</AlertTitle>
         <AlertDescription>
           <p className="text-pretty">{copy.sentence}</p>
-          {record.decidedByAuthor ? (
-            <p data-slot="review-author-decision" className="text-pretty">
-              {COPY.authorDecidedSentence}
-            </p>
-          ) : null}
-          <dl data-slot="review-decision-record" className="grid min-w-0 gap-x-4 gap-y-2 text-sm sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
+          {record.decidedByAuthor ? <p {...{ "data-slot": "review-author-decision", className: "text-pretty" }}>{COPY.authorDecidedSentence}</p> : null}
+          <dl data-slot="review-decision-record" className={FACT_LIST_CLASS}>
             <dt className="text-muted-foreground">{COPY.decidedByLabel}</dt>
             <dd className="min-w-0 wrap-anywhere">{principal === "" ? <span className="text-muted-foreground">{COPY.notStated}</span> : <bdi className="mono-identifier">{principal}</bdi>}</dd>
             <dt className="text-muted-foreground">{COPY.decidedAtLabel}</dt>
@@ -549,9 +397,7 @@ function RecordedDecision({ record, level }: { readonly record: RecordedCandidat
                 <span className="text-muted-foreground">{COPY.notStated}</span>
               ) : (
                 <bdi>
-                  <time dateTime={instant} className="mono-identifier tabular-figures">
-                    {instant}
-                  </time>
+                  <time {...{ dateTime: instant, className: "mono-identifier tabular-figures" }}>{instant}</time>
                 </bdi>
               )}
             </dd>
@@ -565,6 +411,7 @@ function RecordedDecision({ record, level }: { readonly record: RecordedCandidat
     </section>
   );
 }
+/** The one review surface over frozen content candidates, with approve, changes-requested and reject. */
 export function ReviewPanel({ family, candidates, activeVariantId, onSelect, policyRequiresReview, notifyRequestedByAuthor, protectedNoticeScope, scope, expectedRevision, onDecide, siblingStanding, headingLevel = 2, className }: ReviewPanelProps): ReactElement {
   const titleId = useId();
   const Heading = PANEL_HEADING_TAG[headingLevel];
@@ -581,9 +428,7 @@ export function ReviewPanel({ family, candidates, activeVariantId, onSelect, pol
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
-            <Heading id={titleId} className="text-pretty">
-              {copy.title}
-            </Heading>
+            <Heading {...{ id: titleId, className: "text-pretty" }}>{copy.title}</Heading>
           </CardTitle>
           <CardDescription className="text-pretty">{copy.introduction}</CardDescription>
         </CardHeader>
@@ -609,8 +454,6 @@ export function ReviewPanel({ family, candidates, activeVariantId, onSelect, pol
         </CardContent>
       </Card>
       {active === undefined ? null : active.decisionRecord !== null ? (
-        // The read states an answer for this candidate, so the surface reports the record instead of
-        // offering a decision the service would refuse as already given.
         <RecordedDecision record={active.decisionRecord} level={partLevel} />
       ) : policyRequiresReview ? (
         <DecisionStep key={active.variantId} candidate={active} scope={scope} expectedRevision={expectedRevision} onDecide={onDecide} level={partLevel} />

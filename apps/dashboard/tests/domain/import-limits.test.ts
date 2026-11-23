@@ -5,22 +5,12 @@ import { IMPORT_DECISION_KINDS, createDecisionSet, recordDecision, summariseDeci
 import { confirmMapping, suggestMapping, type ImportConfirmedMapping, type ImportSuggestedMapping } from "@/modules/import/map";
 import { IMPORT_LIMIT_DESCRIPTORS, IMPORT_MAX_BYTES, IMPORT_MAX_CELL_CODE_POINTS, IMPORT_MAX_COLUMNS, IMPORT_MAX_DATA_ROWS, checkLimits, parseCsv, type AdmittedImportFile, type ImportLimitCheckResult, type ImportRefusal, type ParsedCsvFile } from "@/modules/import/parse";
 import { flagDuplicateLookingRows, suggestMatches, validateRows, type ImportMatchCandidate, type ImportValidatedRow, type ImportValidation } from "@/modules/import/validate";
-const ENCODER = new TextEncoder();
-function bytesOf(text: string): Uint8Array {
-  return ENCODER.encode(text);
-}
-function field(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
-}
-function csvWith(headers: readonly string[], rows: readonly (readonly string[])[]): string {
-  return `${[headers, ...rows].map((row) => row.map(field).join(",")).join("\n")}\n`;
-}
-function headerNames(count: number): string[] {
-  return Array.from({ length: count }, (_value, index) => `Column ${index + 1}`);
-}
-function rowNames(count: number): string[] {
-  return Array.from({ length: count }, (_value, index) => `Contact ${index + 1}`);
-}
+import { firstWhere, requiredSaying } from "../helpers/answers";
+const bytesOf = (text: string): Uint8Array => new TextEncoder().encode(text);
+const field = (value: string): string => (/[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value);
+const csvWith = (headers: readonly string[], rows: readonly (readonly string[])[]): string => `${[headers, ...rows].map((row) => row.map(field).join(",")).join("\n")}\n`;
+const headerNames = (count: number): string[] => Array.from({ length: count }, (_value, index) => `Column ${index + 1}`);
+const rowNames = (count: number): string[] => Array.from({ length: count }, (_value, index) => `Contact ${index + 1}`);
 function singleColumnCsv(cells: readonly string[]): string {
   return csvWith(
     ["Name"],
@@ -47,10 +37,7 @@ function exactSizeCsv(totalBytes: number): Uint8Array {
   }
   return bytesOf(header + rows.join(""));
 }
-function mustFind<T>(value: T | undefined, what: string): T {
-  if (value === undefined) throw new Error(`expected ${what}`);
-  return value;
-}
+const mustFind = <T>(value: T | undefined, what: string): T => requiredSaying(value, `expected ${what}`);
 async function admittedFile(bytes: Uint8Array, displayName = "chosen.csv"): Promise<AdmittedImportFile> {
   const result = await checkLimits(bytes, displayName);
   if (!result.ok) throw new Error(`expected the file to be admitted, but it was refused: ${result.refusals.map((refusal) => refusal.message).join(" ")}`);
@@ -67,24 +54,15 @@ function refusalsOnly(result: ImportLimitCheckResult): readonly ImportRefusal[] 
   expect(result.refusals.length).toBeGreaterThan(0);
   return result.refusals;
 }
-function firstRefusal(refusals: readonly ImportRefusal[]): ImportRefusal {
-  return mustFind(refusals[0], "a refusal to report");
-}
+const firstRefusal = (refusals: readonly ImportRefusal[]): ImportRefusal => mustFind(refusals[0], "a refusal to report");
 function confirmedMappingFor(file: ParsedCsvFile, suggestion: ImportSuggestedMapping = suggestMapping(file)): ImportConfirmedMapping {
   const result = confirmMapping(suggestion);
   if (!result.ok) throw new Error(`expected the mapping to be confirmed, but it was refused: ${result.refusals.map((refusal) => refusal.message).join(" ")}`);
   return result.mapping;
 }
-function validatedRow(validation: ImportValidation, predicate: (row: ImportValidatedRow) => boolean, what: string): ImportValidatedRow {
-  return mustFind(validation.rows.find(predicate), what);
-}
+const validatedRow = (validation: ImportValidation, predicate: (row: ImportValidatedRow) => boolean, what: string): ImportValidatedRow => mustFind(validation.rows.find(predicate), what);
 const FIXTURE_BYTES = new Uint8Array(readFileSync(new URL("../../public/fixtures/contacts-example.csv", import.meta.url)));
-interface FixtureImport {
-  readonly file: ParsedCsvFile;
-  readonly suggestion: ImportSuggestedMapping;
-  readonly mapping: ImportConfirmedMapping;
-  readonly validation: ImportValidation;
-}
+type FixtureImport = { readonly file: ParsedCsvFile; readonly suggestion: ImportSuggestedMapping; readonly mapping: ImportConfirmedMapping; readonly validation: ImportValidation };
 async function importFixture(): Promise<FixtureImport> {
   const admitted = await admittedFile(FIXTURE_BYTES, "contacts-example.csv");
   const file = await parsedFile(admitted.text);
@@ -92,23 +70,14 @@ async function importFixture(): Promise<FixtureImport> {
   const mapping = confirmedMappingFor(file, suggestion);
   return { file, suggestion, mapping, validation: validateRows(file, mapping) };
 }
-function candidateSharing(email: string): ImportMatchCandidate {
-  return { reference: { system: "synthetic-crm", reference: "partner-existing-0001" }, visibleFields: ["contact-email", "display-name"], visibleValues: { "contact-email": [email] }, reuse: { permitted: true } };
-}
+const candidateSharing = (email: string): ImportMatchCandidate => ({ reference: { system: "synthetic-crm", reference: "partner-existing-0001" }, visibleFields: ["contact-email", "display-name"], visibleValues: { "contact-email": [email] }, reuse: { permitted: true } });
 describe("import limits: the fixed values", () => {
   it("states the four limits exactly as the specification fixes them", () => {
-    expect(IMPORT_MAX_BYTES).toBe(5 * 1024 * 1024);
-    expect(IMPORT_MAX_DATA_ROWS).toBe(5_000);
-    expect(IMPORT_MAX_COLUMNS).toBe(60);
-    expect(IMPORT_MAX_CELL_CODE_POINTS).toBe(2_000);
+    expect([IMPORT_MAX_BYTES, IMPORT_MAX_DATA_ROWS, IMPORT_MAX_COLUMNS, IMPORT_MAX_CELL_CODE_POINTS]).toEqual([5 * 1024 * 1024, 5_000, 60, 2_000]);
     const byId = new Map(IMPORT_LIMIT_DESCRIPTORS.map((descriptor) => [descriptor.id, descriptor]));
-    expect(mustFind(byId.get("file-bytes"), "the file size limit").value).toBe(5 * 1024 * 1024);
-    expect(mustFind(byId.get("data-rows"), "the row limit").value).toBe(5_000);
-    expect(mustFind(byId.get("columns"), "the column limit").value).toBe(60);
-    expect(mustFind(byId.get("cell-code-points"), "the cell limit").value).toBe(2_000);
+    expect([mustFind(byId.get("file-bytes"), "the file size limit").value, mustFind(byId.get("data-rows"), "the row limit").value, mustFind(byId.get("columns"), "the column limit").value, mustFind(byId.get("cell-code-points"), "the cell limit").value]).toEqual([5 * 1024 * 1024, 5_000, 60, 2_000]);
     expect(IMPORT_LIMIT_DESCRIPTORS.filter((entry) => entry.refusesWholeFile).map((entry) => entry.id)).toEqual(["file-bytes", "data-rows", "columns"]);
-    expect(mustFind(byId.get("cell-code-points"), "the cell limit").unit).toBe("Unicode code points");
-    expect(mustFind(byId.get("data-rows"), "the row limit").unit).toBe("nonblank data rows");
+    expect([mustFind(byId.get("cell-code-points"), "the cell limit").unit, mustFind(byId.get("data-rows"), "the row limit").unit]).toEqual(["Unicode code points", "nonblank data rows"]);
   });
   it("refuses an over-limit file before any row is parsed", async () => {
     const result = await checkLimits(bytesOf(singleColumnCsv(rowNames(IMPORT_MAX_DATA_ROWS + 1))));
@@ -121,66 +90,48 @@ describe("import limits: file size", () => {
     const atLimit = exactSizeCsv(IMPORT_MAX_BYTES);
     expect(atLimit.byteLength).toBe(IMPORT_MAX_BYTES);
     const admitted = await admittedFile(atLimit, "at-the-limit.csv");
-    expect(admitted.byteLength).toBe(IMPORT_MAX_BYTES);
-    expect(admitted.contentTyped).toBe("csv-utf8");
-    expect(admitted.structure.dataRowCount).toBe(IMPORT_MAX_DATA_ROWS);
-    expect(admitted.structure.rowFaults).toEqual([]);
+    expect([[admitted.byteLength, admitted.contentTyped, admitted.structure.dataRowCount], admitted.structure.rowFaults]).toEqual([[IMPORT_MAX_BYTES, "csv-utf8", IMPORT_MAX_DATA_ROWS], []]);
     const overLimit = exactSizeCsv(IMPORT_MAX_BYTES + 1);
     expect(overLimit.byteLength).toBe(IMPORT_MAX_BYTES + 1);
     const refusal = firstRefusal(refusalsOnly(await checkLimits(overLimit, "one-byte-over.csv")));
-    expect(refusal.code).toBe("file-too-large");
-    expect(refusal.limit).toBe("file-bytes");
-    expect(refusal.measured).toBe(IMPORT_MAX_BYTES + 1);
-    expect(refusal.message).toContain(String(IMPORT_MAX_BYTES));
-    expect(refusal.message).toContain(String(overLimit.byteLength));
-    expect(refusal.message).toContain("5 MiB");
+    expect([refusal.code, refusal.limit, refusal.measured]).toEqual(["file-too-large", "file-bytes", IMPORT_MAX_BYTES + 1]);
+    for (const needle of [String(IMPORT_MAX_BYTES), String(overLimit.byteLength), "5 MiB"]) expect(refusal.message).toContain(needle);
   });
   it("decides the size before it reads the content", async () => {
     const oversizedWorkbook = new Uint8Array(IMPORT_MAX_BYTES + 1);
     oversizedWorkbook.set([0x50, 0x4b, 0x03, 0x04]);
     const refusal = firstRefusal(refusalsOnly(await checkLimits(oversizedWorkbook, "oversized-workbook.csv")));
     expect(refusal.code).toBe("file-too-large");
-    const workbook = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x06, 0x00, 0x08, 0x00]);
-    expect(firstRefusal(refusalsOnly(await checkLimits(workbook, "workbook.csv"))).code).toBe("content-workbook");
+    expect(firstRefusal(refusalsOnly(await checkLimits(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x06, 0x00, 0x08, 0x00]), "workbook.csv"))).code).toBe("content-workbook");
   });
 });
 describe("import limits: nonblank data rows", () => {
   it("accepts 5,000 nonblank rows and refuses row 5,001", async () => {
     const admitted = await admittedFile(bytesOf(singleColumnCsv(rowNames(IMPORT_MAX_DATA_ROWS))), "five-thousand.csv");
-    expect(admitted.structure.dataRowCount).toBe(IMPORT_MAX_DATA_ROWS);
-    expect(admitted.structure.blankRowCount).toBe(0);
+    expect([admitted.structure.dataRowCount, admitted.structure.blankRowCount]).toEqual([IMPORT_MAX_DATA_ROWS, 0]);
     const refusedResult = await checkLimits(bytesOf(singleColumnCsv(rowNames(IMPORT_MAX_DATA_ROWS + 1))), "five-thousand-and-one.csv");
     const refusal = firstRefusal(refusalsOnly(refusedResult));
-    expect(refusal.code).toBe("too-many-rows");
-    expect(refusal.limit).toBe("data-rows");
-    expect(refusal.measured).toBe(IMPORT_MAX_DATA_ROWS + 1);
-    expect(refusal.message).toContain(String(IMPORT_MAX_DATA_ROWS + 1));
-    expect(refusal.message).toContain(String(IMPORT_MAX_DATA_ROWS));
+    expect([refusal.code, refusal.limit, refusal.measured]).toEqual(["too-many-rows", "data-rows", IMPORT_MAX_DATA_ROWS + 1]);
+    for (const needle of [String(IMPORT_MAX_DATA_ROWS + 1), String(IMPORT_MAX_DATA_ROWS)]) expect(refusal.message).toContain(needle);
   });
   it("does not count blank rows against the limit", async () => {
     const cells = rowNames(IMPORT_MAX_DATA_ROWS);
     const blankEvery = 250;
     const text = singleColumnCsvWithBlanks(cells, blankEvery);
     const admitted = await admittedFile(bytesOf(text), "five-thousand-with-blanks.csv");
-    expect(admitted.structure.dataRowCount).toBe(IMPORT_MAX_DATA_ROWS);
-    expect(admitted.structure.blankRowCount).toBe(Math.floor((IMPORT_MAX_DATA_ROWS - 1) / blankEvery));
-    expect(admitted.structure.rowFaults).toEqual([]);
+    expect([[admitted.structure.dataRowCount, admitted.structure.blankRowCount], admitted.structure.rowFaults]).toEqual([[IMPORT_MAX_DATA_ROWS, Math.floor((IMPORT_MAX_DATA_ROWS - 1) / blankEvery)], []]);
   });
 });
 describe("import limits: columns", () => {
   it("accepts 60 columns and refuses column 61 before mapping", async () => {
     const sixty = headerNames(IMPORT_MAX_COLUMNS);
     const admitted = await admittedFile(bytesOf(csvWith(sixty, [sixty.map(() => "value")])), "sixty-columns.csv");
-    expect(admitted.structure.columnCount).toBe(IMPORT_MAX_COLUMNS);
-    expect(admitted.structure.dataRowCount).toBe(1);
+    expect([admitted.structure.columnCount, admitted.structure.dataRowCount]).toEqual([IMPORT_MAX_COLUMNS, 1]);
     const sixtyOne = headerNames(IMPORT_MAX_COLUMNS + 1);
     const refusedResult = await checkLimits(bytesOf(csvWith(sixtyOne, [sixtyOne.map(() => "value")])), "sixty-one-columns.csv");
     const refusal = firstRefusal(refusalsOnly(refusedResult));
-    expect(refusal.code).toBe("too-many-columns");
-    expect(refusal.limit).toBe("columns");
-    expect(refusal.measured).toBe(IMPORT_MAX_COLUMNS + 1);
-    expect(refusal.message).toContain(String(IMPORT_MAX_COLUMNS + 1));
-    expect(refusal.message).toContain(String(IMPORT_MAX_COLUMNS));
+    expect([refusal.code, refusal.limit, refusal.measured]).toEqual(["too-many-columns", "columns", IMPORT_MAX_COLUMNS + 1]);
+    for (const needle of [String(IMPORT_MAX_COLUMNS + 1), String(IMPORT_MAX_COLUMNS)]) expect(refusal.message).toContain(needle);
     expect("file" in refusedResult).toBe(false);
   });
 });
@@ -193,29 +144,17 @@ describe("import limits: cell length", () => {
     expect(file.rows.map((row) => row.rowNumber)).toEqual([1, 2, 3, 4]);
     expect(file.rowFaults).toHaveLength(1);
     const fault = mustFind(file.rowFaults[0], "the cell-length fault");
-    expect(fault.kind).toBe("cell-too-long");
-    expect(fault.rowNumber).toBe(2);
-    expect(fault.columnNumber).toBe(1);
-    expect(fault.measured).toBe(IMPORT_MAX_CELL_CODE_POINTS + 1);
-    expect(fault.message).toContain(String(IMPORT_MAX_CELL_CODE_POINTS + 1));
-    expect(fault.message).toContain(String(IMPORT_MAX_CELL_CODE_POINTS));
+    expect([fault.kind, fault.rowNumber, fault.columnNumber, fault.measured]).toEqual(["cell-too-long", 2, 1, IMPORT_MAX_CELL_CODE_POINTS + 1]);
+    for (const needle of [String(IMPORT_MAX_CELL_CODE_POINTS + 1), String(IMPORT_MAX_CELL_CODE_POINTS)]) expect(fault.message).toContain(needle);
     const validation = validateRows(file, confirmedMappingFor(file));
     expect(validation.rows.map((row) => row.rowNumber)).toEqual([1, 2, 3, 4]);
-    expect(validation.counts.needsCorrection).toBe(1);
-    expect(validation.counts.ready).toBe(3);
-    const failedRow = mustFind(
-      validation.rows.find((row) => row.rowNumber === 2),
-      "the row the long cell belongs to",
-    );
+    expect([validation.counts.needsCorrection, validation.counts.ready]).toEqual([1, 3]);
+    const failedRow = firstWhere(validation.rows, "rowNumber", 2, "the row the long cell belongs to");
     expect(failedRow.verdict).toBe("needs-correction");
     expect(failedRow.faults.map((entry) => entry.kind)).toEqual(["cell-too-long"]);
     for (const rowNumber of [1, 3, 4]) {
-      const sibling = mustFind(
-        validation.rows.find((row) => row.rowNumber === rowNumber),
-        `row ${rowNumber}`,
-      );
-      expect(sibling.faults).toEqual([]);
-      expect(sibling.verdict).toBe("ready");
+      const sibling = firstWhere(validation.rows, "rowNumber", rowNumber, `row ${rowNumber}`);
+      expect([sibling.faults, sibling.verdict]).toEqual([[], "ready"]);
     }
   });
   it("counts Unicode code points, not UTF-16 units", async () => {
@@ -229,28 +168,23 @@ describe("import limits: cell length", () => {
     const refused = await parsedFile(csvWith(["Name"], [[overLimit], ["sibling contact"]]));
     expect(refused.dataRowCount).toBe(2);
     const fault = mustFind(refused.rowFaults[0], "the astral cell-length fault");
-    expect(fault.kind).toBe("cell-too-long");
-    expect(fault.measured).toBe(IMPORT_MAX_CELL_CODE_POINTS + 1);
+    expect([fault.kind, fault.measured]).toEqual(["cell-too-long", IMPORT_MAX_CELL_CODE_POINTS + 1]);
     expect(fault.message).toContain(String(IMPORT_MAX_CELL_CODE_POINTS + 1));
   });
 });
 describe("import content: typed by bytes, never by name", () => {
   it("refuses a spreadsheet workbook presented as a CSV", async () => {
-    const zipWorkbook = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x06, 0x00, 0x08, 0x00]);
-    const zipRefusal = firstRefusal(refusalsOnly(await checkLimits(zipWorkbook, "contacts.csv")));
+    const zipRefusal = firstRefusal(refusalsOnly(await checkLimits(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x06, 0x00, 0x08, 0x00]), "contacts.csv")));
     expect(zipRefusal.code).toBe("content-workbook");
     expect(zipRefusal.message).toContain("UTF-8 CSV");
-    const ole2Workbook = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
-    expect(firstRefusal(refusalsOnly(await checkLimits(ole2Workbook, "contacts.csv"))).code).toBe("content-workbook");
+    expect(firstRefusal(refusalsOnly(await checkLimits(new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), "contacts.csv"))).code).toBe("content-workbook");
   });
   it("accepts CSV text whatever the file is called", async () => {
     const admitted = await admittedFile(bytesOf(csvWith(["Name"], [["Amara Okonkwo"]])), "contacts.xls");
-    expect(admitted.contentTyped).toBe("csv-utf8");
-    expect(admitted.structure.dataRowCount).toBe(1);
+    expect([admitted.contentTyped, admitted.structure.dataRowCount]).toEqual(["csv-utf8", 1]);
   });
   it("refuses bytes that are not UTF-8 instead of decoding them", async () => {
-    const notUtf8 = new Uint8Array([0x4e, 0x61, 0x6d, 0x65, 0x0a, 0xff, 0xfe, 0x0a]);
-    const result = await checkLimits(notUtf8, "legacy-encoding.csv");
+    const result = await checkLimits(new Uint8Array([0x4e, 0x61, 0x6d, 0x65, 0x0a, 0xff, 0xfe, 0x0a]), "legacy-encoding.csv");
     const refusal = firstRefusal(refusalsOnly(result));
     expect(refusal.code).toBe("content-not-utf8");
     expect(refusal.message).toContain("UTF-8 CSV");
@@ -258,29 +192,19 @@ describe("import content: typed by bytes, never by name", () => {
   });
   it("reads the committed example inside every limit", async () => {
     const admitted = await admittedFile(FIXTURE_BYTES, "contacts-example.csv");
-    expect(admitted.byteLength).toBe(FIXTURE_BYTES.byteLength);
-    expect(admitted.structure.columnCount).toBe(12);
-    expect(admitted.structure.dataRowCount).toBe(25);
-    expect(admitted.structure.blankRowCount).toBe(1);
-    expect(admitted.structure.rowFaults).toEqual([]);
+    expect([[admitted.byteLength, admitted.structure.columnCount, admitted.structure.dataRowCount, admitted.structure.blankRowCount], admitted.structure.rowFaults]).toEqual([[FIXTURE_BYTES.byteLength, 12, 25, 1], []]);
     const file = await parsedFile(admitted.text);
     expect(file.headers).toHaveLength(12);
-    expect(file.headers[0]).toBe("First name");
-    expect(file.dataRowCount).toBe(25);
-    expect(file.rows.every((row) => row.cells.length === 12)).toBe(true);
+    expect([file.headers[0], file.dataRowCount, file.rows.every((row) => row.cells.length === 12)]).toEqual(["First name", 25, true]);
   });
 });
 describe("import mapping: headers are positions, never identities", () => {
   it("keeps the first header key intact when the file starts with a byte-order mark", async () => {
     const file = await parsedFile("\uFEFFName,Email\nAmara Okonkwo,amara@example.org\n");
     expect(file.headers).toHaveLength(2);
-    expect(file.headers[0]).toBe("Name");
-    expect(file.headers[0]?.codePointAt(0)).toBe(0x4e);
+    expect([file.headers[0], file.headers[0]?.codePointAt(0)]).toEqual(["Name", 0x4e]);
     const suggestion = suggestMapping(file);
-    const claim = mustFind(
-      suggestion.claims.find((entry) => entry.fieldId === "display-name"),
-      "the display-name claim",
-    );
+    const claim = firstWhere(suggestion.claims, "fieldId", "display-name", "the display-name claim");
     expect(claim.columnIndexes).toEqual([1]);
   });
   it("keeps both columns of a repeated header as separate positions", async () => {
@@ -288,14 +212,15 @@ describe("import mapping: headers are positions, never identities", () => {
     expect(suggestion.columns).toHaveLength(12);
     expect(suggestion.repeatedHeaders).toEqual([{ header: "Email", columnIndexes: [5, 7] }]);
     const emailColumns = suggestion.columns.filter((column) => column.header === "Email");
-    expect(emailColumns.map((column) => column.index)).toEqual([5, 7]);
-    expect(emailColumns.map((column) => column.occurrence)).toEqual([1, 2]);
-    const claim = mustFind(
-      suggestion.claims.find((entry) => entry.fieldId === "contact-email"),
-      "the email claim",
-    );
-    expect(claim.columnIndexes).toEqual([5, 7]);
-    expect(mapping.assignments.filter((assignment) => assignment.fieldId === "contact-email").map((assignment) => assignment.columnIndex)).toEqual([5, 7]);
+    expect([emailColumns.map((column) => column.index), emailColumns.map((column) => column.occurrence)]).toEqual([
+      [5, 7],
+      [1, 2],
+    ]);
+    const claim = firstWhere(suggestion.claims, "fieldId", "contact-email", "the email claim");
+    expect([claim.columnIndexes, mapping.assignments.filter((assignment) => assignment.fieldId === "contact-email").map((assignment) => assignment.columnIndex)]).toEqual([
+      [5, 7],
+      [5, 7],
+    ]);
   });
   it("proposes an existing contact without deciding or merging it", async () => {
     const { file, mapping, validation } = await importFixture();
@@ -305,33 +230,26 @@ describe("import mapping: headers are positions, never identities", () => {
     expect(proposal.rowNumber).toBe(row.rowNumber);
     expect(proposal.suggestions).toHaveLength(1);
     const suggestion = mustFind(proposal.suggestions[0], "the reuse suggestion");
-    expect(suggestion.reference).toEqual({ system: "synthetic-crm", reference: "partner-existing-0001" });
-    expect(suggestion.signals.map((signal) => signal.kind)).toEqual(["email"]);
+    expect([suggestion.reference, suggestion.signals.map((signal) => signal.kind)]).toEqual([{ system: "synthetic-crm", reference: "partner-existing-0001" }, ["email"]]);
     expect(suggestion.message).toContain("Nothing has been merged");
     const set = createDecisionSet(file);
     expect(set.decisions).toHaveLength(0);
     expect(set.decisions.some((decision) => decision.rowNumber === row.rowNumber)).toBe(false);
     const summary = summariseDecisions(set, { file, mapping, validation, candidates });
     if (!summary.ok) throw new Error(summary.refusal.message);
-    expect(summary.summary.counts.reuse).toBe(0);
-    expect(summary.summary.counts.unresolved).toBe(summary.summary.totalRowCount);
-    expect(summary.summary.totalRowCount).toBe(file.dataRowCount);
+    expect([summary.summary.counts.reuse, summary.summary.counts.unresolved, summary.summary.totalRowCount]).toEqual([0, summary.summary.totalRowCount, file.dataRowCount]);
   });
   it("keeps a restriction the file stated", async () => {
     const { validation } = await importFixture();
     const row = validatedRow(validation, (candidate) => candidate.restrictions.some((entry) => entry.text.trim() === "Do not contact"), "the row that states a contact restriction");
     expect(row.restrictions).toHaveLength(1);
     const restriction = mustFind(row.restrictions[0], "the imported restriction");
-    expect(restriction.kind).toBe("imported-restriction");
-    expect(restriction.text).toBe("Do not contact");
-    expect(restriction.header).toBe("Contact restriction");
-    expect(row.mappedCells.filter((cell) => cell.fieldId === "restriction").map((cell) => cell.value.trim())).toEqual(["Do not contact"]);
+    expect([[restriction.kind, restriction.text, restriction.header], row.mappedCells.filter((cell) => cell.fieldId === "restriction").map((cell) => cell.value.trim())]).toEqual([["imported-restriction", "Do not contact", "Contact restriction"], ["Do not contact"]]);
     expect(validation.counts.restrictions).toBe(3);
   });
   it("offers exactly the four per-row decisions and refuses a fifth", async () => {
     expect(IMPORT_DECISION_KINDS).toHaveLength(4);
-    expect(IMPORT_DECISION_KINDS).toEqual(["create", "reuse", "skip", "unresolved"]);
-    expect(new Set(IMPORT_DECISION_KINDS)).toEqual(new Set(["create", "reuse", "skip", "unresolved"]));
+    expect([IMPORT_DECISION_KINDS, new Set(IMPORT_DECISION_KINDS)]).toEqual([["create", "reuse", "skip", "unresolved"], new Set(["create", "reuse", "skip", "unresolved"])]);
     const { file, mapping, validation } = await importFixture();
     const candidates = [candidateSharing("naomi.petersen@example.org")];
     const context: ImportDecisionContext = { file, mapping, validation, candidates };
@@ -362,77 +280,51 @@ describe("import mapping: headers are positions, never identities", () => {
       "the row whose subscription cell reads yes",
     );
     expect(parsedRow.cells[subscribedColumn - 1]).toBe("yes");
-    const row = mustFind(
-      validation.rows.find((candidate) => candidate.rowNumber === parsedRow.rowNumber),
-      "the validated row of the same contact",
-    );
-    const consentCell = mustFind(
-      row.preservedCells.find((cell) => cell.header === "Subscribed"),
-      "the preserved subscription cell",
-    );
-    expect(consentCell.text).toBe("yes");
-    expect(consentCell.reason).toBe("consent-preserved");
-    expect(consentCell.statesConsent).toBe(true);
-    expect(row.mappedCells.some((cell) => cell.header === "Subscribed")).toBe(false);
+    const row = firstWhere(validation.rows, "rowNumber", parsedRow.rowNumber, "the validated row of the same contact");
+    const consentCell = firstWhere(row.preservedCells, "header", "Subscribed", "the preserved subscription cell");
+    expect([consentCell.text, consentCell.reason, consentCell.statesConsent, row.mappedCells.some((cell) => cell.header === "Subscribed")]).toEqual(["yes", "consent-preserved", true, false]);
     expect(validation.counts.consentMarkedCells).toBeGreaterThan(0);
     expect(Object.keys(validation).sort()).toEqual(["counts", "fields", "problems", "rows"]);
     const summary = summariseDecisions(createDecisionSet(file), { file, mapping, validation, candidates: [] });
     if (!summary.ok) throw new Error(summary.refusal.message);
-    expect(summary.summary.facts).toEqual({ memberships: 0, consentRecords: 0, audienceMembers: 0, preservedColumnsCreateNothing: true });
-    expect(summary.summary.consentLookingColumnCount).toBe(1);
-    expect(summary.summary.preservedColumns.filter((column) => column.statesConsent).map((column) => column.header)).toEqual(["Subscribed"]);
+    expect([summary.summary.facts, [summary.summary.consentLookingColumnCount, summary.summary.preservedColumns.filter((column) => column.statesConsent).map((column) => column.header)]]).toEqual([{ memberships: 0, consentRecords: 0, audienceMembers: 0, preservedColumnsCreateNothing: true }, [1, ["Subscribed"]]]);
   });
 });
 describe("import review: rows of one file that look alike", () => {
-  it("flags the two rows of one name that share no contact method, both ways and only them", async () => {
+  it("flags both rows of one name that share no contact method, and only them", async () => {
     const { validation } = await importFixture();
-    const sameName = validation.rows.filter((row) => row.mappedCells.some((cell) => cell.fieldId === "name-given" && cell.value.trim() === "Tomas"));
-    expect(sameName.map((row) => row.rowNumber)).toEqual([10, 11]);
     const flagged = flagDuplicateLookingRows(validation.rows);
     expect([...flagged.keys()].sort((left, right) => left - right)).toEqual([10, 11]);
-    for (const row of sameName) {
+    for (const row of validation.rows.filter((entry) => flagged.has(entry.rowNumber))) {
       const flag = mustFind(flagged.get(row.rowNumber), `the look-alike flag of row ${row.rowNumber}`);
-      expect(flag.name).toBe("Tomas Rivera");
-      expect(flag.otherRowNumbers).toEqual([row.rowNumber === 10 ? 11 : 10]);
-      // A look-alike is a signal and no more: it names no reference of its own, and the row keeps the verdict validation
-      // graded, so nothing is merged and no decision and no count moves.
-      expect(Object.keys(flag).sort()).toEqual(["name", "otherRowNumbers", "rowNumber"]);
-      expect(row.verdict).toBe("ready");
+      expect([flag.name, flag.otherRowNumbers, Object.keys(flag).sort()]).toEqual(["Tomas Rivera", [row.rowNumber === 10 ? 11 : 10], ["name", "otherRowNumbers", "rowNumber"]]);
+      expect(row.verdict).toBe("ready"); // A look-alike is a signal beside the row: it names no reference, merges nothing and leaves the verdict validation graded.
     }
-    // The pass reads the graded rows and returns a signal beside them: no count and no other row's verdict moves.
-    expect(validation.counts.ready).toBe(22);
-    expect(validation.counts.needsCorrection).toBe(3);
+    expect([validation.counts.ready, validation.counts.needsCorrection]).toEqual([22, 3]);
   });
-  it("folds case and spacing when it compares two names", async () => {
-    const file = await parsedFile(
-      csvWith(
-        ["First name", "Last name", "Email"],
-        [
-          ["Siobhán", "Ní Bhraonáin", "siobhan.nb@example.org"],
-          ["SIOBHÁN", "NÍ  BHRAONÁIN", "s.nibhraonain@example.net"],
-        ],
-      ),
-    );
-    const flagged = flagDuplicateLookingRows(validateRows(file, confirmedMappingFor(file)).rows);
-    expect([...flagged.keys()].sort((left, right) => left - right)).toEqual([1, 2]);
-    expect(mustFind(flagged.get(2), "the second row's look-alike flag").otherRowNumbers).toEqual([1]);
-  });
-  it("does not flag a name carried once, or two rows that already share an email address", async () => {
-    const file = await parsedFile(
-      csvWith(
-        ["First name", "Last name", "Email"],
-        [
-          ["Ada", "Lovelace", "ada.lovelace@example.org"],
-          ["Grace", "Hopper", "grace.hopper@example.org"],
-          ["GRACE", "Hopper", "Grace.Hopper@example.org"],
-          ["Marie", "Curie", "marie.curie@example.org"],
-          ["Marie", "Curie", "m.curie@example.net"],
-        ],
-      ),
-    );
-    const validation = validateRows(file, confirmedMappingFor(file));
-    // Rows 2 and 3 already agree on the address, so they are a reuse question rather than a file carrying one person
-    // twice; rows 1 and 4 carry names nothing else in the file repeats; rows 4 and 5 are the only look-alike pair.
-    expect([...flagDuplicateLookingRows(validation.rows).keys()].sort((left, right) => left - right)).toEqual([4, 5]);
+  const lookAlikeCases: readonly { readonly name: string; readonly rows: readonly (readonly string[])[]; readonly flagged: readonly number[] }[] = [
+    {
+      name: "folds case and spacing when it compares two names",
+      rows: [
+        ["Siobhán", "Ní Bhraonáin", "siobhan.nb@example.org"],
+        ["SIOBHÁN", "NÍ  BHRAONÁIN", "s.nibhraonain@example.net"],
+      ],
+      flagged: [1, 2],
+    },
+    {
+      name: "does not flag a name carried once, or two rows that already share an email address",
+      rows: [
+        ["Ada", "Lovelace", "ada.lovelace@example.org"],
+        ["Grace", "Hopper", "grace.hopper@example.org"],
+        ["GRACE", "Hopper", "Grace.Hopper@example.org"],
+        ["Marie", "Curie", "marie.curie@example.org"],
+        ["Marie", "Curie", "m.curie@example.net"],
+      ],
+      flagged: [4, 5],
+    },
+  ];
+  it.each(lookAlikeCases)("$name", async ({ rows, flagged }) => {
+    const file = await parsedFile(csvWith(["First name", "Last name", "Email"], rows));
+    expect([...flagDuplicateLookingRows(validateRows(file, confirmedMappingFor(file)).rows).keys()].sort((left, right) => left - right)).toEqual(flagged);
   });
 });

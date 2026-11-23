@@ -25,6 +25,17 @@ export const seriesEndSchema: z.ZodType<SeriesEndPayload> = z.discriminatedUnion
   ],
   { error: SERIES_FIELD_MESSAGES.endRequired },
 );
+/** A stated field as a number, `NaN` when the field is blank so the schema refuses it rather than reading it as zero. */ export const statedNumber = (value: string): number => (value.trim() === "" ? Number.NaN : Number(value.trim()));
+/** The end condition the editor's three fields state, in the shape the write carries. */ export function endPayloadOf(kind: SeriesEnd["kind"], on: string, count: string): SeriesEndPayload {
+  switch (kind) {
+    case "on-date":
+      return { kind: "on-date", on };
+    case "after-count":
+      return { kind: "after-count", count: statedNumber(count) };
+    case "ongoing-personal-policy":
+      return { kind: "ongoing-personal-policy" };
+  }
+}
 const PROFILES_READING_INTERVAL: ReadonlySet<RepeatProfile> = new Set<RepeatProfile>(["everyNWeeks", "everyNMonths"]);
 const PROFILES_READING_DAY_OF_MONTH: ReadonlySet<RepeatProfile> = new Set<RepeatProfile>(["monthlyOnDay", "everyNMonths"]);
 function editorFieldsAgree(profile: RepeatProfile): boolean {
@@ -39,14 +50,12 @@ export function refineSeriesRuleFields(value: ProfileConditionalFields, ctx: z.R
     ctx.addIssue({ code: "custom", message: SERIES_SCHEMA_MESSAGES.profileInvalid, path: ["profile"] });
     return;
   }
-  const readsInterval = PROFILES_READING_INTERVAL.has(value.profile);
-  const readsDayOfMonth = PROFILES_READING_DAY_OF_MONTH.has(value.profile);
-  if (readsInterval) {
+  if (PROFILES_READING_INTERVAL.has(value.profile)) {
     if (value.interval === undefined) ctx.addIssue({ code: "custom", message: SERIES_FIELD_MESSAGES.intervalRequired, path: ["interval"] });
   } else if (value.interval !== undefined) {
     ctx.addIssue({ code: "custom", message: SERIES_SCHEMA_MESSAGES.intervalNotApplicable, path: ["interval"] });
   }
-  if (readsDayOfMonth) {
+  if (PROFILES_READING_DAY_OF_MONTH.has(value.profile)) {
     if (value.dayOfMonth === undefined) ctx.addIssue({ code: "custom", message: SERIES_FIELD_MESSAGES.dayOfMonthRequired, path: ["dayOfMonth"] });
   } else if (value.dayOfMonth !== undefined) {
     ctx.addIssue({ code: "custom", message: SERIES_SCHEMA_MESSAGES.dayOfMonthNotApplicable, path: ["dayOfMonth"] });

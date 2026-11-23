@@ -1,12 +1,8 @@
 import { z } from "zod";
 import { CONTACT_METHOD_KINDS } from "@/modules/data-service/envelope";
-function requiredText(message: string): z.ZodString {
-  return z.string({ error: message }).min(1, message);
-}
+const requiredText = (message: string): z.ZodString => z.string({ error: message }).min(1, message);
 export const contactMethodEditSchema = z.strictObject({ kind: z.enum(CONTACT_METHOD_KINDS, { error: "Choose a contact method kind: email, phone or postal." }), value: requiredText("A contact method needs a value."), permitted: z.boolean({ error: "State whether this contact method may be used." }) });
-export type ContactMethodEdit = z.infer<typeof contactMethodEditSchema>;
 export const restrictionEditSchema = z.strictObject({ kind: requiredText("A restriction needs a short label."), detail: requiredText("A restriction states what must not happen.") });
-export type RestrictionEdit = z.infer<typeof restrictionEditSchema>;
 export const relationshipContextEditSchema = requiredText("A relationship label cannot be blank; send null to clear it.").nullable();
 const namePartsEditSchema = z.strictObject({ given: requiredText("A given name cannot be blank; send null instead.").nullable(), family: requiredText("A family name cannot be blank; send null instead.").nullable(), additional: z.array(requiredText("An additional name cannot be blank; remove it instead.")) });
 export const saveContactEditsPayloadSchema = z.strictObject({

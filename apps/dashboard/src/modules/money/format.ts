@@ -1,4 +1,3 @@
-/** The single money formatter in this application, and the place where a value's state becomes visible text. */
 import type { ValueState } from "@/modules/data-service/envelope";
 import { minorUnitsOf, type Money } from "./amount";
 import { exponentOf } from "./currency";
@@ -13,27 +12,16 @@ const WITHHELD_TEXT = "Withheld";
 const UNAVAILABLE_TEXT = "Source unavailable";
 const INCOMPLETE_MARKER = "incomplete";
 const UNKNOWN_CURRENCY_MARKER = "currency unknown";
-export function formatMinor(money: Money, valueState: ValueState, locale: string, options?: MinorFormatOptions): MinorFormatting {
-  switch (valueState) {
-    case "unknown":
-      return { text: UNKNOWN_TEXT, plain: UNKNOWN_TEXT, accessibleLabel: "Unknown amount. The source did not establish a value, so this must not be read as zero or as an absence of giving." };
-    case "withheld":
-      return { text: WITHHELD_TEXT, plain: WITHHELD_TEXT, accessibleLabel: "Withheld. A value exists within this scope but is withheld here, and it must not be inferred by subtraction from any total or from any other figure." };
-    case "unavailable":
-      return { text: UNAVAILABLE_TEXT, plain: UNAVAILABLE_TEXT, accessibleLabel: "Source unavailable. The source behind this amount is unavailable, so no amount can be shown: this is not zero and not an empty value." };
-    case "value":
-    case "zero":
-    case "incomplete-subtotal":
-      return formatAmount(amountOf(money), money.currency, valueState, locale, options?.style ?? "display");
-  }
-}
-function amountOf(money: Money): number {
-  const recorded: number = money.minorUnits === 0 ? 0 : money.minorUnits;
-  return minorUnitsOf(recorded);
-}
+const MARKER_FORMATS: Readonly<Record<"unknown" | "withheld" | "unavailable", MinorFormatting>> = {
+  unknown: { text: UNKNOWN_TEXT, plain: UNKNOWN_TEXT, accessibleLabel: "Unknown amount. The source did not establish a value, so this must not be read as zero or as an absence of giving." },
+  withheld: { text: WITHHELD_TEXT, plain: WITHHELD_TEXT, accessibleLabel: "Withheld. A value exists within this scope but is withheld here, and it must not be inferred by subtraction from any total or from any other figure." },
+  unavailable: { text: UNAVAILABLE_TEXT, plain: UNAVAILABLE_TEXT, accessibleLabel: "Source unavailable. The source behind this amount is unavailable, so no amount can be shown: this is not zero and not an empty value." },
+};
+export const formatMinor = (money: Money, valueState: ValueState, locale: string, options?: MinorFormatOptions): MinorFormatting =>
+  valueState === "unknown" || valueState === "withheld" || valueState === "unavailable" ? MARKER_FORMATS[valueState] : formatAmount(amountOf(money), money.currency, valueState, locale, options?.style ?? "display");
+const amountOf = (money: Money): number => minorUnitsOf(money.minorUnits === 0 ? 0 : money.minorUnits);
 function formatAmount(amount: number, currency: string, valueState: AmountValueState, locale: string, style: "display" | "machine"): MinorFormatting {
   const marker = valueState === "incomplete-subtotal" ? ` (${INCOMPLETE_MARKER})` : "";
-  // `zero` is the state of a genuine zero, so a zero is what it renders: a contradictory minor-unit count beside that state can never make a zero look like a recorded amount.
   const shown = valueState === "zero" ? 0 : amount;
   const exponent = exponentOf(currency);
   if (exponent === undefined) {
@@ -42,21 +30,12 @@ function formatAmount(amount: number, currency: string, valueState: AmountValueS
   }
   const digits = digitsOf(shown, exponent);
   const separators = localeSeparators(locale);
-  const fraction = digits.fraction === "" ? "" : `${separators.decimal}${digits.fraction}`;
-  const plainFraction = digits.fraction === "" ? "" : `.${digits.fraction}`;
-  const displayAmount = `${digits.sign}${groupDigits(digits.integer, separators)}${fraction}`;
-  const plainAmount = `${digits.sign}${digits.integer}${plainFraction}`;
-  const plain = `${plainAmount} ${currency}${marker}`;
-  const spoken = style === "machine" ? plainAmount : displayAmount;
-  return { text: style === "machine" ? plain : `${displayAmount} ${currency}${marker}`, plain, accessibleLabel: `${spoken} ${currency}${marker}. ${stateClause(valueState)}` };
+  const displayAmount = `${digits.sign}${groupDigits(digits.integer, separators)}${digits.fraction === "" ? "" : `${separators.decimal}${digits.fraction}`}`;
+  const plainAmount = `${digits.sign}${digits.integer}${digits.fraction === "" ? "" : `.${digits.fraction}`}`;
+  return { text: style === "machine" ? `${plainAmount} ${currency}${marker}` : `${displayAmount} ${currency}${marker}`, plain: `${plainAmount} ${currency}${marker}`, accessibleLabel: `${style === "machine" ? plainAmount : displayAmount} ${currency}${marker}. ${stateClause(valueState)}` };
 }
 const SEPARATOR_CACHE_LIMIT = 32;
-// The separators are a pure function of the locale argument: one computed entry serves every later amount in that
-// locale, and nothing here captures an ambient locale or reads a default one, so a cache can never answer for a
-// different tag than the caller stated. The bound stops a generated or hostile tag from growing module state without
-// limit; at the limit the map is emptied before the new entry is stored, which costs a recomputation per locale still
-// in use and never a stale or wrong separator.
-const SEPARATOR_CACHE = new Map<string, LocaleSeparators>();
+const SEPARATOR_CACHE = new Map<string, LocaleSeparators>(); // The separators are a pure function of the locale argument, so one computed entry serves every later amount in that locale, and the bound stops a generated or hostile tag from growing module state without limit.
 function localeSeparators(locale: string): LocaleSeparators {
   const cached = SEPARATOR_CACHE.get(locale);
   if (cached !== undefined) return cached;
@@ -71,30 +50,21 @@ function computeLocaleSeparators(locale: string): LocaleSeparators {
     if (primaryLanguage(probe.resolvedOptions().locale) !== primaryLanguage(locale)) return FALLBACK_SEPARATORS;
     const parts = probe.formatToParts(PROBE_INTEGER);
     const decimal = parts.find((part) => part.type === "decimal")?.value;
-    if (decimal === undefined) return FALLBACK_SEPARATORS;
-    return { group: groupSeparatorOf(parts), groupSizes: groupSizesOf(parts), decimal };
+    return decimal === undefined ? FALLBACK_SEPARATORS : { group: groupSeparatorOf(parts), groupSizes: groupSizesOf(parts), decimal };
   } catch {
     return FALLBACK_SEPARATORS;
   }
 }
-function groupSeparatorOf(parts: readonly Intl.NumberFormatPart[]): string {
-  return parts.find((part) => part.type === "group")?.value ?? "";
-}
+const groupSeparatorOf = (parts: readonly Intl.NumberFormatPart[]): string => parts.find((part) => part.type === "group")?.value ?? "";
 function groupSizesOf(parts: readonly Intl.NumberFormatPart[]): readonly number[] {
-  const integerSizes: number[] = [];
-  for (const part of parts) {
-    if (part.type === "integer") integerSizes.push(part.value.length);
-  }
+  const integerSizes: number[] = parts.filter((part) => part.type === "integer").map((part) => part.value.length);
   if (integerSizes.length < 2) return [];
   const fromRight = [...integerSizes].reverse();
   const primary = fromRight[0] ?? 0;
   const secondary = fromRight[1] ?? primary;
   return primary > 0 && secondary > 0 ? [primary, secondary] : [];
 }
-function primaryLanguage(tag: string): string {
-  const [base] = tag.split("-");
-  return (base ?? "").toLowerCase();
-}
+const primaryLanguage = (tag: string): string => (tag.split("-")[0] ?? "").toLowerCase();
 function groupDigits(digits: string, separators: LocaleSeparators): string {
   const primary = separators.groupSizes[0] ?? 0;
   const secondary = separators.groupSizes[1] ?? primary;
@@ -116,14 +86,10 @@ function digitsOf(amount: number, exponent: number): { readonly sign: string; re
   const fraction = exponent === 0 ? "" : padded.slice(padded.length - exponent);
   return { sign: amount < 0 ? "-" : "", integer, fraction };
 }
-function stateClause(valueState: AmountValueState): string {
-  switch (valueState) {
-    case "value":
-      return "A recorded amount.";
-    case "zero":
-      return "Zero: no amount was recorded, so this is a genuine zero rather than an unknown value.";
-    case "incomplete-subtotal":
-      return "Incomplete subtotal: coverage of this period is partial, so this figure is not a complete total and must not be read as one.";
-  }
-}
+const STATE_CLAUSES: Readonly<Record<AmountValueState, string>> = {
+  value: "A recorded amount.",
+  zero: "Zero: no amount was recorded, so this is a genuine zero rather than an unknown value.",
+  "incomplete-subtotal": "Incomplete subtotal: coverage of this period is partial, so this figure is not a complete total and must not be read as one.",
+};
+const stateClause = (valueState: AmountValueState): string => STATE_CLAUSES[valueState];
 const unknownCurrencyClause = (currency: string): string => `The currency ${currency} is unknown, so its minor-unit exponent is unknown as well: this amount cannot be totalled, compared with another amount, or defaulted to a two-decimal currency.`;

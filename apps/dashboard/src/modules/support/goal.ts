@@ -1,23 +1,14 @@
-/** The one support goal: its record, the explicit `canEditGoal` gate, the amount validation, the pure save decision the service wraps in its outcome union, and the single percentage computation every … */
 import type { MinorUnits } from "../money/amount";
 import { exponentOf } from "../money/currency";
 import type { CivilDate } from "../time/civil";
 import type { SupportMeasure } from "./basis";
-/** The one support goal of a support subject: a target amount, the measure it is a target for, the civil day it took effect on, and the revision an edit must present. */
 export type GoalRecord = { readonly minorUnits: MinorUnits; readonly currency: string; readonly measure: SupportMeasure; readonly effectiveFrom: CivilDate; readonly revision: number };
-/** The measure a support goal is a target for in this release: received support on the one named basis. */
 export const GOAL_MEASURE = "received-gifts" as const satisfies SupportMeasure;
-/** The capability that, and only that, permits editing the goal. */
 export const GOAL_CAPABILITY = "canEditGoal";
-/** Why a goal save was refused, and nothing about the goal it was refused for. */
 export type GoalDenialReason = "capability-absent" | "scope-mismatch" | "source-unavailable";
 /** Whether the caller holds the capability that permits editing the goal — the single permission test for a goal in this application. */
-export function canEditGoal(capabilities: readonly string[]): boolean {
-  return capabilities.includes(GOAL_CAPABILITY);
-}
-/** A stated goal amount: an exact count of minor units and the currency those units belong to. */
+export const canEditGoal = (capabilities: readonly string[]): boolean => capabilities.includes(GOAL_CAPABILITY);
 export type GoalAmountInput = { readonly minorUnits: MinorUnits; readonly currency: string };
-/** One reason a stated goal amount cannot be accepted, keyed by the field it belongs to so the `invalid` outcome carries per-field messages and the form can mark the field that is wrong. */
 export type GoalAmountProblem = { readonly field: "minorUnits"; readonly message: string } | { readonly field: "currency"; readonly message: string };
 /** Validates a stated goal amount, returning one problem per refused field and an empty list when the amount is acceptable. */
 export function validateGoalAmount(input: GoalAmountInput): GoalAmountProblem[] {
@@ -42,11 +33,9 @@ export function applyGoalSave(current: GoalRecord | undefined, input: GoalSaveIn
   if (problems.length > 0) return { status: "invalid", problems };
   if (current === undefined) return { status: "accepted", goal: { minorUnits: input.amount.minorUnits, currency: input.amount.currency, measure: GOAL_MEASURE, effectiveFrom, revision: 1 } };
   if (input.expectedRevision !== current.revision) return { status: "conflict", current, input };
-  if (input.amount.minorUnits === current.minorUnits && input.amount.currency === current.currency) return { status: "unchanged", goal: current };
-  return { status: "accepted", goal: { ...current, minorUnits: input.amount.minorUnits, currency: input.amount.currency, revision: current.revision + 1 } };
+  return input.amount.minorUnits === current.minorUnits && input.amount.currency === current.currency ? { status: "unchanged", goal: current } : { status: "accepted", goal: { ...current, minorUnits: input.amount.minorUnits, currency: input.amount.currency, revision: current.revision + 1 } };
 }
 export type GoalProgressState = "value" | "no-goal" | "no-percentage" | "zero" | "incompatible" | "paused" | "ended" | "unavailable";
-/** A progress figure: its state, and the percentage in basis points — whole hundredths of a percent — only when the state is `value` or `zero`. */
 export type GoalProgress = { readonly state: GoalProgressState; readonly percentageBasisPoints: number | null };
 export type GoalProgressInput = { readonly goal?: GoalRecord; readonly numeratorMinor?: MinorUnits; readonly denominatorMinor?: MinorUnits; readonly measureCompatible?: boolean; readonly paused?: boolean; readonly ended?: boolean; readonly sourceAvailable?: boolean };
 const BASIS_POINTS_PER_PERCENT = 100n;
@@ -67,8 +56,7 @@ export function goalProgress(input: GoalProgressInput): GoalProgress {
   if (numerator === 0) return { state: "zero", percentageBasisPoints: 0 };
   const basisPoints = (BigInt(numerator) * BASIS_POINTS_PER_RATIO) / BigInt(denominator);
   const percentageBasisPoints = Number(basisPoints);
-  if (!Number.isSafeInteger(percentageBasisPoints)) return NO_PERCENTAGE;
-  return { state: "value", percentageBasisPoints };
+  return !Number.isSafeInteger(percentageBasisPoints) ? NO_PERCENTAGE : { state: "value", percentageBasisPoints };
 }
 /** Renders basis points as the percentage a surface shows: `12000` is `120%`, `12345` is `123.45%`. */
 export function formatPercentageBasisPoints(basisPoints: number): string {
@@ -78,6 +66,5 @@ export function formatPercentageBasisPoints(basisPoints: number): string {
   const whole = magnitude / BASIS_POINTS_PER_PERCENT;
   const hundredths = magnitude % BASIS_POINTS_PER_PERCENT;
   if (hundredths === 0n) return `${sign}${whole}%`;
-  const fraction = hundredths.toString().padStart(2, "0").replace(/0+$/u, "");
-  return `${sign}${whole}.${fraction}%`;
+  return `${sign}${whole}.${hundredths.toString().padStart(2, "0").replace(/0+$/u, "")}%`;
 }

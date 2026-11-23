@@ -12,7 +12,6 @@ export const CONTEXT_SWITCH_COPY: ContextSwitchCopy = {
   stayNote: "Staying here is the default, and nothing is discarded unless you choose to discard it.",
 } satisfies ContextSwitchGuardCopy;
 export const LATE_RESULT_DISCARDED: string = "A result that arrived after the context changed was discarded, because it described the context you had left.";
-export const CONTEXT_CHANGED = { title: "Context changed", body: "Everything in this workspace is now read under the organization and ministry shown here.", organizationLabel: "Organization", ministryLabel: "Ministry", unlabelledScope: "Name not supplied" } as const;
 export const CHOOSER_COPY = {
   title: "Choose an organization and ministry",
   body: "Choose the organization and ministry this workspace should read under. Every option is a membership your session has been admitted to.",

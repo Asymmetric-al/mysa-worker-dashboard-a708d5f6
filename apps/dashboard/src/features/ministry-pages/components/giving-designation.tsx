@@ -14,30 +14,18 @@ export type GivingBindingView = GivingDesignationApprovedView | GivingDesignatio
 export type GivingDesignationLayout = "panel" | "inline";
 export type GivingDesignationProps = { readonly binding: GivingBindingView; readonly layout?: GivingDesignationLayout; readonly className?: string };
 const GIVING_UNAVAILABLE_DESCRIPTION = [copy.giving.explanation, copy.giving.noFallbackNote, copy.giving.neverZeroNote].join(" ");
-function unavailableDescription(cause: GivingUnavailableCause): string {
-  switch (cause) {
-    case "missing":
-    case "revoked":
-    case "incompatible":
-      return GIVING_UNAVAILABLE_DESCRIPTION;
-    default: {
-      const unhandled: never = cause;
-      return unhandled;
-    }
-  }
-}
+/** Every admitted cause states the same reason, so one sentence serves all three and no other fund is ever named in their place. */
+const unavailableDescription = (): string => GIVING_UNAVAILABLE_DESCRIPTION;
 /** The Give placement, showing either the one approved Designation or why giving is unavailable here. */
 export function GivingDesignation({ binding, layout = "panel", className }: GivingDesignationProps): ReactElement {
   if (binding.state === "unavailable") {
-    // A missing, revoked or incompatible Designation is a stated absence, not a failed read: the source
-    // answered, so this state never borrows the source-outage notice's "could not be read" body.
     return (
       <div data-slot="giving-designation" data-giving-state="unavailable" data-giving-cause={binding.cause} data-layout={layout} className={cn("flex flex-col gap-2 text-start", className)}>
         <Alert>
           <AlertTitle>
             <h3 className="font-medium">{copy.giving.title}</h3>
           </AlertTitle>
-          <AlertDescription>{unavailableDescription(binding.cause)}</AlertDescription>
+          <AlertDescription>{unavailableDescription()}</AlertDescription>
         </Alert>
         <SimulationLabel effect={copy.giving.simulationKey} />
         <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{copy.giving.previewInertNote}</p>

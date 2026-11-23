@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactElement } from "react";
 import type { ZodError } from "zod";
 import ActionReview from "@/components/action-review";
 import { FormField, FormFieldGroup, fieldErrorsFromInvalid, FormErrorSummary, type FieldErrorLookup, type FormFieldControl } from "@/components/form-field";
@@ -13,11 +13,12 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
-import { assertNever } from "@/lib/result";
 import type { MutationInput, MutationOutcome, ReadAction, ReadEnvelope, reads } from "@/modules/data-service";
 import { CLOSURE_COPY, INITIATIVE_COPY, INITIATIVE_STATE_COPY, REQUESTED_TERMS_COPY, dispositionFallback } from "../copy";
-import { useCloseInitiative } from "../hooks/use-initiative-mutations";
+import { useAttemptSubmit, useCloseInitiative } from "../hooks/use-initiative-mutations";
 import { closeInitiativePayloadSchema, type CloseInitiativePayload, type InitiativeHandoff } from "../schemas/closure";
+import DiscardConfirmation from "./discard-confirmation";
+import { StatedInstant, TermFact } from "./figures";
 type InitiativeDetailEnvelope = Extract<Awaited<ReturnType<typeof reads.outreach.readInitiative>>, { readonly kind: "envelope" }>["envelope"];
 type InitiativeDetailData = InitiativeDetailEnvelope["data"];
 type InitiativeRow = InitiativeDetailData["initiative"];
@@ -30,17 +31,9 @@ export interface CloseInitiativeEnvelopeData {
 export const HANDOFF_CHOICES = ["covering", "eligible-handoff"] as const;
 export type HandoffChoice = (typeof HANDOFF_CHOICES)[number];
 /** Everything the worker typed. It stays in this component's state, so a refused or unavailable attempt loses nothing (WCAG 3.3.7). */
-export interface CloseInitiativeFormValues {
-  readonly disposition: string;
-  readonly handoffChoice: HandoffChoice | null;
-  readonly coveringNote: string;
-  readonly recipient: string;
-  readonly handoffNote: string;
-}
+export type CloseInitiativeFormValues = { readonly disposition: string; readonly handoffChoice: HandoffChoice | null; readonly coveringNote: string; readonly recipient: string; readonly handoffNote: string };
 /** The values an unopened dialog holds: the disposition the envelope already records, and nothing else the worker has not written. */
-export function initialFormValues(preservedDisposition: string | null): CloseInitiativeFormValues {
-  return { disposition: preservedDisposition ?? "", handoffChoice: null, coveringNote: "", recipient: "", handoffNote: "" };
-}
+export const initialFormValues = (preservedDisposition: string | null): CloseInitiativeFormValues => ({ disposition: preservedDisposition ?? "", handoffChoice: null, coveringNote: "", recipient: "", handoffNote: "" });
 const CLOSE_HEADING = CLOSURE_COPY.closeHeading;
 const CLOSE_CONFIRM_LABEL = CLOSURE_COPY.closeHeading;
 const REVISE_LABEL = "Change the details";
@@ -61,6 +54,10 @@ const RECIPIENT_LABEL = "Person taking over";
 const RECIPIENT_DESCRIPTION = "Choose from the people this initiative's read states as eligible, or state the person's opaque reference exactly as the source holds it.";
 const HANDOFF_NOTE_LABEL = "What is being handed over";
 const HANDOFF_NOTE_DESCRIPTION = "Required. Say what the person taking over needs to know; this note is recorded with the closure.";
+const HANDOFF_OPTIONS: readonly { readonly choice: HandoffChoice; readonly label: string; readonly description: string }[] = [
+  { choice: "covering", label: "The disposition above covers this work", description: COVERING_DESCRIPTION },
+  { choice: "eligible-handoff", label: "Hand this work to someone else", description: HANDOFF_DESCRIPTION },
+];
 const HANDOFF_CHOICE_REQUIRED = "Say how the work this initiative still owns is dealt with: covered by the disposition, or handed to someone eligible.";
 const NO_OWNED_WORK_TITLE = "No unfinished work is recorded as owned by this initiative";
 const NO_OWNED_WORK_BODY = "Nothing is handed over, because the read states no open work for this initiative. The closure records that no handoff was needed.";
@@ -75,7 +72,6 @@ const SENDS_NOTHING_NOTE = "Closing sends nothing and recalls nothing: no messag
 export const NO_OWNED_WORK_REASON = "No unfinished work was recorded as owned by this initiative, so nothing was handed over.";
 const CLOSING_STATEMENTS: readonly string[] = [CLOSURE_COPY.closeHelp, CLOSURE_COPY.lateResponseNote, CLOSURE_COPY.handoffNote, INITIATIVE_STATE_COPY.closed.description, SENDS_NOTHING_NOTE];
 const FIELD_LABELS: Readonly<Record<string, string>> = { initiativeId: "Initiative", disposition: DISPOSITION_LABEL, handoff: COVERING_LEGEND, "handoff.reason": COVERING_NOTE_LABEL, "handoff.note": HANDOFF_NOTE_LABEL, "handoff.toPrincipalId": RECIPIENT_LABEL };
-/** The root field key a whole-form failure is reported under, and the prefix of the handoff sub-form’s own paths. */
 const ROOT_FIELD_KEY = "_root";
 const HANDOFF_PATH_PREFIX = "handoff.";
 const FIELD_ORDER = ["disposition", "handoff", "handoff.toPrincipalId", "handoff.reason", "handoff.note", "initiativeId"] as const;
@@ -83,12 +79,8 @@ function fieldMessagesOf(error: ZodError): Readonly<Record<string, readonly stri
   const messages: Record<string, string[]> = {};
   for (const issue of error.issues) {
     const path = issue.path.length === 0 ? "handoff" : issue.path.map((step) => String(step)).join(".");
-    const existing = messages[path];
-    if (existing === undefined) {
-      messages[path] = [issue.message];
-    } else if (!existing.includes(issue.message)) {
-      existing.push(issue.message);
-    }
+    const existing = messages[path] ?? [];
+    messages[path] = existing.includes(issue.message) ? existing : [...existing, issue.message];
   }
   return messages;
 }
@@ -98,42 +90,20 @@ export function buildClosePayload(initiativeId: string, values: CloseInitiativeF
   const handoff: InitiativeHandoff = !ownsUnfinishedWork ? { kind: "none", reason: NO_OWNED_WORK_REASON } : values.handoffChoice === "eligible-handoff" ? { kind: "eligible-handoff", toPrincipalId: values.recipient.trim(), note: values.handoffNote.trim() } : { kind: "none", reason: values.coveringNote.trim() };
   return { initiativeId: initiativeId.trim(), ...(disposition === "" ? {} : { disposition }), handoff };
 }
-export interface CloseSettlement {
-  readonly note: string;
-  readonly initiativeClosed: boolean;
-  readonly offersDone: boolean;
-  /** Whether the worker may go back to the entries. Never offered for an unconfirmed result, which would invite a second close. */
-  readonly offersRevision: boolean;
-}
-export function closeSettlement(outcome: MutationOutcome["outcome"]): CloseSettlement {
-  switch (outcome) {
-    case "accepted":
-      return { note: "This initiative is closed. The disposition is recorded, the surface that read it now states the closure, and every item of work it owns that was still open stays outstanding.", initiativeClosed: true, offersDone: true, offersRevision: false };
-    case "alreadyAccepted":
-      return { note: "This attempt was already accepted, so the stored result is shown and nothing was closed a second time.", initiativeClosed: true, offersDone: true, offersRevision: false };
-    case "unchanged":
-      return { note: "This initiative already stood closed, so this attempt recorded no change and no second closure.", initiativeClosed: true, offersDone: true, offersRevision: false };
-    case "conflict":
-      return { note: "This initiative moved since this page read it. Your entries are kept exactly as you wrote them, beside the current record, so you can compare before deciding.", initiativeClosed: false, offersDone: false, offersRevision: true };
-    case "denied":
-      return { note: "Nothing was recorded, and this answer names no record, count or title: a refusal reveals nothing about the initiative.", initiativeClosed: false, offersDone: true, offersRevision: false };
-    case "invalid":
-      return { note: "Nothing was sent. Correct the field named above and review the closure again; every entry you made is kept.", initiativeClosed: false, offersDone: false, offersRevision: true };
-    case "unavailable":
-      return { note: "The source could not answer, so no closure was recorded. Your entries are kept, and the same work can be tried again under this attempt's own identity.", initiativeClosed: false, offersDone: false, offersRevision: true };
-    case "unknown":
-      return { note: "The closure may or may not have been recorded, and this application cannot know which. Check the result for this operation rather than closing again.", initiativeClosed: false, offersDone: true, offersRevision: false };
-    default:
-      return assertNever(outcome, "Unhandled closure outcome");
-  }
-}
-interface OwnedWorkRow {
-  readonly taskId: string;
-  readonly title: string;
-  readonly dueOn: string | null;
-  readonly status: string;
-}
-/** Everything this dialog reads off the envelope, narrowed once so the markup never re-checks a runtime shape. */
+/** Whether the worker may go back to the entries. Never offered for an unconfirmed result, which would invite a second close. */
+export type CloseSettlement = { readonly note: string; readonly initiativeClosed: boolean; readonly offersDone: boolean; readonly offersRevision: boolean };
+const CLOSE_SETTLEMENTS: Readonly<Record<MutationOutcome["outcome"], CloseSettlement>> = {
+  accepted: { note: "This initiative is closed. The disposition is recorded, the surface that read it now states the closure, and every item of work it owns that was still open stays outstanding.", initiativeClosed: true, offersDone: true, offersRevision: false },
+  alreadyAccepted: { note: "This attempt was already accepted, so the stored result is shown and nothing was closed a second time.", initiativeClosed: true, offersDone: true, offersRevision: false },
+  unchanged: { note: "This initiative already stood closed, so this attempt recorded no change and no second closure.", initiativeClosed: true, offersDone: true, offersRevision: false },
+  conflict: { note: "This initiative moved since this page read it. Your entries are kept exactly as you wrote them, beside the current record, so you can compare before deciding.", initiativeClosed: false, offersDone: false, offersRevision: true },
+  denied: { note: "Nothing was recorded, and this answer names no record, count or title: a refusal reveals nothing about the initiative.", initiativeClosed: false, offersDone: true, offersRevision: false },
+  invalid: { note: "Nothing was sent. Correct the field named above and review the closure again; every entry you made is kept.", initiativeClosed: false, offersDone: false, offersRevision: true },
+  unavailable: { note: "The source could not answer, so no closure was recorded. Your entries are kept, and the same work can be tried again under this attempt's own identity.", initiativeClosed: false, offersDone: false, offersRevision: true },
+  unknown: { note: "The closure may or may not have been recorded, and this application cannot know which. Check the result for this operation rather than closing again.", initiativeClosed: false, offersDone: true, offersRevision: false },
+};
+export const closeSettlement = (outcome: MutationOutcome["outcome"]): CloseSettlement => CLOSE_SETTLEMENTS[outcome];
+type OwnedWorkRow = { readonly taskId: string; readonly title: string; readonly dueOn: string | null; readonly status: string };
 interface CloseDialogView {
   readonly name: string;
   readonly state: InitiativeRow["state"];
@@ -146,37 +116,16 @@ interface CloseDialogView {
   readonly refusal: string | null;
 }
 const OPEN_WORK_STATUS_LABEL: Readonly<Record<string, string>> = { open: "Open", reopened: "Reopened", completed: "Completed", cancelled: "Cancelled" };
-function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function admittedListOf(value: unknown): readonly string[] {
-  if (!Array.isArray(value)) return [];
-  const entries: string[] = [];
-  for (const entry of value) if (typeof entry === "string" && entry.trim() !== "" && !entries.includes(entry)) entries.push(entry);
-  return entries;
-}
-function ownedWorkOf(value: unknown): readonly OwnedWorkRow[] {
-  const items = isObject(value) ? value.items : undefined;
-  if (!Array.isArray(items)) return [];
-  const rows: OwnedWorkRow[] = [];
-  for (const item of items) {
-    if (!isObject(item) || typeof item.taskId !== "string") continue;
-    const title = typeof item.title === "string" && item.title.trim() !== "" ? item.title : item.taskId;
-    rows.push({ taskId: item.taskId, title, dueOn: typeof item.dueOn === "string" ? item.dueOn : null, status: typeof item.status === "string" ? item.status : "open" });
-  }
-  return rows;
-}
-/** The total the read states for that work, so a page of items never understates what the initiative owns. */
-function ownedWorkTotalOf(value: unknown, rows: readonly OwnedWorkRow[]): number {
-  const total = isObject(value) ? value.total : undefined;
-  return typeof total === "number" && Number.isFinite(total) && total > rows.length ? total : rows.length;
-}
-function refusalOf(actions: readonly ReadAction[]): string | null {
+const isObject = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value);
+const admittedListOf = (value: unknown): readonly string[] => (Array.isArray(value) ? [...new Set(value.filter((entry): entry is string => typeof entry === "string" && entry.trim() !== ""))] : []);
+const ownedWorkRowOf = (item: unknown): readonly OwnedWorkRow[] =>
+  !isObject(item) || typeof item.taskId !== "string" ? [] : [{ taskId: item.taskId, title: typeof item.title === "string" && item.title.trim() !== "" ? item.title : item.taskId, dueOn: typeof item.dueOn === "string" ? item.dueOn : null, status: typeof item.status === "string" ? item.status : "open" }];
+const ownedWorkOf = (value: unknown): readonly OwnedWorkRow[] => (isObject(value) && Array.isArray(value.items) ? value.items.flatMap(ownedWorkRowOf) : []);
+const ownedWorkTotalOf = (value: unknown, rows: readonly OwnedWorkRow[]): number => (isObject(value) && typeof value.total === "number" && Number.isFinite(value.total) && value.total > rows.length ? value.total : rows.length);
+const refusalOf = (actions: readonly ReadAction[]): string | null => {
   const action = actions.find((entry) => entry.name === "closeInitiative");
-  if (action === undefined || action.available) return null;
-  const reason = action.reason?.trim() ?? "";
-  return reason === "" ? "This read does not state that a closure is available." : reason;
-}
+  return action === undefined || action.available ? null : action.reason?.trim() || "This read does not state that a closure is available.";
+};
 function viewOf(envelope: ReadEnvelope<CloseInitiativeEnvelopeData>): CloseDialogView | null {
   const data: unknown = envelope.data;
   if (!isObject(data)) return null;
@@ -196,31 +145,10 @@ function viewOf(envelope: ReadEnvelope<CloseInitiativeEnvelopeData>): CloseDialo
     ownsUnfinishedWork: ownedWorkTotalOf(data.nextWork, ownedWork) > 0,
     dispositions: admittedListOf(data.dispositions),
     recipients: admittedListOf(data.handoffRecipients),
-    // `actions` is advisory and the service re-checks on submit, so a reason is shown as the read's explanation for withholding the control and never as a second authority beside the service.
     refusal: refusalOf(envelope.actions),
   };
 }
-function Fact({ term, children }: { readonly term: string; readonly children: ReactNode }): ReactElement {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-1.5">
-      <dt className="min-w-0 text-muted-foreground wrap-anywhere">{term}</dt>
-      <dd className="min-w-0 wrap-anywhere">{children}</dd>
-    </div>
-  );
-}
-/** The aria wiring every control under a `FormField` carries, so its description, invalid state and required state are never dropped. */
-function controlAria(field: FormFieldControl): ControlAria {
-  return { "aria-describedby": field.describedBy, "aria-invalid": field.invalid ? true : undefined, "aria-required": field.required ? true : undefined };
-}
-function CivilDate({ value }: { readonly value: string }): ReactElement {
-  return (
-    <bdi>
-      <time className="tabular-figures" dateTime={value}>
-        {value}
-      </time>
-    </bdi>
-  );
-}
+const controlAria = (field: FormFieldControl): ControlAria => ({ "aria-describedby": field.describedBy, "aria-invalid": field.invalid ? true : undefined, "aria-required": field.required ? true : undefined });
 function OwnedWorkItem({ work }: { readonly work: OwnedWorkRow }): ReactElement {
   const statusLabel = OPEN_WORK_STATUS_LABEL[work.status] ?? work.status;
   return (
@@ -233,49 +161,39 @@ function OwnedWorkItem({ work }: { readonly work: OwnedWorkRow }): ReactElement 
           <span>No due date</span>
         ) : (
           <span>
-            Due <CivilDate value={work.dueOn} />
+            Due <StatedInstant value={work.dueOn} />
           </span>
         )}
         <span aria-hidden="true">·</span>
-        <span className="min-w-0 break-all">
-          <bdi className="mono-identifier">{work.taskId}</bdi>
-        </span>
+        <bdi className="mono-identifier min-w-0 break-all">{work.taskId}</bdi>
       </span>
       <span className="text-xs text-pretty text-muted-foreground">Closing does not complete this work.</span>
     </li>
   );
 }
-function ClosingStatements({ headingId }: { readonly headingId: string }): ReactElement {
-  return (
-    <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
-      <h3 id={headingId} className="text-sm font-semibold text-pretty">
-        What closing does, and what it does not do
-      </h3>
-      <ul className="flex min-w-0 flex-col gap-1.5 text-sm text-pretty text-muted-foreground">
-        {CLOSING_STATEMENTS.map((statement) => (
-          <li key={statement}>{statement}</li>
-        ))}
-      </ul>
-    </section>
-  );
-}
+const ClosingStatements = ({ headingId }: { readonly headingId: string }): ReactElement => (
+  <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
+    <h3 id={headingId} className="text-sm font-semibold text-pretty">
+      What closing does, and what it does not do
+    </h3>
+    <ul className="flex min-w-0 flex-col gap-1.5 text-sm text-pretty text-muted-foreground">
+      {CLOSING_STATEMENTS.map((statement) => (
+        <li key={statement}>{statement}</li>
+      ))}
+    </ul>
+  </section>
+);
 export interface CloseInitiativeDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  /** The initiative this closure is for: the identifier the mutation names, and never one read off a display value. */
   readonly initiativeId: string;
   readonly envelope: ReadEnvelope<CloseInitiativeEnvelopeData>;
   readonly onClosed?: (outcome: MutationOutcome) => void;
-  /** Re-reads the initiative for an unconfirmed attempt; the receipt offers this and never a second closure. */
   readonly onCheckResult?: () => void;
   readonly className?: string;
 }
 type CloseDialogPhase = "details" | "review";
-interface ControlAria {
-  readonly "aria-describedby": string | undefined;
-  readonly "aria-invalid": true | undefined;
-  readonly "aria-required": true | undefined;
-}
+type ControlAria = { readonly "aria-describedby": string | undefined; readonly "aria-invalid": true | undefined; readonly "aria-required": true | undefined };
 /** The initiative's closure surface: what closing does, how the work it owns is dealt with, one review step, and the receipt of the attempt. */
 export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId, envelope, onClosed, onCheckResult, className }: CloseInitiativeDialogProps): ReactElement | null {
   const view = viewOf(envelope);
@@ -285,34 +203,16 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
   const workHeadingId = useId();
   const choiceIdPrefix = useId();
   const close = useCloseInitiative(envelope.scope);
-  const submitClose = close.submit;
+  const submit = useAttemptSubmit(close);
   const [values, setValues] = useState<CloseInitiativeFormValues>(() => initialFormValues(preservedDisposition));
   const [errors, setErrors] = useState<FieldErrorLookup | null>(null);
   const [phase, setPhase] = useState<CloseDialogPhase>("details");
   const [settled, setSettled] = useState<MutationOutcome | null>(null);
   const [discardArmed, setDiscardArmed] = useState(false);
-  const waitingRef = useRef<((outcome: MutationOutcome) => void) | null>(null);
-  const keepEditingRef = useRef<HTMLButtonElement | null>(null);
   const reportedRef = useRef<string | null>(null);
   const submitting = close.state.status === "submitting";
-  const hookOutcome = close.state.status === "settled" ? close.state.outcome : null;
-  useEffect(() => {
-    if (hookOutcome === null) return;
-    const resolve = waitingRef.current;
-    waitingRef.current = null;
-    resolve?.(hookOutcome);
-  }, [hookOutcome]);
-  // The discard step keeps editing as its default: focus moves to that safe option, never to the action that throws the entries away.
-  useEffect(() => {
-    if (discardArmed) keepEditingRef.current?.focus();
-  }, [discardArmed]);
   const payload = buildClosePayload(initiativeId, values, ownsUnfinishedWork);
   const reviewInput: Omit<MutationInput<CloseInitiativePayload>, "operationId"> = { scope: envelope.scope, expectedRevision: envelope.revision, payload };
-  const submit = (input: MutationInput<CloseInitiativePayload>): Promise<MutationOutcome> =>
-    new Promise<MutationOutcome>((resolve) => {
-      waitingRef.current = resolve;
-      submitClose({ operationId: input.operationId, expectedRevision: input.expectedRevision, payload: input.payload });
-    });
   const validationErrors = (): FieldErrorLookup | null => {
     const parsed = closeInitiativePayloadSchema.safeParse(buildClosePayload(initiativeId, values, ownsUnfinishedWork));
     const byField: Record<string, readonly string[]> = {};
@@ -320,12 +220,8 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
     if (!parsed.success) {
       for (const [path, messages] of Object.entries(fieldMessagesOf(parsed.error))) {
         if (messages.length === 0) continue;
-        if (path === ROOT_FIELD_KEY) {
-          form.push(...messages);
-          continue;
-        }
-        if (values.handoffChoice === null && path.startsWith(HANDOFF_PATH_PREFIX)) continue;
-        byField[path] = messages;
+        if (path === ROOT_FIELD_KEY) form.push(...messages);
+        else if (!(values.handoffChoice === null && path.startsWith(HANDOFF_PATH_PREFIX))) byField[path] = messages;
       }
     }
     if (ownsUnfinishedWork && values.handoffChoice === null) byField.handoff = [HANDOFF_CHOICE_REQUIRED];
@@ -345,7 +241,6 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
   const untouched = initialFormValues(preservedDisposition);
   const hasEntries = phase === "review" || values.disposition !== untouched.disposition || values.handoffChoice !== null || values.coveringNote.trim() !== "" || values.recipient.trim() !== "" || values.handoffNote.trim() !== "";
   const closeDialog = (): void => {
-    waitingRef.current = null;
     reportedRef.current = null;
     setValues(initialFormValues(preservedDisposition));
     setErrors(null);
@@ -360,16 +255,8 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
       onOpenChange(true);
       return;
     }
-    // An attempt in flight keeps the dialog open: closing it would hide the receipt that says what the source answered, and an unanswered attempt is exactly the state this surface must not conceal.
     if (submitting) return;
-    if (settlement?.initiativeClosed === true) {
-      closeDialog();
-      return;
-    }
-    if (hasEntries) {
-      setDiscardArmed(true);
-      return;
-    }
+    if (settlement?.initiativeClosed !== true && hasEntries) return setDiscardArmed(true);
     closeDialog();
   };
   const requestClose = (): void => handleOpenChange(false);
@@ -436,8 +323,7 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
           <Separator />
           {view.refusal === null ? null : (
             <Alert variant="destructive" role={undefined}>
-              <AlertTitle>{REFUSED_TITLE}</AlertTitle>
-              <AlertDescription>{view.refusal}</AlertDescription>
+              <AlertTitle>{REFUSED_TITLE}</AlertTitle> <AlertDescription>{view.refusal}</AlertDescription>
             </Alert>
           )}
           {view.state === "open" ? null : (
@@ -482,22 +368,18 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
                         aria-describedby={describedBy}
                         aria-invalid={invalid ? true : undefined}
                         aria-required={required ? true : undefined}
-                        onValueChange={(next) => {
-                          update({ handoffChoice: next === "eligible-handoff" ? "eligible-handoff" : next === "covering" ? "covering" : null });
-                        }}
+                        onValueChange={(next) => update({ handoffChoice: next === "eligible-handoff" ? "eligible-handoff" : next === "covering" ? "covering" : null })}
                       >
-                        {HANDOFF_CHOICES.map((choice) => {
-                          const optionId = `${choiceIdPrefix}-${choice}`;
+                        {HANDOFF_OPTIONS.map((option) => {
+                          const optionId = `${choiceIdPrefix}-${option.choice}`;
                           const optionDescriptionId = `${optionId}-description`;
-                          const label = choice === "covering" ? "The disposition above covers this work" : "Hand this work to someone else";
-                          const description = choice === "covering" ? COVERING_DESCRIPTION : HANDOFF_DESCRIPTION;
                           return (
-                            <label key={choice} htmlFor={optionId} className="flex min-h-target items-start gap-3 py-1">
-                              <RadioGroupItem id={optionId} value={choice} aria-label={label} aria-describedby={optionDescriptionId} className="mt-0.5" />
+                            <label key={option.choice} htmlFor={optionId} className="flex min-h-target items-start gap-3 py-1">
+                              <RadioGroupItem id={optionId} value={option.choice} aria-label={option.label} aria-describedby={optionDescriptionId} className="mt-0.5" />
                               <span className="flex min-w-0 flex-col gap-0.5">
-                                <span className="text-sm font-medium text-pretty">{label}</span>
+                                <span className="text-sm font-medium text-pretty">{option.label}</span>
                                 <span id={optionDescriptionId} className="text-sm text-pretty text-muted-foreground">
-                                  {description}
+                                  {option.description}
                                 </span>
                               </span>
                             </label>
@@ -557,18 +439,26 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
                 title={`${CLOSE_HEADING}: ${view.name}`}
                 description={
                   <dl className="flex min-w-0 flex-col gap-2 text-sm">
-                    <Fact term={INITIATIVE_LABEL}>
-                      <span className="text-pretty break-words">{view.name}</span> <bdi className="mono-identifier break-all">{initiativeId}</bdi>
-                    </Fact>
-                    <Fact term={DISPOSITION_LABEL}>{values.disposition.trim() === "" ? <span className="text-muted-foreground">{`${REQUESTED_TERMS_COPY.notStated}: the closure records the handoff of the unfinished work instead.`}</span> : <bdi>{dispositionFallback(values.disposition)}</bdi>}</Fact>
-                    <Fact term={COVERING_LEGEND}>
-                      {view.ownedWork.length === 0 ? (
-                        <span className="text-muted-foreground">{NO_OWNED_WORK_REASON}</span>
-                      ) : (
-                        <span>{values.handoffChoice === "covering" ? `The disposition covers this work. Note recorded: “${values.coveringNote.trim()}”` : `Handed to ${values.recipient.trim()}. Note recorded: “${values.handoffNote.trim()}”`}</span>
-                      )}
-                    </Fact>
-                    {view.ownedWork.length === 0 ? null : <Fact term={INITIATIVE_COPY.nextWorkHeading}>Every item of work listed above stays outstanding when this closure is recorded.</Fact>}
+                    <TermFact
+                      term={INITIATIVE_LABEL}
+                      value={
+                        <>
+                          <span className="text-pretty break-words">{view.name}</span> <bdi className="mono-identifier break-all">{initiativeId}</bdi>
+                        </>
+                      }
+                    />
+                    <TermFact term={DISPOSITION_LABEL} value={values.disposition.trim() === "" ? <span className="text-muted-foreground">{`${REQUESTED_TERMS_COPY.notStated}: the closure records the handoff of the unfinished work instead.`}</span> : <bdi>{dispositionFallback(values.disposition)}</bdi>} />
+                    <TermFact
+                      term={COVERING_LEGEND}
+                      value={
+                        view.ownedWork.length === 0 ? (
+                          <span className="text-muted-foreground">{NO_OWNED_WORK_REASON}</span>
+                        ) : (
+                          <span>{values.handoffChoice === "covering" ? `The disposition covers this work. Note recorded: “${values.coveringNote.trim()}”` : `Handed to ${values.recipient.trim()}. Note recorded: “${values.handoffNote.trim()}”`}</span>
+                        )
+                      }
+                    />
+                    {view.ownedWork.length === 0 ? null : <TermFact term={INITIATIVE_COPY.nextWorkHeading} value={"Every item of work listed above stays outstanding when this closure is recorded."} />}
                   </dl>
                 }
                 consequence={
@@ -596,22 +486,7 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
               )}
             </div>
           )}
-          {discardArmed ? (
-            <Alert variant="destructive">
-              <AlertTitle>{DISCARD_TITLE}</AlertTitle>
-              <AlertDescription>
-                <p>{DISCARD_BODY}</p>
-                <span className="mt-3 flex flex-wrap gap-2">
-                  <Button ref={keepEditingRef} type="button" variant="outline" size="sm" onClick={() => setDiscardArmed(false)}>
-                    {KEEP_EDITING_LABEL}
-                  </Button>
-                  <Button type="button" variant="destructive" size="sm" onClick={closeDialog}>
-                    {DISCARD_LABEL}
-                  </Button>
-                </span>
-              </AlertDescription>
-            </Alert>
-          ) : null}
+          {discardArmed ? <DiscardConfirmation title={DISCARD_TITLE} body={DISCARD_BODY} keepEditingLabel={KEEP_EDITING_LABEL} discardLabel={DISCARD_LABEL} onKeepEditing={() => setDiscardArmed(false)} onDiscard={closeDialog} /> : null}
         </div>
         {phase === "review" && settlement !== null ? (
           <DialogFooter>

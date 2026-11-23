@@ -1,4 +1,3 @@
-/** The coaching grant: the one implementation of a coaching relationship's episode and of what an admitted coach may read. */
 import { Temporal } from "temporal-polyfill";
 import { assertNever, err, ok, type Result } from "@/lib/result";
 import type { Money } from "@/modules/money/amount";
@@ -30,11 +29,9 @@ export const COACHING_REFUSAL_REASONS = [
 export type CoachingRefusalReason = (typeof COACHING_REFUSAL_REASONS)[number];
 export type CoachingRefusal = { readonly reason: CoachingRefusalReason; readonly message: string };
 const refusal = (reason: CoachingRefusalReason, message: string): CoachingRefusal => ({ reason, message });
-/** The five modules a grant may share, and the one declaration of them. */
 export const MODULE_KEYS = ["support-goal", "support-results", "targets", "check-ins", "task-summaries"] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 export type ModuleSelection = Readonly<Record<ModuleKey, boolean>>;
-/** The invitation's selection: nothing shared until the worker switches a module on. */
 export const NO_MODULES_SELECTED: ModuleSelection = { "support-goal": false, "support-results": false, targets: false, "check-ins": false, "task-summaries": false };
 export const MODULE_READ_STATES = ["empty", "partial", "withheld", "unavailable", "ended"] as const;
 export type ModuleReadState = (typeof MODULE_READ_STATES)[number];
@@ -93,43 +90,26 @@ export interface ActiveCoachingEpisode {
 }
 const isNonEmpty = (value: string): boolean => value.trim().length > 0;
 const selectedKeys = (selection: ModuleSelection): ModuleKey[] => MODULE_KEYS.filter((key) => selection[key]);
-function earlierOf(first: Temporal.Instant | null, second: Temporal.Instant | null): Temporal.Instant | null {
-  if (first === null) return second;
-  if (second === null) return first;
-  return Temporal.Instant.compare(first, second) <= 0 ? first : second;
-}
+const earlierOf = (first: Temporal.Instant | null, second: Temporal.Instant | null): Temporal.Instant | null => (first === null ? second : second === null ? first : Temporal.Instant.compare(first, second) <= 0 ? first : second);
 const boundOf = (duration: GrantDuration): Temporal.Instant | null => earlierOf(duration.cutoffInstant, duration.sourceLimitInstant);
 const reached = (bound: Temporal.Instant | null, now: Temporal.Instant): boolean => bound !== null && Temporal.Instant.compare(now, bound) >= 0;
-function remainingUntil(bound: Temporal.Instant | null, now: Temporal.Instant): number | null {
-  if (bound === null || reached(bound, now)) return null;
-  return bound.epochMilliseconds - now.epochMilliseconds;
-}
-function closedRefusal(state: GrantLifecycleState): CoachingRefusal | null {
-  switch (state) {
-    case "invited":
-    case "accepted":
-    case "active":
-      return null;
-    case "revoked":
-      return refusal("revoked", "This grant was revoked, so nothing is readable here.");
-    case "expired":
-      return refusal("expired", "This share window expired, so nothing is readable here.");
-    case "ended":
-      return refusal("ended", "This coaching relationship ended, so nothing is readable here.");
-    case "left":
-      return refusal("left", "The coach left this coaching relationship, so nothing is readable here.");
-    case "superseded":
-      return refusal("superseded", "This invitation was replaced by a newer one before it was accepted.");
-    default:
-      return assertNever(state, "coaching grant state");
-  }
-}
-function holderRefusal(grant: CoachingGrant, actorPrincipalId: string, role: CoachingActorRole): CoachingRefusal | null {
-  const holder = role === "coach" ? grant.coachPrincipalId : grant.workerPrincipalId;
-  return actorPrincipalId === holder ? null : refusal("not-holder", "This action belongs to the other side of the coaching relationship.");
-}
+const remainingUntil = (bound: Temporal.Instant | null, now: Temporal.Instant): number | null => (bound === null || reached(bound, now) ? null : bound.epochMilliseconds - now.epochMilliseconds);
+const CLOSED_GRANT_REFUSALS: Readonly<Record<Exclude<GrantLifecycleState, "invited" | "accepted" | "active">, CoachingRefusal>> = {
+  revoked: refusal("revoked", "This grant was revoked, so nothing is readable here."),
+  expired: refusal("expired", "This share window expired, so nothing is readable here."),
+  ended: refusal("ended", "This coaching relationship ended, so nothing is readable here."),
+  left: refusal("left", "The coach left this coaching relationship, so nothing is readable here."),
+  superseded: refusal("superseded", "This invitation was replaced by a newer one before it was accepted."),
+};
+const closedRefusal = (state: GrantLifecycleState): CoachingRefusal | null => (state === "invited" || state === "accepted" || state === "active" ? null : CLOSED_GRANT_REFUSALS[state]);
+const holderRefusal = (grant: CoachingGrant, actorPrincipalId: string, role: CoachingActorRole): CoachingRefusal | null => (actorPrincipalId === (role === "coach" ? grant.coachPrincipalId : grant.workerPrincipalId) ? null : refusal("not-holder", "This action belongs to the other side of the coaching relationship."));
+const refusalOfNotAccepted = (message: string): CoachingRefusal => refusal("not-accepted", message);
+/** The closure every grant-ending action shares: the holder check, the state's own closure, and — where the action needs one — the acceptance a relationship requires. */
+const closureBlockedBy = (grant: CoachingGrant, actorPrincipalId: string, role: CoachingActorRole, acceptedRefusal: string | null): CoachingRefusal | null =>
+  holderRefusal(grant, actorPrincipalId, role) ?? closedRefusal(grant.state) ?? (acceptedRefusal === null || grant.acceptedAt !== null ? null : refusalOfNotAccepted(acceptedRefusal));
+/** Every closure of a grant answers the same way: the refusal it found, or the record it changed. */
+const grantTransition = (blocked: CoachingRefusal | null, apply: () => CoachingGrant): Result<CoachingGrant, CoachingRefusal> => (blocked === null ? ok(apply()) : err(blocked));
 type Admission = { readonly admitted: true; readonly duration: GrantDuration } | { readonly admitted: false; readonly refusal: CoachingRefusal };
-
 function admitToGrant(grant: CoachingGrant, context: CoachingAccessContext): Admission {
   const notHolder = holderRefusal(grant, context.actor.principalId, context.actor.role);
   if (notHolder !== null) return { admitted: false, refusal: notHolder };
@@ -137,25 +117,39 @@ function admitToGrant(grant: CoachingGrant, context: CoachingAccessContext): Adm
   if (grant.duration === null) return { admitted: false, refusal: refusal("missing-duration", "This grant states no duration, so nothing is shared: a missing duration is not permission.") };
   if (grant.acceptedAt === null) return { admitted: false, refusal: refusal("not-accepted", "This invitation has not been accepted, so nothing is shared yet.") };
   if (grant.identityVerification !== "verified") return { admitted: false, refusal: refusal("identity-not-verified", "The coach's identity is not verified, so access does not begin.") };
-  if (context.permissionHold === "temporary") return { admitted: false, refusal: refusal("permission-hold", "Access is on a temporary hold. The relationship is not over, and nothing here reports it as one.") };
-  return { admitted: true, duration: grant.duration };
+  return context.permissionHold === "temporary" ? { admitted: false, refusal: refusal("permission-hold", "Access is on a temporary hold. The relationship is not over, and nothing here reports it as one.") } : { admitted: true, duration: grant.duration };
 }
-function revisionRefusal(grant: CoachingGrant, expectedRevision: number): CoachingRefusal | null {
-  if (expectedRevision === grant.revision) return null;
-  const expected = String(expectedRevision);
-  const actual = String(grant.revision);
-  return refusal("stale-revision", `Revision ${expected} was expected and the record is at ${actual}; nothing changed.`);
-}
+const revisionRefusal = (grant: CoachingGrant, expectedRevision: number): CoachingRefusal | null => (expectedRevision === grant.revision ? null : refusal("stale-revision", `Revision ${String(expectedRevision)} was expected and the record is at ${String(grant.revision)}; nothing changed.`));
 function openEpisodeRefusal(grant: CoachingGrant, now: Temporal.Instant): CoachingRefusal | null {
   const closed = closedRefusal(grant.state);
   if (closed !== null) return closed;
   if (grant.acceptedAt === null) return refusal("not-accepted", "This invitation has not been accepted, so nothing is shared yet.");
-  if (grant.duration === null) return refusal("missing-duration", "This grant states no duration, so nothing is shared: a missing duration is not permission.");
-  if (reached(boundOf(grant.duration), now)) return refusal("cutoff-reached", "This share window is closed at its frozen bound, so no new read is admitted.");
-  return null;
+  return grant.duration === null ? refusal("missing-duration", "This grant states no duration, so nothing is shared: a missing duration is not permission.") : reached(boundOf(grant.duration), now) ? refusal("cutoff-reached", "This share window is closed at its frozen bound, so no new read is admitted.") : null;
 }
 const ONGOING_WORDING = "Open-ended, with no Share-through date of its own";
 const shareThroughWording = (date: CivilDate): string => `Shared through ${serialiseCivilDate(date)}`;
+const SOURCE_BOUND_SETTLEMENT: { readonly resolution: GrantDurationResolution; readonly disagrees: boolean } = { resolution: "not-a-civil-day-start", disagrees: true };
+/** The members a duration states only once it is frozen or bounded; both builders below start from these. */
+const DURATION_UNSETTLED: Omit<GrantDuration, "kind" | "frozenZone"> = { shareThroughDate: null, cutoffInstant: null, sourceLimitInstant: null, limitedBy: null, nominalWording: ONGOING_WORDING, resolution: null, nominalDisagreesWithResolved: false, settledAt: null };
+const ongoingDuration = (frozenZone: string, sourceLimitInstant: Temporal.Instant | null, settledAt: Temporal.Instant): GrantDuration => ({
+  ...DURATION_UNSETTLED,
+  kind: "ongoing",
+  frozenZone,
+  sourceLimitInstant,
+  limitedBy: sourceLimitInstant === null ? null : "source",
+  nominalDisagreesWithResolved: sourceLimitInstant !== null,
+  settledAt,
+});
+const pendingGrantDuration = (kind: GrantDuration["kind"], shareThroughDate: CivilDate | null, frozenZone: string): GrantDuration => ({ ...DURATION_UNSETTLED, kind, shareThroughDate, frozenZone, nominalWording: shareThroughDate === null ? ONGOING_WORDING : shareThroughWording(shareThroughDate) });
+const throughDateDuration = (
+  shareThroughDate: CivilDate,
+  frozenZone: string,
+  cutoffInstant: Temporal.Instant,
+  sourceLimitInstant: Temporal.Instant | null,
+  limitedBy: "share-through" | "source",
+  settlement: { readonly resolution: GrantDurationResolution; readonly disagrees: boolean },
+  settledAt: Temporal.Instant,
+): GrantDuration => ({ kind: "through-date", shareThroughDate, frozenZone, cutoffInstant, sourceLimitInstant, limitedBy, nominalWording: shareThroughWording(shareThroughDate), resolution: settlement.resolution, nominalDisagreesWithResolved: settlement.disagrees, settledAt });
 function settlementOf(cutoffInstant: Temporal.Instant, frozenZone: string): { readonly resolution: GrantDurationResolution; readonly disagrees: boolean } {
   const localDay = civilDateAt(cutoffInstant, frozenZone);
   if (localDay.status === "refused") return { resolution: "not-a-civil-day-start", disagrees: true };
@@ -169,68 +163,16 @@ export function freezeShareDuration(duration: ShareDuration | null, acceptedAt: 
   if (duration === null) return err(refusal("missing-duration", "This grant states no duration, so nothing is shared: a missing duration is not permission."));
   if (!isNonEmpty(duration.frozenZone)) return err(refusal("invalid-duration", "The chosen duration names no zone, so no cutoff can be resolved."));
   const sourceLimit = options?.sourceLimit ?? null;
-  if (duration.kind === "ongoing") {
-    return ok({
-      kind: "ongoing",
-      shareThroughDate: null,
-      frozenZone: duration.frozenZone,
-      cutoffInstant: null,
-      sourceLimitInstant: sourceLimit,
-      limitedBy: sourceLimit === null ? null : "source",
-      nominalWording: ONGOING_WORDING,
-      resolution: null,
-      nominalDisagreesWithResolved: sourceLimit !== null,
-      settledAt: acceptedAt,
-    });
-  }
+  if (duration.kind === "ongoing") return ok(ongoingDuration(duration.frozenZone, sourceLimit, acceptedAt));
   const cutoff = shareCutoff({ shareThroughDate: duration.shareThroughDate, frozenZone: duration.frozenZone, sourceLimit: sourceLimit ?? undefined });
   if (cutoff.status === "refused") return err(refusal("invalid-duration", "The chosen Share-through date and zone do not resolve to a cutoff, so no bound is stated."));
-  if (cutoff.limitedBy === "source") {
-    return ok({
-      kind: "through-date",
-      shareThroughDate: duration.shareThroughDate,
-      frozenZone: duration.frozenZone,
-      cutoffInstant: cutoff.cutoffInstant,
-      sourceLimitInstant: cutoff.sourceLimitInstant,
-      limitedBy: "source",
-      nominalWording: shareThroughWording(duration.shareThroughDate),
-      resolution: "not-a-civil-day-start",
-      nominalDisagreesWithResolved: true,
-      settledAt: acceptedAt,
-    });
-  }
-  const settlement = settlementOf(cutoff.cutoffInstant, duration.frozenZone);
-  return ok({
-    kind: "through-date",
-    shareThroughDate: duration.shareThroughDate,
-    frozenZone: duration.frozenZone,
-    cutoffInstant: cutoff.cutoffInstant,
-    sourceLimitInstant: null,
-    limitedBy: "share-through",
-    nominalWording: shareThroughWording(duration.shareThroughDate),
-    resolution: settlement.resolution,
-    nominalDisagreesWithResolved: settlement.disagrees,
-    settledAt: acceptedAt,
-  });
+  if (cutoff.limitedBy === "source") return ok(throughDateDuration(duration.shareThroughDate, duration.frozenZone, cutoff.cutoffInstant, cutoff.sourceLimitInstant, "source", SOURCE_BOUND_SETTLEMENT, acceptedAt));
+  return ok(throughDateDuration(duration.shareThroughDate, duration.frozenZone, cutoff.cutoffInstant, null, "share-through", settlementOf(cutoff.cutoffInstant, duration.frozenZone), acceptedAt));
 }
-function pendingDuration(duration: ShareDuration): Result<GrantDuration, CoachingRefusal> {
-  if (duration.kind === "through-date") {
-    const probe = shareCutoff({ shareThroughDate: duration.shareThroughDate, frozenZone: duration.frozenZone });
-    if (probe.status === "refused") return err(refusal("invalid-duration", "The chosen Share-through date and zone do not resolve to a cutoff, so this duration is refused."));
-  }
-  return ok({
-    kind: duration.kind,
-    shareThroughDate: duration.kind === "through-date" ? duration.shareThroughDate : null,
-    frozenZone: duration.frozenZone,
-    cutoffInstant: null,
-    sourceLimitInstant: null,
-    limitedBy: null,
-    nominalWording: duration.kind === "through-date" ? shareThroughWording(duration.shareThroughDate) : ONGOING_WORDING,
-    resolution: null,
-    nominalDisagreesWithResolved: false,
-    settledAt: null,
-  });
-}
+const pendingDuration = (duration: ShareDuration): Result<GrantDuration, CoachingRefusal> =>
+  duration.kind === "through-date" && shareCutoff({ shareThroughDate: duration.shareThroughDate, frozenZone: duration.frozenZone }).status === "refused"
+    ? err(refusal("invalid-duration", "The chosen Share-through date and zone do not resolve to a cutoff, so this duration is refused."))
+    : ok(pendingGrantDuration(duration.kind, duration.kind === "through-date" ? duration.shareThroughDate : null, duration.frozenZone));
 /** Reads the open episode of one grant at `now`, or the reason it is not open. */
 export function activeGrant(grant: CoachingGrant, context: CoachingAccessContext, now: Temporal.Instant): Result<ActiveCoachingEpisode, CoachingRefusal> {
   const admission = admitToGrant(grant, context);
@@ -253,16 +195,14 @@ export function activeGrant(grant: CoachingGrant, context: CoachingAccessContext
     revision: grant.revision,
   });
 }
-export function admittedModules(grant: CoachingGrant, context: CoachingAccessContext, now: Temporal.Instant): Result<readonly ModuleKey[], CoachingRefusal> {
+export const admittedModules = (grant: CoachingGrant, context: CoachingAccessContext, now: Temporal.Instant): Result<readonly ModuleKey[], CoachingRefusal> => {
   const episode = activeGrant(grant, context, now);
   return episode.ok ? ok(episode.value.admittedModules) : err(episode.error);
-}
+};
 /** The single guard every coach-facing read of one module passes through. */
 export function assertModuleAdmitted(grant: CoachingGrant, key: ModuleKey, context: CoachingAccessContext, now: Temporal.Instant): Result<ModuleKey, CoachingRefusal> {
   const episode = activeGrant(grant, context, now);
-  if (!episode.ok) return err(episode.error);
-  if (!grant.modules[key]) return err(refusal("module-not-admitted", "This grant does not share this module."));
-  return ok(key);
+  return !episode.ok ? err(episode.error) : !grant.modules[key] ? err(refusal("module-not-admitted", "This grant does not share this module.")) : ok(key);
 }
 export function moduleReadState(grant: CoachingGrant, key: ModuleKey, context: CoachingAccessContext, now: Temporal.Instant, observation: ModuleObservation): Result<ModuleReadState | null, CoachingRefusal> {
   const admission = admitToGrant(grant, context);
@@ -270,17 +210,7 @@ export function moduleReadState(grant: CoachingGrant, key: ModuleKey, context: C
   if (!grant.modules[key]) return err(refusal("module-not-admitted", "This grant does not share this module."));
   if (closedRefusal(grant.state) !== null || reached(boundOf(admission.duration), now)) return ok("ended");
   if (context.subjectAvailability === "unavailable") return ok("unavailable");
-  if (observation.withheldUntilReReviewed) return ok("withheld");
-  switch (observation.presence) {
-    case "none":
-      return ok("empty");
-    case "partial":
-      return ok("partial");
-    case "complete":
-      return ok(null);
-    default:
-      return assertNever(observation.presence, "module content presence");
-  }
+  return observation.withheldUntilReReviewed ? ok("withheld") : observation.presence === "none" ? ok("empty") : observation.presence === "partial" ? ok("partial") : observation.presence === "complete" ? ok(null) : assertNever(observation.presence, "module content presence");
 }
 export interface GrantInvitation {
   readonly grantId: string;
@@ -296,29 +226,19 @@ export interface GrantInvitation {
 function rangeRefusal(financialRange: CoachingFinancialRange): CoachingRefusal | null {
   if (Temporal.PlainDate.compare(financialRange.from, financialRange.to) > 0) return refusal("invalid-selection", "The reviewed range ends before it starts, so no figure is stated for it.");
   if (financialRange.measures.length === 0) return refusal("invalid-selection", "No reviewed figure is recorded for this range, so nothing is shown rather than a zero.");
-  const currencies = new Set<string>();
-  for (const measure of financialRange.measures) {
-    const currency = measure.amount.currency;
-    if (currencies.has(currency)) {
-      const message = `The range states two figures in ${currency}; one figure per currency keeps them apart.`;
-      return refusal("invalid-selection", message);
-    }
-    currencies.add(currency);
-  }
-  return null;
+  const currencies = financialRange.measures.map((measure) => measure.amount.currency);
+  const repeated = currencies.find((currency, index) => currencies.indexOf(currency) !== index);
+  return repeated === undefined ? null : refusal("invalid-selection", `The range states two figures in ${repeated}; one figure per currency keeps them apart.`);
 }
 /** Creates the invitation an episode begins with: nothing shared, no acceptance recorded. */
 export function inviteGrant(input: GrantInvitation): Result<CoachingGrant, CoachingRefusal> {
-  const identifiers = [input.grantId, input.workerPrincipalId, input.coachPrincipalId, ...input.ministryIds];
-  if (!identifiers.every(isNonEmpty) || input.ministryIds.length === 0) return err(refusal("invalid-selection", "An invitation names a grant, the worker, one coach and at least one ministry, all by identifier."));
+  if (![input.grantId, input.workerPrincipalId, input.coachPrincipalId, ...input.ministryIds].every(isNonEmpty) || input.ministryIds.length === 0) return err(refusal("invalid-selection", "An invitation names a grant, the worker, one coach and at least one ministry, all by identifier."));
   if (input.workerPrincipalId === input.coachPrincipalId) return err(refusal("invalid-selection", "A worker cannot invite their own principal as coach."));
   if (new Set(input.ministryIds).size !== input.ministryIds.length) return err(refusal("invalid-selection", "An invitation names each ministry once."));
   if (Temporal.Instant.compare(input.issuedAt, input.expiresAt) >= 0) return err(refusal("invalid-selection", "An invitation must stop being acceptable after it is issued."));
   if (!Number.isSafeInteger(input.revision) || input.revision < 0) return err(refusal("invalid-selection", "A new invitation starts from a whole revision number."));
-  if (input.financialRange !== null) {
-    const rangeProblem = rangeRefusal(input.financialRange);
-    if (rangeProblem !== null) return err(rangeProblem);
-  }
+  const rangeProblem = input.financialRange === null ? null : rangeRefusal(input.financialRange);
+  if (rangeProblem !== null) return err(rangeProblem);
   if (input.duration === null) return err(refusal("missing-duration", "An invitation names a duration: a missing duration is not permission."));
   const duration = pendingDuration(input.duration);
   if (!duration.ok) return err(duration.error);
@@ -338,10 +258,7 @@ export function inviteGrant(input: GrantInvitation): Result<CoachingGrant, Coach
   });
 }
 export type GrantAcceptance = { readonly acceptedBy: string; readonly identityVerification: CoachIdentityVerification; readonly expectedRevision: number };
-function chosenDuration(duration: GrantDuration): ShareDuration | null {
-  if (duration.kind === "ongoing") return { kind: "ongoing", frozenZone: duration.frozenZone };
-  return duration.shareThroughDate === null ? null : { kind: "through-date", shareThroughDate: duration.shareThroughDate, frozenZone: duration.frozenZone };
-}
+const chosenDuration = (duration: GrantDuration): ShareDuration | null => (duration.kind === "ongoing" ? { kind: "ongoing", frozenZone: duration.frozenZone } : duration.shareThroughDate === null ? null : { kind: "through-date", shareThroughDate: duration.shareThroughDate, frozenZone: duration.frozenZone });
 /** Accepts an invitation: the coach's deliberate acceptance, verified identity and a frozen cutoff. */
 export function acceptGrant(grant: CoachingGrant, input: GrantAcceptance, now: Temporal.Instant): Result<CoachingGrant, CoachingRefusal> {
   const notHolder = holderRefusal(grant, input.acceptedBy, "coach");
@@ -356,8 +273,7 @@ export function acceptGrant(grant: CoachingGrant, input: GrantAcceptance, now: T
   if (revisionProblem !== null) return err(revisionProblem);
   const chosen = chosenDuration(grant.duration);
   const frozen = freezeShareDuration(chosen, now);
-  if (!frozen.ok) return err(frozen.error);
-  return ok({ ...grant, duration: frozen.value, state: "active", identityVerification: "verified", acceptedAt: now, revision: grant.revision + 1 });
+  return !frozen.ok ? err(frozen.error) : ok({ ...grant, duration: frozen.value, state: "active", identityVerification: "verified", acceptedAt: now, revision: grant.revision + 1 });
 }
 export type ModuleSelectionChange = { readonly changedBy: string; readonly selection: ModuleSelection; readonly expectedRevision: number };
 /** Replaces the module selection of an open episode: the only way a module starts being shared. */
@@ -368,58 +284,30 @@ export function setModuleSelection(grant: CoachingGrant, input: ModuleSelectionC
   if (notOpen !== null) return err(notOpen);
   const revisionProblem = revisionRefusal(grant, input.expectedRevision);
   if (revisionProblem !== null) return err(revisionProblem);
-  const unchanged = MODULE_KEYS.every((key) => input.selection[key] === grant.modules[key]);
-  if (unchanged) return ok(grant);
-  return ok({ ...grant, modules: { ...input.selection }, revision: grant.revision + 1 });
+  return MODULE_KEYS.every((key) => input.selection[key] === grant.modules[key]) ? ok(grant) : ok({ ...grant, modules: { ...input.selection }, revision: grant.revision + 1 });
 }
 export type GrantRevocation = { readonly revokedBy: string; readonly expectedRevision: number };
 /** Revokes a grant: the worker's own stop of the sharing, kept apart from ending the relationship. */
-export function revokeGrant(grant: CoachingGrant, input: GrantRevocation): Result<CoachingGrant, CoachingRefusal> {
-  const notHolder = holderRefusal(grant, input.revokedBy, "worker");
-  if (notHolder !== null) return err(notHolder);
-  const closed = closedRefusal(grant.state);
-  if (closed !== null) return err(closed);
-  const revisionProblem = revisionRefusal(grant, input.expectedRevision);
-  if (revisionProblem !== null) return err(revisionProblem);
-  return ok({ ...grant, state: "revoked", revision: grant.revision + 1 });
-}
+export const revokeGrant = (grant: CoachingGrant, input: GrantRevocation): Result<CoachingGrant, CoachingRefusal> => grantTransition(closureBlockedBy(grant, input.revokedBy, "worker", null) ?? revisionRefusal(grant, input.expectedRevision), () => ({ ...grant, state: "revoked", revision: grant.revision + 1 }));
 export type GrantEnd = { readonly endedBy: string; readonly expectedRevision: number };
 /** Ends the coaching relationship: the worker's closure of an accepted episode, kept apart from a revocation and from the coach leaving. */
-export function endGrant(grant: CoachingGrant, input: GrantEnd): Result<CoachingGrant, CoachingRefusal> {
-  const notHolder = holderRefusal(grant, input.endedBy, "worker");
-  if (notHolder !== null) return err(notHolder);
-  const closed = closedRefusal(grant.state);
-  if (closed !== null) return err(closed);
-  if (grant.acceptedAt === null) return err(refusal("not-accepted", "This invitation was never accepted, so there is no relationship to end."));
-  const revisionProblem = revisionRefusal(grant, input.expectedRevision);
-  if (revisionProblem !== null) return err(revisionProblem);
-  return ok({ ...grant, state: "ended", revision: grant.revision + 1 });
-}
+export const endGrant = (grant: CoachingGrant, input: GrantEnd): Result<CoachingGrant, CoachingRefusal> =>
+  grantTransition(closureBlockedBy(grant, input.endedBy, "worker", "This invitation was never accepted, so there is no relationship to end.") ?? revisionRefusal(grant, input.expectedRevision), () => ({ ...grant, state: "ended", revision: grant.revision + 1 }));
 export type GrantDeparture = { readonly leftBy: string; readonly expectedRevision: number };
 /** Records that the coach left: the coach's own closure, which is neither a revocation nor the worker ending the relationship. */
-export function leaveGrant(grant: CoachingGrant, input: GrantDeparture): Result<CoachingGrant, CoachingRefusal> {
-  const notHolder = holderRefusal(grant, input.leftBy, "coach");
-  if (notHolder !== null) return err(notHolder);
-  const closed = closedRefusal(grant.state);
-  if (closed !== null) return err(closed);
-  if (grant.acceptedAt === null) return err(refusal("not-accepted", "This invitation was never accepted, so the coach has nothing to leave."));
-  const revisionProblem = revisionRefusal(grant, input.expectedRevision);
-  if (revisionProblem !== null) return err(revisionProblem);
-  return ok({ ...grant, state: "left", revision: grant.revision + 1 });
-}
+export const leaveGrant = (grant: CoachingGrant, input: GrantDeparture): Result<CoachingGrant, CoachingRefusal> =>
+  grantTransition(closureBlockedBy(grant, input.leftBy, "coach", "This invitation was never accepted, so the coach has nothing to leave.") ?? revisionRefusal(grant, input.expectedRevision), () => ({ ...grant, state: "left", revision: grant.revision + 1 }));
 export type GrantSupersession = { readonly changedBy: string; readonly supersededBy: string; readonly expectedRevision: number };
 /** Supersedes an unaccepted invitation by naming the newer one that replaces it. */
-export function supersedeGrant(grant: CoachingGrant, input: GrantSupersession): Result<CoachingGrant, CoachingRefusal> {
-  const notHolder = holderRefusal(grant, input.changedBy, "worker");
-  if (notHolder !== null) return err(notHolder);
-  if (!isNonEmpty(input.supersededBy)) return err(refusal("invalid-selection", "A supersession names the newer invitation that replaces this one."));
-  const closed = closedRefusal(grant.state);
-  if (closed !== null) return err(closed);
-  if (grant.state !== "invited") return err(refusal("stale-action", "This invitation was accepted: revoke the grant or end the relationship instead of replacing it."));
-  const revisionProblem = revisionRefusal(grant, input.expectedRevision);
-  if (revisionProblem !== null) return err(revisionProblem);
-  return ok({ ...grant, state: "superseded", invitation: { ...grant.invitation, supersededBy: input.supersededBy }, revision: grant.revision + 1 });
-}
+export const supersedeGrant = (grant: CoachingGrant, input: GrantSupersession): Result<CoachingGrant, CoachingRefusal> =>
+  grantTransition(
+    holderRefusal(grant, input.changedBy, "worker") ??
+      (isNonEmpty(input.supersededBy) ? null : refusal("invalid-selection", "A supersession names the newer invitation that replaces this one.")) ??
+      closedRefusal(grant.state) ??
+      (grant.state === "invited" ? null : refusal("stale-action", "This invitation was accepted: revoke the grant or end the relationship instead of replacing it.")) ??
+      revisionRefusal(grant, input.expectedRevision),
+    () => ({ ...grant, state: "superseded", invitation: { ...grant.invitation, supersededBy: input.supersededBy }, revision: grant.revision + 1 }),
+  );
 export type FinancialRangeEntry = { readonly currency: string; readonly exponent: number | null; readonly state: AmountState; readonly formatting: MinorFormatting };
 export type FinancialRangeDescription = { readonly from: string; readonly to: string; readonly entries: readonly FinancialRangeEntry[] };
 /** Formats the separately reviewed fixed range and each figure in it, one entry per currency. */

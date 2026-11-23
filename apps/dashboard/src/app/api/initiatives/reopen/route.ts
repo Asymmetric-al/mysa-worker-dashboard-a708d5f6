@@ -1,24 +1,6 @@
-/** `POST /api/initiatives/reopen` — the one way a browser reopens a closed initiative for further solicitation. */
-import { z } from "zod";
-import { mutationInputSchema, mutations, outcomeFromError, reopenInitiativePayloadSchema, toResponse } from "@/modules/data-service";
-import { jsonBodyOf, operationIdentityOf } from "../../handler";
-// The store behind the service writes through `node:fs`, so this handler never runs on the edge.
+import { mutations, reopenInitiativePayloadSchema } from "@/modules/data-service";
+import { writePayloadRoute } from "../../handler";
 export const runtime = "nodejs";
-// The change resolves the development session and evaluates the scenario clock once per request.
 export const dynamic = "force-dynamic";
-// The envelope is judged by the shared schema, and the payload by the mutation's own exported schema below, so a payload fault keeps its payload-relative field keys — the ones the service's own refusal states.
-const reopenInitiativeEnvelopeSchema = mutationInputSchema(z.unknown());
 /** Reopens one closed initiative, preserving its closure history and its working-list decisions. */
-export async function POST(request: Request): Promise<Response> {
-  const body = await jsonBodyOf(request);
-  const parsed = reopenInitiativeEnvelopeSchema.safeParse(body);
-  if (!parsed.success) return toResponse(outcomeFromError(operationIdentityOf(body), parsed.error));
-  const payload = reopenInitiativePayloadSchema.safeParse(parsed.data.payload);
-  if (!payload.success) return toResponse(outcomeFromError(parsed.data.operationId, payload.error));
-  // Judged here and then handed on exactly as it arrived: the service validates the same wire payload with this same schema before it reads anything, so a value that schema resolves is resolved once.
-  try {
-    return toResponse(await mutations.outreach.reopenInitiative(parsed.data));
-  } catch (error) {
-    return toResponse(outcomeFromError(parsed.data.operationId, error));
-  }
-}
+export const POST = (request: Request): Promise<Response> => writePayloadRoute(request, reopenInitiativePayloadSchema, mutations.outreach.reopenInitiative);

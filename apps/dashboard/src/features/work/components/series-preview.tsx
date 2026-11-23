@@ -8,6 +8,7 @@ import { serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
 import type { DisclosedMonthDayResolution, RepeatProfile, SeriesState } from "@/modules/time/recurrence";
 import { PAUSED_NOTE, SERIES_STATE_LABELS, STOPPED_NOTE } from "../copy/missed-dates";
 import { LAST_DAY_OF_MONTH_RESOLUTION_TEMPLATE, NEXT_DATES_PREVIEW_HEADING, PLANNING_TIME_ZONE_LABEL, REPEAT_PROFILE_DESCRIPTIONS, REPEAT_PROFILE_LABELS, SINGLE_ACTIONABLE_OCCURRENCE_NOTE } from "../copy/repeat-profiles";
+import { StatedInstant } from "./stated-instant";
 export type SeriesPreviewReading =
   | { readonly status: "preview"; readonly dates: readonly CivilDate[]; readonly actionableOccurrenceId: string; readonly actionableDueOn: CivilDate; readonly monthDayResolutions: readonly DisclosedMonthDayResolution[] }
   | { readonly status: "unavailable"; readonly source?: SourceReference; readonly retry?: NoticeRetry }
@@ -31,36 +32,25 @@ function resolutionSentence(resolution: DisclosedMonthDayResolution, displayLoca
   const { requestedDay, dueOn } = resolution;
   return LAST_DAY_OF_MONTH_RESOLUTION_TEMPLATE.replace("{day}", String(requestedDay)).replace("{month}", monthNameOf(dueOn, displayLocale));
 }
-const ACTIONABLE_DATE_LABEL = "Actionable";
-const PREVIEW_DATE_LABEL = "Preview";
-const DATE_STATUS_SR_PREFIX = "Date status";
-const SERIES_STATUS_SR_PREFIX = "Series status";
-const PREVIEW_UNAVAILABLE_TITLE = "The next dates could not be read";
-const PREVIEW_UNAVAILABLE_DESCRIPTION = "This series is still here; the dates its rule produces are not shown because the data behind them could not be read, so nothing stands in for them.";
-const PREVIEW_UNKNOWN_TITLE = "The next dates are not confirmed";
-const PREVIEW_UNKNOWN_DESCRIPTION = "Whether the rule produced new dates after this change is not known yet, so no date is shown in place of the answer.";
-const PREVIEW_ENDED_TITLE = "No further dates on this plan";
-const PREVIEW_ENDED_DESCRIPTION = "The series has reached the end its rule states, so the rule produces no further date to preview.";
 export default function SeriesPreview({ state, profile, planningTimeZone, reading, displayLocale, className }: SeriesPreviewProps): ReactElement {
-  // Hook first and unconditionally, so the label association below survives every branch.
   const previewLabelId = useId();
-  if (reading.status === "unavailable") return <StateNotice kind="unavailable" title={PREVIEW_UNAVAILABLE_TITLE} description={PREVIEW_UNAVAILABLE_DESCRIPTION} source={reading.source} retry={reading.retry} className={className} />;
-  if (reading.status === "unknown") return <StateNotice kind="unknown" title={PREVIEW_UNKNOWN_TITLE} description={PREVIEW_UNKNOWN_DESCRIPTION} operationId={reading.operationId} retry={reading.retry} className={className} />;
+  if (reading.status === "unavailable")
+    return <StateNotice kind="unavailable" title="The next dates could not be read" description="This series is still here; the dates its rule produces are not shown because the data behind them could not be read, so nothing stands in for them." source={reading.source} retry={reading.retry} className={className} />;
+  if (reading.status === "unknown")
+    return <StateNotice kind="unknown" title="The next dates are not confirmed" description="Whether the rule produced new dates after this change is not known yet, so no date is shown in place of the answer." operationId={reading.operationId} retry={reading.retry} className={className} />;
   const stopped = state === "stopped";
   const dates = reading.dates.slice(0, MAX_PREVIEWED_DATES);
-  // An end the rule states is a complete answer; a stopped series is described by its own note.
-  if (!stopped && dates.length === 0) return <StateNotice kind="empty" title={PREVIEW_ENDED_TITLE} description={PREVIEW_ENDED_DESCRIPTION} className={className} />;
+  if (!stopped && dates.length === 0) return <StateNotice kind="empty" title="No further dates on this plan" description="The series has reached the end its rule states, so the rule produces no further date to preview." className={className} />;
   const actionableKey = serialiseCivilDate(reading.actionableDueOn);
   const resolutionByDate = new Map<string, DisclosedMonthDayResolution>(reading.monthDayResolutions.map((resolution): [string, DisclosedMonthDayResolution] => [serialiseCivilDate(resolution.dueOn), resolution]));
   const displayedKeys = new Set(dates.map(serialiseCivilDate));
-  // A resolution outside the previewed dates is still a fact about this plan, so it is stated above.
   const unattachedResolutions = reading.monthDayResolutions.filter((resolution) => !displayedKeys.has(serialiseCivilDate(resolution.dueOn)));
   const actionableShown = dates.some((date) => serialiseCivilDate(date) === actionableKey);
   return (
     <div className={cn("flex flex-col gap-3", className)}>
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-medium">{REPEAT_PROFILE_LABELS[profile]}</p>
-        <StatusBadge label={SERIES_STATE_LABELS[state]} tone={SERIES_STATE_TONES[state]} srPrefix={SERIES_STATUS_SR_PREFIX} />
+        <StatusBadge label={SERIES_STATE_LABELS[state]} tone={SERIES_STATE_TONES[state]} srPrefix="Series status" />
       </div>
       <p className="text-sm text-muted-foreground">{REPEAT_PROFILE_DESCRIPTIONS[profile]}</p>
       {state === "paused" ? <p className="text-sm text-muted-foreground">{PAUSED_NOTE}</p> : null}
@@ -76,12 +66,7 @@ export default function SeriesPreview({ state, profile, planningTimeZone, readin
             const key = serialiseCivilDate(resolution.dueOn);
             return (
               <p key={key} className="text-sm break-words text-muted-foreground">
-                {resolutionSentence(resolution, displayLocale)}{" "}
-                <bdi>
-                  <time dateTime={key} className="tabular-figures">
-                    {displayCivilDate(resolution.dueOn, displayLocale)}
-                  </time>
-                </bdi>
+                {resolutionSentence(resolution, displayLocale)} <StatedInstant iso={key} text={displayCivilDate(resolution.dueOn, displayLocale)} className="tabular-figures" />
               </p>
             );
           })}
@@ -95,12 +80,8 @@ export default function SeriesPreview({ state, profile, planningTimeZone, readin
               const resolution = resolutionByDate.get(key);
               return (
                 <li key={isActionable ? reading.actionableOccurrenceId : key} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <bdi>
-                    <time dateTime={key} className="tabular-figures">
-                      {displayCivilDate(date, displayLocale)}
-                    </time>
-                  </bdi>
-                  <StatusBadge label={isActionable ? ACTIONABLE_DATE_LABEL : PREVIEW_DATE_LABEL} tone={isActionable ? "info" : "muted"} srPrefix={DATE_STATUS_SR_PREFIX} />
+                  <StatedInstant iso={key} text={displayCivilDate(date, displayLocale)} className="tabular-figures" />
+                  <StatusBadge label={isActionable ? "Actionable" : "Preview"} tone={isActionable ? "info" : "muted"} srPrefix="Date status" />
                   {resolution === undefined ? null : <p className="w-full text-sm text-muted-foreground">{resolutionSentence(resolution, displayLocale)}</p>}
                 </li>
               );

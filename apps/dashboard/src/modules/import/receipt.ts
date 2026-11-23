@@ -1,4 +1,3 @@
-/** Contact import, step five: the recoverable receipt — what each data row of the chosen file became, where the worker can go to see it or to correct it. */
 import { z } from "zod";
 import type {
   ImportBlockedReasonCount,
@@ -16,7 +15,7 @@ import type {
   ImportRowDecision,
 } from "./decide";
 import { IMPORT_DECISION_KINDS } from "./decide";
-import { IMPORT_FIELD_IDS, type ImportColumnIgnoreReason, ImportConfirmedMapping, ImportFieldAssignment, ImportIgnoredColumn } from "./map";
+import { IMPORT_FIELD_IDS, ImportConfirmedMapping, ImportFieldAssignment, ImportIgnoredColumn, type ImportColumnIgnoreReason } from "./map";
 import type { ImportMatchReference, ImportPreservedReason, ImportRowVerdict } from "./validate";
 export const IMPORT_ROW_RESULT_STATES = ["accepted", "already-accepted", "skipped", "needs-review", "failed"] as const;
 export type ImportRowResultState = (typeof IMPORT_ROW_RESULT_STATES)[number];
@@ -38,7 +37,6 @@ const STATE_BY_REASON = {
 const COUNT_KEY_BY_STATE = { accepted: "accepted", "already-accepted": "alreadyAccepted", skipped: "skipped", "needs-review": "needsReview", failed: "failed" } as const satisfies Readonly<Record<ImportRowResultState, CountedResultState>>;
 export type ImportResultRoute = { readonly kind: "partner"; readonly partnerRef: ImportMatchReference } | { readonly kind: "correction"; readonly rowNumber: number };
 export type ImportRowResult = { readonly rowNumber: number; readonly state: ImportRowResultState; readonly reasonCode: ImportResultReasonCode; readonly reason: string; readonly route: ImportResultRoute | null };
-/** The receipt's own format tag, held in the stored document so a receipt written by an older shape is refused as unreadable rather than read as if it still meant the same thing. */
 export const IMPORT_RECEIPT_FORMAT = "contact-import-receipt-1";
 export type ImportReceiptFileMeta = { readonly name: string; readonly bytes: number; readonly rowCount: number; readonly columnCount: number };
 export type ImportReceiptCounts = { readonly accepted: number; readonly alreadyAccepted: number; readonly skipped: number; readonly needsReview: number; readonly failed: number; readonly total: number };
@@ -82,42 +80,27 @@ const REASON_WORKER_SKIPPED = "Skipped by the worker's own decision: nothing was
 const REASON_CANCELLED = "Stopped by the cancellation before acceptance: nothing was created for this row.";
 const REASON_UNDECIDED = "No decision was recorded for this row, so nothing was created for it. Decide about the row, or skip it, before importing again.";
 const REASON_NOT_APPLIED = "Acceptance did not apply this row and recorded no fault for it: nothing was created, so review the row before doing anything else with it.";
-
-function partnerRoute(partnerRef: ImportMatchReference): ImportResultRoute {
-  // A copy, so a caller cannot reach back through the receipt into the record it reported.
-  return { kind: "partner", partnerRef: { ...partnerRef } };
-}
+const partnerRoute = (partnerRef: ImportMatchReference): ImportResultRoute => ({ kind: "partner", partnerRef: { ...partnerRef } });
 const correctionRoute = (rowNumber: number): ImportResultRoute => ({ kind: "correction", rowNumber });
-const skippedResult = (rowNumber: number, reasonCode: "worker-skipped"): ImportRowResult => ({ rowNumber, state: STATE_BY_REASON[reasonCode], reasonCode, reason: REASON_WORKER_SKIPPED, route: null });
-function cancelledResult(rowNumber: number): ImportRowResult {
-  const reasonCode: ImportResultReasonCode = "cancelled-before-acceptance";
-  return { rowNumber, state: STATE_BY_REASON[reasonCode], reasonCode, reason: REASON_CANCELLED, route: null };
-}
-const needsReviewResult = (rowNumber: number, reasonCode: "blocked" | "undecided" | "not-applied", reason: string): ImportRowResult => ({ rowNumber, state: STATE_BY_REASON[reasonCode], reasonCode, reason, route: correctionRoute(rowNumber) });
+const rowResult = (rowNumber: number, reasonCode: ImportResultReasonCode, reason: string, route: ImportResultRoute | null): ImportRowResult => ({ rowNumber, state: STATE_BY_REASON[reasonCode], reasonCode, reason, route });
+const skippedResult = (rowNumber: number): ImportRowResult => rowResult(rowNumber, "worker-skipped", REASON_WORKER_SKIPPED, null);
+const cancelledResult = (rowNumber: number): ImportRowResult => rowResult(rowNumber, "cancelled-before-acceptance", REASON_CANCELLED, null);
+const needsReviewResult = (rowNumber: number, reasonCode: "blocked" | "undecided" | "not-applied", reason: string): ImportRowResult => rowResult(rowNumber, reasonCode, reason, correctionRoute(rowNumber));
 function appliedResult(rowNumber: number, decisionKind: ImportDecisionKind, partnerRef: ImportMatchReference, appliedByThisAttempt: boolean): ImportRowResult {
-  let reasonCode: ImportResultReasonCode = "applied";
-  let reason = REASON_APPLIED;
-  if (!appliedByThisAttempt) {
-    reasonCode = "applied-by-earlier-attempt";
-    reason = REASON_ALREADY_APPLIED;
-  } else if (decisionKind === "reuse") {
-    reasonCode = "reused-identity";
-    reason = REASON_REUSED;
-  }
-  return { rowNumber, state: STATE_BY_REASON[reasonCode], reasonCode, reason, route: partnerRoute(partnerRef) };
+  const [reasonCode, reason] = !appliedByThisAttempt ? (["applied-by-earlier-attempt", REASON_ALREADY_APPLIED] as const) : decisionKind === "reuse" ? (["reused-identity", REASON_REUSED] as const) : (["applied", REASON_APPLIED] as const);
+  return rowResult(rowNumber, reasonCode, reason, partnerRoute(partnerRef));
 }
 function resultFor(row: ImportDecisionSummaryRow, application: ImportRowApplication | undefined): ImportRowResult {
   if (application !== undefined) {
     if (application.failure !== null) {
       const { code, reason } = application.failure;
-      return { rowNumber: row.rowNumber, state: STATE_BY_REASON[code], reasonCode: code, reason, route: correctionRoute(row.rowNumber) };
+      return rowResult(row.rowNumber, code, reason, correctionRoute(row.rowNumber));
     }
     if (application.partnerRef !== null) return appliedResult(row.rowNumber, row.decisionKind, application.partnerRef, application.appliedByThisAttempt);
   }
-  if (row.decisionKind === "skip") return skippedResult(row.rowNumber, "worker-skipped");
+  if (row.decisionKind === "skip") return skippedResult(row.rowNumber);
   if (row.decisionKind === "unresolved") return needsReviewResult(row.rowNumber, "undecided", REASON_UNDECIDED);
-  if (row.blockedReasons.length > 0) return needsReviewResult(row.rowNumber, "blocked", `Still blocked when acceptance ran (${row.blockedReasons.join(", ")}), so nothing was created for this row.`);
-  return needsReviewResult(row.rowNumber, "not-applied", REASON_NOT_APPLIED);
+  return row.blockedReasons.length > 0 ? needsReviewResult(row.rowNumber, "blocked", `Still blocked when acceptance ran (${row.blockedReasons.join(", ")}), so nothing was created for this row.`) : needsReviewResult(row.rowNumber, "not-applied", REASON_NOT_APPLIED);
 }
 function indexApplications(applications: readonly ImportRowApplication[]): ReadonlyMap<number, ImportRowApplication> {
   const byRow = new Map<number, ImportRowApplication>();
@@ -151,8 +134,7 @@ function inputRefusalOf(input: ImportReceiptBuildInput): ImportReceiptRefusal | 
 export function buildReceipt(input: ImportReceiptBuildInput): ImportReceiptBuild {
   const refusal = inputRefusalOf(input);
   if (refusal !== null) return { ok: false, refusal };
-  const applicationByRow = indexApplications(input.applications);
-  const results = input.summary.rows.map((row) => resultFor(row, applicationByRow.get(row.rowNumber)));
+  const results = input.summary.rows.map((row) => resultFor(row, indexApplications(input.applications).get(row.rowNumber)));
   return {
     ok: true,
     receipt: {
@@ -171,7 +153,6 @@ export function buildReceipt(input: ImportReceiptBuildInput): ImportReceiptBuild
     },
   };
 }
-// The stored shape, checked before any of it is trusted: the store is JSON, so a receipt read back is a document of unknown shape until it has been checked, and each schema is annotated with the type it describes so a change to a domain type stops compiling here rather than letting the two drift.
 const PRESERVED_REASONS = ["blank-cell", "rejected-value", "consent-preserved", "excluded-topic", "unmapped-column"] as const satisfies readonly ImportPreservedReason[];
 const COLUMN_IGNORE_REASONS = ["blank-header", "unrecognised-header", "consent-preserved-as-data", "excluded-topic", "field-declined", "not-chosen"] as const satisfies readonly ImportColumnIgnoreReason[];
 const BLOCKING_REASON_CODES = ["name-missing", "email-not-complete", "phone-not-a-number", "postal-not-an-address", "ragged-row", "cell-too-long", "reuse-not-offered"] as const satisfies readonly ImportBlockingReasonCode[];
@@ -246,22 +227,14 @@ function integrityProblemOf(receipt: ImportReceipt): string | null {
   if (results.length !== counts.total) return `${results.length} row result(s) are recorded and the counts report ${counts.total}.`;
   if (summary.totalRowCount !== results.length || summary.counts.total !== results.length) return `The results describe ${results.length} row(s) and the reviewed summary ${summary.totalRowCount}.`;
   for (const [offset, result] of results.entries()) {
-    // Row numbers are the file's own, contiguous from 1: a gap, a repeat or a reordering means these results do not describe one parsed file in its own order.
     if (result.rowNumber !== offset + 1) return `Row result ${offset + 1} carries row number ${result.rowNumber} instead of ${offset + 1}.`;
     if (STATE_BY_REASON[result.reasonCode] !== result.state) return `Row ${result.rowNumber} reports "${result.state}" for the reason "${result.reasonCode}".`;
     const routeProblem = routeProblemOf(result);
     if (routeProblem !== null) return routeProblem;
   }
   const recounted = countsOf(results);
-  const recounters: readonly (readonly [CountedResultState | "total", number])[] = [
-    ["accepted", recounted.accepted],
-    ["alreadyAccepted", recounted.alreadyAccepted],
-    ["skipped", recounted.skipped],
-    ["needsReview", recounted.needsReview],
-    ["failed", recounted.failed],
-    ["total", recounted.total],
-  ];
-  for (const [key, held] of recounters) if (counts[key] !== held) return `The counts report ${key} as ${counts[key]} where the results give ${held}.`;
+  const mismatch = (Object.keys(recounted) as (keyof ImportReceiptCounts)[]).find((key) => counts[key] !== recounted[key]);
+  if (mismatch !== undefined) return `The counts report ${mismatch} as ${counts[mismatch]} where the results give ${recounted[mismatch]}.`;
   if (!sameFingerprint(receipt.fingerprint, summary.fingerprint) || !sameFingerprint(receipt.fingerprint, receipt.rowDecisions.fingerprint)) return "The receipt's fingerprint, its reviewed summary and its row decisions describe different files.";
   const { cancellation } = receipt;
   if (cancellation !== null) {
@@ -273,13 +246,9 @@ function integrityProblemOf(receipt: ImportReceipt): string | null {
 }
 function routeProblemOf(result: ImportRowResult): string | null {
   const accepted = result.state === "accepted" || result.state === "already-accepted";
-  if (accepted) {
-    if (result.route === null || result.route.kind !== "partner") return `Row ${result.rowNumber} is ${result.state} without the contact it points at.`;
-    return null;
-  }
+  if (accepted) return result.route === null || result.route.kind !== "partner" ? `Row ${result.rowNumber} is ${result.state} without the contact it points at.` : null;
   if (result.state === "skipped") return result.route === null ? null : `Row ${result.rowNumber} is skipped but carries a route.`;
-  if (result.route === null || result.route.kind !== "correction" || result.route.rowNumber !== result.rowNumber) return `Row ${result.rowNumber} is ${result.state} without a correction route to its own row.`;
-  return null;
+  return result.route === null || result.route.kind !== "correction" || result.route.rowNumber !== result.rowNumber ? `Row ${result.rowNumber} is ${result.state} without a correction route to its own row.` : null;
 }
 export type ImportReceiptIntent = { readonly fingerprint: ImportFileFingerprint; readonly mapping: ImportConfirmedMapping; readonly rowDecisions: ImportDecisionSet };
 export type ImportReceiptIntentPart = "file" | "mapping" | "row-decisions";
@@ -292,13 +261,8 @@ export type ImportReceiptRead =
 export type ImportReceiptLookup = ImportReceiptRead | { readonly kind: "conflict"; readonly importOperationId: string; readonly stored: ImportReceiptIntent; readonly requested: ImportReceiptIntent; readonly differingParts: readonly ImportReceiptIntentPart[]; readonly message: string };
 const NOT_FOUND_MESSAGE = "No receipt is stored under this import operation. Nothing is reported as applied under this identity, so check the operation's recorded result before repeating any of this work.";
 const UNTRUSTWORTHY_TRAILER = "Nothing is reported as applied from it, so check the operation's recorded result before repeating any of this work.";
-const INTENT_PART_NOUNS: Readonly<Record<ImportReceiptIntentPart, string>> = { file: "file", mapping: "column mapping", "row-decisions": "row decisions" };
 const isJsonRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value);
-/**
- * One value in a canonical form, independent of the order its members were built in, so two records assembled by
- * different paths compare equal when they say the same thing. Exported because the import mutation decides with
- * this same comparison whether a repeated proposal of one file would change anything.
- */
+// One value in a canonical form, independent of the member order it was built in, so two records assembled by different paths compare equal when they say the same thing; exported because the import mutation decides with this comparison whether a repeated proposal of one file would change anything.
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value === "boolean" || typeof value === "number") return JSON.stringify(value);
   if (typeof value === "string") return JSON.stringify(value);
@@ -311,52 +275,15 @@ export function canonicalJson(value: unknown): string {
   }
   return "null";
 }
-const intentOf = (receipt: ImportReceipt): ImportReceiptIntent => ({ fingerprint: receipt.fingerprint, mapping: receipt.mapping, rowDecisions: receipt.rowDecisions });
-function differingPartsOf(receipt: ImportReceipt, request: ImportReceiptRequest): ImportReceiptIntentPart[] {
-  const stored = intentOf(receipt);
-  const parts: ImportReceiptIntentPart[] = [];
-  if (canonicalJson(stored.fingerprint) !== canonicalJson(request.fingerprint)) parts.push("file");
-  if (canonicalJson(stored.mapping) !== canonicalJson(request.mapping)) parts.push("mapping");
-  if (canonicalJson(stored.rowDecisions) !== canonicalJson(request.rowDecisions)) parts.push("row-decisions");
-  return parts;
-}
-function joinNouns(parts: readonly ImportReceiptIntentPart[]): string {
-  const nouns = parts.map((part) => `the ${INTENT_PART_NOUNS[part]}`);
-  const [first, ...rest] = nouns;
-  if (first === undefined) return "nothing";
-  const last = rest.pop();
-  if (last === undefined) return first;
-  if (rest.length === 0) return `${first} and ${last}`;
-  return `${first}, ${rest.join(", ")} and ${last}`;
-}
 /** Reads the receipt stored under one import operation, validating it with `RECEIPT_SCHEMA` and then checking that its numbers agree with each other. */
 export function readStoredReceipt(stored: unknown, importOperationId: string): ImportReceiptRead {
   if (stored === null || stored === undefined) return { kind: "not-found", importOperationId, message: NOT_FOUND_MESSAGE };
   const parsed = RECEIPT_SCHEMA.safeParse(stored);
   if (!parsed.success) return { kind: "unavailable", importOperationId, reasonCode: "receipt-unreadable", reason: `The receipt stored under this import operation cannot be read (${describeFirstIssue(parsed.error)}). ${UNTRUSTWORTHY_TRAILER}` };
   const receipt = parsed.data;
-  if (receipt.importOperationId !== importOperationId) {
-    // The document belongs to another operation, so nothing is stored under the identity asked for.
-    return { kind: "not-found", importOperationId, message: NOT_FOUND_MESSAGE };
-  }
+  if (receipt.importOperationId !== importOperationId) return { kind: "not-found", importOperationId, message: NOT_FOUND_MESSAGE };
   const problem = integrityProblemOf(receipt);
-  if (problem !== null) return { kind: "unavailable", importOperationId, reasonCode: "receipt-inconsistent", reason: `The receipt stored under this import operation does not add up: ${problem} ${UNTRUSTWORTHY_TRAILER}` };
-  return { kind: "found", receipt };
-}
-/** Decides what a caller claiming an operation identity gets: the stored receipt unchanged when the intent is the same, a conflict carrying both intents when it differs, and otherwise what. */
-export function resolveReceiptLookup(stored: unknown, request: ImportReceiptRequest): ImportReceiptLookup {
-  const read = readStoredReceipt(stored, request.importOperationId);
-  if (read.kind !== "found") return read;
-  const differingParts = differingPartsOf(read.receipt, request);
-  if (differingParts.length === 0) return read;
-  return {
-    kind: "conflict",
-    importOperationId: request.importOperationId,
-    stored: intentOf(read.receipt),
-    requested: { fingerprint: request.fingerprint, mapping: request.mapping, rowDecisions: request.rowDecisions },
-    differingParts,
-    message: `This operation identity was already used for a different import. What no longer matches the stored receipt: ${joinNouns(differingParts)}. Nothing was changed and no row was applied again. If the file or the decisions changed, start a new import so the changed work gets its own identity.`,
-  };
+  return problem !== null ? { kind: "unavailable", importOperationId, reasonCode: "receipt-inconsistent", reason: `The receipt stored under this import operation does not add up: ${problem} ${UNTRUSTWORTHY_TRAILER}` } : { kind: "found", receipt };
 }
 /** Stops every row the acceptance had not applied, and leaves every row it had applied exactly as it stands. */
 export function cancelUnacceptedRows(receipt: ImportReceipt, cancelledAt: string): ImportReceipt {
@@ -366,4 +293,3 @@ export function cancelUnacceptedRows(receipt: ImportReceipt, cancelledAt: string
   const acceptedRowsRetained = counts.accepted + counts.alreadyAccepted;
   return { ...receipt, results, counts, cancellation: { cancelledAt, acceptedRowsRetained, stoppedRows: counts.total - acceptedRowsRetained, recallsCreatedRecords: false } };
 }
-// What this file deliberately does not do: nothing here parses a file, suggests a mapping, validates a row, records or applies a decision, re-applies one, mints an operation identity, reads a clock or stores anything — `parse.ts`, `map.ts`, `validate.ts` and `decide.ts` own steps one to four and the service owns acceptance, persistence and the ledger — and a refusal never deletes or reverses an effect. No result offers a resend, a retry or a re-apply, because a lost acknowledgement is answered by reading the same operation identity; nothing claims the file was safe, a message was delivered or a partner consented — `facts` carries those as zeros and `false` — and no route in a result is a URL.

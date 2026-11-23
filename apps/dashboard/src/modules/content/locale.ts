@@ -1,6 +1,6 @@
-/** Locale fallback: the one implementation that decides which locale edition of a document a reader is served, whether serving it was a fallback, and when the honest answer is *Language unavailable*. */
 import { Temporal } from "temporal-polyfill";
 import { CONTENT_DIRECTIONS, type ContentDirection } from "@/modules/content/document";
+import { isSuperseded, isWithdrawn } from "@/modules/content/reach";
 import type { ContentDocument, Release, VariantAudience } from "@/modules/content/variant";
 export type ContentLocale = { readonly tag: string; readonly direction: ContentDirection };
 const RTL_LANGUAGES: ReadonlySet<string> = new Set<string>(["ar", "arc", "bal", "bgn", "bft", "brh", "ckb", "dv", "fa", "glk", "he", "iw", "ji", "khw", "ks", "lrc", "mzn", "nqo", "pnb", "prs", "ps", "sd", "syr", "ug", "ur", "yi"]);
@@ -23,7 +23,6 @@ function parseLocaleTag(tag: string): ParsedLocaleTag | undefined {
   let script: string | undefined;
   for (const subtag of subtags.slice(1)) {
     if (!GENERIC_SUBTAG.test(subtag)) return undefined;
-    // A script subtag is the one that directly follows the language: a four-letter subtag after a region or variant is a variant, so it states no direction.
     if (normalised.length === 1 && SCRIPT_SUBTAG.test(subtag)) {
       script = subtag.toLowerCase();
       normalised.push(script.charAt(0).toUpperCase() + script.slice(1));
@@ -33,10 +32,7 @@ function parseLocaleTag(tag: string): ParsedLocaleTag | undefined {
   }
   return { tag: normalised.join("-"), language: language.toLowerCase(), script };
 }
-function directionOfParsedTag(parsed: ParsedLocaleTag): ContentDirection {
-  if (parsed.script !== undefined) return RTL_SCRIPTS.has(parsed.script) ? "rtl" : "ltr";
-  return RTL_LANGUAGES.has(parsed.language) ? "rtl" : "ltr";
-}
+const directionOfParsedTag = (parsed: ParsedLocaleTag): ContentDirection => (parsed.script !== undefined ? (RTL_SCRIPTS.has(parsed.script) ? "rtl" : "ltr") : RTL_LANGUAGES.has(parsed.language) ? "rtl" : "ltr");
 /** The direction a BCP-47 tag is authored and read in: `rtl` for a language or script written right to left, and `ltr` for everything else, including a tag that cannot be read at all. */
 export function directionOfTag(tag: string): ContentDirection {
   const parsed = parseLocaleTag(tag);
@@ -47,50 +43,26 @@ type AdmittedEdition = { readonly release: DocumentEdition; readonly locale: Con
 export type AdmittedLocaleQuery = { readonly document: ContentDocument; readonly siteDefaultLocale: string; readonly audience: VariantAudience; readonly releases: readonly DocumentEdition[] };
 export type LocaleInput = AdmittedLocaleQuery & { readonly requestedLocale: string };
 export type LocaleResolution = { readonly status: "resolved"; readonly requestedLocale: string; readonly servedLocale: ContentLocale; readonly fallbackOccurred: boolean; readonly release: Release } | { readonly status: "language-unavailable"; readonly requestedLocale: string };
-function isWithdrawn(edition: DocumentEdition): boolean {
-  const withdrawnAt: unknown = edition.withdrawnAt;
-  return withdrawnAt !== undefined && withdrawnAt !== null;
-}
-function isSuperseded(edition: DocumentEdition): boolean {
-  const supersededBy: unknown = edition.supersededBy;
-  return typeof supersededBy === "string" && supersededBy.trim().length > 0;
-}
 type StatedLocale = { readonly parsed: ParsedLocaleTag; readonly direction?: ContentDirection };
 function statedLocaleOf(edition: DocumentEdition): StatedLocale | undefined {
   const locale: unknown = edition.locale;
   if (typeof locale !== "object" || locale === null) return undefined;
   const record = locale as { readonly tag?: unknown; readonly direction?: unknown };
-  if (typeof record.tag !== "string") return undefined;
-  const parsed = parseLocaleTag(record.tag);
+  const parsed = typeof record.tag === "string" ? parseLocaleTag(record.tag) : undefined;
   if (parsed === undefined) return undefined;
   const direction = typeof record.direction === "string" ? CONTENT_DIRECTIONS.find((candidate) => candidate === record.direction) : undefined;
   return direction === undefined ? { parsed } : { parsed, direction };
 }
 const contentLocaleOf = (stated: StatedLocale): ContentLocale => ({ tag: stated.parsed.tag, direction: stated.direction ?? directionOfParsedTag(stated.parsed) });
 function admittedEditions(query: AdmittedLocaleQuery): AdmittedEdition[] {
-  const admitted: AdmittedEdition[] = [];
-  for (const edition of query.releases) {
-    if (edition.audience !== query.audience) continue;
-    if (isWithdrawn(edition) || isSuperseded(edition)) continue;
-    if (edition.documentId !== undefined && edition.documentId !== query.document.documentId) continue;
-    if (edition.siteId !== undefined && edition.siteId !== query.document.siteId) continue;
+  return query.releases.flatMap((edition) => {
     const stated = statedLocaleOf(edition);
-    if (stated === undefined) continue;
-    admitted.push({ release: edition, locale: contentLocaleOf(stated), parsed: stated.parsed });
-  }
-  return admitted;
+    const admitted = edition.audience === query.audience && !isWithdrawn(edition) && !isSuperseded(edition) && (edition.documentId === undefined || edition.documentId === query.document.documentId) && (edition.siteId === undefined || edition.siteId === query.document.siteId) && stated !== undefined;
+    return admitted && stated !== undefined ? [{ release: edition, locale: contentLocaleOf(stated), parsed: stated.parsed }] : [];
+  });
 }
-function compareNewestFirst(left: AdmittedEdition, right: AdmittedEdition): number {
-  const byPublication = Temporal.Instant.compare(right.release.publishedAt, left.release.publishedAt);
-  if (byPublication !== 0) return byPublication;
-  if (left.release.releaseId === right.release.releaseId) return 0;
-  return left.release.releaseId < right.release.releaseId ? -1 : 1;
-}
-function mostRecent(candidates: readonly AdmittedEdition[]): AdmittedEdition | undefined {
-  let newest: AdmittedEdition | undefined;
-  for (const candidate of candidates) if (newest === undefined || compareNewestFirst(candidate, newest) < 0) newest = candidate;
-  return newest;
-}
+const compareNewestFirst = (left: AdmittedEdition, right: AdmittedEdition): number => Temporal.Instant.compare(right.release.publishedAt, left.release.publishedAt) || (left.release.releaseId === right.release.releaseId ? 0 : left.release.releaseId < right.release.releaseId ? -1 : 1);
+const mostRecent = (candidates: readonly AdmittedEdition[]): AdmittedEdition | undefined => candidates.reduce<AdmittedEdition | undefined>((newest, candidate) => (newest === undefined || compareNewestFirst(candidate, newest) < 0 ? candidate : newest), undefined);
 function chooseEdition(editions: readonly AdmittedEdition[], requested: ParsedLocaleTag | undefined, siteDefault: ParsedLocaleTag | undefined): AdmittedEdition | undefined {
   if (requested !== undefined) {
     const exact = mostRecent(editions.filter((edition) => edition.parsed.tag === requested.tag));
@@ -98,8 +70,7 @@ function chooseEdition(editions: readonly AdmittedEdition[], requested: ParsedLo
     const sameLanguage = mostRecent(editions.filter((edition) => edition.parsed.language === requested.language));
     if (sameLanguage !== undefined) return sameLanguage;
   }
-  if (siteDefault === undefined) return undefined;
-  return mostRecent(editions.filter((edition) => edition.parsed.tag === siteDefault.tag));
+  return siteDefault === undefined ? undefined : mostRecent(editions.filter((edition) => edition.parsed.tag === siteDefault.tag));
 }
 export function resolveLocale(input: LocaleInput): LocaleResolution {
   const requested = parseLocaleTag(input.requestedLocale);
@@ -116,10 +87,9 @@ export function admittedLocales(query: AdmittedLocaleQuery): readonly AdmittedLo
     const current = newestByTag.get(edition.parsed.tag);
     if (current === undefined || compareNewestFirst(edition, current) < 0) newestByTag.set(edition.parsed.tag, edition);
   }
-  const locales = [...newestByTag.values()].map((edition) => ({ tag: edition.locale.tag, direction: edition.locale.direction, releaseId: edition.release.releaseId, isSiteDefault: siteDefault !== undefined && siteDefault.tag === edition.parsed.tag }));
-  return locales.sort((left, right) => {
-    if (left.isSiteDefault !== right.isSiteDefault) return left.isSiteDefault ? -1 : 1;
-    if (left.tag === right.tag) return 0;
-    return left.tag < right.tag ? -1 : 1;
-  });
+  return [...newestByTag.values()]
+    .map((edition) => ({ tag: edition.locale.tag, direction: edition.locale.direction, releaseId: edition.release.releaseId, isSiteDefault: siteDefault !== undefined && siteDefault.tag === edition.parsed.tag }))
+    .sort((left, right) => {
+      return left.isSiteDefault !== right.isSiteDefault ? (left.isSiteDefault ? -1 : 1) : left.tag === right.tag ? 0 : left.tag < right.tag ? -1 : 1;
+    });
 }

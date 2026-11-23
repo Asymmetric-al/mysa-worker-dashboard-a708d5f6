@@ -1,5 +1,4 @@
 "use client";
-/** The one chart in the application: a figure that says what it shows, draws it, and carries the same data beneath it as a real table. */
 import { useId, useMemo, useSyncExternalStore, type ReactElement } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ScrollRegion } from "@/components/scroll-region";
@@ -40,7 +39,6 @@ const AREA_FILL_OPACITY = 0.35;
 const DEFAULT_CHART_HEIGHT = 240;
 const INITIAL_PLOT_WIDTH = 640;
 const BUCKET_DATA_KEY = "bucket";
-// One point, as it will be drawn and read
 type PlottedPoint = { readonly bucket: string; readonly plot: number | null; readonly text: string; readonly state: ValueState; readonly gap: boolean };
 type PlottedSeries = { readonly key: string; readonly label: string; readonly dataKey: string; readonly paint: SeriesPaint; readonly swatch: string; readonly points: ReadonlyMap<string, PlottedPoint>; readonly plottable: number; readonly incomplete: number };
 type ChartRow = Readonly<Record<string, string | number | null>>;
@@ -119,12 +117,9 @@ function subscribeToReducedMotion(onStoreChange: () => void): () => void {
   query.addEventListener("change", onStoreChange);
   return () => query.removeEventListener("change", onStoreChange);
 }
-function readReducedMotion(): boolean {
-  return typeof window === "undefined" || typeof window.matchMedia !== "function" ? true : window.matchMedia(REDUCED_MOTION_QUERY).matches;
-}
+const readReducedMotion = (): boolean => (typeof window === "undefined" || typeof window.matchMedia !== "function" ? true : window.matchMedia(REDUCED_MOTION_QUERY).matches);
 const readServerReducedMotion = (): boolean => true;
 const usePrefersReducedMotion = (): boolean => useSyncExternalStore(subscribeToReducedMotion, readReducedMotion, readServerReducedMotion);
-// The prose summary the chart owes a reader
 const SUMMARY_CLAUSE_KEYS = ["zero", "gap", "unknown", "withheld", "unavailable"] as const;
 type SummaryClauseKey = (typeof SUMMARY_CLAUSE_KEYS)[number];
 const SUMMARY_CLAUSE_PHRASE: Readonly<Record<SummaryClauseKey, string>> = { zero: "a recorded zero in", gap: "no recorded value in", unknown: "unknown in", withheld: "withheld in", unavailable: "the source could not be read for" };
@@ -155,22 +150,19 @@ function summaryClauses(member: PlottedSeries): readonly SummaryClause[] {
   }
   return SUMMARY_CLAUSE_KEYS.filter((key) => buckets[key].length > 0).map((key) => ({ key, phrase: SUMMARY_CLAUSE_PHRASE[key], buckets: buckets[key] }));
 }
-function SummaryClauseLine({ member, clauses }: { readonly member: PlottedSeries; readonly clauses: readonly SummaryClause[] }): ReactElement {
-  return (
-    <p>
-      <bdi>{member.label}</bdi>
-      {": "}
-      {clauses.map((clause, index) => (
-        <span key={clause.key}>
-          {index === 0 ? null : "; "}
-          {clause.phrase} <bdi>{clause.buckets.join(", ")}</bdi>
-        </span>
-      ))}
-      {"."}
-    </p>
-  );
-}
-// Coverage, as the figure states it
+const SummaryClauseLine = ({ member, clauses }: { readonly member: PlottedSeries; readonly clauses: readonly SummaryClause[] }): ReactElement => (
+  <p>
+    <bdi>{member.label}</bdi>
+    {": "}
+    {clauses.map((clause, index) => (
+      <span key={clause.key}>
+        {index === 0 ? null : "; "}
+        {clause.phrase} <bdi>{clause.buckets.join(", ")}</bdi>
+      </span>
+    ))}
+    {"."}
+  </p>
+);
 function CoverageLine({ coverage, partialFigures }: { readonly coverage: Coverage; readonly partialFigures: boolean }): ReactElement {
   const { from, to, state } = coverage;
   const range =
@@ -193,21 +185,12 @@ function CoverageLine({ coverage, partialFigures }: { readonly coverage: Coverag
         <bdi>{to}</bdi>
       </>
     ) : null;
-  if (state === "unknown") {
+  if (state !== "complete") {
     return (
       <span className="text-sm text-muted-foreground">
-        {"Coverage: unknown"}
+        {`Coverage: ${state}`}
         {range}
-        {" — the source stated no covered range, so no subtotal drawn here is a total of the period."}
-      </span>
-    );
-  }
-  if (state === "partial") {
-    return (
-      <span className="text-sm text-muted-foreground">
-        {"Coverage: partial"}
-        {range}
-        {" only, so every subtotal drawn here is an incomplete subtotal of that part of the period."}
+        {state === "unknown" ? " — the source stated no covered range, so no subtotal drawn here is a total of the period." : " only, so every subtotal drawn here is an incomplete subtotal of that part of the period."}
       </span>
     );
   }
@@ -219,18 +202,16 @@ function CoverageLine({ coverage, partialFigures }: { readonly coverage: Coverag
     </span>
   );
 }
-function ChartLegend({ series }: { readonly series: readonly PlottedSeries[] }): ReactElement {
-  return (
-    <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-      {series.map((member) => (
-        <li key={member.dataKey} className="flex items-center gap-1.5">
-          <span aria-hidden="true" className={cn("inline-block size-2 shrink-0 rounded-full", member.swatch)} />
-          <bdi>{member.label}</bdi>
-        </li>
-      ))}
-    </ul>
-  );
-}
+const ChartLegend = ({ series }: { readonly series: readonly PlottedSeries[] }): ReactElement => (
+  <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+    {series.map((member) => (
+      <li key={member.dataKey} className="flex items-center gap-1.5">
+        <span aria-hidden="true" className={cn("inline-block size-2 shrink-0 rounded-full", member.swatch)} />
+        <bdi>{member.label}</bdi>
+      </li>
+    ))}
+  </ul>
+);
 type ChartTooltipProps = { readonly group: ChartGroup; readonly active?: boolean; readonly label?: string | number };
 function ChartTooltip({ group, active, label }: ChartTooltipProps): ReactElement | null {
   if (active !== true || label === undefined) return null;
@@ -242,22 +223,23 @@ function ChartTooltip({ group, active, label }: ChartTooltipProps): ReactElement
   if (entries.length === 0) return null;
   return (
     <div className="flex flex-col gap-1 rounded-md border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-md">
-      <p className="font-medium">
-        <bdi>{bucket}</bdi>
-      </p>
+      <bdi className="font-medium">{bucket}</bdi>
       <ul className="flex flex-col gap-1">
         {entries.map(({ member, point }) => (
           <li key={member.dataKey} className="flex items-center gap-2">
             <span aria-hidden="true" className={cn("inline-block size-2 shrink-0 rounded-full", member.swatch)} />
-            <span className="text-muted-foreground">
-              <bdi>{member.label}</bdi>
-            </span>
+            <bdi className="text-muted-foreground">{member.label}</bdi>
             <bdi className="tabular-figures ms-auto">{point.text}</bdi>
           </li>
         ))}
       </ul>
     </div>
   );
+}
+function plotMarkOf(kind: ChartKind, member: PlottedSeries, animate: boolean): ReactElement {
+  if (kind === "bar") return <Bar key={member.dataKey} dataKey={member.dataKey} name={member.label} fill={member.paint} isAnimationActive={animate} />;
+  if (kind === "area") return <Area key={member.dataKey} dataKey={member.dataKey} name={member.label} type="linear" stroke={member.paint} fill={member.paint} fillOpacity={AREA_FILL_OPACITY} dot={true} connectNulls={false} isAnimationActive={animate} />;
+  return <Line key={member.dataKey} dataKey={member.dataKey} name={member.label} type="linear" stroke={member.paint} strokeWidth={2} connectNulls={false} isAnimationActive={animate} />;
 }
 type ChartPlotProps = { readonly group: ChartGroup; readonly kind: ChartKind; readonly locale: string; readonly animate: boolean };
 function ChartPlot({ group, kind, locale, animate }: ChartPlotProps): ReactElement {
@@ -267,6 +249,7 @@ function ChartPlot({ group, kind, locale, animate }: ChartPlotProps): ReactEleme
   const categoryAxis = <XAxis dataKey={BUCKET_DATA_KEY} tick={AXIS_TEXT} tickLine={false} axisLine={{ stroke: GRID_PAINT }} interval="preserveStartEnd" minTickGap={8} />;
   const valueAxis = <YAxis width="auto" tick={AXIS_TEXT} tickLine={false} axisLine={false} allowDecimals={false} tickFormatter={valueTick} />;
   const tooltip = <Tooltip content={<ChartTooltip group={group} />} cursor={TOOLTIP_CURSOR} filterNull={false} />;
+  const marks = group.series.map((member) => plotMarkOf(kind, member, animate));
   if (kind === "bar") {
     return (
       <BarChart data={group.rows} accessibilityLayer={false}>
@@ -274,9 +257,7 @@ function ChartPlot({ group, kind, locale, animate }: ChartPlotProps): ReactEleme
         {categoryAxis}
         {valueAxis}
         {tooltip}
-        {group.series.map((member) => (
-          <Bar key={member.dataKey} dataKey={member.dataKey} name={member.label} fill={member.paint} isAnimationActive={animate} />
-        ))}
+        {marks}
       </BarChart>
     );
   }
@@ -287,9 +268,7 @@ function ChartPlot({ group, kind, locale, animate }: ChartPlotProps): ReactEleme
         {categoryAxis}
         {valueAxis}
         {tooltip}
-        {group.series.map((member) => (
-          <Area key={member.dataKey} dataKey={member.dataKey} name={member.label} type="linear" stroke={member.paint} fill={member.paint} fillOpacity={AREA_FILL_OPACITY} dot={true} connectNulls={false} isAnimationActive={animate} />
-        ))}
+        {marks}
       </AreaChart>
     );
   }
@@ -299,53 +278,40 @@ function ChartPlot({ group, kind, locale, animate }: ChartPlotProps): ReactEleme
       {categoryAxis}
       {valueAxis}
       {tooltip}
-      {group.series.map((member) => (
-        <Line key={member.dataKey} dataKey={member.dataKey} name={member.label} type="linear" stroke={member.paint} strokeWidth={2} connectNulls={false} isAnimationActive={animate} />
-      ))}
+      {marks}
     </LineChart>
   );
 }
-// The alternative, and the figure that holds everything
-function ChartDataTable({ table, id }: { readonly table: ChartTable; readonly id: string }): ReactElement {
-  return (
-    <Table id={id}>
-      <TableCaption className="sr-only">{table.caption}</TableCaption>
-      <TableHeader>
-        <TableRow>
+const ChartDataTable = ({ table, id }: { readonly table: ChartTable; readonly id: string }): ReactElement => (
+  <Table id={id}>
+    <TableCaption className="sr-only">{table.caption}</TableCaption>
+    <TableHeader>
+      <TableRow>
+        {table.columns.map((column) => (
+          <TableHead key={column.key} scope="col">
+            {column.label}
+          </TableHead>
+        ))}
+      </TableRow>
+    </TableHeader>
+    <TableBody>
+      {table.rows.map((row, index) => (
+        <TableRow key={`row-${String(index)}`}>
           {table.columns.map((column) => (
-            <TableHead key={column.key} scope="col">
-              {column.label}
-            </TableHead>
+            <TableCell key={column.key}>{row[column.key] ?? ""}</TableCell>
           ))}
         </TableRow>
-      </TableHeader>
-      <TableBody>
-        {table.rows.map((row, index) => (
-          <TableRow key={`row-${String(index)}`}>
-            {table.columns.map((column) => (
-              <TableCell key={column.key}>{row[column.key] ?? ""}</TableCell>
-            ))}
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
+      ))}
+    </TableBody>
+  </Table>
+);
 function everyPointUnavailable(group: ChartGroup): boolean {
-  let sawPoint = false;
-  for (const member of group.series) {
-    for (const point of member.points.values()) {
-      sawPoint = true;
-      if (point.state !== "unavailable") return false;
-    }
-  }
-  return sawPoint;
+  const points = group.series.flatMap((member) => [...member.points.values()]);
+  return points.length > 0 && points.every((point) => point.state === "unavailable");
 }
 function UnplottableNotice({ group }: { readonly group: ChartGroup }): ReactElement {
   const subject = group.currency === undefined ? "This series" : `The ${group.currency} series`;
-  if (everyPointUnavailable(group)) {
-    return <StateNotice kind="unavailable" title={`${subject} could not be read`} description="Every bucket in this series reports that its source could not be read, so no point is drawn. Nothing is filled in with a zero, and the table below states each bucket's own state." />;
-  }
+  if (everyPointUnavailable(group)) return <StateNotice kind="unavailable" title={`${subject} could not be read`} description="Every bucket in this series reports that its source could not be read, so no point is drawn. Nothing is filled in with a zero, and the table below states each bucket's own state." />;
   return <StateNotice kind="empty" title={`${subject} has no figure to draw`} description="Every bucket in this series is a gap, an unknown value or a withheld one, so there is nothing to plot. None is treated as a zero, and the table below names each bucket's own state." />;
 }
 type ChartGroupFigureProps = { readonly group: ChartGroup; readonly kind: ChartKind; readonly caption: string; readonly height: number; readonly describedBy: string; readonly locale: string; readonly animate: boolean };
@@ -359,9 +325,7 @@ function ChartGroupFigure({ group, kind, caption, height, describedBy, locale, a
         <UnplottableNotice group={group} />
       ) : (
         <>
-          {/* The currency is named above the plot that draws it, so a two-currency figure shows which axis is which; a group with no plot renders no label, because its notice names the currency in words. */}
           {group.currency === undefined ? null : <p className="text-xs font-medium text-muted-foreground">{group.currency}</p>}
-          {/* `role="img"` is the region, not the SVG: the plot is one picture with one name and the table beside it carries the figures, and a plain `div` holds marks an `img` could not. */}
           <div role="img" aria-label={regionLabel} aria-describedby={describedBy}>
             <ResponsiveContainer width="100%" height={height} initialDimension={{ width: INITIAL_PLOT_WIDTH, height }}>
               <ChartPlot group={group} kind={kind} locale={locale} animate={animate} />
@@ -379,9 +343,7 @@ export function ChartFigure({ title, summary, caption, kind, height = DEFAULT_CH
   const summaryId = `${baseId}-summary`;
   const tableId = `${baseId}-table`;
   const reducedMotion = usePrefersReducedMotion();
-  // The regeneration is the expensive part of this figure — a map per series, every point re-formatted — so it
-  // is derived once per (series, locale) pair rather than once per commit of a parent that re-renders.
-  const groups = useMemo(() => groupSeries(series, locale), [series, locale]);
+  const groups = useMemo(() => groupSeries(series, locale), [series, locale]); // The regeneration is the expensive part of this figure — a map per series, every point re-formatted — so it is derived once per (series, locale) pair rather than once per commit of a parent that re-renders.
   const partialFigures = groups.some((group) => group.series.some((member) => member.incomplete > 0));
   const seriesClauses = groups.flatMap((group, groupIndex) => group.series.map((member, seriesIndex) => ({ member, key: `${member.key}-${String(groupIndex)}-${String(seriesIndex)}`, clauses: summaryClauses(member) })));
   const named = seriesClauses.filter((entry) => entry.clauses.length > 0);
@@ -405,7 +367,6 @@ export function ChartFigure({ title, summary, caption, kind, height = DEFAULT_CH
           <SummaryClauseLine key={entry.key} member={entry.member} clauses={entry.clauses} />
         ))}
       </div>
-      {/* The table's name sits above the scroll region, where it is not clipped at the region's edge on a phone, and is hidden because the table's own caption states the same words once. */}
       <div className="flex flex-col gap-2">
         <p aria-hidden="true" className="text-sm text-muted-foreground">
           {table.caption}

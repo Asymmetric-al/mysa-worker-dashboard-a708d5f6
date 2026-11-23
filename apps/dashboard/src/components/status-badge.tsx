@@ -4,6 +4,7 @@ import { cn } from "@/lib/cn";
 import type { SendOutcomeState } from "@/modules/audience/consent";
 import type { MembershipState } from "@/modules/audience/membership";
 import type { GrantLifecycleState } from "@/modules/coaching/grant";
+import type { TaskStatus } from "@/modules/coaching/taskshare";
 import type { Reach } from "@/modules/content/reach";
 import type { ValueState } from "@/modules/data-service/envelope";
 import { BUCKET_LABELS, type RecurringBucket } from "@/modules/support/buckets";
@@ -37,7 +38,6 @@ export const COACHING_STATUS: Readonly<Record<CoachingGrantStatus, StatusBadgeSp
   ended: { label: "Ended", tone: "neutral" },
   left: { label: "Coach left — access closed", tone: "neutral" },
   superseded: { label: "Superseded by a newer invitation", tone: "muted" },
-  // Derived at read time, never stored: the acceptance is recorded and the episode's source cannot be read right now, so this states no closure and no access — it stays distinct from `accepted` and from every lifecycle closure.
   "accepted-but-unavailable": { label: "Accepted — access unavailable", tone: "caution" },
 };
 /** The five recurring outcomes plus `outside-partition`, each with the word the support module already owns and the tone this file adds. */
@@ -51,6 +51,8 @@ export const BUCKET_STATUS: Readonly<Record<RecurringBucket, StatusBadgeSpec>> =
 };
 /** Every value state except `value`: the five words that say a value is not a plain number. */
 export type ValueStateWord = Exclude<ValueState, "value">;
+/** The four states one task can stand in, in the one vocabulary the partner record and the coaching selector both read a task's state by. */
+export const TASK_STATUS: Readonly<Record<TaskStatus, StatusBadgeSpec>> = { open: { label: "Open", tone: "info" }, completed: { label: "Completed", tone: "positive" }, reopened: { label: "Reopened", tone: "caution" }, cancelled: { label: "Cancelled", tone: "muted" } };
 /** The word and tone of each value state that must render differently from a number. */
 export const VALUE_STATE_WORDS: Readonly<Record<ValueStateWord, StatusBadgeSpec>> = {
   zero: { label: "Zero", tone: "neutral" },
@@ -62,9 +64,7 @@ export const VALUE_STATE_WORDS: Readonly<Record<ValueStateWord, StatusBadgeSpec>
 /** The word for a value state, or `undefined` when the value is an ordinary one. */
 export const valueStateWord = (state: ValueState): StatusBadgeSpec | undefined => (state === "value" ? undefined : VALUE_STATE_WORDS[state]);
 /** Reads one member's label and tone out of a vocabulary, so a feature passes the union member it already holds and spreads the result onto {@link StatusBadge} instead of writing a state word. */
-export function statusBadgeProps<Key extends string>(vocabulary: Readonly<Record<Key, StatusBadgeSpec>>, key: Key): StatusBadgeSpec {
-  return vocabulary[key];
-}
+export const statusBadgeProps = <Key extends string>(vocabulary: Readonly<Record<Key, StatusBadgeSpec>>, key: Key): StatusBadgeSpec => vocabulary[key];
 export type StatusBadgeProps = { label: string; tone?: StatusTone; valueState?: ValueState; srPrefix?: string; className?: string };
 /** The one status and audience label. */
 export default function StatusBadge({ label, tone = "neutral", valueState, srPrefix, className }: StatusBadgeProps) {

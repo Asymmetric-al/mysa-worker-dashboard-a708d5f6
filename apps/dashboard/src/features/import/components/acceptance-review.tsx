@@ -17,8 +17,7 @@ export default function AcceptanceReview({ input, submit, decidedRowCount, onCan
         <ul className="flex min-w-0 flex-col gap-2">
           {ACCEPTANCE_NOTICE.map((item) => (
             <li key={item.id} className="flex min-w-0 flex-col gap-0.5">
-              <span className="font-medium">{item.label}</span>
-              <span className="text-pretty text-muted-foreground">{item.statement}</span>
+              <span className="font-medium">{item.label}</span> <span className="text-pretty text-muted-foreground">{item.statement}</span>
             </li>
           ))}
         </ul>

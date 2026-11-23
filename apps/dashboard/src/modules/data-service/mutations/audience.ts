@@ -1,41 +1,23 @@
-/** The audience and consent mutations: a deliberate signup, an explicit confirmation, the Off or Immediate choice with a language preference that stands on its own, and an unsubscribe for one … */
 import { Temporal } from "temporal-polyfill";
 import { ZodError, z } from "zod";
 import { unsubscribe as recordOffChoice } from "@/modules/audience/consent";
-import { MEMBER_CHOICES, UPDATE_EMAIL_PURPOSE, confirmAt, newPendingMembership, withChoice, withLanguagePreference, type AudiencePurpose, type ConfirmationRefusalReason, type MemberChoice, type MembershipRecord as DomainMembership, type MembershipScope, type MembershipState } from "@/modules/audience/membership";
+import { MEMBER_CHOICES, UPDATE_EMAIL_PURPOSE, confirmAt, newPendingMembership, withChoice, withLanguagePreference, type MembershipRecord as DomainMembership, type AudiencePurpose, type ConfirmationRefusalReason, type MemberChoice, type MembershipScope, type MembershipState } from "@/modules/audience/membership";
 import { instantAt } from "@/modules/time/clock";
 import { confirmationDeadline } from "@/modules/time/window";
-import { canEdit, outcomeOfRefusal, resolveSession, sessionDenial, type ResolvedSession, type ScopeDecision, type SessionRefusal, type SessionSource } from "../authorize";
+import { canEdit, type ResolvedSession, type ScopeDecision, type SessionSource } from "../authorize";
 import { membershipRecordSchema, type MembershipRecord as StoredMembership, type MutationInput } from "../envelope";
-import { UNIDENTIFIED_ATTEMPT, denied, type MutationOutcome, type MutationResult } from "../outcome";
-import { runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
-function operationIdOf(input: unknown): string {
-  if (!isPlainObject(input)) return UNIDENTIFIED_ATTEMPT;
-  const candidate: unknown = Reflect.get(input, "operationId");
-  return typeof candidate === "string" && candidate.length > 0 ? candidate : UNIDENTIFIED_ATTEMPT;
-}
-type AttemptSession = { readonly ok: true; readonly session: ResolvedSession } | { readonly ok: false; readonly refusal: SessionRefusal };
-async function attemptSession(source?: SessionSource): Promise<AttemptSession> {
-  try {
-    const resolved = await resolveSession(source);
-    return resolved.ok ? { ok: true, session: resolved.session } : { ok: false, refusal: resolved.refusal };
-  } catch {
-    return { ok: false, refusal: sessionDenial("session-unavailable") };
-  }
-}
+import { denied, type MutationOutcome, type MutationResult } from "../outcome";
+import { openMutation, runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
 type StateDocumentHolder = { state: unknown };
 const CORRUPT_DOCUMENT_FAULT = "CorruptJsonError";
 class UnreadableStateDocumentError extends Error {
   constructor(part: string) {
     super(`The session's state document cannot be read: ${part}. Nothing was written.`);
     this.name = CORRUPT_DOCUMENT_FAULT;
-    // Keeps `instanceof` working where a built-in subclass is downlevelled past ES2015 semantics.
     Object.setPrototypeOf(this, UnreadableStateDocumentError.prototype);
   }
 }
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 function membershipsOf(holder: StateDocumentHolder): StoredMembership[] {
   const state: unknown = holder.state;
   if (!isPlainObject(state)) throw new UnreadableStateDocumentError("it is not an object");
@@ -63,9 +45,7 @@ function revisionOrdinal(revision: string): number {
   const parsed = Number.parseInt(digits[1] ?? "", 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
-function revisionTokenOf(ordinal: number): string {
-  return `rev-${String(ordinal)}`;
-}
+const revisionTokenOf = (ordinal: number): string => `rev-${String(ordinal)}`;
 function domainMembershipOf(record: StoredMembership, scope: MembershipScope): DomainMembership {
   const acceptedAt = instantOf(record.acceptedAt);
   const confirmation = instantOf(record.confirmationDeadline);
@@ -87,9 +67,7 @@ function domainMembershipOf(record: StoredMembership, scope: MembershipScope): D
   };
 }
 function storedAcceptanceOf(previous: StoredMembership, next: DomainMembership): string | null {
-  if (next.state === "awaiting-proof") return next.acceptedAt === undefined ? null : next.acceptedAt.toString();
-  if (next.confirmedAt !== undefined) return next.confirmedAt.toString();
-  return next.state === "active" ? (next.acceptedAt?.toString() ?? previous.acceptedAt) : null;
+  return next.state === "awaiting-proof" ? (next.acceptedAt === undefined ? null : next.acceptedAt.toString()) : next.confirmedAt !== undefined ? next.confirmedAt.toString() : next.state === "active" ? (next.acceptedAt?.toString() ?? previous.acceptedAt) : null;
 }
 function storedMembershipFrom(previous: StoredMembership, next: DomainMembership): StoredMembership {
   const acceptedAt = storedAcceptanceOf(previous, next);
@@ -128,10 +106,7 @@ type ConfirmPayload = z.infer<typeof confirmPayloadSchema>;
 type PreferencePayload = z.infer<typeof preferencePayloadSchema>;
 type UnsubscribePayload = z.infer<typeof unsubscribePayloadSchema>;
 const AUTHORITY_QUESTION_ID = "authority-question";
-function addressedByCaller(session: ResolvedSession, membershipId: string | undefined): ScopeDecision {
-  if (membershipId === undefined || membershipId !== session.principalId) return { ok: false, denial: denied({ operationId: AUTHORITY_QUESTION_ID, reasonCode: "no-permission" }) };
-  return { ok: true };
-}
+const addressedByCaller = (session: ResolvedSession, membershipId: string | undefined): ScopeDecision => (membershipId === undefined || membershipId !== session.principalId ? { ok: false, denial: denied({ operationId: AUTHORITY_QUESTION_ID, reasonCode: "no-permission" }) } : { ok: true });
 function claimedMembershipId(input: unknown): string | undefined {
   if (!isPlainObject(input)) return undefined;
   const payload: unknown = Reflect.get(input, "payload");
@@ -139,9 +114,8 @@ function claimedMembershipId(input: unknown): string | undefined {
   const candidate: unknown = Reflect.get(payload, "membershipId");
   return typeof candidate === "string" && candidate.length > 0 ? candidate : undefined;
 }
-function membershipScopeOf(scope: MutationInput<unknown>["scope"]): MembershipScope {
-  return { organizationId: scope.organizationId, ministryId: scope.ministryId };
-}
+const membershipScopeOf = (scope: MutationInput<unknown>["scope"]): MembershipScope => ({ organizationId: scope.organizationId, ministryId: scope.ministryId });
+const membershipTargetOf = (documents: StateDocumentHolder, membershipId: string | undefined): CurrentTarget => currentTargetOf(documents, (rows) => rows.find((row) => row.membershipId === membershipId));
 type SignupResult = {
   readonly membershipId: string;
   readonly publisherId: string;
@@ -154,9 +128,7 @@ type SignupResult = {
 type ConfirmResult = { readonly membershipId: string; readonly state: MembershipState; readonly confirmedAt: string | null; readonly revision: string };
 type PreferenceResult = { readonly membershipId: string; readonly state: MembershipState; readonly choice: MemberChoice; readonly languagePreference: string | null; readonly revision: string; readonly changed: { readonly choice: boolean; readonly languagePreference: boolean } };
 type UnsubscribeResult = { readonly membershipId: string; readonly publisherId: string; readonly purpose: AudiencePurpose; readonly state: MembershipState; readonly choice: MemberChoice; readonly revision: string; readonly claimsRecall: false };
-function refusedConfirmation(reason: ConfirmationRefusalReason, message: string): ZodError {
-  return new ZodError([{ code: "custom", path: ["membershipId"], message: `${reason}: ${message}` }]);
-}
+const refusedConfirmation = (reason: ConfirmationRefusalReason, message: string): ZodError => new ZodError([{ code: "custom", path: ["membershipId"], message: `${reason}: ${message}` }]);
 function refuseConfirmation(record: StoredMembership, reason: ConfirmationRefusalReason, at: Temporal.Instant): never {
   switch (reason) {
     case "confirmation-expired": {
@@ -184,78 +156,61 @@ function applySignup(context: MutationContext, payload: SignupPayload, scope: Me
   const at = instantAt(context.session.clockOffsetMs);
   const memberships = membershipsOf(context.docs);
   const identity = context.session.principalId;
-  const existing = memberships.find((row) => row.publisherId === payload.publisherId && row.purpose === payload.purpose && row.membershipId === identity);
-  if (existing !== undefined) return { changed: false };
+  if (memberships.find((row) => row.publisherId === payload.publisherId && row.purpose === payload.purpose && row.membershipId === identity) !== undefined) return { changed: false };
   const { membership, proof } = newPendingMembership({ membershipId: identity, scope, publisherId: payload.publisherId, purpose: payload.purpose, recipientId: identity, email: payload.email, languagePreference: payload.languagePreference ?? "" }, at);
   const stored = newStoredMembership(membership, payload.displayName ?? null);
   withMemberships(context.docs, [...memberships, stored]);
   const result = { membershipId: stored.membershipId, publisherId: stored.publisherId, purpose: stored.purpose, state: stored.state, revision: stored.revision, confirmationDeadline: stored.confirmationDeadline, proof: { status: proof.status, claimsMailSent: proof.claimsMailSent, nextStep: proof.nextStep } };
-  const created = [stored.membershipId];
-  const revision = stored.revision;
-  const changed = true;
-  return { changed, revision, created, result };
+  return { changed: true, revision: stored.revision, created: [stored.membershipId], result };
+}
+type WritableMembership = { readonly memberships: readonly StoredMembership[]; readonly record: StoredMembership; readonly domain: DomainMembership; readonly at: Temporal.Instant };
+/** The one membership a request names, read into its domain shape, when the caller may edit it; `undefined` is answered as "nothing to change". */
+function writableMembership(context: MutationContext, scope: MembershipScope, membershipId: string): WritableMembership | undefined {
+  const memberships = membershipsOf(context.docs);
+  const record = memberships.find((row) => row.membershipId === membershipId);
+  const domain = record === undefined ? undefined : domainMembershipOf(record, scope);
+  return record === undefined || domain === undefined || !canEdit(context.session, { kind: "membership", record: domain }).allowed ? undefined : { memberships, record, domain, at: instantAt(context.session.clockOffsetMs) };
 }
 function applyConfirmation(context: MutationContext, payload: ConfirmPayload, scope: MembershipScope): ApplyResult<ConfirmResult> {
-  const at = instantAt(context.session.clockOffsetMs);
-  const memberships = membershipsOf(context.docs);
-  const record = memberships.find((row) => row.membershipId === payload.membershipId);
-  if (record === undefined) {
-    // Nothing of the caller's is addressed here, so nothing changes and nothing is disclosed.
-    return { changed: false };
-  }
-  const domain = domainMembershipOf(record, scope);
-  const access = canEdit(context.session, { kind: "membership", record: domain });
-  if (!access.allowed) return { changed: false };
-  const confirmed = confirmAt(domain, at);
-  if (confirmed.status === "refused") {
-    if (confirmed.reason === "not-awaiting-proof" && record.state === "active") return { changed: false };
-    return refuseConfirmation(record, confirmed.reason, at);
-  }
-  const stored = storedMembershipFrom(record, confirmed.membership);
-  withMemberships(context.docs, replacingMembership(memberships, stored));
+  const found = writableMembership(context, scope, payload.membershipId);
+  if (found === undefined) return { changed: false };
+  const confirmed = confirmAt(found.domain, found.at);
+  if (confirmed.status === "refused") return confirmed.reason === "not-awaiting-proof" && found.record.state === "active" ? { changed: false } : refuseConfirmation(found.record, confirmed.reason, found.at);
+  const stored = storedMembershipFrom(found.record, confirmed.membership);
+  withMemberships(context.docs, replacingMembership(found.memberships, stored));
   return { changed: true, revision: stored.revision, changedIds: [stored.membershipId], result: { membershipId: stored.membershipId, state: stored.state, confirmedAt: stored.acceptedAt, revision: stored.revision } };
 }
 function applyPreference(context: MutationContext, payload: PreferencePayload, scope: MembershipScope): ApplyResult<PreferenceResult> {
-  const at = instantAt(context.session.clockOffsetMs);
-  const memberships = membershipsOf(context.docs);
-  const record = memberships.find((row) => row.membershipId === payload.membershipId);
-  if (record === undefined) return { changed: false };
-  const domain = domainMembershipOf(record, scope);
-  const access = canEdit(context.session, { kind: "membership", record: domain });
-  if (!access.allowed) return { changed: false };
-  const afterChoice = withChoice(domain, payload.choice, at);
-  const choiceChanged = afterChoice !== domain;
+  const found = writableMembership(context, scope, payload.membershipId);
+  if (found === undefined) return { changed: false };
+  const afterChoice = withChoice(found.domain, payload.choice, found.at);
+  const choiceChanged = afterChoice !== found.domain;
   const afterLanguage = payload.languagePreference === undefined ? afterChoice : withLanguagePreference(afterChoice, payload.languagePreference);
   const languageChanged = afterLanguage !== afterChoice;
   if (!choiceChanged && !languageChanged) return { changed: false };
-  const stored = storedMembershipFrom(record, afterLanguage);
-  withMemberships(context.docs, replacingMembership(memberships, stored));
+  const stored = storedMembershipFrom(found.record, afterLanguage);
+  withMemberships(context.docs, replacingMembership(found.memberships, stored));
   const choice: MemberChoice = stored.state === "off" || stored.state === "restricted" ? "off" : "immediate";
   return { changed: true, revision: stored.revision, changedIds: [stored.membershipId], result: { membershipId: stored.membershipId, state: stored.state, choice, languagePreference: stored.languagePreference, revision: stored.revision, changed: { choice: choiceChanged, languagePreference: languageChanged } } };
 }
 function applyUnsubscribe(context: MutationContext, payload: UnsubscribePayload, scope: MembershipScope): ApplyResult<UnsubscribeResult> {
-  const at = instantAt(context.session.clockOffsetMs);
   const memberships = membershipsOf(context.docs);
-  const identity = context.session.principalId;
-  const record = memberships.find((row) => row.publisherId === payload.publisherId && row.purpose === payload.purpose && row.membershipId === identity);
-  if (record === undefined) return { changed: false };
-  const domain = domainMembershipOf(record, scope);
-  const access = canEdit(context.session, { kind: "membership", record: domain });
-  if (!access.allowed) return { changed: false };
-  const transition = recordOffChoice({ memberships: [domain], publisherId: record.publisherId, purpose: record.purpose, recipientId: record.membershipId }, at);
+  const record = memberships.find((row) => row.publisherId === payload.publisherId && row.purpose === payload.purpose && row.membershipId === context.session.principalId);
+  const domain = record === undefined ? undefined : domainMembershipOf(record, scope);
+  if (record === undefined || domain === undefined || !canEdit(context.session, { kind: "membership", record: domain }).allowed) return { changed: false };
+  const transition = recordOffChoice({ memberships: [domain], publisherId: record.publisherId, purpose: record.purpose, recipientId: record.membershipId }, instantAt(context.session.clockOffsetMs));
   const next = transition.memberships[0];
   if (transition.changedMembershipId === null || next === undefined) return { changed: false };
   const stored = storedMembershipFrom(record, next);
   withMemberships(context.docs, replacingMembership(memberships, stored));
   return { changed: true, revision: stored.revision, changedIds: [stored.membershipId], result: { membershipId: stored.membershipId, publisherId: stored.publisherId, purpose: stored.purpose, state: stored.state, choice: "off", revision: stored.revision, claimsRecall: false } };
 }
-/** The membership family is authorised by the record it addresses rather than by ministry admission: a reader persona holds its own membership and is admitted to no ministry, so the default … */
 type AudienceSpec<R extends MutationResult> = { readonly authorize?: (session: ResolvedSession) => ScopeDecision; readonly readCurrent?: (documents: MutationContext["docs"], session: ResolvedSession) => CurrentTarget; readonly apply: (context: MutationContext, session: ResolvedSession) => ApplyResult<R> };
 const OWN_RECORD_ADMITTED: (session: ResolvedSession) => ScopeDecision = () => ({ ok: true });
 async function runAudienceMutation<P, R extends MutationResult>(input: MutationInput<P>, source: SessionSource | undefined, schema: z.ZodType<P>, name: MutationName, spec: AudienceSpec<R>): Promise<MutationOutcome> {
-  const attempt = await attemptSession(source);
-  if (!attempt.ok) return outcomeOfRefusal(attempt.refusal, operationIdOf(input));
-  const { session } = attempt;
+  const opening = await openMutation(input, source);
+  if (!opening.ok) return opening.outcome;
+  const { session } = opening;
   return runMutation<P, R>({
     sessionId: session.sessionId,
     input,
@@ -268,14 +223,12 @@ async function runAudienceMutation<P, R extends MutationResult>(input: MutationI
   });
 }
 /** Opens one purpose-specific membership for the caller and leaves it waiting for proof. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function signupForPurpose(input: MutationInput<SignupPayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runAudienceMutation(input, source, signupPayloadSchema, "signupForPurpose", { apply: (context) => applySignup(context, input.payload, membershipScopeOf(input.scope)) });
-}
+export const signupForPurpose = async (input: MutationInput<SignupPayload>, source?: SessionSource): Promise<MutationOutcome> => runAudienceMutation(input, source, signupPayloadSchema, "signupForPurpose", { apply: (context) => applySignup(context, input.payload, membershipScopeOf(input.scope)) });
 /** Confirms one membership's address, on the person's explicit action and inside its window only. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function confirmMembership(input: MutationInput<ConfirmPayload>, source?: SessionSource): Promise<MutationOutcome> {
   return runAudienceMutation(input, source, confirmPayloadSchema, "confirmMembership", {
     authorize: (resolved) => addressedByCaller(resolved, claimedMembershipId(input)),
-    readCurrent: (documents) => currentTargetOf(documents, (memberships) => memberships.find((row) => row.membershipId === claimedMembershipId(input))),
+    readCurrent: (documents) => membershipTargetOf(documents, claimedMembershipId(input)),
     apply: (context) => applyConfirmation(context, input.payload, membershipScopeOf(input.scope)),
   });
 }
@@ -283,7 +236,7 @@ export async function confirmMembership(input: MutationInput<ConfirmPayload>, so
 export async function setPreference(input: MutationInput<PreferencePayload>, source?: SessionSource): Promise<MutationOutcome> {
   return runAudienceMutation(input, source, preferencePayloadSchema, "setPreference", {
     authorize: (resolved) => addressedByCaller(resolved, claimedMembershipId(input)),
-    readCurrent: (documents) => currentTargetOf(documents, (memberships) => memberships.find((row) => row.membershipId === claimedMembershipId(input))),
+    readCurrent: (documents) => membershipTargetOf(documents, claimedMembershipId(input)),
     apply: (context) => applyPreference(context, input.payload, membershipScopeOf(input.scope)),
   });
 }

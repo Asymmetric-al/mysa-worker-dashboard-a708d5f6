@@ -1,13 +1,14 @@
 "use client";
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "next/navigation";
-import { useCallback, useId, useState, type ReactElement } from "react";
+import { useCallback, useId, useState, type ReactElement, type ReactNode } from "react";
 import ActionReview from "@/components/action-review";
+import { ChoiceGroup } from "@/components/choice-group";
 import FormField, { fieldErrorsFromInvalid, FormFieldGroup } from "@/components/form-field";
+import { Fact } from "@/components/fact";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/cn";
 import type { SourceReference } from "@/lib/ids";
 import type { MutationInput, MutationOutcome, Scope } from "@/modules/data-service";
@@ -16,15 +17,11 @@ import { useRecordIntroduction } from "../hooks/use-referral-mutations";
 import { DATE_PRECISION_VALUES, type DatePrecisionValue, type IntroductionPayload } from "../schemas";
 export type ReferralIntroductionFormProps = {
   readonly scope: Scope;
-  /** The opaque identity of the partner this introduction refers to: a reference, not a join key, never read for meaning or compared with a name, an address or another record. */
   readonly partnerId: string;
   readonly expectedRevision: string;
   readonly sourceReference: SourceReference;
-  /** The accepted source zone the envelope resolved the introduction date in; windows are read in it and it is never typed here. */
   readonly sourceZone: string;
-  /** When the envelope states this record was entered, already formatted for display. The form never reads a clock. */
   readonly recordedAtDisplay?: string;
-  /** Called with the outcome of every settled attempt, so the composing route can re-read the lists or state the result. */
   readonly onRecorded?: (outcome: MutationOutcome) => void;
   readonly dir?: "ltr" | "rtl";
   readonly className?: string;
@@ -41,66 +38,39 @@ const FIELD_LABELS: Readonly<Record<string, string | undefined>> = {
   "sourceReference.system": INTRODUCED_BY_COPY.sourceReferenceLabel,
   "sourceReference.reference": INTRODUCED_BY_COPY.sourceReferenceLabel,
 };
-function isDatePrecision(value: unknown): value is DatePrecisionValue {
-  return typeof value === "string" && (DATE_PRECISION_VALUES as readonly string[]).includes(value);
-}
 function composePayload(partnerId: string, values: IntroductionFormValues, sourceZone: string, sourceReference: SourceReference): IntroductionPayload {
   const typed = values.originalIntroductionOn.trim();
   return { partnerId, originalIntroductionOn: values.datePrecision === "unknown" || typed === "" ? null : typed, datePrecision: values.datePrecision, sourceZone, sourceReference: { system: sourceReference.system, reference: sourceReference.reference } };
 }
+const factOf = (term: string, ddClass: string, value: ReactNode, trailing?: ReactNode): ReactElement => (
+  <Fact term={term} termClassName="font-medium text-foreground" detailClassName={ddClass}>
+    {value}
+    {trailing}
+  </Fact>
+);
 function EnvelopeFact({ term, values, help }: { readonly term: string; readonly values: readonly string[]; readonly help: string }): ReactElement {
   const stated = values.filter((value) => value.trim() !== "");
+  const statedLine = (value: string, index: number): ReactElement => (
+    <bdi key={`${String(index)}-${value}`} className="mono-identifier wrap-anywhere">
+      {value}
+    </bdi>
+  );
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <dt className="font-medium">{term}</dt>
-      <dd className="flex min-w-0 flex-col gap-1">
-        {stated.length === 0 ? null : (
-          <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-            {/* Each opaque value is isolated, so a mixed-direction neighbour cannot reorder it. */}
-            {stated.map((value, index) => (
-              <bdi key={`${String(index)}-${value}`} className="mono-identifier wrap-anywhere">
-                {value}
-              </bdi>
-            ))}
-          </span>
-        )}
-        <span className="text-pretty text-muted-foreground">{help}</span>
-      </dd>
-    </div>
+    <Fact term={term} termClassName="font-medium" detailClassName="flex min-w-0 flex-col gap-1">
+      {stated.length === 0 ? null : <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">{stated.map(statedLine)}</span>}
+      <span className="text-pretty text-muted-foreground">{help}</span>
+    </Fact>
   );
 }
 function ReviewedIntroduction({ payload }: { readonly payload: IntroductionPayload }): ReactElement {
   const precision = PRECISION_COPY[payload.datePrecision];
+  const reference = payload.sourceReference;
   return (
     <dl className="flex min-w-0 flex-col gap-3">
-      {payload.originalIntroductionOn === null ? null : (
-        <div className="flex min-w-0 flex-col gap-1">
-          <dt className="font-medium text-foreground">{INTRODUCED_BY_COPY.originalIntroductionOnLabel}</dt>
-          <dd className="min-w-0">
-            <bdi className="mono-identifier">{payload.originalIntroductionOn}</bdi>
-          </dd>
-        </div>
-      )}
-      <div className="flex min-w-0 flex-col gap-1">
-        <dt className="font-medium text-foreground">{INTRODUCED_BY_COPY.datePrecisionLabel}</dt>
-        <dd className="flex min-w-0 flex-col items-start gap-1">
-          <Badge variant="secondary">{precision.label}</Badge>
-          <span className="text-pretty">{precision.hint}</span>
-        </dd>
-      </div>
-      <div className="flex min-w-0 flex-col gap-1">
-        <dt className="font-medium text-foreground">{INTRODUCED_BY_COPY.sourceZoneLabel}</dt>
-        <dd className="min-w-0">
-          <bdi className="mono-identifier">{payload.sourceZone}</bdi>
-        </dd>
-      </div>
-      <div className="flex min-w-0 flex-col gap-1">
-        <dt className="font-medium text-foreground">{INTRODUCED_BY_COPY.sourceReferenceLabel}</dt>
-        <dd className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-          <bdi className="mono-identifier">{payload.sourceReference.system}</bdi>
-          <bdi className="mono-identifier wrap-anywhere">{payload.sourceReference.reference}</bdi>
-        </dd>
-      </div>
+      {payload.originalIntroductionOn === null ? null : factOf(INTRODUCED_BY_COPY.originalIntroductionOnLabel, "min-w-0", <bdi className="mono-identifier">{payload.originalIntroductionOn}</bdi>)}
+      {factOf(INTRODUCED_BY_COPY.datePrecisionLabel, "flex min-w-0 flex-col items-start gap-1", <Badge variant="secondary">{precision.label}</Badge>, <span className="text-pretty">{precision.hint}</span>)}
+      {factOf(INTRODUCED_BY_COPY.sourceZoneLabel, "min-w-0", <bdi className="mono-identifier">{payload.sourceZone}</bdi>)}
+      {factOf(INTRODUCED_BY_COPY.sourceReferenceLabel, "flex min-w-0 flex-wrap items-baseline gap-x-2", <bdi className="mono-identifier">{reference.system}</bdi>, <bdi className="mono-identifier wrap-anywhere">{reference.reference}</bdi>)}
     </dl>
   );
 }
@@ -112,25 +82,17 @@ export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, s
   const [settledOutcome, setSettledOutcome] = useState<MutationOutcome | null>(null);
   const { mutateAsync } = useRecordIntroduction();
   const submit = useCallback((input: MutationInput<IntroductionPayload>): Promise<MutationOutcome> => mutateAsync({ operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload }), [mutateAsync]);
-  // A recorded introduction is a new cycle in the referral lists and a new fact on the record this form is
-  // composed beside, so a resolved attempt asks the route to re-read the reads it renders rather than this
-  // form placing the result in a list it does not own. The receipt stays on screen across that re-read: the
-  // outcome is this component's own state, and only the server reads around it are issued again.
+  // A recorded introduction is a new cycle in the referral lists and a new fact on the record this form is composed beside, so a resolved attempt asks the route to re-read what it renders rather than this form placing the result in a list it does not own. The receipt stays on screen across that re-read, because the outcome is this component's own state.
   const handleSettled = useCallback(
     (outcome: MutationOutcome): void => {
       setSettledOutcome(outcome);
-      if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") {
-        router.refresh();
-      }
+      if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") router.refresh();
       onRecorded?.(outcome);
     },
     [onRecorded, router],
   );
-  // A refusal's per-field messages are read from the settled outcome, keyed by the schema's own field paths. Correcting a field begins a new intent, so the previous refusal stops being shown against the values it was raised for; returning the current `null` unchanged lets React bail out.
   const fieldErrors = settledOutcome !== null && settledOutcome.outcome === "invalid" ? fieldErrorsFromInvalid(settledOutcome) : null;
-  const clearRefusal = useCallback((): void => {
-    setSettledOutcome((current) => (current === null ? current : null));
-  }, []);
+  const clearRefusal = useCallback((): void => setSettledOutcome(null), []);
   const enteredAt = recordedAtDisplay?.trim() ?? "";
   return (
     <section dir={dir} aria-labelledby={headingId} data-slot="referral-introduction-form" className={cn("flex min-w-0 flex-col gap-6", className)}>
@@ -173,41 +135,18 @@ export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, s
                 {(group) => (
                   <form.Field name={PRECISION_FIELD}>
                     {(precisionField) => (
-                      <RadioGroup
+                      <ChoiceGroup
+                        frame={group}
                         value={precisionField.state.value}
-                        onValueChange={(next) => {
-                          if (!isDatePrecision(next)) {
-                            return;
-                          }
+                        choices={DATE_PRECISION_VALUES}
+                        wording={PRECISION_COPY}
+                        idPrefix={`${optionIdPrefix}-precision`}
+                        onChange={(next) => {
                           precisionField.handleChange(next);
-                          // An unknown date clears the date rather than leaving a value this precision would refuse to store.
-                          if (next === "unknown") {
-                            form.setFieldValue(DATE_FIELD, "");
-                          }
+                          if (next === "unknown") form.setFieldValue(DATE_FIELD, "");
                           clearRefusal();
                         }}
-                        aria-labelledby={group.legendId}
-                        aria-describedby={group.describedBy}
-                        aria-invalid={group.invalid ? true : undefined}
-                        aria-required={group.required ? true : undefined}
-                      >
-                        {DATE_PRECISION_VALUES.map((option) => {
-                          const wording = PRECISION_COPY[option];
-                          const optionId = `${optionIdPrefix}-precision-${option}`;
-                          const hintId = `${optionId}-hint`;
-                          return (
-                            <label key={option} htmlFor={optionId} className="flex min-h-target items-start gap-3 py-1">
-                              <RadioGroupItem id={optionId} value={option} aria-label={wording.label} aria-describedby={hintId} className="mt-0.5" />
-                              <span className="flex min-w-0 flex-col gap-0.5">
-                                <span className="text-sm font-medium">{wording.label}</span>
-                                <span id={hintId} className="text-sm text-pretty text-muted-foreground">
-                                  {wording.hint}
-                                </span>
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </RadioGroup>
+                      />
                     )}
                   </form.Field>
                 )}

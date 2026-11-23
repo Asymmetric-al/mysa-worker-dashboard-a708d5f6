@@ -4,7 +4,7 @@ import type { ReactElement, ReactNode } from "react";
 import { refusalSummary } from "@/components/form-field";
 import RecordDetail, { type RecordDetailBreadcrumbEntry, type RecordDetailIdentity, type RecordDetailLayout, type RecordDetailSectionSlots } from "@/components/record-detail";
 import StateNotice, { type NoticeAction, type NoticeHeadingLevel, type NoticeRetry, type StateNoticeProps } from "@/components/state-notice";
-import StatusBadge, { BUCKET_STATUS, statusBadgeProps, valueStateWord, type StatusBadgeSpec } from "@/components/status-badge";
+import StatusBadge, { BUCKET_STATUS, statusBadgeProps, TASK_STATUS, valueStateWord } from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -52,72 +52,38 @@ export type PartnerDetailSectionsProps = {
   readonly links?: PartnerDetailLinks;
   readonly breadcrumb?: readonly RecordDetailBreadcrumbEntry[];
 };
-const READING_RECORD_TITLE = "Reading this partner record";
-const NO_RESTRICTION_RECORDED = "No restriction is recorded for this relationship.";
-const NO_RELATIONSHIP_RECORDED = "No relationship label is recorded for this record.";
-const CONTACT_METHOD_PERMITTED = "Permitted on this record";
-const CONTACT_METHOD_NOT_PERMITTED = "Not permitted on this record";
-const CONTACT_METHODS_UNVERIFIED = "This application verifies none of these details, so a value here is what the record holds rather than a confirmed address or number.";
-const CONTACT_METHODS_SEPARATE_FACTS = `Contactability only — ${PERMISSION_FACT_COPY.communicationConsent.label} and ${PERMISSION_FACT_COPY.protectedReaderGrant.label} are separate facts, recorded separately, and none of the three stands in for another.`;
-const PRIVATE_NOTES_CARD_TITLE = "What you wrote";
-const PREPARATION_ARCHIVED_LABEL = "Preparation archived";
-const PREPARATION_ARCHIVED_EXPLANATION = `${ARCHIVE_COPY.archiveIsNotDelete.body} ${ARCHIVE_COPY.restore.body}`;
-const GIFT_DATE_NOT_RECORDED = "Gift date not recorded";
-const GIFT_GRAIN_WHOLE = "One whole gift";
-const GIFT_GRAIN_ALLOCATION = "One allocation of a split gift";
-const GIFT_REFUND_LABEL = "Refund or correction of an earlier gift";
-const COMMITMENT_PER_OCCURRENCE = "Per occurrence";
-const TASK_WITHOUT_DUE_DATE = "No due date";
-const TASK_PLANNED_IS_NOT_HELD = "a planned time is not a held meeting";
-const TASKS_PROVE_NOTHING = "A completed task records that the work was closed. It proves nothing about contact, payment or fulfilment.";
-const SUPPORT_BASIS_LEAD = "Received support on the named basis";
-const COMMITMENTS_GROUP_TITLE = "Recurring commitments the source states";
-const SUPPORT_LEDGER_LINK_LABEL = "See every gift recorded for this partner";
 const CONTACT_METHOD_KIND_LABELS: Readonly<Record<ContactMethodKind, string>> = { email: "Email address", phone: "Phone number", postal: "Postal address" };
-/** The two contact methods a handoff exists for. A postal line leaves the application on no scheme, so it keeps its value and offers none. */
-type ContactHandoff = { readonly scheme: "mailto:" | "tel:"; readonly label: string };
-const CONTACT_HANDOFFS: Readonly<Partial<Record<ContactMethodKind, ContactHandoff>>> = { email: { scheme: "mailto:", label: "Email" }, phone: { scheme: "tel:", label: "Call" } };
+/** The two contact methods a handoff exists for: a postal line leaves the application on no scheme, so it keeps its value and offers none. */
+const CONTACT_HANDOFFS: Readonly<Partial<Record<ContactMethodKind, { readonly scheme: "mailto:" | "tel:"; readonly label: string }>>> = { email: { scheme: "mailto:", label: "Email" }, phone: { scheme: "tel:", label: "Call" } };
 const CONTACT_HANDOFF_CLASS = cn(buttonVariants({ variant: "outline", size: "sm" }), "h-auto min-h-6 max-w-full whitespace-normal py-1.5");
 const CONTACT_METHODS_HANDOFF = `${INTERACTION_COPY.whatDoesNot.body} ${CONTACT_HANDOFF_COPY.recordsNothing.body}`;
 const PRECISION_WORDS: Readonly<Record<InteractionRecord["precision"], string>> = { date: "Date recorded", approximate: "Approximate date", unknown: "Date not known" };
-const TASK_STATUS_LABELS: Readonly<Record<TaskRecord["status"], StatusBadgeSpec>> = { open: { label: "Open", tone: "info" }, completed: { label: "Completed", tone: "positive" }, reopened: { label: "Reopened", tone: "caution" }, cancelled: { label: "Cancelled", tone: "muted" } };
 const NOTICE_HEADING_BY_LAYOUT: Readonly<Record<RecordDetailLayout, NoticeHeadingLevel>> = { page: 3, panel: 4, sheet: 4 };
 const STATES_WITH_A_NUMBER: ReadonlySet<ValueState> = new Set<ValueState>(["value", "zero", "incomplete-subtotal"]);
-function partnerKindLabel(kind: PartnerKind): string {
-  return FACET_VALUE_LABELS["contact-type"][kind] ?? kind;
-}
-function valueStateOf(valueStates: Readonly<Record<string, ValueState>>, path: string): ValueState {
-  return valueStates[path] ?? "unknown";
-}
-function retryOf(onRetry: (() => void) | undefined): NoticeRetry | undefined {
-  return onRetry === undefined ? undefined : { label: PARTNER_ACTION_LABELS.retry, onClick: onRetry };
-}
-function coverageNoticeOf(coverage: Coverage): SectionNoticeState | undefined {
-  return coverage.state === "complete" ? undefined : "partial-coverage";
+const partnerKindLabel = (kind: PartnerKind): string => FACET_VALUE_LABELS["contact-type"][kind] ?? kind;
+const valueStateOf = (valueStates: Readonly<Record<string, ValueState>>, path: string): ValueState => valueStates[path] ?? "unknown";
+const coverageNoticeOf = (coverage: Coverage): SectionNoticeState | undefined => (coverage.state === "complete" ? undefined : "partial-coverage");
+function FactLine({ className, label, value }: { readonly className: string; readonly label?: string; readonly value: ReactNode }): ReactElement {
+  return (
+    <p className={className}>
+      {label === undefined ? null : <span className="sr-only">{label}</span>}
+      {value}
+    </p>
+  );
 }
 function PartnerAmount({ amount, valueState, locale }: { readonly amount: GiftRowRecord["amount"]; readonly valueState: ValueState; readonly locale: string }): ReactElement {
   const formatted = formatMinor(amount, valueState, locale);
   const word = valueStateWord(valueState);
-  const chip = (
-    <span aria-hidden="true">
-      <StatusBadge label={word?.label ?? formatted.text} tone={word?.tone ?? "muted"} />
-    </span>
-  );
-  if (!STATES_WITH_A_NUMBER.has(valueState)) {
-    return (
-      <span className="inline-flex flex-wrap items-baseline gap-2" title={formatted.accessibleLabel}>
-        <span className="sr-only">{formatted.accessibleLabel}</span>
-        {chip}
-      </span>
-    );
-  }
+  const numbered = STATES_WITH_A_NUMBER.has(valueState);
   return (
     <span className="inline-flex flex-wrap items-baseline gap-2" title={formatted.accessibleLabel}>
       <span className="sr-only">{formatted.accessibleLabel}</span>
-      <bdi aria-hidden="true" className="tabular-figures">
-        {formatted.text}
-      </bdi>
-      {word === undefined ? null : chip}
+      {numbered ? <bdi {...{ "aria-hidden": "true", className: "tabular-figures" }}>{formatted.text}</bdi> : null}
+      {numbered && word === undefined ? null : (
+        <span aria-hidden="true">
+          <StatusBadge label={word?.label ?? formatted.text} tone={word?.tone ?? "muted"} />
+        </span>
+      )}
     </span>
   );
 }
@@ -129,15 +95,7 @@ function SupportFigures({ figures, valueStates, locale }: { readonly figures: re
         return (
           <div key={`${figure.path}-${String(index)}`} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
             <dt className="text-muted-foreground">{figure.label}</dt>
-            <dd className="flex flex-wrap items-baseline gap-2">
-              {figure.href === undefined ? (
-                amount
-              ) : (
-                <Link className="underline-offset-4 hover:underline" href={figure.href}>
-                  {amount}
-                </Link>
-              )}
-            </dd>
+            <dd className="flex flex-wrap items-baseline gap-2">{figure.href === undefined ? amount : <Link {...{ className: "underline-offset-4 hover:underline", href: figure.href }}>{amount}</Link>}</dd>
           </div>
         );
       })}
@@ -146,21 +104,16 @@ function SupportFigures({ figures, valueStates, locale }: { readonly figures: re
 }
 function ValueStateNotes({ states }: { readonly states: readonly ValueState[] }): ReactElement | null {
   const distinct = [...new Set(states)].filter((state) => state !== "value");
-  if (distinct.length === 0) {
-    return null;
-  }
+  if (distinct.length === 0) return null;
   return (
     <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
-      {distinct.map((state) => {
-        const copy = VALUE_STATE_COPY[state];
-        return (
-          <li key={state}>
-            <span className="font-medium">{copy.phrase}</span>
-            {" — "}
-            {copy.explanation ?? copy.accessibleLabel}
-          </li>
-        );
-      })}
+      {distinct.map((state) => (
+        <li key={state}>
+          <span className="font-medium">{VALUE_STATE_COPY[state].phrase}</span>
+          {" — "}
+          {VALUE_STATE_COPY[state].explanation ?? VALUE_STATE_COPY[state].accessibleLabel}
+        </li>
+      ))}
     </ul>
   );
 }
@@ -181,132 +134,88 @@ type SectionNoticeProps = {
 function SectionNotice({ surface, state, headingLevel, actionHref, onAction, source, retry, coverage, reasonCode, description, className }: SectionNoticeProps): ReactElement {
   const copy = SURFACE_STATE_COPY[surface][state];
   const action: NoticeAction | undefined = copy.actionLabel === undefined || (actionHref === undefined && onAction === undefined) ? undefined : { label: copy.actionLabel, href: actionHref, onClick: onAction };
-  return (
-    <StateNotice
-      kind={state}
-      title={copy.title}
-      description={description ?? copy.body}
-      action={action}
-      source={source}
-      retry={retry}
-      coverage={coverage}
-      reasonCode={reasonCode}
-      headingLevel={headingLevel}
-      // The notice keeps its own alignment at the start of the section it sits in, so a
-      // right-to-left record does not leave its notices flush to the opposite edge.
-      className={cn("text-start", className)}
-    />
-  );
+  return <StateNotice kind={state} title={copy.title} description={description ?? copy.body} action={action} source={source} retry={retry} coverage={coverage} reasonCode={reasonCode} headingLevel={headingLevel} className={cn("text-start", className)} />;
 }
 function ReadNotice<T>({ read, surface, headingLevel }: { readonly read: Exclude<PartnerReadResult<T>, { kind: "read" }>; readonly surface: PartnersSurface; readonly headingLevel: NoticeHeadingLevel }): ReactElement {
   switch (read.kind) {
     case "loading":
-      return <StateNotice kind="loading" title={READING_RECORD_TITLE} headingLevel={headingLevel} loadingLines={4} />;
+      return <StateNotice kind="loading" title="Reading this partner record" headingLevel={headingLevel} loadingLines={4} />;
     case "unavailable":
-      return <SectionNotice surface={surface} state="unavailable" headingLevel={headingLevel} source={read.source} retry={retryOf(read.onRetry)} />;
+      return <SectionNotice surface={surface} state="unavailable" headingLevel={headingLevel} source={read.source} retry={read.onRetry === undefined ? undefined : { label: PARTNER_ACTION_LABELS.retry, onClick: read.onRetry }} />;
     case "denied":
       return <SectionNotice surface={surface} state="denied" headingLevel={headingLevel} reasonCode={read.reasonCode} onAction={read.onSwitchContext} />;
     case "refused":
-      // The request this section's read was asked to serve is not one it admits, so the refusal's own
-      // words replace the section rather than an outage claim about the partner source.
       return <SectionNotice surface={surface} state="refused" headingLevel={headingLevel} description={refusalSummary(read)} />;
   }
 }
 function ContactMethodsBody({ partner }: { readonly partner: PartnerRecord }): ReactElement {
+  const methodLine = (method: PartnerRecord["contactMethods"][number], index: number): ReactElement => {
+    const handoff = CONTACT_HANDOFFS[method.kind];
+    return (
+      <li key={`${method.kind}-${String(index)}`} className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-muted-foreground">{CONTACT_METHOD_KIND_LABELS[method.kind]}</span>
+        <bdi className="mono-identifier text-sm">{method.value}</bdi>
+        <StatusBadge label={method.permitted ? "Permitted on this record" : "Not permitted on this record"} tone={method.permitted ? "positive" : "muted"} srPrefix={CONTACT_METHOD_KIND_LABELS[method.kind]} />
+        {/* The row keeps the value the record stores and offers the handoff beside it: the link carries that value unchanged, and its hidden half names the value it would open, so the visible word alone never leaves two rows reading the same. */}
+        {handoff === undefined ? null : (
+          <a href={`${handoff.scheme}${method.value}`} className={CONTACT_HANDOFF_CLASS}>
+            {handoff.label}
+            <span className="sr-only">{`: ${method.value}`}</span>
+          </a>
+        )}
+      </li>
+    );
+  };
   const offersHandoff = partner.contactMethods.some((method) => CONTACT_HANDOFFS[method.kind] !== undefined);
   return (
     <div className="flex flex-col gap-3">
-      {partner.contactMethods.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{PERMISSION_FACT_COPY.contactability.whenAbsent}</p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {partner.contactMethods.map((method, index) => {
-            const handoff = CONTACT_HANDOFFS[method.kind];
-            return (
-              <li key={`${method.kind}-${String(index)}`} className="flex flex-wrap items-center gap-2">
-                <span className="text-sm text-muted-foreground">{CONTACT_METHOD_KIND_LABELS[method.kind]}</span>
-                {/* An address, a number and a postal line are weak-direction values, so each is
-                    isolated: a right-to-left neighbour cannot reorder it, and a leading zero survives. */}
-                <bdi className="mono-identifier text-sm">{method.value}</bdi>
-                <StatusBadge label={method.permitted ? CONTACT_METHOD_PERMITTED : CONTACT_METHOD_NOT_PERMITTED} tone={method.permitted ? "positive" : "muted"} srPrefix={CONTACT_METHOD_KIND_LABELS[method.kind]} />
-                {/* The row keeps the value the record stores and offers the handoff beside it: the link carries
-                    that value unchanged, and its hidden half names the value it would open so the visible word
-                    alone never leaves two rows reading the same. */}
-                {handoff === undefined ? null : (
-                  <a href={`${handoff.scheme}${method.value}`} className={CONTACT_HANDOFF_CLASS}>
-                    {handoff.label}
-                    <span className="sr-only">{`: ${method.value}`}</span>
-                  </a>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {partner.contactMethods.length === 0 ? <p className="text-sm text-muted-foreground">{PERMISSION_FACT_COPY.contactability.whenAbsent}</p> : <ul className="flex flex-col gap-2">{partner.contactMethods.map(methodLine)}</ul>}
       {offersHandoff ? <p className="text-sm text-muted-foreground">{CONTACT_METHODS_HANDOFF}</p> : null}
       <p className="text-sm text-muted-foreground">{PERMISSION_FACT_COPY.contactability.explanation}</p>
-      <p className="text-sm text-muted-foreground">{CONTACT_METHODS_SEPARATE_FACTS}</p>
-      <p className="text-xs text-muted-foreground">{CONTACT_METHODS_UNVERIFIED}</p>
+      <p className="text-sm text-muted-foreground">{`Contactability only — ${PERMISSION_FACT_COPY.communicationConsent.label} and ${PERMISSION_FACT_COPY.protectedReaderGrant.label} are separate facts, recorded separately, and none of the three stands in for another.`}</p>
+      <p className="text-xs text-muted-foreground">This application verifies none of these details, so a value here is what the record holds rather than a confirmed address or number.</p>
     </div>
   );
 }
 function RestrictionsBody({ partner }: { readonly partner: PartnerRecord }): ReactElement {
-  if (partner.restrictions.length === 0) {
-    return <p className="text-sm text-muted-foreground">{NO_RESTRICTION_RECORDED}</p>;
-  }
-  return (
-    <ul className="flex flex-col gap-2">
-      {partner.restrictions.map((restriction, index) => (
-        <li key={`${restriction.kind}-${String(index)}`} className="flex flex-wrap items-baseline gap-2">
-          <Badge variant="outline">
-            <bdi>{restriction.kind}</bdi>
-          </Badge>
-          <span className="text-sm">
-            <bdi>{restriction.detail}</bdi>
-          </span>
-        </li>
-      ))}
-    </ul>
+  if (partner.restrictions.length === 0) return <p className="text-sm text-muted-foreground">No restriction is recorded for this relationship.</p>;
+  const restrictionLine = (restriction: PartnerRecord["restrictions"][number], index: number): ReactElement => (
+    <li key={`${restriction.kind}-${String(index)}`} className="flex flex-wrap items-baseline gap-2">
+      <Badge variant="outline">
+        <bdi>{restriction.kind}</bdi>
+      </Badge>
+      <bdi className="text-sm">{restriction.detail}</bdi>
+    </li>
   );
+  return <ul className="flex flex-col gap-2">{partner.restrictions.map(restrictionLine)}</ul>;
+}
+function CounterpartName({ counterpart }: { readonly counterpart: NonNullable<PartnerRelationship["counterpart"]> }): ReactElement {
+  const name = <bdi>{counterpart.displayName}</bdi>;
+  return counterpart.href === undefined ? <span className="text-sm">{name}</span> : <Link {...{ className: "text-sm underline-offset-4 hover:underline", href: counterpart.href }}>{name}</Link>;
 }
 function RelationshipBody({ relationships }: { readonly relationships: readonly PartnerRelationship[] }): ReactElement {
+  const relationshipLine = (relationship: PartnerRelationship, index: number): ReactElement => {
+    const counterpart = relationship.counterpart;
+    return (
+      <li key={`${relationship.label}-${String(index)}`} className="flex flex-col gap-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">
+            <bdi>{relationship.label}</bdi>
+          </Badge>
+          {counterpart === undefined ? null : (
+            <>
+              <CounterpartName counterpart={counterpart} />
+              <span className="text-xs text-muted-foreground">{partnerKindLabel(counterpart.kind)}</span>
+            </>
+          )}
+        </div>
+        {relationship.detail === undefined ? null : <FactLine className="text-sm text-muted-foreground" value={<bdi>{relationship.detail}</bdi>} />}
+      </li>
+    );
+  };
   return (
     <div className="flex flex-col gap-3">
-      {relationships.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{NO_RELATIONSHIP_RECORDED}</p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {relationships.map((relationship, index) => (
-            <li key={`${relationship.label}-${String(index)}`} className="flex flex-col gap-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">
-                  <bdi>{relationship.label}</bdi>
-                </Badge>
-                {relationship.counterpart === undefined ? null : (
-                  <>
-                    {relationship.counterpart.href === undefined ? (
-                      <span className="text-sm">
-                        <bdi>{relationship.counterpart.displayName}</bdi>
-                      </span>
-                    ) : (
-                      <Link className="text-sm underline-offset-4 hover:underline" href={relationship.counterpart.href}>
-                        <bdi>{relationship.counterpart.displayName}</bdi>
-                      </Link>
-                    )}
-                    <span className="text-xs text-muted-foreground">{partnerKindLabel(relationship.counterpart.kind)}</span>
-                  </>
-                )}
-              </div>
-              {relationship.detail === undefined ? null : (
-                <p className="text-sm text-muted-foreground">
-                  <bdi>{relationship.detail}</bdi>
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {/* A static explanation, so its container carries no live-region role of its own. */}
+      {relationships.length === 0 ? <p className="text-sm text-muted-foreground">No relationship label is recorded for this record.</p> : <ul className="flex flex-col gap-2">{relationships.map(relationshipLine)}</ul>}
       <Alert role={undefined} className="bg-muted/40">
         <AlertTitle>{IDENTITY_COPY.distinctKinds.title}</AlertTitle>
         <AlertDescription>
@@ -321,48 +230,24 @@ function InteractionItem({ interaction }: { readonly interaction: InteractionRec
   return (
     <li className="flex flex-col gap-1">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span className="text-sm font-medium">
-          <bdi>{interaction.type}</bdi>
-        </span>
+        <bdi className="text-sm font-medium">{interaction.type}</bdi>
         <span className="text-xs text-muted-foreground">{PRECISION_WORDS[interaction.precision]}</span>
       </div>
-      {interaction.occurredOn === null ? null : (
-        <p className="text-sm">
-          <bdi className="mono-identifier">{interaction.occurredOn}</bdi>
-        </p>
-      )}
-      {interaction.outcome.length === 0 ? null : (
-        <p className="text-sm text-muted-foreground">
-          <bdi>{interaction.outcome}</bdi>
-        </p>
-      )}
-      {roles.length === 0 ? null : (
-        <p className="text-xs text-muted-foreground">
-          <span className="sr-only">Participants: </span>
-          <bdi>{roles.join(", ")}</bdi>
-        </p>
-      )}
+      {interaction.occurredOn === null ? null : <FactLine className="text-sm" value={<bdi className="mono-identifier">{interaction.occurredOn}</bdi>} />}
+      {interaction.outcome.length === 0 ? null : <FactLine className="text-sm text-muted-foreground" value={<bdi>{interaction.outcome}</bdi>} />}
+      {roles.length === 0 ? null : <FactLine className="text-xs text-muted-foreground" label="Participants: " value={<bdi>{roles.join(", ")}</bdi>} />}
       {interaction.note === null ? null : (
         <div className="flex flex-col gap-1 rounded-lg border border-border p-2">
           <StatusBadge label={AUDIENCE_LABEL_COPY[interaction.note.audience].label} tone="muted" srPrefix="Note audience" />
-          <p className="whitespace-pre-line text-sm">
-            <bdi>{interaction.note.body}</bdi>
-          </p>
+          <bdi className="whitespace-pre-line text-sm">{interaction.note.body}</bdi>
         </div>
       )}
-      {interaction.provenance === null ? null : (
-        <p className="text-xs text-muted-foreground">
-          <span className="sr-only">{`Recorded by the ${interaction.provenance.system} source as `}</span>
-          <bdi className="mono-identifier">{interaction.provenance.reference}</bdi>
-        </p>
-      )}
+      {interaction.provenance === null ? null : <FactLine className="text-xs text-muted-foreground" label={`Recorded by the ${interaction.provenance.system} source as `} value={<bdi className="mono-identifier">{interaction.provenance.reference}</bdi>} />}
     </li>
   );
 }
 function ActivityBody({ read, headingLevel, composer, links }: { readonly read: PartnerReadResult<readonly InteractionRecord[]>; readonly headingLevel: NoticeHeadingLevel; readonly composer?: ReactNode; readonly links: PartnerDetailLinks }): ReactElement {
-  if (read.kind !== "read") {
-    return <ReadNotice read={read} surface="interactions" headingLevel={headingLevel} />;
-  }
+  if (read.kind !== "read") return <ReadNotice read={read} surface="interactions" headingLevel={headingLevel} />;
   const interactions = read.envelope.data;
   const partial = coverageNoticeOf(read.envelope.coverage);
   return (
@@ -385,36 +270,29 @@ function ActivityBody({ read, headingLevel, composer, links }: { readonly read: 
   );
 }
 function PrivateNoteItem({ note }: { readonly note: PrivateNoteRecord }): ReactElement {
-  const audience = AUDIENCE_LABEL_COPY[note.audience];
   return (
     <li className="flex flex-col gap-1">
-      <StatusBadge label={audience.label} tone="muted" srPrefix="Audience" />
+      <StatusBadge label={AUDIENCE_LABEL_COPY[note.audience].label} tone="muted" srPrefix="Audience" />
       <p className="whitespace-pre-line text-sm">
         <bdi>{note.body}</bdi>
       </p>
-      <p className="text-xs text-muted-foreground">
-        <span className="sr-only">Written at </span>
-        <bdi className="mono-identifier">{note.createdAt}</bdi>
-      </p>
+      <FactLine className="text-xs text-muted-foreground" label="Written at " value={<bdi className="mono-identifier">{note.createdAt}</bdi>} />
     </li>
   );
 }
 function PrivateNotesBody({ read, headingLevel, composer, preparation: preparationAction, links }: { readonly read: PartnerReadResult<PartnerPrivateData>; readonly headingLevel: NoticeHeadingLevel; readonly composer?: ReactNode; readonly preparation?: ReactNode; readonly links: PartnerDetailLinks }): ReactElement {
-  if (read.kind !== "read") {
-    return <ReadNotice read={read} surface="private-preparation" headingLevel={headingLevel} />;
-  }
+  if (read.kind !== "read") return <ReadNotice read={read} surface="private-preparation" headingLevel={headingLevel} />;
   const { notes, preparation } = read.envelope.data;
   const archived = preparation?.archived === true;
   return (
     <div className="flex flex-col gap-3">
       {composer}
-      {/* The preparation record's own lifecycle sits beside the note composer: private preparation is this
-          section's record class, and a shared record is handed no control here at all. */}
+      {/* The preparation record's own lifecycle sits beside the note composer: private preparation is this section's record class, and a shared record is handed no control here at all. */}
       {preparationAction}
       {archived ? (
         <div className="flex flex-col gap-1">
-          <StatusBadge label={PREPARATION_ARCHIVED_LABEL} tone="muted" srPrefix="Private preparation" />
-          <p className="text-sm text-muted-foreground">{PREPARATION_ARCHIVED_EXPLANATION}</p>
+          <StatusBadge label="Preparation archived" tone="muted" srPrefix="Private preparation" />
+          <p className="text-sm text-muted-foreground">{`${ARCHIVE_COPY.archiveIsNotDelete.body} ${ARCHIVE_COPY.restore.body}`}</p>
         </div>
       ) : null}
       {notes.length === 0 ? (
@@ -422,7 +300,7 @@ function PrivateNotesBody({ read, headingLevel, composer, preparation: preparati
       ) : (
         <Card size="sm" className="bg-muted/30">
           <CardHeader>
-            <CardTitle className="text-sm">{PRIVATE_NOTES_CARD_TITLE}</CardTitle>
+            <CardTitle className="text-sm">What you wrote</CardTitle>
             <CardDescription>{PRIVATE_RECORD_COPY.noteIsPrivate.body}</CardDescription>
           </CardHeader>
           <CardContent>
@@ -442,33 +320,20 @@ function TaskItem({ task }: { readonly task: TaskRecord }): ReactElement {
   return (
     <li className="flex flex-col gap-1">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <span className="text-sm font-medium">
-          <bdi>{task.title}</bdi>
-        </span>
-        <StatusBadge {...TASK_STATUS_LABELS[task.status]} srPrefix="Task status" />
+        <bdi className="text-sm font-medium">{task.title}</bdi>
+        <StatusBadge {...TASK_STATUS[task.status]} srPrefix="Task status" />
       </div>
-      <p className="text-xs text-muted-foreground">
-        {task.dueOn === null ? (
-          TASK_WITHOUT_DUE_DATE
-        ) : (
-          <>
-            <span className="sr-only">Due </span>
-            <bdi className="mono-identifier">{task.dueOn}</bdi>
-          </>
-        )}
-      </p>
+      <FactLine className="text-xs text-muted-foreground" label={task.dueOn === null ? undefined : "Due "} value={task.dueOn === null ? "No due date" : <bdi className="mono-identifier">{task.dueOn}</bdi>} />
       {task.plannedTime === null || task.timeZone === null ? null : (
         <p className="text-xs text-muted-foreground">
           <span className="sr-only">Planned time </span>
-          <bdi className="mono-identifier">{task.plannedTime}</bdi> <bdi>{task.timeZone}</bdi> — {TASK_PLANNED_IS_NOT_HELD}
+          <bdi className="mono-identifier">{task.plannedTime}</bdi> <bdi>{task.timeZone}</bdi> — a planned time is not a held meeting
         </p>
       )}
       {task.category === null ? null : (
-        <div>
-          <Badge variant="outline">
-            <bdi>{task.category}</bdi>
-          </Badge>
-        </div>
+        <Badge variant="outline">
+          <bdi>{task.category}</bdi>
+        </Badge>
       )}
     </li>
   );
@@ -487,7 +352,7 @@ function OpenTasksBody({ tasks, coverage, headingLevel, links }: { readonly task
               <TaskItem key={task.taskId} task={task} />
             ))}
           </ul>
-          <p className="text-xs text-muted-foreground">{TASKS_PROVE_NOTHING}</p>
+          <p className="text-xs text-muted-foreground">A completed task records that the work was closed. It proves nothing about contact, payment or fulfilment.</p>
         </>
       )}
     </div>
@@ -500,20 +365,16 @@ function GiftItem({ row, valueState, locale }: { readonly row: PartnerSupportGif
       <div className="flex min-w-0 flex-col gap-1">
         <span className="text-sm">
           <span className="sr-only">{`${PRECISION_WORDS[gift.datePrecision]}: `}</span>
-          {gift.originalGiftOn === null ? <span className="text-muted-foreground">{GIFT_DATE_NOT_RECORDED}</span> : <bdi className="mono-identifier">{gift.originalGiftOn}</bdi>}
+          {gift.originalGiftOn === null ? <span className="text-muted-foreground">Gift date not recorded</span> : <bdi className="mono-identifier">{gift.originalGiftOn}</bdi>}
         </span>
-        <span className="text-xs text-muted-foreground">{gift.allocationId === null ? GIFT_GRAIN_WHOLE : GIFT_GRAIN_ALLOCATION}</span>
+        <span className="text-xs text-muted-foreground">{gift.allocationId === null ? "One whole gift" : "One allocation of a split gift"}</span>
         {gift.designation === null ? null : (
           <span className="text-xs text-muted-foreground">
             <span className="sr-only">Designation </span>
             <bdi>{gift.designation}</bdi>
           </span>
         )}
-        {gift.refundOf === null ? null : (
-          <div>
-            <StatusBadge label={GIFT_REFUND_LABEL} tone="caution" srPrefix="This row" />
-          </div>
-        )}
+        {gift.refundOf === null ? null : <StatusBadge label="Refund or correction of an earlier gift" tone="caution" srPrefix="This row" />}
       </div>
       <PartnerAmount amount={gift.amount} valueState={valueState} locale={locale} />
     </li>
@@ -524,12 +385,8 @@ function CommitmentItem({ row, valueState, locale }: { readonly row: PartnerSupp
   return (
     <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <div className="flex min-w-0 flex-col gap-1">
-        <span className="text-sm">
-          <bdi>{commitment.cadence}</bdi>
-        </span>
-        <div>
-          <StatusBadge {...statusBadgeProps(BUCKET_STATUS, commitment.bucketState)} srPrefix="Recurring outcome" />
-        </div>
+        <bdi className="text-sm">{commitment.cadence}</bdi>
+        <StatusBadge {...statusBadgeProps(BUCKET_STATUS, commitment.bucketState)} srPrefix="Recurring outcome" />
         {commitment.nextEligibleOn === null ? null : (
           <span className="text-xs text-muted-foreground">
             <span className="sr-only">Next eligible on </span>
@@ -538,21 +395,25 @@ function CommitmentItem({ row, valueState, locale }: { readonly row: PartnerSupp
         )}
       </div>
       <div className="flex flex-col items-end gap-1">
-        <span className="text-xs text-muted-foreground">{COMMITMENT_PER_OCCURRENCE}</span>
+        <span className="text-xs text-muted-foreground">Per occurrence</span>
         <PartnerAmount amount={commitment.perOccurrence} valueState={valueState} locale={locale} />
       </div>
     </li>
   );
 }
+function SupportRowList({ rows, title }: { readonly rows: readonly ReactNode[]; readonly title?: string }): ReactElement | null {
+  if (rows.length === 0) return null;
+  return (
+    <>
+      <Separator />
+      {title === undefined ? null : <p className="text-sm font-medium">{title}</p>}
+      <ul className="flex flex-col gap-2">{rows}</ul>
+    </>
+  );
+}
 function SupportHistoryBody({ history, coverage, valueStates, locale, headingLevel }: { readonly history: PartnerSupportHistory; readonly coverage: Coverage; readonly valueStates: Readonly<Record<string, ValueState>>; readonly locale: string; readonly headingLevel: NoticeHeadingLevel }): ReactElement {
   const outage = history.outage;
-  if (outage !== undefined) {
-    // The source is reported down for this session, so the section states that fact with the source it
-    // could not read and the way back to it. No figure list and no period line is rendered: an empty
-    // figure list under a period would read as "no received support", which is the one thing a declared
-    // outage is not, and the module's own unavailable wording already carries the heading.
-    return <SectionNotice surface="support-history" state="unavailable" headingLevel={headingLevel} source={{ system: outage.system, reference: outage.reference }} description={outage.guidance} />;
-  }
+  if (outage !== undefined) return <SectionNotice surface="support-history" state="unavailable" headingLevel={headingLevel} source={{ system: outage.system, reference: outage.reference }} description={outage.guidance} />;
   const gifts = history.gifts ?? [];
   const commitments = history.commitments ?? [];
   const partial = coverageNoticeOf(coverage);
@@ -560,61 +421,40 @@ function SupportHistoryBody({ history, coverage, valueStates, locale, headingLev
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">
-        {SUPPORT_BASIS_LEAD}: <bdi>{history.basis}</bdi>
-        {/* A section that reaches this line resolved a period: the outage arm returned above. */}
+        Received support on the named basis: <bdi>{history.basis}</bdi>
         {history.periodLabel === undefined ? null : <> — {history.periodLabel}</>}
       </p>
       {partial === undefined ? null : <SectionNotice surface="support-history" state={partial} headingLevel={headingLevel} coverage={coverage} />}
       {history.figures.length === 0 ? <SectionNotice surface="support-history" state="empty" headingLevel={headingLevel} /> : <SupportFigures figures={history.figures} valueStates={valueStates} locale={locale} />}
       <ValueStateNotes states={states} />
-      {gifts.length === 0 ? null : (
-        <>
-          <Separator />
-          <ul className="flex flex-col gap-2">
-            {gifts.map((row) => (
-              <GiftItem key={row.gift.giftRowId} row={row} valueState={valueStateOf(valueStates, row.amountPath)} locale={locale} />
-            ))}
-          </ul>
-        </>
-      )}
-      {commitments.length === 0 ? null : (
-        <>
-          <Separator />
-          <p className="text-sm font-medium">{COMMITMENTS_GROUP_TITLE}</p>
-          <ul className="flex flex-col gap-2">
-            {commitments.map((row) => (
-              <CommitmentItem key={row.commitment.commitmentRowId} row={row} valueState={valueStateOf(valueStates, row.amountPath)} locale={locale} />
-            ))}
-          </ul>
-        </>
-      )}
-      {history.ledgerHref === undefined ? null : (
-        <Link className="text-sm underline-offset-4 hover:underline" href={history.ledgerHref}>
-          {SUPPORT_LEDGER_LINK_LABEL}
-        </Link>
-      )}
+      <SupportRowList
+        rows={gifts.map((row) => (
+          <GiftItem key={row.gift.giftRowId} row={row} valueState={valueStateOf(valueStates, row.amountPath)} locale={locale} />
+        ))}
+      />
+      <SupportRowList
+        title="Recurring commitments the source states"
+        rows={commitments.map((row) => (
+          <CommitmentItem key={row.commitment.commitmentRowId} row={row} valueState={valueStateOf(valueStates, row.amountPath)} locale={locale} />
+        ))}
+      />
+      {history.ledgerHref === undefined ? null : <Link {...{ className: "text-sm underline-offset-4 hover:underline", href: history.ledgerHref }}>See every gift recorded for this partner</Link>}
     </div>
   );
 }
 function RecordAudienceStatus({ record }: { readonly record: PartnerRecord }): ReactElement {
-  const audienceLabel = FACET_VALUE_LABELS["preparation-state"][record.audience] ?? record.audience;
   return (
     <div className="flex flex-col items-end gap-1">
-      <StatusBadge label={audienceLabel} tone={record.audience === "private" ? "muted" : "neutral"} srPrefix="Audience" />
+      <StatusBadge label={FACET_VALUE_LABELS["preparation-state"][record.audience] ?? record.audience} tone={record.audience === "private" ? "muted" : "neutral"} srPrefix="Audience" />
       {record.stage === null ? null : <StatusBadge label={record.stage} tone="info" srPrefix="Stage" />}
     </div>
   );
 }
 export default function PartnerDetailSections({ partner, privatePreparation, interactions, layout, locale, actions, links = {}, breadcrumb }: PartnerDetailSectionsProps): ReactElement {
   const headingLevel = NOTICE_HEADING_BY_LAYOUT[layout];
-  // A record that was refused or never arrived is reported as that fact, never as a body with no
-  // sections: an identity heading would be a name this read never supplied, and the notice carries no
-  // count, title or size for anything behind it.
-  if (partner.kind !== "read") {
-    return <ReadNotice read={partner} surface="partner-detail" headingLevel={layout === "page" ? 1 : 2} />;
-  }
+  if (partner.kind !== "read") return <ReadNotice read={partner} surface="partner-detail" headingLevel={layout === "page" ? 1 : 2} />;
   const { envelope } = partner;
-  const { partner: record } = envelope.data;
+  const record = envelope.data.partner;
   const identity: RecordDetailIdentity = { displayName: record.displayName, secondaryName: envelope.data.secondaryName, kind: partnerKindLabel(record.kind), avatarSrc: envelope.data.avatarSrc, reference: record.source ?? undefined };
   const sections: RecordDetailSectionSlots = {
     contactMethods: <ContactMethodsBody partner={record} />,

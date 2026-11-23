@@ -1,14 +1,11 @@
-/** `GET /api/coaching/targets` — the worker's own targets and their measured periods — and `POST /api/coaching/targets`, the four named changes a target admits. */
+import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { assertNever } from "@/lib/result";
-import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse } from "@/modules/data-service";
+import { mutationInputSchema, mutations, reads } from "@/modules/data-service";
 import { pagingParamsOf, pagingQuerySchema } from "../../paging";
-import { dispatch, jsonBodyOf, operationIdentityOf } from "../../handler";
-/** The store reads and writes through `node:fs`, so this handler never runs on the edge runtime. */
+import { claimedWriteRoute, claimedWrites } from "../../handler";
+import { READ_ATTEMPT, readGrammar, readRoute } from "../../read";
 export const runtime = "nodejs";
-/** Both verbs resolve the development session and evaluate the scenario clock once per request. */
 export const dynamic = "force-dynamic";
-const READ_ATTEMPT_ID = "read";
 const MESSAGES = {
   operationRequired: "State which change this request makes as payload.operation: saveTarget, editTarget, pauseTarget or endTarget.",
   bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.",
@@ -25,40 +22,16 @@ const editTargetBodySchema = mutationInputSchema(z.custom<WirePayload<EditTarget
 const pauseTargetBodySchema = mutationInputSchema(z.custom<WirePayload<PauseTargetPayload, "pauseTarget">>());
 const endTargetBodySchema = mutationInputSchema(z.custom<WirePayload<EndTargetPayload, "endTarget">>());
 const TARGET_OPERATIONS = ["saveTarget", "editTarget", "pauseTarget", "endTarget"] as const;
-type TargetListQuery = Parameters<typeof reads.coaching.readTargets>[0];
+type TargetOperation = (typeof TARGET_OPERATIONS)[number];
 const targetListQuerySchema = pagingQuerySchema({ page: MESSAGES.pageInvalid, pageSize: MESSAGES.pageSizeInvalid });
 const discriminantSchema = z.object({ payload: z.object({ operation: z.enum(TARGET_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.bodyNotJson });
 /** One page of the worker's targets, each with its versions and its measured periods. */
-export async function GET(request: Request): Promise<Response> {
-  try {
-    const grammar = targetListQuerySchema.safeParse(pagingParamsOf(new URL(request.url).searchParams));
-    if (!grammar.success) {
-      // A paging value this read does not admit is a request-level refusal answered with the same per-field `invalid` outcome the four mutations on this path answer, because no source behind the read failed and the caller has to be told which parameter to correct.
-      return toResponse(outcomeFromError(READ_ATTEMPT_ID, grammar.error));
-    }
-    return toResponse(await reads.coaching.readTargets(grammar.data satisfies TargetListQuery));
-  } catch (error) {
-    // One mapper knows the difference between a store outage, a session that cannot be established and a lost acknowledgement, so a thrown fault is answered rather than escaping the boundary.
-    return toResponse(outcomeFromError(READ_ATTEMPT_ID, error));
-  }
-}
+export const GET = readRoute(readGrammar(targetListQuerySchema, pagingParamsOf), (query) => reads.coaching.readTargets(query), READ_ATTEMPT);
+const TARGET_WRITES = claimedWrites<TargetOperation>("operation", {
+  saveTarget: [saveTargetBodySchema, mutations.coaching.saveTarget],
+  editTarget: [editTargetBodySchema, mutations.coaching.editTarget],
+  pauseTarget: [pauseTargetBodySchema, mutations.coaching.pauseTarget],
+  endTarget: [endTargetBodySchema, mutations.coaching.endTarget],
+});
 /** One named target mutation, selected by `payload.operation`. */
-export async function POST(request: Request): Promise<Response> {
-  const raw = await jsonBodyOf(request);
-  const operationId = operationIdentityOf(raw);
-  const claimed = discriminantSchema.safeParse(raw);
-  if (!claimed.success) return toResponse(outcomeFromError(operationId, claimed.error));
-  switch (claimed.data.payload.operation) {
-    case "saveTarget":
-      return dispatch(saveTargetBodySchema, raw, operationId, "operation", mutations.coaching.saveTarget);
-    case "editTarget":
-      return dispatch(editTargetBodySchema, raw, operationId, "operation", mutations.coaching.editTarget);
-    case "pauseTarget":
-      return dispatch(pauseTargetBodySchema, raw, operationId, "operation", mutations.coaching.pauseTarget);
-    case "endTarget":
-      return dispatch(endTargetBodySchema, raw, operationId, "operation", mutations.coaching.endTarget);
-    default:
-      // Unreachable: the four names above are the closed set the discriminant schema admits, so a fifth mutation fails to compile at this call instead of reaching the runtime.
-      return assertNever(claimed.data.payload.operation, "Unhandled coaching target mutation");
-  }
-}
+export const POST = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, TARGET_WRITES);

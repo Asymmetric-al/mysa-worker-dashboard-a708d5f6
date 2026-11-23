@@ -1,15 +1,5 @@
 "use client";
-
-/**
- * The Coaching family's one surface for the closed set of stop-type effects — stop sharing a module, withdraw a shared
- * check-in, stop sharing a task summary, end the relationship, the coach leaving, and revoking the grant — offering only
- * the effects the grant's own envelope admits, routing each one through a review and a confirmation to exactly one named
- * mutation, and stating on every effect that the source work is not deleted and that nothing a coach has already read
- * can be recalled; once the episode has ended, every effect is a statement with no control, so a stale save or a
- * re-enable cannot be submitted.
- */
-import { useCallback, useId, useState, type ReactElement } from "react";
-
+import { useId, useState, type ReactElement } from "react";
 import ActionReview, { type MutationSubmit, type ReviewHeadingLevel } from "@/components/action-review";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -20,110 +10,32 @@ import { cn } from "@/lib/cn";
 import type { GrantLifecycleState, ModuleKey } from "@/modules/coaching/grant";
 import type { MutationInput, Scope } from "@/modules/data-service/envelope";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
-
 import { COACHING_COPY, GRANT_STATE_COPY, STOP_EFFECTS, STOP_EFFECT_COPY, type StopEffect } from "../copy";
-import { useEndCoaching, useLeaveCoaching, useRevokeGrant, useSetModule, useStopTaskShare, useWithdrawCheckIn } from "../hooks/use-coaching-mutations";
-import { stopActionFor } from "../schemas/stop";
-
-/** Which identity is acting: the worker whose work is shared, or the coach it was shared with. */
+import { useEndCoaching, useLeaveCoaching, useRevokeGrant, useSetModule, useStopTaskShare, useWithdrawCheckIn } from "../hooks/use-coaching";
+import { stopActionFor } from "../schemas";
 export type StopRole = "worker" | "coach";
-
-/**
- * The identities one stop-type effect needs, handed in by the route from the envelope it read.
- *
- * `moduleKey`, `checkInId`, `checkInRevisionId` and `taskShareId` are present only for the effect that names them.
- * Withdrawing a check-in names two distinct identities — the check-in and the shared revision a coach can read — and
- * neither is derived from the other, so the route supplies both rather than this surface reading one out of the other.
- * `episodeState` is the lifecycle the read resolved, which decides whether any effect is offered at all.
- */
 export type StopTarget = { readonly grantId: string; readonly moduleKey?: ModuleKey; readonly checkInId?: string; readonly checkInRevisionId?: string; readonly taskShareId?: string; readonly episodeState: GrantLifecycleState };
-
 /** The facts one submitted attempt presented: the revision it read and the target it named. */
 type SubmittedAttempt = { readonly expectedRevision: string; readonly target: StopTarget };
-
-export interface StopActionsProps {
-  /**
-   * The effects the grant's own envelope published as available. This surface renders only these: an effect the
-   * envelope withheld is never invented here, and the service re-checks every submission anyway.
-   */
-  readonly available: ReadonlyArray<StopEffect>;
-  readonly target: StopTarget;
-  /** The context the change is submitted in. It is a claim the caller makes; the service re-derives and re-authorises it. */
-  readonly scope: Scope;
-  /** The revision the caller read. Every effect presents it, so a stale attempt settles as a conflict, not an overwrite. */
-  readonly expectedRevision: string;
-  readonly role: StopRole;
-  /** Reads the result of an operation whose acknowledgement was lost, by its operation identity. */
-  readonly onCheckResult?: () => void;
-  readonly headingLevel?: ReviewHeadingLevel;
-  readonly className?: string;
-}
-
-/**
- * The episode states in which no stop-type effect can be applied. A coach who has left is as final as an episode the
- * worker ended, so `left` joins the four states the release names: a revoke or a module change after it would be a
- * stale action answered by a status that no longer means anything.
- */
+export type StopActionsProps = { readonly available: ReadonlyArray<StopEffect>; readonly target: StopTarget; readonly scope: Scope; readonly expectedRevision: string; readonly role: StopRole; readonly onCheckResult?: () => void; readonly headingLevel?: ReviewHeadingLevel; readonly className?: string };
 const TERMINAL_EPISODE_STATES: ReadonlySet<GrantLifecycleState> = new Set<GrantLifecycleState>(["revoked", "expired", "ended", "left", "superseded"]);
-
 const HEADING_TAG: Readonly<Record<ReviewHeadingLevel, "h2" | "h3" | "h4">> = { 2: "h2", 3: "h3", 4: "h4" };
-
-/** A review nests one level under the heading it sits beneath; a level-4 surface keeps its reviews at level 4. */
 const NESTED_LEVEL: Readonly<Record<ReviewHeadingLevel, ReviewHeadingLevel>> = { 2: 3, 3: 4, 4: 4 };
-
-const ROOT_CLASS = "flex min-w-0 flex-col gap-4";
-const HEADER_CLASS = "flex min-w-0 flex-col gap-2";
-const SENTENCE_CLASS = "text-sm text-pretty text-muted-foreground";
-const PANEL_CLASS = "flex min-w-0 flex-col gap-3 rounded-lg border border-border p-3";
-const ROW_CLASS = "flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center";
-const TRIGGER_CLASS = "h-auto min-h-target max-w-full py-2 text-start whitespace-normal";
+const ROOT_CLASS = "flex min-w-0 flex-col gap-4",
+  SENTENCE_CLASS = "text-sm text-pretty text-muted-foreground";
 const REVIEW_BODY_CLASS = "flex min-w-0 flex-col gap-2";
-const IDENTIFIER_CLASS = "mono-identifier min-w-0 wrap-anywhere";
 const STATEMENTS_CLASS = "flex min-w-0 flex-col gap-3";
-const STATEMENT_HEADING_CLASS = "text-sm font-medium";
-
-const SOURCE_WORK_KEPT = "The source work is not deleted: the task, the check-in draft, the target history and your private preparation " + "all stay yours, and they keep working exactly as they do now.";
-const NOTHING_RECALLED = "Nothing a coach has already read can be recalled, and no message is taken back: this stops what can be read " + "from now on, and it cannot undo what has already been seen.";
-const MISSING_IDENTITY_SENTENCE = "This effect names an identity the surface was not given, so nothing is sent. Reopen the relationship from its " + "own page, choose the module, check-in or task summary there, and act on that record instead of this one.";
-const ENDED_EFFECT_SENTENCE = "This effect can no longer be applied: the episode has ended, so there is nothing left here to stop and no " + "control is shown.";
-const NEW_INVITATION_SENTENCE = "Beginning again takes a new invitation from the worker, naming the modules and the duration; no later action " + "here can reopen the episode.";
-const NO_EFFECT_SENTENCE = "No stop-type effect applies to this relationship right now. What is shared stays readable exactly as the invitation named it.";
+const SOURCE_WORK_KEPT = "The source work is not deleted: the task, the check-in draft, the target history and your private preparation all stay yours, and they keep working exactly as they do now.";
+const NOTHING_RECALLED = "Nothing a coach has already read can be recalled, and no message is taken back: this stops what can be read from now on, and it cannot undo what has already been seen.";
 const OTHER_ROLE_NOTE: Readonly<Record<StopRole, string>> = { worker: "Leaving belongs to the coach, so no control for it is offered here.", coach: "Only the worker can take this step, so no control for it is offered here." };
-
-/** Fails the build if a stop effect is added without a place on this surface. */
 function assertUnreachable(effect: never): never {
   throw new Error(`Unhandled stop effect: ${String(effect)}`);
 }
-
-/** Every effect a role may ever hold, in the closed vocabulary's own order, taken from that vocabulary rather than restated. */
-export function effectsForRole(role: StopRole): readonly StopEffect[] {
-  return STOP_EFFECTS.filter((effect) => (role === "coach" ? effect === "coach-leave" : effect !== "coach-leave"));
-}
-
-/** Whether the episode has reached an end, after which every effect is a statement rather than a control. */
-export function isTerminalEpisode(state: GrantLifecycleState): boolean {
-  return TERMINAL_EPISODE_STATES.has(state);
-}
-
-/** The sentences one effect's review states: its own consequence, then the two assurances every stop-type review carries. */
-export function stopReviewSentences(effect: StopEffect): readonly string[] {
-  const copy = STOP_EFFECT_COPY[effect];
-  return [copy.consequence, copy.assurance, SOURCE_WORK_KEPT, NOTHING_RECALLED];
-}
-
-/**
- * Whether a settled attempt keeps its receipt once the route re-reads the relationship.
- *
- * An accepted, replayed or uncertain attempt refreshes the reads, which advances the revision this surface is handed —
- * and, where the change closes one relationship and leaves another live, replaces the grant the surface manages.
- * Holding the facts that were submitted therefore keeps the receipt readable instead of collapsing back to a fresh
- * review of whichever record the route now names. A definite refusal changed nothing, so the live facts are the honest
- * ones there.
- */
+export const effectsForRole = (role: StopRole): readonly StopEffect[] => STOP_EFFECTS.filter((effect) => (role === "coach" ? effect === "coach-leave" : effect !== "coach-leave"));
+export const isTerminalEpisode = (state: GrantLifecycleState): boolean => TERMINAL_EPISODE_STATES.has(state);
+export const stopReviewSentences = (effect: StopEffect): readonly string[] => [STOP_EFFECT_COPY[effect].consequence, STOP_EFFECT_COPY[effect].assurance, SOURCE_WORK_KEPT, NOTHING_RECALLED];
 function holdsReceipt(outcome: MutationOutcome | null): boolean {
-  if (outcome === null) {
-    return false;
-  }
+  if (outcome === null) return false;
   switch (outcome.outcome) {
     case "accepted":
     case "alreadyAccepted":
@@ -139,8 +51,6 @@ function holdsReceipt(outcome: MutationOutcome | null): boolean {
       return assertUnreachable(outcome);
   }
 }
-
-/** The identity an effect names, as the surface shows and announces it; `null` when the route supplied none. */
 function identityOf(effect: StopEffect, target: StopTarget): string | null {
   switch (effect) {
     case "stop-module":
@@ -157,29 +67,21 @@ function identityOf(effect: StopEffect, target: StopTarget): string | null {
       return assertUnreachable(effect);
   }
 }
-
-/** The messages of the one payload schema the mapping table holds for this effect: a refusal here means nothing is sent. */
 function refusalMessages(effect: StopEffect, payload: unknown): readonly string[] {
   const parsed = stopActionFor(effect).schema.safeParse(payload);
   return parsed.success ? [] : parsed.error.issues.map((issue) => issue.message);
 }
-
-/** The two assurances and the effect's own consequence, rendered as the review's body. */
-function ReviewSentences({ effect }: { readonly effect: StopEffect }): ReactElement {
-  return (
-    <div className={REVIEW_BODY_CLASS}>
-      {stopReviewSentences(effect).map((sentence) => (
-        <p key={sentence} className={SENTENCE_CLASS}>
-          {sentence}
-        </p>
-      ))}
-    </div>
-  );
-}
-
+const ReviewSentences = ({ effect }: { readonly effect: StopEffect }): ReactElement => (
+  <div className={REVIEW_BODY_CLASS}>
+    {stopReviewSentences(effect).map((sentence) => (
+      <p key={sentence} className={SENTENCE_CLASS}>
+        {sentence}
+      </p>
+    ))}
+  </div>
+);
 type EffectReviewProps<P> = {
   readonly effect: StopEffect;
-  /** The identifier this effect acts on, shown in the review so the confirmed change names its own record. */
   readonly targetIdentity: string;
   readonly input: Omit<MutationInput<P>, "operationId">;
   readonly submit: MutationSubmit<P>;
@@ -188,14 +90,6 @@ type EffectReviewProps<P> = {
   readonly onCancel: () => void;
   readonly onSettled: (outcome: MutationOutcome) => void;
 };
-
-/**
- * One effect's review, confirmation and receipt: the shared review step renders the effect's own consequence with both
- * assurances, holds the `alert-dialog` confirmation, and prints the one durable receipt for whatever the service answers.
- *
- * The review step also owns the attempt's identity, so the only retry it can offer re-submits that same operationId and
- * the ledger answers with the original result: recovery is by identity, never a fresh send under a new one.
- */
 function EffectReview<P>({ effect, targetIdentity, input, submit, headingLevel, onCheckResult, onCancel, onSettled }: EffectReviewProps<P>): ReactElement {
   const copy = STOP_EFFECT_COPY[effect];
   return (
@@ -207,9 +101,8 @@ function EffectReview<P>({ effect, targetIdentity, input, submit, headingLevel, 
         <div className={REVIEW_BODY_CLASS}>
           <p>{copy.question}</p>
           <p>
-            <bdi className={IDENTIFIER_CLASS}>{targetIdentity}</bdi>
+            <bdi className={"mono-identifier min-w-0 wrap-anywhere"}>{targetIdentity}</bdi>
           </p>
-          {/* The consequence is read before the confirm control is pressed, and stated again inside the dialog. */}
           <ReviewSentences effect={effect} />
         </div>
       }
@@ -223,34 +116,24 @@ function EffectReview<P>({ effect, targetIdentity, input, submit, headingLevel, 
     />
   );
 }
-
-/** A refused effect: the schema's own messages, the way back, and no control that could send it. */
-function EffectRefused({ effect, messages }: { readonly effect: StopEffect; readonly messages: readonly string[] }): ReactElement {
-  return (
-    <Alert variant="destructive" data-slot="stop-effect-refused" data-outcome="invalid" data-effect={effect}>
-      <AlertTitle>{STOP_EFFECT_COPY[effect].title} cannot be sent</AlertTitle>
-      <AlertDescription className="flex min-w-0 flex-col gap-2">
-        <p>{MISSING_IDENTITY_SENTENCE}</p>
-        {messages.length === 0 ? null : (
-          <ul className="flex min-w-0 flex-col gap-1">
-            {messages.map((message) => (
-              <li key={message} className="min-w-0 wrap-anywhere">
-                {message}
-              </li>
-            ))}
-          </ul>
-        )}
-      </AlertDescription>
-    </Alert>
-  );
-}
-
+const EffectRefused = ({ effect, messages }: { readonly effect: StopEffect; readonly messages: readonly string[] }): ReactElement => (
+  <Alert variant="destructive" data-slot="stop-effect-refused" data-outcome="invalid" data-effect={effect}>
+    <AlertTitle>{STOP_EFFECT_COPY[effect].title} cannot be sent</AlertTitle>
+    <AlertDescription className="flex min-w-0 flex-col gap-2">
+      <p>{"This effect names an identity the surface was not given, so nothing is sent. Reopen the relationship from its own page, choose the module, check-in or task summary there, and act on that record instead of this one."}</p>
+      {messages.length === 0 ? null : (
+        <ul className="flex min-w-0 flex-col gap-1">
+          {messages.map((message) => (
+            <li key={message} className="min-w-0 wrap-anywhere">
+              {message}
+            </li>
+          ))}
+        </ul>
+      )}
+    </AlertDescription>
+  </Alert>
+);
 type EndedStatementsProps = { readonly state: GrantLifecycleState; readonly role: StopRole; readonly level: ReviewHeadingLevel };
-
-/**
- * The ended episode: one statement for each effect in the closed vocabulary, none of them a control, so a stale save or a
- * re-enable has nothing to submit. Each statement still carries its effect's own assurance about the source work.
- */
 function EndedStatements({ state, role, level }: EndedStatementsProps): ReactElement {
   const standing = GRANT_STATE_COPY[state];
   const held = effectsForRole(role);
@@ -261,7 +144,7 @@ function EndedStatements({ state, role, level }: EndedStatementsProps): ReactEle
         <AlertTitle>{standing.label}</AlertTitle>
         <AlertDescription>
           <p>{standing.description}</p>
-          <p>{NEW_INVITATION_SENTENCE}</p>
+          <p>{"Beginning again takes a new invitation from the worker, naming the modules and the duration; no later action here can reopen the episode."}</p>
         </AlertDescription>
       </Alert>
       <ul className={STATEMENTS_CLASS}>
@@ -270,11 +153,11 @@ function EndedStatements({ state, role, level }: EndedStatementsProps): ReactEle
             <Card className="min-w-0">
               <CardHeader>
                 <CardTitle>
-                  <Heading className={STATEMENT_HEADING_CLASS}>{STOP_EFFECT_COPY[effect].title}</Heading>
+                  <Heading className={"text-sm font-medium"}>{STOP_EFFECT_COPY[effect].title}</Heading>
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex min-w-0 flex-col gap-2">
-                <p className={cn(SENTENCE_CLASS, "text-foreground")}>{ENDED_EFFECT_SENTENCE}</p>
+                <p className={cn(SENTENCE_CLASS, "text-foreground")}>{"This effect can no longer be applied: the episode has ended, so there is nothing left here to stop and no control is shown."}</p>
                 <p className={SENTENCE_CLASS}>{STOP_EFFECT_COPY[effect].assurance}</p>
                 {held.includes(effect) ? null : <p className={SENTENCE_CLASS}>{OTHER_ROLE_NOTE[role]}</p>}
               </CardContent>
@@ -285,11 +168,7 @@ function EndedStatements({ state, role, level }: EndedStatementsProps): ReactEle
     </div>
   );
 }
-
-/** The three effects that end access outright, and so read as destructive at the point they are offered. */
 const DESTRUCTIVE_EFFECTS: ReadonlySet<StopEffect> = new Set<StopEffect>(["end-relationship", "coach-leave", "revoke"]);
-
-/** Every stop-type effect that applies to the current grant, each reviewed before exactly one named mutation is sent. */
 export function StopActions({ available, target, scope, expectedRevision, role, onCheckResult, headingLevel = 2, className }: StopActionsProps): ReactElement {
   const { mutateAsync: setModule } = useSetModule();
   const { mutateAsync: withdrawCheckIn } = useWithdrawCheckIn();
@@ -297,27 +176,17 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
   const { mutateAsync: endCoaching } = useEndCoaching();
   const { mutateAsync: leaveCoaching } = useLeaveCoaching();
   const { mutateAsync: revokeGrant } = useRevokeGrant();
-
   const [chosen, setChosen] = useState<StopEffect | null>(null);
   const [settled, setSettled] = useState<MutationOutcome | null>(null);
   const [submitted, setSubmitted] = useState<SubmittedAttempt | null>(null);
   const headingId = useId();
-
   const terminal = isTerminalEpisode(target.episodeState);
   const kept = holdsReceipt(settled);
-  // What the review presents: the facts the attempt itself submitted while its receipt is on screen, and the live ones
-  // otherwise. The route re-read after an applied change advances the revision — and, when the grant it named is the
-  // one it stopped, hands this surface the relationship that survives — so the receipt has to keep describing the change
-  // that was made rather than collapse into a fresh review of another record. The summary above states the re-read
-  // state; the settled row states what was done.
+  // What the review presents: the facts the attempt itself submitted while its receipt is on screen, and the live ones otherwise. The route re-read after an applied change advances the revision — and, when the grant it named is the one it stopped, hands this surface the relationship that survives — so the receipt keeps describing the change that was made rather than collapsing into a fresh review of another record.
   const reviewAttempt = kept ? submitted : null;
   const reviewTarget = reviewAttempt?.target ?? target;
   const reviewRevision = reviewAttempt?.expectedRevision ?? expectedRevision;
-  // Whether an attempt for the chosen effect is in hand: submitted, settling, or settled with its receipt. The attempt
-  // and the re-read it causes are two separate arrivals, and the refreshed envelope can reach this surface before the
-  // outcome does — so an episode the re-read reports as an ended one must not displace the review mid-attempt. With an
-  // attempt in hand the review keeps its own element, and with it the identity and the outcome `useReviewedMutation`
-  // holds; only an effect nobody has submitted is replaced by the statements.
+  // Whether an attempt for the chosen effect is in hand: submitted, settling, or settled with its receipt. The refreshed envelope can reach this surface before the outcome does, so an episode the re-read reports as ended must not displace the review mid-attempt.
   const attemptInHand = chosen !== null && (submitted !== null || kept);
   const ended = terminal && !attemptInHand;
   const offered = effectsForRole(role).filter((effect) => available.includes(effect));
@@ -326,150 +195,70 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
   const Heading = HEADING_TAG[headingLevel];
   const reviewLevel = NESTED_LEVEL[headingLevel];
   const showRow = chosen === null || kept;
-
-  // The review step mints the attempt's identity and reuses it for a replay of the same work, so this surface records
-  // the facts an attempt presented and never mints an identity of its own.
-  const holdAttempt = useCallback(
-    (submittedRevision: string): void => {
-      setSubmitted({ expectedRevision: submittedRevision, target });
-    },
-    [target],
-  );
-  const settle = useCallback((outcome: MutationOutcome): void => {
+  // The review step mints the attempt's identity and reuses it for a replay of the same work, so this surface records the facts an attempt presented and never mints an identity of its own.
+  const holdAttempt = (submittedRevision: string): void => {
+    setSubmitted({ expectedRevision: submittedRevision, target });
+  };
+  const settle = (outcome: MutationOutcome): void => {
     setSettled(outcome);
-  }, []);
-  const choose = useCallback((effect: StopEffect): void => {
+  };
+  const choose = (effect: StopEffect): void => {
     setChosen(effect);
     setSettled(null);
     setSubmitted(null);
-  }, []);
-  const keep = useCallback((): void => {
+  };
+  const keep = (): void => {
     setChosen(null);
-  }, []);
-
-  const submitModule = useCallback(
-    (submission: Parameters<typeof setModule>[0]): Promise<MutationOutcome> => {
-      holdAttempt(submission.expectedRevision);
-      return setModule(submission);
-    },
-    [holdAttempt, setModule],
-  );
-  const submitWithdrawal = useCallback(
-    (submission: Parameters<typeof withdrawCheckIn>[0]): Promise<MutationOutcome> => {
-      holdAttempt(submission.expectedRevision);
-      return withdrawCheckIn(submission);
-    },
-    [holdAttempt, withdrawCheckIn],
-  );
-  const submitTaskShareStop = useCallback(
-    (submission: Parameters<typeof stopTaskShare>[0]): Promise<MutationOutcome> => {
-      holdAttempt(submission.expectedRevision);
-      return stopTaskShare(submission);
-    },
-    [holdAttempt, stopTaskShare],
-  );
-  const submitEnd = useCallback(
-    (submission: Parameters<typeof endCoaching>[0]): Promise<MutationOutcome> => {
-      holdAttempt(submission.expectedRevision);
-      return endCoaching(submission);
-    },
-    [holdAttempt, endCoaching],
-  );
-  const submitLeave = useCallback(
-    (submission: Parameters<typeof leaveCoaching>[0]): Promise<MutationOutcome> => {
-      holdAttempt(submission.expectedRevision);
-      return leaveCoaching(submission);
-    },
-    [holdAttempt, leaveCoaching],
-  );
-  const submitRevoke = useCallback(
-    (submission: Parameters<typeof revokeGrant>[0]): Promise<MutationOutcome> => {
-      holdAttempt(submission.expectedRevision);
-      return revokeGrant(submission);
-    },
-    [holdAttempt, revokeGrant],
-  );
-
-  /*
-   * The one place an effect becomes a submission: this switch builds the payload the mapping table's own schema admits
-   * and names the single hook that sends it, so no effect can reach two mutations and a seventh effect fails to compile.
-   * A payload the schema refuses renders its messages and sends nothing. Each case reads the facts the review presents
-   * — the attempt's own while its receipt is on screen, the live ones otherwise — so a settled row keeps naming what it
-   * changed while the surface around it shows the relationship that survived.
-   */
+  };
+  /** Every stop effect records the facts its attempt presented before the mutation runs, so the receipt keeps describing the change that was made; the six submissions differ only in which mutation they call. */
+  const held =
+    <P,>(mutate: (attempt: MutationInput<P>) => Promise<MutationOutcome>): MutationSubmit<P> =>
+    (attempt) => {
+      holdAttempt(attempt.expectedRevision);
+      return mutate(attempt);
+    };
+  const submitModule = held(setModule);
+  const submitWithdrawal = held(withdrawCheckIn);
+  const submitTaskShareStop = held(stopTaskShare);
+  const submitEnd = held(endCoaching);
+  const submitLeave = held(leaveCoaching);
+  const submitRevoke = held(revokeGrant);
   const reviewFor = (effect: StopEffect): ReactElement => {
+    // The frame every review shares: one relationship identity, one set of callbacks and one heading level, whatever the effect being reviewed.
+    const shared = { effect, targetIdentity: identityOf(effect, reviewTarget) ?? "this relationship", headingLevel: reviewLevel, onCheckResult, onCancel: keep, onSettled: settle };
+    const review = <P,>(payload: P, submit: MutationSubmit<P>): ReactElement => <EffectReview {...shared} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submit} />;
     switch (effect) {
       case "stop-module": {
         const payload = reviewTarget.moduleKey === undefined ? null : { grantId: reviewTarget.grantId, moduleKey: reviewTarget.moduleKey, enabled: false };
-        const messages = payload === null ? [] : refusalMessages("stop-module", payload);
-        if (payload === null || messages.length > 0) {
-          return <EffectRefused effect="stop-module" messages={messages} />;
-        }
-        return <EffectReview effect="stop-module" targetIdentity={identityOf("stop-module", reviewTarget) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitModule} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
+        const messages = payload === null ? [] : refusalMessages(effect, payload);
+        return payload === null || messages.length > 0 ? <EffectRefused effect={effect} messages={messages} /> : review(payload, submitModule);
       }
       case "withdraw-check-in": {
         const { checkInId, checkInRevisionId } = reviewTarget;
         const payload = checkInId === undefined || checkInRevisionId === undefined ? null : { checkInId, sharedRevisionId: checkInRevisionId };
-        const messages = payload === null ? [] : refusalMessages("withdraw-check-in", payload);
-        if (payload === null || messages.length > 0) {
-          return <EffectRefused effect="withdraw-check-in" messages={messages} />;
-        }
-        return (
-          <EffectReview effect="withdraw-check-in" targetIdentity={identityOf("withdraw-check-in", reviewTarget) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitWithdrawal} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />
-        );
+        const messages = payload === null ? [] : refusalMessages(effect, payload);
+        return payload === null || messages.length > 0 ? <EffectRefused effect={effect} messages={messages} /> : review(payload, submitWithdrawal);
       }
       case "remove-task-share": {
-        const { taskShareId } = reviewTarget;
-        const payload = taskShareId === undefined ? null : { taskShareId };
-        const messages = payload === null ? [] : refusalMessages("remove-task-share", payload);
-        if (payload === null || messages.length > 0) {
-          return <EffectRefused effect="remove-task-share" messages={messages} />;
-        }
-        return (
-          <EffectReview
-            effect="remove-task-share"
-            targetIdentity={identityOf("remove-task-share", reviewTarget) ?? "this relationship"}
-            input={{ scope, expectedRevision: reviewRevision, payload }}
-            submit={submitTaskShareStop}
-            headingLevel={reviewLevel}
-            onCheckResult={onCheckResult}
-            onCancel={keep}
-            onSettled={settle}
-          />
-        );
+        const payload = reviewTarget.taskShareId === undefined ? null : { taskShareId: reviewTarget.taskShareId };
+        const messages = payload === null ? [] : refusalMessages(effect, payload);
+        return payload === null || messages.length > 0 ? <EffectRefused effect={effect} messages={messages} /> : review(payload, submitTaskShareStop);
       }
-      case "end-relationship": {
-        const payload = { grantId: reviewTarget.grantId };
-        const messages = refusalMessages("end-relationship", payload);
-        if (messages.length > 0) {
-          return <EffectRefused effect="end-relationship" messages={messages} />;
-        }
-        return <EffectReview effect="end-relationship" targetIdentity={identityOf("end-relationship", reviewTarget) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitEnd} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
-      }
-      case "coach-leave": {
-        const payload = { grantId: reviewTarget.grantId };
-        const messages = refusalMessages("coach-leave", payload);
-        if (messages.length > 0) {
-          return <EffectRefused effect="coach-leave" messages={messages} />;
-        }
-        return <EffectReview effect="coach-leave" targetIdentity={identityOf("coach-leave", reviewTarget) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitLeave} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
-      }
+      case "end-relationship":
+      case "coach-leave":
       case "revoke": {
         const payload = { grantId: reviewTarget.grantId };
-        const messages = refusalMessages("revoke", payload);
-        if (messages.length > 0) {
-          return <EffectRefused effect="revoke" messages={messages} />;
-        }
-        return <EffectReview effect="revoke" targetIdentity={identityOf("revoke", reviewTarget) ?? "this relationship"} input={{ scope, expectedRevision: reviewRevision, payload }} submit={submitRevoke} headingLevel={reviewLevel} onCheckResult={onCheckResult} onCancel={keep} onSettled={settle} />;
+        const messages = refusalMessages(effect, payload);
+        const submit = effect === "end-relationship" ? submitEnd : effect === "coach-leave" ? submitLeave : submitRevoke;
+        return messages.length > 0 ? <EffectRefused effect={effect} messages={messages} /> : review(payload, submit);
       }
       default:
         return assertUnreachable(effect);
     }
   };
-
   return (
     <section aria-labelledby={headingId} data-slot="stop-actions" data-role={role} data-episode-state={target.episodeState} className={cn(ROOT_CLASS, className)}>
-      <header className={HEADER_CLASS}>
+      <header className={"flex min-w-0 flex-col gap-2"}>
         <Heading id={headingId}>{surface.heading}</Heading>
         <p className={SENTENCE_CLASS}>{surface.purpose}</p>
         <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
@@ -478,32 +267,19 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
         </p>
       </header>
       <Separator />
-      {/*
-        An ended episode is a statement rather than a set of controls — unless an attempt is in hand, when the review
-        that made the change stands on its own. The header above already states the state the read reports, so the
-        settled record reads as what was done next to the state it produced, and no control is offered here.
-      */}
       {ended ? (
         <EndedStatements state={target.episodeState} role={role} level={reviewLevel} />
       ) : (
         <>
           {!terminal && showRow ? (
-            <div className={PANEL_CLASS}>
+            <div className={"flex min-w-0 flex-col gap-3 rounded-lg border border-border p-3"}>
               {offered.length === 0 ? (
-                <p className={SENTENCE_CLASS}>{NO_EFFECT_SENTENCE}</p>
+                <p className={SENTENCE_CLASS}>{"No stop-type effect applies to this relationship right now. What is shared stays readable exactly as the invitation named it."}</p>
               ) : (
-                <ul className={ROW_CLASS}>
+                <ul className={"flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center"}>
                   {offered.map((effect) => (
                     <li key={effect} className="min-w-0">
-                      <Button
-                        type="button"
-                        variant={DESTRUCTIVE_EFFECTS.has(effect) ? "destructive" : "outline"}
-                        className={TRIGGER_CLASS}
-                        data-effect={effect}
-                        onClick={() => {
-                          choose(effect);
-                        }}
-                      >
+                      <Button type="button" variant={DESTRUCTIVE_EFFECTS.has(effect) ? "destructive" : "outline"} className={"h-auto min-h-target max-w-full py-2 text-start whitespace-normal"} data-effect={effect} onClick={() => choose(effect)}>
                         {STOP_EFFECT_COPY[effect].title}
                         <span className="sr-only">
                           {" for "}
@@ -522,5 +298,4 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
     </section>
   );
 }
-
 export default StopActions;

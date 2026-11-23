@@ -1,4 +1,3 @@
-/** The development scenario registry, the per-session scenario document, and the one controllable clock offset. */
 import { isRecord } from "@/lib/guards";
 import { err, ok, type Result } from "@/lib/result";
 import { isSafeSessionId } from "@/lib/session-cookie";
@@ -8,46 +7,20 @@ import { advanceClockOffset, SEED_INSTANT, setClockOffset } from "@/modules/time
 import { EMPTY_FAILURE_PLAN, parseFailurePlan, type FailurePlanDocument } from "./failures";
 const SCENARIO_ID_LIST = ["baseline", "financial-source-unavailable", "media-unavailable", "coaching-module-unavailable", "continuation-on", "continuation-off", "partial-release-failure"] as const;
 export type ScenarioId = (typeof SCENARIO_ID_LIST)[number];
-/** The registry's order, frozen so no caller can append a scenario no other session sees declared. */
 export const SCENARIO_IDS: readonly ScenarioId[] = Object.freeze(SCENARIO_ID_LIST);
-/** The scenario every session starts in: every source available, worker continuation off. */
 export const DEFAULT_SCENARIO_ID: ScenarioId = "baseline";
 export type ScenarioFlags = { financialSource: "available" | "unavailable"; mediaAsset: "available" | "unavailable"; coachingModule: "available" | "unavailable"; continuationSetting: "on" | "off" };
 export type ScenarioDefinition = { readonly label: string; readonly description: string; readonly flags: ScenarioFlags };
-const defineScenario = (definition: ScenarioDefinition): ScenarioDefinition => Object.freeze({ ...definition, flags: Object.freeze({ ...definition.flags }) });
+const BASELINE_FLAGS: ScenarioFlags = { financialSource: "available", mediaAsset: "available", coachingModule: "available", continuationSetting: "off" };
+const defineScenario = (label: string, description: string, flags: Partial<ScenarioFlags> = {}): ScenarioDefinition => Object.freeze({ label, description, flags: Object.freeze({ ...BASELINE_FLAGS, ...flags }) });
 export const SCENARIO_DEFINITIONS: Readonly<Record<ScenarioId, ScenarioDefinition>> = Object.freeze({
-  baseline: defineScenario({ label: "Baseline", description: "Every source available and worker continuation off — the state every criterion other than the feature-specific ones starts from.", flags: { financialSource: "available", mediaAsset: "available", coachingModule: "available", continuationSetting: "off" } }),
-  "financial-source-unavailable": defineScenario({
-    label: "Financial source unavailable",
-    description: "Support reports its source as unavailable — never as zero and never as an empty list — while contact, work and content jobs continue normally.",
-    flags: { financialSource: "unavailable", mediaAsset: "available", coachingModule: "available", continuationSetting: "off" },
-  }),
-  "media-unavailable": defineScenario({
-    label: "Media unavailable",
-    description: "A placement reports its asset unavailable, keeping its poster or text alternative and its retry action, so a failed preparation never hides the prose around it.",
-    flags: { financialSource: "available", mediaAsset: "unavailable", coachingModule: "available", continuationSetting: "off" },
-  }),
-  "coaching-module-unavailable": defineScenario({
-    label: "Coaching module unavailable",
-    description: "One admitted coaching module's source is down: that module reports unavailable while the other admitted modules stay usable and are never blanked with it.",
-    flags: { financialSource: "available", mediaAsset: "available", coachingModule: "unavailable", continuationSetting: "off" },
-  }),
-  // The referral journey is walked in both directions — an expired cycle that may be continued and one that may not — so both settings are named scenarios rather than one default plus a hand-edited record.
-  "continuation-on": defineScenario({
-    label: "Continuation on",
-    description: "The worker-continuation setting is on, so an ordinarily expired referral cycle offers the Continue action within its current permission.",
-    flags: { financialSource: "available", mediaAsset: "available", coachingModule: "available", continuationSetting: "on" },
-  }),
-  "continuation-off": defineScenario({
-    label: "Continuation off",
-    description: "The worker-continuation setting is explicitly off, so an expired referral offers no Continue action; named so a spec depends on this scenario rather than on the baseline default.",
-    flags: { financialSource: "available", mediaAsset: "available", coachingModule: "available", continuationSetting: "off" },
-  }),
-  "partial-release-failure": defineScenario({
-    label: "Partial release failure",
-    description: "One variant of a submission releases while a sibling fails, preserving the sibling's prior-good release head instead of rolling the successful one back.",
-    flags: { financialSource: "available", mediaAsset: "available", coachingModule: "available", continuationSetting: "off" },
-  }),
+  baseline: defineScenario("Baseline", "Every source available and worker continuation off — the state every criterion other than the feature-specific ones starts from."),
+  "financial-source-unavailable": defineScenario("Financial source unavailable", "Support reports its source as unavailable — never as zero and never as an empty list — while contact, work and content jobs continue normally.", { financialSource: "unavailable" }),
+  "media-unavailable": defineScenario("Media unavailable", "A placement reports its asset unavailable, keeping its poster or text alternative and its retry action, so a failed preparation never hides the prose around it.", { mediaAsset: "unavailable" }),
+  "coaching-module-unavailable": defineScenario("Coaching module unavailable", "One admitted coaching module's source is down: that module reports unavailable while the other admitted modules stay usable and are never blanked with it.", { coachingModule: "unavailable" }),
+  "continuation-on": defineScenario("Continuation on", "The worker-continuation setting is on, so an ordinarily expired referral cycle offers the Continue action within its current permission.", { continuationSetting: "on" }),
+  "continuation-off": defineScenario("Continuation off", "The worker-continuation setting is explicitly off, so an expired referral offers no Continue action; named so a spec depends on this scenario rather than on the baseline default."),
+  "partial-release-failure": defineScenario("Partial release failure", "One variant of a submission releases while a sibling fails, preserving the sibling's prior-good release head instead of rolling the successful one back."),
 });
 export const isScenarioId = (value: unknown): value is ScenarioId => typeof value === "string" && Object.hasOwn(SCENARIO_DEFINITIONS, value);
 /** The flags a scenario sets. */
@@ -55,13 +28,11 @@ export function scenarioFlagsFor(scenarioId: ScenarioId): ScenarioFlags {
   if (!isScenarioId(scenarioId)) throw new RangeError(`Unknown scenario ${describeValue(scenarioId)}: this release defines ${SCENARIO_IDS.join(", ")}.`);
   return SCENARIO_DEFINITIONS[scenarioId].flags;
 }
-/** The admission states a session can be in, in the order the shell presents them, and the membership a principal is admitted under — re-exported from the read envelope that owns the persisted. */
 export { SESSION_STATES };
 export type { AdmittedMembership, SessionState };
 export const isSessionState = (value: unknown): value is SessionState => typeof value === "string" && (SESSION_STATES as readonly string[]).includes(value);
 export type SelectedContext = { organizationId: string; ministryId: string; supportSubjectId: string };
 const SESSION_META_VERSION = 1;
-/** The kinds a persisted roster row may state: the receiving readers whose persona decides what a preview shows, and the three worker-side kinds whose identities own work. */
 export const PERSISTED_PERSONA_KINDS = ["reader", "worker", "reviewer", "coach"] as const;
 export type PersistedPersonaKind = (typeof PERSISTED_PERSONA_KINDS)[number];
 export type PersistedPersonaRecord = { readonly id: string; readonly principalId: string; readonly kind: PersistedPersonaKind; readonly label: string; readonly description: string };
@@ -97,17 +68,13 @@ function describeValue(value: unknown): string {
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "a non-finite number";
   if (value === null) return "null";
   if (value === undefined) return "undefined";
-  if (Array.isArray(value)) return "an array";
-  return typeof value === "object" ? "an object" : `a ${typeof value}`;
+  return Array.isArray(value) ? "an array" : typeof value === "object" ? "an object" : `a ${typeof value}`;
 }
 const invalidOffsetRefusal = (value: unknown): SessionMetaRefusal => refuse("invalid-offset", `A clock offset is a whole number of milliseconds from the seed instant, in either direction; ${describeValue(value)} is not one that can be represented exactly.`);
 const outOfRangeOffsetRefusal = (value: number): SessionMetaRefusal => refuse("out-of-range-offset", `A clock offset stays within ${String(CLOCK_OFFSET_LIMIT_MS)} milliseconds (ten years) of the seed instant; ${describeValue(value)} is farther than that.`);
 const isWholeMillisecond = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value);
 const isWithinOffsetLimit = (value: number): boolean => value >= -CLOCK_OFFSET_LIMIT_MS && value <= CLOCK_OFFSET_LIMIT_MS;
-function offsetRefusalFor(value: unknown): SessionMetaRefusal | undefined {
-  if (!isWholeMillisecond(value)) return invalidOffsetRefusal(value);
-  return isWithinOffsetLimit(value) ? undefined : outOfRangeOffsetRefusal(value);
-}
+const offsetRefusalFor = (value: unknown): SessionMetaRefusal | undefined => (!isWholeMillisecond(value) ? invalidOffsetRefusal(value) : isWithinOffsetLimit(value) ? undefined : outOfRangeOffsetRefusal(value));
 function parseAdmittedMemberships(value: unknown): AdmittedMembership[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const memberships: AdmittedMembership[] = [];
@@ -115,7 +82,6 @@ function parseAdmittedMemberships(value: unknown): AdmittedMembership[] | undefi
     if (!isRecord(entry)) return undefined;
     const { organizationId, ministryId, supportSubjectId, organizationLabel, ministryLabel } = entry;
     if (!isNonEmptyString(organizationId) || !isNonEmptyString(ministryId) || !isNonEmptyString(supportSubjectId)) return undefined;
-    // A name the document states is carried through the parse: every development control rewrites the meta document from this value, so dropping it here would erase the name on the next write; a name that is empty or not a string states none, and the membership keeps its absence rather than a blank standing in for one.
     const admission = admittedMembershipSchema.safeParse({ organizationId, ministryId, supportSubjectId, ...(isNonEmptyString(organizationLabel) ? { organizationLabel } : {}), ...(isNonEmptyString(ministryLabel) ? { ministryLabel } : {}) });
     if (!admission.success) return undefined;
     for (const existing of memberships) if (existing.organizationId === admission.data.organizationId && existing.ministryId === admission.data.ministryId && existing.supportSubjectId === admission.data.supportSubjectId) return undefined;
@@ -123,15 +89,7 @@ function parseAdmittedMemberships(value: unknown): AdmittedMembership[] | undefi
   }
   return memberships;
 }
-function parseCapabilities(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const capabilities: string[] = [];
-  for (const entry of value) {
-    if (!isNonEmptyString(entry) || capabilities.includes(entry)) return undefined;
-    capabilities.push(entry);
-  }
-  return capabilities;
-}
+const parseCapabilities = (value: unknown): string[] | undefined => (Array.isArray(value) && value.every(isNonEmptyString) && new Set<string>(value).size === value.length ? value : undefined);
 const isPersistedPersonaKind = (value: unknown): value is PersistedPersonaKind => typeof value === "string" && (PERSISTED_PERSONA_KINDS as readonly string[]).includes(value);
 function parsePersistedPersonas(value: unknown): PersistedPersonaRecord[] | undefined {
   if (!Array.isArray(value)) return undefined;
@@ -150,8 +108,7 @@ function parseSelectedContext(value: unknown): SelectedContext | null | undefine
   if (value === null) return null;
   if (!isRecord(value)) return undefined;
   const { organizationId, ministryId, supportSubjectId } = value;
-  if (!isNonEmptyString(organizationId) || !isNonEmptyString(ministryId) || !isNonEmptyString(supportSubjectId)) return undefined;
-  return { organizationId, ministryId, supportSubjectId };
+  return !isNonEmptyString(organizationId) || !isNonEmptyString(ministryId) || !isNonEmptyString(supportSubjectId) ? undefined : { organizationId, ministryId, supportSubjectId };
 }
 export interface SessionMetaSeedInput {
   principalId: string;
@@ -165,26 +122,20 @@ export interface SessionMetaSeedInput {
   personas?: readonly PersistedPersonaRecord[];
 }
 export function buildSessionMeta(input: SessionMetaSeedInput): SessionMetaDocument {
-  const { principalId, admittedMemberships, sessionState } = input;
-  if (!isNonEmptyString(principalId)) throw new TypeError("A session meta document needs the principal it acts for: buildSessionMeta never invents one.");
-  const memberships = parseAdmittedMemberships(admittedMemberships);
-  if (memberships === undefined) throw new TypeError("A session meta document's admitted memberships are zero or more distinct triples of non-empty organization, ministry and support-subject ids.");
-  if (!isSessionState(sessionState)) throw new TypeError(`Unknown session state ${describeValue(sessionState)}: this release defines ${SESSION_STATES.join(", ")}.`);
-  const scenarioId = input.scenarioId ?? DEFAULT_SCENARIO_ID;
-  if (!isScenarioId(scenarioId)) throw new RangeError(`Unknown scenario ${describeValue(scenarioId)}: this release defines ${SCENARIO_IDS.join(", ")}.`);
-  const clockOffsetMs = input.clockOffsetMs ?? 0;
-  const offsetRefusal = offsetRefusalFor(clockOffsetMs);
-  if (offsetRefusal !== undefined) throw new RangeError(offsetRefusal.message);
-  const failurePlan = parseFailurePlan(input.failurePlan ?? EMPTY_FAILURE_PLAN);
-  if (!failurePlan.ok) throw new TypeError(`A session meta document carries a usable failure plan: ${failurePlan.error.message}`);
-  const selectedContext = parseSelectedContext(input.selectedContext ?? null);
-  if (selectedContext === undefined) throw new TypeError("A session meta document's selected context is null or a non-empty organization, ministry and support subject reference.");
-  const capabilities = parseCapabilities(input.capabilities ?? []);
-  if (capabilities === undefined) throw new TypeError("A session meta document's capability set is zero or more distinct non-empty capability names.");
-  // An absent roster is the empty list, exactly as an absent capability set is: a session laid down without personas states none, and the development read reports that absence rather than this builder inventing a roster the seed never described.
-  const personas = parsePersistedPersonas(input.personas ?? []);
-  if (personas === undefined) throw new TypeError(personaRosterRequirement());
-  return { version: SESSION_META_VERSION, scenarioId, clockOffsetMs, failurePlan: failurePlan.value, sessionState, principalId, admittedMemberships: memberships, selectedContext, capabilities, personas };
+  const parsed = parseSessionMeta({
+    version: SESSION_META_VERSION,
+    scenarioId: input.scenarioId ?? DEFAULT_SCENARIO_ID,
+    clockOffsetMs: input.clockOffsetMs ?? 0,
+    failurePlan: input.failurePlan ?? EMPTY_FAILURE_PLAN,
+    sessionState: input.sessionState,
+    principalId: input.principalId,
+    admittedMemberships: input.admittedMemberships,
+    selectedContext: input.selectedContext ?? null,
+    capabilities: input.capabilities ?? [],
+    personas: input.personas ?? [],
+  });
+  if (parsed.ok) return parsed.value;
+  throw parsed.error.code === "unknown-scenario" || parsed.error.code === "invalid-offset" || parsed.error.code === "out-of-range-offset" ? new RangeError(parsed.error.message) : new TypeError(parsed.error.message);
 }
 /** Reads a document back from its stored form, refusing rather than throwing on anything unusable. */
 export function parseSessionMeta(value: unknown): Result<SessionMetaDocument, SessionMetaRefusal> {
@@ -204,20 +155,15 @@ export function parseSessionMeta(value: unknown): Result<SessionMetaDocument, Se
   if (!isNonEmptyString(principalId)) return err(refuse("meta-unreadable", "A session meta document names the principal it acts for, and never an empty or invented one."));
   const admittedMemberships = parseAdmittedMemberships(value.admittedMemberships);
   if (admittedMemberships === undefined) return err(refuse("meta-unreadable", "The stored session's admitted memberships are zero or more distinct triples of non-empty organization, ministry and support-subject ids."));
-  // The key has to be present even when its value is null: an absent context is a truncation, while a stored null is the ordinary state of a session that has not chosen one yet.
   if (!Object.hasOwn(value, "selectedContext")) return err(refuse("meta-unreadable", "A session meta document carries its selected context, as null when no context has been chosen."));
   const selectedContext = parseSelectedContext(value.selectedContext);
   if (selectedContext === undefined) return err(refuse("meta-unreadable", "The stored session's selected context is null or a non-empty organization, ministry and support subject reference."));
-  // An absent capability set is a document written before the field existed, and it resolves to no capability rather than to a refusal: every capability question fails closed, so reading such a document as read-only is the honest answer, while refusing it would report an unreadable session for a file that is merely older. A present value that is not a list of distinct names is refused like every other unusable field.
   const capabilities = parseCapabilities(value.capabilities ?? []);
   if (capabilities === undefined) return err(refuse("meta-unreadable", "The stored session's capability set is zero or more distinct non-empty capability names."));
-  // An absent roster is a document written before the field existed, and it resolves to no persona rather than to a refusal, on the same reasoning as an absent capability set; a present roster that is not a list of usable rows is refused like every other unusable field, and a caller that writes the document back carries the roster it read, so a control never drops it.
   const personas = parsePersistedPersonas(value.personas ?? []);
-  if (personas === undefined) return err(refuse("meta-unreadable", personaRosterRequirement()));
-  return ok({ version: SESSION_META_VERSION, scenarioId, clockOffsetMs, failurePlan: failurePlan.value, sessionState, principalId, admittedMemberships, selectedContext, capabilities, personas });
+  return personas === undefined ? err(refuse("meta-unreadable", personaRosterRequirement())) : ok({ version: SESSION_META_VERSION, scenarioId, clockOffsetMs, failurePlan: failurePlan.value, sessionState, principalId, admittedMemberships, selectedContext, capabilities, personas });
 }
 type MetaUpdate = (meta: SessionMetaDocument) => Result<SessionMetaDocument, SessionControlRefusal>;
-
 async function updateSessionMeta(sessionId: string, update: MetaUpdate): Promise<Result<SessionMetaDocument, SessionControlRefusal>> {
   if (!isSafeSessionId(sessionId)) return err(refuse("unknown-session", `${describeValue(sessionId)} cannot name a session: a session id is 1 to 64 characters drawn only from A-Z, a-z, 0-9, underscore and hyphen.`));
   try {
@@ -226,13 +172,11 @@ async function updateSessionMeta(sessionId: string, update: MetaUpdate): Promise
       if (!stored.ok) return err(stored.error);
       const next = update(stored.value);
       if (!next.ok) return next;
-      // The transaction writes back only a document whose canonical bytes changed, so selecting the scenario a session already runs in, or re-setting the offset it already has, writes nothing.
       draft.meta = next.value;
       return next;
     });
   } catch (error) {
     if (error instanceof SessionNotFoundError) return err(refuse("unknown-session", `No session ${JSON.stringify(sessionId)} exists in the store, and a development control never creates one: reset seeds every session.`));
-    // A read or write fault that is neither an absent session nor an unreadable document is a store fault, and it stays a thrown error so the one error model can report it as unavailable.
     throw error;
   }
 }
@@ -254,9 +198,9 @@ export async function setClock(sessionId: string, offsetMs: number): Promise<Res
 export async function advanceClock(sessionId: string, byMs: number): Promise<Result<SessionMetaDocument, SessionControlRefusal>> {
   if (typeof byMs !== "number" || !Number.isSafeInteger(byMs) || byMs <= 0) return err(refuse("invalid-offset", `A clock advance moves forward by a positive whole number of milliseconds; ${describeValue(byMs)} is not one. Use setClock for an absolute offset.`));
   const updated = await updateSessionMeta(sessionId, (meta) => {
-    const advanced = meta.clockOffsetMs + byMs;
-    const refusal = offsetRefusalFor(advanced);
-    return refusal === undefined ? ok({ ...meta, clockOffsetMs: advanced }) : err(refusal);
+    const nextOffset = meta.clockOffsetMs + byMs;
+    const refusal = offsetRefusalFor(nextOffset);
+    return refusal === undefined ? ok({ ...meta, clockOffsetMs: nextOffset }) : err(refusal);
   });
   if (!updated.ok) return updated;
   advanceClockOffset(byMs);

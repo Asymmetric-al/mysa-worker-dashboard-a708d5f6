@@ -2,6 +2,4 @@
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/lib/session-cookie";
 /** The session id the request's own cookie carries, or the empty string when it carries none. */
-export function sessionIdOf(request: NextRequest): string {
-  return request.cookies.get(SESSION_COOKIE)?.value ?? "";
-}
+export const sessionIdOf = (request: NextRequest): string => request.cookies.get(SESSION_COOKIE)?.value ?? "";

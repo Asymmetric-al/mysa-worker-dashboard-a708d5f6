@@ -1,4 +1,3 @@
-/** The sixteen named coaching mutations: the invitation and the episode it opens, the worker's own targets, the check-ins a coach may be shown, and the reviewed task summaries. */
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { savePrivateDraft, shareCheckIn as openCheckInShare, updateSharedCheckIn as reviseSharedCheckIn, withdrawSharedCheckIn, type CheckIn, type CheckInAnswer, type CheckInPayload, type CheckInRefusal, type CheckInShareDuration, type CheckInSharedRevision } from "@/modules/coaching/checkin";
@@ -9,24 +8,22 @@ import { reviewTaskSummary, stopTaskShare as stopCoachingTaskShare, type TaskSha
 import { parseCivilDate, serialiseCivilDate, todayInZone, type CivilDate } from "@/modules/time/civil";
 import { now } from "@/modules/time/clock";
 import { shareThroughDateOfCutoff } from "@/modules/time/window";
-import { outcomeOfRefusal, resolveSession, type ScopeDecision, type SessionSource } from "../authorize";
+import type { ScopeDecision, SessionSource } from "../authorize";
 import { coachingCheckInRecordSchema, coachingGrantRecordSchema, coachingTaskShareRecordSchema, coachingTargetRecordSchema, ministryIdSchema, principalIdSchema, taskRecordSchema, taskReviewedFingerprint } from "../envelope";
 import type { CoachingCheckInRecord, CoachingDurationRecord, CoachingGrantRecord, CoachingTaskShareRecord, CoachingTargetRecord, MutationInput, Scope, TaskRecord } from "../envelope";
-import { runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
-import { LOCAL_STORE_SYSTEM, ROOT_FIELD_KEY, UNIDENTIFIED_ATTEMPT, conflict, denied, invalid, unavailable, type FieldMessages, type JsonValue, type MutationOutcome, type MutationResult } from "../outcome";
+import { openMutation, refuseConflict, refuseDenied, refuseInvalid, refuseUnavailable, runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
+import { ROOT_FIELD_KEY, type FieldMessages, type JsonValue, type MutationOutcome, type MutationResult } from "../outcome";
 const SHARE_SOURCE_ZONE = "Europe/London",
   TARGET_PLANNING_ZONE = "UTC";
 const STATE_DOCUMENT_REFERENCE = "session-state",
   STATE_UNAVAILABLE_GUIDANCE = "This session's coaching records could not be read. Reload the page; if they stay unreadable, reset the development seed, which rebuilds the session documents deterministically.";
 const SCOPE_ESTABLISHED: ScopeDecision = { ok: true };
-/** The one runner behind every coaching mutation: the session an attempt acts for is established before a transaction opens, and every one of the sixteen declares itself under the development control's own authority. */
 type CoachingSpec<R extends MutationResult> = { readonly scopeAuthority?: "grant"; readonly readCurrent?: (documents: MutationContext["docs"]) => CurrentTarget; readonly apply: (context: MutationContext) => ApplyResult<R> };
 async function runCoachingMutation<P, R extends MutationResult>(input: MutationInput<P>, source: SessionSource | undefined, schema: z.ZodType<P>, name: MutationName, spec: CoachingSpec<R>): Promise<MutationOutcome> {
-  const session = await mutationSessionId(source, attemptIdOf(input));
+  const session = await mutationSessionId(input, source);
   if (!session.ok) return session.outcome;
   return runMutation<P, R>({ sessionId: session.sessionId, input, schema, name, authorize: () => SCOPE_ESTABLISHED, ...(spec.scopeAuthority === undefined ? {} : { scopeAuthority: spec.scopeAuthority }), ...(spec.readCurrent === undefined ? {} : { readCurrent: spec.readCurrent }), apply: spec.apply });
 }
-
 function revisionOrdinalOf(token: string): number {
   const digits = /(\d+)\s*$/u.exec(token);
   if (digits === null) return 1;
@@ -36,7 +33,6 @@ function revisionOrdinalOf(token: string): number {
 const revisionOrdinalOfValue = (value: number | string): number => (typeof value === "number" ? value : revisionOrdinalOf(value)),
   nextRevisionTokenOf = (token: string): string => `rev-${String(revisionOrdinalOf(token) + 1)}`;
 const FIRST_REVISION = "rev-1";
-
 function instantOf(value: string): Temporal.Instant | null {
   try {
     return Temporal.Instant.from(value);
@@ -52,19 +48,8 @@ function planningToday(at: Temporal.Instant): CivilDate | null {
   const today = todayInZone(TARGET_PLANNING_ZONE, at);
   return today.status === "resolved" ? today.date : null;
 }
-function attemptIdOf(input: unknown): string {
-  if (typeof input !== "object" || input === null) return UNIDENTIFIED_ATTEMPT;
-  const candidate: unknown = Reflect.get(input, "operationId");
-  return typeof candidate === "string" && candidate.length > 0 ? candidate : UNIDENTIFIED_ATTEMPT;
-}
-type SessionForMutation = { readonly ok: true; readonly sessionId: string } | { readonly ok: false; readonly outcome: MutationOutcome };
-
-async function mutationSessionId(source: SessionSource | undefined, operationId: string): Promise<SessionForMutation> {
-  if (source !== undefined) return { ok: true, sessionId: source.sessionId };
-  const resolution = await resolveSession().catch(() => undefined);
-  if (resolution === undefined) return { ok: false, outcome: denied({ operationId, reasonCode: "session-unavailable" }) };
-  return resolution.ok ? { ok: true, sessionId: resolution.session.sessionId } : { ok: false, outcome: outcomeOfRefusal(resolution.refusal, operationId) };
-}
+type MutationIdentity = { readonly ok: true; readonly sessionId: string } | { readonly ok: false; readonly outcome: MutationOutcome };
+const mutationSessionId = async (input: unknown, source: SessionSource | undefined): Promise<MutationIdentity> => (source === undefined ? openMutation(input) : { ok: true, sessionId: source.sessionId });
 type StateDocumentCarrier = { state: unknown };
 type CoachingFamilies = {
   readonly document: Record<string, unknown>;
@@ -76,11 +61,26 @@ type CoachingFamilies = {
   readonly projectionCurrencies: readonly string[];
 };
 type FamiliesLoad = { readonly ok: true; readonly families: CoachingFamilies } | { readonly ok: false; readonly reference: string };
-function familiesOf(context: MutationContext, operationId: string): CoachingFamilies | RefusalResult {
+function familiesOf(context: MutationContext): CoachingFamilies {
   const loaded = readFamilies(context.docs);
-  return loaded.ok ? loaded.families : refuseUnavailable(operationId, loaded.reference);
+  if (!loaded.ok) refuseUnavailable({ operationId: context.operationId, reference: loaded.reference, guidance: STATE_UNAVAILABLE_GUIDANCE });
+  return loaded.families;
 }
-
+function requireWorkingGrant(record: CoachingGrantRecord, operationId: string): CoachingGrant {
+  const working = workingGrantOf(record);
+  if (working === null) refuseUnavailable({ operationId, reference: "coaching-grant", guidance: STATE_UNAVAILABLE_GUIDANCE });
+  return working;
+}
+function requireWorkingCheckIn(record: CoachingCheckInRecord, operationId: string): CheckIn {
+  const working = workingCheckInOf(record);
+  if (working === null) refuseUnavailable({ operationId, reference: "coaching-check-in", guidance: STATE_UNAVAILABLE_GUIDANCE });
+  return working;
+}
+function requireGrant(families: CoachingFamilies, grantId: string, principalId: string, role: "worker" | "coach", operationId: string): CoachingGrantRecord {
+  const record = families.grants.find((candidate) => candidate.grantId === grantId);
+  if (record === undefined || (role === "coach" ? record.coachPrincipalId : record.workerPrincipalId) !== principalId) refuseDenied(operationId);
+  return record;
+}
 const plainRecordOf = (value: unknown): Record<string, unknown> | null => (typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
 const familyOf = <T>(document: Record<string, unknown>, key: string, schema: z.ZodType<T>): readonly T[] | null => {
   const parsed = z.array(schema).safeParse(Reflect.get(document, key) ?? []);
@@ -104,8 +104,7 @@ function readFamilies(carrier: StateDocumentCarrier): FamiliesLoad {
   const taskShares = familyOf(document, "coachingTaskShares", coachingTaskShareRecordSchema);
   if (taskShares === null) return { ok: false, reference: "coaching-task-shares" };
   const tasks = familyOf(document, "tasks", taskRecordSchema);
-  if (tasks === null) return { ok: false, reference: "tasks" };
-  return { ok: true, families: { document, grants, targets, checkIns, taskShares, tasks, projectionCurrencies: projectionCurrenciesOf(document) } };
+  return tasks === null ? { ok: false, reference: "tasks" } : { ok: true, families: { document, grants, targets, checkIns, taskShares, tasks, projectionCurrencies: projectionCurrenciesOf(document) } };
 }
 const withFamily = (document: Record<string, unknown>, key: string, value: unknown): Record<string, unknown> => ({ ...document, [key]: value });
 const replacingRecord = <T>(records: readonly T[], identifierOf: (record: T) => string, identifier: string, next: T): readonly T[] => records.map((record) => (identifierOf(record) === identifier ? next : record));
@@ -113,27 +112,18 @@ const grantIdOf = (grant: CoachingGrantRecord): string => grant.grantId;
 const targetIdOf = (target: CoachingTargetRecord): string => target.targetId;
 const checkInIdOf = (checkIn: CoachingCheckInRecord): string => checkIn.checkInId;
 const shareIdOf = (share: CoachingTaskShareRecord): string => share.shareId;
-type RefusalResult = { readonly refused: MutationOutcome };
-
-const refuseDenied = (operationId: string): RefusalResult => ({ refused: denied({ operationId, reasonCode: "no-permission" }) });
-const refuseConflict = (operationId: string, currentRevision: string, current: unknown, preservedInput: unknown): RefusalResult => ({ refused: conflict({ operationId, currentRevision, current, preservedInput, reason: "stale-revision" }) });
-const refuseInvalid = (operationId: string, fields: FieldMessages): RefusalResult => ({ refused: invalid({ operationId, fields }) });
-const refuseUnavailable = (operationId: string, reference: string): RefusalResult => ({ refused: unavailable({ operationId, source: { system: LOCAL_STORE_SYSTEM, reference }, guidance: STATE_UNAVAILABLE_GUIDANCE }) });
-function refuseFromCoaching(operationId: string, refusal: CoachingRefusal, record: CoachingGrantRecord, preservedInput: unknown): RefusalResult {
-  switch (refusal.reason) {
-    case "not-holder":
-    case "ministry-not-admitted":
-    case "module-not-admitted":
-    case "permission-hold":
-      return refuseDenied(operationId);
-    case "missing-duration":
-    case "invalid-selection":
-    case "invalid-duration":
-    case "identity-not-verified":
-      return refuseInvalid(operationId, { [ROOT_FIELD_KEY]: [refusal.message] });
-    default:
-      return refuseConflict(operationId, record.revision, record, preservedInput);
-  }
+/** The current-state target one record of a coaching family names: absent when the id is unknown or the document cannot be read. */
+function currentStandingTarget<T extends { readonly revision: string | number }>(docs: StateDocumentCarrier, id: string | undefined, recordsOf: (families: CoachingFamilies) => readonly T[], idOf: (record: T) => string, standing: (record: T) => unknown): CurrentTarget {
+  if (id === undefined) return { kind: "absent" };
+  const loaded = readFamilies(docs);
+  if (!loaded.ok) return { kind: "absent" };
+  const record = recordsOf(loaded.families).find((candidate) => idOf(candidate) === id);
+  return record === undefined ? { kind: "absent" } : { kind: "record", revision: String(record.revision), value: standing(record) };
+}
+function refuseFromCoaching(operationId: string, refusal: CoachingRefusal, record: CoachingGrantRecord, preservedInput: unknown): never {
+  const reason = refusal.reason;
+  if (reason === "not-holder" || reason === "ministry-not-admitted" || reason === "module-not-admitted" || reason === "permission-hold") return refuseDenied(operationId);
+  return reason === "missing-duration" || reason === "invalid-selection" || reason === "invalid-duration" || reason === "identity-not-verified" ? refuseInvalid(operationId, { [ROOT_FIELD_KEY]: [refusal.message] }) : refuseConflict({ operationId, currentRevision: record.revision, current: record, preservedInput });
 }
 function workingDurationOf(duration: CoachingDurationRecord): GrantDuration | null {
   if (duration.kind === "ongoing")
@@ -168,20 +158,17 @@ function workingGrantOf(record: CoachingGrantRecord): CoachingGrant | null {
   };
 }
 function storedGrantOf(record: CoachingGrantRecord, grant: CoachingGrant, nextRevision: string): CoachingGrantRecord {
-  const duration = grant.duration === null ? record.duration : storedDurationOf(grant.duration);
-  return { ...record, modules: grant.modules, duration, state: grant.state === "superseded" ? record.state : grant.state, invitation: { ...record.invitation, supersededBy: grant.invitation.supersededBy }, revision: nextRevision };
+  return { ...record, modules: grant.modules, duration: grant.duration === null ? record.duration : storedDurationOf(grant.duration), state: grant.state === "superseded" ? record.state : grant.state, invitation: { ...record.invitation, supersededBy: grant.invitation.supersededBy }, revision: nextRevision };
 }
 function accessContextOf(record: CoachingGrantRecord, principalId: string, role: "worker" | "coach", scope: Scope): CoachingAccessContext {
-  const ministryId = record.ministryIds.includes(scope.ministryId) ? scope.ministryId : (record.ministryIds.at(0) ?? scope.ministryId);
-  return { actor: { role, principalId }, organizationId: scope.organizationId, ministryId, subjectAvailability: "available", permissionHold: "none" };
+  return { actor: { role, principalId }, organizationId: scope.organizationId, ministryId: record.ministryIds.includes(scope.ministryId) ? scope.ministryId : (record.ministryIds.at(0) ?? scope.ministryId), subjectAvailability: "available", permissionHold: "none" };
 }
 function workingVersionOf(version: CoachingTargetRecord["versions"][number]): TargetVersion | null {
   const effectiveFrom = civilDateOf(version.effectiveFrom),
     calendarStart = civilDateOf(version.calendarStart);
   if (effectiveFrom === null || calendarStart === null) return null;
   const effectiveTo = version.effectiveTo === null ? null : civilDateOf(version.effectiveTo);
-  if (version.effectiveTo !== null && effectiveTo === null) return null;
-  return { revisionId: version.revisionId, effectiveFrom, ...(effectiveTo === null ? {} : { effectiveTo }), quantity: version.quantity, measure: version.measure, calendarStart };
+  return version.effectiveTo !== null && effectiveTo === null ? null : { revisionId: version.revisionId, effectiveFrom, ...(effectiveTo === null ? {} : { effectiveTo }), quantity: version.quantity, measure: version.measure, calendarStart };
 }
 function storedVersionsOf(versions: readonly TargetVersion[]): CoachingTargetRecord["versions"] {
   return versions.map((version) => ({
@@ -276,27 +263,15 @@ function workingTaskShareOf(record: CoachingTaskShareRecord): TaskShare | null {
   const withdrawnAt = record.withdrawnAt === undefined || record.withdrawnAt === null ? null : instantOf(record.withdrawnAt);
   if (record.withdrawnAt !== undefined && record.withdrawnAt !== null && withdrawnAt === null) return null;
   const reviewedSummary = { description: record.reviewedSummary.description, codePoints: record.reviewedSummary.codePoints, reviewedAt };
-  const reviewedFingerprint = record.reviewedFingerprint;
-  const occurrenceId = record.occurrenceId;
-  const revision = record.revision;
-  const shareId = record.shareId;
-  const state = record.state;
-  return { shareId, occurrenceId, reviewedSummary, reviewedFingerprint, state, revision, ...(withdrawnAt === null ? {} : { withdrawnAt }) };
+  return { shareId: record.shareId, occurrenceId: record.occurrenceId, reviewedSummary, reviewedFingerprint: record.reviewedFingerprint, state: record.state, revision: record.revision, ...(withdrawnAt === null ? {} : { withdrawnAt }) };
 }
-function refuseFromTaskShare(operationId: string, refusal: TaskShareRefusal): RefusalResult {
-  switch (refusal.reason) {
-    case "description-too-long":
-      return refuseInvalid(operationId, { safeDescription: [`A shared description is at most ${String(refusal.limit)} Unicode code points; this one is ${String(refusal.codePoints)}. Nothing was shortened: take out the text you do not want to share, and review it again.`] });
-    case "description-empty":
-      return refuseInvalid(operationId, { safeDescription: ["A shared description states what you want your coach to read, so it cannot be blank."] });
-    case "unavailable":
-      return refuseUnavailable(operationId, "coaching-task-share");
-    default:
-      return refuseInvalid(operationId, { [ROOT_FIELD_KEY]: ["This shared summary no longer stands as it was read, so nothing was shared. Reload the summaries, review the description and share it again."] });
-  }
+function refuseFromTaskShare(operationId: string, refusal: TaskShareRefusal): never {
+  if (refusal.reason === "description-too-long") return refuseInvalid(operationId, { safeDescription: [`A shared description is at most ${String(refusal.limit)} Unicode code points; this one is ${String(refusal.codePoints)}. Nothing was shortened: take out the text you do not want to share, and review it again.`] });
+  if (refusal.reason === "description-empty") return refuseInvalid(operationId, { safeDescription: ["A shared description states what you want your coach to read, so it cannot be blank."] });
+  if (refusal.reason === "unavailable") return refuseUnavailable({ operationId, reference: "coaching-task-share", guidance: STATE_UNAVAILABLE_GUIDANCE });
+  return refuseInvalid(operationId, { [ROOT_FIELD_KEY]: ["This shared summary no longer stands as it was read, so nothing was shared. Reload the summaries, review the description and share it again."] });
 }
 const referenceField = z.string().trim().min(1);
-
 const civilDateField = z
   .string()
   .trim()
@@ -324,22 +299,11 @@ const invitationPayload = z
     if (invitedMinistriesOf(payload).length === 0) ctx.addIssue({ code: "custom", path: ["ministryIds"], message: "An invitation names the ministry it is made in, by identifier." });
   });
 type InvitationPayload = z.infer<typeof invitationPayload>;
-
-function invitedCoachOf(payload: InvitationPayload): string {
-  return payload.coachPrincipalId ?? payload.recipientPrincipalId ?? "";
-}
-function invitedMinistriesOf(payload: InvitationPayload): readonly string[] {
-  if (payload.ministryIds !== undefined) return payload.ministryIds;
-  return payload.ministryId === undefined ? [] : [payload.ministryId];
-}
-const acceptancePayload = z.strictObject({
-  grantId: referenceField,
-  // The revision the coach saw, in either form a read hands out: the ordinal number, or the stored token (`"rev-1"`) a relationship's own envelope states. Both are read as the same ordinal below.
-  invitationRevision: z.union([z.number().int().min(0), referenceField]).optional(),
-});
+const invitedCoachOf = (payload: InvitationPayload): string => payload.coachPrincipalId ?? payload.recipientPrincipalId ?? "";
+const invitedMinistriesOf = (payload: InvitationPayload): readonly string[] => (payload.ministryIds !== undefined ? payload.ministryIds : payload.ministryId === undefined ? [] : [payload.ministryId]);
+const acceptancePayload = z.strictObject({ grantId: referenceField, invitationRevision: z.union([z.number().int().min(0), referenceField]).optional() });
 type AcceptancePayload = z.infer<typeof acceptancePayload>;
 const grantReferencePayload = z.strictObject({ grantId: referenceField });
-
 type GrantReferencePayload = z.infer<typeof grantReferencePayload>;
 const modulePayload = z.strictObject({ grantId: referenceField, moduleKey: z.enum(MODULE_KEYS).optional(), module: z.enum(MODULE_KEYS).optional(), enabled: z.boolean() }).superRefine((payload, ctx) => {
   if ((payload.moduleKey ?? payload.module) === undefined) ctx.addIssue({ code: "custom", path: ["moduleKey"], message: "A module change names the one module it switches." });
@@ -349,7 +313,6 @@ const moduleKeyOf = (payload: ModulePayload): ModuleKey | undefined => payload.m
   measureField = z.enum(TARGET_MEASURES);
 const quantityField = z.number().int().min(1),
   periodKindField = z.enum(["weekly", "monthly", "custom"]);
-
 type CustomRangeFields = { readonly period?: "weekly" | "monthly" | "custom" | undefined; readonly calendarStart?: string | undefined; readonly periodEnd?: string | undefined };
 function requireCustomRange(fields: CustomRangeFields, ctx: z.RefinementCtx): void {
   if (fields.period !== "custom") return;
@@ -372,7 +335,6 @@ const targetEditPayload = z
   .superRefine(requireCustomRange);
 type TargetEditPayload = z.infer<typeof targetEditPayload>;
 const targetStatePayload = z.strictObject({ targetId: referenceField });
-
 type TargetStatePayload = z.infer<typeof targetStatePayload>;
 const checkInTextsField = z.array(z.string()),
   saveCheckInPayload = z.strictObject({ checkInId: referenceField.optional(), questions: checkInTextsField.optional(), answers: checkInTextsField });
@@ -402,7 +364,6 @@ type TargetResult = { readonly [field: string]: JsonValue; readonly targetId: st
 type CheckInResult = { readonly [field: string]: JsonValue; readonly checkInId: string; readonly state: string; readonly revision: string };
 type TaskShareResult = { readonly [field: string]: JsonValue; readonly shareId: string; readonly taskId: string; readonly state: string; readonly revision: string };
 const INVITATION_WINDOW_HOURS = 168;
-
 const invitationExpiryOf = (issuedAt: Temporal.Instant): Temporal.Instant => issuedAt.add({ hours: INVITATION_WINDOW_HOURS });
 function chosenShareDurationOf(duration: InvitationPayload["duration"]): ShareDuration | null {
   if (duration.kind === "ongoing") return { kind: "ongoing", frozenZone: SHARE_SOURCE_ZONE };
@@ -419,26 +380,20 @@ function invitedRangeOf(payload: InvitationPayload, projectionCurrencies: readon
     currency = stated === undefined ? (projectionCurrencies.length === 1 ? projectionCurrencies[0] : undefined) : projectionCurrencies.includes(stated) ? stated : undefined;
   if (currency === undefined) {
     const absent = "A reviewed range states the one currency it was reviewed in, because this session's support source states more than one and no figure is recorded against a currency nobody chose.";
-    const foreign = "A reviewed range states a currency this session's support source holds, so a figure is never disclosed in a currency nothing was measured in.";
-    return { ok: false, fields: { financialRange: [stated === undefined ? absent : foreign] } };
+    return { ok: false, fields: { financialRange: [stated === undefined ? absent : "A reviewed range states a currency this session's support source holds, so a figure is never disclosed in a currency nothing was measured in."] } };
   }
   return { ok: true, stored: { from: range.fromDate, to: range.toDate, currency } };
 }
 const grantStandingOf = (record: CoachingGrantRecord): GrantResult => ({ grantId: record.grantId, state: record.state, revision: record.revision });
 /** Invites one named coach over the ministries and for the duration the worker chose. */
-export async function inviteCoach(input: MutationInput<InvitationPayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, invitationPayload, "inviteCoach", { apply: (context) => applyInviteCoach(context, input.payload) });
-}
+export const inviteCoach = async (input: MutationInput<InvitationPayload>, source?: SessionSource): Promise<MutationOutcome> => runCoachingMutation(input, source, invitationPayload, "inviteCoach", { apply: (context) => applyInviteCoach(context, input.payload) });
 function applyInviteCoach(context: MutationContext, payload: InvitationPayload): ApplyResult<GrantResult> {
   const { operationId } = context;
   const at = now();
-  const families = familiesOf(context, operationId);
-  if ("refused" in families) return families;
+  const families = familiesOf(context);
   const coachPrincipalId = invitedCoachOf(payload),
     ministryIds = invitedMinistriesOf(payload);
-  // An invitation states the scope it was made in, and the runner asserted the scope the request claimed. Those are two statements of where the worker is acting, so the stated one is checked against the same admissions the claimed one was.
-  const admitted = ministryIds.every((ministryId) => context.session.admittedMemberships.some((membership) => membership.organizationId === payload.organizationId && membership.ministryId === ministryId));
-  if (!admitted) return refuseDenied(operationId);
+  if (!ministryIds.every((ministryId) => context.session.admittedMemberships.some((membership) => membership.organizationId === payload.organizationId && membership.ministryId === ministryId))) return refuseDenied(operationId);
   if (coachPrincipalId === context.session.principalId) return refuseInvalid(operationId, { coachPrincipalId: ["A worker cannot invite their own principal as coach."] });
   const chosen = chosenShareDurationOf(payload.duration);
   if (chosen === null) return refuseInvalid(operationId, { duration: ["A Share-through date is a real calendar day, so this duration names none."] });
@@ -450,18 +405,7 @@ function applyInviteCoach(context: MutationContext, payload: InvitationPayload):
     coachPrincipal = principalIdSchema.safeParse(coachPrincipalId);
   const ministries = z.array(ministryIdSchema).safeParse(ministryIds);
   if (!coachPrincipal.success || !ministries.success) return refuseDenied(operationId);
-  const invitation = inviteGrant({
-    grantId,
-    workerPrincipalId: context.session.principalId,
-    coachPrincipalId: coachPrincipal.data,
-    ministryIds: ministries.data,
-    duration: chosen,
-    // A range is recorded with its period and currency; the figures inside it are produced by the one report function at read time, and an invitation states none, so the module is handed no range rather than a measured amount this mutation would have had to invent.
-    financialRange: null,
-    issuedAt: at,
-    expiresAt: invitationExpiryOf(at),
-    revision: revisionOrdinalOf(FIRST_REVISION),
-  });
+  const invitation = inviteGrant({ grantId, workerPrincipalId: context.session.principalId, coachPrincipalId: coachPrincipal.data, ministryIds: ministries.data, duration: chosen, financialRange: null, issuedAt: at, expiresAt: invitationExpiryOf(at), revision: revisionOrdinalOf(FIRST_REVISION) });
   if (!invitation.ok) return refuseInvalid(operationId, { [ROOT_FIELD_KEY]: [invitation.error.message] });
   const record: CoachingGrantRecord = {
     grantId,
@@ -479,21 +423,15 @@ function applyInviteCoach(context: MutationContext, payload: InvitationPayload):
   return { changed: true, revision: FIRST_REVISION, created: [grantId], result: { grantId, state: record.state, revision: FIRST_REVISION } };
 }
 /** Accepts an invitation, as the coach it names, freezing the share cutoff at this instant. */
-export async function acceptInvitation(input: MutationInput<AcceptancePayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, acceptancePayload, "acceptInvitation", { scopeAuthority: "grant", readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applyAcceptInvitation(context, input.payload) });
-}
+export const acceptInvitation = async (input: MutationInput<AcceptancePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runCoachingMutation(input, source, acceptancePayload, "acceptInvitation", { scopeAuthority: "grant", readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applyAcceptInvitation(context, input.payload) });
 function applyAcceptInvitation(context: MutationContext, payload: AcceptancePayload): ApplyResult<GrantResult> {
   const { operationId } = context;
   const at = now();
-  const families = familiesOf(context, operationId);
-  if ("refused" in families) return families;
-  const record = families.grants.find((candidate) => candidate.grantId === payload.grantId);
-  // A relationship the caller does not hold and one that does not exist answer alike: a distinguishable answer would let a caller enumerate what is not theirs.
-  if (record === undefined || record.coachPrincipalId !== context.session.principalId) return refuseDenied(operationId);
-  if (payload.invitationRevision !== undefined && revisionOrdinalOfValue(payload.invitationRevision) !== revisionOrdinalOf(record.revision)) return refuseConflict(operationId, record.revision, grantStandingOf(record), payload);
-  const working = workingGrantOf(record);
-  if (working === null) return refuseUnavailable(operationId, "coaching-grant");
-  const accepted = acceptGrant(working, { acceptedBy: context.session.principalId, identityVerification: "verified", expectedRevision: revisionOrdinalOf(record.revision) }, at);
+  const families = familiesOf(context);
+  const record = requireGrant(families, payload.grantId, context.session.principalId, "coach", operationId);
+  if (payload.invitationRevision !== undefined && revisionOrdinalOfValue(payload.invitationRevision) !== revisionOrdinalOf(record.revision)) return refuseConflict({ operationId, currentRevision: record.revision, current: grantStandingOf(record), preservedInput: payload });
+  const accepted = acceptGrant(requireWorkingGrant(record, operationId), { acceptedBy: context.session.principalId, identityVerification: "verified", expectedRevision: revisionOrdinalOf(record.revision) }, at);
   if (!accepted.ok) return refuseFromCoaching(operationId, accepted.error, record, payload);
   const nextRevision = nextRevisionTokenOf(record.revision),
     next = storedGrantOf(record, accepted.value, nextRevision);
@@ -501,30 +439,21 @@ function applyAcceptInvitation(context: MutationContext, payload: AcceptancePayl
   return { changed: true, revision: nextRevision, changedIds: [record.grantId], result: grantStandingOf(next) };
 }
 /** Revokes a grant: the worker's own stop of the sharing, kept apart from ending the relationship. */
-export async function revokeGrant(input: MutationInput<GrantReferencePayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, grantReferencePayload, "revokeGrant", { readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applyGrantClosure(context, input.payload, "revoke") });
-}
+export const revokeGrant = async (input: MutationInput<GrantReferencePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runCoachingMutation(input, source, grantReferencePayload, "revokeGrant", { readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applyGrantClosure(context, input.payload, "revoke") });
 /** Ends the coaching relationship, as the worker. */
-export async function endCoaching(input: MutationInput<GrantReferencePayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, grantReferencePayload, "endCoaching", { readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applyGrantClosure(context, input.payload, "end") });
-}
+export const endCoaching = async (input: MutationInput<GrantReferencePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runCoachingMutation(input, source, grantReferencePayload, "endCoaching", { readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applyGrantClosure(context, input.payload, "end") });
 /** Records that the coach left: the coach identity's second and last write. */
-export async function leaveCoaching(input: MutationInput<GrantReferencePayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, grantReferencePayload, "leaveCoaching", { scopeAuthority: "grant", readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applyGrantClosure(context, input.payload, "leave") });
-}
+export const leaveCoaching = async (input: MutationInput<GrantReferencePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runCoachingMutation(input, source, grantReferencePayload, "leaveCoaching", { scopeAuthority: "grant", readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applyGrantClosure(context, input.payload, "leave") });
 type GrantClosure = "revoke" | "end" | "leave";
-
 function applyGrantClosure(context: MutationContext, payload: GrantReferencePayload, closure: GrantClosure): ApplyResult<GrantResult> {
   const { operationId } = context;
-  const families = familiesOf(context, operationId);
-  if ("refused" in families) return families;
-  const record = families.grants.find((candidate) => candidate.grantId === payload.grantId);
-  if (record === undefined) return refuseDenied(operationId);
-  const principalId = context.session.principalId,
-    holds = closure === "leave" ? record.coachPrincipalId === principalId : record.workerPrincipalId === principalId;
-  if (!holds) return refuseDenied(operationId);
-  const working = workingGrantOf(record);
-  if (working === null) return refuseUnavailable(operationId, "coaching-grant");
+  const families = familiesOf(context);
+  const principalId = context.session.principalId;
+  const record = requireGrant(families, payload.grantId, principalId, closure === "leave" ? "coach" : "worker", operationId);
+  const working = requireWorkingGrant(record, operationId);
   const expectedRevision = revisionOrdinalOf(record.revision);
   const closed = closure === "revoke" ? revokeCoachingGrant(working, { revokedBy: principalId, expectedRevision }) : closure === "end" ? endGrant(working, { endedBy: principalId, expectedRevision }) : leaveGrant(working, { leftBy: principalId, expectedRevision });
   if (!closed.ok) return refuseFromCoaching(operationId, closed.error, record, payload);
@@ -534,20 +463,15 @@ function applyGrantClosure(context: MutationContext, payload: GrantReferencePayl
   return { changed: true, revision: nextRevision, changedIds: [record.grantId], result: grantStandingOf(next) };
 }
 /** Switches one of the five modules on or off for an open relationship. */
-export async function setModule(input: MutationInput<ModulePayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, modulePayload, "setModule", { readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applySetModule(context, input.payload) });
-}
+export const setModule = async (input: MutationInput<ModulePayload>, source?: SessionSource): Promise<MutationOutcome> => runCoachingMutation(input, source, modulePayload, "setModule", { readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applySetModule(context, input.payload) });
 function applySetModule(context: MutationContext, payload: ModulePayload): ApplyResult<GrantResult> {
   const { operationId } = context;
   const at = now(),
     key = moduleKeyOf(payload);
   if (key === undefined) return refuseInvalid(operationId, { moduleKey: ["A module change names the one module it switches."] });
-  const families = familiesOf(context, operationId);
-  if ("refused" in families) return families;
-  const record = families.grants.find((candidate) => candidate.grantId === payload.grantId);
-  if (record === undefined || record.workerPrincipalId !== context.session.principalId) return refuseDenied(operationId);
-  const working = workingGrantOf(record);
-  if (working === null) return refuseUnavailable(operationId, "coaching-grant");
+  const families = familiesOf(context);
+  const record = requireGrant(families, payload.grantId, context.session.principalId, "worker", operationId);
+  const working = requireWorkingGrant(record, operationId);
   const selection: ModuleSelection = { ...record.modules, [key]: payload.enabled };
   const changed = setModuleSelection(working, { changedBy: context.session.principalId, selection, expectedRevision: revisionOrdinalOf(record.revision) }, at);
   if (!changed.ok) return refuseFromCoaching(operationId, changed.error, record, payload);
@@ -557,13 +481,7 @@ function applySetModule(context: MutationContext, payload: ModulePayload): Apply
   context.docs.state = withFamily(families.document, "coachingGrants", replacingRecord(families.grants, grantIdOf, record.grantId, next));
   return { changed: true, revision: nextRevision, changedIds: [record.grantId], result: grantStandingOf(next) };
 }
-function currentGrantTarget(docs: StateDocumentCarrier, grantId: string | undefined): CurrentTarget {
-  if (grantId === undefined) return { kind: "absent" };
-  const loaded = readFamilies(docs);
-  if (!loaded.ok) return { kind: "absent" };
-  const record = loaded.families.grants.find((candidate) => candidate.grantId === grantId);
-  return record === undefined ? { kind: "absent" } : { kind: "record", revision: record.revision, value: grantStandingOf(record) };
-}
+const currentGrantTarget = (docs: StateDocumentCarrier, grantId: string | undefined): CurrentTarget => currentStandingTarget(docs, grantId, (families) => families.grants, grantIdOf, grantStandingOf);
 function rawGrantIdOf(input: unknown): string | undefined {
   if (typeof input !== "object" || input === null) return undefined;
   const payload: unknown = Reflect.get(input, "payload");
@@ -575,9 +493,7 @@ const targetStandingOf = (record: CoachingTargetRecord): TargetResult => ({ targ
 function periodOf(kind: "weekly" | "monthly" | "custom", calendarStart: CivilDate, periodEnd: string | undefined): { readonly ok: true; readonly period: TargetPeriod } | { readonly ok: false; readonly field: string } {
   if (kind !== "custom") return { ok: true, period: { kind } };
   const end = periodEnd === undefined ? null : civilDateOf(periodEnd);
-  if (end === null) return { ok: false, field: "A one-off custom period states the day it ends." };
-  if (Temporal.PlainDate.compare(end, calendarStart) < 0) return { ok: false, field: "A one-off custom period ends on or after the day it starts." };
-  return { ok: true, period: { kind: "custom", start: calendarStart, end } };
+  return end === null ? { ok: false, field: "A one-off custom period states the day it ends." } : Temporal.PlainDate.compare(end, calendarStart) < 0 ? { ok: false, field: "A one-off custom period ends on or after the day it starts." } : { ok: true, period: { kind: "custom", start: calendarStart, end } };
 }
 function prospectiveBoundaryOf(anchor: PeriodAnchor, today: CivilDate, latestEffectiveFrom: CivilDate): CivilDate | null {
   const current = resolvePeriodContaining(anchor, today);
@@ -589,16 +505,13 @@ function prospectiveBoundaryOf(anchor: PeriodAnchor, today: CivilDate, latestEff
   return Temporal.PlainDate.compare(today, latestEffectiveFrom) > 0 ? today : null;
 }
 /** Sets a target for the first time: what it counts, how many, over which period, under the worker's own private label, and whether Home lists it. */
-export async function saveTarget(input: MutationInput<TargetSavePayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, targetSavePayload, "saveTarget", { apply: (context) => applySaveTarget(context, input.payload) });
-}
+export const saveTarget = async (input: MutationInput<TargetSavePayload>, source?: SessionSource): Promise<MutationOutcome> => runCoachingMutation(input, source, targetSavePayload, "saveTarget", { apply: (context) => applySaveTarget(context, input.payload) });
 function applySaveTarget(context: MutationContext, payload: TargetSavePayload): ApplyResult<TargetResult> {
   const { operationId } = context;
   const at = now(),
     today = planningToday(at);
-  if (today === null) return refuseUnavailable(operationId, "planning-calendar");
-  const families = familiesOf(context, operationId);
-  if ("refused" in families) return families;
+  if (today === null) return refuseUnavailable({ operationId, reference: "planning-calendar", guidance: STATE_UNAVAILABLE_GUIDANCE });
+  const families = familiesOf(context);
   const calendarStart = payload.calendarStart === undefined ? today : civilDateOf(payload.calendarStart);
   if (calendarStart === null) return refuseInvalid(operationId, { calendarStart: ["This target starts on a real calendar day."] });
   const period = periodOf(payload.period ?? "weekly", calendarStart, payload.periodEnd);
@@ -622,25 +535,23 @@ function applySaveTarget(context: MutationContext, payload: TargetSavePayload): 
   return { changed: true, revision: FIRST_REVISION, created: [targetId], result: { targetId, state: record.state, revision: FIRST_REVISION, versionRevisionId: firstVersion.revisionId } };
 }
 /** Changes a target's plan, opening a prospective version when the count, the measure or the calendar start changes. */
-export async function editTarget(input: MutationInput<TargetEditPayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, targetEditPayload, "editTarget", { readCurrent: (docs) => currentTargetTarget(docs, rawTargetIdOf(input)), apply: (context) => applyEditTarget(context, input.payload) });
-}
+export const editTarget = async (input: MutationInput<TargetEditPayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runCoachingMutation(input, source, targetEditPayload, "editTarget", { readCurrent: (docs) => currentTargetTarget(docs, rawTargetIdOf(input)), apply: (context) => applyEditTarget(context, input.payload) });
 function applyEditTarget(context: MutationContext, payload: TargetEditPayload): ApplyResult<TargetResult> {
   const { operationId } = context;
   const at = now();
-  const families = familiesOf(context, operationId);
-  if ("refused" in families) return families;
+  const families = familiesOf(context);
   const record = families.targets.find((candidate) => candidate.targetId === payload.targetId);
   if (record === undefined || record.workerPrincipalId !== context.session.principalId) return refuseDenied(operationId);
   const today = planningToday(at),
     period = workingPeriodOf(record);
   const calendarStart = civilDateOf(record.calendarStart),
     versions = record.versions.map(workingVersionOf);
-  if (today === null || period === null || calendarStart === null) return refuseUnavailable(operationId, "coaching-target");
-  if (versions.some((version) => version === null)) return refuseUnavailable(operationId, "coaching-target-versions");
+  if (today === null || period === null || calendarStart === null) return refuseUnavailable({ operationId, reference: "coaching-target", guidance: STATE_UNAVAILABLE_GUIDANCE });
+  if (versions.some((version) => version === null)) return refuseUnavailable({ operationId, reference: "coaching-target-versions", guidance: STATE_UNAVAILABLE_GUIDANCE });
   const history = versions.filter((version): version is TargetVersion => version !== null),
     latest = history.at(-1);
-  if (latest === undefined) return refuseUnavailable(operationId, "coaching-target-versions");
+  if (latest === undefined) return refuseUnavailable({ operationId, reference: "coaching-target-versions", guidance: STATE_UNAVAILABLE_GUIDANCE });
   const nextMeasure: TargetMeasure = payload.measure ?? record.measure;
   const nextQuantity = payload.quantity ?? record.quantity,
     nextCalendarStart = payload.calendarStart === undefined ? calendarStart : civilDateOf(payload.calendarStart);
@@ -652,20 +563,18 @@ function applyEditTarget(context: MutationContext, payload: TargetEditPayload): 
   const nextLabel = payload.privateLabel ?? record.privateLabel,
     nextPlacement = payload.homePlacement === undefined ? record.homePlacement : payload.homePlacement ? "placed" : "unplaced";
   const planChanged = nextMeasure !== record.measure || nextQuantity !== record.quantity || Temporal.PlainDate.compare(nextCalendarStart, calendarStart) !== 0;
-  const periodChanged = nextPeriod.period.kind !== period.kind || (nextPeriod.period.kind === "custom" && period.kind === "custom" && !nextPeriod.period.end.equals(period.end));
-  if (!planChanged && !periodChanged && nextLabel === record.privateLabel && nextPlacement === record.homePlacement) return { changed: false };
-  if (record.state === "ended") return refuseConflict(operationId, record.revision, targetStandingOf(record), payload);
+  if (!planChanged && !(nextPeriod.period.kind !== period.kind || (nextPeriod.period.kind === "custom" && period.kind === "custom" && !nextPeriod.period.end.equals(period.end))) && nextLabel === record.privateLabel && nextPlacement === record.homePlacement) return { changed: false };
+  if (record.state === "ended") return refuseConflict({ operationId, currentRevision: record.revision, current: targetStandingOf(record), preservedInput: payload });
   let nextVersions: readonly TargetVersion[] = history;
   let openedVersionId: string | undefined;
   if (planChanged) {
     const boundary = prospectiveBoundaryOf({ period, calendarStart }, today, latest.effectiveFrom);
-    if (boundary === null) return refuseConflict(operationId, record.revision, targetStandingOf(record), payload);
+    if (boundary === null) return refuseConflict({ operationId, currentRevision: record.revision, current: targetStandingOf(record), preservedInput: payload });
     const versionRevisionId = `${record.targetId}-version-${String(history.length + 1)}`;
     const planned = startProspectiveVersion({ versions: history, anchor: { period, calendarStart }, change: { revisionId: versionRevisionId, quantity: nextQuantity, measure: nextMeasure, calendarStart: nextCalendarStart }, effectiveFrom: boundary });
     if (!planned.ok) {
       if (planned.error === "invalid-quantity") return refuseInvalid(operationId, { quantity: ["A target counts a positive whole number of the measure it sets."] });
-      if (planned.error === "no-change") return { changed: false };
-      return refuseConflict(operationId, record.revision, targetStandingOf(record), payload);
+      return planned.error === "no-change" ? { changed: false } : refuseConflict({ operationId, currentRevision: record.revision, current: targetStandingOf(record), preservedInput: payload });
     }
     nextVersions = planned.value;
     openedVersionId = versionRevisionId;
@@ -676,33 +585,24 @@ function applyEditTarget(context: MutationContext, payload: TargetEditPayload): 
   return { changed: true, revision: nextRevision, changedIds: [record.targetId], result: { targetId: record.targetId, state: next.state, revision: nextRevision, ...(openedVersionId === undefined ? {} : { versionRevisionId: openedVersionId }) } };
 }
 /** Pauses a target: distinct from ending it and from a source that cannot be read. */
-export async function pauseTarget(input: MutationInput<TargetStatePayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, targetStatePayload, "pauseTarget", { readCurrent: (docs) => currentTargetTarget(docs, rawTargetIdOf(input)), apply: (context) => applyTargetLifecycle(context, input.payload, "paused") });
-}
+export const pauseTarget = async (input: MutationInput<TargetStatePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runCoachingMutation(input, source, targetStatePayload, "pauseTarget", { readCurrent: (docs) => currentTargetTarget(docs, rawTargetIdOf(input)), apply: (context) => applyTargetLifecycle(context, input.payload, "paused") });
 /** Ends a target: its history is kept, its closed periods keep the version they were measured against, and no later action reopens it. */
-export async function endTarget(input: MutationInput<TargetStatePayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, targetStatePayload, "endTarget", { readCurrent: (docs) => currentTargetTarget(docs, rawTargetIdOf(input)), apply: (context) => applyTargetLifecycle(context, input.payload, "ended") });
-}
+export const endTarget = async (input: MutationInput<TargetStatePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runCoachingMutation(input, source, targetStatePayload, "endTarget", { readCurrent: (docs) => currentTargetTarget(docs, rawTargetIdOf(input)), apply: (context) => applyTargetLifecycle(context, input.payload, "ended") });
 function applyTargetLifecycle(context: MutationContext, payload: TargetStatePayload, state: "paused" | "ended"): ApplyResult<TargetResult> {
   const { operationId } = context;
-  const families = familiesOf(context, operationId);
-  if ("refused" in families) return families;
+  const families = familiesOf(context);
   const record = families.targets.find((candidate) => candidate.targetId === payload.targetId);
   if (record === undefined || record.workerPrincipalId !== context.session.principalId) return refuseDenied(operationId);
-  if (record.state === "ended") return state === "ended" ? { changed: false } : refuseConflict(operationId, record.revision, targetStandingOf(record), payload);
+  if (record.state === "ended") return state === "ended" ? { changed: false } : refuseConflict({ operationId, currentRevision: record.revision, current: targetStandingOf(record), preservedInput: payload });
   if (record.state === state) return { changed: false };
   const nextRevision = nextRevisionTokenOf(record.revision);
   const next: CoachingTargetRecord = { ...record, state, revision: nextRevision };
   context.docs.state = withFamily(families.document, "coachingTargets", replacingRecord(families.targets, targetIdOf, record.targetId, next));
   return { changed: true, revision: nextRevision, changedIds: [record.targetId], result: { targetId: record.targetId, state, revision: nextRevision } };
 }
-function currentTargetTarget(docs: StateDocumentCarrier, targetId: string | undefined): CurrentTarget {
-  if (targetId === undefined) return { kind: "absent" };
-  const loaded = readFamilies(docs);
-  if (!loaded.ok) return { kind: "absent" };
-  const record = loaded.families.targets.find((candidate) => candidate.targetId === targetId);
-  return record === undefined ? { kind: "absent" } : { kind: "record", revision: record.revision, value: targetStandingOf(record) };
-}
+const currentTargetTarget = (docs: StateDocumentCarrier, targetId: string | undefined): CurrentTarget => currentStandingTarget(docs, targetId, (families) => families.targets, targetIdOf, targetStandingOf);
 const rawTargetIdOf = (input: unknown): string | undefined => rawIdentifierOf(input, "targetId");
 function checkInStandingOf(record: CoachingCheckInRecord): CheckInResult {
   const shared = record.shared;
@@ -717,11 +617,10 @@ function checkInSharedDurationOf(families: CoachingFamilies, record: CoachingChe
   const grant = families.grants.find((candidate) => candidate.grantId === record.grantId);
   return grant === undefined ? record.shared?.duration : grant.duration;
 }
-function refuseMisalignedCheckIn(operationId: string, questions: readonly string[], answers: readonly string[]): RefusalResult | null {
-  if (questions.length === 0 || questions.length === answers.length) return null;
-  return refuseInvalid(operationId, { answers: [`This check-in carries ${String(answers.length)} answers and ${String(questions.length)} questions. Nothing was padded or dropped: give each question one answer and save again.`] });
+function refuseMisalignedCheckIn(operationId: string, questions: readonly string[], answers: readonly string[]): void {
+  if (questions.length > 0 && questions.length !== answers.length) refuseInvalid(operationId, { answers: [`This check-in carries ${String(answers.length)} answers and ${String(questions.length)} questions. Nothing was padded or dropped: give each question one answer and save again.`] });
 }
-function refuseFromCheckIn(operationId: string, refusal: CheckInRefusal, record: CoachingCheckInRecord, preservedInput: unknown): RefusalResult {
+function refuseFromCheckIn(operationId: string, refusal: CheckInRefusal, record: CoachingCheckInRecord, preservedInput: unknown): never {
   if (refusal.violations.length > 0) {
     const fields: Record<string, string[]> = {};
     for (const violation of refusal.violations) {
@@ -730,28 +629,18 @@ function refuseFromCheckIn(operationId: string, refusal: CheckInRefusal, record:
     }
     return refuseInvalid(operationId, fields);
   }
-  switch (refusal.reason) {
-    case "unavailable":
-      return refuseUnavailable(operationId, "coaching-check-in");
-    case "no-private-draft":
-    case "no-recipients":
-      return refuseInvalid(operationId, { [ROOT_FIELD_KEY]: [refusal.message] });
-    default:
-      return refuseConflict(operationId, record.revision, checkInStandingOf(record), preservedInput);
-  }
+  if (refusal.reason === "unavailable") return refuseUnavailable({ operationId, reference: "coaching-check-in", guidance: STATE_UNAVAILABLE_GUIDANCE });
+  return refusal.reason === "no-private-draft" || refusal.reason === "no-recipients" ? refuseInvalid(operationId, { [ROOT_FIELD_KEY]: [refusal.message] }) : refuseConflict({ operationId, currentRevision: record.revision, current: checkInStandingOf(record), preservedInput: preservedInput });
 }
 /** Saves the worker's private draft of a check-in. */
-export async function saveCheckIn(input: MutationInput<SaveCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, saveCheckInPayload, "saveCheckIn", { readCurrent: (docs) => currentCheckInTarget(docs, rawCheckInIdOf(input)), apply: (context) => applySaveCheckIn(context, input.payload, input.scope) });
-}
+export const saveCheckIn = async (input: MutationInput<SaveCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runCoachingMutation(input, source, saveCheckInPayload, "saveCheckIn", { readCurrent: (docs) => currentCheckInTarget(docs, rawCheckInIdOf(input)), apply: (context) => applySaveCheckIn(context, input.payload, input.scope) });
 function applySaveCheckIn(context: MutationContext, payload: SaveCheckInPayload, scope: Scope): ApplyResult<CheckInResult> {
   const { operationId } = context;
   const at = now();
-  const families = familiesOf(context, operationId);
-  if ("refused" in families) return families;
-  const questions = payload.questions ?? [],
-    misaligned = refuseMisalignedCheckIn(operationId, questions, payload.answers);
-  if (misaligned !== null) return misaligned;
+  const families = familiesOf(context);
+  const questions = payload.questions ?? [];
+  refuseMisalignedCheckIn(operationId, questions, payload.answers);
   let record: CoachingCheckInRecord;
   let working: CheckIn;
   if (payload.checkInId === undefined) {
@@ -764,49 +653,42 @@ function applySaveCheckIn(context: MutationContext, payload: SaveCheckInPayload,
     if (found === undefined || found.workerPrincipalId !== context.session.principalId) return refuseDenied(operationId);
     record = found;
     const workingRecord = workingCheckInOf(found);
-    if (workingRecord === null) return refuseUnavailable(operationId, "coaching-check-in");
+    if (workingRecord === null) return refuseUnavailable({ operationId, reference: "coaching-check-in", guidance: STATE_UNAVAILABLE_GUIDANCE });
     working = workingRecord;
   }
   const saved = savePrivateDraft(working, checkInPayloadOf(questions, payload.answers), revisionOrdinalOf(record.revision), at);
   if (!saved.ok) return refuseFromCheckIn(operationId, saved.error, record, payload);
   if (!saved.value.changed) return { changed: false };
-  // A check-in this mutation creates stands at its first revision; every later autosave advances it.
   const nextRevision = payload.checkInId === undefined ? FIRST_REVISION : nextRevisionTokenOf(record.revision),
     sharedDuration = checkInSharedDurationOf(families, record);
   const next = storedCheckInOf(record, saved.value.checkIn, nextRevision, sharedDuration);
-  if (next === null) return refuseUnavailable(operationId, "coaching-check-in");
+  if (next === null) return refuseUnavailable({ operationId, reference: "coaching-check-in", guidance: STATE_UNAVAILABLE_GUIDANCE });
   context.docs.state = withFamily(families.document, "coachingCheckIns", payload.checkInId === undefined ? [...families.checkIns, next] : replacingRecord(families.checkIns, checkInIdOf, record.checkInId, next));
   return { changed: true, revision: nextRevision, ...(payload.checkInId === undefined ? { created: [record.checkInId] } : { changedIds: [record.checkInId] }), result: checkInStandingOf(next) };
 }
 /** Shares the saved private draft, creating the one revision a named coach may read. */
-export async function shareCheckIn(input: MutationInput<ShareCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, shareCheckInPayload, "shareCheckIn", { readCurrent: (docs) => currentCheckInTarget(docs, rawCheckInIdOf(input)), apply: (context) => applyShareCheckIn(context, input.payload, input.scope) });
-}
+export const shareCheckIn = async (input: MutationInput<ShareCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runCoachingMutation(input, source, shareCheckInPayload, "shareCheckIn", { readCurrent: (docs) => currentCheckInTarget(docs, rawCheckInIdOf(input)), apply: (context) => applyShareCheckIn(context, input.payload, input.scope) });
 function applyShareCheckIn(context: MutationContext, payload: ShareCheckInPayload, scope: Scope): ApplyResult<CheckInResult> {
   const { operationId } = context;
   const at = now();
-  const families = familiesOf(context, operationId);
-  if ("refused" in families) return families;
+  const families = familiesOf(context);
   const record = families.checkIns.find((candidate) => candidate.checkInId === payload.checkInId);
   if (record === undefined || record.workerPrincipalId !== context.session.principalId) return refuseDenied(operationId);
-  const working = workingCheckInOf(record);
-  if (working === null) return refuseUnavailable(operationId, "coaching-check-in");
+  const working = requireWorkingCheckIn(record, operationId);
   const grantRecord = families.grants.find((candidate) => candidate.grantId === record.grantId),
     grant = grantRecord === undefined ? null : workingGrantOf(grantRecord);
-  if (grantRecord === undefined || grant === null) return refuseUnavailable(operationId, "coaching-grant");
-  // The relationship must still be open: a share inside a revoked, ended or expired episode, or past its frozen cutoff, is refused rather than recorded as a disclosure nobody may read.
+  if (grantRecord === undefined || grant === null) return refuseUnavailable({ operationId, reference: "coaching-grant", guidance: STATE_UNAVAILABLE_GUIDANCE });
   const episode = activeGrant(grant, accessContextOf(grantRecord, context.session.principalId, "worker", scope), at);
   if (!episode.ok) return refuseFromCoaching(operationId, episode.error, grantRecord, payload);
   const duration = checkInShareDurationOf(grantRecord.duration);
-  if (duration === null) return refuseUnavailable(operationId, "coaching-grant");
-  // A share records the duration the relationship was accepted with. A payload that states another kind is asking to widen or shorten that window, which a share is not the act that can do.
+  if (duration === null) return refuseUnavailable({ operationId, reference: "coaching-grant", guidance: STATE_UNAVAILABLE_GUIDANCE });
   if (payload.duration !== undefined && payload.duration.kind !== grantRecord.duration.kind) return refuseInvalid(operationId, { duration: ["A shared check-in records the duration this relationship was accepted with, so the share cannot state another."] });
   const draft = working.privateDraft;
   if (payload.questions !== undefined || payload.answers !== undefined) {
     if (draft === undefined) return refuseInvalid(operationId, { [ROOT_FIELD_KEY]: ["There is no private draft to share yet. Save the draft, then share it."] });
-    const questions = payload.questions ?? draft.captured.questions.map((question) => question.wording),
-      misaligned = refuseMisalignedCheckIn(operationId, questions, payload.answers ?? []);
-    if (misaligned !== null) return misaligned;
+    const questions = payload.questions ?? draft.captured.questions.map((question) => question.wording);
+    refuseMisalignedCheckIn(operationId, questions, payload.answers ?? []);
     const bodyDiffers = questions.some((wording, index) => wording !== draft.captured.questions[index]?.wording) || (payload.answers ?? []).some((text, index) => text !== draft.answers[index]?.text);
     if (bodyDiffers) return refuseInvalid(operationId, { answers: ["The text on screen is not the saved draft, so nothing was shared. Save the private draft, then share it, so a coach reads the wording you reviewed."] });
   }
@@ -815,83 +697,67 @@ function applyShareCheckIn(context: MutationContext, payload: ShareCheckInPayloa
   if (!shared.ok) return refuseFromCheckIn(operationId, shared.error, record, payload);
   const nextRevision = nextRevisionTokenOf(record.revision),
     next = storedCheckInOf(record, shared.value.checkIn, nextRevision, grantRecord.duration);
-  if (next === null) return refuseUnavailable(operationId, "coaching-check-in");
+  if (next === null) return refuseUnavailable({ operationId, reference: "coaching-check-in", guidance: STATE_UNAVAILABLE_GUIDANCE });
   context.docs.state = withFamily(families.document, "coachingCheckIns", replacingRecord(families.checkIns, checkInIdOf, record.checkInId, next));
   return { changed: true, revision: nextRevision, changedIds: [record.checkInId], result: checkInStandingOf(next) };
 }
 /** Changes the shared revision of a check-in, which no other operation may. */
-export async function updateSharedCheckIn(input: MutationInput<UpdateSharedCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, updateSharedCheckInPayload, "updateSharedCheckIn", { readCurrent: (docs) => currentCheckInTarget(docs, rawCheckInIdOf(input)), apply: (context) => applyUpdateSharedCheckIn(context, input.payload) });
-}
+export const updateSharedCheckIn = async (input: MutationInput<UpdateSharedCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runCoachingMutation(input, source, updateSharedCheckInPayload, "updateSharedCheckIn", { readCurrent: (docs) => currentCheckInTarget(docs, rawCheckInIdOf(input)), apply: (context) => applyUpdateSharedCheckIn(context, input.payload) });
 function applyUpdateSharedCheckIn(context: MutationContext, payload: UpdateSharedCheckInPayload): ApplyResult<CheckInResult> {
   const { operationId } = context;
   const at = now();
-  const families = familiesOf(context, operationId);
-  if ("refused" in families) return families;
+  const families = familiesOf(context);
   const record = families.checkIns.find((candidate) => candidate.checkInId === payload.checkInId);
   if (record === undefined || record.workerPrincipalId !== context.session.principalId) return refuseDenied(operationId);
-  const working = workingCheckInOf(record);
-  if (working === null) return refuseUnavailable(operationId, "coaching-check-in");
-  if (payload.sharedRevisionId !== undefined && (record.shared === null || payload.sharedRevisionId !== record.shared.revisionId)) return refuseConflict(operationId, record.revision, checkInStandingOf(record), payload);
+  const working = requireWorkingCheckIn(record, operationId);
+  if (payload.sharedRevisionId !== undefined && (record.shared === null || payload.sharedRevisionId !== record.shared.revisionId)) return refuseConflict({ operationId, currentRevision: record.revision, current: checkInStandingOf(record), preservedInput: payload });
   const captured = working.shared?.captured.questions ?? [],
     questions = payload.questions === undefined ? captured.map((question) => question.wording) : payload.questions;
-  const misaligned = refuseMisalignedCheckIn(operationId, questions, payload.answers);
-  if (misaligned !== null) return misaligned;
+  refuseMisalignedCheckIn(operationId, questions, payload.answers);
   const revised = reviseSharedCheckIn(working, checkInPayloadOf(questions, payload.answers), revisionOrdinalOf(record.revision), at);
   if (!revised.ok) return refuseFromCheckIn(operationId, revised.error, record, payload);
   if (!revised.value.changed) return { changed: false };
   const nextRevision = nextRevisionTokenOf(record.revision),
     sharedDuration = checkInSharedDurationOf(families, record);
   const next = storedCheckInOf(record, revised.value.checkIn, nextRevision, sharedDuration);
-  if (next === null) return refuseUnavailable(operationId, "coaching-check-in");
+  if (next === null) return refuseUnavailable({ operationId, reference: "coaching-check-in", guidance: STATE_UNAVAILABLE_GUIDANCE });
   context.docs.state = withFamily(families.document, "coachingCheckIns", replacingRecord(families.checkIns, checkInIdOf, record.checkInId, next));
   return { changed: true, revision: nextRevision, changedIds: [record.checkInId], result: checkInStandingOf(next) };
 }
 /** Withdraws a shared check-in, so a coach can no longer open it. */
-export async function withdrawCheckIn(input: MutationInput<WithdrawCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, withdrawCheckInPayload, "withdrawCheckIn", { readCurrent: (docs) => currentCheckInTarget(docs, rawCheckInIdOf(input)), apply: (context) => applyWithdrawCheckIn(context, input.payload) });
-}
+export const withdrawCheckIn = async (input: MutationInput<WithdrawCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runCoachingMutation(input, source, withdrawCheckInPayload, "withdrawCheckIn", { readCurrent: (docs) => currentCheckInTarget(docs, rawCheckInIdOf(input)), apply: (context) => applyWithdrawCheckIn(context, input.payload) });
 function applyWithdrawCheckIn(context: MutationContext, payload: WithdrawCheckInPayload): ApplyResult<CheckInResult> {
   const { operationId } = context;
   const at = now();
-  const families = familiesOf(context, operationId);
-  if ("refused" in families) return families;
+  const families = familiesOf(context);
   const record = families.checkIns.find((candidate) => candidate.checkInId === payload.checkInId);
   if (record === undefined || record.workerPrincipalId !== context.session.principalId) return refuseDenied(operationId);
-  const working = workingCheckInOf(record);
-  if (working === null) return refuseUnavailable(operationId, "coaching-check-in");
-  if (payload.sharedRevisionId !== undefined && (record.shared === null || payload.sharedRevisionId !== record.shared.revisionId)) return refuseConflict(operationId, record.revision, checkInStandingOf(record), payload);
+  const working = requireWorkingCheckIn(record, operationId);
+  if (payload.sharedRevisionId !== undefined && (record.shared === null || payload.sharedRevisionId !== record.shared.revisionId)) return refuseConflict({ operationId, currentRevision: record.revision, current: checkInStandingOf(record), preservedInput: payload });
   const withdrawn = withdrawSharedCheckIn(working, revisionOrdinalOf(record.revision), at);
   if (!withdrawn.ok) return refuseFromCheckIn(operationId, withdrawn.error, record, payload);
   if (!withdrawn.value.changed) return { changed: false };
   const nextRevision = nextRevisionTokenOf(record.revision),
     sharedDuration = checkInSharedDurationOf(families, record);
   const next = storedCheckInOf(record, withdrawn.value.checkIn, nextRevision, sharedDuration);
-  if (next === null) return refuseUnavailable(operationId, "coaching-check-in");
+  if (next === null) return refuseUnavailable({ operationId, reference: "coaching-check-in", guidance: STATE_UNAVAILABLE_GUIDANCE });
   context.docs.state = withFamily(families.document, "coachingCheckIns", replacingRecord(families.checkIns, checkInIdOf, record.checkInId, next));
   return { changed: true, revision: nextRevision, changedIds: [record.checkInId], result: checkInStandingOf(next) };
 }
-function currentCheckInTarget(docs: StateDocumentCarrier, checkInId: string | undefined): CurrentTarget {
-  if (checkInId === undefined) return { kind: "absent" };
-  const loaded = readFamilies(docs);
-  if (!loaded.ok) return { kind: "absent" };
-  const record = loaded.families.checkIns.find((candidate) => candidate.checkInId === checkInId);
-  return record === undefined ? { kind: "absent" } : { kind: "record", revision: record.revision, value: checkInStandingOf(record) };
-}
+const currentCheckInTarget = (docs: StateDocumentCarrier, checkInId: string | undefined): CurrentTarget => currentStandingTarget(docs, checkInId, (families) => families.checkIns, checkInIdOf, checkInStandingOf);
 const rawCheckInIdOf = (input: unknown): string | undefined => rawIdentifierOf(input, "checkInId");
 const taskShareStandingOf = (record: CoachingTaskShareRecord): TaskShareResult => ({ shareId: record.shareId, taskId: record.taskId, state: record.state, revision: String(record.revision) });
 /** Shares a reviewed description of one task occurrence with the coach the worker shares with. */
-export async function shareTaskSummary(input: MutationInput<TaskSharePayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, taskSharePayload, "shareTaskSummary", { readCurrent: (docs) => currentTaskTarget(docs, rawTaskIdOf(input)), apply: (context) => applyShareTaskSummary(context, input.payload) });
-}
+export const shareTaskSummary = async (input: MutationInput<TaskSharePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runCoachingMutation(input, source, taskSharePayload, "shareTaskSummary", { readCurrent: (docs) => currentTaskTarget(docs, rawTaskIdOf(input)), apply: (context) => applyShareTaskSummary(context, input.payload) });
 function applyShareTaskSummary(context: MutationContext, payload: TaskSharePayload): ApplyResult<TaskShareResult> {
   const { operationId } = context;
   const at = now();
-  const families = familiesOf(context, operationId);
-  if ("refused" in families) return families;
+  const families = familiesOf(context);
   const task = families.tasks.find((candidate) => candidate.taskId === payload.taskId);
   if (task === undefined || task.ownerPrincipalId !== context.session.principalId) return refuseDenied(operationId);
-  // A recurring task's next occurrence never inherits the predecessor's share: the occurrence identity must be the one the worker selected, so a summary never appears in front of a coach for work nobody chose to share. A task that does not recur has exactly one occurrence, whose identity is the task's.
   const occurrenceId = payload.occurrenceId ?? (task.seriesId === null ? task.taskId : undefined);
   if (occurrenceId === undefined) return refuseInvalid(operationId, { occurrenceId: ["A recurring task's next occurrence is shared only when it is selected, so choose the occurrence you want to share."] });
   const fingerprint = taskReviewedFingerprint(task);
@@ -899,32 +765,27 @@ function applyShareTaskSummary(context: MutationContext, payload: TaskSharePaylo
   const reviewed = reviewTaskSummary(payload.safeDescription, at);
   if (!reviewed.ok) return refuseFromTaskShare(operationId, reviewed.error);
   const existing = families.taskShares.find((share) => share.taskId === task.taskId && share.occurrenceId === occurrenceId && share.state === "shared");
-  if (existing !== undefined) {
-    const same = existing.reviewedSummary.description === reviewed.value.description && existing.reviewedFingerprint === fingerprint;
-    return same ? { changed: false } : refuseConflict(operationId, String(existing.revision), taskShareStandingOf(existing), payload);
-  }
+  if (existing !== undefined) return existing.reviewedSummary.description === reviewed.value.description && existing.reviewedFingerprint === fingerprint ? { changed: false } : refuseConflict({ operationId, currentRevision: String(existing.revision), current: taskShareStandingOf(existing), preservedInput: payload });
   const shareId = `coaching-task-share-${operationId}`;
   const record: CoachingTaskShareRecord = { shareId, taskId: task.taskId, occurrenceId, reviewedSummary: { description: reviewed.value.description, codePoints: reviewed.value.codePoints, reviewedAt: at.toString() }, reviewedFingerprint: fingerprint, state: "shared", revision: 1, withdrawnAt: null };
   context.docs.state = withFamily(families.document, "coachingTaskShares", [...families.taskShares, record]);
   return { changed: true, revision: String(record.revision), created: [shareId], result: taskShareStandingOf(record) };
 }
 /** Stops sharing one occurrence's summary. */
-export async function stopTaskShare(input: MutationInput<StopTaskSharePayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runCoachingMutation(input, source, stopTaskSharePayload, "stopTaskShare", { readCurrent: (docs) => currentShareTarget(docs, rawShareIdOf(input)), apply: (context) => applyStopTaskShare(context, input.payload) });
-}
+export const stopTaskShare = async (input: MutationInput<StopTaskSharePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runCoachingMutation(input, source, stopTaskSharePayload, "stopTaskShare", { readCurrent: (docs) => currentShareTarget(docs, rawShareIdOf(input)), apply: (context) => applyStopTaskShare(context, input.payload) });
 function applyStopTaskShare(context: MutationContext, payload: StopTaskSharePayload): ApplyResult<TaskShareResult> {
   const { operationId } = context;
   const at = now();
-  const families = familiesOf(context, operationId);
-  if ("refused" in families) return families;
+  const families = familiesOf(context);
   const record = families.taskShares.find((candidate) => candidate.shareId === stoppedShareIdOf(payload));
   if (record === undefined) return refuseDenied(operationId);
   const task = families.tasks.find((candidate) => candidate.taskId === record.taskId);
-  if (task === undefined) return refuseUnavailable(operationId, "tasks");
+  if (task === undefined) return refuseUnavailable({ operationId, reference: "tasks", guidance: STATE_UNAVAILABLE_GUIDANCE });
   if (task.ownerPrincipalId !== context.session.principalId) return refuseDenied(operationId);
   if (record.state === "removed") return { changed: false };
   const working = workingTaskShareOf(record);
-  if (working === null) return refuseUnavailable(operationId, "coaching-task-share");
+  if (working === null) return refuseUnavailable({ operationId, reference: "coaching-task-share", guidance: STATE_UNAVAILABLE_GUIDANCE });
   const stopped = stopCoachingTaskShare({ share: working, expectedRevision: record.revision }, at);
   if (!stopped.ok) return refuseFromTaskShare(operationId, stopped.error);
   if (stopped.value.state === record.state) return { changed: false };
@@ -932,27 +793,15 @@ function applyStopTaskShare(context: MutationContext, payload: StopTaskSharePayl
   context.docs.state = withFamily(families.document, "coachingTaskShares", replacingRecord(families.taskShares, shareIdOf, record.shareId, next));
   return { changed: true, revision: String(next.revision), changedIds: [record.shareId], result: taskShareStandingOf(next) };
 }
-function currentTaskTarget(docs: StateDocumentCarrier, taskId: string | undefined): CurrentTarget {
-  if (taskId === undefined) return { kind: "absent" };
-  const loaded = readFamilies(docs);
-  if (!loaded.ok) return { kind: "absent" };
-  const record = loaded.families.tasks.find((candidate) => candidate.taskId === taskId);
-  return record === undefined
-    ? { kind: "absent" }
-    : {
-        kind: "record",
-        revision: record.revision,
-        // The task's own fields are not a conflict payload: a surface compares the revision it read and the status it shows, and nothing of the task's text or its people travels back here.
-        value: { taskId: record.taskId, status: record.status, revision: record.revision },
-      };
-}
-function currentShareTarget(docs: StateDocumentCarrier, shareId: string | undefined): CurrentTarget {
-  if (shareId === undefined) return { kind: "absent" };
-  const loaded = readFamilies(docs);
-  if (!loaded.ok) return { kind: "absent" };
-  const record = loaded.families.taskShares.find((candidate) => candidate.shareId === shareId);
-  return record === undefined ? { kind: "absent" } : { kind: "record", revision: String(record.revision), value: taskShareStandingOf(record) };
-}
+const currentTaskTarget = (docs: StateDocumentCarrier, taskId: string | undefined): CurrentTarget =>
+  currentStandingTarget(
+    docs,
+    taskId,
+    (families) => families.tasks,
+    (record) => record.taskId,
+    (record) => ({ taskId: record.taskId, status: record.status, revision: record.revision }),
+  );
+const currentShareTarget = (docs: StateDocumentCarrier, shareId: string | undefined): CurrentTarget => currentStandingTarget(docs, shareId, (families) => families.taskShares, shareIdOf, taskShareStandingOf);
 const rawTaskIdOf = (input: unknown): string | undefined => rawIdentifierOf(input, "taskId");
 const rawShareIdOf = (input: unknown): string | undefined => rawIdentifierOf(input, "shareId") ?? rawIdentifierOf(input, "taskShareId");
 function rawIdentifierOf(input: unknown, field: string): string | undefined {

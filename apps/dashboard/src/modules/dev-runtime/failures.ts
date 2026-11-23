@@ -1,4 +1,3 @@
-/** The one deterministic failure plan: which single simulated failure is armed, against which named call, at which scenario instant. */
 import { Temporal } from "temporal-polyfill";
 import { isRecord } from "@/lib/guards";
 import { err, ok, type Result } from "@/lib/result";
@@ -19,7 +18,6 @@ const DEMONSTRABLE_TARGET_ROWS = [
 ] as const;
 export type DemonstrableTargetName = (typeof DEMONSTRABLE_TARGET_ROWS)[number]["name"];
 export type DemonstrableTarget = { readonly kind: FailureTargetKind; readonly name: DemonstrableTargetName; readonly modes: readonly FailureMode[]; readonly note: string };
-/** The development panel's label for each mode: the specification's own names for the three demonstrations, kept in one table so the panel, a refusal message and a description agree. */
 export const MODE_LABEL: Readonly<Record<FailureMode, string>> = Object.freeze({ denied: "Scope denial", conflict: "Changed revision", unknown: "Lost acknowledgement" });
 export const MODE_OUTCOME: Readonly<Record<FailureMode, OperationOutcomeName>> = Object.freeze({ denied: "denied", conflict: "conflict", unknown: "unknown" });
 export const DEMONSTRABLE_TARGETS: readonly DemonstrableTarget[] = Object.freeze(DEMONSTRABLE_TARGET_ROWS);
@@ -32,7 +30,6 @@ export type FailurePlanRefusalCode = (typeof FAILURE_PLAN_REFUSAL_CODES)[number]
 export type FailurePlanRefusal = { readonly code: FailurePlanRefusalCode; readonly message: string };
 const refuse = (code: FailurePlanRefusalCode, message: string): FailurePlanRefusal => ({ code, message });
 const STORED_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
-
 function isStoredInstant(value: unknown): value is string {
   if (typeof value !== "string" || !STORED_INSTANT_PATTERN.test(value)) return false;
   try {
@@ -59,10 +56,7 @@ export function setFailurePlan(current: FailurePlanDocument, request: FailurePla
 }
 export const disarmFailurePlan = (): FailurePlanDocument => EMPTY_FAILURE_PLAN;
 /** The single consultation point: the mode armed for this kind and name, or `undefined` when nothing applies. */
-export function failureFor(plan: FailurePlanDocument, kind: FailureTargetKind, name: string): FailureMode | undefined {
-  if (plan === EMPTY_FAILURE_PLAN || plan.target.kind !== kind || plan.target.name !== name) return undefined;
-  return plan.mode;
-}
+export const failureFor = (plan: FailurePlanDocument, kind: FailureTargetKind, name: string): FailureMode | undefined => (plan === EMPTY_FAILURE_PLAN || plan.target.kind !== kind || plan.target.name !== name ? undefined : plan.mode);
 export type FailurePlanDescription = { readonly armed: boolean; readonly mode: FailureMode | null; readonly modeLabel: string; readonly target: FailureTarget | null; readonly targetNote: string | null; readonly armedAt: string | null; readonly effect: string; readonly recoveryLesson: string };
 const MODE_EFFECT: Readonly<Record<FailureMode, string>> = Object.freeze({
   denied: "The call answers with a denial that carries no count, title, existence flag or size, so the surface cannot hint that the refused record exists.",
@@ -102,8 +96,7 @@ export function parseFailurePlan(value: unknown): Result<FailurePlanDocument, Fa
   const demonstrable = demonstrableTargetFor(kind, name);
   if (demonstrable === undefined) return err(refuse("malformed-plan", "A stored failure target names no call this release demonstrates a failure on."));
   if (!demonstrable.modes.includes(mode)) return err(refuse("malformed-plan", `${demonstrable.name} demonstrates ${modesWording(demonstrable)}, which is not the mode the stored plan names.`));
-  if (!isStoredInstant(armedAt)) return err(refuse("malformed-plan", "A stored failure plan carries the scenario instant it was armed at, written as an ISO-8601 date-time that states its offset."));
-  return ok({ mode, target: { kind: demonstrable.kind, name: demonstrable.name }, armedAt });
+  return !isStoredInstant(armedAt) ? err(refuse("malformed-plan", "A stored failure plan carries the scenario instant it was armed at, written as an ISO-8601 date-time that states its offset.")) : ok({ mode, target: { kind: demonstrable.kind, name: demonstrable.name }, armedAt });
 }
 /** Reads the armed plan out of one session document, or the absent plan. */
 export function failurePlanOfDocument(document: unknown): FailurePlanDocument {

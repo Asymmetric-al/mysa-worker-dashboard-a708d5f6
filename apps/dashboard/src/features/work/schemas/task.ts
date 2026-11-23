@@ -62,8 +62,7 @@ export const taskNoteSchema = z
   .transform((value) => (value === undefined || value.length === 0 ? undefined : value));
 const TASK_KIND_VALUES = ["default", "meeting"] as const satisfies readonly TaskKind[];
 export const taskKindSchema = z.enum(TASK_KIND_VALUES, { error: TASK_SCHEMA_MESSAGES.taskKindInvalid });
-type PlannedTimePairing = { readonly kind: TaskKind; readonly plannedTime?: string | undefined; readonly timeZone?: string | undefined };
-/** The one planned-time rule: a schedule belongs to a meeting, and a time is always stated in a zone. */
+type PlannedTimePairing = { readonly kind: TaskKind; readonly plannedTime?: string | undefined; readonly timeZone?: string | undefined }; /** The one planned-time rule: a schedule belongs to a meeting, and a time is always stated in a zone. */
 export function refinePlannedTimePairing(value: PlannedTimePairing, ctx: z.RefinementCtx): void {
   const hasTime = value.plannedTime !== undefined;
   const hasZone = value.timeZone !== undefined;

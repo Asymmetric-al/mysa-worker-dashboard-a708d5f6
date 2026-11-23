@@ -1,14 +1,10 @@
-/** `GET /api/referrals` — the three referral lists, each cycle with the window the boundary module resolves from its original introduction date, or one cycle's own detail when the request names it — … */
-import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
-import { mutationInputSchema, mutations, outcomeFromError, reads, refusedRead, toResponse, type MutationOutcome, type ReferralCycleRecord } from "@/modules/data-service";
-import { jsonBodyOf, operationIdentityOf } from "../handler";
-/** The store behind the service reads and writes its documents through `node:fs`, so this handler runs on the Node runtime and never on the edge runtime. */
+import { mutationInputSchema, mutations, outcomeFromError, reads, refusedRead, toResponse, type ReferralCycleRecord } from "@/modules/data-service";
+import { writeRoute } from "../handler";
+import { READ_ATTEMPT, readResponse } from "../read";
 export const runtime = "nodejs";
-// The read resolves the development-session cookie and evaluates the scenario clock per request, so no response may be cached.
 export const dynamic = "force-dynamic";
-const READ_ATTEMPT_ID = "read";
 const MAX_REFERENCE_LENGTH = 200;
 const MAX_SYSTEM_LENGTH = 64;
 const MAX_ZONE_LENGTH = 64;
@@ -31,29 +27,18 @@ const MESSAGES = {
   pageInvalid: "State the page as a whole number from 1.",
   pageSizeInvalid: "State the page size as a whole number from 1.",
 } as const;
-// The closed sets, each bound to the field it is read into, so a fourth list or a fourth precision fails to compile here instead of reaching the service.
 type ReferralListQuery = NonNullable<Parameters<typeof reads.referrals.readReferrals>[0]>;
 type ReferralListName = NonNullable<ReferralListQuery["list"]>;
 const REFERRAL_LISTS = ["active", "incomplete-date", "expired"] as const satisfies readonly ReferralListName[];
 const DATE_PRECISIONS = ["date", "approximate", "unknown"] as const satisfies readonly ReferralCycleRecord["datePrecision"][];
 const SOURCE_ZONE_SHAPE = /^(?:[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*|[+-]\d{2}:\d{2})$/u;
-// The read side: the query grammar this transport admits
 const referralListQuerySchema = z.strictObject({
   list: z.enum(REFERRAL_LISTS, { error: MESSAGES.listInvalid }).optional(),
   search: z.string({ error: MESSAGES.searchTooLong }).trim().max(MAX_SEARCH_LENGTH, MESSAGES.searchTooLong).optional(),
-  // The release's 50-row default and 200-row ceiling belong to the read, which clamps the size it is given and reports the whole-result total, so nothing here defaults, caps, counts or slices a page.
   page: z.coerce.number({ error: MESSAGES.pageInvalid }).int({ error: MESSAGES.pageInvalid }).min(1, { error: MESSAGES.pageInvalid }).optional(),
   pageSize: z.coerce.number({ error: MESSAGES.pageSizeInvalid }).int({ error: MESSAGES.pageSizeInvalid }).min(1, { error: MESSAGES.pageSizeInvalid }).optional(),
 });
-type ReferralListQueryParams = z.output<typeof referralListQuerySchema>;
-function rawReferralListParams(search: URLSearchParams): Record<string, unknown> {
-  return { list: search.get("list") ?? undefined, search: search.get("search") ?? undefined, page: search.get("page") ?? undefined, pageSize: search.get("pageSize") ?? undefined };
-}
-function referralListQueryOf(params: ReferralListQueryParams): ReferralListQuery {
-  return { ...(params.list === undefined ? {} : { list: params.list }), ...(params.search === undefined ? {} : { search: params.search }), ...(params.page === undefined ? {} : { page: params.page }), ...(params.pageSize === undefined ? {} : { pageSize: params.pageSize }) };
-}
-// The write side: the introduction, and nothing the service resolves from it  The payload is strict on purpose. Everything a window is derived from — the resolved endpoint, the window kind, the deadline, the cycle index, the predecessor, an entry timestamp, a second
-// introduction — is answered by the service from the date and its precision, so a body that states any of them is refused by name rather than silently stripped and then quietly ignored.
+const rawReferralListParams = (search: URLSearchParams): Record<string, unknown> => ({ list: search.get("list") ?? undefined, search: search.get("search") ?? undefined, page: search.get("page") ?? undefined, pageSize: search.get("pageSize") ?? undefined });
 const introductionPayloadSchema = z
   .strictObject({
     partnerId: z.string({ error: MESSAGES.partnerRequired }).trim().min(1, MESSAGES.partnerRequired).max(MAX_REFERENCE_LENGTH, MESSAGES.partnerTooLong),
@@ -68,64 +53,27 @@ const introductionPayloadSchema = z
   .superRefine((payload, context) => {
     const stated = payload.originalIntroductionOn ?? null;
     if (payload.datePrecision === "unknown") {
-      if (stated !== null) {
-        context.addIssue({ code: "custom", path: ["originalIntroductionOn"], message: MESSAGES.dateWithUnknownPrecision });
-      }
+      if (stated !== null) context.addIssue({ code: "custom", path: ["originalIntroductionOn"], message: MESSAGES.dateWithUnknownPrecision });
       return;
     }
-    if (stated === null) {
-      context.addIssue({ code: "custom", path: ["originalIntroductionOn"], message: MESSAGES.dateRequired });
-    }
+    if (stated === null) context.addIssue({ code: "custom", path: ["originalIntroductionOn"], message: MESSAGES.dateRequired });
   });
 const recordIntroductionBodySchema = mutationInputSchema(introductionPayloadSchema);
-// The read side: one cycle, or the lists
-/** The one parameter a request names a single cycle by. */
 const REFERRAL_ID_PARAM = "referralId";
-function referralDetailRequestOf(request: NextRequest): string | null {
-  const referralId = new URL(request.url).searchParams.get(REFERRAL_ID_PARAM);
-  return referralId === null || referralId.trim().length === 0 ? null : referralId;
-}
-/** One page of one referral list — each cycle with its introduction date, its precision and the resolved window, exactly as the read built them — or the one cycle the request named, as one envelope either way, or the read's own `denied`/`unavailable` outcome. */
-export async function GET(request: NextRequest): Promise<Response> {
-  // One route, two reads: a named cycle is read as its detail, and its absence leaves the request to the list read below, so neither the record nor the lists need a second transport path.
-  const referralId = referralDetailRequestOf(request);
-  if (referralId !== null) {
-    try {
-      return toResponse(await reads.referrals.readReferral(referralId));
-    } catch (error) {
-      // The same mapper answers here as on the list read: the service states its own refusals as outcomes, so a thrown fault is the only thing left to classify.
-      return toResponse(outcomeFromError(READ_ATTEMPT_ID, error));
-    }
-  }
-  const grammar = referralListQuerySchema.safeParse(rawReferralListParams(new URL(request.url).searchParams));
-  if (!grammar.success) {
-    // No source behind the read failed here, so a value this list does not admit is answered with the same per-field refusal the write answers, naming the field the caller has to correct.
-    return toResponse(refusedRead(READ_ATTEMPT_ID, grammar.error));
-  }
-  try {
-    return toResponse(await reads.referrals.readReferrals(referralListQueryOf(grammar.data)));
-  } catch (error) {
-    // A throw is a store or medium fault rather than a presentation: the service answers its own refusals as outcomes, so the one mapper decides between `unavailable` and `unknown`.
-    return toResponse(outcomeFromError(READ_ATTEMPT_ID, error));
-  }
+/** One page of one referral list, or the one cycle the request named, as one envelope either way, or the read's own `denied`/`unavailable` outcome. */
+export async function GET(request: Request): Promise<Response> {
+  const search = new URL(request.url).searchParams;
+  const referralId = search.get(REFERRAL_ID_PARAM);
+  if (referralId !== null && referralId.trim().length > 0) return readResponse(READ_ATTEMPT, () => reads.referrals.readReferral(referralId));
+  const grammar = referralListQuerySchema.safeParse(rawReferralListParams(search));
+  if (!grammar.success) return toResponse(refusedRead(READ_ATTEMPT, grammar.error));
+  return readResponse(READ_ATTEMPT, () => reads.referrals.readReferrals(grammar.data));
 }
 /** Records one cycle's original introduction date and the precision it is known to, as `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function POST(request: NextRequest): Promise<Response> {
-  const body = await jsonBodyOf(request);
-  const parsed = recordIntroductionBodySchema.safeParse(body);
-  if (!parsed.success) {
-    // A malformed body and a rejected field are both `invalid` at this boundary, never a thrown 500.
-    return toResponse(outcomeFromError(operationIdentityOf(body), parsed.error));
-  }
+export const POST = (request: Request): Promise<Response> => writeRoute(request, recordIntroductionBodySchema, recordIntroduction);
+async function recordIntroduction(input: Parameters<typeof mutations.referrals.recordIntroduction>[0]): ReturnType<typeof mutations.referrals.recordIntroduction> {
   const startedAt = performance.now();
-  let outcome: MutationOutcome;
-  try {
-    outcome = await mutations.referrals.recordIntroduction(parsed.data);
-  } catch (error) {
-    outcome = outcomeFromError(parsed.data.operationId, error);
-  }
-  // One line per attempt at this boundary, carrying only the closed set of diagnostic fields: the operation that names it, the scope it claimed, the outcome's discriminant and the measured duration. It also describes an outcome built from a fault that escaped the service, which the
-  // service's own report of a completed attempt cannot.
-  logger.mutation({ operationId: parsed.data.operationId, scope: parsed.data.scope, outcome: outcome.outcome, elapsedMs: performance.now() - startedAt });
-  return toResponse(outcome);
+  const outcome = await mutations.referrals.recordIntroduction(input).catch((error: unknown) => outcomeFromError(input.operationId, error));
+  logger.mutation({ operationId: input.operationId, scope: input.scope, outcome: outcome.outcome, elapsedMs: performance.now() - startedAt });
+  return outcome;
 }

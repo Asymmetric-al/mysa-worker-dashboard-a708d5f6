@@ -1,19 +1,20 @@
 "use client";
 import { useState, type ReactElement } from "react";
 import { FormErrorSummary, FormField, type FieldErrorLookup } from "@/components/form-field";
-import { ScrollRegion } from "@/components/scroll-region";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TableCell, TableHead, TableRow } from "@/components/ui/table";
 import type { ImportProposalRecord, ReadEnvelope } from "@/modules/data-service/envelope";
 import { IMPORT_FIELD_VOCABULARY, confirmMapping } from "@/modules/import/map";
-import type { ImportColumnIgnoreReason, ImportColumnMapping, ImportConfirmedMapping, ImportFieldDescriptor, ImportFieldId, ImportIgnoredColumn, ImportMappingDecision, ImportMappingRefusal, ImportSuggestedMapping } from "@/modules/import/map";
+import type { ImportColumnMapping, ImportConfirmedMapping, ImportFieldDescriptor, ImportFieldId, ImportIgnoredColumn, ImportMappingDecision, ImportMappingRefusal, ImportSuggestedMapping } from "@/modules/import/map";
 import { MAPPING_COPY, TABLE_LABELS } from "../copy";
+import ImportTable from "./import-table";
 export type ImportMappingProposal = ImportProposalRecord & { readonly suggestion: ImportSuggestedMapping };
 export type StepMappingProps = { readonly proposal: ReadEnvelope<ImportMappingProposal>; readonly confirmedMapping: ImportConfirmedMapping | null; readonly onConfirm: (mapping: ImportConfirmedMapping) => void; readonly submitting: boolean; readonly fieldErrors: FieldErrorLookup | null };
+const MAPPING_HEADINGS: readonly string[] = ["Column", "Heading in the file", "Suggested field", "Field to import", "Status and reason"];
 type ColumnChoice = "suggestion" | "ignore" | ImportFieldId;
 const SUGGESTION_CHOICE = "suggestion" satisfies ColumnChoice;
 const IGNORE_CHOICE = "ignore" satisfies ColumnChoice;
@@ -55,9 +56,7 @@ function refusalsByColumn(refusals: readonly ImportMappingRefusal[]): ReadonlyMa
   }
   return byColumn;
 }
-const messagesOf = (refusals: readonly ImportMappingRefusal[]): readonly string[] => [...new Set(refusals.map((refusal) => refusal.message))];
 type BlockedIgnoreReason = "blank-header" | "consent-preserved-as-data" | "excluded-topic";
-const isBlockedReason = (reason: ImportColumnIgnoreReason): reason is BlockedIgnoreReason => reason === "blank-header" || reason === "consent-preserved-as-data" || reason === "excluded-topic";
 type ColumnStatusKind = "blocked" | "refusal" | "chosen" | "ignored" | "suggested";
 type ColumnStatus = { readonly kind: ColumnStatusKind; readonly label: string; readonly variant: "default" | "secondary" | "outline" | "destructive" };
 const BLOCKED_STATUS: Readonly<Record<BlockedIgnoreReason, ColumnStatus>> = {
@@ -71,7 +70,6 @@ const SUGGESTED_STATUS: ColumnStatus = { kind: "suggested", label: "Suggested", 
 const CHOSEN_STATUS: ColumnStatus = { kind: "chosen", label: "Chosen by you", variant: "default" };
 const NOT_USED_STATUS: ColumnStatus = { kind: "ignored", label: "Not used", variant: "outline" };
 const UNMAPPED_STATUS: ColumnStatus = { kind: "ignored", label: "Not mapped", variant: "outline" };
-const statusForIgnoreReason = (reason: ImportColumnIgnoreReason): ColumnStatus => (reason === "unrecognised-header" ? UNMAPPED_STATUS : NOT_USED_STATUS);
 type ColumnView = { readonly column: ImportColumnMapping; readonly choice: ColumnChoice; readonly occurrenceLabel: string | null; readonly suggestedLabel: string; readonly status: ColumnStatus; readonly reason: string | null; readonly note: string | null; readonly errors: readonly string[] };
 type ColumnViewInput = { readonly suggestion: ImportSuggestedMapping; readonly ignored: readonly ImportIgnoredColumn[]; readonly refusals: ReadonlyMap<number, readonly ImportMappingRefusal[]>; readonly choiceOf: (columnIndex: number) => ColumnChoice };
 function buildColumnViews(input: ColumnViewInput): readonly ColumnView[] {
@@ -79,17 +77,16 @@ function buildColumnViews(input: ColumnViewInput): readonly ColumnView[] {
     const choice = input.choiceOf(column.index);
     const ignored = input.ignored.find((candidate) => candidate.index === column.index) ?? null;
     const refusals = input.refusals.get(column.index) ?? NO_REFUSALS;
-    const errors = messagesOf(refusals);
+    const errors = [...new Set(refusals.map((refusal) => refusal.message))];
     const repeated = input.suggestion.repeatedHeaders.find((candidate) => candidate.header === column.header);
     const chosen = choice !== SUGGESTION_CHOICE && choice !== IGNORE_CHOICE;
     let status: ColumnStatus;
-    if (ignored !== null && isBlockedReason(ignored.reason)) status = BLOCKED_STATUS[ignored.reason];
+    if (ignored !== null && (ignored.reason === "blank-header" || ignored.reason === "consent-preserved-as-data" || ignored.reason === "excluded-topic")) status = BLOCKED_STATUS[ignored.reason];
     else if (errors.length > 0) status = refusals.every((refusal) => refusal.code === "field-ambiguous") ? AMBIGUOUS_STATUS : CONFLICT_STATUS;
     else if (chosen) status = CHOSEN_STATUS;
-    else if (ignored !== null) status = statusForIgnoreReason(ignored.reason);
+    else if (ignored !== null) status = ignored.reason === "unrecognised-header" ? UNMAPPED_STATUS : NOT_USED_STATUS;
     else status = choice === SUGGESTION_CHOICE ? SUGGESTED_STATUS : NOT_USED_STATUS;
-    const usedFieldId: ImportFieldId | null = status.kind === "suggested" ? column.suggestedField : status.kind === "chosen" && chosen ? choice : null;
-    const used = fieldDescriptorOf(usedFieldId);
+    const used = fieldDescriptorOf(status.kind === "suggested" ? column.suggestedField : status.kind === "chosen" && chosen ? choice : null);
     return {
       column,
       choice,
@@ -102,7 +99,6 @@ function buildColumnViews(input: ColumnViewInput): readonly ColumnView[] {
     };
   });
 }
-// Every sentence the domain produces is rendered as it arrives, never restated; TABLE_LABELS.mapping names the table region and its caption.
 type ColumnViewProps = { readonly view: ColumnView; readonly disabled: boolean; readonly onChoose: (columnIndex: number, value: string) => void };
 type ColumnControlProps = ColumnViewProps & { readonly branch: "table" | "card" };
 function ColumnControl({ view, branch, disabled, onChoose }: ColumnControlProps): ReactElement {
@@ -110,18 +106,7 @@ function ColumnControl({ view, branch, disabled, onChoose }: ColumnControlProps)
   return (
     <FormField label={`${MAPPING_COPY.fieldLabel} ${String(columnIndex)}`} name={`mapping-${branch}-${String(columnIndex)}`} hideLabel={branch === "table"} description={view.reason ?? undefined} error={view.errors}>
       {({ id, describedBy, invalid, required }) => (
-        <NativeSelect
-          id={id}
-          className="w-full"
-          value={view.choice}
-          disabled={disabled}
-          aria-describedby={describedBy}
-          aria-invalid={invalid ? true : undefined}
-          aria-required={required ? true : undefined}
-          onChange={(event) => {
-            onChoose(columnIndex, event.target.value);
-          }}
-        >
+        <NativeSelect id={id} className="w-full" value={view.choice} disabled={disabled} aria-describedby={describedBy} aria-invalid={invalid ? true : undefined} aria-required={required ? true : undefined} onChange={(event) => onChoose(columnIndex, event.target.value)}>
           <NativeSelectOption value={SUGGESTION_CHOICE}>{MAPPING_COPY.suggestionOption}</NativeSelectOption>
           {IMPORT_FIELD_VOCABULARY.map((field) => (
             <NativeSelectOption key={field.id} value={field.id}>
@@ -134,15 +119,13 @@ function ColumnControl({ view, branch, disabled, onChoose }: ColumnControlProps)
     </FormField>
   );
 }
-function ColumnStatusBlock({ view }: { readonly view: ColumnView }): ReactElement {
-  return (
-    <div className="flex flex-col items-start gap-1">
-      <Badge variant={view.status.variant}>{view.status.label}</Badge>
-      {view.reason === null ? null : <p className="text-sm text-muted-foreground">{view.reason}</p>}
-      {view.note === null ? null : <p className="text-sm text-muted-foreground">{view.note}</p>}
-    </div>
-  );
-}
+const ColumnStatusBlock = ({ view }: { readonly view: ColumnView }): ReactElement => (
+  <div className="flex flex-col items-start gap-1">
+    <Badge variant={view.status.variant}>{view.status.label}</Badge>
+    {view.reason === null ? null : <p className="text-sm text-muted-foreground">{view.reason}</p>}
+    {view.note === null ? null : <p className="text-sm text-muted-foreground">{view.note}</p>}
+  </div>
+);
 function ColumnCard({ view, disabled, onChoose }: ColumnViewProps): ReactElement {
   const { column } = view;
   return (
@@ -172,11 +155,8 @@ export default function StepMapping({ proposal, confirmedMapping, onConfirm, sub
   const { name, rowCount, columnCount } = proposal.data.fileMeta;
   const fileIdentity = fileIdentityOf(proposal);
   const [edits, setEdits] = useState<ColumnEdits>({ fileIdentity, choices: NO_CHOICES });
-  // Answers belong to the file they were made about, so a changed file starts from its own suggestion.
-  const retained = edits.fileIdentity === fileIdentity ? edits.choices : NO_CHOICES;
-  const retainedFromConfirmation = choicesFromConfirmation(confirmedMapping);
   const choiceOf = (columnIndex: number): ColumnChoice => {
-    const remembered = retained[columnIndex] ?? retainedFromConfirmation[columnIndex];
+    const remembered = (edits.fileIdentity === fileIdentity ? edits.choices : NO_CHOICES)[columnIndex] ?? choicesFromConfirmation(confirmedMapping)[columnIndex];
     if (remembered !== undefined) return remembered;
     const column = suggestion.columns.find((candidate) => candidate.index === columnIndex);
     return column === undefined ? IGNORE_CHOICE : initialChoice(column);
@@ -184,21 +164,14 @@ export default function StepMapping({ proposal, confirmedMapping, onConfirm, sub
   const handleChoose = (columnIndex: number, value: string): void => {
     const choice = readChoice(value);
     if (choice === null) return;
-    setEdits((previous) => {
-      const base = previous.fileIdentity === fileIdentity ? previous.choices : NO_CHOICES;
-      return { fileIdentity, choices: { ...base, [columnIndex]: choice } };
-    });
+    setEdits((previous) => ({ fileIdentity, choices: { ...(previous.fileIdentity === fileIdentity ? previous.choices : NO_CHOICES), [columnIndex]: choice } }));
   };
-  // The domain is asked on every render: a remembered copy could only disagree with the rows.
   const confirmation = confirmMapping(suggestion, decisionsFor(suggestion, choiceOf));
   const refusals = confirmation.ok ? NO_REFUSALS : confirmation.refusals;
   const mapping = confirmation.ok ? confirmation.mapping : null;
   const ignored = mapping === null ? suggestion.ignored : mapping.ignored;
-  const unmappedFields = mapping === null ? suggestion.unmapped : mapping.unmapped;
-  const declinedFields = mapping === null ? NO_FIELD_IDS : mapping.declined;
   const unattributedRefusals = refusals.filter((refusal) => refusal.columnIndexes.length === 0);
   const views = buildColumnViews({ suggestion, ignored, refusals: refusalsByColumn(refusals), choiceOf });
-  const canConfirm = mapping !== null && mapping.assignments.length > 0 && !submitting;
   const handleConfirm = (): void => {
     if (mapping === null || mapping.assignments.length === 0) return;
     onConfirm(mapping);
@@ -231,39 +204,24 @@ export default function StepMapping({ proposal, confirmedMapping, onConfirm, sub
         <p className="text-sm text-muted-foreground">{MAPPING_COPY.noColumns}</p>
       ) : (
         <>
-          {/* One horizontal scroll port from `md` up: the region carries the accessible name, the focus ring and the scroll padding; the cards carry the same controls below `md`. */}
-          <ScrollRegion label={TABLE_LABELS.mapping} className="hidden md:block" aria-busy={submitting ? true : undefined}>
-            <Table>
-              <TableCaption className="sr-only">{TABLE_LABELS.mapping}</TableCaption>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  {["Column", "Heading in the file", "Suggested field", "Field to import", "Status and reason"].map((heading) => (
-                    <TableHead key={heading} scope="col">
-                      {heading}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {views.map((view) => (
-                  <TableRow key={view.column.index}>
-                    <TableHead scope="row" className="whitespace-normal align-top">
-                      Column <bdi>{String(view.column.index)}</bdi>
-                    </TableHead>
-                    <TableCell className="whitespace-normal align-top">
-                      {view.column.header === "" ? <span className="text-muted-foreground">{MAPPING_COPY.noHeading}</span> : <bdi>{view.column.header}</bdi>}
-                      {view.occurrenceLabel === null ? null : <span className="block text-muted-foreground">{view.occurrenceLabel}</span>}
-                    </TableCell>
-                    <TableCell className="whitespace-normal align-top">{view.suggestedLabel}</TableCell>
-                    <TableCell className="whitespace-normal align-top">{view.status.kind === "blocked" ? <span className="text-muted-foreground">{MAPPING_COPY.notMapped}</span> : <ColumnControl view={view} branch="table" disabled={submitting} onChoose={handleChoose} />}</TableCell>
-                    <TableCell className="whitespace-normal align-top">
-                      <ColumnStatusBlock view={view} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </ScrollRegion>
+          <ImportTable label={TABLE_LABELS.mapping} headings={MAPPING_HEADINGS} busy={submitting} className="hidden md:block">
+            {views.map((view) => (
+              <TableRow key={view.column.index}>
+                <TableHead scope="row" className="whitespace-normal align-top">
+                  Column <bdi>{String(view.column.index)}</bdi>
+                </TableHead>
+                <TableCell className="whitespace-normal align-top">
+                  {view.column.header === "" ? <span className="text-muted-foreground">{MAPPING_COPY.noHeading}</span> : <bdi>{view.column.header}</bdi>}
+                  {view.occurrenceLabel === null ? null : <span className="block text-muted-foreground">{view.occurrenceLabel}</span>}
+                </TableCell>
+                <TableCell className="whitespace-normal align-top">{view.suggestedLabel}</TableCell>
+                <TableCell className="whitespace-normal align-top">{view.status.kind === "blocked" ? <span className="text-muted-foreground">{MAPPING_COPY.notMapped}</span> : <ColumnControl view={view} branch="table" disabled={submitting} onChoose={handleChoose} />}</TableCell>
+                <TableCell className="whitespace-normal align-top">
+                  <ColumnStatusBlock view={view} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </ImportTable>
           <ul className="flex flex-col gap-4 md:hidden">
             {views.map((view) => (
               <li key={view.column.index}>
@@ -274,11 +232,10 @@ export default function StepMapping({ proposal, confirmedMapping, onConfirm, sub
         </>
       )}
       <div className="flex flex-col gap-1 text-sm">
-        {[[MAPPING_COPY.unmappedTitle, unmappedFields] as const, [MAPPING_COPY.declinedTitle, declinedFields] as const].map(([title, fieldIds]) =>
+        {[[MAPPING_COPY.unmappedTitle, mapping === null ? suggestion.unmapped : mapping.unmapped] as const, [MAPPING_COPY.declinedTitle, mapping === null ? NO_FIELD_IDS : mapping.declined] as const].map(([title, fieldIds]) =>
           fieldIds.length === 0 ? null : (
             <p key={title} className="text-muted-foreground">
-              <span className="text-foreground">{title} </span>
-              {labelsOf(fieldIds)}
+              <span className="text-foreground">{title} </span> {labelsOf(fieldIds)}{" "}
             </p>
           ),
         )}
@@ -286,7 +243,7 @@ export default function StepMapping({ proposal, confirmedMapping, onConfirm, sub
       <Separator />
       <FormField label="Confirm the column mapping" name="confirmedMapping" description={confirmHint} error={fieldErrors === null ? undefined : fieldErrors.byField["confirmedMapping"]}>
         {({ id, describedBy }) => (
-          <Button id={id} aria-describedby={describedBy} type="button" disabled={!canConfirm} onClick={handleConfirm}>
+          <Button id={id} aria-describedby={describedBy} type="button" disabled={!(mapping !== null && mapping.assignments.length > 0 && !submitting)} onClick={handleConfirm}>
             {confirmLabel}
           </Button>
         )}

@@ -8,8 +8,6 @@ export default function ImportStepper({ current, completed, onReopen }: ImportSt
   const currentPosition = foundPosition === -1 ? 0 : foundPosition;
   return (
     <div className="flex flex-col gap-3">
-      {/* The bar states the position it shows: a screen reader reads it on demand, while the live region below is what
-       * announces the step as the journey moves, so the two never compete to say the same thing twice. */}
       <Progress value={currentPosition + 1} max={STEPS.length} aria-valuetext={stepAnnouncement(current)} />
       <p aria-live="polite" aria-atomic="true" className="sr-only">
         {stepAnnouncement(current)}
@@ -17,7 +15,6 @@ export default function ImportStepper({ current, completed, onReopen }: ImportSt
       <ol className="flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm">
         {STEPS.map((step, position) => {
           const isCurrent = position === currentPosition;
-          const isCompleted = !isCurrent && completed.includes(step.id);
           return (
             <li key={step.id} aria-current={isCurrent ? "step" : undefined} className="flex min-w-0 items-baseline gap-1.5">
               <span className="text-muted-foreground tabular-nums">{position + 1}.</span>
@@ -26,7 +23,7 @@ export default function ImportStepper({ current, completed, onReopen }: ImportSt
                   {step.title}
                   <span className="font-normal text-muted-foreground"> (current step)</span>
                 </span>
-              ) : isCompleted ? (
+              ) : !isCurrent && completed.includes(step.id) ? (
                 <Button type="button" variant="ghost" size="sm" className="h-auto min-h-8 max-w-full shrink whitespace-normal py-1.5 underline underline-offset-4" aria-label={step.reopenLabel} onClick={() => onReopen(step.id)}>
                   {step.title}
                 </Button>

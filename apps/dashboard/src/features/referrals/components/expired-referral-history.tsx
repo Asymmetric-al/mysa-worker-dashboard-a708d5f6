@@ -9,38 +9,18 @@ import type { reads } from "@/modules/data-service";
 import { EXPIRED_HISTORY_COPY, EXPIRY_VS_CLOSURE, FORBIDDEN_FIELDS, LIST_COPY, PRECISION_COPY, STATUS_COPY, WINDOW_COPY, type ReferralStatusWord } from "../copy";
 type ReferralDetailReadResult = Awaited<ReturnType<typeof reads.referrals.readReferral>>;
 type ReferralDetailEnvelope = Extract<ReferralDetailReadResult, { readonly kind: "envelope" }>["envelope"];
-/** The narrow permitted projection one expired cycle is answered in, derived from the read rather than restated so the component can hold no field, permission exception or fixture fallback the service does not itself put in the envelope. */
 type ExpiredHistoryRow = Extract<ReferralDetailEnvelope["data"], { readonly view: "expired-history" }>["referral"];
 const STATUS_TONE: Readonly<Record<ReferralStatusWord, StatusTone>> = { active: "positive", expired: "neutral", "no-deadline": "caution", refused: "caution", withdrawn: "danger", revoked: "danger", erased: "danger", departed: "danger" };
 const NOT_RECORDED = statusBadgeProps(VALUE_STATE_WORDS, "unknown");
-/** The heading levels this surface accepts, because the level belongs to the page that composes it. */
 export type ExpiredHistoryHeadingLevel = 2 | 3 | 4;
 const HEADINGS: Readonly<Record<ExpiredHistoryHeadingLevel, { readonly title: "h2" | "h3" | "h4"; readonly section: "h3" | "h4"; readonly notice: 3 | 4 }>> = { 2: { title: "h2", section: "h3", notice: 3 }, 3: { title: "h3", section: "h4", notice: 4 }, 4: { title: "h4", section: "h4", notice: 4 } };
-export type ExpiredReferralHistoryProps = {
-  /** One expired cycle exactly as the narrow permitted projection carries it, or `null` when the permitted history holds none; an absent projection renders the permission statement, never a record built from anything else. */
-  readonly referral: ExpiredHistoryRow | null;
-  /** The status word this record carries, defaulting to the projection's own; a caller states it to show a closure the source recorded, which stays visibly apart from an ordinary expiry. */
-  readonly status?: ReferralStatusWord;
-  /** Whether the list holds nothing because a search matched nothing, which is a different fact from a permission that covers no ended referral. */
-  readonly searchEmpty?: boolean;
-  readonly headingLevel?: ExpiredHistoryHeadingLevel;
-  /** The direction the surrounding document is read in. Every fact value is isolated on its own with `bdi`. */
-  readonly dir?: "ltr" | "rtl";
-  readonly className?: string;
-};
-/** The state word a permitted value the projection does not carry renders as, rather than an empty gap or a dash. */
-function NotRecorded(): ReactElement {
-  return <StatusBadge label={NOT_RECORDED.label} tone={NOT_RECORDED.tone} />;
-}
-/** One permitted date, printed exactly as the envelope supplied it: the surface never reformats, re-derives or reinterprets it. */
-function PermittedDate({ value }: { readonly value: string | null }): ReactElement {
-  return value === null ? <NotRecorded /> : <bdi className="tabular-figures">{value}</bdi>;
-}
+export type ExpiredReferralHistoryProps = { readonly referral: ExpiredHistoryRow | null; readonly status?: ReferralStatusWord; readonly searchEmpty?: boolean; readonly headingLevel?: ExpiredHistoryHeadingLevel; readonly dir?: "ltr" | "rtl"; readonly className?: string };
+const NotRecorded = (): ReactElement => <StatusBadge label={NOT_RECORDED.label} tone={NOT_RECORDED.tone} />;
+const PermittedDate = ({ value }: { readonly value: string | null }): ReactElement => (value === null ? <NotRecorded /> : <bdi className="tabular-figures">{value}</bdi>);
 function PermittedFacts({ referral, status }: { readonly referral: ExpiredHistoryRow; readonly status: ReferralStatusWord }): ReactElement {
   const labels = EXPIRED_HISTORY_COPY.fieldLabels;
   const statusCopy = STATUS_COPY[status];
   const reference = referral.sourceReference;
-  // The two halves of the status vocabulary are told apart here, where both could appear.
   const separatesClosures = status === "expired" || statusCopy.closureRecordedBySource;
   return (
     <dl className="grid grid-cols-1 gap-x-4 gap-y-3 text-start text-sm sm:grid-cols-[max-content_minmax(0,1fr)]">
@@ -49,26 +29,13 @@ function PermittedFacts({ referral, status }: { readonly referral: ExpiredHistor
         <bdi>{referral.partnerDisplayName}</bdi>
       </dd>
       <dt className="font-medium">{labels.sourceReference}</dt>
-      <dd className="min-w-0 wrap-anywhere text-muted-foreground">
-        {reference === null ? (
-          <NotRecorded />
-        ) : (
-          // Printed exactly as the source gave it: never parsed, never linked, never compared with another reference.
-          <bdi className="mono-identifier">{`${reference.system}:${reference.reference}`}</bdi>
-        )}
-      </dd>
+      <dd className="min-w-0 wrap-anywhere text-muted-foreground">{reference === null ? <NotRecorded /> : <bdi className="mono-identifier">{`${reference.system}:${reference.reference}`}</bdi>}</dd>
       <dt className="font-medium">{labels.status}</dt>
       <dd className="flex min-w-0 flex-col gap-1">
         <StatusBadge label={statusCopy.label} tone={STATUS_TONE[status]} />
         <p className="min-w-0 text-pretty wrap-anywhere text-muted-foreground">{statusCopy.description}</p>
         {separatesClosures ? <p className="min-w-0 text-pretty wrap-anywhere text-muted-foreground">{EXPIRY_VS_CLOSURE}</p> : null}
       </dd>
-      {/*
-        The permitted dates are one permission category, so they are one fact here and their own
-        labels sit inside it. The group takes the window heading the copy already owns because the
-        window is counted from the introduction date, and a date is unreadable without the precision
-        it is known to — so each date fact keeps its own copy label rather than being merged.
-      */}
       <dt className="font-medium">{WINDOW_COPY.heading}</dt>
       <dd className="min-w-0">
         <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-start sm:grid-cols-[max-content_minmax(0,1fr)]">
@@ -107,7 +74,6 @@ export default function ExpiredReferralHistory({ referral, status, searchEmpty =
   const headings = HEADINGS[headingLevel];
   const TitleTag = headings.title;
   const SectionTag = headings.section;
-  // A search that matched nothing and a permission that covers no ended referral are two different facts, so each gets its own statement and neither is rendered as a record.
   const emptyNotice = searchEmpty ? (
     <StateNotice kind="empty" headingLevel={headings.notice} title={LIST_COPY.search.empty.title} description={EXPIRED_HISTORY_COPY.noMatchingHint} />
   ) : (
@@ -122,7 +88,6 @@ export default function ExpiredReferralHistory({ referral, status, searchEmpty =
         <CardDescription className="text-pretty wrap-anywhere">{EXPIRED_HISTORY_COPY.explanation}</CardDescription>
       </CardHeader>
       <CardContent className="flex min-w-0 flex-col gap-4">
-        {/* The permission is stated before the facts it covers, so nothing below is read as wider access. */}
         <Alert>
           <AlertTitle>{EXPIRED_HISTORY_COPY.permissionStatement}</AlertTitle>
           <AlertDescription>{EXPIRED_HISTORY_COPY.readOnlyNote}</AlertDescription>

@@ -1,4 +1,3 @@
-/** The whole data surface, grouped by visible job. */
 import { readAudience, readDiscoveryIndex, readInbox, readPreferences, readReceivingList, readReceivingPage, readReceivingPost, readSendResult } from "./reads/audience";
 import { readCheckIns, readCoachPortfolio, readCoachSubject, readCoachingOverview, readTargets, readTaskShares } from "./reads/coaching";
 import { findContentDocuments, readCandidate, readDraft, readGivingBinding, readPage, readPageCatalogues, readPageLocales, readPreview, readRelease, readSharePresentation, readVariantOverview } from "./reads/content";
@@ -77,8 +76,6 @@ export type {
   TaskSeriesRecord,
   ValueState,
 } from "./envelope";
-// The payload schemas and vocabularies a Route Handler composes: a handler may import nothing below this barrel, so the schemas a body is validated against are re-exported from the mutation that owns them, and the bound and the message a caller is refused with have one author rather than a second copy at the
-// transport.
 export { NOTIFICATION_UNSERVED_REASONS, mutationInputSchema } from "./envelope";
 export { PUBLISH_MODES } from "./mutations/content";
 export { closeInitiativePayloadSchema, draftRequestPayloadSchema, presentRequestPayloadSchema, recordRequestResponsePayloadSchema, reopenInitiativePayloadSchema } from "./mutations/outreach";
@@ -97,17 +94,7 @@ export const reads = {
   referrals: { readReferrals, readReferral },
   support: { readSupportOverview, readGifts, readCommitments, readGoal, readReport },
   export: { readExport },
-  updates: {
-    // `findContentDocuments` is the same listing read the Page job uses: one enumeration under one authorisation, never a second implementation of it.
-    findContentDocuments,
-    readVariantOverview,
-    readDraft,
-    readCandidate,
-    readRelease,
-    readPreview,
-    readSharePresentation,
-  },
-  // `readPreview` is the same read the Update job uses: one preview authorisation, reachable from either family's job, never a second implementation of it.
+  updates: { findContentDocuments, readVariantOverview, readDraft, readCandidate, readRelease, readPreview, readSharePresentation },
   pages: { findContentDocuments, readPageCatalogues, readPage, readPageLocales, readGivingBinding, readPreview },
   media: { readMediaAsset },
   audience: { readAudience, readPreferences, readInbox, readReceivingList, readReceivingPost, readDiscoveryIndex, readReceivingPage, readSendResult },
@@ -125,10 +112,8 @@ export const mutations = {
   import: { proposeImport, setRowDecision, acceptImportRows, cancelImport },
   outreach: { createInitiative, addMembers, removeMember, returnMember, setStage, draftRequest, presentRequest, recordRequestResponse, closeInitiative, reopenInitiative },
   referrals: { recordIntroduction, continueReferral },
-  // The one financial write in the application: gated by `canEditGoal` and never touching a gift.
   support: { saveGoal },
   updates: { createVariant, saveDraft, submitForReview, approveCandidate, requestChanges, rejectCandidate, publishVariants, requestNotification, withdrawUpdate, withdrawLocale, restoreRevisionAsDraft },
-  // The seven variant, draft, review, publish and locale mutations above are the same bindings the Page family uses; the Page job adds its section, reach and withdrawal writes to them.
   pages: { createVariant, saveDraft, submitForReview, approveCandidate, requestChanges, publishVariants, withdrawLocale, addSection, moveSection, duplicateSection, removeSection, saveSectionFields, applyPreset, setReach, stopShowingPublicly, withdrawPage },
   media: { registerMediaAsset, replacePlacement, removePlacement },
   audience: { signupForPurpose, confirmMembership, setPreference, unsubscribe },

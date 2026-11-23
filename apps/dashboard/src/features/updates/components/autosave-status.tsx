@@ -1,30 +1,4 @@
 "use client";
-/**
- * The autosave status line of the one Update editor: which state the save is in, what the service last said, and the
- * only recoveries that never repeat an effect on their own.
- *
- * **What it renders.** One closed state from `useDraftRecovery` — `idle`, `unsaved`, `saving`, `saved`,
- * `failed-local-kept`, `conflict` or `unknown` — as a durable, in-context statement. It is not a transient
- * notification and not a dismissal-only message: the statement stands for as long as it is true, so a worker who looks
- * away and comes back still sees what happened. Each state states its own word, so colour is never the only signal, and
- * the word is announced politely rather than assertively, because an autosave interrupts nobody.
- *
- * **What it never computes.** No revision, no instant, no count and no percentage. Every value shown here is one the
- * hook or the service stated, rendered exactly as supplied, which is why the instant beside an acknowledged revision
- * arrives as a prop: the hook's contract carries no clock, and deriving one here would be a second, silently drifting
- * answer to the same question. Nothing on this line is a relative time.
- *
- * **What it never does on its own.** No send, no resend, no automatic retry, no silent discard of anything. A definite
- * answer — a refusal, an outage, a denial, a stale revision — offers only *Retry the same work*, which resubmits the
- * kept text through the same reviewed attempt; an uncertain one additionally offers *Check the result*, which reads the
- * same attempt again instead of starting a second one. "Send again" does not exist here: a lost acknowledgement is not
- * a failure, and repeating it under a fresh identity is the duplicate the operation ledger exists to prevent.
- *
- * **The copy this browser keeps.** Text the service has not acknowledged is mirrored by the hook into one slot of this
- * tab's storage, so a reload can offer it back. This line says plainly when such a copy exists, that it is not record
- * state, and that removing it touches nothing else — and removing it is offered only as a separately labelled
- * destructive action behind a confirmation.
- */
 import { useEffect, useId, useRef, useState, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -34,71 +8,25 @@ import { assertNever } from "@/lib/result";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
 import { DRAFT_VS_RELEASED } from "../copy/updates-copy";
 import type { AutosaveState, DraftRecovery, Revision } from "../hooks/use-draft-recovery";
-
-// ---------------------------------------------------------------------------------------------
-// The vocabulary of this line
-//
-// The status words below belong to the autosave lifecycle alone. The lifecycle vocabulary (draft,
-// candidate, released, withdrawn) belongs to the edition indicator, and the send, membership, reach
-// and value-state words belong to the shared status badge; a state that looked like one of those
-// here would let a saved draft be read as something published.
-// ---------------------------------------------------------------------------------------------
-
-/** The two actions a definite or an uncertain answer may offer. Both work under the attempt's own identity, so neither can repeat an effect. */
 const RETRY_LABEL = "Retry the same work";
-
 const CHECK_RESULT_LABEL = "Check the result";
-
-/** What a status may offer. A state with neither a definite nor an uncertain answer offers nothing, so nothing here can be pressed by mistake. */
 type RecoveryOffer = { readonly retrySameWork: boolean; readonly checkResult: boolean };
-
 const NO_OFFER: RecoveryOffer = { retrySameWork: false, checkResult: false };
-
 const RETRY_ONLY: RecoveryOffer = { retrySameWork: true, checkResult: false };
-
-/** Offered for `unknown` alone: checking a definite answer would assert an uncertainty that does not exist. */
 const RETRY_OR_CHECK: RecoveryOffer = { retrySameWork: true, checkResult: true };
-
-/** Every durable sentence this line states, written once so the same promise is never worded two ways. */
 const UNSAVED_DETAIL = "The editor sends a change after a short pause, and until an answer comes back the service still holds the earlier draft: nothing typed here has reached the record yet.";
-
 const SAVING_DETAIL = "No second attempt starts while one is in flight, so one pause cannot produce two saves. Whether the text was stored is stated only once the service answers.";
-
 const SAVED_DETAIL = "An acknowledgement records this text against that revision and states nothing more: it is not a review, not a release and not a notice.";
-
 const IDLE_DETAIL = "The saved draft still holds what the service last recorded. A change becomes an unsaved change as soon as the editor reports it.";
-
 const KEPT_WITH_COPY = "That copy lives in this tab's own storage and nowhere else: nobody else sees it, it is not the saved draft, and it ends with the tab.";
-
 const KEPT_WITHOUT_COPY = "The editor holds the text on screen, and this browser keeps no separate copy of it: leaving the page would lose it.";
-
-/** Said only when a stored copy exists that this editor is not showing — the recovery a reload offers back. */
 const LOCAL_ONLY = "This browser also keeps text from an earlier attempt that this editor is not showing. That copy exists only in this browser: the service has never acknowledged it, nobody else can see it, and it is not part of the draft record.";
-
 const NOT_ACKNOWLEDGED = "The service did not acknowledge this text, so nothing was saved.";
-
-// ---------------------------------------------------------------------------------------------
-// Wording that reads a value the service supplied
-// ---------------------------------------------------------------------------------------------
-
-/** How one status reads: its word, how that word is drawn, the one sentence the live region announces, the durable sentences under it, and what recovery it offers. */
-interface AutosaveWording {
-  readonly word: string;
-  readonly badge: NonNullable<ComponentProps<typeof Badge>["variant"]>;
-  readonly statement: ReactNode;
-  readonly details: readonly ReactNode[];
-  readonly offers: RecoveryOffer;
-}
-
-/** The acknowledgement sentence: the revision the service recorded, and the instant it stated for it when the caller supplied one. Both are shown as given; neither is derived, formatted or rounded here. */
+type AutosaveWording = { readonly word: string; readonly badge: NonNullable<ComponentProps<typeof Badge>["variant"]>; readonly statement: ReactNode; readonly details: readonly ReactNode[]; readonly offers: RecoveryOffer };
 function savedStatement(revision: Revision | null, asOf: string | null): ReactNode {
   const statedRevision = revision?.trim() ?? "";
   const statedAsOf = asOf?.trim() ?? "";
-  if (statedRevision === "") {
-    // The contract always names the revision an acknowledgement confirmed, so this states only what it can rather than
-    // inventing one. It never falls back to "saved" alone: the revision is why the line is trustworthy.
-    return "Saved — the service acknowledged this text and stated no revision for it.";
-  }
+  if (statedRevision === "") return "Saved — the service acknowledged this text and stated no revision for it.";
   if (statedAsOf === "") {
     return (
       <>
@@ -112,12 +40,8 @@ function savedStatement(revision: Revision | null, asOf: string | null): ReactNo
     </>
   );
 }
-
-/** Why the text was not saved, in the terms the answer itself used. `invalid` names no field here: the editor's own field errors list them, and repeating them would be a second rendering of one refusal. */
 function refusalDetail(outcome: MutationOutcome | null): ReactNode {
-  if (outcome === null) {
-    return NOT_ACKNOWLEDGED;
-  }
+  if (outcome === null) return NOT_ACKNOWLEDGED;
   switch (outcome.outcome) {
     case "invalid":
       return "The service refused at least one field, so nothing was saved. The editor lists the fields it refused; this line does not repeat them.";
@@ -137,14 +61,10 @@ function refusalDetail(outcome: MutationOutcome | null): ReactNode {
       return NOT_ACKNOWLEDGED;
   }
 }
-
-/** Which revision the conflict is against: the one the service reported, the one this editor had acknowledged, or neither. */
 function conflictDetail(outcome: MutationOutcome | null, acknowledgedRevision: Revision | null): ReactNode {
   const current = outcome !== null && outcome.outcome === "conflict" ? outcome.currentRevision.trim() : "";
   const acknowledged = acknowledgedRevision?.trim() ?? "";
-  if (current === "") {
-    return "This editor's revision is no longer the one the service holds, so nothing was saved.";
-  }
+  if (current === "") return "This editor's revision is no longer the one the service holds, so nothing was saved.";
   if (acknowledged === "") {
     return (
       <>
@@ -158,10 +78,7 @@ function conflictDetail(outcome: MutationOutcome | null, acknowledgedRevision: R
     </>
   );
 }
-
 const CONFLICT_RETRY = "Retrying the same work resends your text against the revision the service reported, so your text becomes the saved draft if the service accepts it and what the record holds now is replaced.";
-
-/** What an uncertain answer leaves open, what each recovery does, and what this browser still holds. */
 function unknownDetails(outcome: MutationOutcome | null, keepsText: boolean): readonly ReactNode[] {
   const details: ReactNode[] = [];
   const operationId = outcome !== null && outcome.outcome === "unknown" ? outcome.operationId.trim() : "";
@@ -176,21 +93,7 @@ function unknownDetails(outcome: MutationOutcome | null, keepsText: boolean): re
   details.push(keepsText ? KEPT_WITH_COPY : KEPT_WITHOUT_COPY);
   return details;
 }
-
-/** What this status is asked to describe. */
-type WordingInput = {
-  readonly state: AutosaveState;
-  readonly outcome: MutationOutcome | null;
-  readonly acknowledgedRevision: Revision | null;
-  readonly acknowledgedAsOf: string | null;
-  /** Whether the editor still holds text the service has not acknowledged, read from the contract rather than assumed from the state. */
-  readonly keepsText: boolean;
-};
-
-/**
- * Maps the one status onto the words, the durable sentences and the recovery it offers, exhaustively: a member added
- * to `AutosaveState` fails to compile at the `assertNever` call instead of reaching a surface with no wording.
- */
+type WordingInput = { readonly state: AutosaveState; readonly outcome: MutationOutcome | null; readonly acknowledgedRevision: Revision | null; readonly acknowledgedAsOf: string | null; readonly keepsText: boolean };
 function wordingOf({ state, outcome, acknowledgedRevision, acknowledgedAsOf, keepsText }: WordingInput): AutosaveWording {
   const kept = keepsText ? KEPT_WITH_COPY : KEPT_WITHOUT_COPY;
   switch (state) {
@@ -212,28 +115,13 @@ function wordingOf({ state, outcome, acknowledgedRevision, acknowledgedAsOf, kee
       return assertNever(state, "Unhandled autosave state");
   }
 }
-
-// ---------------------------------------------------------------------------------------------
-// The one destructive offer: removing this browser's copy
-// ---------------------------------------------------------------------------------------------
-
 const DISCARD_LABELS = { action: "Discard this browser's copy", title: "Discard the copy this browser kept?", confirm: "Discard the copy", cancel: "Keep the copy" } as const;
-
 const DISCARD_STATEMENTS = {
   scope: "This removes only the copy this browser kept of text the service never acknowledged.",
   onScreen: "It removes nothing from the text on screen, and nothing from the draft record: the editor keeps showing exactly what was typed.",
   irreversible: "It cannot be undone from here. Once the copy is discarded, this browser has nothing to offer back after a reload.",
 } as const;
-
 type DiscardControlProps = { readonly onDiscard: () => void };
-
-/**
- * The separate, confirmation-guarded removal of this tab's kept copy.
- *
- * It is deliberately not offered beside the two recoveries without a confirmation: the copy is the only thing standing
- * between a lost save and lost work, so removing it is a destructive act that states what it does and does not touch.
- * The open state is this control's own UI state; the status itself stays a pure render of what the hook reports.
- */
 function DiscardLocalRecoveryControl({ onDiscard }: DiscardControlProps): ReactElement {
   const [open, setOpen] = useState(false);
   const confirm = (): void => {
@@ -255,45 +143,14 @@ function DiscardLocalRecoveryControl({ onDiscard }: DiscardControlProps): ReactE
         <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{DISCARD_STATEMENTS.irreversible}</p>
         <AlertDialogFooter>
           <AlertDialogCancel>{DISCARD_LABELS.cancel}</AlertDialogCancel>
-          <AlertDialogAction confirmVariant="destructive" onClick={confirm}>
-            {DISCARD_LABELS.confirm}
-          </AlertDialogAction>
+          <AlertDialogAction {...{ confirmVariant: "destructive", onClick: confirm }}>{DISCARD_LABELS.confirm}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   );
 }
-
-// ---------------------------------------------------------------------------------------------
-// The component
-// ---------------------------------------------------------------------------------------------
-
-export type AutosaveStatusProps = {
-  /** The hook's report: the closed status, the service's last answer, the kept text and the three recoveries. */
-  readonly recovery: DraftRecovery;
-  /**
-   * The instant the service stated for the revision it acknowledged — the draft read's own `asOf`, passed through
-   * unchanged. Omitted when the caller has none, in which case the acknowledgement states its revision alone rather
-   * than inventing a time.
-   */
-  readonly acknowledgedAsOf?: string | null;
-  /**
-   * Reads the same attempt again under its own identity. Offered for `unknown` only, and only when the caller supplies
-   * it: a definite answer needs no check, because it is already known that nothing was applied.
-   */
-  readonly onCheckResult?: () => void;
-  readonly className?: string;
-};
-
-/**
- * The durable status of one autosave.
- *
- * The live region carries the state word and one sentence, and nothing else: the durable sentences under it are linked
- * with `aria-describedby` rather than included, so an atomic announcement stays short while the full explanation stays
- * on screen for as long as it is true. Focus is never moved when a save settles — an autosave that stole focus would
- * interrupt the sentence being typed — and the region is written so that no motion is involved, so nothing here needs a
- * reduced-motion variant.
- */
+export type AutosaveStatusProps = { readonly recovery: DraftRecovery; readonly acknowledgedAsOf?: string | null; readonly onCheckResult?: () => void; readonly className?: string };
+/** The durable status of one autosave. */
 export function AutosaveStatus({ recovery, acknowledgedAsOf = null, onCheckResult, className }: AutosaveStatusProps): ReactElement {
   const detailsId = useId();
   const regionRef = useRef<HTMLOutputElement | null>(null);
@@ -305,8 +162,6 @@ export function AutosaveStatus({ recovery, acknowledgedAsOf = null, onCheckResul
   const checkResult = wording.offers.checkResult && onCheckResult !== undefined ? onCheckResult : null;
   const offersActions = retry !== null || checkResult !== null || localRecovery.present;
   useEffect(() => {
-    // The control that opened the confirmation has just gone with the copy it removed, so the dialog would otherwise
-    // return focus to nothing. The region states what remains, so a keyboard lands there instead of at the page start.
     if (!discardRequestedRef.current || localRecovery.present) return;
     discardRequestedRef.current = false;
     regionRef.current?.focus();
@@ -332,21 +187,12 @@ export function AutosaveStatus({ recovery, acknowledgedAsOf = null, onCheckResul
       </div>
       {offersActions ? (
         <div data-slot="autosave-status-actions" className="flex min-w-0 flex-wrap items-center gap-2">
-          {retry === null ? null : (
-            <Button type="button" size="sm" variant="outline" onClick={retry}>
-              {RETRY_LABEL}
-            </Button>
-          )}
-          {checkResult === null ? null : (
-            <Button type="button" size="sm" variant="outline" onClick={checkResult}>
-              {CHECK_RESULT_LABEL}
-            </Button>
-          )}
+          {retry === null ? null : <Button {...{ type: "button", size: "sm", variant: "outline", onClick: retry }}>{RETRY_LABEL}</Button>}
+          {checkResult === null ? null : <Button {...{ type: "button", size: "sm", variant: "outline", onClick: checkResult }}>{CHECK_RESULT_LABEL}</Button>}
           {localRecovery.present ? <DiscardLocalRecoveryControl onDiscard={discard} /> : null}
         </div>
       ) : null}
     </div>
   );
 }
-
 export default AutosaveStatus;

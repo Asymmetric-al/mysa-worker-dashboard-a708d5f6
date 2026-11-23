@@ -16,10 +16,6 @@ export const FACET_LABELS: Readonly<Record<FacetKey, string>> = {
   "giving-total": "Giving in the selected period",
   "commitment-status": "Recurring support status",
 };
-// The seven open value sets below are deliberate: an open value is rendered exactly
-// as the source supplied it, and no label may be invented for a value the service has
-// not enumerated.
-/** Chip wording for closed facet values, with open value sets left to the source. */
 export const FACET_VALUE_LABELS: Readonly<Record<FacetKey, Readonly<Partial<Record<string, string>>>>> = {
   "contact-type": { person: "Person", household: "Household", church: "Church", organization: "Organization", "private-preparation": "Private preparation" },
   "preparation-state": { private: "Private record", shared: "Shared record" },

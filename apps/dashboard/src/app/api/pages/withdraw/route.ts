@@ -1,13 +1,8 @@
-/** `POST /api/pages/withdraw` — the two withdrawals of a Worker or Project Page: */
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { assertNever } from "@/lib/result";
-import { mutationInputSchema, mutations, outcomeFromError, toResponse } from "@/modules/data-service";
-import { sessionIdOf } from "../../session-cookie";
-import { dispatch, jsonBodyOf, operationIdentityOf } from "../../handler";
-// The store writes through node:fs, so this handler never runs on the edge runtime.
+import { mutationInputSchema, mutations } from "@/modules/data-service";
+import { claimedWriteRoute, dispatch, type ClaimedWrite } from "../../handler";
 export const runtime = "nodejs";
-// Every mutation resolves the development session and the scenario clock per request.
 export const dynamic = "force-dynamic";
 const MESSAGES = { operationRequired: "State which withdrawal this request makes as payload.operation: withdrawPage or withdrawLocale.", bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload." } as const;
 type WithdrawPagePayload = Parameters<typeof mutations.pages.withdrawPage>[1]["payload"];
@@ -16,21 +11,11 @@ type Routed<P> = P & { readonly operation: string };
 const withdrawPageBodySchema = mutationInputSchema(z.custom<Routed<WithdrawPagePayload>>());
 const withdrawLocaleBodySchema = mutationInputSchema(z.custom<Routed<WithdrawLocalePayload>>());
 const WITHDRAW_OPERATIONS = ["withdrawPage", "withdrawLocale"] as const;
+type WithdrawOperation = (typeof WITHDRAW_OPERATIONS)[number];
 const discriminantSchema = z.object({ payload: z.object({ operation: z.enum(WITHDRAW_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.bodyNotJson });
+const WRITES = {
+  withdrawPage: (raw, { operationId, sessionId }) => dispatch(withdrawPageBodySchema, raw, operationId, "operation", (input) => mutations.pages.withdrawPage(sessionId, input)),
+  withdrawLocale: (raw, { operationId, sessionId }) => dispatch(withdrawLocaleBodySchema, raw, operationId, "operation", (input) => mutations.pages.withdrawLocale(sessionId, input)),
+} satisfies Readonly<Record<WithdrawOperation, ClaimedWrite>>;
 /** One named withdrawal, selected by `payload.operation`. */
-export async function POST(request: NextRequest): Promise<Response> {
-  const raw = await jsonBodyOf(request);
-  const operationId = operationIdentityOf(raw);
-  const sessionId = sessionIdOf(request);
-  const claimed = discriminantSchema.safeParse(raw);
-  if (!claimed.success) return toResponse(outcomeFromError(operationId, claimed.error));
-  switch (claimed.data.payload.operation) {
-    case "withdrawPage":
-      return dispatch(withdrawPageBodySchema, raw, operationId, "operation", (input) => mutations.pages.withdrawPage(sessionId, input));
-    case "withdrawLocale":
-      return dispatch(withdrawLocaleBodySchema, raw, operationId, "operation", (input) => mutations.pages.withdrawLocale(sessionId, input));
-    default:
-      // Unreachable: the two names above are the closed set the discriminant schema admits, so a third mutation fails to compile at this call instead of reaching the runtime.
-      return assertNever(claimed.data.payload.operation, "Unhandled page withdrawal");
-  }
-}
+export const POST = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES);

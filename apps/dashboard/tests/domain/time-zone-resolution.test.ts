@@ -6,14 +6,9 @@ const SEED_INSTANT = Temporal.Instant.from("2026-11-20T00:00:00Z");
 const RESOLVABLE = ["UTC", "utc", "Europe/London", "America/Santiago", "Pacific/Auckland", "Asia/Tokyo"];
 const UNRESOLVABLE = ["Mars/Olympus", "Mars/Phobos", "UTC+1", "", "   "];
 describe("the time-zone identifier a request states", () => {
-  it.each(RESOLVABLE)("accepts %s, because this runtime resolves it", (timeZone) => {
-    expect(isResolvableTimeZone(timeZone)).toBe(true);
-  });
-  it.each(UNRESOLVABLE)("refuses %j, because no calendar day can be read in it", (timeZone) => {
-    expect(isResolvableTimeZone(timeZone)).toBe(false);
-  });
+  it.each(RESOLVABLE)("accepts %s, because this runtime resolves it", (timeZone) => expect(isResolvableTimeZone(timeZone)).toBe(true));
+  it.each(UNRESOLVABLE)("refuses %j, because no calendar day can be read in it", (timeZone) => expect(isResolvableTimeZone(timeZone)).toBe(false));
   it.each([...RESOLVABLE, ...UNRESOLVABLE])("answers %j exactly as the reader that would use it does", (timeZone) => {
-    const readerResolved = todayInZone(timeZone, SEED_INSTANT).status === "resolved";
-    expect(isResolvableTimeZone(timeZone)).toBe(readerResolved);
+    expect(isResolvableTimeZone(timeZone)).toBe(todayInZone(timeZone, SEED_INSTANT).status === "resolved");
   });
 });

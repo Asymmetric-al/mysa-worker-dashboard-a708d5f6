@@ -1,253 +1,62 @@
 "use client";
-/** The Audience family's seven browser reads, and the cache keys its writes invalidate. **Authority.** This is the one place the audience family reads from the browser. */
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect } from "react";
 import { isStale, queryKey, type QueryParams, type ScopedQueryKey } from "@/components/context-switch-guard";
 import { isRecord } from "@/lib/guards";
-import type { Scope } from "@/modules/data-service/envelope";
-import { isOutcome, isReadResult, unavailable, type ReadResult } from "@/modules/data-service/outcome";
-import type { AudienceQuery, DiscoveryIndexQuery, InboxQuery, ReceivingListQuery, ReceivingPageQuery, ReceivingPostQuery, readAudience, readDiscoveryIndex, readInbox, readPreferences, readReceivingList, readReceivingPage, readReceivingPost } from "@/modules/data-service/reads/audience";
-// The seven jobs of this family's read row, named once
-/** The publisher's audience view for the one purpose this release keeps memberships for. */
+import { fetchReadOrOutage, handlerSource } from "@/lib/read-transport";
+import type { Coverage, ReadEnvelope, Scope } from "@/modules/data-service/envelope";
+import type { ReadResult } from "@/modules/data-service/outcome";
+import type { AudienceQuery, DiscoveryIndexQuery, InboxQuery, ReceivingListQuery, ReceivingPageQuery, ReceivingPostQuery, readAudience, readDiscoveryIndex, readInbox, readReceivingList, readReceivingPage, readReceivingPost } from "@/modules/data-service/reads/audience";
 const AUDIENCE_JOB = "audience";
-const PREFERENCES_JOB = "preferences";
 const INBOX_JOB = "inbox";
 const RECEIVING_LIST_JOB = "receiving-list";
 const RECEIVING_POST_JOB = "receiving-post";
 const DISCOVERY_INDEX_JOB = "discovery-index";
 const RECEIVING_PAGE_JOB = "receiving-page";
-/** Every job segment this family keys under, in the order AAP 0.7.1 lists the reads. */
-export const AUDIENCE_JOB_SEGMENTS = [AUDIENCE_JOB, PREFERENCES_JOB, INBOX_JOB, RECEIVING_LIST_JOB, RECEIVING_POST_JOB, DISCOVERY_INDEX_JOB, RECEIVING_PAGE_JOB] as const;
-/** One job segment of this family's read row. */
-export type AudienceJob = (typeof AUDIENCE_JOB_SEGMENTS)[number];
-// What each read answers with, taken from the read rather than restated
-/** What a read answered, whether it answered directly or through a promise. */
+/** Every job segment this family keys under, in the order AAP 0.7.1 lists the reads. */ export const AUDIENCE_JOB_SEGMENTS = [AUDIENCE_JOB, "preferences", INBOX_JOB, RECEIVING_LIST_JOB, RECEIVING_POST_JOB, DISCOVERY_INDEX_JOB, RECEIVING_PAGE_JOB] as const;
 type ReadOf<F extends (...args: never[]) => unknown> = Awaited<ReturnType<F>>;
-/** The scoped envelope a read answered with: the envelope arm of its result union, and `never` for a read that could only refuse. */
 type EnvelopeOf<R> = R extends { readonly kind: "envelope"; readonly envelope: infer E } ? E : never;
-/** The publisher's audience: four membership states, eligible and excluded counts, one page of members. */
 export type AudienceEnvelope = EnvelopeOf<ReadOf<typeof readAudience>>;
-/** A reader's own Off or Immediate choice, reading language, membership state and proof state. */
-export type PreferencesEnvelope = EnvelopeOf<ReadOf<typeof readPreferences>>;
-/** One reader's synthetic inbox: one message per recipient and notification intent. */
 export type InboxEnvelope = EnvelopeOf<ReadOf<typeof readInbox>>;
-/** The Updates a reader may open now, re-authorised at the read's instant. */
 export type ReceivingListEnvelope = EnvelopeOf<ReadOf<typeof readReceivingList>>;
-/** One Update at its exact post, re-authorised on every open. */
 export type ReceivingPostEnvelope = EnvelopeOf<ReadOf<typeof readReceivingPost>>;
-/** The page editions that reach a public listing, and nothing else. */
 export type DiscoveryIndexEnvelope = EnvelopeOf<ReadOf<typeof readDiscoveryIndex>>;
-/** One page edition served by direct link, with its reach decision and tombstone. */
 export type ReceivingPageEnvelope = EnvelopeOf<ReadOf<typeof readReceivingPage>>;
-// Fixed values
-/** The attempt a read reports under: a read mints no operation identity, so it names the marker every read transport names. */
-const READ_ATTEMPT_ID = "read";
-/** The source behind a request that produced no usable answer — the response boundary, named as a source so an outage names something a person can act on and never a record. */
-const HANDLER_SOURCE_SYSTEM = "data-service";
-const AUDIENCE_ENDPOINT = "/api/audience";
-const PREFERENCES_ENDPOINT = "/api/preferences";
-const INBOX_ENDPOINT = "/api/inbox";
-/** How long an envelope stays fresh. Short on purpose: a persona switch, a consent change or a clock step must reach the next read rather than hide behind a cache. */
 const READ_STALE_TIME_MS = 5_000;
-/** The parameters of a read that declares none, so its key still states a params member rather than a shorter key shape. */
-const NO_PARAMS: QueryParams = Object.freeze({});
-
 const TRANSPORT_GUIDANCE = "The request did not complete, so this read has no answer and is reported unavailable rather than empty. Request it again: nothing was changed, and a source that could not be read is not a source with nothing in it.";
-
-const UNREADABLE_GUIDANCE = "The request was answered with a body this read does not recognise, so the result is reported unavailable rather than shown as empty. Request it again; if it keeps happening the response boundary is faulty rather than the records.";
-// The parameters each read takes, as both the cache key and the request carry them
-/** The paging window a list read declares, with an absent value omitted rather than stated as a value the read would have to interpret. */
-function pageParams(query: { readonly page?: number; readonly pageSize?: number }): QueryParams {
-  return { ...(query.page === undefined ? {} : { page: query.page }), ...(query.pageSize === undefined ? {} : { pageSize: query.pageSize }) };
-}
-function audienceParams(query: AudienceQuery): QueryParams {
-  return { ...(query.publisherId === undefined ? {} : { publisherId: query.publisherId }), ...pageParams(query) };
-}
-function inboxParams(query: InboxQuery): QueryParams {
-  return pageParams(query);
-}
-function receivingListParams(query: ReceivingListQuery): QueryParams {
-  return { ...(query.locale === undefined ? {} : { locale: query.locale }), ...pageParams(query) };
-}
-function receivingPostParams(query: ReceivingPostQuery): QueryParams {
-  return { updateId: query.updateId, ...(query.locale === undefined ? {} : { locale: query.locale }) };
-}
-function discoveryIndexParams(query: DiscoveryIndexQuery): QueryParams {
-  return pageParams(query);
-}
-function receivingPageParams(query: ReceivingPageQuery): QueryParams {
-  return { pageId: query.pageId, ...(query.locale === undefined ? {} : { locale: query.locale }) };
-}
-/** The query string one request carries, built from the same params object the key holds, so a key and its request cannot drift apart. */
+const pageParams = (query: { readonly page?: number; readonly pageSize?: number }): QueryParams => ({ ...(query.page === undefined ? {} : { page: query.page }), ...(query.pageSize === undefined ? {} : { pageSize: query.pageSize }) });
 function searchOf(params: QueryParams): string {
   const search = new URLSearchParams();
   for (const name of Object.keys(params).sort()) {
     const value = params[name];
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      search.set(name, String(value));
-    }
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") search.set(name, String(value));
   }
   const encoded = search.toString();
   return encoded === "" ? "" : `?${encoded}`;
 }
-// The cache keys, one per job
-/** The key of the publisher's audience read. A writer invalidating this job instead of one parameter set uses `[...scopeKey(scope), 'audience']`. */
-export function audienceKey(scope: Scope, params: QueryParams): ScopedQueryKey {
-  return queryKey(scope, AUDIENCE_JOB, params);
+const staleTimeOf = (result: ReadResult<unknown> | undefined): number => (result?.kind === "envelope" ? READ_STALE_TIME_MS : 0);
+async function readOnce<TData, TCoverage extends Coverage = Coverage>(endpoint: string, params: QueryParams): Promise<ReadResult<ReadEnvelope<TData, TCoverage>>> {
+  return fetchReadOrOutage<TData, TCoverage>({ url: `${endpoint}${searchOf(params)}`, admits: isRecord, source: handlerSource(endpoint), guidance: TRANSPORT_GUIDANCE });
+} /** What {@link useAudience} needs: the authority to read under, and the read's own paging state. */
+export type UseAudienceParams = { readonly scope: Scope; readonly query?: AudienceQuery };
+/** Reads the publisher's audience for the one purpose this release keeps memberships for. Answers `envelope`, `denied` or `unavailable`, unchanged. */ export function useAudience({ scope, query = {} }: UseAudienceParams): UseQueryResult<ReadResult<AudienceEnvelope>> {
+  const params: QueryParams = { ...(query.publisherId === undefined ? {} : { publisherId: query.publisherId }), ...pageParams(query) };
+  return useQuery<ReadResult<AudienceEnvelope>>({ queryKey: queryKey(scope, AUDIENCE_JOB, params), queryFn: () => readOnce<AudienceEnvelope["data"], AudienceEnvelope["coverage"]>("/api/audience", params), retry: false, staleTime: (entry) => staleTimeOf(entry.state.data) });
 }
-/** The key of the reader's own preference read. It admits no parameter, so the key states the job and an empty params member. */
-export function preferencesKey(scope: Scope): ScopedQueryKey {
-  return queryKey(scope, PREFERENCES_JOB, NO_PARAMS);
+/** What {@link useInbox} needs: the authority to read under, and the read's own paging state. */ export type UseInboxParams = { readonly scope: Scope; readonly query?: InboxQuery };
+/** Reads one page of this reader's synthetic inbox: one message per recipient and notification intent, each with its HTML and plain text. Answers `envelope`, `denied` or `unavailable`, unchanged. */ export function useInbox({ scope, query = {} }: UseInboxParams): UseQueryResult<ReadResult<InboxEnvelope>> {
+  const params = pageParams(query);
+  return useQuery<ReadResult<InboxEnvelope>>({ queryKey: queryKey(scope, INBOX_JOB, params), queryFn: () => readOnce<InboxEnvelope["data"], InboxEnvelope["coverage"]>("/api/inbox", params), retry: false, staleTime: (entry) => staleTimeOf(entry.state.data) });
 }
-/** The key of the synthetic inbox read. */
-export function inboxKey(scope: Scope, params: QueryParams): ScopedQueryKey {
-  return queryKey(scope, INBOX_JOB, params);
-}
-/** The key of the receiving list read: the Updates one reader may open now. */
-export function receivingListKey(scope: Scope, params: QueryParams): ScopedQueryKey {
-  return queryKey(scope, RECEIVING_LIST_JOB, params);
-}
-/** The key of the exact-post read: one Update, at the revision the service admits for this reader. */
-export function receivingPostKey(scope: Scope, params: QueryParams): ScopedQueryKey {
-  return queryKey(scope, RECEIVING_POST_JOB, params);
-}
-/** The key of the discovery index read: the page editions listed publicly. */
-export function discoveryIndexKey(scope: Scope, params: QueryParams): ScopedQueryKey {
-  return queryKey(scope, DISCOVERY_INDEX_JOB, params);
-}
-/** The key of the public reading view: one page edition, reached by direct link. */
-export function receivingPageKey(scope: Scope, params: QueryParams): ScopedQueryKey {
-  return queryKey(scope, RECEIVING_PAGE_JOB, params);
-}
-
-// Reading an answer
-/** Reports whether a body carries the facts every envelope carries. */
-function isEnvelopeBody(value: unknown): boolean {
-  return isRecord(value) && "data" in value && isRecord(value.scope) && isRecord(value.valueStates) && typeof value.asOf === "string" && typeof value.revision === "string";
-}
-/** The outage a read answers with when its request produced no answer it can state: the handler is the source, and no record, count or title is named. */
-function outage<T>(endpoint: string, guidance: string): ReadResult<T> {
-  return { kind: "unavailable", unavailable: unavailable({ operationId: READ_ATTEMPT_ID, source: { system: HANDLER_SOURCE_SYSTEM, reference: endpoint }, guidance }) };
-}
-/** The read result one body states: the envelope the handler sent, the denial, the refusal or the outage it sent, and `unavailable` for a body that is none of them. */
-function readResultOf<T>(body: unknown, endpoint: string): ReadResult<T> {
-  if (isReadResult(body)) {
-    return body as ReadResult<T>;
-  }
-  if (isOutcome(body) && body.outcome === "denied") {
-    return { kind: "denied", denied: body };
-  }
-  if (isOutcome(body) && body.outcome === "unavailable") {
-    return { kind: "unavailable", unavailable: body };
-  }
-  if (isOutcome(body) && body.outcome === "invalid") {
-    // The request this read issued is one the handler does not admit: the field-keyed refusal is the
-    // answer, because the source behind it answered and only the request was wrong.
-    return { kind: "refused", refused: body };
-  }
-  if (isEnvelopeBody(body)) {
-    return { kind: "envelope", envelope: body as T };
-  }
-  return outage<T>(endpoint, UNREADABLE_GUIDANCE);
-}
-/** How fresh one cached answer is: five seconds for an envelope and none at all for a refusal, so a denial or an outage is never cached as though it were data. */
-function staleTimeOf(result: ReadResult<unknown> | undefined): number {
-  return result?.kind === "envelope" ? READ_STALE_TIME_MS : 0;
-}
-/** One GET of one read handler, answered as a read result. */
-async function readOnce<T>(endpoint: string, params: QueryParams): Promise<ReadResult<T>> {
-  let answer: Response;
-  try {
-    answer = await fetch(`${endpoint}${searchOf(params)}`, { method: "GET", headers: { accept: "application/json" }, cache: "no-store", credentials: "same-origin" });
-  } catch {
-    return outage<T>(endpoint, TRANSPORT_GUIDANCE);
-  }
-  let body: unknown;
-  try {
-    body = await answer.json();
-  } catch {
-    return outage<T>(endpoint, TRANSPORT_GUIDANCE);
-  }
-  return readResultOf<T>(body, endpoint);
-}
-// The three reads that have a handler
-/** What {@link useAudience} needs: the authority to read under, and the read's own paging state. */
-export interface UseAudienceParams {
-  readonly scope: Scope;
-  /** The read's own query, passed straight through: this hook defaults nothing the service would default and validates nothing the service would refuse. */
-  readonly query?: AudienceQuery;
-}
-/** Reads the publisher's audience for the one purpose this release keeps memberships for. Answers `envelope`, `denied` or `unavailable`, unchanged. */
-export function useAudience({ scope, query = {} }: UseAudienceParams): UseQueryResult<ReadResult<AudienceEnvelope>> {
-  const params = audienceParams(query);
-  return useQuery<ReadResult<AudienceEnvelope>>({
-    queryKey: audienceKey(scope, params),
-    queryFn: () => readOnce<AudienceEnvelope>(AUDIENCE_ENDPOINT, params),
-    // A refusal is the source's answer, so it is never retried behind the worker's back: the surface
-    // offers the refetch and says what happened.
-    retry: false,
-    staleTime: (entry) => staleTimeOf(entry.state.data),
-  });
-}
-/** What {@link usePreferences} needs. The preferences read declares no parameter and its handler refuses every one it is given, so there is no query to pass. */
-export interface UsePreferencesParams {
-  readonly scope: Scope;
-  readonly query?: undefined;
-}
-/** Reads the reader's own Off or Immediate choice, reading language, membership state and proof state as four separate facts. Answers `envelope`, `denied` or `unavailable`, unchanged. */
-export function usePreferences({ scope }: UsePreferencesParams): UseQueryResult<ReadResult<PreferencesEnvelope>> {
-  return useQuery<ReadResult<PreferencesEnvelope>>({ queryKey: preferencesKey(scope), queryFn: () => readOnce<PreferencesEnvelope>(PREFERENCES_ENDPOINT, NO_PARAMS), retry: false, staleTime: (entry) => staleTimeOf(entry.state.data) });
-}
-/** What {@link useInbox} needs: the authority to read under, and the read's own paging state. */
-export interface UseInboxParams {
-  readonly scope: Scope;
-  readonly query?: InboxQuery;
-}
-/** Reads one page of this reader's synthetic inbox: one message per recipient and notification intent, each with its HTML and plain text. Answers `envelope`, `denied` or `unavailable`, unchanged. */
-export function useInbox({ scope, query = {} }: UseInboxParams): UseQueryResult<ReadResult<InboxEnvelope>> {
-  const params = inboxParams(query);
-  return useQuery<ReadResult<InboxEnvelope>>({ queryKey: inboxKey(scope, params), queryFn: () => readOnce<InboxEnvelope>(INBOX_ENDPOINT, params), retry: false, staleTime: (entry) => staleTimeOf(entry.state.data) });
-}
-
-// The four reads that arrive with their route
-/** What a route-envelope read hands its component: the union the server produced, a request for the server to check the route again, and the hook's busy state. */
-export interface RouteEnvelope<T> {
-  readonly result: ReadResult<T>;
-  /** Asks the server for the current route again, so the read that answered it is authorised once more. */
-  readonly refresh: () => void;
-  readonly isFetching: boolean;
-}
-/** The one mechanism behind the four views that arrive with their route. */
+/** What a route-envelope read hands its component: the union the server produced, a request for the server to check the route again, and the hook's busy state. */ export type RouteEnvelope<T> = { readonly result: ReadResult<T>; readonly refresh: () => void; readonly isFetching: boolean };
 function useRouteEnvelope<T extends { readonly scope: Scope }>(scope: Scope, key: ScopedQueryKey, initialEnvelope: ReadResult<T>): RouteEnvelope<T> {
   const queryClient = useQueryClient();
   const router = useRouter();
-  const entry = useQuery<ReadResult<T>>({
-    queryKey: key,
-    // Never called: this read has no handler and `enabled` is false. The query function states what an
-    // answer would be if it ever ran, rather than inventing a transport that does not exist.
-    queryFn: () => Promise.resolve(initialEnvelope),
-    initialData: initialEnvelope,
-    enabled: false,
-    retry: false,
-    // Staleness cannot cause a fetch here because the query is disabled; the value is stated so the
-    // entry is not marked stale the moment the server's answer is adopted.
-    staleTime: READ_STALE_TIME_MS,
-  });
+  const entry = useQuery<ReadResult<T>>({ queryKey: key, queryFn: () => Promise.resolve(initialEnvelope), initialData: initialEnvelope, enabled: false, retry: false, staleTime: READ_STALE_TIME_MS });
   useEffect(() => {
-    // `key` is a fresh array each render, so this effect runs after each one and returns at the guards
-    // below as soon as the cache already holds the arriving answer: the comparison is against the
-    // arrival itself, so an unchanged envelope is never written a second time.
-    if (initialEnvelope.kind === "envelope" && isStale(initialEnvelope.envelope.scope, scope)) {
-      // A late answer from a context this view has left is dropped rather than written: an envelope
-      // read in another context's authority may never answer for this one.
-      return;
-    }
-    if (queryClient.getQueryData<ReadResult<T>>(key) === initialEnvelope) {
-      return;
-    }
-    // Replace, never merge: the newest server render is authoritative, so an edition withdrawn or a
-    // grant revoked since the previous read cannot survive inside a cached envelope.
+    if (initialEnvelope.kind === "envelope" && isStale(initialEnvelope.envelope.scope, scope)) return;
+    if (queryClient.getQueryData<ReadResult<T>>(key) === initialEnvelope) return;
     queryClient.setQueryData<ReadResult<T>>(key, initialEnvelope);
   }, [queryClient, key, scope, initialEnvelope]);
   const refresh = useCallback(() => {
@@ -256,42 +65,15 @@ function useRouteEnvelope<T extends { readonly scope: Scope }>(scope: Scope, key
   return { result: entry.data ?? initialEnvelope, refresh, isFetching: entry.isFetching };
 }
 /** What {@link useReceivingList} needs: the authority to read under, the params the entry is keyed by (omitted because the read itself defaults its query), and the envelope the Server Component read. */
-export interface UseReceivingListParams {
-  readonly scope: Scope;
-  readonly params?: ReceivingListQuery;
-  readonly initialEnvelope: ReadResult<ReceivingListEnvelope>;
-}
+export type UseReceivingListParams = { readonly scope: Scope; readonly params?: ReceivingListQuery; readonly initialEnvelope: ReadResult<ReceivingListEnvelope> };
 /** Renders the Updates a reader may open now, as the server authorised them. Answers `envelope`, `denied` or `unavailable`, exactly as the server produced it; `refresh()` asks the server again. */
-export function useReceivingList({ scope, params = {}, initialEnvelope }: UseReceivingListParams): RouteEnvelope<ReceivingListEnvelope> {
-  return useRouteEnvelope(scope, receivingListKey(scope, receivingListParams(params)), initialEnvelope);
-}
-/** What {@link useReceivingPost} needs. */
-export interface UseReceivingPostParams {
-  readonly scope: Scope;
-  readonly params: ReceivingPostQuery;
-  readonly initialEnvelope: ReadResult<ReceivingPostEnvelope>;
-}
+export const useReceivingList = ({ scope, params = {}, initialEnvelope }: UseReceivingListParams): RouteEnvelope<ReceivingListEnvelope> => useRouteEnvelope(scope, queryKey(scope, RECEIVING_LIST_JOB, { ...(params.locale === undefined ? {} : { locale: params.locale }), ...pageParams(params) }), initialEnvelope);
+/** What {@link useReceivingPost} needs. */ export type UseReceivingPostParams = { readonly scope: Scope; readonly params: ReceivingPostQuery; readonly initialEnvelope: ReadResult<ReceivingPostEnvelope> };
 /** Renders one Update at its exact post, re-authorised by the server on every open. Answers `envelope`, `denied` or `unavailable`, exactly as the server produced it; `refresh()` asks the server again. */
-export function useReceivingPost({ scope, params, initialEnvelope }: UseReceivingPostParams): RouteEnvelope<ReceivingPostEnvelope> {
-  return useRouteEnvelope(scope, receivingPostKey(scope, receivingPostParams(params)), initialEnvelope);
-}
-/** What {@link useDiscoveryIndex} needs. */
-export interface UseDiscoveryIndexParams {
-  readonly scope: Scope;
-  readonly params?: DiscoveryIndexQuery;
-  readonly initialEnvelope: ReadResult<DiscoveryIndexEnvelope>;
-}
+export const useReceivingPost = ({ scope, params, initialEnvelope }: UseReceivingPostParams): RouteEnvelope<ReceivingPostEnvelope> => useRouteEnvelope(scope, queryKey(scope, RECEIVING_POST_JOB, { updateId: params.updateId, ...(params.locale === undefined ? {} : { locale: params.locale }) }), initialEnvelope);
+/** What {@link useDiscoveryIndex} needs. */ export type UseDiscoveryIndexParams = { readonly scope: Scope; readonly params?: DiscoveryIndexQuery; readonly initialEnvelope: ReadResult<DiscoveryIndexEnvelope> };
 /** Renders the page editions that reach a public listing, and nothing else: the service decided which they are. Answers `envelope`, `denied` or `unavailable`, exactly as the server produced it; `refresh()` asks the server again. */
-export function useDiscoveryIndex({ scope, params = {}, initialEnvelope }: UseDiscoveryIndexParams): RouteEnvelope<DiscoveryIndexEnvelope> {
-  return useRouteEnvelope(scope, discoveryIndexKey(scope, discoveryIndexParams(params)), initialEnvelope);
-}
-/** What {@link useReceivingPage} needs. */
-export interface UseReceivingPageParams {
-  readonly scope: Scope;
-  readonly params: ReceivingPageQuery;
-  readonly initialEnvelope: ReadResult<ReceivingPageEnvelope>;
-}
+export const useDiscoveryIndex = ({ scope, params = {}, initialEnvelope }: UseDiscoveryIndexParams): RouteEnvelope<DiscoveryIndexEnvelope> => useRouteEnvelope(scope, queryKey(scope, DISCOVERY_INDEX_JOB, pageParams(params)), initialEnvelope);
+/** What {@link useReceivingPage} needs. */ export type UseReceivingPageParams = { readonly scope: Scope; readonly params: ReceivingPageQuery; readonly initialEnvelope: ReadResult<ReceivingPageEnvelope> };
 /** Renders one page edition reached by direct link, with the reach decision, `noindex` metadata and tombstone the service produced. Answers `envelope`, `denied` or `unavailable`, exactly as the server produced it; `refresh()` asks the server again. */
-export function useReceivingPage({ scope, params, initialEnvelope }: UseReceivingPageParams): RouteEnvelope<ReceivingPageEnvelope> {
-  return useRouteEnvelope(scope, receivingPageKey(scope, receivingPageParams(params)), initialEnvelope);
-}
+export const useReceivingPage = ({ scope, params, initialEnvelope }: UseReceivingPageParams): RouteEnvelope<ReceivingPageEnvelope> => useRouteEnvelope(scope, queryKey(scope, RECEIVING_PAGE_JOB, { pageId: params.pageId, ...(params.locale === undefined ? {} : { locale: params.locale }) }), initialEnvelope);

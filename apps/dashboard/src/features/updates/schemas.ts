@@ -1,0 +1,227 @@
+import { z } from "zod";
+import { parseDocument } from "@/modules/content/document";
+import { variantKeyAllowed, type ContentVariant, type VariantAudience, type VariantFamily } from "@/modules/content/variant";
+import type { MediaAcceptanceSuccess, MediaAssetScope, MediaRenditionPurpose } from "@/modules/media/asset";
+import { ADMITTED_IMAGE_FORMATS, ADMITTED_VIDEO_PROFILES, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH, mediaStateReason } from "@/modules/media/profile";
+import { PUBLISH_MODE_LABELS, REVIEW_ROUND_NOTE, VARIANT_AXIS_NOTE, WITHDRAWAL_WORDING } from "./copy/updates-copy";
+export const UPDATE_FAMILY = "update" as const satisfies VariantFamily;
+export const contentIdSchema = z
+  .string({ error: "This action applies to one record, so open the record again and retry." })
+  .trim()
+  .min(1, "This action applies to one record, so open the record again and retry.")
+  .max(128, "That reference is too long to be one record identity, so open the record from its list rather " + "than pasting an address.");
+const AUDIENCE_AXIS = { public: "public", "approved-supporter": "approved-supporter" } as const satisfies Readonly<Record<ContentVariant["audience"], VariantAudience>>;
+export const audienceSchema = z.enum(Object.values(AUDIENCE_AXIS), { error: "Choose the audience this edition serves: public or approved supporters." });
+export const localeTagSchema = z
+  .string({ error: "State the content locale this edition is written in." })
+  .trim()
+  .min(2, "Use a content-locale tag such as en, fr or ar-EG.")
+  .max(35, "Use a content-locale tag of at most 35 characters, such as ar-EG.")
+  .regex(/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/, "Use a content-locale tag such as en, fr or ar-EG: a language subtag, then any hyphen-separated " + "subtags.");
+const PLACEABLE_RENDITION_PURPOSES = { display: "display", playback: "playback", poster: "poster", captions: "captions", transcript: "transcript" } as const satisfies Readonly<Record<MediaRenditionPurpose, MediaRenditionPurpose>>;
+export const mediaPlacementRefSchema = z.strictObject({ assetId: contentIdSchema, purpose: z.enum(Object.values(PLACEABLE_RENDITION_PURPOSES), { error: "Choose the rendition this placement uses: display, playback, poster, captions or transcript." }) });
+export const createVariantSchema = z.strictObject({ documentId: contentIdSchema, audience: audienceSchema, locale: localeTagSchema }).superRefine((payload, ctx) => {
+  if (!variantKeyAllowed(UPDATE_FAMILY, payload.audience)) ctx.addIssue({ code: "custom", path: ["audience"], message: VARIANT_AXIS_NOTE });
+});
+function bodyFieldPath(documentPath: string): (string | number)[] {
+  const segments: (string | number)[] = ["body"];
+  for (const segment of documentPath.split(".")) {
+    if (segment.length === 0) continue;
+    segments.push(/^\d+$/.test(segment) ? Number(segment) : segment);
+  }
+  return segments;
+}
+/** Feeds `saveDraft`: the working revision of one variant, which moves the draft pointer and nothing else — no candidate and no release changes because a draft was saved. */
+export const saveDraftSchema = z
+  .strictObject({
+    variantId: contentIdSchema,
+    body: z.unknown(),
+    contentChecksum: z
+      .string({ error: "A checksum is either left out or stated as the value the editor holds." })
+      .trim()
+      .min(1, "A checksum is either left out or stated as the value the editor holds.")
+      .max(64, "That checksum is longer than any this application produces, so save the draft from the " + "editor again rather than pasting one.")
+      .optional(),
+    mediaPlacements: z.array(mediaPlacementRefSchema).optional(),
+  })
+  .superRefine((payload, ctx) => {
+    if (!Object.hasOwn(payload, "body") || payload.body === undefined) {
+      ctx.addIssue({ code: "custom", path: ["body"], message: "A saved draft carries the document body, so save it from the editor rather than here." });
+      return;
+    }
+    const parsed = parseDocument(payload.body);
+    if (parsed.status === "valid") return;
+    for (const issue of parsed.issues) ctx.addIssue({ code: "custom", path: bodyFieldPath(issue.path), message: issue.message });
+  });
+/** The two release modes a submission asks for, in the store's own spelling: the closed pair the editor's publishing preference also states, so a widened list stops compiling here rather than sending a mode the service refuses at submit time. */
+export const SUBMISSION_NOTIFY_MODES = ["publish-only", "publish-and-notify"] as const;
+export type SubmissionNotifyMode = (typeof SUBMISSION_NOTIFY_MODES)[number];
+/** Feeds `submitForReview`: the exact revision to freeze and the release mode the submission records; a submission that states no mode keeps the service's default of `publish-only`. */
+export const submitForReviewSchema = z.strictObject({ variantId: contentIdSchema, revisionId: contentIdSchema, notifyMode: z.enum(SUBMISSION_NOTIFY_MODES, { error: "Choose how this submission asks for its release: publish only, or publish and notify now." }).optional() });
+export type CreateVariantPayload = z.infer<typeof createVariantSchema>;
+export type SaveDraftPayload = z.infer<typeof saveDraftSchema>;
+export type SubmitForReviewPayload = z.infer<typeof submitForReviewSchema>;
+export const REVIEW_REASON_MAX_CHARS = 2000;
+export const approveCandidateSchema = z.strictObject({
+  candidateId: contentIdSchema,
+  variantId: contentIdSchema,
+  revisionId: contentIdSchema,
+  contentChecksum: z
+    .string({ error: "Approval names the checksum of the revision you read, so approve the candidate from its " + "review panel rather than here." })
+    .trim()
+    .min(1, "Approve the candidate from its review panel, which carries the checksum of the revision you " + "read. " + REVIEW_ROUND_NOTE.approvalIsPerVariant)
+    .max(64, "That checksum is longer than any this application produces, so approve the candidate from " + "its review panel rather than pasting one."),
+});
+export const requestChangesSchema = z.strictObject({
+  candidateId: contentIdSchema,
+  variantId: contentIdSchema,
+  reason: z
+    .string({ error: "Say what needs changing, as a note on this candidate rather than a message to anyone." })
+    .trim()
+    .min(1, "Say what needs changing so the author can act on it. " + REVIEW_ROUND_NOTE.furtherRoundIsNewSubmission)
+    .max(REVIEW_REASON_MAX_CHARS, `Keep the note to ${REVIEW_REASON_MAX_CHARS} characters, which is all this review record ` + "holds, so point at what needs changing and leave the rewriting to the author."),
+});
+export const rejectCandidateSchema = z.strictObject({
+  candidateId: contentIdSchema,
+  variantId: contentIdSchema,
+  reason: z
+    .string({ error: "State the reason as a note on this candidate, or leave the reason out entirely." })
+    .trim()
+    .min(1, "Either leave the reason out or say what ended this candidate: an empty note states nothing.")
+    .max(REVIEW_REASON_MAX_CHARS, `Keep the note to ${REVIEW_REASON_MAX_CHARS} characters, which is all this review record ` + "holds, so say what ended the candidate and leave the rest to its author.")
+    .optional(),
+});
+export const restoreRevisionAsDraftSchema = z.strictObject({ revisionId: contentIdSchema });
+export type ApproveCandidatePayload = z.infer<typeof approveCandidateSchema>;
+export type RequestChangesPayload = z.infer<typeof requestChangesSchema>;
+export type RestoreRevisionAsDraftPayload = z.infer<typeof restoreRevisionAsDraftSchema>;
+/** The release choices a release selection states, in the review surface's client spelling: a submission records the same choice in the store's own words — `SUBMISSION_NOTIFY_MODES`, which ends `notify` rather than `notify-now` — and the two are mapped, never merged. */
+export const PUBLISH_MODES = ["publish-only", "publish-and-notify-now"] as const;
+export type PublishMode = (typeof PUBLISH_MODES)[number];
+const PUBLISH_MODE_PARITY = { "publish-only": "publish-only", "publish-and-notify-now": "publish-and-notify-now" } as const satisfies Readonly<Record<keyof typeof PUBLISH_MODE_LABELS, PublishMode> & Record<PublishMode, keyof typeof PUBLISH_MODE_LABELS>>;
+const NOTIFY_NOW_MODE = PUBLISH_MODE_PARITY["publish-and-notify-now"];
+export const publishSelectionSchema = z.strictObject({
+  variantId: contentIdSchema,
+  revisionId: contentIdSchema,
+  mode: z.enum(PUBLISH_MODES, { error: "Choose how this edition is released: publish only, or publish and notify now." }),
+  candidateNotifyAdmitted: z.boolean({ error: "This release needs the candidate's own notification policy, so reopen the review and choose " + "the publish choice again." }),
+});
+const DUPLICATE_VARIANT_MESSAGE = "This release lists the same variant edition twice, so remove the repeated entry: one publication " + "releases each edition once.";
+export const publishVariantsSchema = z.strictObject({ documentId: contentIdSchema, variants: z.array(publishSelectionSchema).min(1, "Choose at least one variant edition to release.") }).superRefine((payload, ctx) => {
+  const selected = new Set<string>();
+  payload.variants.forEach((selection, index) => {
+    if (selection.mode === NOTIFY_NOW_MODE && selection.candidateNotifyAdmitted === false) ctx.addIssue({ code: "custom", path: ["variants", index, "mode"], message: REVIEW_ROUND_NOTE.reviewerCannotAddNotify });
+    if (selected.has(selection.variantId)) {
+      ctx.addIssue({ code: "custom", path: ["variants", index, "variantId"], message: DUPLICATE_VARIANT_MESSAGE });
+      return;
+    }
+    selected.add(selection.variantId);
+  });
+});
+export type PublishSelection = z.infer<typeof publishSelectionSchema>;
+export type PublishVariantsPayload = z.infer<typeof publishVariantsSchema>;
+/** A repeat names the notice that recorded the failure rather than the recipients it is about: the service decides which copies definitely failed, and the stated instant is that notice's own, so no recipient list or dedupe key is computed here. */
+export const requestNotificationSchema = z.strictObject(
+  {
+    documentId: contentIdSchema,
+    variantId: contentIdSchema,
+    releaseId: contentIdSchema,
+    acknowledgedCeiling: z
+      .number({ error: "A notice request states the ceiling you acknowledged as a number, so submit it from the " + "publish review screen rather than building one by hand." })
+      .int("State the ceiling as a whole number — the eligible count the review screen showed you.")
+      .min(0, "A ceiling is a count, so the lowest it can be is zero: zero means nobody is eligible " + "for this notice right now."),
+    repeatOfIntentId: contentIdSchema.optional(),
+    intendedAt: z.iso.datetime({ offset: true, error: "A notice's intended instant is the one its record states, so take it from the notice rather than writing one here." }).optional(),
+  },
+  { error: "A notice request carries the release it is submitted for and the ceiling you acknowledged, and nothing else " + "besides the notice a repeat names and the instant that notice was meant for, so submit it from the publish review " + "screen or the delivery results." },
+);
+export type RequestNotificationPayload = z.infer<typeof requestNotificationSchema>;
+export const WITHDRAWAL_REASON_MAX_CHARS = 500;
+export const withdrawalReasonSchema = z
+  .string({ error: "A withdrawal reason is text, so type it here rather than pasting formatted content." })
+  .trim()
+  .max(WITHDRAWAL_REASON_MAX_CHARS, `Keep the reason to ${WITHDRAWAL_REASON_MAX_CHARS} characters or fewer: it is a short note ` + "beside the withdrawal, not a record of why the edition existed.")
+  .optional()
+  .describe(`${WITHDRAWAL_WORDING.whatItDoes} ${WITHDRAWAL_WORDING.whatItDoesNotDo}`);
+export const withdrawUpdateSchema = z.strictObject({ documentId: contentIdSchema, reason: withdrawalReasonSchema });
+export const withdrawLocaleSchema = z.strictObject({ variantId: contentIdSchema, locale: localeTagSchema, reason: withdrawalReasonSchema });
+export type WithdrawUpdatePayload = z.infer<typeof withdrawUpdateSchema>;
+export type WithdrawLocalePayload = z.infer<typeof withdrawLocaleSchema>;
+export const PLACEMENT_TEXT_MAX_CHARS = 4_000;
+const BYTES_PER_MEBIBYTE = 1024 * 1024;
+const SECONDS_PER_MINUTE = 60;
+const REFUSAL_NEXT_STEP = mediaStateReason("rejected").action ?? "";
+const refusal = (problem: string): string => (REFUSAL_NEXT_STEP.length === 0 ? problem : `${problem} ${REFUSAL_NEXT_STEP}`);
+function formatByteLimit(bytes: number): string {
+  const mebibytes = bytes / BYTES_PER_MEBIBYTE;
+  return `${Number.isInteger(mebibytes) ? String(mebibytes) : mebibytes.toFixed(1)} MiB`;
+}
+const formatDurationLimit = (seconds: number): string => (seconds % SECONDS_PER_MINUTE !== 0 ? `${seconds} seconds` : seconds === SECONDS_PER_MINUTE ? "1 minute" : `${seconds / SECONDS_PER_MINUTE} minutes`);
+const admittedImageTypes = (): string => ADMITTED_IMAGE_FORMATS.map((format) => `image/${format}`).join(", ");
+const admittedVideoTypes = (): string => ADMITTED_VIDEO_PROFILES.map((profile) => `video/${profile.container}`).join(", ");
+const UNKNOWN_MEDIA_TYPE = "application/octet-stream";
+const declaredMediaType = (file: File): string | null => {
+  const trimmed = (file.type.trim().toLowerCase().split(";")[0] ?? "").trim();
+  return trimmed.length === 0 || trimmed === UNKNOWN_MEDIA_TYPE ? null : trimmed;
+};
+const tooLargeBytes = (kind: MediaKind, limit: number): string => refusal(`This ${kind} is larger than the ${formatByteLimit(limit)} admitted for one ${kind}, so it was ` + `not opened.`);
+const tooLargeStill = (side: "width" | "height", measured: number): string => refusal(`This image is ${measured} pixels ${side === "width" ? "wide" : "tall"}, past the ${IMAGE_MAX_EDGE_PX}-pixel limit on one ` + `side, so it was not opened.`);
+const tooLongVideo = (): string => refusal(`This video runs longer than the ${formatDurationLimit(VIDEO_MAX_DURATION_S)} admitted for one ` + `video, so it was not opened.`);
+const unreadableDuration = (): string => refusal(`The length of this video could not be read, so it could not be checked against the ` + `${formatDurationLimit(VIDEO_MAX_DURATION_S)} admitted for one video.`);
+const tooLargeVideo = (axis: "width" | "height", measured: number): string => refusal(`This video is ${measured} pixels ${axis === "width" ? "wide" : "tall"}, past the ${axis === "width" ? VIDEO_MAX_WIDTH : VIDEO_MAX_HEIGHT} pixels admitted across that side ` + `of one video, so it was not opened.`);
+export const MEDIA_KINDS = ["image", "video"] as const satisfies readonly MediaAcceptanceSuccess<MediaAssetScope>["kind"][];
+type MediaKind = (typeof MEDIA_KINDS)[number];
+const placementTextTooLong = (field: string): string => `The ${field} is longer than the ${PLACEMENT_TEXT_MAX_CHARS} characters one placement field may ` + `hold, so shorten it.`;
+const optionalPlacementText = (field: string) =>
+  z
+    .string({ error: `State the ${field} as text, or leave it out.` })
+    .trim()
+    .max(PLACEMENT_TEXT_MAX_CHARS, placementTextTooLong(field))
+    .optional();
+export const mediaPlacementSchema = z.strictObject({
+  altText: z.string({ error: "Describe what this image or video shows." }).trim().min(1, "Describe what this image or video shows.").max(PLACEMENT_TEXT_MAX_CHARS, placementTextTooLong("alternative text")),
+  caption: optionalPlacementText("caption"),
+  credit: optionalPlacementText("credit"),
+  transcript: optionalPlacementText("transcript"),
+  language: localeTagSchema.optional(),
+  posterAssetId: contentIdSchema.optional(),
+});
+const mediaProbeSchema = z.strictObject({
+  width: z.number({ error: "The width the picker measured must be a number of pixels." }).positive({ error: "The width the picker measured must be more than zero pixels." }).optional(),
+  height: z.number({ error: "The height the picker measured must be a number of pixels." }).positive({ error: "The height the picker measured must be more than zero pixels." }).optional(),
+  durationSeconds: z.number({ error: "The duration the picker measured must be a number of seconds." }).positive({ error: "The duration the picker measured must be more than zero seconds." }).optional(),
+});
+export const registerMediaAssetSchema = z
+  .strictObject({ kind: z.enum(MEDIA_KINDS, { error: "Choose whether this file is an image or a video." }), file: z.custom<File>((value) => typeof File !== "undefined" && value instanceof File, { error: "Choose a file to upload." }), probe: mediaProbeSchema.optional(), placement: mediaPlacementSchema })
+  .superRefine((payload, ctx) => {
+    const refuse = (path: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path, message });
+    const { file, kind, probe } = payload;
+    const declared = declaredMediaType(file);
+    const byteLimit = kind === "image" ? IMAGE_MAX_BYTES : VIDEO_MAX_BYTES;
+    if (file.size > byteLimit) refuse(["file"], tooLargeBytes(kind, byteLimit));
+    const admitted = kind === "image" ? admittedImageTypes() : admittedVideoTypes();
+    if (declared !== null && !declared.startsWith(`${kind}/`)) refuse(["file"], refusal(`This ${kind} placement cannot take a file the browser reports as ${declared}; choose one ` + `of ${admitted}, whose content the local pipeline then checks.`));
+    if (kind === "image") {
+      const { width, height } = probe ?? {};
+      if (width !== undefined && width > IMAGE_MAX_EDGE_PX) refuse(["probe", "width"], tooLargeStill("width", width));
+      if (height !== undefined && height > IMAGE_MAX_EDGE_PX) refuse(["probe", "height"], tooLargeStill("height", height));
+      return;
+    }
+    if (probe === undefined) {
+      refuse(["probe"], unreadableDuration());
+      return;
+    }
+    if (probe.durationSeconds === undefined) {
+      refuse(["probe", "durationSeconds"], unreadableDuration());
+    } else if (probe.durationSeconds > VIDEO_MAX_DURATION_S) {
+      refuse(["probe", "durationSeconds"], tooLongVideo());
+    }
+    if (probe.width !== undefined && probe.width > VIDEO_MAX_WIDTH) refuse(["probe", "width"], tooLargeVideo("width", probe.width));
+    if (probe.height !== undefined && probe.height > VIDEO_MAX_HEIGHT) refuse(["probe", "height"], tooLargeVideo("height", probe.height));
+  });
+export const replacePlacementSchema = z.strictObject({ variantId: contentIdSchema, placementId: contentIdSchema, placement: mediaPlacementSchema });
+export const removePlacementSchema = z.strictObject({ variantId: contentIdSchema, placementId: contentIdSchema });
+export type MediaPlacement = z.infer<typeof mediaPlacementSchema>;
+export type RegisterMediaAssetPayload = z.infer<typeof registerMediaAssetSchema>;
+export type ReplacePlacementPayload = z.infer<typeof replacePlacementSchema>;
+export type RemovePlacementPayload = z.infer<typeof removePlacementSchema>;

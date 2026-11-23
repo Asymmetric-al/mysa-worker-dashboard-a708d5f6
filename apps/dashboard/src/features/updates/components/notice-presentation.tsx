@@ -49,15 +49,12 @@ type NoticeBodies = { readonly html: string; readonly text: string };
 type AdmittedPoster = { readonly path: string; readonly alt: string; readonly captionLanguages?: readonly string[]; readonly transcriptAvailable?: boolean };
 const textOf = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 type FactProps = { readonly label: string; readonly value: string; readonly absent?: string; readonly mono?: boolean };
-/** One labelled fact: the label is announced, and a value the notice does not carry states its absence instead. */
-function Fact({ label, value, absent, mono }: FactProps): ReactElement {
-  return (
-    <span className="break-words">
-      <span className="sr-only">{label}</span>
-      {value.length === 0 ? absent : <bdi className={mono === true ? "font-mono" : undefined}>{value}</bdi>}
-    </span>
-  );
-}
+const Fact = ({ label, value, absent, mono }: FactProps): ReactElement => (
+  <span className="break-words">
+    <span className="sr-only">{label}</span>
+    {value.length === 0 ? absent : <bdi className={mono === true ? "font-mono" : undefined}>{value}</bdi>}
+  </span>
+);
 function servedPathOf(value: unknown): string | undefined {
   const path = textOf(value);
   if (!path.startsWith("/") || path.startsWith("//")) return undefined;
@@ -88,20 +85,17 @@ function omissionItemsOf(input: { readonly protectedCopy: boolean; readonly post
     CREDENTIAL_OMISSION,
   ];
 }
-function MissingRendering({ which }: { readonly which: "html" | "plain" | "both" }): ReactElement {
-  return (
-    <Alert variant="default" role={undefined} data-notice-missing-rendering={which}>
-      <AlertDescription>
-        {MISSING_RENDERING[which]} {MISSING_RENDERING.neitherReconstructed}
-      </AlertDescription>
-    </Alert>
-  );
-}
+const MissingRendering = ({ which }: { readonly which: "html" | "plain" | "both" }): ReactElement => (
+  <Alert variant="default" role={undefined} data-notice-missing-rendering={which}>
+    <AlertDescription>
+      {MISSING_RENDERING[which]} {MISSING_RENDERING.neitherReconstructed}
+    </AlertDescription>
+  </Alert>
+);
 type MessageBodiesProps = { readonly bodies: NoticeBodies; readonly direction: NoticeDirection; readonly lang?: string };
 function MessageBodies({ bodies, direction, lang }: MessageBodiesProps): ReactElement {
   const hasHtml = bodies.html.length > 0;
   const hasText = bodies.text.length > 0;
-  // The server's own HTML, handed on exactly; the reading styles above are all this file adds.
   const htmlRendering = <RenderedContent html={bodies.html} direction={direction} lang={lang} className={RENDERED_MESSAGE} />;
   const textRendering = <pre className="min-w-0 font-mono text-sm leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{bodies.text}</pre>;
   if (!hasHtml && !hasText) return <MissingRendering which="both" />;
@@ -114,12 +108,8 @@ function MessageBodies({ bodies, direction, lang }: MessageBodiesProps): ReactEl
         </TabsList>
         <DirectionProvider direction={direction}>
           <div className="min-w-0" dir={direction} lang={lang}>
-            <TabsContent value="html" className={PANEL_CLASS}>
-              {htmlRendering}
-            </TabsContent>
-            <TabsContent value="plain" className={PANEL_CLASS}>
-              {textRendering}
-            </TabsContent>
+            <TabsContent {...{ value: "html", className: PANEL_CLASS }}>{htmlRendering}</TabsContent>
+            <TabsContent {...{ value: "plain", className: PANEL_CLASS }}>{textRendering}</TabsContent>
           </div>
         </DirectionProvider>
       </Tabs>
@@ -128,9 +118,7 @@ function MessageBodies({ bodies, direction, lang }: MessageBodiesProps): ReactEl
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <DirectionProvider direction={direction}>
-        <div className="min-w-0" dir={direction} lang={lang}>
-          {hasHtml ? htmlRendering : textRendering}
-        </div>
+        <div {...{ className: "min-w-0", dir: direction, lang }}>{hasHtml ? htmlRendering : textRendering}</div>
       </DirectionProvider>
       <MissingRendering which={hasHtml ? "plain" : "html"} />
     </div>
@@ -168,23 +156,21 @@ function AdmittedPosterBlock({ poster }: AdmittedPosterBlockProps): ReactElement
   );
 }
 type OmissionsBlockProps = { readonly items: readonly string[]; readonly hasLink: boolean };
-function OmissionsBlock({ items, hasLink }: OmissionsBlockProps): ReactElement {
-  return (
-    <Alert variant="default" role={undefined} data-slot="notice-omissions">
-      <AlertTitle>{OMISSIONS_HEADING}</AlertTitle>
-      <AlertDescription>
-        <ul className="flex list-disc flex-col gap-1 text-start ps-5">
-          {items.map((item) => (
-            <li key={item} className="break-words">
-              {item}
-            </li>
-          ))}
-        </ul>
-        <p className="mt-3 break-words">{hasLink ? ACCESS_STATEMENT : ABSENCE_WORDING.link}</p>
-      </AlertDescription>
-    </Alert>
-  );
-}
+const OmissionsBlock = ({ items, hasLink }: OmissionsBlockProps): ReactElement => (
+  <Alert variant="default" role={undefined} data-slot="notice-omissions">
+    <AlertTitle>{OMISSIONS_HEADING}</AlertTitle>
+    <AlertDescription>
+      <ul className="flex list-disc flex-col gap-1 text-start ps-5">
+        {items.map((item) => (
+          <li key={item} className="break-words">
+            {item}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 break-words">{hasLink ? ACCESS_STATEMENT : ABSENCE_WORDING.link}</p>
+    </AlertDescription>
+  </Alert>
+);
 export default function NoticePresentation({ notice, recipient, poster, className }: NoticePresentationProps): ReactElement {
   const pinned = notice.pinned;
   const audience = AUDIENCE_LABELS[pinned.audience];
@@ -248,9 +234,7 @@ export default function NoticePresentation({ notice, recipient, poster, classNam
                 <Fact label={`${FIELD_LABELS.pinned}: `} value={releaseId} mono />
                 {revisionId.length === 0 ? null : (
                   <>
-                    <span aria-hidden="true" className="mx-1">
-                      ·
-                    </span>
+                    <span {...{ "aria-hidden": "true", className: "mx-1" }}>·</span>
                     <Fact label={`${FIELD_LABELS.revision}: `} value={revisionId} mono />
                   </>
                 )}

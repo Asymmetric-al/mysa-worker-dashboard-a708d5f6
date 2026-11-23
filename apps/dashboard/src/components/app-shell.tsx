@@ -1,11 +1,7 @@
 "use client";
-/** The one application shell: the chrome every route renders inside, and the only place the page's landmarks are created. */
-
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition, type ReactElement, type ReactNode, type RefObject } from "react";
-
 import ContextIndicator, { type AdmittedContext, type ContextRequest } from "@/components/context-indicator";
-// The one context-change decision, composed here as a shared component of this layer so the dialog and the fence exist once wherever the context indicator is; its words and its dispatch arrive as props.
 import ContextSwitchGuard, { type ContextSwitchGuardCopy, type ContextSwitchResult } from "@/components/context-switch-guard";
 import DevBanner from "@/components/dev-banner";
 import { isCurrent, SidebarNav } from "@/components/sidebar-nav";
@@ -28,13 +24,7 @@ export type AppShellProps = {
   readonly scope: Scope;
   readonly admissionState: AdmissionState;
   readonly currentPath?: string;
-  /**
-   * The development region's content, composed by the layer above and rendered once inside the shell's own
-   * landmark. A shell below the feature layer may not import a feature, so the composition arrives as a
-   * slot: the shell owns the landmark and the label, its caller owns what is placed in it.
-   */
   readonly developmentRegion?: ReactNode;
-  /** The scenario the development read reported, for the persistent label; blank where no scenario is known. */
   readonly devScenarioId?: string;
   readonly contextAdmissions?: readonly AdmittedContext[];
   readonly contextSwitch?: AppShellContextSwitch;
@@ -47,27 +37,14 @@ export const MAIN_CONTENT_ID = "main-content";
 const SKIP_LINK_LABEL = "Skip to main content";
 const DEVELOPMENT_REGION_LABEL = "Development controls";
 const HELP_HREF = "/help";
-
 type RecoveryActionKind = "help" | "refresh";
-
-type RecoveryCopy = {
-  readonly noticeKind: StateNoticeProps["kind"];
-  readonly reasonCode?: StateNoticeProps["reasonCode"];
-  readonly title: string;
-  readonly description: string;
-  readonly actionLabel: string;
-  /** How that one action is dispatched, which is all the four surfaces differ in. */
-  readonly actionKind: RecoveryActionKind;
-};
-
-/** The four recovery surfaces, one sentence set each. */
+type RecoveryCopy = { readonly noticeKind: StateNoticeProps["kind"]; readonly reasonCode?: StateNoticeProps["reasonCode"]; readonly title: string; readonly description: string; readonly actionLabel: string; readonly actionKind: RecoveryActionKind };
 const RECOVERY_COPY: Readonly<Record<RecoveryState, RecoveryCopy>> = {
   unavailable: {
     noticeKind: "unavailable",
     title: "This workspace could not be read",
     description: "The application could not read this session's context, so the workspace is not shown at all " + "rather than shown partially or filled in from a guess. Nothing here has been changed, and " + "anything already saved is still saved.",
     actionLabel: "Try this page again",
-    // A re-request rather than a destination: the page the reader is on is the one to ask for again.
     actionKind: "refresh",
   },
   denied: {
@@ -125,16 +102,14 @@ function useStickyOffset(headerRef: RefObject<HTMLElement | null>): void {
 }
 const SKIP_LINK_CLASS = cn("absolute start-3 top-3 z-50 -translate-y-[200%] rounded-md border border-border bg-background", "px-3 py-2 text-sm font-medium text-foreground", "focus:translate-y-0 focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--ring)]", "print:hidden");
 /** The shell: the chrome every route renders inside. Every region of it is screen-only, so print media keeps the page's own content and drops the skip link, the navigation column, the sticky banner and the development region from paper. `Sidebar` puts a caller's class on its fixed inner container alone, which leaves the column's width-reserving wrapper in the printed layout, so the provider hides that whole column from print. */
-export function AppShell({ className, ...chrome }: AppShellProps): ReactElement {
-  return (
-    <SidebarProvider className={cn("relative", "print:[&>[data-slot=sidebar]]:hidden", className)}>
-      <a href={`#${MAIN_CONTENT_ID}`} className={SKIP_LINK_CLASS}>
-        {SKIP_LINK_LABEL}
-      </a>
-      <ShellChrome {...chrome} />
-    </SidebarProvider>
-  );
-}
+export const AppShell = ({ className, ...chrome }: AppShellProps): ReactElement => (
+  <SidebarProvider className={cn("relative", "print:[&>[data-slot=sidebar]]:hidden", className)}>
+    <a href={`#${MAIN_CONTENT_ID}`} className={SKIP_LINK_CLASS}>
+      {SKIP_LINK_LABEL}
+    </a>
+    <ShellChrome {...chrome} />
+  </SidebarProvider>
+);
 type ShellChromeProps = Omit<AppShellProps, "className">;
 function ShellChrome({ scope, admissionState, currentPath: suppliedPath, developmentRegion, devScenarioId, contextAdmissions, contextSwitch, direction, children }: ShellChromeProps): ReactElement {
   const { setOpenMobile } = useSidebar();
@@ -142,45 +117,27 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
   const [pending, setPending] = useState<PendingSwitch | null>(null);
   const [switching, setSwitching] = useState(false);
   const [lastSwitch, setLastSwitch] = useState<ContextSwitchResult | null>(null);
-
-  // The router and the transition the outage surface's retry runs in, so the refresh it starts keeps the notice readable until the fresh server render arrives.
   const router = useRouter();
   const [, startRefresh] = useTransition();
-
   useStickyOffset(headerRef);
-
-  /** The route to describe, from whichever side knows it. */
   const routedPath = usePathname();
   const currentPath = suppliedPath ?? routedPath;
-  // A plain click on a destination closes the compact navigation the reader is looking at. The model reports only real navigations — a modified click that opens another tab is not one — so following a link in place dismisses the sheet while following it in a new tab leaves this page alone.
-  const closeCompactNav = useCallback((): void => {
-    setOpenMobile(false);
-  }, [setOpenMobile]);
-
-  /** The outage surface's one action: ask the router for this route again. */
+  const closeCompactNav = useCallback((): void => setOpenMobile(false), [setOpenMobile]);
   const requestPageAgain = useCallback((): void => {
-    startRefresh(() => {
-      router.refresh();
-    });
+    startRefresh(() => router.refresh());
   }, [router, startRefresh]);
-
   const admissions = contextAdmissions ?? NO_ADMISSIONS;
   const requestContext = useCallback(
     (request: ContextRequest): void => {
       if (contextSwitch === undefined) return;
       const target = contextSwitch.resolvePendingScope(request);
-      if (target === null) {
-        // The chooser listed memberships the session admitted, so an unadmittable request means the session changed under the click. Reporting a refusal here would describe an attempt that was never made; the next read is the honest answer.
-        return;
-      }
+      if (target === null) return;
       setLastSwitch(null);
       setPending({ request, scope: target });
     },
     [contextSwitch],
   );
-  const stayOnContext = useCallback((): void => {
-    setPending(null);
-  }, []);
+  const stayOnContext = useCallback((): void => setPending(null), []);
   const discardAndSwitch = useCallback(async (): Promise<void> => {
     if (contextSwitch === undefined || pending === null) return;
     setSwitching(true);
@@ -196,30 +153,23 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
   const pendingLabel = pending === null ? undefined : describePending(pending.request, admissions);
   const announcement = pending === null && lastSwitch !== null && lastSwitch.switched ? lastSwitch.announcement : "";
   const recovery = admissionState === "signed-in" ? null : RECOVERY_COPY[admissionState];
-
-  /** The development region is rendered only where the layer above composed one, and never twice. */
   const showsDevelopmentRegion = developmentRegion !== undefined;
   return (
     <>
-      {/* The shell's only live region: polite, empty until a switch is accepted, and it never repeats the person's own words — an outcome sentence is all it says, once. */}
       <output className="sr-only">{announcement}</output>
-      {/* One navigation model for both layouts: below the compact breakpoint `Sidebar` renders this same content in its own sheet, so every route stays reachable at 320 CSS px, and the resting side comes from the layout's direction. */}
       <Sidebar side={direction === "rtl" ? "right" : "left"} collapsible="icon" className="print:hidden">
         <SidebarContent>
           <SidebarNav currentPath={currentPath} onNavigate={closeCompactNav} />
         </SidebarContent>
       </Sidebar>
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* The banner region: sticky so the active context and the Development data label stay in view, and measured by `useStickyOffset` so a focused cell is never obscured (WCAG 2.4.11); `min-w-0` keeps a long ministry name from pushing the page sideways at 320 CSS px. */}
         <header ref={headerRef} className="sticky top-0 z-20 flex flex-col gap-1.5 border-b border-border bg-background/95 px-3 py-2 backdrop-blur print:hidden">
           <div className="flex min-w-0 items-center gap-2">
             <SidebarTrigger />
             <ContextIndicator scope={scope} admissions={visibleAdmissions} onRequestContext={requestContext} showSupportSubject={showsFinancialFacts(currentPath)} lastResult={pending === null ? lastSwitch : null} className="min-w-0 flex-1" />
           </div>
-          {/* The label sits here — outside every admission conditional, every dialog and every route — so no surface can forget it and no screen can be mistaken for production. */}
           <DevBanner scenarioId={devScenarioId} />
         </header>
-        {/* The one `main` landmark. The design system's `SidebarInset` is deliberately not used: it renders a `main` element itself, and a second one would give the page two content landmarks where the shell exists to guarantee exactly one. */}
         <main id={MAIN_CONTENT_ID} tabIndex={-1} className="min-w-0 flex-1">
           <div className="mx-auto w-full max-w-6xl px-3 py-4 sm:px-4">
             {recovery === null ? (
@@ -229,7 +179,6 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
             )}
           </div>
         </main>
-        {/* The development region, in a secondary landmark: the label and the landmark belong to the shell, and the composition placed here belongs to the layer above, which is also the only layer that may reach a feature. */}
         {showsDevelopmentRegion ? (
           <aside aria-label={DEVELOPMENT_REGION_LABEL} className="border-t border-border bg-muted/30 print:hidden">
             <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-3 py-4">{developmentRegion}</div>

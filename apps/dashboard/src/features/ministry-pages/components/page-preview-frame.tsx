@@ -1,4 +1,3 @@
-/** The one exact, currently authorised, inert preview of a Page edition. */
 import type { ReactElement, ReactNode } from "react";
 import RenderedContent from "@/components/rendered-content";
 import { SimulationLabel } from "@/components/simulation-label";
@@ -9,19 +8,8 @@ import { cn } from "@/lib/cn";
 import type { SourceReference } from "@/lib/ids";
 import { copy } from "../copy";
 import { GivingDesignation, type GivingBindingView } from "./giving-designation";
-// What a preview read hands this surface
 /** A preview that may be rendered: the exact revision, the language and direction it is read in, and the markup the single renderer produced. */
-export interface PagePreviewAuthorisedView {
-  readonly status: "authorised";
-  readonly variantId: string;
-  readonly revisionId: string;
-  readonly servedLocale: string;
-  readonly requestedLocale?: string;
-  readonly direction: "ltr" | "rtl";
-  readonly html: string;
-  readonly inert: true;
-  readonly givingAction: "none";
-}
+export type PagePreviewAuthorisedView = { readonly status: "authorised"; readonly variantId: string; readonly revisionId: string; readonly servedLocale: string; readonly requestedLocale?: string; readonly direction: "ltr" | "rtl"; readonly html: string; readonly inert: true; readonly givingAction: "none" };
 /** A preview that may not be rendered: one reason code and nothing else. */
 export type PagePreviewDeniedView = { readonly status: "denied"; readonly reason: string };
 /** A preview whose edition could not be read: the source that failed, named honestly. */
@@ -35,16 +23,9 @@ export type PagePreviewUnreleasedView = { readonly status: "unreleased"; readonl
 /** Every answer this surface renders. */
 export type PagePreviewView = PagePreviewAuthorisedView | PagePreviewDeniedView | PagePreviewUnavailableView | PagePreviewRefusedView | PagePreviewLanguageUnavailableView | PagePreviewUnreleasedView;
 /** Props of {@link PagePreviewFrame}. */
-export interface PagePreviewFrameProps {
-  readonly layout: "builder" | "route";
-  readonly preview: PagePreviewView;
-  readonly givingBinding?: GivingBindingView;
-  readonly className?: string;
-}
-// The few words this surface owns
+export type PagePreviewFrameProps = { readonly layout: "builder" | "route"; readonly preview: PagePreviewView; readonly givingBinding?: GivingBindingView; readonly className?: string };
 const FIELD_LABELS = { revision: "Revision", requestedLanguage: "Language requested" } as const;
 const PREVIEW_HEADING = copy.builder.preview;
-
 const PREVIEW_CONTENT = cn(
   "min-w-0 text-sm leading-relaxed break-words",
   "[&_p]:mb-3 [&_p:last-child]:mb-0",
@@ -66,29 +47,21 @@ const PREVIEW_CONTENT = cn(
 );
 const BODY_CLASS = "flex min-w-0 flex-col gap-4";
 const HEADING_CLASS = "font-heading text-lg font-medium";
-const IDENTITY_CLASS = "flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-muted-foreground";
-const IDENTITY_PAIR_CLASS = "flex items-baseline gap-1.5";
 const NOTE_CLASS = "text-xs text-muted-foreground text-pretty wrap-anywhere";
-
-function PreviewHeading(): ReactElement {
-  return <h2 className={HEADING_CLASS}>{PREVIEW_HEADING}</h2>;
-}
-function IdentityPair({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement {
-  return (
-    <div className={IDENTITY_PAIR_CLASS}>
-      <dt>{label}</dt>
-      <dd>{children}</dd>
-    </div>
-  );
-}
-// The edition identity
+const PreviewHeading = (): ReactElement => <h2 className={HEADING_CLASS}>{PREVIEW_HEADING}</h2>;
+const IdentityPair = ({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement => (
+  <div className={"flex items-baseline gap-1.5"}>
+    <dt>{label}</dt>
+    <dd>{children}</dd>
+  </div>
+);
 function EditionIdentity({ preview, layout }: { readonly preview: PagePreviewAuthorisedView; readonly layout: PagePreviewFrameProps["layout"] }): ReactElement {
   const requested = preview.requestedLocale?.trim() ?? "";
   const fallback = requested.length > 0 && requested !== preview.servedLocale;
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
-        <dl className={IDENTITY_CLASS}>
+        <dl className={"flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-muted-foreground"}>
           <IdentityPair label={copy.editions.localeLabel}>
             <bdi>{preview.servedLocale}</bdi>
           </IdentityPair>
@@ -108,83 +81,52 @@ function EditionIdentity({ preview, layout }: { readonly preview: PagePreviewAut
     </div>
   );
 }
-// The five answers
-function AuthorisedPreview({ preview, layout, givingBinding }: { readonly preview: PagePreviewAuthorisedView; readonly layout: PagePreviewFrameProps["layout"]; readonly givingBinding: GivingBindingView | undefined }): ReactElement {
-  return (
-    <>
-      <EditionIdentity preview={preview} layout={layout} />
-      <Alert role={undefined} data-slot="page-preview-inert">
-        <AlertDescription>{copy.preview.inertBanner}</AlertDescription>
-      </Alert>
-      {/* `preview.html` is the one renderer's output for the pinned revision, placed unchanged. It already places
-          each image and video once, with the poster, caption track and figcaption the revision carries, so this
-          surface adds no player of its own: a second one would stream the same rendition twice and state the
-          edition's media twice. */}
-      <RenderedContent html={preview.html} direction={preview.direction} lang={preview.servedLocale} slot="page-preview-content" className={PREVIEW_CONTENT} />
-      {givingBinding === undefined ? null : <GivingDesignation binding={givingBinding} layout="inline" />}
-      <p className={NOTE_CLASS}>{copy.preview.recheckedOnOpen}</p>
-    </>
-  );
-}
-function DeniedPreview({ preview }: { readonly preview: PagePreviewDeniedView }): ReactElement {
-  return (
-    <div data-slot="page-preview-denied" data-denial-reason={preview.reason}>
-      <StateNotice kind="denied" title={copy.states.deniedTitle} headingLevel={3} />
-    </div>
-  );
-}
-function UnavailablePreview({ preview }: { readonly preview: PagePreviewUnavailableView }): ReactElement {
-  return <StateNotice kind="unavailable" title={copy.states.unavailableTitle} source={preview.source} headingLevel={3} />;
-}
-/** The request for this preview is the fault: the notice says so rather than claiming a source failed. */
-function RefusedPreview(): ReactElement {
-  return <StateNotice kind="refused" title={copy.states.refusedTitle} headingLevel={3} />;
-}
-// The requested language travels in the marker and in no prose, and no edition that exists is named or
-// counted: which other languages this Page holds is not something this answer discloses.
-function LanguageUnavailablePreview({ preview }: { readonly preview: PagePreviewLanguageUnavailableView }): ReactElement {
-  return (
-    <div data-slot="page-preview-language-unavailable" data-requested-locale={preview.requestedLocale}>
-      <StateNotice kind="language-unavailable" title={copy.editions.languageUnavailable} headingLevel={3} />
-    </div>
-  );
-}
-// An edition with nothing to render is stated as that, never as a refusal and never as an empty page: the
-// words say what is absent so no reader supplies a substitute of their own.
-function UnreleasedPreview({ preview }: { readonly preview: PagePreviewUnreleasedView }): ReactElement {
-  return (
-    <div data-slot="page-preview-unreleased" data-edition-locale={preview.locale}>
-      <StateNotice kind="empty" title={copy.editions.unreleasedTitle} description={copy.editions.unreleasedDescription} headingLevel={3} />
-    </div>
-  );
-}
+const AuthorisedPreview = ({ preview, layout, givingBinding }: { readonly preview: PagePreviewAuthorisedView; readonly layout: PagePreviewFrameProps["layout"]; readonly givingBinding: GivingBindingView | undefined }): ReactElement => (
+  <>
+    <EditionIdentity preview={preview} layout={layout} />
+    <Alert role={undefined} data-slot="page-preview-inert">
+      <AlertDescription>{copy.preview.inertBanner}</AlertDescription>
+    </Alert>
+    <RenderedContent html={preview.html} direction={preview.direction} lang={preview.servedLocale} slot="page-preview-content" className={PREVIEW_CONTENT} />
+    {givingBinding === undefined ? null : <GivingDesignation binding={givingBinding} layout="inline" />}
+    <p className={NOTE_CLASS}>{copy.preview.recheckedOnOpen}</p>
+  </>
+);
 function previewBody(preview: PagePreviewView, layout: PagePreviewFrameProps["layout"], givingBinding: GivingBindingView | undefined): ReactElement {
   switch (preview.status) {
     case "authorised":
       return <AuthorisedPreview preview={preview} layout={layout} givingBinding={givingBinding} />;
     case "denied":
-      return <DeniedPreview preview={preview} />;
+      return (
+        <div data-slot="page-preview-denied" data-denial-reason={preview.reason}>
+          <StateNotice kind="denied" title={copy.states.deniedTitle} headingLevel={3} />
+        </div>
+      );
     case "unavailable":
-      return <UnavailablePreview preview={preview} />;
+      return <StateNotice kind="unavailable" title={copy.states.unavailableTitle} source={preview.source} headingLevel={3} />;
     case "refused":
-      return <RefusedPreview />;
+      return <StateNotice kind="refused" title={copy.states.refusedTitle} headingLevel={3} />;
     case "language-unavailable":
-      return <LanguageUnavailablePreview preview={preview} />;
+      return (
+        <div data-slot="page-preview-language-unavailable" data-requested-locale={preview.requestedLocale}>
+          <StateNotice kind="language-unavailable" title={copy.editions.languageUnavailable} headingLevel={3} />
+        </div>
+      );
     case "unreleased":
-      return <UnreleasedPreview preview={preview} />;
+      return (
+        <div data-slot="page-preview-unreleased" data-edition-locale={preview.locale}>
+          <StateNotice kind="empty" title={copy.editions.unreleasedTitle} description={copy.editions.unreleasedDescription} headingLevel={3} />
+        </div>
+      );
     default: {
-      const unhandled: never = preview;
-      return unhandled;
+      return preview;
     }
   }
 }
 /** The exact, currently authorised, inert preview of one Page edition. */
 export function PagePreviewFrame({ layout, preview, givingBinding, className }: PagePreviewFrameProps): ReactElement {
   const body = previewBody(preview, layout, givingBinding);
-  // The builder composes this frame inside the pane that already names and titles this region, so there the frame states
-  // neither a landmark name nor a heading of its own: one region called "Preview" with one heading, rather than a region
-  // nested in a region of the same name and a second heading saying the same words. The route preview has no such pane,
-  // so it keeps both.
+  // The builder composes this frame inside the pane that already names and titles this region, so there the frame states neither a landmark name nor a heading of its own: one region called "Preview" with one heading, rather than a region nested in a region of the same name and a second heading saying the same words. The route preview has no such pane, so it keeps both.
   const named = layout === "route" ? { "aria-label": PREVIEW_HEADING } : {};
   return (
     <section data-slot="page-preview-frame" data-layout={layout} data-preview-status={preview.status} {...named} className={cn("flex min-w-0 flex-col gap-3 text-start", className)}>

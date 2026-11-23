@@ -4,7 +4,7 @@ import type { SourceReference } from "../../lib/ids";
 import type { Coverage, GiftAttribution, SupportGoalRecord, ValueState } from "../data-service/envelope";
 import { addMinor, compareMinor, minorUnitsOf, negateMinor, type MinorUnits, type Money } from "../money/amount";
 import { exponentOf, isKnownCurrency } from "../money/currency";
-import { parseCivilDate, serialiseCivilDate, todayInZone, type CivilDate, type DatePrecision } from "../time/civil";
+import { parseCivilDate, serialiseCivilDate, todayInZone, type CivilDate } from "../time/civil";
 import { SUPPORT_BASIS, assertSingleBasis, type GiftRow, type SupportBasis, type SupportProjection } from "./basis";
 import { GOAL_MEASURE, goalProgress, type GoalProgress, type GoalRecord } from "./goal";
 export const PAGE_SIZE_DEFAULT = 50;
@@ -13,9 +13,7 @@ export const PAGE_SIZE_CAP = 200;
 export function clampPageSize(size?: number): number {
   if (size === undefined || !Number.isFinite(size)) return PAGE_SIZE_DEFAULT;
   const whole = Math.trunc(size);
-  if (whole < 1) return 1;
-  if (whole > PAGE_SIZE_CAP) return PAGE_SIZE_CAP;
-  return whole;
+  return whole < 1 ? 1 : whole > PAGE_SIZE_CAP ? PAGE_SIZE_CAP : whole;
 }
 export type ReportId = "received-period-and-year-to-date" | "monthly-history" | "partner-month-matrix" | "period-comparison";
 export const REPORT_IDS = ["received-period-and-year-to-date", "monthly-history", "partner-month-matrix", "period-comparison"] as const satisfies readonly ReportId[];
@@ -53,8 +51,7 @@ const isResolvableZone = (timeZone: string): boolean => todayInZone(timeZone, ZO
 export function validateReportQuery(query: ReportQuery): ReportQueryProblem[] {
   const problems: ReportQueryProblem[] = [];
   if (!REPORT_IDS.includes(query.reportId)) problems.push({ field: "reportId", message: "This application reports received support in four fixed ways. Choose one of the four identities; no other report is computed and none is substituted for an unrecognised one." });
-  // The three structures below are checked for presence before they are read, so a request body that failed to decode is answered with per-field problems rather than with a thrown fault.
-  const scope: ReportScope | undefined = query.scope;
+  const scope: ReportScope | undefined = query.scope; // The three structures below are checked for presence before they are read, so a request body that failed to decode is answered with per-field problems rather than with a thrown fault.
   if (typeof scope !== "object" || scope === null) {
     problems.push({ field: "scope", message: "Every report runs under the four references that state its authority, and this request states none. No report is computed under an assumed context." });
   } else {
@@ -66,15 +63,11 @@ export function validateReportQuery(query: ReportQuery): ReportQueryProblem[] {
   const period: ReportPeriod | undefined = query.period;
   if (typeof period !== "object" || period === null) {
     problems.push({ field: "period", message: "A report covers a period, and this request states none. No period is assumed in its place." });
-  } else {
-    problems.push(...validatePeriod(period));
-  }
+  } else problems.push(...validatePeriod(period));
   const currency: CurrencySelection | undefined = query.currency;
   if (typeof currency !== "object" || currency === null) {
     problems.push({ field: "currency", message: "A report states the currency or currencies its figures are in, and this request states none. No currency is assumed in its place." });
-  } else {
-    problems.push(...validateCurrency(query));
-  }
+  } else problems.push(...validateCurrency(query));
   problems.push(...validateFilters(query));
   problems.push(...validateSort(query.sort));
   problems.push(...validatePage(query.page));
@@ -118,9 +111,7 @@ function validateCurrency(query: ReportQuery): ReportQueryProblem[] {
     if (range !== undefined) {
       if (!Number.isSafeInteger(range.minMinor) || !Number.isSafeInteger(range.maxMinor)) {
         problems.push({ field: "amountRange", message: "An amount range states whole counts of the selected currency's minor units. A fractional or non-finite bound is refused rather than rounded, because rounding would change which rows match." });
-      } else if (range.minMinor > range.maxMinor) {
-        problems.push({ field: "amountRange", message: "The amount range starts above where it ends, so it matches nothing. State the lower bound first; both bounds are inclusive." });
-      }
+      } else if (range.minMinor > range.maxMinor) problems.push({ field: "amountRange", message: "The amount range starts above where it ends, so it matches nothing. State the lower bound first; both bounds are inclusive." });
     }
     return problems;
   }
@@ -133,9 +124,7 @@ function validateFilters(query: ReportQuery): ReportQueryProblem[] {
     const partner = query.partner;
     if (partner.kind === "partner") {
       if (typeof partner.partnerId !== "string" || partner.partnerId.trim() === "") problems.push({ field: "partner.partnerId", message: "A partner filter states the partner's own reference. This one is empty, and no partner is assumed in its place." });
-    } else if (partner.kind !== "anonymous" && partner.kind !== "unresolved") {
-      problems.push({ field: "partner.kind", message: "An attribution filter is a partner reference, anonymous support or unattributed support. This one is none of those." });
-    }
+    } else if (partner.kind !== "anonymous" && partner.kind !== "unresolved") problems.push({ field: "partner.kind", message: "An attribution filter is a partner reference, anonymous support or unattributed support. This one is none of those." });
   }
   if (query.designation !== undefined && query.designation.trim() === "") problems.push({ field: "designation", message: "A designation filter states the source's own designation. An empty one selects nothing rather than everything, so it is refused; omit the filter to read every designation." });
   if (query.method !== undefined) {
@@ -167,25 +156,19 @@ export function buildReportQuery(input: ReportQuery): { ok: true; query: ReportQ
 }
 function trimOptionalFields(input: ReportQuery): ReportQuery {
   const page = input.page;
-  const designation = blankToUndefined(input.designation);
-  const search = blankToUndefined(input.search);
-  const method = blankToUndefined(input.method);
-  const timeZone = blankToUndefined(input.timeZone);
   const partner: ReportPartnerSelection | undefined = input.partner === undefined || input.partner === null ? undefined : input.partner.kind === "partner" ? { kind: "partner", partnerId: trimmedText(input.partner.partnerId) } : input.partner;
-  return {
-    reportId: input.reportId,
-    scope: trimScope(input.scope),
-    period: input.period,
-    currency: trimCurrency(input.currency),
-    ...(designation === undefined ? {} : { designation }),
-    ...(search === undefined ? {} : { search }),
-    ...(method === undefined ? {} : { method }),
-    ...(timeZone === undefined ? {} : { timeZone }),
-    ...(partner === undefined ? {} : { partner }),
-    ...(input.amountRange === undefined ? {} : { amountRange: input.amountRange }),
-    ...(input.sort === undefined ? {} : { sort: input.sort }),
-    ...(page === undefined || page === null ? {} : { page: { index: page.index, size: clampPageSize(page.size) } }),
+  // Every member a caller may omit is trimmed once here, and a member that says nothing is left out rather than stated as empty.
+  const given = {
+    designation: blankToUndefined(input.designation),
+    search: blankToUndefined(input.search),
+    method: blankToUndefined(input.method),
+    timeZone: blankToUndefined(input.timeZone),
+    partner,
+    amountRange: input.amountRange,
+    sort: input.sort,
+    page: page === undefined || page === null ? undefined : { index: page.index, size: clampPageSize(page.size) },
   };
+  return { reportId: input.reportId, scope: trimScope(input.scope), period: input.period, currency: trimCurrency(input.currency), ...Object.fromEntries(Object.entries(given).filter(([, value]) => value !== undefined)) } as ReportQuery;
 }
 const trimmedText = (value: string | undefined): string => (typeof value === "string" ? value.trim() : "");
 function blankToUndefined(value: string | undefined): string | undefined {
@@ -193,8 +176,7 @@ function blankToUndefined(value: string | undefined): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 function trimScope(scope: ReportScope): ReportScope {
-  // Widened on purpose: this value arrives from a request body, so what actually arrived is compared rather than the type it was declared with.
-  const arrived: unknown = scope;
+  const arrived: unknown = scope; // Widened on purpose: this value arrives from a request body, so what actually arrived is compared rather than the type it was declared with.
   if (typeof arrived !== "object" || arrived === null) return scope;
   return { organizationId: trimmedText(scope.organizationId), ministryId: trimmedText(scope.ministryId), supportSubjectId: trimmedText(scope.supportSubjectId), principalId: trimmedText(scope.principalId) };
 }
@@ -214,19 +196,7 @@ export type StatedValue = { readonly minorUnits: MinorUnits | null; readonly val
 export type StatedCount = { readonly count: number; readonly valueState: ValueState };
 export type CurrencySummary = { readonly currency: string; readonly exponent: number | undefined; readonly received: StatedValue; readonly giftCount: StatedCount; readonly allocationCount: StatedCount; readonly donorCount: StatedCount };
 export type SeriesPoint = { readonly bucketStart: CivilDate; readonly bucketEnd: CivilDate; readonly currency: string; readonly value: StatedValue; readonly gap: boolean };
-export interface ReportRow {
-  readonly giftRowId: string;
-  readonly giftId: string;
-  readonly allocationId?: string;
-  readonly amount: Money;
-  readonly originalGiftOn?: CivilDate;
-  readonly datePrecision: DatePrecision;
-  readonly designation?: string;
-  readonly attribution: GiftAttribution;
-  readonly refundOf?: string;
-  readonly provenance: SourceReference;
-  readonly entryOn: CivilDate;
-}
+export type ReportRow = GiftRow;
 export type MatrixCell = { readonly bucketStart: CivilDate; readonly bucketEnd: CivilDate; readonly currency: string; readonly value: StatedValue; readonly gap: boolean };
 export type MatrixRow = { readonly partnerId?: string; readonly attribution: GiftAttribution; readonly label: string; readonly cells: readonly MatrixCell[] };
 /** One partner-by-month matrix: the whole-result row total, the window of rows this read serves, and the cells of exactly those rows. */
@@ -280,9 +250,7 @@ export function runReport(query: ReportQuery, projection: SupportProjection): Re
   const today = civilTodayIn(timeZone, asOf);
   const period = resolvePeriod(query.period, today);
   const baseline = needsComparison(query.reportId) ? precedingEqualElapsed(period) : undefined;
-  // One filtering pass over every authorised row, then one de-duplication at the grain. Both artifacts below are derived from this same set, so a filter can never apply to one surface and not another. Each surviving row's calendar day and month are then read once, because a whole-result read compares a row's day on
-  // every filter and orders it on every sort comparison, and a `Temporal` date's fields are not free to read.
-  const searchTerm = query.search === undefined ? undefined : query.search.toLowerCase();
+  const searchTerm = query.search === undefined ? undefined : query.search.toLowerCase(); // One filtering pass over every authorised row, then one de-duplication at the grain. Both artifacts below are derived from this same set, so a filter can never apply to one surface and not another.
   const prepared = prepareRows(deduplicateAtGrain(projection.gifts.filter((row) => matchesNonDateFilters(row, query, searchTerm))), period.from);
   const current = sortPreparedRows(
     prepared.filter((row) => isWithin(row, dayKeyOf(period.from), dayKeyOf(period.to))),
@@ -293,11 +261,9 @@ export function runReport(query: ReportQuery, projection: SupportProjection): Re
   const summary = summarise(current, currencies, projection.coverage);
   const buckets = monthBuckets(period.from, period.to);
   const series = buildSeries(current, buckets, currencies, projection.coverage);
-  // The page window is taken over the matched rows before anything is projected, so a page costs the rows it
-  // serves rather than every row the query matched. The whole-result count comes from the same set the window
-  // was taken over, so the page and the total can never describe different results.
+  // The page window is taken over the matched rows before anything is projected, so a page costs the rows it serves rather than every row the query matched. The whole-result count comes from the same set the window was taken over, so the page and the total can never describe different results.
   const windowed = windowRows(current, query.page);
-  const rows = windowed.items.map((prepared) => toReportRow(prepared.row));
+  const rows = windowed.items.map((prepared) => prepared.row);
   const comparison = baseline === undefined ? undefined : buildComparison({ period, baseline, coverage: projection.coverage, current, baselineRows });
   const matrix = query.reportId === "partner-month-matrix" ? buildMatrix({ query, buckets, currencies, rows: current, coverage: projection.coverage }) : undefined;
   const goal = projection.goal === undefined ? undefined : buildGoal(projection.goal, summary, query.currency, projection.coverage);
@@ -412,12 +378,9 @@ function matchesNonDateFilters(row: GiftRow, query: ReportQuery, searchTerm: str
   if (partner !== undefined) {
     if (partner.kind === "partner") {
       if (row.attribution.kind !== "partner" || row.attribution.partnerId !== partner.partnerId) return false;
-    } else if (row.attribution.kind !== partner.kind) {
-      return false;
-    }
+    } else if (row.attribution.kind !== partner.kind) return false;
   }
-  if (searchTerm !== undefined && !matchesSearch(row, searchTerm)) return false;
-  return true;
+  return searchTerm !== undefined && !matchesSearch(row, searchTerm) ? false : true;
 }
 function matchesSearch(row: GiftRow, needle: string): boolean {
   const fields: readonly (string | undefined)[] = [row.designation, row.giftId, row.giftRowId, row.allocationId, row.provenance.system, row.provenance.reference, row.attribution.kind === "partner" ? row.attribution.partnerId : undefined];
@@ -425,9 +388,7 @@ function matchesSearch(row: GiftRow, needle: string): boolean {
 }
 function deduplicateAtGrain(rows: readonly GiftRow[]): readonly GiftRow[] {
   const giftsWithAllocations = new Set<string>();
-  for (const row of rows) {
-    if (row.allocationId !== undefined) giftsWithAllocations.add(row.giftId);
-  }
+  for (const row of rows) if (row.allocationId !== undefined) giftsWithAllocations.add(row.giftId);
   const seen = new Set<string>();
   const kept: GiftRow[] = [];
   for (const row of rows) {
@@ -453,23 +414,18 @@ function compareRows(left: PreparedRow, right: PreparedRow, sort: ReportQuery["s
   return primary === 0 ? compareIdentifiers(left.row.giftRowId, right.row.giftRowId) : primary;
 }
 function compareText(left: string | undefined, right: string | undefined, descending: boolean): number {
-  if (left === undefined && right === undefined) return 0;
-  if (left === undefined) return 1;
-  if (right === undefined) return -1;
-  return signOf(compareIdentifiers(left, right), descending);
+  return left === undefined && right === undefined ? 0 : left === undefined ? 1 : right === undefined ? -1 : signOf(compareIdentifiers(left, right), descending);
 }
 function compareAmounts(left: Money, right: Money): number {
   if (left.currency !== right.currency) return compareIdentifiers(left.currency, right.currency);
   if (isKnownCurrency(left.currency)) return compareMinor(left, right);
   const leftUnits: number = left.minorUnits;
   const rightUnits: number = right.minorUnits;
-  if (leftUnits === rightUnits) return 0;
-  return leftUnits < rightUnits ? -1 : 1;
+  return leftUnits === rightUnits ? 0 : leftUnits < rightUnits ? -1 : 1;
 }
 const signOf = (order: number, descending: boolean): number => (descending ? -order : order);
 function compareIdentifiers(left: string, right: string): number {
-  if (left === right) return 0;
-  return left < right ? -1 : 1;
+  return left === right ? 0 : left < right ? -1 : 1;
 }
 type CurrencyAggregate = { total: Money | undefined; readonly giftIds: Set<string>; allocationCount: number; readonly donorIds: Set<string> };
 function currenciesOf(rows: readonly PreparedRow[], selection: CurrencySelection): readonly string[] {
@@ -501,16 +457,17 @@ function aggregateFor(aggregates: Map<string, CurrencyAggregate>, currency: stri
   aggregates.set(currency, created);
   return created;
 }
-function statedValue(minorUnits: MinorUnits | null, coverage: Coverage): StatedValue {
-  if (minorUnits === null || coverage.state === "unknown") return { minorUnits: null, valueState: "unknown" };
-  if (coverage.state === "partial") return { minorUnits, valueState: "incomplete-subtotal" };
-  return minorUnits === 0 ? { minorUnits, valueState: "zero" } : { minorUnits, valueState: "value" };
-}
-function statedCount(count: number, coverage: Coverage): StatedCount {
-  if (coverage.state === "unknown") return { count, valueState: "unknown" };
-  if (coverage.state === "partial") return { count, valueState: "incomplete-subtotal" };
-  return count === 0 ? { count, valueState: "zero" } : { count, valueState: "value" };
-}
+const measuredState = (zero: boolean, coverage: Coverage): ValueState => (coverage.state === "partial" ? "incomplete-subtotal" : zero ? "zero" : "value"); // The state a measured figure carries: a partial period states a subtotal, and a complete one keeps zero distinct from a value.
+const statedValue = (minorUnits: MinorUnits | null, coverage: Coverage): StatedValue => (minorUnits === null || coverage.state === "unknown" ? { minorUnits: null, valueState: "unknown" } : { minorUnits, valueState: measuredState(minorUnits === 0, coverage) });
+const statedCount = (count: number, coverage: Coverage): StatedCount => ({ count, valueState: coverage.state === "unknown" ? "unknown" : measuredState(count === 0, coverage) });
+// One bucket's figure as every surface states it: a bucket with no recorded row is a gap rather than a zero.
+const statedPoint = (bucket: MonthBucket, currency: string, count: number, total: Money | undefined, coverage: Coverage): SeriesPoint => ({
+  bucketStart: bucket.start,
+  bucketEnd: bucket.end,
+  currency,
+  value: count > 0 && total !== undefined ? statedValue(total.minorUnits, coverage) : { minorUnits: null, valueState: "unknown" },
+  gap: !(count > 0 && total !== undefined),
+});
 const zeroMoney = (currency: string): Money => ({ currency, minorUnits: minorUnitsOf(0) });
 type CurrencySeries = { readonly totals: Money[]; readonly counts: number[] };
 function buildSeries(rows: readonly PreparedRow[], buckets: readonly MonthBucket[], currencies: readonly string[], coverage: Coverage): readonly SeriesPoint[] {
@@ -532,12 +489,7 @@ function buildSeries(rows: readonly PreparedRow[], buckets: readonly MonthBucket
   for (const currency of currencies) {
     const currencySeries = series.get(currency);
     if (currencySeries === undefined) continue;
-    for (const [index, bucket] of buckets.entries()) {
-      const count = currencySeries.counts[index] ?? 0;
-      const total = currencySeries.totals[index];
-      const recorded = count > 0 && total !== undefined;
-      points.push({ bucketStart: bucket.start, bucketEnd: bucket.end, currency, value: recorded ? statedValue(total.minorUnits, coverage) : { minorUnits: null, valueState: "unknown" }, gap: !recorded });
-    }
+    for (const [index, bucket] of buckets.entries()) points.push(statedPoint(bucket, currency, currencySeries.counts[index] ?? 0, currencySeries.totals[index], coverage));
   }
   return points;
 }
@@ -547,21 +499,6 @@ function windowRows<T>(items: readonly T[], page: ReportQuery["page"]): Windowed
   const size = clampPageSize(page.size);
   const start = page.index * size;
   return { items: items.slice(start, start + size), page: { index: page.index, size, totalPages: totalPagesOf(items.length, size) } };
-}
-function toReportRow(row: GiftRow): ReportRow {
-  return {
-    giftRowId: row.giftRowId,
-    giftId: row.giftId,
-    amount: row.amount,
-    datePrecision: row.datePrecision,
-    attribution: row.attribution,
-    provenance: row.provenance,
-    entryOn: row.entryOn,
-    ...(row.allocationId === undefined ? {} : { allocationId: row.allocationId }),
-    ...(row.originalGiftOn === undefined ? {} : { originalGiftOn: row.originalGiftOn }),
-    ...(row.designation === undefined ? {} : { designation: row.designation }),
-    ...(row.refundOf === undefined ? {} : { refundOf: row.refundOf }),
-  };
 }
 type ComparisonInput = { readonly period: PeriodRange; readonly baseline: PeriodRange; readonly coverage: Coverage; readonly current: readonly PreparedRow[]; readonly baselineRows: readonly PreparedRow[] };
 function buildComparison(input: ComparisonInput): ReportComparison {
@@ -594,15 +531,9 @@ function sumKnownByCurrency(rows: readonly PreparedRow[]): Map<string, Money> {
   }
   return totals;
 }
-function directionOf(minorUnits: MinorUnits): "increase" | "decrease" | "unchanged" {
-  const units: number = minorUnits;
-  if (units > 0) return "increase";
-  return units < 0 ? "decrease" : "unchanged";
-}
+const directionOf = (minorUnits: MinorUnits): "increase" | "decrease" | "unchanged" => (minorUnits > 0 ? "increase" : minorUnits < 0 ? "decrease" : "unchanged");
 function comparisonValueState(current: Money, baseline: Money, coverage: Coverage): ValueState {
-  if (coverage.state === "unknown") return "unknown";
-  if (coverage.state === "partial") return "incomplete-subtotal";
-  return compareMinor(current, zeroMoney(current.currency)) === 0 && compareMinor(baseline, zeroMoney(baseline.currency)) === 0 ? "zero" : "value";
+  return coverage.state === "unknown" ? "unknown" : coverage.state === "partial" ? "incomplete-subtotal" : compareMinor(current, zeroMoney(current.currency)) === 0 && compareMinor(baseline, zeroMoney(baseline.currency)) === 0 ? "zero" : "value";
 }
 type ContributorAccumulator = { readonly attribution: GiftAttribution; readonly current: Map<string, Money>; readonly baseline: Map<string, Money> };
 const ATTRIBUTION_ORDER = ["partner", "anonymous", "unresolved"] as const satisfies readonly GiftAttribution["kind"][];
@@ -632,12 +563,13 @@ function accumulateContributor(accumulators: Map<string, ContributorAccumulator>
   const running = totals.get(currency);
   totals.set(currency, running === undefined ? row.amount : addMinor(running, row.amount));
 }
-function contributorFor(accumulators: Map<string, ContributorAccumulator>, attribution: GiftAttribution): ContributorAccumulator {
-  const key = attributionKey(attribution);
-  const existing = accumulators.get(key);
+const contributorFor = (accumulators: Map<string, ContributorAccumulator>, attribution: GiftAttribution): ContributorAccumulator => forKey(accumulators, attributionKey(attribution), () => ({ attribution, current: new Map<string, Money>(), baseline: new Map<string, Money>() }));
+/** The value a map holds for one key, built by the caller's own factory the first time it is asked for: a currency, bucket or contributor tally is created once per read. */
+function forKey<Value>(map: Map<string, Value>, key: string, create: () => Value): Value {
+  const existing = map.get(key);
   if (existing !== undefined) return existing;
-  const created: ContributorAccumulator = { attribution, current: new Map<string, Money>(), baseline: new Map<string, Money>() };
-  accumulators.set(key, created);
+  const created = create();
+  map.set(key, created);
   return created;
 }
 function compareContributorDeltas(left: ContributorDelta, right: ContributorDelta): number {
@@ -646,8 +578,7 @@ function compareContributorDeltas(left: ContributorDelta, right: ContributorDelt
   const leftKind = left.attribution?.kind ?? "partner";
   const rightKind = right.attribution?.kind ?? "partner";
   const byKind = ATTRIBUTION_ORDER.indexOf(leftKind) - ATTRIBUTION_ORDER.indexOf(rightKind);
-  if (byKind !== 0) return byKind;
-  return compareIdentifiers(left.partnerId ?? "", right.partnerId ?? "");
+  return byKind !== 0 ? byKind : compareIdentifiers(left.partnerId ?? "", right.partnerId ?? "");
 }
 function reconciles(perCurrency: ReportComparison["perCurrency"], deltas: readonly ContributorDelta[]): boolean {
   for (const entry of perCurrency) {
@@ -680,9 +611,7 @@ function buildMatrix(input: MatrixInput): Matrix {
     const running = totals[index];
     totals[index] = running === undefined ? row.amount : addMinor(running, row.amount);
   }
-  // The rows are ordered over the whole result before the page window is taken, so the total is the whole
-  // result's row count and the served rows sit at the position the whole result holds them at. Only the rows
-  // the window serves become cells, so a matrix read costs its page rather than every attribution in the result.
+  // The rows are ordered over the whole result before the page window is taken, so the total is the whole result's row count and the served rows sit at the position the whole result holds them at.
   const ordered = [...accumulators.values()].sort((left, right) => compareAttributions(left.attribution, right.attribution));
   const served = matrixWindowOf(ordered.length, input.query.page);
   const rows = ordered.slice(served.start, served.start + served.size).map((accumulator) => matrixRowOf(accumulator, input));
@@ -698,48 +627,19 @@ function matrixWindowOf(total: number, page: ReportQuery["page"]): { readonly st
 function matrixRowOf(accumulator: MatrixAccumulator, input: MatrixInput): MatrixRow {
   return { ...(accumulator.attribution.kind === "partner" ? { partnerId: accumulator.attribution.partnerId } : {}), attribution: accumulator.attribution, label: labelOf(accumulator.attribution), cells: buildMatrixCells(accumulator, input) };
 }
-function matrixAccumulatorFor(accumulators: Map<string, MatrixAccumulator>, attribution: GiftAttribution): MatrixAccumulator {
-  const key = attributionKey(attribution);
-  const existing = accumulators.get(key);
-  if (existing !== undefined) return existing;
-  const created: MatrixAccumulator = { attribution, totals: new Map<string, (Money | undefined)[]>(), counts: new Map<string, number[]>() };
-  accumulators.set(key, created);
-  return created;
-}
-function bucketTotalsFor(totals: Map<string, (Money | undefined)[]>, currency: string, bucketCount: number): (Money | undefined)[] {
-  const existing = totals.get(currency);
-  if (existing !== undefined) return existing;
-  const created = Array.from({ length: bucketCount }, (): Money | undefined => undefined);
-  totals.set(currency, created);
-  return created;
-}
-function bucketCountsFor(counts: Map<string, number[]>, currency: string, bucketCount: number): number[] {
-  const existing = counts.get(currency);
-  if (existing !== undefined) return existing;
-  const created = Array.from({ length: bucketCount }, () => 0);
-  counts.set(currency, created);
-  return created;
-}
+const matrixAccumulatorFor = (accumulators: Map<string, MatrixAccumulator>, attribution: GiftAttribution): MatrixAccumulator => forKey(accumulators, attributionKey(attribution), () => ({ attribution, totals: new Map<string, (Money | undefined)[]>(), counts: new Map<string, number[]>() }));
+const bucketTotalsFor = (totals: Map<string, (Money | undefined)[]>, currency: string, bucketCount: number): (Money | undefined)[] => forKey(totals, currency, () => Array.from({ length: bucketCount }, (): Money | undefined => undefined));
+const bucketCountsFor = (counts: Map<string, number[]>, currency: string, bucketCount: number): number[] => forKey(counts, currency, () => Array.from({ length: bucketCount }, () => 0));
 function buildMatrixCells(accumulator: MatrixAccumulator, input: MatrixInput): readonly MatrixCell[] {
   const cells: MatrixCell[] = [];
   for (const currency of input.currencies) {
     const counts = accumulator.counts.get(currency);
     const totals = accumulator.totals.get(currency);
-    for (const [index, bucket] of input.buckets.entries()) {
-      const count = counts?.[index] ?? 0;
-      const total = totals?.[index];
-      const recorded = count > 0 && total !== undefined;
-      cells.push({ bucketStart: bucket.start, bucketEnd: bucket.end, currency, value: recorded ? statedValue(total.minorUnits, input.coverage) : { minorUnits: null, valueState: "unknown" }, gap: !recorded });
-    }
+    for (const [index, bucket] of input.buckets.entries()) cells.push(statedPoint(bucket, currency, counts?.[index] ?? 0, totals?.[index], input.coverage));
   }
   return cells;
 }
-/**
- * The query a matrix cell stands for: the result's own query narrowed to that cell's month, attribution and
- * currency, carrying no page window, so the rows it reads are a subset of the result's rows and their sums add
- * to the cell. It is derived where a cell is opened rather than carried in every cell, because a matrix of
- * 10,000 partners would otherwise ship 10,000 copies of the query it was computed from.
- */
+/** The query a matrix cell stands for: the result's own query narrowed to that cell's month, attribution and currency, carrying no page window, so the rows it reads are a subset of the result's rows and their sums add to the cell. */
 export function matrixDrilldownQuery(query: ReportQuery, attribution: GiftAttribution, currency: string, bucketStart: CivilDate, bucketEnd: CivilDate): ReportQuery {
   return { ...query, period: { kind: "explicit", from: bucketStart, to: bucketEnd }, partner: attribution, currency: { kind: "one", currency }, page: undefined };
 }
@@ -757,8 +657,7 @@ function labelOf(attribution: GiftAttribution): string {
 /** The matrix's one order — partners by their own reference, then the two unnamed attributions — taken over the whole result so a served page is a slice of that one ordering. */
 function compareAttributions(left: GiftAttribution, right: GiftAttribution): number {
   const byKind = ATTRIBUTION_ORDER.indexOf(left.kind) - ATTRIBUTION_ORDER.indexOf(right.kind);
-  if (byKind !== 0) return byKind;
-  return compareIdentifiers(left.kind === "partner" ? left.partnerId : "", right.kind === "partner" ? right.partnerId : "");
+  return byKind !== 0 ? byKind : compareIdentifiers(left.kind === "partner" ? left.partnerId : "", right.kind === "partner" ? right.partnerId : "");
 }
 function buildGoal(goal: SupportGoalRecord, summary: readonly CurrencySummary[], selection: CurrencySelection, coverage: Coverage): GoalProgress {
   const record = goalRecordOf(goal);
@@ -769,9 +668,7 @@ function buildGoal(goal: SupportGoalRecord, summary: readonly CurrencySummary[],
     const received = entry?.received;
     if (received !== undefined) {
       numerator = received.minorUnits ?? undefined;
-    } else if (coverage.state === "complete") {
-      numerator = minorUnitsOf(0);
-    }
+    } else if (coverage.state === "complete") numerator = minorUnitsOf(0);
   }
   return goalProgress({ goal: record, measureCompatible: currencySelected, ...(numerator === undefined ? {} : { numeratorMinor: numerator }) });
 }

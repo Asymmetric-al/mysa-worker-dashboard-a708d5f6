@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
-import { assertNever } from "@/lib/result";
 import type { InitiativeMemberRecord, MutationInput, MutationOutcome, ReadAction, Scope } from "@/modules/data-service";
 import { MEMBERSHIP_RULES_COPY, MEMBERSHIP_STATE_COPY, REQUESTED_TERMS_COPY, STAGE_SELECTOR_COPY, STAGE_STATE_COPY, type StageState } from "../copy";
 import { useSetStage } from "../hooks/use-initiative-mutations";
@@ -18,19 +17,10 @@ const ABSENT_OPTION_VALUE = "";
 const MENU_TRIGGER_LABEL = "Stage actions";
 const RECORDED_TERM = "Recorded stage";
 const INTENDED_TERM = "Stage after this change";
-/** The two source states this surface cannot derive from a member's own record, and never invents. */
 type StageSourceState = Exclude<StageState, "recorded" | "retired">;
-interface StagePresentation {
-  readonly variant: "secondary" | "outline";
-  readonly offersControls: boolean;
-}
-export interface StageSelectorMember {
-  readonly memberId: string;
-  readonly stage: InitiativeMemberRecord["stage"];
-  readonly revision: string;
-  readonly state?: InitiativeMemberRecord["state"] | undefined;
-  readonly partnerDisplayName?: string | null | undefined;
-}
+type StagePresentation = { readonly variant: "secondary" | "outline"; readonly offersControls: boolean };
+const STAGE_PRESENTATION: Readonly<Record<StageState, StagePresentation>> = { recorded: { variant: "secondary", offersControls: true }, retired: { variant: "outline", offersControls: true }, denied: { variant: "outline", offersControls: false }, unavailable: { variant: "outline", offersControls: false } };
+export type StageSelectorMember = { readonly memberId: string; readonly stage: InitiativeMemberRecord["stage"]; readonly revision: string; readonly state?: InitiativeMemberRecord["state"] | undefined; readonly partnerDisplayName?: string | null | undefined };
 export interface StageSelectorProps {
   readonly initiativeId: string;
   readonly member: StageSelectorMember;
@@ -44,75 +34,34 @@ export interface StageSelectorProps {
   readonly onCheckResult?: (() => void) | undefined;
   readonly className?: string;
 }
-interface StageIntent {
-  readonly stage: string | null;
-  readonly expectedRevision: string;
-}
-interface RecordedStage {
-  readonly memberId: string;
-  readonly stage: string | null;
-  readonly revision: string;
-}
-function carriedForward(recorded: RecordedStage | null, member: StageSelectorMember): RecordedStage | null {
-  if (recorded === null || recorded.memberId !== member.memberId || recorded.revision === member.revision) return null;
-  return recorded;
-}
-interface PendingAttempt {
-  readonly operationId: string;
-  readonly resolve: (outcome: MutationOutcome) => void;
-}
+type StageIntent = { readonly stage: string | null; readonly expectedRevision: string };
+type RecordedStage = { readonly memberId: string; readonly stage: string | null; readonly revision: string };
+const carriedForward = (recorded: RecordedStage | null, member: StageSelectorMember): RecordedStage | null => (recorded === null || recorded.memberId !== member.memberId || recorded.revision === member.revision ? null : recorded);
+type PendingAttempt = { readonly operationId: string; readonly resolve: (outcome: MutationOutcome) => void };
 type StageNote = { readonly text: string; readonly sequence: number };
 function stageStateOf(stage: string | null, admittedStages: readonly string[], sourceState: StageSourceState | undefined): StageState | null {
   if (sourceState !== undefined) return sourceState;
   if (stage === null) return null;
   return isAdmittedStage(admittedStages, stage) ? "recorded" : "retired";
 }
-function presentationOf(state: StageState | null): StagePresentation {
-  if (state === null) {
-    return { variant: "outline", offersControls: true };
-  }
-  switch (state) {
-    case "recorded":
-      return { variant: "secondary", offersControls: true };
-    case "retired":
-      // The source no longer admits this value: it stays visible as retired and is never silently dropped, and it is never offered again as though the source still approved it.
-      return { variant: "outline", offersControls: true };
-    case "denied":
-      return { variant: "outline", offersControls: false };
-    case "unavailable":
-      return { variant: "outline", offersControls: false };
-    default:
-      return assertNever(state, "Unhandled stage state");
-  }
-}
-function memberNameOf(member: StageSelectorMember): string {
-  const stated = (member.partnerDisplayName ?? "").trim();
-  return stated === "" ? member.memberId : stated;
-}
-function stageTextOf(stage: string | null): string {
-  return stage === null ? REQUESTED_TERMS_COPY.notStated : stage;
-}
-function StageComparison({ recorded, intended }: { readonly recorded: string | null; readonly intended: string | null }): ReactElement {
-  return (
-    <dl className="flex min-w-0 flex-col gap-1.5">
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-        <dt className="font-medium">{RECORDED_TERM}</dt>
-        <dd className="min-w-0 wrap-anywhere">
-          <bdi>{stageTextOf(recorded)}</bdi>
-        </dd>
-      </div>
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-        <dt className="font-medium">{INTENDED_TERM}</dt>
-        <dd className="min-w-0 wrap-anywhere">
-          <bdi>{stageTextOf(intended)}</bdi>
-        </dd>
-      </div>
-    </dl>
-  );
-}
-function intendedStageOf(value: string): string | null {
-  return value === ABSENT_OPTION_VALUE ? null : value;
-}
+const presentationOf = (state: StageState | null): StagePresentation => (state === null ? { variant: "outline", offersControls: true } : STAGE_PRESENTATION[state]);
+const stageTextOf = (stage: string | null): string => (stage === null ? REQUESTED_TERMS_COPY.notStated : stage);
+const StageComparison = ({ recorded, intended }: { readonly recorded: string | null; readonly intended: string | null }): ReactElement => (
+  <dl className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+      <dt className="font-medium">{RECORDED_TERM}</dt>
+      <dd className="min-w-0 wrap-anywhere">
+        <bdi>{stageTextOf(recorded)}</bdi>
+      </dd>
+    </div>
+    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+      <dt className="font-medium">{INTENDED_TERM}</dt>
+      <dd className="min-w-0 wrap-anywhere">
+        <bdi>{stageTextOf(intended)}</bdi>
+      </dd>
+    </div>
+  </dl>
+);
 const FIELD_LABELS: Readonly<Record<string, string>> = { initiativeId: "Initiative", memberId: "Working-list member", stage: STAGE_SELECTOR_COPY.label };
 function changeRefusalOf(member: StageSelectorMember, stageAction: ReadAction | undefined): string | null {
   if (member.state !== undefined && member.state !== "included") return MEMBERSHIP_STATE_COPY[member.state].description;
@@ -166,9 +115,7 @@ export default function StageSelector({ initiativeId, member, admittedStages, sc
       }),
     [dispatchStage],
   );
-  const announce = useCallback((text: string): void => {
-    setNote((current) => ({ text, sequence: (current?.sequence ?? 0) + 1 }));
-  }, []);
+  const announce = useCallback((text: string): void => setNote((current) => ({ text, sequence: (current?.sequence ?? 0) + 1 })), []);
   const beginChange = useCallback(
     (stage: string | null): void => {
       if (!isAdmittedStage(admittedStages, stage)) {
@@ -187,36 +134,30 @@ export default function StageSelector({ initiativeId, member, admittedStages, sc
   );
   const handleSettled = useCallback(
     (outcome: MutationOutcome): void => {
-      if (intent !== null && (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged")) {
-        setRecorded({ memberId: member.memberId, stage: intent.stage, revision: outcome.revision });
-      }
+      if (intent !== null && (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged")) setRecorded({ memberId: member.memberId, stage: intent.stage, revision: outcome.revision });
       onOutcome?.(outcome);
     },
     [intent, member.memberId, onOutcome],
   );
-  const memberName = memberNameOf(member);
+  const memberName = (member.partnerDisplayName ?? "").trim() || member.memberId;
   const stageState = stageStateOf(recordedStage, admittedStages, stageSourceState);
   const presentation = presentationOf(stageState);
   const refusedReason = changeRefusalOf(member, stageAction);
   const offersStageChoice = presentation.offersControls && refusedReason === null;
   const offersClear = offersStageChoice && recordedStage !== null;
   const offersReturn = onReturn !== undefined && member.state === "removed";
-  const offersMenu = offersClear || offersReturn;
   const describedBy = refusedReason === null ? helpId : `${helpId} ${reasonId}`;
-  // The select shows the value this control would record — the intent while a review is open, the recorded value otherwise — so a pending Clear reads as "not stated" instead of as no choice.
   const shownValue: string | null = intent === null ? recordedStage : intent.stage;
   const selectedValue = shownValue ?? ABSENT_OPTION_VALUE;
-  const showsAbsentOption = shownValue === null;
   const showsRetiredOption = recordedStage !== null && !isAdmittedStage(admittedStages, recordedStage);
-  const handleSelectChange = (event: ChangeEvent<HTMLSelectElement>): void => beginChange(intendedStageOf(event.target.value));
+  const handleSelectChange = (event: ChangeEvent<HTMLSelectElement>): void => beginChange(event.target.value === ABSENT_OPTION_VALUE ? null : event.target.value);
   const handleClear = (): void => beginChange(null);
   const handleReturn = (): void => onReturn?.(member.memberId);
   return (
     <div data-slot="stage-selector" data-member-id={member.memberId} data-stage-state={stageState ?? undefined} className={cn("flex min-w-0 flex-col gap-2", className)}>
       {stageState === null ? null : (
         <p className="flex min-w-0 flex-wrap items-baseline gap-2">
-          <Badge variant={presentation.variant}>{STAGE_STATE_COPY[stageState].label}</Badge>
-          <span className="min-w-0 text-xs text-pretty text-muted-foreground">{STAGE_STATE_COPY[stageState].description}</span>
+          <Badge variant={presentation.variant}>{STAGE_STATE_COPY[stageState].label}</Badge> <span className="min-w-0 text-xs text-pretty text-muted-foreground">{STAGE_STATE_COPY[stageState].description}</span>
         </p>
       )}
       {presentation.offersControls ? (
@@ -230,7 +171,7 @@ export default function StageSelector({ initiativeId, member, admittedStages, sc
           </Label>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <NativeSelect id={selectId} value={selectedValue} disabled={!offersStageChoice} aria-describedby={describedBy} onChange={handleSelectChange} className="max-w-full">
-              {showsAbsentOption ? <NativeSelectOption value={ABSENT_OPTION_VALUE}>{stageTextOf(null)}</NativeSelectOption> : null}
+              {shownValue === null ? <NativeSelectOption value={ABSENT_OPTION_VALUE}>{stageTextOf(null)}</NativeSelectOption> : null}
               {showsRetiredOption ? <NativeSelectOption value={recordedStage ?? ABSENT_OPTION_VALUE}>{`${stageTextOf(recordedStage)} — ${STAGE_STATE_COPY.retired.label}`}</NativeSelectOption> : null}
               {admittedStages.map((stage) => (
                 <NativeSelectOption key={stage} value={stage}>
@@ -238,7 +179,7 @@ export default function StageSelector({ initiativeId, member, admittedStages, sc
                 </NativeSelectOption>
               ))}
             </NativeSelect>
-            {offersMenu ? (
+            {offersClear || offersReturn ? (
               <DropdownMenu>
                 <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" />} aria-describedby={helpId}>
                   {MENU_TRIGGER_LABEL}
@@ -290,15 +231,11 @@ export default function StageSelector({ initiativeId, member, admittedStages, sc
             title={STAGE_SELECTOR_COPY.label}
             description={
               <div className="flex min-w-0 flex-col gap-2">
-                <StageComparison recorded={recordedStage} intended={intent.stage} />
-                {intent.stage === null ? <p>{STAGE_SELECTOR_COPY.clearHelp}</p> : null}
-                <p>{STAGE_SELECTOR_COPY.noTaskCreatedNote}</p>
+                <StageComparison recorded={recordedStage} intended={intent.stage} /> {intent.stage === null ? <p>{STAGE_SELECTOR_COPY.clearHelp}</p> : null} <p>{STAGE_SELECTOR_COPY.noTaskCreatedNote}</p>
               </div>
             }
             confirmLabel={intent.stage === null ? STAGE_SELECTOR_COPY.clearLabel : "Record this stage"}
-            onCancel={() => {
-              setIntent(null);
-            }}
+            onCancel={() => setIntent(null)}
             input={{ scope, expectedRevision: intent.expectedRevision, payload: { initiativeId, memberId: member.memberId, stage: intent.stage } }}
             submit={submit}
             onSettled={handleSettled}

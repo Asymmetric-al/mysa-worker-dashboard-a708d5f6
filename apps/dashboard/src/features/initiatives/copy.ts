@@ -1,10 +1,7 @@
-/** Wording for the initiatives and referrals family: the closed vocabularies this family displays, and the statements that keep each distinction intact. */
 import type { NoticeKind } from "@/components/state-notice";
 /** The three states of an initiative working-list membership. */
 export const MEMBERSHIP_STATES = ["included", "removed", "excluded"] as const;
-
 export type MembershipState = (typeof MEMBERSHIP_STATES)[number];
-
 export const MEMBERSHIP_STATE_COPY: Record<MembershipState, { label: string; description: string; emptyNote: string }> = {
   included: { label: "On the working list", description: "You selected this partner for this initiative's reviewed working list.", emptyNote: "No partners are on the working list yet." },
   removed: { label: "Removed", description: "No longer on the working list; history and independent obligations are kept.", emptyNote: "No partners have been removed." },
@@ -21,9 +18,7 @@ export const MEMBERSHIP_RULES_COPY = {
 } as const;
 /** The four ways a stage can appear on this surface. */
 export const STAGE_STATES = ["recorded", "retired", "denied", "unavailable"] as const;
-
 export type StageState = (typeof STAGE_STATES)[number];
-
 export const STAGE_STATE_COPY: Record<StageState, { label: string; description: string }> = {
   recorded: { label: "Recorded", description: "A human assessment the worker recorded; it is never a prediction of giving." },
   retired: { label: "Retired", description: "The source no longer admits this stage, so it is shown as retired or missing." },
@@ -42,15 +37,9 @@ export const STAGE_SELECTOR_COPY = {
 } as const;
 /** The seven ways a Request can be answered. */
 export const RESPONSE_KINDS = ["agreed", "conditional", "partial", "deferred", "declined", "unanswered", "needs clarification"] as const;
-
 export type ResponseKind = (typeof RESPONSE_KINDS)[number];
 /** The three kinds that assert agreement — agreed, conditional and partial. */
 export const ASSERTING_RESPONSE_KINDS = ["agreed", "conditional", "partial"] as const satisfies readonly ResponseKind[];
-
-export type AssertingResponseKind = (typeof ASSERTING_RESPONSE_KINDS)[number];
-/** Deterministic rendering order for results surfaces. */
-export const RESPONSE_KIND_ORDER = RESPONSE_KINDS;
-
 export const RESPONSE_KIND_COPY: Record<ResponseKind, { label: string; description: string }> = {
   agreed: { label: "Agreed", description: "The named respondent agreed to the terms of this version." },
   conditional: { label: "Agreed with conditions", description: "The respondent agreed subject to conditions recorded with the response." },
@@ -82,27 +71,16 @@ export const REQUESTED_TERMS_COPY = {
   nonFinancialLabel: "No amount requested",
   versionLabel: "Terms version",
 } as const;
-function readableToken(value: string): string {
-  const readable = value.replace(/[_\s-]+/g, " ").trim();
-  return readable.length > 0 ? readable : REQUESTED_TERMS_COPY.notStated;
-}
+const readableToken = (value: string): string => value.replace(/[_\s-]+/g, " ").trim() || REQUESTED_TERMS_COPY.notStated;
 /** Renders a cadence value from the envelope instead of leaving the field blank. */
-export function cadenceValueFallback(value: string): string {
-  return readableToken(value);
-}
+export const cadenceValueFallback = (value: string): string => readableToken(value);
 /** Renders a term value from the envelope instead of leaving the field blank. */
-export function termValueFallback(value: string): string {
-  return readableToken(value);
-}
+export const termValueFallback = (value: string): string => readableToken(value);
 /** Renders a closure disposition from the envelope instead of leaving it blank. */
-export function dispositionFallback(value: string): string {
-  return readableToken(value);
-}
+export const dispositionFallback = (value: string): string => readableToken(value);
 /** The four states a Request passes through; each owns its own draft and version. */
 export const REQUEST_LIFECYCLE_STATES = ["draft", "submitted", "presented", "answered"] as const;
-
 export type RequestLifecycleState = (typeof REQUEST_LIFECYCLE_STATES)[number];
-
 export const REQUEST_LIFECYCLE_COPY: Record<RequestLifecycleState, { label: string; description: string }> = {
   draft: { label: "Draft", description: "Prepared but not submitted for review, and not presented to the respondent." },
   submitted: { label: "Submitted for review", description: "Waiting for review before it can be presented to the respondent." },
@@ -135,9 +113,7 @@ export const CLOSURE_COPY = {
 } as const;
 /** The two initiative states. */
 export const INITIATIVE_STATES = ["open", "closed"] as const;
-
 export type InitiativeState = (typeof INITIATIVE_STATES)[number];
-
 export const INITIATIVE_STATE_COPY: Record<InitiativeState, { label: string; description: string }> = {
   open: { label: "Open", description: "Accepting new solicitation and further recorded responses." },
   closed: { label: "Closed", description: "No new solicitation; every recorded response and closure note is kept." },
@@ -159,9 +135,6 @@ export const INITIATIVE_COPY = {
 } as const;
 /** Empty, unavailable, denied and unconfirmed results for this family. */
 export type StateNoticeKind = Exclude<NoticeKind, "loading" | "partial-coverage" | "language-unavailable">;
-
-export const STATE_NOTICE_KINDS = ["empty", "unavailable", "denied", "unknown", "refused"] as const satisfies readonly StateNoticeKind[];
-
 export const STATE_NOTICE_COPY: Record<StateNoticeKind, { title: string; body: string; actionLabel: string | null }> = {
   empty: { title: "Nothing recorded yet", body: "Create an initiative to start a reviewed working list.", actionLabel: null },
   unavailable: { title: "Source unavailable", body: "The source behind this initiative could not answer, so nothing is shown here.", actionLabel: "Try again" },

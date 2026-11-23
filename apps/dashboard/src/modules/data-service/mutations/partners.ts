@@ -1,16 +1,14 @@
-/** The partner mutations: saved views, personal tags and favourites, private preparation, permitted-field contact edits, private notes and recorded interactions. */
 import { z } from "zod";
 import { sameSourceReference, type SourceReference } from "@/lib/ids";
 import { now } from "@/modules/time/clock";
 import { DATE_PRECISIONS, parseCivilDate } from "@/modules/time/civil";
-import { canEdit, canView, outcomeOfRefusal, resolveSession, type AccessDecision, type AuthorizationTarget, type ResolvedSession, type ScopeDecision, type SessionSource } from "../authorize";
+import { canEdit, canView, type AccessDecision, type AuthorizationTarget, type ResolvedSession, type ScopeDecision, type SessionSource } from "../authorize";
 import { CONTACT_METHOD_KINDS, interactionRecordSchema, partnerRecordSchema, privateNoteRecordSchema, principalIdSchema, recordRevisionSchema, sourceReferenceSchema } from "../envelope";
-import type { InteractionNote, InteractionParticipant, InteractionRecord, MutationInput, PartnerContactMethod, PartnerNameParts, PartnerRecord, PartnerRestriction, PrivateNoteRecord, Scope } from "../envelope";
-import { runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
-import { UNIDENTIFIED_ATTEMPT, denied, type MutationOutcome, type MutationResult } from "../outcome";
+import type { InteractionNote, InteractionParticipant, InteractionRecord, MutationInput, PartnerContactMethod, PartnerNameParts, PartnerRecord, PartnerRestriction, PrivateNoteRecord, Scope, StoredRecord } from "../envelope";
+import { openMutation, payloadOf, refuseDenied, runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
+import type { MutationOutcome, MutationResult } from "../outcome";
 export const INTERACTION_KINDS = ["conversation", "visit", "call", "meeting", "written-exchange", "other"] as const;
 export type InteractionKind = (typeof INTERACTION_KINDS)[number];
-// Bounds: every bound is stated once and reused by the payload schema and by the code that writes the record, so a value that passes validation is a value the stored record's own schema accepts.
 const OPAQUE_ID_MAX_LENGTH = 160,
   VIEW_NAME_MAX_LENGTH = 80,
   SEARCH_TEXT_MAX_LENGTH = 200,
@@ -61,8 +59,6 @@ const savedViewQueryFields = {
 } as const;
 const savedViewQuerySchema = z.strictObject(savedViewQueryFields),
   storedSavedViewQuerySchema = z.object(savedViewQueryFields);
-// One schema per mutation, named after it, and each one closed: an unknown member is `invalid` with the
-// key named in the message rather than a field quietly dropped. No payload schema accepts a server-managed fact — a `revision`, `source`, `kind`, `audience`, `principalId` or `verified` — so an attempt to write one is a refusal rather than a silent rewrite.
 export const saveViewInput = z.strictObject({ name: viewNameSchema, queryState: savedViewQuerySchema, viewId: opaqueIdSchema.optional() });
 export const renameViewInput = z.strictObject({ viewId: opaqueIdSchema, name: viewNameSchema });
 export const deleteViewInput = z.strictObject({ viewId: opaqueIdSchema });
@@ -100,31 +96,23 @@ export const logInteractionInput = z.strictObject({
   provenance: sourceReferenceSchema.optional(),
 });
 const storedPartnerRecordSchema = partnerRecordSchema.and(z.object({ archived: z.boolean().optional() }));
-type StoredPartnerRecord = z.infer<typeof storedPartnerRecordSchema>;
+type StoredPartnerRecord = StoredRecord<z.infer<typeof storedPartnerRecordSchema>>;
 const storedSavedViewSchema = z.object({ viewId: z.string().min(1), name: z.string().min(1), query: storedSavedViewQuerySchema, ownerPrincipalId: principalIdSchema, revision: recordRevisionSchema });
-type StoredSavedView = z.infer<typeof storedSavedViewSchema>;
-type StoredSavedViewQuery = z.infer<typeof storedSavedViewQuerySchema>;
+type StoredSavedView = StoredRecord<z.infer<typeof storedSavedViewSchema>>;
+type StoredSavedViewQuery = StoredRecord<z.infer<typeof storedSavedViewQuerySchema>>;
 type SavedViewQueryInput = z.infer<typeof savedViewQuerySchema>;
 type ContactMethodInput = z.infer<typeof contactMethodInputSchema>;
 type NamePartsInput = z.infer<typeof namePartsInputSchema>;
 type RestrictionInput = z.infer<typeof restrictionInputSchema>;
 const stateDocumentSchema = z.looseObject({ partners: z.array(storedPartnerRecordSchema).default([]), privateNotes: z.array(privateNoteRecordSchema).default([]), interactions: z.array(interactionRecordSchema).default([]), savedViews: z.array(storedSavedViewSchema).default([]) });
-type StateDocument = z.infer<typeof stateDocumentSchema>;
+type StateDocument = StoredRecord<z.infer<typeof stateDocumentSchema>>;
 type StateFamily = "partners" | "privateNotes" | "interactions" | "savedViews";
-// What these mutations report: one exact shape per job, so a replayed operation returns the same identifiers it first returned and no caller has to interpret an optional member to know what happened.
 export type PartnerChangeResult = { readonly partnerId: string; readonly revision: string };
 export type PartnerTagChangeResult = { readonly partnerId: string; readonly revision: string; readonly tags: readonly string[] };
 export type PartnerPreparationResult = { readonly partnerId: string; readonly revision: string; readonly note: { readonly noteId: string; readonly revision: string } | null };
 export type NoteChangeResult = { readonly partnerId: string; readonly noteId: string; readonly revision: string };
 export type InteractionChangeResult = { readonly partnerId: string; readonly interactionId: string; readonly revision: string };
 export type ViewChangeResult = { readonly viewId: string; readonly revision: string };
-function attemptIdOf(input: unknown): string {
-  if (typeof input === "object" && input !== null) {
-    const candidate: unknown = Reflect.get(input, "operationId");
-    if (typeof candidate === "string" && candidate.length > 0) return candidate;
-  }
-  return UNIDENTIFIED_ATTEMPT;
-}
 type PartnerSpec<P, R extends MutationResult> = {
   readonly name: MutationName;
   readonly schema: z.ZodType<P>;
@@ -133,18 +121,11 @@ type PartnerSpec<P, R extends MutationResult> = {
   readonly apply: (context: MutationContext, payload: P, scope: Scope) => ApplyResult<R>;
 };
 async function runPartnerMutation<P, R extends MutationResult>(input: MutationInput<P>, source: SessionSource | undefined, spec: PartnerSpec<P, R>): Promise<MutationOutcome> {
-  let sessionId: string;
-  try {
-    const resolution = await resolveSession(source);
-    if (!resolution.ok) return outcomeOfRefusal(resolution.refusal, attemptIdOf(input));
-    sessionId = resolution.session.sessionId;
-  } catch {
-    // A request scope that cannot yield its cookie leaves no session to establish, which is the one refusal the resolver names for that case.
-    return denied({ operationId: attemptIdOf(input), reasonCode: "session-unavailable" });
-  }
+  const opening = await openMutation(input, source);
+  if (!opening.ok) return opening.outcome;
   const payload = (): P => payloadOf(spec.schema, input);
   return runMutation<P, R>({
-    sessionId,
+    sessionId: opening.sessionId,
     input,
     schema: spec.schema,
     name: spec.name,
@@ -153,7 +134,6 @@ async function runPartnerMutation<P, R extends MutationResult>(input: MutationIn
     apply: (context) => spec.apply(context, payload(), input.scope),
   });
 }
-const payloadOf = <S extends z.ZodType>(schema: S, input: MutationInput<unknown>): z.output<S> => schema.parse(input.payload);
 const ADMISSION_ESTABLISHES_AUTHORITY: (session: ResolvedSession) => ScopeDecision = () => ({ ok: true });
 const authorityOf = (decision: AccessDecision): ScopeDecision => (decision.allowed ? { ok: true } : { ok: false, denial: decision.denial });
 const ownPreparationTarget = (scope: Scope, session: ResolvedSession): AuthorizationTarget => ({ kind: "partner", scope, audience: "private", authorPrincipalId: session.principalId });
@@ -161,12 +141,7 @@ const partnerTarget = (scope: Scope, session: ResolvedSession, record: PartnerRe
 const ownPrivateNoteTarget = (scope: Scope, session: ResolvedSession): AuthorizationTarget => ({ kind: "private-note", scope, authorPrincipalId: session.principalId }),
   interactionTarget = (scope: Scope): AuthorizationTarget => ({ kind: "interaction", scope });
 const STORE_CORRUPT_DOCUMENT_FAULT = "CorruptJsonError";
-
-function unreadableState(detail: string): Error {
-  const error = new Error(`This session's records cannot be read: ${detail}. Nothing was written. Reset the development data from Settings to rebuild the session's documents deterministically.`);
-  error.name = STORE_CORRUPT_DOCUMENT_FAULT;
-  return error;
-}
+const unreadableState = (detail: string): Error => Object.assign(new Error(`This session's records cannot be read: ${detail}. Nothing was written. Reset the development data from Settings to rebuild the session's documents deterministically.`), { name: STORE_CORRUPT_DOCUMENT_FAULT });
 function stateDocumentOf(docs: MutationContext["docs"]): StateDocument {
   const parsed = stateDocumentSchema.safeParse(docs.state);
   if (!parsed.success) throw unreadableState("a record family in the state document is not readable");
@@ -179,38 +154,17 @@ const partnerOf = (state: StateDocument, partnerId: string): StoredPartnerRecord
 const withPartner = (state: StateDocument, next: StoredPartnerRecord): readonly StoredPartnerRecord[] => state.partners.map((record) => (record.partnerId === next.partnerId ? next : record));
 const savedViewOf = (state: StateDocument, viewId: string): StoredSavedView | undefined => state.savedViews.find((view) => view.viewId === viewId);
 function sameNameParts(left: PartnerNameParts | null, right: PartnerNameParts | null): boolean {
-  if (left === null || right === null) return left === right;
-  return left.given === right.given && left.family === right.family && left.additional.length === right.additional.length && left.additional.every((part, index) => part === right.additional[index]);
+  return left === null || right === null ? left === right : left.given === right.given && left.family === right.family && left.additional.length === right.additional.length && left.additional.every((part, index) => part === right.additional[index]);
 }
-function sameContactMethods(left: readonly PartnerContactMethod[], right: readonly PartnerContactMethod[]): boolean {
-  return (
-    left.length === right.length &&
-    left.every((method, index) => {
-      const other = right[index];
-      return other !== undefined && other.kind === method.kind && other.value === method.value && other.permitted === method.permitted;
-    })
-  );
-}
-function sameRestrictions(left: readonly PartnerRestriction[], right: readonly PartnerRestriction[]): boolean {
-  return (
-    left.length === right.length &&
-    left.every((restriction, index) => {
-      const other = right[index];
-      return other !== undefined && other.kind === restriction.kind && other.detail === restriction.detail;
-    })
-  );
-}
+const sameSequence = <T>(left: readonly T[], right: readonly T[], same: (one: T, other: T) => boolean): boolean => left.length === right.length && left.every((one, index) => right[index] !== undefined && same(one, right[index]));
+const sameContactMethods = (left: readonly PartnerContactMethod[], right: readonly PartnerContactMethod[]): boolean => sameSequence(left, right, (one, other) => one.kind === other.kind && one.value === other.value && one.permitted === other.permitted);
+const sameRestrictions = (left: readonly PartnerRestriction[], right: readonly PartnerRestriction[]): boolean => sameSequence(left, right, (one, other) => one.kind === other.kind && one.detail === other.detail);
 function storedQueryOf(query: SavedViewQueryInput): StoredSavedViewQuery {
-  const applied: Record<string, string[]> = {};
-  for (const facetId of Object.keys(query.applied).sort()) {
-    const values = query.applied[facetId];
-    if (values === undefined || values.length === 0) continue;
-    applied[facetId] = [...values].sort();
-  }
-  const visibility = query.columnVisibility ?? {};
-  const columnVisibility: Record<string, boolean> = {};
-  for (const columnId of Object.keys(visibility).sort()) {
-    const visible = visibility[columnId];
+  const applied: Record<string, string[]> = {},
+    columnVisibility: Record<string, boolean> = {};
+  for (const facetId of Object.keys(query.applied).sort()) if ((query.applied[facetId]?.length ?? 0) > 0) applied[facetId] = [...(query.applied[facetId] ?? [])].sort();
+  for (const columnId of Object.keys(query.columnVisibility ?? {}).sort()) {
+    const visible = query.columnVisibility?.[columnId];
     if (visible !== undefined) columnVisibility[columnId] = visible;
   }
   return { search: query.search, applied, ...(Object.keys(columnVisibility).length === 0 ? {} : { columnVisibility }), ...(query.sort === undefined ? {} : { sort: { field: query.sort.field, direction: query.sort.direction } }), ...(query.pageSize === undefined ? {} : { pageSize: query.pageSize }) };
@@ -235,25 +189,31 @@ export type SavePrivateNoteInput = z.output<typeof savePrivateNoteInput>;
 export type LogInteractionInput = z.output<typeof logInteractionInput>;
 const ABSENT_TARGET: CurrentTarget = { kind: "absent" };
 const NOTHING_TO_CHANGE = { changed: false } as const;
-
-function refuseDenied(operationId: string): { readonly refused: MutationOutcome } {
-  return { refused: denied({ operationId, reasonCode: "no-permission" }) };
-}
-function partnerCurrentTarget(docs: MutationContext["docs"], partnerId: string): CurrentTarget {
+const partnerCurrentTarget = (docs: MutationContext["docs"], partnerId: string): CurrentTarget => {
   const record = partnerOf(stateDocumentOf(docs), partnerId);
   return record === undefined ? ABSENT_TARGET : { kind: "record", revision: record.revision, value: record };
-}
+};
 function savedViewCurrentTarget(docs: MutationContext["docs"], viewId: string | undefined, principalId: string): CurrentTarget {
   if (viewId === undefined) return ABSENT_TARGET;
   const view = savedViewOf(stateDocumentOf(docs), viewId);
-  if (view === undefined || view.ownerPrincipalId !== principalId) return ABSENT_TARGET;
-  return { kind: "record", revision: view.revision, value: view };
+  return view === undefined || view.ownerPrincipalId !== principalId ? ABSENT_TARGET : { kind: "record", revision: view.revision, value: view };
 }
 const samePermittedFields = (current: PartnerRecord, next: PartnerRecord): boolean =>
   current.displayName === next.displayName && sameNameParts(current.nameParts, next.nameParts) && sameContactMethods(current.contactMethods, next.contactMethods) && sameRestrictions(current.restrictions, next.restrictions) && current.stage === next.stage;
 /** Saves a new saved view for the caller, or replaces a view the caller already owns. */
 export async function saveView(input: MutationInput<SaveViewInput>, source?: SessionSource): Promise<MutationOutcome> {
   return runPartnerMutation<SaveViewInput, ViewChangeResult>(input, source, { name: "saveView", schema: saveViewInput, authorize: ADMISSION_ESTABLISHES_AUTHORITY, readCurrent: (documents, payload) => savedViewCurrentTarget(documents, payload.viewId, input.scope.principalId), apply: applySaveView });
+}
+function storedViewChange(docs: MutationContext["docs"], state: StateDocument, replaced: StoredSavedView): ApplyResult<ViewChangeResult> {
+  const revision = nextRevision();
+  const next: StoredSavedView = { ...replaced, revision };
+  writeState(docs, state, { savedViews: state.savedViews.map((candidate) => (candidate.viewId === next.viewId ? next : candidate)) });
+  return { changed: true, revision, result: { viewId: next.viewId, revision }, changedIds: [next.viewId] };
+}
+function requireOwnedView(state: StateDocument, viewId: string, principalId: string, operationId: string): StoredSavedView {
+  const view = savedViewOf(state, viewId);
+  if (view === undefined || view.ownerPrincipalId !== principalId) refuseDenied(operationId);
+  return view;
 }
 function applySaveView({ docs, session, operationId }: MutationContext, payload: SaveViewInput): ApplyResult<ViewChangeResult> {
   const state = stateDocumentOf(docs);
@@ -265,13 +225,8 @@ function applySaveView({ docs, session, operationId }: MutationContext, payload:
     writeState(docs, state, { savedViews: [...state.savedViews, view] });
     return { changed: true, revision, result: { viewId, revision }, created: [viewId] };
   }
-  const view = savedViewOf(state, payload.viewId);
-  if (view === undefined || view.ownerPrincipalId !== session.principalId) return refuseDenied(operationId);
-  if (view.name === payload.name && sameQuery(view.query, query)) return NOTHING_TO_CHANGE;
-  const revision = nextRevision();
-  const replaced: StoredSavedView = { ...view, name: payload.name, query, revision };
-  writeState(docs, state, { savedViews: state.savedViews.map((candidate) => (candidate.viewId === replaced.viewId ? replaced : candidate)) });
-  return { changed: true, revision, result: { viewId: replaced.viewId, revision }, changedIds: [replaced.viewId] };
+  const view = requireOwnedView(state, payload.viewId, session.principalId, operationId);
+  return view.name === payload.name && sameQuery(view.query, query) ? NOTHING_TO_CHANGE : storedViewChange(docs, state, { ...view, name: payload.name, query });
 }
 /** Renames one saved view the caller owns. */
 export async function renameView(input: MutationInput<RenameViewInput>, source?: SessionSource): Promise<MutationOutcome> {
@@ -279,13 +234,8 @@ export async function renameView(input: MutationInput<RenameViewInput>, source?:
 }
 function applyRenameView({ docs, session, operationId }: MutationContext, payload: RenameViewInput): ApplyResult<ViewChangeResult> {
   const state = stateDocumentOf(docs);
-  const view = savedViewOf(state, payload.viewId);
-  if (view === undefined || view.ownerPrincipalId !== session.principalId) return refuseDenied(operationId);
-  if (view.name === payload.name) return NOTHING_TO_CHANGE;
-  const revision = nextRevision();
-  const renamed: StoredSavedView = { ...view, name: payload.name, revision };
-  writeState(docs, state, { savedViews: state.savedViews.map((candidate) => (candidate.viewId === renamed.viewId ? renamed : candidate)) });
-  return { changed: true, revision, result: { viewId: renamed.viewId, revision }, changedIds: [renamed.viewId] };
+  const view = requireOwnedView(state, payload.viewId, session.principalId, operationId);
+  return view.name === payload.name ? NOTHING_TO_CHANGE : storedViewChange(docs, state, { ...view, name: payload.name });
 }
 /** Deletes one saved view the caller owns; no record is touched by deleting a view. */
 export async function deleteView(input: MutationInput<DeleteViewInput>, source?: SessionSource): Promise<MutationOutcome> {
@@ -293,41 +243,46 @@ export async function deleteView(input: MutationInput<DeleteViewInput>, source?:
 }
 function applyDeleteView({ docs, session, operationId }: MutationContext, payload: DeleteViewInput): ApplyResult<ViewChangeResult> {
   const state = stateDocumentOf(docs);
-  const view = savedViewOf(state, payload.viewId);
-  if (view === undefined || view.ownerPrincipalId !== session.principalId) return refuseDenied(operationId);
+  const view = requireOwnedView(state, payload.viewId, session.principalId, operationId);
   writeState(docs, state, { savedViews: state.savedViews.filter((candidate) => candidate.viewId !== view.viewId) });
-  // A removed view no longer stands at a revision of its own, so the answer reports the revision it stood at when the removal was made: nothing else can be presented for a record that is gone, and the view list is read again with its own revisions.
   return { changed: true, revision: view.revision, result: { viewId: view.viewId, revision: view.revision }, changedIds: [view.viewId] };
 }
 /** Applies or removes one personal tag on one partner record. */
 export async function setTag(input: MutationInput<SetTagInput>, source?: SessionSource): Promise<MutationOutcome> {
   return runPartnerMutation<SetTagInput, PartnerTagChangeResult>(input, source, { name: "setTag", schema: setTagInput, authorize: ADMISSION_ESTABLISHES_AUTHORITY, readCurrent: (documents, payload) => partnerCurrentTarget(documents, payload.partnerId), apply: applySetTag });
 }
-function applySetTag({ docs, session, operationId }: MutationContext, payload: SetTagInput, scope: Scope): ApplyResult<PartnerTagChangeResult> {
-  const state = stateDocumentOf(docs);
-  const record = partnerOf(state, payload.partnerId);
-  if (record === undefined || !canEdit(session, partnerTarget(scope, session, record)).allowed) return refuseDenied(operationId);
-  const held = record.tags.includes(payload.tag);
-  if (held === payload.present) return NOTHING_TO_CHANGE;
-  const tags = payload.present ? [...record.tags, payload.tag] : record.tags.filter((tag) => tag !== payload.tag),
-    revision = nextRevision();
-  const tagged: StoredPartnerRecord = { ...record, tags, revision };
-  writeState(docs, state, { partners: withPartner(state, tagged) });
-  return { changed: true, revision, result: { partnerId: tagged.partnerId, revision, tags }, changedIds: [tagged.partnerId] };
+function editPartner<Result extends MutationResult>(context: MutationContext, scope: Scope, partnerId: string, change: (record: StoredPartnerRecord) => Partial<StoredPartnerRecord> | null, answer: (next: StoredPartnerRecord) => Result): ApplyResult<Result> {
+  const state = stateDocumentOf(context.docs);
+  const record = partnerOf(state, partnerId);
+  if (record === undefined || !canEdit(context.session, partnerTarget(scope, context.session, record)).allowed) return refuseDenied(context.operationId);
+  const changed = change(record);
+  if (changed === null) return NOTHING_TO_CHANGE;
+  const next: StoredPartnerRecord = { ...record, ...changed, revision: nextRevision() };
+  writeState(context.docs, state, { partners: withPartner(state, next) });
+  return { changed: true, revision: next.revision, result: answer(next), changedIds: [next.partnerId] };
+}
+function applySetTag(context: MutationContext, payload: SetTagInput, scope: Scope): ApplyResult<PartnerTagChangeResult> {
+  const present = payload.present;
+  return editPartner(
+    context,
+    scope,
+    payload.partnerId,
+    (record) => (record.tags.includes(payload.tag) === present ? null : { tags: present ? [...record.tags, payload.tag] : record.tags.filter((tag) => tag !== payload.tag) }),
+    (next) => ({ partnerId: next.partnerId, revision: next.revision, tags: next.tags }),
+  );
 }
 /** Marks one partner record as a favourite, or clears the mark. */
 export async function setFavourite(input: MutationInput<SetFavouriteInput>, source?: SessionSource): Promise<MutationOutcome> {
   return runPartnerMutation<SetFavouriteInput, PartnerChangeResult>(input, source, { name: "setFavourite", schema: setFavouriteInput, authorize: ADMISSION_ESTABLISHES_AUTHORITY, readCurrent: (documents, payload) => partnerCurrentTarget(documents, payload.partnerId), apply: applySetFavourite });
 }
-function applySetFavourite({ docs, session, operationId }: MutationContext, payload: SetFavouriteInput, scope: Scope): ApplyResult<PartnerChangeResult> {
-  const state = stateDocumentOf(docs);
-  const record = partnerOf(state, payload.partnerId);
-  if (record === undefined || !canEdit(session, partnerTarget(scope, session, record)).allowed) return refuseDenied(operationId);
-  if (record.favourite === payload.favourite) return NOTHING_TO_CHANGE;
-  const revision = nextRevision();
-  const marked: StoredPartnerRecord = { ...record, favourite: payload.favourite, revision };
-  writeState(docs, state, { partners: withPartner(state, marked) });
-  return { changed: true, revision, result: { partnerId: marked.partnerId, revision }, changedIds: [marked.partnerId] };
+function applySetFavourite(context: MutationContext, payload: SetFavouriteInput, scope: Scope): ApplyResult<PartnerChangeResult> {
+  return editPartner(
+    context,
+    scope,
+    payload.partnerId,
+    (record) => (record.favourite === payload.favourite ? null : { favourite: payload.favourite }),
+    (next) => ({ partnerId: next.partnerId, revision: next.revision }),
+  );
 }
 /** Creates the worker's own private preparation record for a contact, with its opening note if one is given. */
 export async function createPrivatePreparation(input: MutationInput<CreatePrivatePreparationInput>, source?: SessionSource): Promise<MutationOutcome> {
@@ -350,57 +305,47 @@ function applyCreatePrivatePreparation({ docs, session }: MutationContext, paylo
 export async function saveContactEdits(input: MutationInput<SaveContactEditsInput>, source?: SessionSource): Promise<MutationOutcome> {
   return runPartnerMutation<SaveContactEditsInput, PartnerChangeResult>(input, source, { name: "saveContactEdits", schema: saveContactEditsInput, authorize: ADMISSION_ESTABLISHES_AUTHORITY, readCurrent: (documents, payload) => partnerCurrentTarget(documents, payload.partnerId), apply: applySaveContactEdits });
 }
-function applySaveContactEdits({ docs, session, operationId }: MutationContext, payload: SaveContactEditsInput, scope: Scope): ApplyResult<PartnerChangeResult> {
-  const state = stateDocumentOf(docs);
+function applySaveContactEdits(context: MutationContext, payload: SaveContactEditsInput, scope: Scope): ApplyResult<PartnerChangeResult> {
+  return editPartner(
+    context,
+    scope,
+    payload.partnerId,
+    (record) => {
+      const next: StoredPartnerRecord = {
+        ...record,
+        displayName: payload.displayName ?? record.displayName,
+        nameParts: payload.nameParts === undefined ? record.nameParts : namePartsOf(payload.nameParts),
+        contactMethods: payload.contactMethods === undefined ? record.contactMethods : contactMethodsOf(payload.contactMethods),
+        restrictions: payload.restrictions === undefined ? record.restrictions : restrictionsOf(payload.restrictions),
+        stage: payload.stage === undefined ? record.stage : payload.stage,
+      };
+      return samePermittedFields(record, next) ? null : next;
+    },
+    (next) => ({ partnerId: next.partnerId, revision: next.revision }),
+  );
+}
+function applyPreparationArchive(context: MutationContext, payload: ArchivePreparationInput, scope: Scope, archived: boolean): ApplyResult<PartnerChangeResult> {
+  const state = stateDocumentOf(context.docs);
   const record = partnerOf(state, payload.partnerId);
-  if (record === undefined || !canEdit(session, partnerTarget(scope, session, record)).allowed) return refuseDenied(operationId);
-  const contactMethods = payload.contactMethods === undefined ? record.contactMethods : contactMethodsOf(payload.contactMethods);
-  const restrictions = payload.restrictions === undefined ? record.restrictions : restrictionsOf(payload.restrictions);
-  const next: StoredPartnerRecord = { ...record, displayName: payload.displayName ?? record.displayName, nameParts: payload.nameParts === undefined ? record.nameParts : namePartsOf(payload.nameParts), contactMethods, restrictions, stage: payload.stage === undefined ? record.stage : payload.stage };
-  if (samePermittedFields(record, next)) return NOTHING_TO_CHANGE;
-  const revision = nextRevision();
-  const edited: StoredPartnerRecord = { ...next, revision };
-  writeState(docs, state, { partners: withPartner(state, edited) });
-  return { changed: true, revision, result: { partnerId: edited.partnerId, revision }, changedIds: [edited.partnerId] };
+  if (record === undefined || record.kind !== "private-preparation" || record.audience !== "private" || !canEdit(context.session, partnerTarget(scope, context.session, record)).allowed) return refuseDenied(context.operationId);
+  if ((record.archived === true) === archived) return NOTHING_TO_CHANGE;
+  const next: StoredPartnerRecord = { ...record, archived, revision: nextRevision() };
+  writeState(context.docs, state, { partners: withPartner(state, next) });
+  return { changed: true, revision: next.revision, result: { partnerId: next.partnerId, revision: next.revision }, changedIds: [next.partnerId] };
+}
+function runPreparationArchive(input: MutationInput<ArchivePreparationInput>, source: SessionSource | undefined, name: MutationName, schema: z.ZodType<ArchivePreparationInput>, archived: boolean): Promise<MutationOutcome> {
+  return runPartnerMutation<ArchivePreparationInput, PartnerChangeResult>(input, source, {
+    name,
+    schema,
+    authorize: (session) => authorityOf(canEdit(session, ownPreparationTarget(input.scope, session))),
+    readCurrent: (documents, payload) => partnerCurrentTarget(documents, payload.partnerId),
+    apply: (context, payload, scope) => applyPreparationArchive(context, payload, scope, archived),
+  });
 }
 /** Archives one private preparation record: it leaves the working lists and nothing is deleted. */
-export async function archivePreparation(input: MutationInput<ArchivePreparationInput>, source?: SessionSource): Promise<MutationOutcome> {
-  return runPartnerMutation<ArchivePreparationInput, PartnerChangeResult>(input, source, {
-    name: "archivePreparation",
-    schema: archivePreparationInput,
-    authorize: (session) => authorityOf(canEdit(session, ownPreparationTarget(input.scope, session))),
-    readCurrent: (documents, payload) => partnerCurrentTarget(documents, payload.partnerId),
-    apply: ({ docs, session, operationId }, payload) => {
-      const state = stateDocumentOf(docs);
-      const record = partnerOf(state, payload.partnerId);
-      if (record === undefined || record.kind !== "private-preparation" || record.audience !== "private" || !canEdit(session, partnerTarget(input.scope, session, record)).allowed) return refuseDenied(operationId);
-      if (record.archived === true) return NOTHING_TO_CHANGE;
-      const revision = nextRevision();
-      const archived: StoredPartnerRecord = { ...record, archived: true, revision };
-      writeState(docs, state, { partners: withPartner(state, archived) });
-      return { changed: true, revision, result: { partnerId: archived.partnerId, revision }, changedIds: [archived.partnerId] };
-    },
-  });
-}
+export const archivePreparation = async (input: MutationInput<ArchivePreparationInput>, source?: SessionSource): Promise<MutationOutcome> => runPreparationArchive(input, source, "archivePreparation", archivePreparationInput, true);
 /** Restores one archived private preparation record to the working lists. */
-export async function restorePreparation(input: MutationInput<RestorePreparationInput>, source?: SessionSource): Promise<MutationOutcome> {
-  return runPartnerMutation<RestorePreparationInput, PartnerChangeResult>(input, source, {
-    name: "restorePreparation",
-    schema: restorePreparationInput,
-    authorize: (session) => authorityOf(canEdit(session, ownPreparationTarget(input.scope, session))),
-    readCurrent: (documents, payload) => partnerCurrentTarget(documents, payload.partnerId),
-    apply: ({ docs, session, operationId }, payload) => {
-      const state = stateDocumentOf(docs);
-      const record = partnerOf(state, payload.partnerId);
-      if (record === undefined || record.kind !== "private-preparation" || record.audience !== "private" || !canEdit(session, partnerTarget(input.scope, session, record)).allowed) return refuseDenied(operationId);
-      if (record.archived !== true) return NOTHING_TO_CHANGE;
-      const revision = nextRevision();
-      const restored: StoredPartnerRecord = { ...record, archived: false, revision };
-      writeState(docs, state, { partners: withPartner(state, restored) });
-      return { changed: true, revision, result: { partnerId: restored.partnerId, revision }, changedIds: [restored.partnerId] };
-    },
-  });
-}
+export const restorePreparation = async (input: MutationInput<RestorePreparationInput>, source?: SessionSource): Promise<MutationOutcome> => runPreparationArchive(input, source, "restorePreparation", restorePreparationInput, false);
 /** Writes one private note about one partner record. */
 export async function savePrivateNote(input: MutationInput<SavePrivateNoteInput>, source?: SessionSource): Promise<MutationOutcome> {
   return runPartnerMutation<SavePrivateNoteInput, NoteChangeResult>(input, source, { name: "savePrivateNote", schema: savePrivateNoteInput, authorize: (session) => authorityOf(canEdit(session, ownPrivateNoteTarget(input.scope, session))), apply: applySavePrivateNote });
@@ -409,8 +354,7 @@ function applySavePrivateNote({ docs, session, operationId }: MutationContext, p
   const state = stateDocumentOf(docs);
   const record = partnerOf(state, payload.partnerId);
   if (record === undefined || !canView(session, partnerTarget(scope, session, record)).allowed) return refuseDenied(operationId);
-  const alreadyWritten = state.privateNotes.some((note) => note.partnerId === record.partnerId && note.authorPrincipalId === session.principalId && note.body === payload.body);
-  if (alreadyWritten) return NOTHING_TO_CHANGE;
+  if (state.privateNotes.some((note) => note.partnerId === record.partnerId && note.authorPrincipalId === session.principalId && note.body === payload.body)) return NOTHING_TO_CHANGE;
   const note: PrivateNoteRecord = { noteId: newRecordId(), partnerId: record.partnerId, authorPrincipalId: session.principalId, body: payload.body, audience: "private", createdAt: recordedAt(), revision: nextRevision() };
   writeState(docs, state, { privateNotes: [...state.privateNotes, note] });
   return { changed: true, revision: note.revision, result: { partnerId: note.partnerId, noteId: note.noteId, revision: note.revision }, created: [note.noteId] };
@@ -424,16 +368,9 @@ function applyLogInteraction({ docs, session, operationId }: MutationContext, pa
   const record = partnerOf(state, payload.partnerId);
   if (record === undefined || !canView(session, partnerTarget(scope, session, record)).allowed) return refuseDenied(operationId);
   const provenance: SourceReference | null = payload.provenance ?? null;
-  if (provenance !== null && state.interactions.some((interaction) => interaction.provenance !== null && sameSourceReference(interaction.provenance, provenance))) {
-    // The source recorded this event once already, so a second record of it would state that it happened twice. The stored record is what the source stands behind, and it is left as it is.
-    return NOTHING_TO_CHANGE;
-  }
+  if (provenance !== null && state.interactions.some((interaction) => interaction.provenance !== null && sameSourceReference(interaction.provenance, provenance))) return NOTHING_TO_CHANGE;
   const participants: readonly InteractionParticipant[] = payload.participants.map((participant) => ({ role: participant.role, partnerId: partnerOf(state, participant.partnerId)?.partnerId ?? null, principalId: null }));
-  if (participants.some((participant) => participant.partnerId === null)) {
-    // A participant this context holds no record of would point at nothing. Guessing a person from a name is exactly the identity inference this application refuses, so nothing is recorded.
-    return NOTHING_TO_CHANGE;
-  }
-  // The note states its own author, so a private note is a fact about this principal's work rather than a note the read could only guess the owner of: the activity read admits it to the principal named here and to nobody else.
+  if (participants.some((participant) => participant.partnerId === null)) return NOTHING_TO_CHANGE;
   const note: InteractionNote | null = payload.note === undefined ? null : { body: payload.note, audience: "private", authorPrincipalId: session.principalId };
   const occurredOn = payload.occurredOn.precision === "unknown" ? null : (payload.occurredOn.date ?? null);
   const interaction: InteractionRecord = { interactionId: newRecordId(), partnerId: record.partnerId, type: payload.type, occurredOn, precision: payload.occurredOn.precision, outcome: payload.outcome, participants, note, provenance, revision: nextRevision() };
