@@ -8,7 +8,7 @@ import { dedupeKey, mayRepeatIntent, type SendOutcomeState } from "@/modules/aud
 import { EXCLUSION_REASONS, membershipAccessAt, type ContentAudience, type ExclusionReason } from "@/modules/audience/resolve";
 import { directionOfTag, resolveLocale, type ContentLocale } from "@/modules/content/locale";
 import { buildNotice, type Notice, type PinnedRendition as NoticePinnedRendition } from "@/modules/content/notice";
-import { isListedPublicly, reachMetadata, withdrawEdition, type ReachMetadata, type Tombstone } from "@/modules/content/reach";
+import { isDirectlyReadable, isListedPublicly, reachMetadata, withdrawEdition, type ReachMetadata, type Tombstone } from "@/modules/content/reach";
 import { renderToHtml, type RenderMediaPlacement, type RenderRendition, type RenderRenditions } from "@/modules/content/render";
 import type { Release } from "@/modules/content/variant";
 import { scenarioMediaServing } from "@/modules/dev-runtime/scenario";
@@ -706,7 +706,7 @@ export async function readDiscoveryIndex(query: DiscoveryIndexQuery = {}, source
 export type ReceivingPageQuery = { readonly pageId: string; readonly locale?: string };
 /** The unserved half of a page view: no edition is served, so every edition and giving field states none. */
 const UNSERVED_PAGE_FIELDS: Omit<ReceivingPageView, "state" | "documentId" | "family" | "requestedLocale" | "metadata" | "tombstone" | "simulated"> = { releaseId: null, servedLocale: null, fallbackOccurred: false, reach: null, title: null, description: null, html: null, renditions: [], giving: null };
-/** One page edition served by direct link, re-authorised on every request. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
+/** One page edition served by direct link, re-authorised on every request, where a Not public edition is served to the caller whose own world holds it and refused to every caller reading across the reading crossing. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readReceivingPage(query: ReceivingPageQuery, source?: SessionSource): Promise<ReadResult<ReadEnvelope<ReceivingPageView>>> {
   const opened = await openRead("readReceivingPage", source);
   if (!opened.ok) return opened.result;
@@ -732,7 +732,9 @@ export async function readReceivingPage(query: ReceivingPageQuery, source?: Sess
   }
   const served = resolution;
   const edition = served.edition;
-  if (edition.record.reach === "not-public") return deniedRead("no-permission");
+  const reading = published.sessionId !== own.sessionId;
+  // Reach decides what a direct link serves for this caller: the reach control's own words say only the owner can open a Not public edition, so the world that holds the edition serves it, while a caller reading across the reading crossing is served a link for a `link-public` or `listed` edition alone and is otherwise refused the neutral answer an address that was never recorded receives.
+  if (reading && !isDirectlyReadable({ reach: edition.record.reach, withdrawnAt: edition.domain.withdrawnAt })) return deniedRead("no-permission");
   const serving = scenarioMediaServing(session.scenarioId);
   const rendered = renderingOf(edition.revision, published.state.mediaAssets, serving);
   if (!rendered.ok) return sourceUnavailableRead({ job: "readReceivingPage", source: { system: "content-render", reference: "unrenderable-edition" }, guidance: STORE_READ_GUIDANCE });

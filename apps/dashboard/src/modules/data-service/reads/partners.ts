@@ -29,12 +29,16 @@ export type PartnerSortDirection = (typeof PARTNER_SORT_DIRECTIONS)[number];
 export const PARTNER_ROSTER_COLUMNS = ["displayName", "kind", "stage", "tags", "favourite", "contactMethods", "lastActivity", "openTasks", "referralStatus", "giving"] as const;
 const CONTACT_TYPE_LABELS: Readonly<Record<PartnerKind, string>> = { person: "Person", household: "Household", church: "Church", organization: "Organization", "private-preparation": "Private preparation" };
 const FAVOURITE_LABELS: Readonly<Record<"favourite" | "not-favourite", string>> = { favourite: "Favourites only", "not-favourite": "Not a favourite" };
-const PREPARATION_LABELS: Readonly<Record<"private" | "shared", string>> = { private: "Private record", shared: "Shared record" };
+// An archived preparation is one value of the preparation-state facet rather than a facet of its own: the archive takes the record out of the working list, and this is the value that names where it went.
+const ARCHIVED_PREPARATION = "archived" as const;
+const PREPARATION_LABELS: Readonly<Record<"private" | "shared" | typeof ARCHIVED_PREPARATION, string>> = { private: "Private record", shared: "Shared record", [ARCHIVED_PREPARATION]: "Archived record" };
 const REFERRAL_STATUS_LABELS: Readonly<Record<PartnerReferralStatus, string>> = { active: "Active", "incomplete-date": "Date incomplete", expired: "Expired" };
 const CONTACT_METHOD_AVAILABILITY_LABELS: Readonly<Record<"any-permitted" | "none-permitted", string>> = { "any-permitted": "Has a permitted contact method", "none-permitted": "No permitted contact method" };
 const ACTIVITY_LABELS: Readonly<Record<"recorded" | "none-recorded", string>> = { recorded: "Activity recorded", "none-recorded": "No activity recorded" };
 const TASK_STATE_LABELS: Readonly<Record<"open" | "overdue" | "no-date", string>> = { open: "Open task", overdue: "Overdue task", "no-date": "Task without a due date" };
 const GIVING_PRESENCE_LABELS: Readonly<Record<"recorded" | "none-recorded", string>> = { recorded: "A gift is recorded", "none-recorded": "No gift is recorded" };
+/** Whether one stored record is an archived private preparation: the roster is a working list, and an archived preparation is its one deliberate omission. */
+const isArchivedPreparation = (record: StoredPartnerRecord): boolean => record.archived === true;
 const NO_STATED_CAPABILITIES: readonly string[] = Object.freeze([]);
 const STORE_UNAVAILABLE_GUIDANCE = "This session's records could not be read, so no list, count or amount is shown rather than an empty one. Retry the read; if it keeps failing, reset the seeded development data.";
 const CALENDAR_SOURCE: SourceReference = { system: "time-zone-database", reference: "calendar" };
@@ -55,7 +59,7 @@ export interface PartnerRosterQuery extends PartnerGivingSelection {
   readonly sort?: { readonly field: PartnerSortField; readonly direction: PartnerSortDirection };
   readonly page?: { readonly index: number; readonly size?: number };
 }
-export type PartnerRosterRecord = Pick<PartnerRecord, "partnerId" | "kind" | "displayName" | "tags" | "favourite" | "stage" | "audience" | "revision">;
+export type PartnerRosterRecord = Pick<StoredPartnerRecord, "partnerId" | "kind" | "displayName" | "tags" | "favourite" | "stage" | "audience" | "revision"> & { readonly archived: boolean };
 export type PartnerRosterGivingScope = { readonly periodLabel: string; readonly coverage: Coverage; readonly currencies: readonly string[] };
 export type PartnerRosterRow = { readonly partner: PartnerRosterRecord; readonly contactMethodKinds: readonly ContactMethodKind[]; readonly initiativeIds: readonly string[] } & { readonly referralStatus: PartnerReferralStatus | null; readonly openTaskCount: number; readonly overdueTaskCount: number } & {
   readonly undatedTaskCount: number;
@@ -388,7 +392,7 @@ function rosterFactsOf(job: string, context: PartnerReadContext, selection: Part
     },
   };
 }
-type FacetDeclaration = { readonly id: PartnerFacetId; readonly multi: boolean; readonly requires: "roster" | "giving" } & { readonly values: (facts: RosterFacts) => FacetOutcome } & { readonly matches: (record: PartnerRecord, value: string, facts: RosterFacts) => boolean };
+type FacetDeclaration = { readonly id: PartnerFacetId; readonly multi: boolean; readonly requires: "roster" | "giving" } & { readonly values: (facts: RosterFacts) => FacetOutcome } & { readonly matches: (record: StoredPartnerRecord, value: string, facts: RosterFacts) => boolean };
 const closedValues =
   (labels: Readonly<Record<string, string>>) =>
   (ids: readonly string[]): FacetOutcome => ({ kind: "values", values: ids.map((id) => ({ id, label: labels[id] ?? id })) });
@@ -418,9 +422,15 @@ function flatMapPartners(records: readonly PartnerRecord[], pick: (record: Partn
   const counts = taskFactsOrNone(facts, record.partnerId);
   return value === "open" ? counts.open > 0 : value === "overdue" ? counts.overdue > 0 : value === "no-date" ? counts.undated > 0 : false;
 }
+/** The values the preparation-state facet offers: every audience the authorised records are stated at, then the archived value when at least one of those records is archived. */
+const preparationStateValues = (facts: RosterFacts): readonly string[] => [...distinctInOrder(facts.partners, (record) => record.audience), ...(facts.partners.some(isArchivedPreparation) ? [ARCHIVED_PREPARATION] : [])];
+/** Whether one record carries the preparation state a `preparation-state` filter names: an archived preparation answers the archived value alone, so the audience value it left counts nothing that the working list does not hold. */
+function preparationStateMatches(record: StoredPartnerRecord, value: string): boolean {
+  return value === ARCHIVED_PREPARATION ? isArchivedPreparation(record) : record.audience === value && !isArchivedPreparation(record);
+}
 const PARTNER_FACET_DECLARATIONS: readonly FacetDeclaration[] = [
   { id: "contact-type", multi: true, requires: "roster", values: (facts) => closedValues(CONTACT_TYPE_LABELS)(distinctInOrder(facts.partners, (r) => r.kind)), matches: (record, value) => record.kind === value },
-  { id: "preparation-state", multi: false, requires: "roster", values: (facts) => closedValues(PREPARATION_LABELS)(distinctInOrder(facts.partners, (r) => r.audience)), matches: (record, value) => record.audience === value },
+  { id: "preparation-state", multi: false, requires: "roster", values: (facts) => closedValues(PREPARATION_LABELS)(preparationStateValues(facts)), matches: preparationStateMatches },
   { id: "tag", multi: true, requires: "roster", values: (facts) => openValues(flatMapPartners(facts.partners, (record) => record.tags)), matches: (record, value) => record.tags.includes(value) },
   { id: "favourite", multi: false, requires: "roster", values: () => closedValues(FAVOURITE_LABELS)(["favourite", "not-favourite"]), matches: (record, value) => record.favourite === (value === "favourite") },
   { id: "relationship-label", multi: true, requires: "roster", values: (facts) => openValues(facts.partners.map((record) => record.stage).filter((stage): stage is string => stage !== null)), matches: (record, value) => record.stage === value },
@@ -436,8 +446,12 @@ const PARTNER_FACET_DECLARATIONS: readonly FacetDeclaration[] = [
 ];
 const facetOutcomeOf = (declaration: FacetDeclaration, facts: RosterFacts): FacetOutcome => (declaration.requires === "giving" && facts.giving.kind === "unavailable" ? { kind: "unavailable", reason: facts.giving.reason } : declaration.values(facts));
 function countOf(declaration: FacetDeclaration, value: string, facts: RosterFacts): number {
+  // Each count describes the working list: an archived preparation is counted by the archived value that names it and by no other value, so no count offers a record the list does not hold.
   let count = 0;
-  for (const record of facts.partners) if (declaration.matches(record, value, facts)) count += 1;
+  for (const record of facts.partners) {
+    if (isArchivedPreparation(record) && value !== ARCHIVED_PREPARATION) continue;
+    if (declaration.matches(record, value, facts)) count += 1;
+  }
   return count;
 }
 function buildFacets(facts: RosterFacts): readonly PartnerFacet[] {
@@ -511,7 +525,7 @@ function appliedSelectionOf(facts: RosterFacts, applied: PartnerRosterQuery["app
   }
   return { filters, applied: echoed, unapplied };
 }
-function matchesFilters(record: PartnerRecord, filters: readonly AppliedFacet[], facts: RosterFacts): boolean {
+function matchesFilters(record: StoredPartnerRecord, filters: readonly AppliedFacet[], facts: RosterFacts): boolean {
   for (const filter of filters) if (!filter.values.some((value) => filter.declaration.matches(record, value, facts))) return false;
   return true;
 }
@@ -591,7 +605,7 @@ function rowOf(record: StoredPartnerRecord, facts: RosterFacts, position: number
   valueStates[`${prefix}.undatedTaskCount`] = countState(tasks.undated);
   valueStates[`${prefix}.lastActivityOn`] = dayState(lastActivityOn);
   const row: PartnerRosterRow = {
-    partner: project(record, ["partnerId", "kind", "displayName", "tags", "favourite", "stage", "audience", "revision"]),
+    partner: { ...project(record, ["partnerId", "kind", "displayName", "tags", "favourite", "stage", "audience", "revision"]), archived: record.archived === true },
     contactMethodKinds: contactKindsOf(record),
     initiativeIds: facts.initiativeIds.get(record.partnerId) ?? [],
     referralStatus: facts.referralStatus.get(record.partnerId) ?? null,
@@ -619,16 +633,20 @@ export async function findPartners(query: PartnerRosterQuery = {}, source?: Sess
   const searchText = (query.search ?? "").trim();
   const term = searchText.toLowerCase();
   const matched: PartnerRecord[] = [];
+  // The roster is a working list, so an archived preparation is left out of it unless the applied selection asks for the archived value by name: that value is the only way the archived record stays reachable, which is what keeps its Restore action reachable from the roster.
+  const includesArchived = selection.applied["preparation-state"]?.includes(ARCHIVED_PREPARATION) === true;
   for (const record of facts.partners) {
+    if (isArchivedPreparation(record) && !includesArchived) continue;
     if (!matchesFilters(record, selection.filters, facts)) continue;
     if (term !== "" && !matchesSearch(record, term)) continue;
     matched.push(record);
   }
   matched.sort((left, right) => compareRecords(left, right, query, facts));
   const size = clampPageSize(query.page?.size);
-  const requested = query.page?.index ?? 0;
-  const index = Number.isSafeInteger(requested) && requested > 0 ? requested : 0;
   const totalPages = Math.max(1, Math.ceil(matched.length / size));
+  // The page window describes the rows this read returns, so a requested page past the last one the result holds is served as that last page rather than echoed beside a smaller totalPages, which would state a page the answer does not have. The total stays the whole result's count: an offset that moved it would let a caller measure what it cannot see.
+  const requested = query.page?.index ?? 0;
+  const index = Number.isSafeInteger(requested) && requested > 0 ? Math.min(requested, totalPages - 1) : 0;
   const window = matched.slice(index * size, index * size + size);
   const valueStates: Record<string, RecordedValueState> = { total: countState(matched.length) };
   const rows = window.map((record, position) => rowOf(record, facts, position, valueStates));
@@ -840,9 +858,10 @@ export async function readInteractions(query: PartnerInteractionsQuery = {}, sou
   }
   visible.sort(compareInteractions);
   const size = clampPageSize(query.page?.size);
-  const requested = query.page?.index ?? 0;
-  const index = Number.isSafeInteger(requested) && requested > 0 ? requested : 0;
   const totalPages = Math.max(1, Math.ceil(visible.length / size));
+  // The page window describes the activity this read returns, so a requested page past the last one the activity holds is served as that last page rather than echoed beside a smaller totalPages, which would state a page the answer does not have. The total stays the whole record's count: an offset that moved it would let a caller measure activity it cannot see.
+  const requested = query.page?.index ?? 0;
+  const index = Number.isSafeInteger(requested) && requested > 0 ? Math.min(requested, totalPages - 1) : 0;
   const window = visible.slice(index * size, index * size + size);
   const valueStates: Record<string, RecordedValueState> = { total: countState(visible.length) };
   window.forEach((interaction, position) => {

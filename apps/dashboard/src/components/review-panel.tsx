@@ -1,5 +1,5 @@
 "use client";
-import { useId, useState, type ReactElement } from "react";
+import { useEffect, useId, useRef, useState, type ReactElement } from "react";
 import ActionReview from "@/components/action-review";
 import { LIFECYCLE_STATUS, type ContentLifecycleState, type LifecycleSpec } from "@/components/draft-status";
 import { FormField, FormFieldGroup } from "@/components/form-field";
@@ -245,10 +245,41 @@ function PublishIntent({ notifyRequestedByAuthor, protectedNoticeScope, level }:
 function CandidatePreview({ candidate, level }: { readonly candidate: CandidateView; readonly level: SubHeadingLevel }): ReactElement {
   const titleId = useId();
   const mediaLabelId = useId();
+  // Whether the frame's own window reports focus: a browser that hands keyboard focus to the frame's document without matching `:focus-within` on the frame element reports it only there, so this state says what the utilities below cannot.
+  const [frameFocused, setFrameFocused] = useState(false);
+  // The wrapper is what shows that the frame holds focus and what a focus scrolls: a focused frame draws no indicator of its own, and an outline on the frame would be clipped by this wrapper's `overflow-hidden`, so the ring is drawn on the wrapper where it stays visible. Its scroll margin keeps that ring clear of the viewport edge, so a frame scrolled to the bottom of the window still shows the whole indicator.
+  const frameWrapper = useRef<HTMLDivElement | null>(null);
+  const frameElement = useRef<HTMLIFrameElement | null>(null);
   const Heading = SUB_HEADING_TAG[level];
   const audience = AUDIENCE_WORDS[candidate.audience];
   const frameTitle = `Frozen revision of the ${audience.label} edition in ${candidate.locale.tag}`;
   const frameDocument = previewDocumentOf(candidate.renderedHtml, candidate.locale, frameTitle);
+  // A keyboard Tab moves focus into the frame's own document, where the browser fires no focus event on the frame element and matches no `:focus` rule on it, so the frame's window is the one thing that reports the focus a reader gave it. The frame's document is same-origin, so its events are readable here, and they are re-attached whenever the frozen revision reloads.
+  useEffect(() => {
+    const frame = frameElement.current;
+    if (frame === null) return;
+    const reveal = (): void => {
+      setFrameFocused(true);
+      frameWrapper.current?.scrollIntoView({ block: "nearest" }); // The wrapper is scrolled rather than the frame, so the whole frame and its ring arrive clear of the sticky shell, which the scroll padding every element carries already allows for (WCAG 2.4.11 Focus Not Obscured).
+    };
+    const conceal = (): void => setFrameFocused(false);
+    let content: Window | null = null;
+    const watchContent = (): void => {
+      content?.removeEventListener("focus", reveal);
+      content?.removeEventListener("blur", conceal);
+      content = frame.contentWindow;
+      content?.addEventListener("focus", reveal);
+      content?.addEventListener("blur", conceal);
+      setFrameFocused(frame.contentDocument?.hasFocus() === true); // A reloaded revision holds no focus unless the browser carried focus in the frame across the reload.
+    };
+    frame.addEventListener("load", watchContent);
+    watchContent();
+    return () => {
+      frame.removeEventListener("load", watchContent);
+      content?.removeEventListener("focus", reveal);
+      content?.removeEventListener("blur", conceal);
+    };
+  }, [frameDocument]);
   return (
     <section aria-labelledby={titleId} data-slot="review-preview" className="flex min-w-0 flex-col gap-3">
       <Heading {...{ id: titleId, className: cn(PART_HEADING_SCALE[level], "text-pretty") }}>{COPY.previewHeading}</Heading>
@@ -256,8 +287,8 @@ function CandidatePreview({ candidate, level }: { readonly candidate: CandidateV
         <p className="text-sm text-muted-foreground text-pretty">{COPY.noRenderedBodyNotice}</p>
       ) : (
         <DirectionProvider direction={candidate.locale.direction}>
-          <div dir={candidate.locale.direction} className="min-w-0 overflow-hidden rounded-lg border border-border">
-            <iframe title={frameTitle} srcDoc={frameDocument} sandbox="allow-same-origin" referrerPolicy="no-referrer" data-slot="review-candidate-frame" className="block h-96 max-h-[70svh] min-h-64 w-full border-0 bg-background" />
+          <div ref={frameWrapper} dir={candidate.locale.direction} className={cn("min-w-0 scroll-m-4 overflow-hidden rounded-lg border border-border focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring", frameFocused && "border-ring ring-[3px] ring-ring")}>
+            <iframe ref={frameElement} title={frameTitle} srcDoc={frameDocument} sandbox="allow-same-origin" referrerPolicy="no-referrer" data-slot="review-candidate-frame" className="block h-96 max-h-[70svh] min-h-64 w-full border-0 bg-background" />
           </div>
         </DirectionProvider>
       )}

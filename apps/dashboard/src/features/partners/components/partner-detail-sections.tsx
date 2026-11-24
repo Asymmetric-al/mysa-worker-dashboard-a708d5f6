@@ -38,7 +38,15 @@ export type PartnerSupportHistory = {
   readonly ledgerHref?: string;
   readonly outage?: { readonly system: string; readonly reference: string; readonly guidance: string };
 };
-export type PartnerDetailData = { readonly partner: PartnerRecord; readonly secondaryName?: string; readonly avatarSrc?: string; readonly relationshipContext: readonly PartnerRelationship[]; readonly openTasks: readonly TaskRecord[]; readonly supportHistory?: PartnerSupportHistory };
+export type PartnerDetailData = {
+  readonly partner: PartnerRecord;
+  readonly secondaryName?: string;
+  readonly avatarSrc?: string;
+  readonly relationshipContext: readonly PartnerRelationship[];
+  readonly openTasks: readonly TaskRecord[];
+  readonly supportHistory?: PartnerSupportHistory;
+  readonly referralSourceZone: string;
+};
 export type PartnerPrivateData = { readonly notes: readonly PrivateNoteRecord[]; readonly preparation?: { readonly partnerId: string; readonly archived: boolean } };
 export type PartnerDetailActions = { readonly bar?: ReactNode; readonly status?: ReactNode; readonly privateNote?: ReactNode; readonly interaction?: ReactNode; readonly preparation?: ReactNode; readonly filing?: ReactNode };
 export type PartnerDetailLinks = { readonly logInteraction?: string; readonly createTask?: string; readonly addPreparation?: string };

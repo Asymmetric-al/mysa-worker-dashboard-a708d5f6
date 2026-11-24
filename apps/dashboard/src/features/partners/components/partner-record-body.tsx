@@ -1,8 +1,9 @@
 "use client";
-/** One partner record's detail body, composed once for every presentation it appears in: the record's own route states it as the page, and the record opened beside the roster renders it in the panel and in the phone sheet. The sections, the action row, the change surfaces and the empty states' destinations are all derived here from the facts the record's read published, so the three presentations offer the same jobs against the same revision instead of a second copy of any of them. */
-import type { ReactElement } from "react";
+/** One partner record's detail body, composed once for every presentation it appears in: the record's own route states it as the page, and the record opened beside the roster renders it in the panel and in the phone sheet. The sections, the action row, the change surfaces and the empty states' destinations are all derived here from the facts the record's read published, so the three presentations offer the same jobs against the same revision instead of a second copy of any of them. The one job this family cannot render itself — recording the introduction that brought the person here — is composed by the app layer and mounted here, so it is offered in the same three presentations too. */
+import { createContext, useContext, type ReactElement, type ReactNode } from "react";
 import type { ReviewHeadingLevel } from "@/components/action-review";
 import type { RecordDetailBreadcrumbEntry, RecordDetailLayout } from "@/components/record-detail";
+import type { SourceReference } from "@/lib/ids";
 import type { InteractionRecord, PartnerKind, ReadAction, Scope } from "@/modules/data-service/envelope";
 import PartnerDetailSections, { type PartnerDetailActions, type PartnerDetailData, type PartnerDetailLinks, type PartnerPrivateData, type PartnerReadResult } from "./partner-detail-sections";
 import { PartnerFilingSurface, PartnerPreparationSurface, PartnerRecordActionBar, PARTNER_RECORD_PATHS } from "./partner-record-actions";
@@ -19,6 +20,11 @@ export type PartnerRecordFacts = {
   readonly tagSuggestions: readonly string[];
   readonly preparationArchived?: boolean;
 };
+/** The facts the record-introduction section states a change against, taken from the read this body already received: the section is composed by the app layer, because the referrals feature that renders it is never imported by this one, so it reads them from the context below instead of issuing a second read of the same record. */
+export type PartnerIntroductionFacts = { readonly scope: Scope; readonly partnerId: string; readonly expectedRevision: string; readonly sourceReference: SourceReference; readonly sourceZone: string; readonly headingLevel: 2 | 3 };
+export const PartnerIntroductionFactsContext = createContext<PartnerIntroductionFacts | null>(null);
+/** The introduction facts of the record body this section is rendered in, and `null` where no record body states them, so a section composed outside one renders nothing rather than a form with invented facts. */
+export const usePartnerIntroductionFacts = (): PartnerIntroductionFacts | null => useContext(PartnerIntroductionFactsContext);
 export type PartnerRecordBodyProps = {
   readonly partner: PartnerReadResult<PartnerDetailData>;
   readonly privatePreparation?: PartnerReadResult<PartnerPrivateData>;
@@ -28,6 +34,8 @@ export type PartnerRecordBodyProps = {
   readonly breadcrumb?: readonly RecordDetailBreadcrumbEntry[];
   /** The facts the record's own actions are derived from: a record whose read has not answered states none, so no action is offered against a revision this body has not read. */
   readonly facts?: PartnerRecordFacts;
+  /** The record-introduction section, composed by the app layer because the feature that renders it sits beside this one rather than below it: this body mounts it against the facts the read published, so the record's route, the panel beside the list and the phone sheet all offer the same job. */
+  readonly introduction?: ReactNode;
 };
 const admitted = (actions: readonly ReadAction[], name: string): boolean => actions.some((action) => action.name === name && action.available);
 /** The whole of the body's action surface, derived from the one facts record so no presentation states an action, a destination or a revision of its own. */
@@ -49,7 +57,21 @@ function surfacesOf(facts: PartnerRecordFacts | undefined, headings: SurfaceHead
   const links: PartnerDetailLinks = { ...(logInteractionAdmitted ? { logInteraction: PARTNER_RECORD_PATHS.newInteraction(partnerId) } : {}), ...(createTaskAdmitted ? { createTask: PARTNER_RECORD_PATHS.work(partnerId) } : {}), addPreparation: PARTNER_RECORD_PATHS.roster };
   return { actions, links };
 }
-export default function PartnerRecordBody({ partner, privatePreparation, interactions, layout, locale, breadcrumb, facts }: PartnerRecordBodyProps): ReactElement {
+/** The facts the introduction section states its change against, taken from the read this body received: the record's identity, the revision it was read at, the source that answered and the zone its introduction is read in, with the level the section's own heading lands at — the same step below the record's name that `SURFACE_HEADINGS` takes for the note and filing surfaces. */
+function introductionFactsOf(partner: PartnerReadResult<PartnerDetailData>, layout: RecordDetailLayout): PartnerIntroductionFacts | undefined {
+  if (partner.kind !== "read") return undefined;
+  const { scope, revision, source, data } = partner.envelope;
+  return { scope, partnerId: data.partner.partnerId, expectedRevision: revision, sourceReference: source, sourceZone: data.referralSourceZone, headingLevel: layout === "page" ? 2 : 3 };
+}
+export default function PartnerRecordBody({ partner, privatePreparation, interactions, layout, locale, breadcrumb, facts, introduction }: PartnerRecordBodyProps): ReactElement {
   const { actions, links } = surfacesOf(facts, SURFACE_HEADINGS[layout]);
-  return <PartnerDetailSections partner={partner} layout={layout} locale={locale} {...(breadcrumb === undefined ? {} : { breadcrumb })} links={links} actions={actions} {...(interactions === undefined ? {} : { interactions })} {...(privatePreparation === undefined ? {} : { privatePreparation })} />;
+  // An introduction is recorded against a record only where the read admits that action, so the section is mounted here and nowhere else: its facts are the same envelope's, and the app layer's composition of it renders nothing when this body states none.
+  const introductionFacts = introductionFactsOf(partner, layout);
+  const introductionSection = introduction !== undefined && introductionFacts !== undefined && facts !== undefined && admitted(facts.actions, "recordIntroduction") ? <PartnerIntroductionFactsContext.Provider value={introductionFacts}>{introduction}</PartnerIntroductionFactsContext.Provider> : null;
+  return (
+    <div className="flex min-w-0 flex-col gap-6 text-start">
+      <PartnerDetailSections partner={partner} layout={layout} locale={locale} {...(breadcrumb === undefined ? {} : { breadcrumb })} links={links} actions={actions} {...(interactions === undefined ? {} : { interactions })} {...(privatePreparation === undefined ? {} : { privatePreparation })} />
+      {introductionSection}
+    </div>
+  );
 }

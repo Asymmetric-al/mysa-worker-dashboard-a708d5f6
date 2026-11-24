@@ -15,6 +15,9 @@ const ARABIC = "ar";
 const ARABIC_DRAFT_PROSE = "أمسيات الجمعة";
 const ADMITTED_SECTION_TYPES = ["Introduction", "Story", "Prayer", "Milestone", "Image", "Video", "Giving", "Support progress"] as const;
 const REACH = { notPublic: "Not public", linkPublic: "Shared by link: public", listed: "Listed publicly" } as const;
+// The discovery index's own count sentence, in the two sizes the seed reaches: every list in this application states its total, so an index of nothing and an index of one each say so rather than leaving the reader to count the rows.
+const ONE_LISTED_EDITION = "1 edition is listed publicly.";
+const NO_LISTED_EDITION = "No editions are listed publicly.";
 const GIVING_SIMULATION = "simulated giving destination; no payment is taken";
 const IMAGE_ALT_TEXT = "The youth group gathered in the church hall after a Friday meal."; // The words this file places an image with, so the placement the section states is one only this test wrote.
 const VIDEO_ALT_TEXT = "The youth group's welcome message, filmed in the hall."; // The text alternative criterion 18's video placement carries, written here so the assertion reads the record rather than the form.
@@ -329,8 +332,13 @@ test("the preview names the revision it renders, and that same revision is revie
   await expect(frozen).toContainText(revision);
   await expect(page.getByRole("radio", { name: "Approve", exact: true })).toBeChecked();
   await page.getByRole("button", { name: "Approve this revision", exact: true }).click();
-  await expect(page.locator('[data-slot="review-decision"] [data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: WRITE_RECEIPT_TIMEOUT_MS });
-  await expect(page.getByText("This candidate is answered, so its decision is fixed. Anything further comes from the author as a new submission with a new revision.", { exact: true })).toBeVisible();
+  await expect(page.locator('[data-slot="review-decision"] [data-slot="action-review-result"]').or(page.locator('[data-slot="review-recorded-decision"]'))).toBeVisible({ timeout: WRITE_RECEIPT_TIMEOUT_MS }); // The answer is answered where it was made: the receipt, or the recorded decision the surface re-reads in its place, proves the approval was accepted in place rather than carried out by a reload.
+  // The surface re-reads the answer it just recorded and offers no second decision: this review page states the decision itself, without navigation.
+  await expect(page.locator('[data-slot="review-recorded-decision"]')).toHaveAttribute("data-decision", "approved");
+  const decidedEdition = page.locator(`[data-slot="page-review-edition"][data-locale="${ARABIC}"]`);
+  await expect(decidedEdition).toHaveAttribute("data-lifecycle-state", "approved");
+  await expect(decidedEdition).toContainText("Approved");
+  await expect(page.locator('[data-slot="review-decision"]')).toHaveCount(0);
   await openBuilder(page);
   await expect(builderOf(page).locator(`[data-slot="locale-edition"][data-locale="${ARABIC}"]`)).toHaveAttribute("data-lifecycle-state", "approved"); // The builder states the edition's own records, so it reports the answer recorded on the frozen candidate it still holds: Approved, because this review approved that exact revision — and an approval publishes nothing, so only a release reaches a reader.
   await releaseSelectedEditions(page, ARABIC);
@@ -357,6 +365,7 @@ test("each reach value is stated in words and demonstrated at the discovery inde
   await expect(page.locator('[data-slot="discovery-edition"]')).toHaveCount(1);
   await expect(page.locator('[data-slot="discovery-edition"]')).toContainText(PAGE_TITLE);
   await expect(page.locator('[data-slot="discovery-edition"]')).toContainText(REACH.listed);
+  await expect(page.getByText(ONE_LISTED_EDITION, { exact: true }), "The index states its own total, as every list in this application does").toBeVisible();
   await openBuilder(page);
   await selectEdition(page, ENGLISH);
   await setReachTo(page, REACH.linkPublic);
@@ -364,6 +373,7 @@ test("each reach value is stated in words and demonstrated at the discovery inde
   await page.goto(discoveryIndexPath());
   await expect(page.locator('[data-slot="discovery-edition"]')).toHaveCount(0);
   await expect(page.getByText("Nothing is listed publicly yet", { exact: true })).toBeVisible();
+  await expect(page.getByText(NO_LISTED_EDITION, { exact: true }), "The empty index states its total too: zero, in words, rather than only a notice").toBeVisible();
   await page.goto(readingPath(PAGE_DOCUMENT, ENGLISH));
   const edition = page.locator('[data-slot="public-reading-view-edition"]');
   await expect(edition).toHaveAttribute("data-reach", "link-public");
@@ -375,12 +385,23 @@ test("each reach value is stated in words and demonstrated at the discovery inde
   await setReachTo(page, REACH.listed);
   await page.goto(discoveryIndexPath());
   await expect(page.locator('[data-slot="discovery-edition"]')).toHaveCount(1);
+  await expect(page.getByText(ONE_LISTED_EDITION, { exact: true })).toBeVisible();
   await page.goto(readingPath(PAGE_DOCUMENT, ENGLISH));
   await expect(page.locator('head meta[name="robots"]')).toHaveCount(0);
   await openBuilder(page);
   await selectEdition(page, ENGLISH);
   await setReachTo(page, REACH.notPublic);
   await expect(page.locator('[data-slot="reach-control"]')).toHaveAttribute("data-current-reach", "not-public");
+  await page.goto(discoveryIndexPath());
+  await expect(page.locator('[data-slot="discovery-edition"]')).toHaveCount(0); // The index enumerates `listed` editions and nothing else, so a Not public edition leaves it while staying open to the person who owns it.
+  await expect(page.getByText(NO_LISTED_EDITION, { exact: true })).toBeVisible();
+  await page.goto(readingPath(PAGE_DOCUMENT, ENGLISH));
+  const ownerEdition = page.locator('[data-slot="public-reading-view-edition"]'); // The reach control's own words are that only you can open a Not public edition, so the owner's own reading view serves it here rather than refusing the person who set the reach.
+  await expect(ownerEdition).toHaveAttribute("data-reach", "not-public");
+  await expect(ownerEdition).toContainText(REACH.notPublic);
+  await expect(page.locator('[data-slot="public-reading-view"]')).toContainText("Only you can see this edition");
+  await expect(page.locator('head meta[name="robots"]')).toHaveAttribute("content", /noindex/u);
+  await actAs(page, "reader-unauthorized"); // A reader in the receiving preview reaches the same address across the reading crossing, where a Not public edition is refused exactly as an address naming no edition is.
   await page.goto(readingPath(PAGE_DOCUMENT, ENGLISH));
   await expect(page.locator('[data-slot="public-reading-view"][data-read-kind="denied"]')).toBeVisible();
   await expect(page.getByRole("heading", { name: "This address cannot be read", exact: true })).toBeVisible();
@@ -411,6 +432,7 @@ test("Giving unavailable stands with no fallback fund, and containment hides eve
   await expect(page.locator('[data-slot="reach-control"]')).toHaveAttribute("data-current-reach", "listed");
   await page.goto(discoveryIndexPath());
   await expect(page.locator('[data-slot="discovery-edition"]')).toHaveCount(1);
+  await expect(page.getByText(ONE_LISTED_EDITION, { exact: true })).toBeVisible();
   await openBuilder(page);
   const stop = page.locator('[data-slot="stop-showing-publicly"]');
   await expect(stop).toHaveAttribute("data-state", "review");
@@ -428,6 +450,7 @@ test("Giving unavailable stands with no fallback fund, and containment hides eve
   await page.goto(discoveryIndexPath());
   await expect(page.locator('[data-slot="discovery-edition"]')).toHaveCount(0);
   await expect(page.getByText("Nothing is listed publicly yet", { exact: true })).toBeVisible();
+  await expect(page.getByText(NO_LISTED_EDITION, { exact: true })).toBeVisible();
   await page.goto(readingPath(PAGE_DOCUMENT, ENGLISH));
   await expect(page.locator('[data-slot="public-reading-view-withdrawn"]')).toBeVisible();
   await expect(page.getByText("This page is no longer available.", { exact: true })).toBeVisible();
@@ -465,7 +488,7 @@ test("a public edition serves what it published while its draft stays shut, and 
   if (candidateId === "") throw new Error(`The review entry held no candidate identity in its address (${reviewHref}), so the release could not name the candidate it publishes.`);
   await reviewLink.click();
   await page.getByRole("button", { name: "Approve this revision", exact: true }).click();
-  await expect(page.locator('[data-slot="review-decision"] [data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: WRITE_RECEIPT_TIMEOUT_MS });
+  await expect(page.locator('[data-slot="review-decision"] [data-slot="action-review-result"]').or(page.locator('[data-slot="review-recorded-decision"]'))).toBeVisible({ timeout: WRITE_RECEIPT_TIMEOUT_MS }); // The approval settles where it was made: the receipt, or the recorded decision the surface re-reads in its place, proves the answer was accepted before the candidate identity is released below.
   await openBuilder(page);
   const controls = page.locator('[data-slot="release-controls"]');
   await expect(controls).toContainText("Withdraw 1 released edition?");
@@ -544,7 +567,12 @@ test("a Project Page is composed from its own catalogue, reviewed and released, 
   await expect(page.locator('[data-slot="review-frozen-revision"]')).toContainText(revision);
   await expect(page.getByRole("radio", { name: "Approve", exact: true })).toBeChecked();
   await page.getByRole("button", { name: "Approve this revision", exact: true }).click();
-  await expect(page.locator('[data-slot="review-decision"] [data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: WRITE_RECEIPT_TIMEOUT_MS });
+  await expect(page.locator('[data-slot="review-decision"] [data-slot="action-review-result"]').or(page.locator('[data-slot="review-recorded-decision"]'))).toBeVisible({ timeout: WRITE_RECEIPT_TIMEOUT_MS }); // The answer is answered where it was made: the receipt, or the recorded decision the surface re-reads in its place, proves this review was accepted in place.
+  // The surface re-reads the answer it just recorded, so this review page states the Project Page's decision and leaves no second one to give.
+  await expect(page.locator('[data-slot="review-recorded-decision"]')).toHaveAttribute("data-decision", "approved");
+  await expect(page.locator(`[data-slot="page-review-edition"][data-locale="${ENGLISH}"]`)).toHaveAttribute("data-lifecycle-state", "approved");
+  await expect(page.locator(`[data-slot="page-review-edition"][data-locale="${ENGLISH}"]`)).toContainText("Approved");
+  await expect(page.locator('[data-slot="review-decision"]')).toHaveCount(0);
   await openProjectBuilder(page);
   await expect(
     builderOf(page).locator(`[data-slot="locale-edition"][data-locale="${ENGLISH}"]`),

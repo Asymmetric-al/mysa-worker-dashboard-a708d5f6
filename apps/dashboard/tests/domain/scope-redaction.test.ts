@@ -169,10 +169,17 @@ it("a search, a sort and a page cannot become a disclosure oracle: reports the w
     "the second worker's roster must return no record of the first scope",
   ).toEqual([]);
 });
-it("a search, a sort and a page cannot become a disclosure oracle: answers a page beyond the authorised set with an empty page and an unchanged total", async () => {
+it("a search, a sort and a page cannot become a disclosure oracle: answers a page beyond the authorised set with the last page it holds and an unchanged total", async () => {
   const roster = expectEnvelope(await reads.partners.findPartners({}, sourceOf(SECOND_WORKER)), "the second worker's roster");
+  const last = expectEnvelope(await reads.partners.findPartners({ page: { index: roster.data.page.totalPages - 1 } }, sourceOf(SECOND_WORKER)), "the last page the authorised set holds");
   const beyond = expectEnvelope(await reads.partners.findPartners({ page: { index: 6 } }, sourceOf(SECOND_WORKER)), "a page beyond the authorised set");
-  expect([beyond.data.rows, beyond.data.total]).toEqual([[], roster.data.total]); // A page size or an offset that changed the total would let a caller measure what it cannot see.
+  // The unchanged total is the property that matters: an offset must not let a caller measure what it cannot see, so a page beyond the last one the authorised result holds answers that last page rather than a page index the result does not have beside no rows.
+  expect([beyond.data.page.index, beyond.data.total, beyond.data.rows.map((row) => row.partner.partnerId)]).toEqual([last.data.page.index, roster.data.total, last.data.rows.map((row) => row.partner.partnerId)]);
+  const authorisedIds = new Set(stateOf(SECOND_WORKER).partners.map((record) => record.partnerId));
+  expect(
+    beyond.data.rows.filter((row) => !authorisedIds.has(row.partner.partnerId)),
+    "the last page a page beyond it answers must hold no record outside the resolved scope",
+  ).toEqual([]);
 });
 it("a search, a sort and a page cannot become a disclosure oracle: keeps every sorted row inside the resolved scope", async () => {
   const roster = expectEnvelope(await reads.partners.findPartners({}, sourceOf(SECOND_WORKER)), "the second worker's roster");
@@ -255,6 +262,38 @@ it("a private record stays private: keeps a private preparation record author-on
   expect(authorPerson.data.notes.map((note) => note.body)).toContain(notedPerson.body);
   expect(expectDenial(await reads.partners.readPrivatePreparation({ partnerId: preparation.partnerId }, sourceOf(SECOND_WORKER)), "another ministry reading a private preparation").reasonCode).toBe("no-permission");
   expect(expectDenial(await reads.partners.readPrivatePreparation({ partnerId: preparation.partnerId }, sourceOf(READER)), "an unauthorized reader reading a private preparation").reasonCode).toBe("not-admitted");
+});
+it("a private record stays private: an archived preparation leaves the working roster, is named by its own facet value and returns on restore", async () => {
+  const preparation = partnerOfKind("private-preparation");
+  const rosterBefore = expectEnvelope(await reads.partners.findPartners({}, sourceOf(WORKER)), "the worker's roster before an archive");
+  // The seeded private preparation belongs to the working roster to begin with, so its absence below is the archive's own effect rather than a record the read never held.
+  expect(rosterBefore.data.rows.map((row) => row.partner.partnerId)).toContain(preparation.partnerId);
+  const own = expectEnvelope(await reads.partners.readPartner(preparation.partnerId, {}, sourceOf(WORKER)), "the preparation record the archive acts on");
+  const archive = await mutations.partnerPreparation.archivePreparation({ operationId: randomUUID(), scope: selectedScopeOf(WORKER), expectedRevision: own.revision, payload: { partnerId: preparation.partnerId } }, sourceOf(WORKER));
+  expectOutcome(archive, "accepted");
+  // An archive takes the record out of the working list: the whole-result total falls by one, no row names it, and no row is left stating the archived state the list omits.
+  const archived = expectEnvelope(await reads.partners.findPartners({}, sourceOf(WORKER)), "the worker's roster after the archive");
+  expect(archived.data.total).toBe(rosterBefore.data.total - 1);
+  expect(archived.data.rows.map((row) => row.partner.partnerId)).not.toContain(preparation.partnerId);
+  expect(archived.data.rows.some((row) => row.partner.archived)).toBe(false);
+  const preparationFacet = firstWhere(archived.data.facets, "id", "preparation-state", "the preparation-state facet of the archived roster");
+  const optionOf = (value: string) =>
+    required(
+      preparationFacet.options.find((option) => option.id === value),
+      `the preparation-state "${value}" option`,
+    );
+  // The facet states where the record went rather than counting it in place: the archived value names it and counts one, while the audience it left counts nothing the list cannot show.
+  expect([optionOf("archived").label, optionOf("archived").count, optionOf("private").count]).toEqual(["Archived record", 1, 0]);
+  // Selecting that value is the one way back to the archived record, and it returns exactly that record, which is what keeps the record's Restore action reachable from the roster.
+  const selected = expectEnvelope(await reads.partners.findPartners({ applied: { "preparation-state": ["archived"] } }, sourceOf(WORKER)), "the roster narrowed to the archived value");
+  expect([selected.data.total, selected.data.rows.map((row) => row.partner.partnerId), selected.data.unappliedFacets]).toEqual([1, [preparation.partnerId], []]);
+  expect(first(selected.data.rows, "the archived row").partner.archived).toBe(true);
+  const archivedRecord = expectEnvelope(await reads.partners.readPartner(preparation.partnerId, {}, sourceOf(WORKER)), "the archived preparation read by its record");
+  const restore = await mutations.partnerPreparation.restorePreparation({ operationId: randomUUID(), scope: selectedScopeOf(WORKER), expectedRevision: archivedRecord.revision, payload: { partnerId: preparation.partnerId } }, sourceOf(WORKER));
+  expectOutcome(restore, "accepted");
+  // A restore puts the record back where the archive took it from, at the whole-result total it left, so nothing the archive omitted is lost to the working list.
+  const restored = expectEnvelope(await reads.partners.findPartners({}, sourceOf(WORKER)), "the worker's roster after the restore");
+  expect([restored.data.total, restored.data.rows.map((row) => row.partner.partnerId).includes(preparation.partnerId)]).toEqual([rosterBefore.data.total, true]);
 });
 it("a private record stays private: carries no private note and no private preparation into the export, and refuses the export where the caller holds no context", async () => {
   const preparation = partnerOfKind("private-preparation");
@@ -538,9 +577,8 @@ function protectedWorld(): SeededSessionDocuments {
     },
   };
 }
-/** The protected world with one release changed, which is all a withdrawal or a reach change sets on a release. */
-function worldWithRelease(releaseId: string, change: Partial<SeededSessionDocuments["state"]["releases"][number]>): SeededSessionDocuments {
-  const world = protectedWorld();
+/** One world with one release changed, which is all a withdrawal or a reach change sets on a release: the protected world unless a case hands in the world it reads. */
+function worldWithRelease(releaseId: string, change: Partial<SeededSessionDocuments["state"]["releases"][number]>, world: SeededSessionDocuments = protectedWorld()): SeededSessionDocuments {
   return { ...world, state: { ...world.state, releases: world.state.releases.map((release) => (release.releaseId === releaseId ? { ...release, ...change } : release)) } };
 }
 /** Asserts the caller is refused this address, and that the refusal is the one an address that was never recorded receives — the same members, the same reason and the same serialised answer — so a caller cannot tell a recorded asset from one that was never recorded. */
@@ -624,6 +662,26 @@ describe("every rendition re-authorises the request that asks for it", () => {
       expect([...lengths.keys()]).toEqual([...PROTECTED_SERVED_PURPOSES]);
     } finally {
       await resetSession(PUBLISHED_WORLD, protectedWorld()); // The listed edition goes back, so the published world is what it was once this case has finished.
+    }
+  });
+  it("serves a not-public page edition to the contributor whose own world holds it and refuses it to every reader at the reading crossing", async () => {
+    // The reach control's own words are that only the owner can open a Not public edition, and the reading view's are that the owner's own reading view shows it, so the direct address serves the world that holds the edition. A reader reaches it across the reading crossing instead, where a link is served for a `link-public` or `listed` edition alone, so an edition set to Not public is refused there exactly as an address that was never recorded is. Both worlds carry the change because the owner reads its own world while a reader reads the published one.
+    const page = { pageId: "doc-page-harbour-youth", locale: "en" };
+    await resetSession(WORKER, worldWithRelease(NOT_PUBLIC_RELEASE, { reach: "not-public" }, worldOf(WORKER)));
+    await resetSession(PUBLISHED_WORLD, worldWithRelease(NOT_PUBLIC_RELEASE, { reach: "not-public" }));
+    try {
+      const own = expectEnvelope(await reads.audience.readReceivingPage(page, sourceOf(WORKER)), "the contributing worker's own not-public edition");
+      expect([own.data.state, own.data.reach]).toEqual(["served", "not-public"]);
+      expect(required(own.data.html, "the served edition's rendered html").length).toBeGreaterThan(0); // The owner's reading view is the edition itself rather than a notice that names it.
+      for (const reader of [READER, SUPPORTER_READER]) {
+        const what = `"${reader}" asking the reading crossing for a not-public edition`;
+        const denial = expectDenial(await reads.audience.readReceivingPage(page, sourceOf(reader)), what);
+        expect([denial.outcome, denial.reasonCode]).toEqual(["denied", "no-permission"]);
+        expectNoDisclosure(denial, what);
+      }
+    } finally {
+      await resetSession(WORKER, worldOf(WORKER)); // The worker's own documents go back under this file's worker id, so no later case reads the reach this one set.
+      await resetSession(PUBLISHED_WORLD, protectedWorld()); // And the published world is the protected world again, which is the world every other case in this arm starts from.
     }
   });
 });

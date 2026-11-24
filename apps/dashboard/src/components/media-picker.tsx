@@ -16,6 +16,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
 import { countFormatOf } from "@/lib/count-format";
+import type { ContentDirection } from "@/modules/content/document";
 import { ADMITTED_IMAGE_FORMATS, ADMITTED_VIDEO_PROFILES, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH, mediaStateReason, type MediaPreparationState } from "@/modules/media/profile";
 export type MediaPickerKind = "image" | "video";
 export type MediaProbe = { readonly width?: number; readonly height?: number; readonly durationSeconds?: number };
@@ -30,6 +31,8 @@ export type MediaPickerProps = {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly placement?: MediaPlacement;
+  /** The direction of the edition these words are being written for, stated on the authored fields alone: the picker's own labels, descriptions and controls stay at the interface's direction. */
+  readonly direction?: ContentDirection;
   readonly onRegister: (input: MediaRegisterInput) => Promise<MediaPickerOutcome>;
   readonly onReplace?: (input: { readonly placementId: string } & MediaRegisterInput) => Promise<MediaPickerOutcome>;
   readonly onRemove?: (input: { readonly placementId: string }) => Promise<MediaPickerOutcome>;
@@ -151,7 +154,7 @@ const PHASE_DESCRIPTION: Readonly<Record<PickerPhase["name"], (kind: MediaPicker
   settled: () => "This is what the attempt answered. The record stays on screen until you close the picker.",
 };
 type FooterAction = { readonly label: string; readonly onClick?: () => void; readonly variant?: "default" | "destructive"; readonly disabled?: boolean; readonly className?: string };
-/** The single image and video picker and placement form. */ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, onReplace, onRemove, onSettled, className }: MediaPickerProps): ReactElement {
+/** The single image and video picker and placement form. */ export function MediaPicker({ kind, open, onOpenChange, placement, direction, onRegister, onReplace, onRemove, onSettled, className }: MediaPickerProps): ReactElement {
   const instructionsId = useId();
   const limitsId = useId();
   const altTextRef = useRef<HTMLTextAreaElement | null>(null);
@@ -470,20 +473,20 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
           {renderLimitWarnings()}
         </div>
         <FormField {...{ label: "Alternative text", name: "placement.altText", required: true, description: altTextDescription, error: errorsFor("placement.altText") }}>
-          {({ id, describedBy, invalid, required }) => <Textarea id={id} ref={altTextRef} rows={3} value={draft.altText} aria-describedby={describedBy} aria-invalid={invalid} aria-required={required} onChange={(event) => update("altText", event.target.value)} />}
+          {({ id, describedBy, invalid, required }) => <Textarea id={id} ref={altTextRef} rows={3} value={draft.altText} dir={direction} aria-describedby={describedBy} aria-invalid={invalid} aria-required={required} onChange={(event) => update("altText", event.target.value)} />}
         </FormField>
         <FormField label="Caption" name="placement.caption" optionalHint description="Shown beneath the media. Leave it empty when a caption would only repeat the alternative text." error={errorsFor("placement.caption")}>
-          {({ id, describedBy, invalid }) => <Input id={id} value={draft.caption} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("caption", event.target.value)} />}
+          {({ id, describedBy, invalid }) => <Input id={id} value={draft.caption} dir={direction} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("caption", event.target.value)} />}
         </FormField>
         <FormField label="Credit" name="placement.credit" optionalHint description="Who made or supplied this media, as it should read beside it." error={errorsFor("placement.credit")}>
-          {({ id, describedBy, invalid }) => <Input id={id} value={draft.credit} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("credit", event.target.value)} />}
+          {({ id, describedBy, invalid }) => <Input id={id} value={draft.credit} dir={direction} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("credit", event.target.value)} />}
         </FormField>
         <FormField label="Language" name="placement.language" optionalHint description="The language this media is in, as a tag such as en or ar, or as a name. It is the media's language, never this interface's." error={errorsFor("placement.language")}>
           {({ id, describedBy, invalid }) => <Input id={id} ref={languageRef} value={draft.language} autoComplete="off" spellCheck={false} className="font-mono" aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("language", event.target.value)} />}
         </FormField>
         {kind === "video" ? (
           <FormField label="Transcript" name="placement.transcript" optionalHint description="The video's words as text, for a reader who cannot play it. It is stored and shown as content, never as trusted metadata." error={errorsFor("placement.transcript")}>
-            {({ id, describedBy, invalid }) => <Textarea id={id} rows={4} value={draft.transcript} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("transcript", event.target.value)} />}
+            {({ id, describedBy, invalid }) => <Textarea id={id} rows={4} value={draft.transcript} dir={direction} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("transcript", event.target.value)} />}
           </FormField>
         ) : null}
         {kind === "video" ? renderVideoTracks() : null}
@@ -517,7 +520,7 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
         {renderChosenTrack(captionFile, "Caption track")}
         {captionFile === null ? null : (
           <FormField label="Track label" name="captions.label" optionalHint description="What the player's caption menu calls this track, such as English. Leave it empty to use the language stated above." error={errorsFor("captions.label")}>
-            {({ id, describedBy, invalid }) => <Input id={id} value={trackLabel} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => setTrackLabel(event.target.value)} />}
+            {({ id, describedBy, invalid }) => <Input id={id} value={trackLabel} dir={direction} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => setTrackLabel(event.target.value)} />}
           </FormField>
         )}
       </div>

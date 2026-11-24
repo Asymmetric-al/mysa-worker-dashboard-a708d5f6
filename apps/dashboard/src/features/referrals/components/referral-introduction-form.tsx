@@ -21,6 +21,7 @@ export type ReferralIntroductionFormProps = {
   readonly expectedRevision: string;
   readonly sourceReference: SourceReference;
   readonly sourceZone: string;
+  /** The level this section's own heading lands at: the record's route titles the record at the page's h1 and its sections at h2, where the side panel and the phone sheet state the record at h2 and its sections at h3. */ readonly headingLevel?: 2 | 3;
   readonly recordedAtDisplay?: string;
   readonly onRecorded?: (outcome: MutationOutcome) => void;
   readonly dir?: "ltr" | "rtl";
@@ -28,6 +29,9 @@ export type ReferralIntroductionFormProps = {
 };
 type IntroductionFormValues = { originalIntroductionOn: string; datePrecision: DatePrecisionValue };
 const INITIAL_VALUES: IntroductionFormValues = { originalIntroductionOn: "", datePrecision: "date" };
+/** The tag and the type scale this section's own heading renders at the level it sits in, so one form states the same step below the record's name in the record's route and in the side panel. */
+const SECTION_HEADING_TAGS = { 2: "h2", 3: "h3" } as const;
+const SECTION_HEADING_SCALES: Readonly<Record<2 | 3, string>> = { 2: "type-section-title", 3: "type-subsection-title" };
 const DATE_FIELD = "originalIntroductionOn";
 const PRECISION_FIELD = "datePrecision";
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = {
@@ -74,8 +78,9 @@ function ReviewedIntroduction({ payload }: { readonly payload: IntroductionPaylo
     </dl>
   );
 }
-export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, sourceReference, sourceZone, recordedAtDisplay, onRecorded, dir, className }: ReferralIntroductionFormProps): ReactElement {
+export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, sourceReference, sourceZone, headingLevel = 2, recordedAtDisplay, onRecorded, dir, className }: ReferralIntroductionFormProps): ReactElement {
   const headingId = useId();
+  const SectionHeading = SECTION_HEADING_TAGS[headingLevel];
   const optionIdPrefix = useId();
   const form = useForm({ defaultValues: INITIAL_VALUES });
   const router = useRouter();
@@ -97,7 +102,7 @@ export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, s
   return (
     <section dir={dir} aria-labelledby={headingId} data-slot="referral-introduction-form" className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 {...{ id: headingId, className: "type-section-title" }}>{INTRODUCED_BY_COPY.sectionHeading}</h2>
+        <SectionHeading {...{ id: headingId, className: SECTION_HEADING_SCALES[headingLevel] }}>{INTRODUCED_BY_COPY.sectionHeading}</SectionHeading>
         <p className="type-supporting text-pretty">{INTRODUCED_BY_COPY.formHelp}</p>
       </div>
       <form.Subscribe selector={(state) => state.values}>
@@ -159,7 +164,7 @@ export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, s
                 submit={submit}
                 onSettled={handleSettled}
                 fieldLabels={FIELD_LABELS}
-                headingLevel={3}
+                headingLevel={headingLevel === 2 ? 3 : 4}
               />
             </div>
           );

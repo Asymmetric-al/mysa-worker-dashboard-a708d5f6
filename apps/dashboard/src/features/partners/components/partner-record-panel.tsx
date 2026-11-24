@@ -1,6 +1,6 @@
 "use client";
 /** One partner record as it appears in place beside the roster: the family's one record body over the family's own browser reads, in the panel presentation on a desktop and the sheet presentation on a phone. The body is the one the record's own route renders, composed from the same facts, so every section, action and destination is offered here against the revision this panel read. It merges nothing and re-projects nothing, so a denial, an outage and a refused request read here exactly as they read on the record's own route, and no private note body is read outside the worker's own preparation read. */
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { scopeKey } from "@/components/context-switch-guard";
 import type { RecordDetailLayout } from "@/components/record-detail";
 import { isNonEmptyString, isRecord } from "@/lib/guards";
@@ -54,9 +54,9 @@ function factsOf(record: ReadQueryResult<RecordPayload>, preparation: ReadQueryR
     ...(preparationRecord === undefined ? {} : { preparationArchived: preparationRecord.archived }),
   };
 }
-export type PartnerRecordPanelProps = { readonly scope: Scope; readonly partnerId: string; readonly layout: Extract<RecordDetailLayout, "panel" | "sheet">; readonly tagSuggestions?: readonly string[] };
+export type PartnerRecordPanelProps = { readonly scope: Scope; readonly partnerId: string; readonly layout: Extract<RecordDetailLayout, "panel" | "sheet">; readonly tagSuggestions?: readonly string[]; readonly introduction?: ReactNode };
 /** One partner record presented in place: the shared facts, the worker's own private preparation and the activity that actually happened, each read on its own so a refusal or an outage costs its own section rather than the whole record. */
-export default function PartnerRecordPanel({ scope, partnerId, layout, tagSuggestions = [] }: PartnerRecordPanelProps): ReactElement {
+export default function PartnerRecordPanel({ scope, partnerId, layout, tagSuggestions = [], introduction }: PartnerRecordPanelProps): ReactElement {
   const record = useRecordJob<RecordPayload>(scope, partnerId, PARTNER_KEY.record, READ_JOB.record, isRecordPayload);
   const preparation = useRecordJob<PreparationPayload>(scope, partnerId, PARTNER_KEY.preparation, READ_JOB.preparation, isPreparationPayload);
   const interactions = useRecordJob<InteractionPayload>(scope, partnerId, PARTNER_KEY.interactions, READ_JOB.interactions, isInteractionPayload);
@@ -81,6 +81,7 @@ export default function PartnerRecordPanel({ scope, partnerId, layout, tagSugges
       locale={"en-GB"}
       breadcrumb={ROSTER_CRUMB}
       facts={factsOf(record, preparation, tagSuggestions)}
+      introduction={introduction}
     />
   );
 }

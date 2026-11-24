@@ -18,7 +18,7 @@ export const FACET_LABELS: Readonly<Record<FacetKey, string>> = {
 };
 export const FACET_VALUE_LABELS: Readonly<Record<FacetKey, Readonly<Partial<Record<string, string>>>>> = {
   "contact-type": { person: "Person", household: "Household", church: "Church", organization: "Organization", "private-preparation": "Private preparation" },
-  "preparation-state": { private: "Private record", shared: "Shared record" },
+  "preparation-state": { private: "Private record", shared: "Shared record", archived: "Archived record" },
   tag: {},
   favourite: { favourite: "Favourites only", "not-favourite": "Not a favourite" },
   "relationship-label": {},

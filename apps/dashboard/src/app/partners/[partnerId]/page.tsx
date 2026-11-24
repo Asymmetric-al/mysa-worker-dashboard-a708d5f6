@@ -4,11 +4,10 @@ import type { PartnerReadResult } from "@/features/partners/components/partner-d
 import PartnerRecordBody, { type PartnerRecordFacts } from "@/features/partners/components/partner-record-body";
 import { PARTNER_ACTION_LABELS, SURFACE_STATE_COPY } from "@/features/partners/copy/states";
 import { tagSuggestionsOf } from "@/features/partners/tag-suggestions";
-import ReferralIntroductionForm from "@/features/referrals/components/referral-introduction-form";
 import { reads, type ReadAction, type ReadEnvelope, type ReadResult } from "@/modules/data-service";
+import PartnerIntroductionSection from "../partner-introduction-section";
 import { pageRefusalOf, type ReadNoticeCopy } from "../../page-frame";
 const ROSTER_HREF = "/partners";
-/** The action a record states when an introduction may be recorded against it. */ const RECORD_INTRODUCTION_ACTION = "recordIntroduction";
 const DETAIL_COPY = SURFACE_STATE_COPY["partner-detail"];
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Partner" };
@@ -41,7 +40,6 @@ export default async function PartnerDetailPage({ params }: { readonly params: P
   const logInteractionAdmitted = admitted(envelope.actions, "logInteraction");
   const privateNoteAdmitted = admitted(envelope.actions, "savePrivateNote");
   const filingAdmitted = admitted(envelope.actions, "setTag") && admitted(envelope.actions, "setFavourite"); // Personal tags and the favourite mark are one filing surface, so it is read only where the read admits both halves of it.
-  const recordIntroductionAdmitted = admitted(envelope.actions, RECORD_INTRODUCTION_ACTION);
   const interactions = logInteractionAdmitted ? await reads.interactions.readInteractions({ partnerId }) : null; // The two further reads are issued only for the sections this record admits, and each arrives in the body's own vocabulary: a source that fails here costs its section, never the whole record.
   const privatePreparation = privateNoteAdmitted ? await reads.partners.readPrivatePreparation({ partnerId }) : null;
   const facets = filingAdmitted ? await reads.partners.readFacets() : null; // The vocabulary the record is filed against is the roster's own tag facet, read only where the record admits filing: a facet read that refuses or does not answer costs the suggestions, never the record.
@@ -58,19 +56,17 @@ export default async function PartnerDetailPage({ params }: { readonly params: P
     tagSuggestions,
     ...(preparation === undefined ? {} : { preparationArchived: preparation.archived }),
   };
+  // The body lays out the record's own stack and the introduction section it is handed, so the route states the record and no second wrapper around it.
   return (
-    <div className="flex min-w-0 flex-col gap-6 text-start">
-      <PartnerRecordBody
-        partner={detailRead(result, (data) => data)}
-        layout="page"
-        locale="en-GB"
-        breadcrumb={[{ label: "Partners", href: ROSTER_HREF }]}
-        facts={facts}
-        {...(interactions === null ? {} : { interactions: detailRead(interactions, (page) => page.interactions) })}
-        {...(privatePreparation === null ? {} : { privatePreparation: detailRead(privatePreparation, (data) => data) })}
-      />
-      {/* The introduction that brought this person here is recorded against this record and nowhere else: the referral list states the same thing in its own words, because a list has no partner identity, revision or source to hand a form. Every fact below is the read's own — the record's identity, the revision this page read, the source that answered, and the accepted source zone the read states — so the route states none of them itself and the window the introduction opens is counted in the one zone the referral rules declare. */}
-      {recordIntroductionAdmitted ? <ReferralIntroductionForm scope={envelope.scope} partnerId={partner.partnerId} expectedRevision={envelope.revision} sourceReference={envelope.source} sourceZone={envelope.data.referralSourceZone} /> : null}
-    </div>
+    <PartnerRecordBody
+      partner={detailRead(result, (data) => data)}
+      layout="page"
+      locale="en-GB"
+      breadcrumb={[{ label: "Partners", href: ROSTER_HREF }]}
+      facts={facts}
+      introduction={<PartnerIntroductionSection />}
+      {...(interactions === null ? {} : { interactions: detailRead(interactions, (page) => page.interactions) })}
+      {...(privatePreparation === null ? {} : { privatePreparation: detailRead(privatePreparation, (data) => data) })}
+    />
   );
 }

@@ -10,6 +10,7 @@ import {
   expect,
   expectDevelopmentData,
   expectFocusInsideDialog,
+  expectFocusVisibleAndUnobscured,
   expectNoHorizontalPageScroll,
   expectScrollPaddingSet,
   expectSoleHorizontalScroller,
@@ -232,6 +233,37 @@ test.describe("at 320 CSS pixels, with motion suppressed", () => {
       await expect(matrix.locator("table:visible"), "The wide matrix table is not offered at this width, because reading it would mean dragging it sideways.").toHaveCount(0);
       await expectNoHorizontalPageScroll(page, "The matrix report at 320 CSS px");
       await expectDevelopmentData(page, "The matrix report");
+    });
+  });
+  test.describe("the review surface's frozen revision", () => {
+    test.use({ persona: ESTABLISHED_WORKER }); // The reviewer a candidate is answered by: the frozen frame exists on the review surface alone, so the stop measured here is the one that surface gives.
+    test("the frozen revision's frame takes focus with a visible indicator, and the frame is scrolled clear of the shell", async ({ page }) => {
+      await page.goto("/communication/review/rev-update-ar-candidate-1"); // The Arabic candidate the surface was reported on, so the frame measured is the one whose focus a keyboard user could not see.
+      await expect(page.locator('[data-slot="review-panel"]'), "The review surface renders the frozen candidate whose frame is the tab stop under test.").toBeVisible();
+      const frame = page.locator('[data-slot="review-candidate-frame"]');
+      let reachedAtStep = -1;
+      for (let step = 1; step <= TAB_SWEEP_STEPS && reachedAtStep < 0; step += 1) {
+        await page.keyboard.press("Tab");
+        await settleLayout(page);
+        if (await frame.evaluate((element) => element === document.activeElement)) reachedAtStep = step;
+      }
+      expect(reachedAtStep, `Tab reaches the frozen revision's frame within ${String(TAB_SWEEP_STEPS)} presses, so the preview is a keyboard stop rather than a view only a pointer can reach.`).toBeGreaterThan(0);
+      await expect(frame, "The frame itself holds focus, so every reading below describes the stop a keyboard user lands on.").toBeFocused();
+      await settleLayout(page);
+      await expectFocusVisibleAndUnobscured(page, "The frozen revision's frame at 320 CSS px"); // The frame is in view and clear of the sticky shell once it holds focus, because focus is never moved to content a reader cannot see (WCAG 2.4.11).
+      const indicator = await frame.evaluate((element) => {
+        const readings: string[] = [];
+        for (let current: Element | null = element; current !== null; current = current.parentElement) {
+          const style = window.getComputedStyle(current);
+          const outlineWidth = Number.parseFloat(style.outlineWidth);
+          const drawn = style.boxShadow !== "none" || (style.outlineStyle !== "none" && Number.isFinite(outlineWidth) && outlineWidth > 0);
+          readings.push(`${current.getAttribute("data-slot") ?? current.tagName.toLowerCase()}: box-shadow ${style.boxShadow}, outline ${style.outlineStyle} ${style.outlineWidth}`);
+          if (drawn) return { drawn, readings };
+          if (current.matches('[data-slot="review-preview"]')) break;
+        }
+        return { drawn: false, readings };
+      });
+      expect(indicator.drawn, `A visible focus indicator is drawn on the frame or on the element that holds it, because a keyboard user needs to see where focus is; the computed values read were ${JSON.stringify(indicator.readings)}.`).toBe(true);
     });
   });
 });

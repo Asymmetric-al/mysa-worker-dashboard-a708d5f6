@@ -3,13 +3,13 @@ import Link from "next/link";
 import { useId, type ReactElement } from "react";
 import SimulationLabel from "@/components/simulation-label";
 import StateNotice, { type NoticeHeadingLevel } from "@/components/state-notice";
-import StatusBadge, { REACH_STATUS, statusBadgeProps } from "@/components/status-badge";
+import StatusBadge, { REACH_STATUS, statusBadgeProps, VALUE_STATE_WORDS } from "@/components/status-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DISCOVERY_INDEX_COPY, RECEIVING_SIMULATION_EFFECT } from "@/features/audience/copy/receiving";
 import { useDiscoveryIndex, type DiscoveryIndexEnvelope } from "@/features/audience/hooks/use-audience-reads";
 import { cn } from "@/lib/cn";
 import { languageNameOf } from "@/lib/language-name";
-import type { Scope } from "@/modules/data-service/envelope";
+import type { Scope, ValueState } from "@/modules/data-service/envelope";
 import type { ReadResult } from "@/modules/data-service/outcome";
 export type DiscoveryIndexProps = { readonly scope: Scope; readonly initialEnvelope: ReadResult<DiscoveryIndexEnvelope>; readonly headingLevel?: NoticeHeadingLevel; readonly className?: string };
 const HEADING_TAGS: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4">> = { 1: "h1", 2: "h2", 3: "h3", 4: "h4" };
@@ -34,15 +34,39 @@ function ListedEditionRow({ edition }: { readonly edition: DiscoveryIndexEnvelop
     </li>
   );
 }
-function PagingStatement({ shown, total }: { readonly shown: number; readonly total: number }): ReactElement | null {
-  if (total <= shown) return null;
+function EditionCountStatement({ shown, page, state }: { readonly shown: number; readonly page: DiscoveryIndexEnvelope["data"]["page"]; readonly state: ValueState | undefined }): ReactElement {
+  if (state !== undefined && state !== "value" && state !== "zero") {
+    const word = VALUE_STATE_WORDS[state];
+    return (
+      <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+        <StatusBadge label={word.label} tone={word.tone} srPrefix="Edition count" />
+        <span className="text-pretty wrap-anywhere">The read did not state how many editions are listed publicly, so no count is shown here and none is derived from the editions on screen.</span>
+      </p>
+    );
+  }
+  const total = page.total;
+  if (total === 0) return <p className="text-xs text-muted-foreground">No editions are listed publicly.</p>;
+  if (total === 1)
+    return (
+      <p className="text-xs text-muted-foreground">
+        <bdi>{total}</bdi>
+        {" edition is listed publicly."}
+      </p>
+    );
+  if (shown < total)
+    return (
+      <p className="text-xs text-muted-foreground">
+        {"Showing the first "}
+        <bdi>{shown}</bdi>
+        {" of "}
+        <bdi>{total}</bdi>
+        {" editions listed publicly."}
+      </p>
+    );
   return (
     <p className="text-xs text-muted-foreground">
-      {"Showing the first "}
-      <bdi>{shown}</bdi>
-      {" of "}
       <bdi>{total}</bdi>
-      {" editions listed publicly."}
+      {" editions are listed publicly."}
     </p>
   );
 }
@@ -51,7 +75,14 @@ function IndexBody({ result, headingLevel, onRetry }: { readonly result: ReadRes
   switch (result.kind) {
     case "envelope": {
       const { entries, page } = result.envelope.data;
-      if (entries.length === 0) return <StateNotice kind="empty" headingLevel={noticeLevel} title={DISCOVERY_INDEX_COPY.emptyTitle} description={DISCOVERY_INDEX_COPY.emptyDescription} />;
+      const countStatement = <EditionCountStatement shown={entries.length} page={page} state={result.envelope.valueStates["page.total"]} />;
+      if (entries.length === 0)
+        return (
+          <>
+            <StateNotice kind="empty" headingLevel={noticeLevel} title={DISCOVERY_INDEX_COPY.emptyTitle} description={DISCOVERY_INDEX_COPY.emptyDescription} />
+            {countStatement}
+          </>
+        );
       return (
         <div className="flex min-w-0 flex-col gap-2">
           <ul className="flex min-w-0 flex-col divide-y divide-border">
@@ -59,7 +90,7 @@ function IndexBody({ result, headingLevel, onRetry }: { readonly result: ReadRes
               <ListedEditionRow key={edition.href} edition={edition} />
             ))}
           </ul>
-          <PagingStatement shown={entries.length} total={page.total} />
+          {countStatement}
         </div>
       );
     }

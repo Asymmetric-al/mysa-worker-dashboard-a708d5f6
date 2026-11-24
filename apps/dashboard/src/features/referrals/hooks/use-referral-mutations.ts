@@ -5,7 +5,8 @@ import { refreshJobs, sendMutation } from "@/lib/read-transport";
 import type { MutationInput } from "@/modules/data-service";
 import { invalid, type MutationOutcome } from "@/modules/data-service/outcome";
 import { continueReferralPayloadSchema, introductionPayloadSchema, type ContinueReferralPayload, type IntroductionPayload } from "../schemas";
-const REFRESHED_JOBS = ["referrals", "referral"] as const;
+// A recorded or continued cycle is what a partner's roster row states as its referral status, so the roster and its facet set are re-read beside the referral lists that own the cycle: the job names are the query cache's shared vocabulary, as the support family's follow-up already refreshes the task lists it creates.
+const REFRESHED_JOBS = ["referrals", "referral", "partners", "facets"] as const;
 const REFRESHING_OUTCOMES = ["accepted", "alreadyAccepted", "unchanged"] as const;
 const OFFLINE_GUIDANCE = "This device reported no connection, so the request did not leave from here. Reconnect and submit this same change again: it keeps this attempt's identity, so a request that had already arrived is answered with its original result rather than applied twice.";
 async function postReferralMutation<TPayload>(path: string, schema: ZodType<TPayload>, input: MutationInput<TPayload>): Promise<MutationOutcome> {

@@ -7,7 +7,6 @@ import { MediaPicker, type MediaPickerKind, type MediaPickerOutcome, type MediaR
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DirectionProvider } from "@/components/ui/direction";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -57,6 +56,8 @@ const FIELD_WORDING: Readonly<Record<SectionFieldKey, { readonly label: string; 
   language: { label: "Language", description: "The language of this media, as a tag such as en or ar-EG. This is the media's language, never the interface's.", control: "text" },
 };
 const FIELD_ORDER: readonly SectionFieldKey[] = ["heading", "date", "body", "altText", "caption", "credit", "language"];
+// The edition's direction is stated on the writing surfaces that hold the worker's own words. A calendar date and a BCP-47 tag are not authored prose, and every label, description, choice and status line around them is the application's own English chrome, so those stay at the interface's direction.
+const AUTHORED_TEXT_KEYS: readonly SectionFieldKey[] = ["heading", "body", "altText", "caption", "credit"];
 const TREATMENT_OPTIONS = PRESENTATION_CHOICES.treatment.map((value) => ({ value, ...copy.presentation.treatment[value] }));
 const LAYOUT_OPTIONS = PRESENTATION_CHOICES.layout.map((value) => ({ value, ...copy.presentation.layout[value] }));
 const ALIGNMENT_OPTIONS = PRESENTATION_CHOICES.alignment.map((value) => ({ value, ...copy.presentation.alignment[value] }));
@@ -328,6 +329,7 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
   );
   function renderField(key: SectionFieldKey): ReactElement {
     const wording = FIELD_WORDING[key];
+    const authoringDirection = AUTHORED_TEXT_KEYS.includes(key) ? direction : undefined;
     const initial = formValuesOf(section)[key];
     const dateIsCivil = key !== "date" || initial === "" || ISO_CIVIL_DATE.test(initial);
     return (
@@ -343,12 +345,13 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
                       field.handleChange(next);
                       clearSettlement();
                     };
-                    if (wording.control === "long-text") return <Textarea id={control.id} rows={4} value={field.state.value} disabled={disabled} aria-describedby={control.describedBy} aria-invalid={control.invalid ? true : undefined} onChange={(event) => change(event.currentTarget.value)} />;
+                    if (wording.control === "long-text") return <Textarea id={control.id} rows={4} value={field.state.value} dir={authoringDirection} disabled={disabled} aria-describedby={control.describedBy} aria-invalid={control.invalid ? true : undefined} onChange={(event) => change(event.currentTarget.value)} />;
                     return (
                       <Input
                         id={control.id}
                         type={wording.control === "date" && dateIsCivil ? "date" : "text"}
                         value={field.state.value}
+                        dir={authoringDirection}
                         disabled={disabled}
                         aria-describedby={control.describedBy}
                         aria-invalid={control.invalid ? true : undefined}
@@ -440,76 +443,74 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
             </Button>
           </div>
           <p className="type-supporting">{MEDIA_COPY.mediaLanguageNote}</p>
-          <MediaPicker kind={mediaKind} open={pickerOpen} onOpenChange={setPickerOpen} {...(placement === undefined ? {} : { placement: placement })} onRegister={registerMediaAsset} {...(placement === undefined ? {} : { onRemove: removePlacedMedia })} />
+          <MediaPicker kind={mediaKind} open={pickerOpen} onOpenChange={setPickerOpen} direction={direction} {...(placement === undefined ? {} : { placement: placement })} onRegister={registerMediaAsset} {...(placement === undefined ? {} : { onRemove: removePlacedMedia })} />
         </CardContent>
       </Card>
     );
   }
   return (
-    <DirectionProvider direction={direction}>
-      <section dir={direction} data-slot="section-fields" data-section-id={section.sectionId} aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
-        <div className="flex min-w-0 flex-col gap-1">
-          <h3 id={headingId} className="type-subsection-title wrap-anywhere">
-            <bdi>{copy.catalogue.sections[section.sectionType].label}</bdi>
-            {` — ${FIELDS_COPY.heading}`}
-          </h3>
-          <p className="type-supporting text-pretty">{FIELDS_COPY.enterNote}</p>
-          {saveReason === null ? null : <p {...{ id: saveReasonId, className: "type-supporting text-pretty" as const }}>{saveReason}</p>}
+    <section data-slot="section-fields" data-section-id={section.sectionId} aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
+      <div className="flex min-w-0 flex-col gap-1">
+        <h3 id={headingId} className="type-subsection-title wrap-anywhere">
+          <bdi>{copy.catalogue.sections[section.sectionType].label}</bdi>
+          {` — ${FIELDS_COPY.heading}`}
+        </h3>
+        <p className="type-supporting text-pretty">{FIELDS_COPY.enterNote}</p>
+        {saveReason === null ? null : <p {...{ id: saveReasonId, className: "type-supporting text-pretty" as const }}>{saveReason}</p>}
+      </div>
+      <FormErrorSummary errors={errors} labels={admittedLabels} order={summaryOrder} headingLevel={4} />
+      <form
+        className="flex min-w-0 flex-col gap-6"
+        aria-busy={saving ? true : undefined}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
+      >
+        {fieldKeys.length === 0 ? null : <div className="flex min-w-0 flex-col gap-5">{fieldKeys.map((key) => renderField(key))}</div>}
+        <Separator />
+        <div className="flex min-w-0 flex-col gap-5">
+          <FormFieldGroup {...{ legend: "Treatment" as const, name: "treatment" as const, error: errors?.byField["treatment"] }}>{(group) => renderChoice(TREATMENT_OPTIONS, "treatment", group, isTreatment)}</FormFieldGroup>
+          <FormFieldGroup {...{ legend: "Layout" as const, name: "layout" as const, error: errors?.byField["layout"] }}>{(group) => renderChoice(LAYOUT_OPTIONS, "layout", group, isLayout)}</FormFieldGroup>
+          <p className="type-supporting text-pretty">{copy.presentation.boundedNote}</p>
+          <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-start">
+            {selectChoices.map((choice) => (
+              <FormField key={choice.name} label={choice.label} name={choice.name} error={errors?.byField[choice.name]}>
+                {(control) => (
+                  <form.Field name={choice.name}>
+                    {(field) =>
+                      selectControl(control, field.state.value, choice.options, (next) => {
+                        if (!choice.admits(next)) return;
+                        field.handleChange(next);
+                        clearSettlement();
+                      })
+                    }
+                  </form.Field>
+                )}
+              </FormField>
+            ))}
+          </div>
         </div>
-        <FormErrorSummary errors={errors} labels={admittedLabels} order={summaryOrder} headingLevel={4} />
-        <form
-          className="flex min-w-0 flex-col gap-6"
-          aria-busy={saving ? true : undefined}
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit();
-          }}
-        >
-          {fieldKeys.length === 0 ? null : <div className="flex min-w-0 flex-col gap-5">{fieldKeys.map((key) => renderField(key))}</div>}
-          <Separator />
-          <div className="flex min-w-0 flex-col gap-5">
-            <FormFieldGroup {...{ legend: "Treatment" as const, name: "treatment" as const, error: errors?.byField["treatment"] }}>{(group) => renderChoice(TREATMENT_OPTIONS, "treatment", group, isTreatment)}</FormFieldGroup>
-            <FormFieldGroup {...{ legend: "Layout" as const, name: "layout" as const, error: errors?.byField["layout"] }}>{(group) => renderChoice(LAYOUT_OPTIONS, "layout", group, isLayout)}</FormFieldGroup>
-            <p className="type-supporting text-pretty">{copy.presentation.boundedNote}</p>
-            <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-start">
-              {selectChoices.map((choice) => (
-                <FormField key={choice.name} label={choice.label} name={choice.name} error={errors?.byField[choice.name]}>
-                  {(control) => (
-                    <form.Field name={choice.name}>
-                      {(field) =>
-                        selectControl(control, field.state.value, choice.options, (next) => {
-                          if (!choice.admits(next)) return;
-                          field.handleChange(next);
-                          clearSettlement();
-                        })
-                      }
-                    </form.Field>
-                  )}
-                </FormField>
-              ))}
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button {...{ type: "submit" as const, disabled: disabled || saving || authority === undefined, "aria-describedby": saveReason === null ? undefined : saveReasonId }}>{saving ? "Saving…" : FIELDS_COPY.save}</Button>
-            <output {...{ "data-slot": "section-fields-status" as const, className: "type-supporting text-pretty" as const }}>{statusTextOf(saving, settlement)}</output>
-          </div>
-        </form>
-        {notice === null ? null : (
-          <Alert {...(notice.destructive ? { variant: "destructive" as const } : {})}>
-            <AlertTitle>{notice.title}</AlertTitle>
-            <AlertDescription>
-              <p className="type-supporting">{notice.body}</p>
-              <p className="type-supporting">
-                {`${notice.detail[0]}: `}
-                <bdi className="mono-identifier">{notice.detail[1]}</bdi>
-              </p>
-              {notice.again === null ? null : <Button {...{ type: "button" as const, variant: "outline" as const, size: "sm" as const, onClick: () => void submit() }}>{notice.again}</Button>}
-            </AlertDescription>
-          </Alert>
-        )}
-        {renderMedia()}
-      </section>
-    </DirectionProvider>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button {...{ type: "submit" as const, disabled: disabled || saving || authority === undefined, "aria-describedby": saveReason === null ? undefined : saveReasonId }}>{saving ? "Saving…" : FIELDS_COPY.save}</Button>
+          <output {...{ "data-slot": "section-fields-status" as const, className: "type-supporting text-pretty" as const }}>{statusTextOf(saving, settlement)}</output>
+        </div>
+      </form>
+      {notice === null ? null : (
+        <Alert {...(notice.destructive ? { variant: "destructive" as const } : {})}>
+          <AlertTitle>{notice.title}</AlertTitle>
+          <AlertDescription>
+            <p className="type-supporting">{notice.body}</p>
+            <p className="type-supporting">
+              {`${notice.detail[0]}: `}
+              <bdi className="mono-identifier">{notice.detail[1]}</bdi>
+            </p>
+            {notice.again === null ? null : <Button {...{ type: "button" as const, variant: "outline" as const, size: "sm" as const, onClick: () => void submit() }}>{notice.again}</Button>}
+          </AlertDescription>
+        </Alert>
+      )}
+      {renderMedia()}
+    </section>
   );
 }
 function ManagedSectionSummary({ section }: { readonly section: PageBuilderSection }): ReactElement {

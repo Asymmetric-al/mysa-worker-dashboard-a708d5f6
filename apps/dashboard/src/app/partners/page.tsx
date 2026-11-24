@@ -9,6 +9,7 @@ import { parseRosterQuery, rosterQuerySearch, rosterReadQuery, type RosterQueryS
 import { cn } from "@/lib/cn";
 import { querySearchParamsOf } from "@/lib/query-params";
 import { reads, type ReadAction } from "@/modules/data-service";
+import PartnerIntroductionSection from "./partner-introduction-section";
 import { PageColumn, PageHeading, ReadNotices, type ReadNoticeCopy, type SearchParams } from "../page-frame";
 type RosterEnvelope = Extract<Awaited<ReturnType<typeof reads.partners.findPartners>>, { readonly kind: "envelope" }>["envelope"];
 type RosterEnvelopeRead = { readonly kind: "envelope"; readonly envelope: RosterEnvelope };
@@ -47,6 +48,7 @@ function RosterBody({ result }: { readonly result: RosterEnvelopeRead }): ReactE
       <PartnerRoster
         scope={envelope.scope}
         initialResult={result}
+        introduction={<PartnerIntroductionSection />}
         emptyAction={
           mayPrepare ? (
             <Link href={`#${ADD_CONTACT_ANCHOR}`} data-slot="button" className={cn(buttonVariants({ variant: "outline" }), BUTTON_WRAP_CLASS)}>

@@ -1,4 +1,5 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useCallback, useId, useState, type ReactElement } from "react";
 import { DraftStatus, type ContentLifecycleState } from "@/components/draft-status";
 import ReviewPanel, { type CandidateMediaRendition, type CandidateView, type RecordedCandidateDecision, type ReviewPanelProps } from "@/components/review-panel";
@@ -55,12 +56,15 @@ function candidateViewOf(edition: ReviewEditionView): CandidateView | undefined 
   };
 }
 const refusalOf = (operationId: string, message: string): Extract<ReviewOutcome, { readonly outcome: "invalid" }> => ({ outcome: "invalid", operationId, fields: { ["_root"]: [message] } });
+/** Whether an outcome leaves this candidate answered, so the page re-reads the route it just answered: `accepted`, `alreadyAccepted` and `unchanged` each state a decision the reviewer must read in place of the control that made it, which is the one condition the Updates review surface re-reads on. */
+const statesDecision = (outcome: ReviewOutcome): boolean => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged";
 /** The review of one frozen Page candidate: the Page's visibility and giving context, and the one decision the shared panel takes. */
 export function PageReviewSurface({ document, candidateId, expectedRevision, scope, givingBinding, reach, className }: PageReviewSurfaceProps): ReactElement {
   const editionsTitleId = useId();
   const reachTitleId = useId();
   const givingTitleId = useId();
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  const router = useRouter();
   const { mutateAsync: approveCandidate } = useApprovePageCandidate();
   const { mutateAsync: requestChanges } = useRequestPageChanges();
   const reviewedEdition = reviewedEditionOf(document.editions, candidateId);
@@ -71,15 +75,21 @@ export function PageReviewSurface({ document, candidateId, expectedRevision, sco
     async (input: Parameters<ReviewPanelProps["onDecide"]>[0]): Promise<ReviewOutcome> => {
       const { operationId, expectedRevision: attemptRevision, scope: attemptScope, payload } = input;
       switch (payload.decision) {
-        case "approved":
-          return approveCandidate({ operationId, scope: attemptScope, expectedRevision: attemptRevision, payload: { candidateId: answeredCandidateId, notifyMode: PUBLISH_ONLY } });
-        case "changes-requested":
-          return requestChanges({ operationId, scope: attemptScope, expectedRevision: attemptRevision, payload: { candidateId: answeredCandidateId, reason: payload.note } });
+        case "approved": {
+          const outcome = await approveCandidate({ operationId, scope: attemptScope, expectedRevision: attemptRevision, payload: { candidateId: answeredCandidateId, notifyMode: PUBLISH_ONLY } });
+          if (statesDecision(outcome)) router.refresh();
+          return outcome;
+        }
+        case "changes-requested": {
+          const outcome = await requestChanges({ operationId, scope: attemptScope, expectedRevision: attemptRevision, payload: { candidateId: answeredCandidateId, reason: payload.note } });
+          if (statesDecision(outcome)) router.refresh();
+          return outcome;
+        }
         case "rejected":
           return refusalOf(operationId, REJECTION_NOT_OFFERED);
       }
     },
-    [approveCandidate, requestChanges, answeredCandidateId],
+    [approveCandidate, requestChanges, answeredCandidateId, router],
   );
   const reviewedCandidates = reviewedCandidate === undefined ? NO_CANDIDATES : [reviewedCandidate];
   return (

@@ -158,6 +158,7 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
   const amountState: ValueState = exponentOf(row.amount.currency) === undefined ? "unknown" : (view.valueStates[`rows.${String(index)}.amount`] ?? (row.amount.minorUnits === 0 ? "zero" : "value"));
   const grain: RowGrain = row.allocationId === undefined ? "gift" : "allocation";
   const correction = correctionAgainst(view.data.report.rows, row);
+  const correctedRow = row.refundOf === undefined ? undefined : view.data.report.rows.find((candidate) => candidate.giftRowId === row.refundOf);
   const originalDate = row.originalGiftOn === undefined ? undefined : String(row.originalGiftOn);
   const entryDate = String(row.entryOn);
   const partnerId = partnerDraft ?? (row.attribution.kind === "partner" ? row.attribution.partnerId : "");
@@ -220,7 +221,7 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
               )}
             </Fact>
             <Fact term="Designation">{row.designation === undefined ? "The source states no designation for this gift." : <bdi>{row.designation}</bdi>}</Fact>
-            <Fact term="This figure\u2019s state">
+            <Fact term="This figure's state">
               <span className="font-medium text-foreground">{VALUE_STATE_WORD[amountState]}</span> — {VALUE_STATE_MEANING[amountState]}
             </Fact>
           </dl>
@@ -236,22 +237,26 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
         </p>
         <p className="type-supporting">Another row of the same gift may exist in the ledger. Each row is its own record, and this one neither totals the others nor stands in for them.</p>
         <p className="type-supporting">The snapshot statement below states the grain rule this family reports on, including why a view that holds both grain levels counts the gift once.</p>
-        <p className="type-body">
-          <span className="sr-only">The grain this read reports at </span>
-          <bdi className="mono-identifier">{view.data.grain}</bdi>
-        </p>
       </SectionCard>
       {correction === undefined && row.refundOf === undefined ? null : (
         <SectionCard headingId={correctionHeadingId} title={row.refundOf === undefined ? "A correction against this row is also in this result" : "This row is a correction"} cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-3">
           {row.refundOf === undefined ? null : (
             <p className="type-supporting">
-              This row records a refund or correction against another row, <bdi className="mono-identifier">{row.refundOf}</bdi>. It carries its own date and its own amount, exactly as the source states them above, and it is never netted into the row it corrects: the two are read as two records, so the change is
-              explained in the open rather than hidden inside a difference.
+              This row records a refund or correction against another row of this ledger, which the source states by that row's own row reference, <bdi className="mono-identifier">{row.refundOf}</bdi>. The row reference is the row's own identity and the gift reference is the gift the row belongs to, so the two are two
+              references to one record rather than one reference spelled two ways.{" "}
+              {correctedRow === undefined ? (
+                "This read holds no row with that reference, so the row it corrects is not in this result, and the gift reference that row carries is not restated here."
+              ) : (
+                <>
+                  That row is in this result, listed under the gift reference <bdi className="mono-identifier">{correctedRow.giftId}</bdi>.
+                </>
+              )}{" "}
+              It carries its own date and its own amount, exactly as the source states them above, and it is never netted into the row it corrects: the two are read as two records, so the change is explained in the open rather than hidden inside a difference.
             </p>
           )}
           {correction === undefined ? null : (
             <p className="type-supporting">
-              The result also holds the correction recorded against this row: <bdi className="mono-identifier">{correction.giftRowId}</bdi>, with its own date and its own amount. Both records stand as the source states them, and neither is combined with the other here.
+              The result also holds the correction recorded against this row: the row <bdi className="mono-identifier">{correction.giftRowId}</bdi>, with its own date and its own amount. Both records stand as the source states them, and neither is combined with the other here.
             </p>
           )}
         </SectionCard>

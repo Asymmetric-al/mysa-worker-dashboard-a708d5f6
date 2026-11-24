@@ -20,7 +20,7 @@ import ColumnChooser, { PARTNER_COLUMN_KEYS, admittedPartnerColumns, type Partne
 import { PartnerFacets } from "./partner-facets";
 import PartnerRecordPanel from "./partner-record-panel";
 import SavedViewBar from "./saved-view-bar";
-type PartnerRosterRecord = { readonly partnerId: string; readonly kind: PartnerKind; readonly displayName: string; readonly tags: readonly string[]; readonly favourite: boolean; readonly stage: string | null; readonly audience: RecordAudience; readonly revision: string };
+type PartnerRosterRecord = { readonly partnerId: string; readonly kind: PartnerKind; readonly displayName: string; readonly tags: readonly string[]; readonly favourite: boolean; readonly stage: string | null; readonly audience: RecordAudience; readonly revision: string; readonly archived: boolean };
 type PartnerReferralStatus = "active" | "incomplete-date" | "expired";
 export interface PartnerRosterRow {
   readonly partner: PartnerRosterRecord;
@@ -35,7 +35,7 @@ export interface PartnerRosterRow {
   readonly lastReceivedOn?: string | null;
   readonly commitmentStatus?: string | null;
 }
-export type PartnerRosterProps = { readonly scope: Scope; readonly initialResult?: ReadResult<RosterEnvelope<PartnerRosterRow>>; readonly rowActions?: (row: PartnerRosterRow) => ReactNode; readonly emptyAction?: ReactNode; readonly dir?: "ltr" | "rtl"; readonly className?: string };
+export type PartnerRosterProps = { readonly scope: Scope; readonly initialResult?: ReadResult<RosterEnvelope<PartnerRosterRow>>; readonly rowActions?: (row: PartnerRosterRow) => ReactNode; readonly emptyAction?: ReactNode; readonly dir?: "ltr" | "rtl"; readonly className?: string; readonly introduction?: ReactNode };
 const ROSTER_LABEL = "Partner roster";
 const PAGE_SIZE_OPTIONS: readonly number[] = [ROSTER_PAGE_SIZE_DEFAULT, ROSTER_PAGE_SIZE_CAP];
 const ROW_PATH_PREFIX = "rows.";
@@ -103,6 +103,7 @@ function NameCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
         {displayName === "" ? <bdi className="mono-identifier">{row.partner.partnerId}</bdi> : <bdi className="text-pretty wrap-anywhere">{displayName}</bdi>}
       </Link>
       {row.partner.audience === "private" ? <StatusBadge label="Private record" tone="caution" /> : null}
+      {row.partner.archived ? <StatusBadge label="Archived" tone="muted" srPrefix="Private preparation" /> : null}
     </span>
   );
 }
@@ -225,7 +226,7 @@ function RosterNotes({ envelope }: { readonly envelope: ReadEnvelope<unknown> })
   );
 }
 /** The Partners roster for one scope: the one filter surface over the one table preset, the family's saved views and column chooser beside it, and the way into each record in its row. */
-export default function PartnerRoster({ scope, initialResult, rowActions, emptyAction, dir, className }: PartnerRosterProps): ReactElement {
+export default function PartnerRoster({ scope, initialResult, rowActions, emptyAction, dir, className, introduction }: PartnerRosterProps): ReactElement {
   const roster = useRosterQuery<PartnerRosterRow>(scope, { admittedColumnKeys: PARTNER_COLUMN_KEYS }, initialResult);
   const result = roster.roster.data;
   const envelope = result !== undefined && result.kind === "envelope" ? result.envelope : null;
@@ -316,7 +317,7 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
         return <StateNotice kind="refused" headingLevel={2} title={copy.refused.title} description={copy.refused.body} />;
     }
   }
-  const panelBody = openPartnerId === null ? null : <PartnerRecordPanel scope={scope} partnerId={openPartnerId} layout={isMobile ? "sheet" : "panel"} tagSuggestions={tagSuggestions} />;
+  const panelBody = openPartnerId === null ? null : <PartnerRecordPanel scope={scope} partnerId={openPartnerId} layout={isMobile ? "sheet" : "panel"} tagSuggestions={tagSuggestions} introduction={introduction} />;
   return (
     <div data-slot="partner-roster" dir={dir} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-3">
