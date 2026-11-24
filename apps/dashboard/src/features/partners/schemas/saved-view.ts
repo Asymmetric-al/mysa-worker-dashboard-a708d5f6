@@ -33,7 +33,6 @@ export const deleteViewPayloadSchema = z.strictObject({ viewId: savedViewIdSchem
 export type SaveViewPayload = z.infer<typeof saveViewPayloadSchema>;
 export type RenameViewPayload = z.infer<typeof renameViewPayloadSchema>;
 export type DeleteViewPayload = z.infer<typeof deleteViewPayloadSchema>;
-export type SavedViewQuery = z.infer<typeof savedViewQuerySchema>;
 type AdmittedFacet = { readonly id: string; readonly state?: "available" | "unavailable"; readonly options: ReadonlyArray<{ readonly id: string }> };
 export type SavedViewDrift = { readonly state: "clean" } | { readonly state: "drifted"; readonly deadFacets: readonly string[]; readonly deadValues: readonly { readonly facet: string; readonly value: string }[]; readonly deadColumns: readonly string[] };
 export function checkSavedViewDrift(query: { readonly applied: Readonly<Record<string, readonly string[]>>; readonly columnVisibility?: Readonly<Record<string, boolean>> }, admitted: { readonly facets: ReadonlyArray<AdmittedFacet>; readonly columns: ReadonlyArray<string> }): SavedViewDrift {

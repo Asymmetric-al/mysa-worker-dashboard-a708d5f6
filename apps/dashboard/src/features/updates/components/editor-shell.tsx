@@ -107,7 +107,7 @@ function tabsOf(overview: VariantOverviewData): readonly VariantTab[] {
     variantId: edition.variantId,
     audience: edition.audience,
     locale: edition.locale,
-    lifecycle: lifecycleOf(variantRecordOf(overview.document.documentId, edition), edition.headRelease ?? undefined),
+    lifecycle: lifecycleOf(variantRecordOf(overview.document.documentId, edition), edition.headRelease ?? undefined, { reviewDecision: edition.candidate?.decision ?? null }),
     ...(edition.translation.status === "stale" ? { staleSince: edition.translation.sourceUpdatedAt } : {}),
   }));
 }
@@ -381,6 +381,8 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
   const overviewData = overview.result !== undefined && overview.result.kind === "envelope" ? overview.result.envelope.data : undefined;
   const tabs = overviewData === undefined ? undefined : tabsOf(overviewData);
   const locales = overviewData === undefined ? undefined : localesOfAudience(overviewData, data.audience);
+  // The edition being written as the overview read states it, so the comparison beside it states the word this edition's own frozen candidate holds — including the answer a reviewer recorded on it.
+  const comparedEdition = overviewData === undefined ? undefined : overviewData.editions.find((edition) => edition.variantId === variantId);
   const draftRevisionId = data.status === "draft" ? data.revision.revisionId : undefined;
   const draftChecksum = data.status === "draft" ? data.revision.contentChecksum : "";
   const openEdition = (nextVariantId: string): void => {
@@ -409,10 +411,16 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
     const draftSide: ComponentProps<typeof CompareWithRelease>["draft"] = data.status === "draft" ? { status: "revision", revision: data.revision, renderedHtml: data.renderedHtml, asOf: envelope.asOf, author: data.revision.authorPrincipalId } : { status: "none" };
     if (releaseData.status === "released") {
       comparison = (
-        <CompareWithRelease variant={data.variant} draft={draftSide} release={{ status: "revision", revision: releaseData.revision, renderedHtml: releaseData.renderedHtml, asOf: releaseResult.envelope.asOf, author: releaseData.revision.authorPrincipalId, release: releaseData.release }} headingLevel={headingLevel} />
+        <CompareWithRelease
+          variant={data.variant}
+          draft={draftSide}
+          reviewDecision={comparedEdition?.candidate?.decision ?? null}
+          release={{ status: "revision", revision: releaseData.revision, renderedHtml: releaseData.renderedHtml, asOf: releaseResult.envelope.asOf, author: releaseData.revision.authorPrincipalId, release: releaseData.release }}
+          headingLevel={headingLevel}
+        />
       );
     } else if (releaseData.status === "no-release") {
-      comparison = <CompareWithRelease variant={data.variant} draft={draftSide} release={{ status: "none" }} headingLevel={headingLevel} />;
+      comparison = <CompareWithRelease variant={data.variant} draft={draftSide} reviewDecision={comparedEdition?.candidate?.decision ?? null} release={{ status: "none" }} headingLevel={headingLevel} />;
     } else if (releaseData.status === "withdrawn") {
       comparison = <StateNotice kind="empty" title={COMPARE_UNAVAILABLE.withdrawn.title} description={COMPARE_UNAVAILABLE.withdrawn.description} headingLevel={headingLevel} />;
     } else comparison = <StateNotice kind="unavailable" title={COMPARE_UNAVAILABLE.unreadable.title} description={COMPARE_UNAVAILABLE.unreadable.description} headingLevel={headingLevel} />;

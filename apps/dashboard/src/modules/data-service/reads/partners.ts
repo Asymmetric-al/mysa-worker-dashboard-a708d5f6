@@ -27,7 +27,6 @@ export type PartnerSortField = (typeof PARTNER_SORT_FIELDS)[number];
 export const PARTNER_SORT_DIRECTIONS = ["asc", "desc"] as const;
 export type PartnerSortDirection = (typeof PARTNER_SORT_DIRECTIONS)[number];
 export const PARTNER_ROSTER_COLUMNS = ["displayName", "kind", "stage", "tags", "favourite", "contactMethods", "lastActivity", "openTasks", "referralStatus", "giving"] as const;
-export type PartnerRosterColumn = (typeof PARTNER_ROSTER_COLUMNS)[number];
 const CONTACT_TYPE_LABELS: Readonly<Record<PartnerKind, string>> = { person: "Person", household: "Household", church: "Church", organization: "Organization", "private-preparation": "Private preparation" };
 const FAVOURITE_LABELS: Readonly<Record<"favourite" | "not-favourite", string>> = { favourite: "Favourites only", "not-favourite": "Not a favourite" };
 const PREPARATION_LABELS: Readonly<Record<"private" | "shared", string>> = { private: "Private record", shared: "Shared record" };

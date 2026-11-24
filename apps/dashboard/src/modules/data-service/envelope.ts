@@ -356,7 +356,6 @@ export type NotificationRecipientOutcomeRecord = { readonly recipientId: string;
 export type NotificationSendResultRecord = { readonly sendResultId: string; readonly intentId: string; readonly recipients: readonly NotificationRecipientOutcomeRecord[]; readonly unserved: readonly NotificationUnservedRecipientRecord[]; readonly recordedAt: string; readonly revision: string };
 export const notificationRecipientOutcomeRecordSchema: z.ZodType<NotificationRecipientOutcomeRecord> = z.object({ recipientId: text, renditionId: text, state: z.enum(NOTIFICATION_RECIPIENT_STATES), at: storedInstantSchema });
 export const NOTIFICATION_UNSERVED_REASONS = ["already-covered", "no-eligible-rendition"] as const;
-export type NotificationUnservedReason = (typeof NOTIFICATION_UNSERVED_REASONS)[number];
 export type NotificationUnservedRecipientRecord =
   | { readonly recipientId: string; readonly reason: "already-covered"; readonly coveredByIntentId: string; readonly coveredByRenditionId: string }
   | { readonly recipientId: string; readonly reason: "no-eligible-rendition"; readonly renditionRefusal: RenditionRefusalReason };
@@ -370,7 +369,6 @@ export type MembershipState = (typeof MEMBERSHIP_STATES)[number];
 export type MembershipRecord = StoredRecord<z.infer<typeof membershipRecordSchema>>;
 export const membershipRecordSchema = z.object({ membershipId: text, email: text, displayName: opt, publisherId: text, purpose: z.enum(NOTIFICATION_PURPOSES), state: z.enum(MEMBERSHIP_STATES), acceptedAt: inst.nullable(), confirmationDeadline: inst.nullable(), languagePreference: opt, revision: rev });
 export const COACHING_GRANT_STATES = ["invited", "accepted", "active", "revoked", "expired", "ended", "left"] as const;
-export type CoachingGrantState = (typeof COACHING_GRANT_STATES)[number];
 export type CoachingModuleSelection = Readonly<Record<ModuleKey, boolean>>;
 export type CoachingDurationRecord = { readonly kind: "ongoing" | "through-date"; readonly cutoffInstant: string | null; readonly frozenZone: string };
 export type CoachingFinancialRangeRecord = { readonly from: string; readonly to: string; readonly currency: string };

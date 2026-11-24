@@ -45,7 +45,7 @@ const publishEditionOf = (documentId: string, edition: OverviewEnvelope["data"][
   variantId: edition.variantId,
   audience: edition.audience,
   locale: edition.locale,
-  lifecycle: lifecycleOf(variantRecordOf(documentId, edition), edition.headRelease ?? undefined),
+  lifecycle: lifecycleOf(variantRecordOf(documentId, edition), edition.headRelease ?? undefined, { reviewDecision: edition.candidate?.decision ?? null }),
   candidate: edition.candidate,
   headRelease: edition.headRelease === null ? null : releaseViewOf(edition.headRelease),
 });

@@ -27,6 +27,7 @@ function editionViewOf(documentId: string, edition: PageLocaleEdition): LocalesE
     },
     ...(edition.headRelease === null ? {} : { release: edition.headRelease }),
     ...(edition.candidateId === null ? {} : { candidateId: edition.candidateId }),
+    ...(edition.candidate === null ? {} : { candidateDecision: edition.candidate.decision }),
   };
 }
 const editionViewsOf = (documentId: string, editions: readonly PageLocaleEdition[]): LocalesEnvelope["data"] => editions.map((edition) => editionViewOf(documentId, edition));

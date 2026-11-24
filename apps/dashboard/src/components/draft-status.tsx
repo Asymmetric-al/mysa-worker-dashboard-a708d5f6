@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
 import { cn } from "@/lib/cn";
-import { translationStaleness, type ContentVariant, type Release, type ReleaseOutcome, type TranslationSourceContext, type VariantAudience, type VariantLocale } from "@/modules/content/variant";
+import { translationStaleness, type ContentVariant, type Release, type ReleaseOutcome, type ReviewDecision, type TranslationSourceContext, type VariantAudience, type VariantLocale } from "@/modules/content/variant";
 /** Every state an edition can be in, listed once so the closed set has a runtime form as well as a type. */
 export const CONTENT_LIFECYCLE_STATES = ["not-started", "draft", "candidate", "approved", "released", "partially-released", "withdrawn", "superseded-head", "stale-translation"] as const;
 export type ContentLifecycleState = (typeof CONTENT_LIFECYCLE_STATES)[number];
@@ -19,8 +19,8 @@ export const LIFECYCLE_STATUS: Readonly<Record<ContentLifecycleState, LifecycleS
   "stale-translation": { label: "Translation stale", tone: "caution", explanation: "The source revision this translation copied is no longer current. Nothing was withdrawn and nothing needs re-approval, but the translation no longer reflects the source." },
 };
 export type VariantReleaseOutcome = { readonly variantId: string; readonly outcome: ReleaseOutcome };
-/** The facts {@link lifecycleOf} reads besides the two records themselves — both optional, because a surface that has not run a release attempt or shown a translation has neither. */
-export type LifecycleEvidence = { readonly synthesis?: readonly VariantReleaseOutcome[]; readonly translationSource?: TranslationSourceContext };
+/** The facts {@link lifecycleOf} reads besides the two records themselves — each optional, because a surface that has not run a release attempt, shown a translation or read the review record has none: `synthesis` is the attempt's per-edition results, `translationSource` the edition this one copied, and `reviewDecision` the answer recorded on the frozen candidate this edition holds, which only a surface or a read that states that answer sets. */
+export type LifecycleEvidence = { readonly synthesis?: readonly VariantReleaseOutcome[]; readonly translationSource?: TranslationSourceContext; readonly reviewDecision?: ReviewDecision | null };
 /** The facts of one edition a surface or a read states, as the lifecycle vocabulary reads them: its identity, its audience and language, and its three pointers, any of which may be absent or stated as null. */
 export type LifecycleEditionFold = { readonly variantId: string; readonly audience: VariantAudience; readonly locale: VariantLocale; readonly draftRevisionId?: string | null; readonly candidateId?: string | null; readonly releaseHeadId?: string | null };
 /** The edition's own record as the lifecycle vocabulary reads it: the three pointers and its audience and language, nothing added. It is the one adapter from an edition view to `ContentVariant`, so a route that states an edition's lifecycle states it from the same record the matrix does rather than folding the pointers a second way. */
@@ -31,13 +31,17 @@ export function variantRecordOf(documentId: string, edition: LifecycleEditionFol
   // An absent pointer is omitted rather than set to `undefined`, so the record states exactly what the read stated.
   return { variantId: edition.variantId, documentId, audience: edition.audience, locale: edition.locale, ...(draft === "" ? {} : { draftRevisionId: draft }), ...(candidate === "" ? {} : { candidateId: candidate }), ...(head === "" ? {} : { releaseHeadId: head }) };
 }
-/** Derives the one lifecycle state of an edition from the records the service supplies. */ export function lifecycleOf(variant: ContentVariant, release?: Release, evidence?: LifecycleEvidence): ContentLifecycleState {
+/** Derives the one lifecycle state of an edition from the records the service supplies: the candidate branch states the answer the review record holds for this frozen candidate, because an approval is a fact about the very revision the one review answered — and approval publishes nothing, so it still precedes `released`. */ export function lifecycleOf(
+  variant: ContentVariant,
+  release?: Release,
+  evidence?: LifecycleEvidence,
+): ContentLifecycleState {
   const current = release !== undefined && release.variantId === variant.variantId ? release : undefined;
   if (current !== undefined) {
     if (current.withdrawnAt !== undefined) return "withdrawn";
     if (current.supersededBy !== undefined || (variant.releaseHeadId !== undefined && variant.releaseHeadId !== current.releaseId)) return "superseded-head";
   }
-  if (variant.candidateId !== undefined) return "candidate";
+  if (variant.candidateId !== undefined) return evidence?.reviewDecision === "approved" ? "approved" : "candidate";
   if (current !== undefined) return siblingFailed(variant, evidence) ? "partially-released" : "released";
   if (translationIsStale(variant, evidence)) return "stale-translation";
   return variant.draftRevisionId !== undefined ? "draft" : "not-started";

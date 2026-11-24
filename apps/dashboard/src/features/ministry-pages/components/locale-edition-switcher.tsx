@@ -4,10 +4,18 @@ import { DraftStatus, lifecycleOf, type LifecycleEvidence } from "@/components/d
 import { LocaleSwitcher, type LocaleEdition } from "@/components/locale-switcher";
 import { cn } from "@/lib/cn";
 import type { ContentLocale } from "@/modules/content/locale";
-import type { ContentVariant, Release, TranslationSourceContext } from "@/modules/content/variant";
+import type { ContentVariant, Release, ReviewDecision, TranslationSourceContext } from "@/modules/content/variant";
 import { copy } from "../copy";
 type ContentDirection = ContentLocale["direction"];
-export type EditionView = { readonly locale: string; readonly direction: ContentDirection; readonly variant: ContentVariant; readonly release?: Release; readonly candidateId?: string; readonly translationSource?: TranslationSourceContext };
+export type EditionView = {
+  readonly locale: string;
+  readonly direction: ContentDirection;
+  readonly variant: ContentVariant;
+  readonly release?: Release;
+  readonly candidateId?: string;
+  readonly translationSource?: TranslationSourceContext;
+  /** The answer the read recorded on this edition's frozen candidate, or `null` for one still awaiting it: the fact this list states so an approved candidate is not named as one nobody has answered. */ readonly candidateDecision?: ReviewDecision | null;
+};
 export type LocaleEditionSwitcherProps = { readonly editions: readonly EditionView[]; readonly selectedLocale: string; readonly onSelectLocale: (locale: string) => void; readonly onDirectionChange?: (direction: ContentDirection) => void; readonly disabled?: boolean; readonly className?: string };
 const normaliseTag = (tag: string): string => tag.trim().toLowerCase();
 const findEdition = (editions: readonly EditionView[], tag: string): EditionView | undefined => (normaliseTag(tag) === "" ? undefined : editions.find((edition) => normaliseTag(edition.locale) === normaliseTag(tag)));
@@ -16,7 +24,8 @@ function variantOf(edition: EditionView): ContentVariant {
   if (edition.candidateId === undefined || edition.variant.candidateId !== undefined) return edition.variant;
   return { ...edition.variant, candidateId: edition.candidateId };
 }
-const evidenceOf = (edition: EditionView): LifecycleEvidence | undefined => (edition.translationSource === undefined ? undefined : { translationSource: edition.translationSource });
+const evidenceOf = (edition: EditionView): LifecycleEvidence | undefined =>
+  edition.translationSource === undefined && edition.candidateDecision === undefined ? undefined : { ...(edition.translationSource === undefined ? {} : { translationSource: edition.translationSource }), ...(edition.candidateDecision === undefined ? {} : { reviewDecision: edition.candidateDecision }) };
 /** The Page's language editions: the one control that changes which edition is being worked on, and the lifecycle state each admitted edition holds on its own. */
 export function LocaleEditionSwitcher({ editions, selectedLocale, onSelectLocale, onDirectionChange, disabled = false, className }: LocaleEditionSwitcherProps): ReactElement {
   const groupLabelId = useId();

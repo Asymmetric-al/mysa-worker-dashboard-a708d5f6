@@ -45,7 +45,7 @@ export type UpdatesRoster = {
   return { variantId: edition.variantId, documentId, audience: edition.audience, locale: { tag: edition.locale.tag, direction: edition.locale.direction }, ...stated };
 }
 export function lifecycleFor(documentId: string, edition: EditionView): ContentLifecycleState {
-  const derived = lifecycleOf(domainVariantOf(documentId, edition), edition.headRelease ?? undefined);
+  const derived = lifecycleOf(domainVariantOf(documentId, edition), edition.headRelease ?? undefined, { reviewDecision: edition.candidate?.decision ?? null });
   return edition.translation.status === "stale" && (derived === "draft" || derived === "not-started") ? "stale-translation" : derived;
 }
 function releaseOf(edition: EditionView): RosterRelease | null {

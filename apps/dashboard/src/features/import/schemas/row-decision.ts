@@ -12,4 +12,3 @@ const ROW_DECISION_SHAPES = {
   unresolved: z.strictObject({ kind: z.literal("unresolved"), rowNumber: rowNumberSchema }),
 } satisfies Record<ImportDecisionKind, z.ZodObject>;
 export const rowDecisionPayloadSchema: z.ZodType<ImportDecisionInput> = z.discriminatedUnion("kind", [ROW_DECISION_SHAPES.create, ROW_DECISION_SHAPES.reuse, ROW_DECISION_SHAPES.skip, ROW_DECISION_SHAPES.unresolved]);
-export type RowDecisionPayload = z.infer<typeof rowDecisionPayloadSchema>;

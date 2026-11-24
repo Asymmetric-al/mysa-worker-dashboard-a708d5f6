@@ -219,7 +219,10 @@ test("an Update is composed with an image, previewed, reviewed once and released
   expect(messagesAt(flipped, "variants.0").join(" ")).toMatch(/mode the submission did not ask for/u);
   await page.goto(overviewPath());
   const releaseRow = releaseEditionOf(page, PUBLIC_ENGLISH_EDITION);
-  await expect(releaseRow, "The edition the submission froze is the one the release offers, at the exact revision the preview rendered").toHaveAttribute("data-lifecycle-state", "candidate");
+  await expect(
+    releaseRow,
+    "The edition the submission froze is the one the release offers, at the exact revision the preview rendered, and its word is Approved because the review record on this frozen candidate is an approval — an approval publishes nothing, so only the release below reaches a reader",
+  ).toHaveAttribute("data-lifecycle-state", "approved");
   await expect(releaseRow).toHaveAttribute("data-mode", "publish-only");
   await expect(releaseRow).toContainText(revision);
   await selectForRelease(page, PUBLIC_ENGLISH_EDITION);
@@ -362,7 +365,7 @@ test("an edition whose author chose Publish and notify now is released through t
   await page.goto(overviewPath());
   const review = releaseReviewOf(page);
   const releaseRow = releaseEditionOf(page, PUBLIC_ENGLISH_EDITION);
-  await expect(releaseRow, "The row states the mode the submission fixed and the exact revision the review answered").toHaveAttribute("data-lifecycle-state", "candidate");
+  await expect(releaseRow, "The row states the mode the submission fixed and the exact revision the review answered, and it names that revision Approved because the review record on it is an approval, which publishes nothing by itself").toHaveAttribute("data-lifecycle-state", "approved");
   await expect(releaseRow).toHaveAttribute("data-mode", "publish-and-notify-now");
   await expect(releaseRow).toContainText(submittedDraft);
   await selectForRelease(page, PUBLIC_ENGLISH_EDITION);

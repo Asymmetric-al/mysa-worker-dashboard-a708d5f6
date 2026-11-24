@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
 import type { SourceReference } from "@/lib/ids";
-import { isReleaseUnchanged, type ContentRevision, type ContentVariant, type Release } from "@/modules/content/variant";
+import { isReleaseUnchanged, type ContentRevision, type ContentVariant, type Release, type ReviewDecision } from "@/modules/content/variant";
 import type { ValueState } from "@/modules/data-service/envelope";
 import { AUDIENCE_LABELS, DRAFT_VS_RELEASED, LOCALE_DISPLAY_NAMES } from "../copy/updates-copy";
 export type ComparisonRevisionSide = { readonly revision: ContentRevision; readonly renderedHtml: string; readonly asOf: string; readonly author: string };
@@ -145,8 +145,16 @@ function ComparisonPane({ side, title, headingId, headingLevel, direction, lang,
     </Card>
   );
 }
-export type CompareWithReleaseProps = { readonly variant: ContentVariant; readonly draft: ComparisonDraftSide; readonly release: ComparisonReleaseSide; readonly changes?: readonly ComparisonChange[]; readonly headingLevel?: NoticeHeadingLevel; readonly className?: string };
-export function CompareWithRelease({ variant, draft, release, changes, headingLevel = 2, className }: CompareWithReleaseProps): ReactElement {
+export type CompareWithReleaseProps = {
+  readonly variant: ContentVariant;
+  readonly draft: ComparisonDraftSide;
+  readonly release: ComparisonReleaseSide;
+  /** The decision the read recorded on this edition's frozen candidate, or `null` for one it has not answered: the fact the lifecycle word beside the comparison states, so this surface names an approved candidate as approved rather than deriving a word of its own. */ readonly reviewDecision?: ReviewDecision | null;
+  readonly changes?: readonly ComparisonChange[];
+  readonly headingLevel?: NoticeHeadingLevel;
+  readonly className?: string;
+};
+export function CompareWithRelease({ variant, draft, release, reviewDecision, changes, headingLevel = 2, className }: CompareWithReleaseProps): ReactElement {
   const baseId = useId();
   const titleId = `${baseId}-title`;
   const nestedLevel = NESTED_HEADING_LEVEL[headingLevel];
@@ -166,7 +174,7 @@ export function CompareWithRelease({ variant, draft, release, changes, headingLe
             <bdi>{LOCALE_DISPLAY_NAMES[variant.locale.tag] ?? variant.locale.tag}</bdi>
           </span>
         </div>
-        <DraftStatus state={lifecycleOf(variant, release.status === "revision" ? release.release : undefined)} />
+        <DraftStatus state={lifecycleOf(variant, release.status === "revision" ? release.release : undefined, { reviewDecision: reviewDecision ?? null })} />
         {/* A static explanation, not an alarm: the pass leaves the announcing region to the notices that report a change of condition. */}
         <Alert role={undefined}>
           <AlertTitle>{"What this comparison shows"}</AlertTitle>

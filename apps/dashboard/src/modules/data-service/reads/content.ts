@@ -219,7 +219,14 @@ function currentRevisionOf(state: ContentWorkspaceState, variant: ContentVariant
   return head === undefined ? undefined : findRevision(state, head.revisionId);
 }
 /** The frozen candidate one edition holds, as a release surface reads it: the exact revision the candidate froze with its checksum, and whether the submission that froze it asked for a notice — the fact no release surface can state or choose a mode without, because `publishVariants` refuses a mode the submission never asked for. */
-export type ContentEditionCandidateView = { readonly candidateId: string; readonly revisionId: string; readonly contentChecksum: string; readonly notifyAdmitted: boolean; readonly notifyRefusal?: string };
+export type ContentEditionCandidateView = {
+  readonly candidateId: string;
+  readonly revisionId: string;
+  readonly contentChecksum: string;
+  readonly notifyAdmitted: boolean;
+  readonly notifyRefusal?: string;
+  /** The answer recorded on this frozen submission, `null` while it still awaits its one review: the one fact that separates an approved candidate from one no reviewer has answered yet. */ readonly decision: ReviewDecision | null;
+};
 export type ContentEditionView = { readonly variantId: string; readonly audience: ContentAudience; readonly locale: ContentLocale; readonly draftRevisionId: string | null } & {
   readonly candidateId: string | null;
   readonly candidate: ContentEditionCandidateView | null;
@@ -567,8 +574,9 @@ function candidateViewOf(state: ContentWorkspaceState, variant: ContentVariantRe
   if (candidateId === null) return null;
   const frozen = findRevision(state, candidateId);
   const review = state.contentReviews.find((candidate) => candidate.candidateId === candidateId);
-  const notifyAction = releaseActionOf(NOTIFY_NOW_OFFER, review, releaseRefusalOf(review, recordedDecisionOf(review)));
-  return { candidateId, revisionId: candidateId, contentChecksum: frozen === undefined ? "" : frozen.contentChecksum, notifyAdmitted: notifyAction.available, ...(notifyAction.available || notifyAction.reason === undefined ? {} : { notifyRefusal: notifyAction.reason }) };
+  const decision = recordedDecisionOf(review);
+  const notifyAction = releaseActionOf(NOTIFY_NOW_OFFER, review, releaseRefusalOf(review, decision));
+  return { candidateId, revisionId: candidateId, contentChecksum: frozen === undefined ? "" : frozen.contentChecksum, notifyAdmitted: notifyAction.available, decision, ...(notifyAction.available || notifyAction.reason === undefined ? {} : { notifyRefusal: notifyAction.reason }) };
 }
 function candidateDiff(input: {
   readonly candidate: ContentDocumentJson;

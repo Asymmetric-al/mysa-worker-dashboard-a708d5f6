@@ -95,6 +95,27 @@ function querySignature(queryState: RecordListQueryState): string {
     .join(",");
   return `${queryState.page}|${queryState.pageSize}|${sorting}|${visibility}`;
 }
+const SCROLL_PLACE_TOLERANCE_PX = 2; // How far a re-applied place may stand from the one the reader left: a settled layout can move a row by a pixel between the two readings, while a wider gap is a different place on the list.
+const SCROLL_PLACE_FRAME_BUDGET = 90; // How many frames a return re-applies the reader's place for, about a second and a half at 60 fps: long enough for a re-read to land, and short enough that a place the document cannot reach settles instead of fighting the reader's own scrolling.
+const SCROLL_PLACE_STALLED_FRAMES = 60; // How many frames a document whose reachable height has stopped growing is given before the stored place counts as unreachable, so a list re-read shorter than it was left restores as far as it can and then lets go.
+/** The place a reader left one list at, read back from this tab's own session storage: the place is the reader's own and is never sent anywhere, and a browser that refuses session storage simply holds none. */
+function storedScrollPlace(key: string): number | undefined {
+  try {
+    const stated = window.sessionStorage.getItem(key);
+    const place = stated === null ? 0 : Number(stated);
+    return Number.isSafeInteger(place) && place > 0 ? place : undefined;
+  } catch {
+    return undefined; // A refused session storage is a browser that cannot keep a place, so the list is read without one rather than failing on the store that keeps it.
+  }
+}
+/** Keeps the place a reader stands at for the list they are reading, so a return to the same list, filters, page window and ordering finds it. */
+function storeScrollPlace(key: string, place: number): void {
+  try {
+    window.sessionStorage.setItem(key, String(place));
+  } catch {
+    // A browser that refuses session storage leaves the place unrecorded and the list unaffected, because nothing the list renders depends on this value.
+  }
+}
 function columnLabel<TRow extends RowData>(column: Column<RecordListFeatureSet, TRow, unknown>): string {
   const header = column.columnDef.header;
   return typeof header === "string" && header.trim() !== "" ? header : column.id;
@@ -207,6 +228,8 @@ export function useRecordListWindow(opening: RecordListWindow): RecordListWindow
 }: RecordListProps<TRow>): ReactElement {
   const cellIdBase = useId();
   const rowResultsId = useId();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const selectionEnabled = onSelectionChange !== undefined;
   const actionsEnabled = rowActions !== undefined;
   const selectedKeys = selectedIds ?? EMPTY_SELECTION;
@@ -244,6 +267,80 @@ export function useRecordListWindow(opening: RecordListWindow): RecordListWindow
   useEffect(() => {
     latestQuery.current = queryState;
   }, [queryState]);
+  const scrollPlaceKey = `${pathname}?${searchParams.toString()}|${label}|${signature}`; // The list one reader's place belongs to: this address with the filters it carries, this table, and the window and ordering it is showing, so a place kept for one of those is never found by another.
+  useEffect(() => {
+    // The place is the list's own record rather than the browser's: a returned list re-reads its query and its document passes through a shorter state, and an arrival at the list's own address carries no history entry to restore from at all. The place is re-applied here until the re-read reaches it, and nothing is recorded until that restore settles, so a clamped sample never becomes the place the next return aims at.
+    const place = storedScrollPlace(scrollPlaceKey);
+    const readerHoldsFocus = document.activeElement !== null && document.activeElement !== document.body && document.activeElement !== document.documentElement; // A control already holding focus belongs to a reader who moved before this arrival's place could be re-applied, so the place is not applied over it: the reader keeps the control they are on, and tabbing straight after a return is never held at the stored place.
+    let restoring = place !== undefined && !readerHoldsFocus;
+    let observed = window.scrollY;
+    let writeFrame = 0;
+    let restoreFrame = 0;
+    let steps = 0;
+    let stalled = 0;
+    let reachable = document.documentElement.scrollHeight - window.innerHeight;
+    const write = (): void => {
+      writeFrame = 0;
+      storeScrollPlace(scrollPlaceKey, observed);
+    };
+    const onScroll = (): void => {
+      observed = window.scrollY;
+      if (restoring || writeFrame !== 0) return;
+      writeFrame = window.requestAnimationFrame(write);
+    };
+    const flush = (): void => {
+      if (!restoring) storeScrollPlace(scrollPlaceKey, observed); // The last observed offset, taken when the page was left rather than read again now: a navigation may already have reset the window to the top by the time this runs.
+    };
+    const settle = (): void => {
+      restoring = false;
+      observed = window.scrollY;
+    };
+    const yieldToReader = (): void => {
+      // A control taking focus, a key, a pointer press or a wheel is the reader stating where they mean to be: the place left over from an earlier visit is given up for this arrival rather than holding the document against the browser's own scroll-into-view or the reader's own scrolling, so a focused control is never left outside the viewport. The stored place itself is untouched, so a return the reader does not interrupt still restores, and once this arrival has yielded the loop never re-applies the place to it.
+      if (!restoring) return;
+      if (restoreFrame !== 0) window.cancelAnimationFrame(restoreFrame);
+      restoreFrame = 0;
+      settle();
+    };
+    const step = (): void => {
+      restoreFrame = 0;
+      if (!restoring) return; // The reader took over after this frame was asked for, so the frame has nothing left to apply.
+      if (place === undefined || Math.abs(window.scrollY - place) <= SCROLL_PLACE_TOLERANCE_PX) {
+        settle();
+        return;
+      }
+      window.scrollTo(0, place);
+      steps += 1;
+      const reached = document.documentElement.scrollHeight - window.innerHeight;
+      stalled = reached <= reachable && reached < place - SCROLL_PLACE_TOLERANCE_PX ? stalled + 1 : 0;
+      reachable = reached;
+      if (steps >= SCROLL_PLACE_FRAME_BUDGET || stalled >= SCROLL_PLACE_STALLED_FRAMES) {
+        settle();
+        return;
+      }
+      restoreFrame = window.requestAnimationFrame(step);
+    };
+    if (!restoring) settle();
+    else restoreFrame = window.requestAnimationFrame(step);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("pagehide", flush);
+    // The four ways a reader moves while a place is being re-applied, each of which the restore yields to: a control taking focus, a key, a pointer press and a wheel. Focus and key are caught in the capture phase, so a control that stops propagation still yields the place before the browser scrolls it into view.
+    window.addEventListener("focusin", yieldToReader, true);
+    window.addEventListener("keydown", yieldToReader, true);
+    window.addEventListener("pointerdown", yieldToReader, { passive: true });
+    window.addEventListener("wheel", yieldToReader, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("focusin", yieldToReader, true);
+      window.removeEventListener("keydown", yieldToReader, true);
+      window.removeEventListener("pointerdown", yieldToReader);
+      window.removeEventListener("wheel", yieldToReader);
+      if (writeFrame !== 0) window.cancelAnimationFrame(writeFrame);
+      if (restoreFrame !== 0) window.cancelAnimationFrame(restoreFrame);
+      flush();
+    };
+  }, [scrollPlaceKey]);
   function commitQuery(patch: Partial<RecordListQueryState>): void {
     const next: RecordListQueryState = { ...latestQuery.current, ...patch };
     latestQuery.current = next;

@@ -248,13 +248,11 @@ function routeProblemOf(result: ImportRowResult): string | null {
 }
 export type ImportReceiptIntent = { readonly fingerprint: ImportFileFingerprint; readonly mapping: ImportConfirmedMapping; readonly rowDecisions: ImportDecisionSet };
 export type ImportReceiptIntentPart = "file" | "mapping" | "row-decisions";
-export type ImportReceiptRequest = ImportReceiptIntent & { readonly importOperationId: string };
 export type ImportReceiptUnavailableCode = "receipt-unreadable" | "receipt-inconsistent";
 export type ImportReceiptRead =
   | { readonly kind: "found"; readonly receipt: ImportReceipt }
   | { readonly kind: "not-found"; readonly importOperationId: string; readonly message: string }
   | { readonly kind: "unavailable"; readonly importOperationId: string; readonly reasonCode: ImportReceiptUnavailableCode; readonly reason: string };
-export type ImportReceiptLookup = ImportReceiptRead | { readonly kind: "conflict"; readonly importOperationId: string; readonly stored: ImportReceiptIntent; readonly requested: ImportReceiptIntent; readonly differingParts: readonly ImportReceiptIntentPart[]; readonly message: string };
 const NOT_FOUND_MESSAGE = "No receipt is stored under this import operation. Nothing is reported as applied under this identity, so check the operation's recorded result before repeating any of this work.";
 const UNTRUSTWORTHY_TRAILER = "Nothing is reported as applied from it, so check the operation's recorded result before repeating any of this work.";
 const isJsonRecord = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value);

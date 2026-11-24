@@ -332,7 +332,7 @@ test("the preview names the revision it renders, and that same revision is revie
   await expect(page.locator('[data-slot="review-decision"] [data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: WRITE_RECEIPT_TIMEOUT_MS });
   await expect(page.getByText("This candidate is answered, so its decision is fixed. Anything further comes from the author as a new submission with a new revision.", { exact: true })).toBeVisible();
   await openBuilder(page);
-  await expect(builderOf(page).locator(`[data-slot="locale-edition"][data-locale="${ARABIC}"]`)).toHaveAttribute("data-lifecycle-state", "candidate"); // The builder states the edition's own pointers, so it reports the frozen candidate it still holds; the decision the reviewer gave it is the review surface's fact, and only a release reaches a reader.
+  await expect(builderOf(page).locator(`[data-slot="locale-edition"][data-locale="${ARABIC}"]`)).toHaveAttribute("data-lifecycle-state", "approved"); // The builder states the edition's own records, so it reports the answer recorded on the frozen candidate it still holds: Approved, because this review approved that exact revision — and an approval publishes nothing, so only a release reaches a reader.
   await releaseSelectedEditions(page, ARABIC);
   const controls = page.locator('[data-slot="release-controls"]');
   await expect(controls.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: WRITE_RECEIPT_TIMEOUT_MS });
@@ -546,7 +546,10 @@ test("a Project Page is composed from its own catalogue, reviewed and released, 
   await page.getByRole("button", { name: "Approve this revision", exact: true }).click();
   await expect(page.locator('[data-slot="review-decision"] [data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: WRITE_RECEIPT_TIMEOUT_MS });
   await openProjectBuilder(page);
-  await expect(builderOf(page).locator(`[data-slot="locale-edition"][data-locale="${ENGLISH}"]`)).toHaveAttribute("data-lifecycle-state", "candidate");
+  await expect(
+    builderOf(page).locator(`[data-slot="locale-edition"][data-locale="${ENGLISH}"]`),
+    "The builder states the answer the review recorded on this edition's frozen candidate: Approved, because that exact revision is the one the reviewer approved, and an approval publishes nothing — so the release below is still the step that reaches a reader",
+  ).toHaveAttribute("data-lifecycle-state", "approved");
   await releaseSelectedEditions(page, ENGLISH);
   const controls = page.locator('[data-slot="release-controls"]');
   await expect(controls.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: WRITE_RECEIPT_TIMEOUT_MS });

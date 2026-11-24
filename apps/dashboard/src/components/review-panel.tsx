@@ -159,9 +159,7 @@ const lifecycleSpecOf = (state: ContentLifecycleState): LifecycleSpec => LIFECYC
 const shortChecksumOf = (checksum: string): string => (checksum.trim().length <= SHORT_CHECKSUM_LENGTH ? checksum.trim() : `${checksum.trim().slice(0, SHORT_CHECKSUM_LENGTH)}…`);
 const escapeAttribute = (value: string): string => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 const previewDocumentOf = (html: string, locale: VariantLocale, title: string): string => "<!doctype html>" + `<html lang="${escapeAttribute(locale.tag)}" dir="${escapeAttribute(locale.direction)}">` + `<head><meta charset="utf-8"><title>${escapeAttribute(title)}</title></head>` + `<body>${html}</body>` + "</html>";
-const lifecycleOfDecision = (decision: ReviewDecision | null, edition: ContentLifecycleState): ContentLifecycleState => (decision === "approved" ? "approved" : edition);
-const decisionOf = (candidate: CandidateView): ReviewDecision | null => candidate.decisionRecord?.decision ?? null;
-const variantTabsOf = (candidates: readonly CandidateView[]): readonly VariantTab[] => candidates.map((candidate) => ({ variantId: candidate.variantId, audience: candidate.audience, locale: candidate.locale, lifecycle: lifecycleOfDecision(decisionOf(candidate), candidate.lifecycle) }));
+const variantTabsOf = (candidates: readonly CandidateView[]): readonly VariantTab[] => candidates.map((candidate) => ({ variantId: candidate.variantId, audience: candidate.audience, locale: candidate.locale, lifecycle: candidate.lifecycle }));
 const switcherFamilyOf = (family: ReviewFamily): VariantFamily => (family === "update" ? "update" : "worker-page");
 const reviewableCandidatesOf = (family: ReviewFamily, candidates: readonly CandidateView[]): readonly CandidateView[] => candidates.filter((candidate) => variantKeyAllowed(switcherFamilyOf(family), candidate.audience));
 function decisionPayloadFor(decision: ReviewDecision, candidate: CandidateView, note: string): ReviewDecisionPayload {

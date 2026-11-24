@@ -126,8 +126,6 @@ export type SuccessorAdmission = { status: "admitted"; nextDueOn: CivilDate } | 
   const [nextDueOn] = preview.dates;
   return nextDueOn === undefined ? { status: "refused", reason: "series-ended" } : { status: "admitted", nextDueOn };
 }
-export type SeriesAdmissionQuestion = { state: SeriesState; at: CivilDate };
-export type SeriesAdmission = { status: "admits"; evaluatedOn: CivilDate } | { status: "refused"; reason: "paused" | "stopped" };
 export type SeriesOccurrenceState = "open" | "completed" | "reopened" | "skipped" | "cancelled";
 export type SeriesOccurrence = { dueOn: CivilDate; status: SeriesOccurrenceState };
 export type PlanResolutions = readonly ["keep-this-occurrence", "move-next-date-forward", "stop-series"];

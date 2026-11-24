@@ -30,7 +30,7 @@ function candidateViewOf(data: ReviewableCandidate): CandidateView {
     contentChecksum: data.candidate.contentChecksum,
     renderedHtml: data.renderedHtml,
     mediaRenditions: data.placements.flatMap((placement) => placement.renditions.map((rendition) => ({ purpose: rendition.purpose, url: rendition.path }))),
-    lifecycle: lifecycleOf(data.variant, data.headRelease ?? undefined),
+    lifecycle: lifecycleOf(data.variant, data.headRelease ?? undefined, { reviewDecision: data.review.decision }),
     decisionRecord: data.review.recorded,
     reviewedByAuthor: data.review.reviewedByAuthor,
   };

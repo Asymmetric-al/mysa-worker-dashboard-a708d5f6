@@ -351,7 +351,7 @@ type EditionCellProps = { readonly documentId: string; readonly documentRevision
 function EditionCell({ documentId, documentRevision, edition, scope, headingLevel, onChoose }: EditionCellProps): ReactElement {
   const titleId = useId();
   const head: Release | null = edition.headRelease;
-  const lifecycle = lifecycleOf(variantRecordOf(documentId, edition), head ?? undefined);
+  const lifecycle = lifecycleOf(variantRecordOf(documentId, edition), head ?? undefined, { reviewDecision: edition.candidate?.decision ?? null });
   const translation = edition.translation;
   const staleSince = translation.status === "stale" ? instantTextOf(translation.sourceUpdatedAt) : "";
   const staleWords = LIFECYCLE_STATUS["stale-translation"];
@@ -472,7 +472,7 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
   const editions: readonly EditionView[] = data.editions;
   if (editions.length === 0) return <StateNotice kind="empty" title={READ_STATE.empty.title} description={READ_STATE.empty.description} headingLevel={headingLevel} className={className} />;
   const tabs: readonly VariantTab[] = editions.map((edition) => {
-    const lifecycle = lifecycleOf(variantRecordOf(data.document.documentId, edition), edition.headRelease ?? undefined);
+    const lifecycle = lifecycleOf(variantRecordOf(data.document.documentId, edition), edition.headRelease ?? undefined, { reviewDecision: edition.candidate?.decision ?? null });
     const staleSince = edition.translation.status === "stale" ? instantTextOf(edition.translation.sourceUpdatedAt) : "";
     return { variantId: edition.variantId, audience: edition.audience, locale: edition.locale, lifecycle, ...(staleSince === "" ? {} : { staleSince }) };
   });

@@ -6,6 +6,7 @@ const PERSONA: PersonaName = "established-worker";
 const SESSION = SEEDED_PERSONAS[PERSONA]; // The established worker's seeded session, mirrored from the runner's roster rather than hard-coded.
 const WORK_HREF = "/work";
 const AGENDA_HREF = "/work/agenda";
+const UPCOMING_HREF = `${WORK_HREF}?list=upcoming&sort=title:asc&page=1&pageSize=50`; // The one filtered, ordered page window this journey leaves and returns to, which is the list a reader's place is kept against.
 const PARTNER_ROUTE_PREFIX = "/partners"; // The prefix every partner record is served under, from the opaque identifier and never from a name, and the one its own read lives under.
 const PARTNER_API_PREFIX = "/api/partners";
 const SEEDED_TODAY = "2026-11-20";
@@ -275,9 +276,34 @@ test("completing a task takes it out of Today, reopening returns it, a category 
     `Completed and reopened ${JSON.stringify(TODAY_TASK.title)} (${created.taskId}) due ${today}, whose two receipts stated revisions ${completionRevision} and ${reopeningRevision}; the category change on ${JSON.stringify(LINKED.title)} kept the task's day and status and its receipt stated revision ${editedRevision}, and the change left the partner's ${String(activityBefore)} recorded interactions untouched; the planned meeting on ${MEETING.date} at ${MEETING.time} ${PLANNED_MEETING_ZONE} was counted as open work and never as held.`,
   );
 });
+const SCROLL_PLACE_TOLERANCE_PX = 2; // How far a returned place may sit from the place the reader left: a settled layout can move a row by a pixel between the two readings, while anything larger is a different place on the list.
+type ScrollPlace = { readonly offset: number; readonly height: number }; // One reader's place as the page states it: the offset they stand at and the height of the document they stand in, because a place reached only by a document shorter than the one they left is the clamp at its end rather than the place itself.
+const scrollPlaceAt = (page: Page): Promise<ScrollPlace> => page.evaluate(() => ({ offset: window.scrollY, height: document.documentElement.scrollHeight }));
+/** Reads the place a reader leaves a list at, with the row's own link brought into view exactly as the click requires, once the document has stopped growing. */
+async function scrollPlaceOfRow(page: Page, link: Locator, subject: string): Promise<ScrollPlace> {
+  await expect(async () => {
+    await link.scrollIntoViewIfNeeded();
+  }, `${subject} states the row's own link and can bring it into view, which is what makes the place the reader stands at one they can leave from.`).toPass({ timeout: 15_000 });
+  let place = await scrollPlaceAt(page); // The height is sampled until it stops growing: a list fills after its first paint, and a place taken on a half-rendered document is not the place the reader leaves at.
+  for (let sample = 0; sample < 12; sample += 1) {
+    await page.waitForTimeout(250);
+    const next = await scrollPlaceAt(page);
+    if (next.height === place.height) return next;
+    place = next;
+  }
+  return place;
+}
+/** Asserts the reader is back at the place they left: inside the list rather than at its top, within the tolerance, on a document at least as tall as the one they left. */
+async function expectRestoredScrollPlace(page: Page, place: ScrollPlace, subject: string): Promise<void> {
+  const restored = async (): Promise<number | undefined> => {
+    const read = await scrollPlaceAt(page);
+    return read.height >= place.height && Math.abs(read.offset - place.offset) <= SCROLL_PLACE_TOLERANCE_PX ? read.offset : undefined;
+  };
+  await expect.poll(restored, { message: `${subject} comes back at the ${String(place.offset)} px place the reader left, within ${String(SCROLL_PLACE_TOLERANCE_PX)} px of it, on a document at least as tall as the ${String(place.height)} px one it was left on.` }).toBeGreaterThan(0);
+}
 test("a record visit returns to the same filtered view, its same ordering and the reader's same place in it", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 480 }); // A short window, so the list is longer than the viewport and the reader's place in it is a figure to return to rather than a zero on both sides of the visit.
-  await page.goto(`${WORK_HREF}?list=upcoming&sort=title:asc&page=1&pageSize=50`);
+  await page.goto(UPCOMING_HREF);
   await expect(page.locator('[data-slot="work-task-lists"]'), "The filter the address names is the list the surface shows.").toHaveAttribute("data-list", "upcoming");
   await expect(page.getByRole("tab", { name: "Upcoming" })).toHaveAttribute("aria-selected", "true");
   const upcoming = taskRegion(page, "Upcoming");
@@ -286,12 +312,14 @@ test("a record visit returns to the same filtered view, its same ordering and th
   await expect(orderedBy, "The ordering the address names is the ordering the surface shows.").toHaveAttribute("aria-sort", "ascending");
   const workPagerBefore = (await readPager(page)).text;
   const workFirstRowBefore = (await upcoming.getByRole("row").nth(1).innerText()).replace(/\s+/gu, " ").trim();
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  const workScrollBefore = await page.evaluate(() => window.scrollY);
-  expect(workScrollBefore, "The filtered list is longer than the window, which is what makes the reader's place in it something to return to.").toBeGreaterThan(0);
-  await upcoming.getByRole("link", { name: "Jo Mbeki" }).click(); // The visit: the row's own link is the only route to the partner, so the record is a destination.
+  const visitLink = upcoming.locator('a[href^="/partners/"]').last(); // The last partner row the list states: the record is opened from the row as the reader sees it, so the place they leave is the one they were reading rather than one the click scrolls them away from.
+  const visitHref = await visitLink.getAttribute("href"); // The address the row itself states, which is the record the visit has to open.
+  if (visitHref === null) throw new Error("The row the reader opens states no destination, so the visit has no record to return from.");
+  const workPlaceBefore = await scrollPlaceOfRow(page, visitLink, "The Upcoming list");
+  expect(workPlaceBefore.offset, "The filtered list is longer than the window, which is what makes the reader's place in it something to return to.").toBeGreaterThan(0);
+  await visitLink.click(); // The visit: the row's own link is the only route to the partner, so the record is a destination.
   await expect(page.getByRole("navigation", { name: "breadcrumb" }), "The record states the list it belongs to, so the visit is a navigation rather than a panel over the list.").toBeVisible();
-  await expect(page).toHaveURL(new RegExp(`${PARTNER_ROUTE_PREFIX}/${LINKED.partner}`, "u"));
+  expect(new URL(page.url()).pathname, "The visit opens the record the row the reader clicked links to.").toBe(visitHref);
   await page.goBack();
   await expect(page.locator('[data-slot="work-task-lists"]'), "The same list comes back after the visit.").toHaveAttribute("data-list", "upcoming");
   await expect(page, "The address keeps the filter and the ordering the visit started from.").toHaveURL(/list=upcoming/u);
@@ -301,18 +329,22 @@ test("a record visit returns to the same filtered view, its same ordering and th
   expect((await readPager(page)).text, "The page window comes back exactly as it was.").toBe(workPagerBefore);
   await expect(upcoming.getByRole("row").nth(1)).toBeVisible();
   expect((await upcoming.getByRole("row").nth(1).innerText()).replace(/\s+/gu, " ").trim(), "The same rows are in the same order after the return.").toBe(workFirstRowBefore);
-  await expect.poll(async () => await page.evaluate(() => window.scrollY), { message: `The return leaves the reader inside the list they left (${String(workScrollBefore)} CSS px down before the visit) rather than dropping them at its top.` }).toBeGreaterThan(0); // The place the reader left is a non-zero one, which is what makes the return a return rather than a fresh arrival at the top of the list. The application restores a place rather than the same offset: the returned view re-reads its own query, so the document is briefly shorter than the place
-  const workScrollAfter = await page.evaluate(() => window.scrollY);
+  await expectRestoredScrollPlace(page, workPlaceBefore, "The return to the Upcoming list");
+  const workPlaceAfter = await scrollPlaceAt(page);
+  await page.goto(WORK_HREF); // The surface, then the list's own address: a fresh arrival rather than a step back through history, which no browser restores a place for, so the place the reader is put back at here is the application's own record of it.
+  await page.goto(UPCOMING_HREF);
+  await expect(page.locator('[data-slot="work-task-lists"]'), "The list's own address is the filtered view the reader left.").toHaveAttribute("data-list", "upcoming");
+  await expectRestoredScrollPlace(page, workPlaceBefore, "Reopening the Upcoming list at its own address");
   await expectDevelopmentData(page);
   await page.goto(AGENDA_HREF);
   const agenda = agendaRegion(page);
   await expect(agenda, "The dated agenda is a list destination of its own.").toBeVisible();
   const agendaPagerBefore = (await readPager(page)).text;
   const agendaFirstRowBefore = (await agenda.getByRole("row").nth(1).innerText()).replace(/\s+/gu, " ").trim();
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  const agendaScrollBefore = await page.evaluate(() => window.scrollY);
-  expect(agendaScrollBefore, "The agenda is longer than the window, so its place is something to return to as well.").toBeGreaterThan(0);
-  await agenda.getByRole("link", { name: "Grace Adeyemi" }).click();
+  const agendaVisitLink = agenda.locator('a[href^="/partners/"]').last(); // The last partner row the agenda groups, opened from the row as the reader sees it for the same reason: the place they leave is the one they were reading.
+  const agendaPlaceBefore = await scrollPlaceOfRow(page, agendaVisitLink, "The dated agenda");
+  expect(agendaPlaceBefore.offset, "The agenda is longer than the window, so its place is something to return to as well.").toBeGreaterThan(0);
+  await agendaVisitLink.click();
   await expect(page.getByRole("navigation", { name: "breadcrumb" })).toBeVisible();
   await expect(page).toHaveURL(/\/partners\/[^?/]+/u);
   await page.goBack();
@@ -321,12 +353,16 @@ test("a record visit returns to the same filtered view, its same ordering and th
   expect((await readPager(page)).text, "The agenda's page window comes back exactly as it was.").toBe(agendaPagerBefore);
   await expect(agenda.getByRole("row").nth(1)).toBeVisible();
   expect((await agenda.getByRole("row").nth(1).innerText()).replace(/\s+/gu, " ").trim(), "The same days and rows come back in the same order.").toBe(agendaFirstRowBefore);
-  await expect.poll(async () => await page.evaluate(() => window.scrollY), { message: `The return leaves the reader inside the agenda they left (${String(agendaScrollBefore)} CSS px down before the visit) rather than at its top.` }).toBeGreaterThan(0);
-  const agendaScrollAfter = await page.evaluate(() => window.scrollY);
+  await expectRestoredScrollPlace(page, agendaPlaceBefore, "The return to the dated agenda");
+  const agendaPlaceAfter = await scrollPlaceAt(page);
+  await page.goto(WORK_HREF); // And the agenda's own address, reached the same way: no history entry holds a place for it, so the place it comes back at is the one the application kept.
+  await page.goto(AGENDA_HREF);
+  await expect(agenda, "The agenda's own address is the agenda the reader left.").toBeVisible();
+  await expectRestoredScrollPlace(page, agendaPlaceBefore, "Reopening the dated agenda at its own address");
   await expectDevelopmentData(page);
   recordEvidence(
     "criterion-5 continuity",
-    `A partner-record visit and return restored the Work list's filter (upcoming), its ordering (title ascending), its page window (${workPagerBefore}) and a place ${String(workScrollAfter)} px down a list it left ${String(workScrollBefore)} px down, and the agenda's window (${agendaPagerBefore}) and a place ${String(agendaScrollAfter)} px down an agenda it left ${String(agendaScrollBefore)} px down. The return restores a non-zero place rather than the same offset, because the returned view re-reads its own query before the document reaches the height the reader left at.`,
+    `A partner-record visit and return restored the Work list's filter (upcoming), its ordering (title ascending), its page window (${workPagerBefore}) and the reader's place ${String(workPlaceAfter.offset)} px down a list they left at ${String(workPlaceBefore.offset)} px in a ${String(workPlaceBefore.height)} px document, and the agenda's window (${agendaPagerBefore}) and the reader's place ${String(agendaPlaceAfter.offset)} px down an agenda they left at ${String(agendaPlaceBefore.offset)} px in a ${String(agendaPlaceBefore.height)} px document. Each return landed within ${String(SCROLL_PLACE_TOLERANCE_PX)} px of the place the reader left, on a document at least as tall as the one it was left on, which is the scroll position the criterion requires to survive the visit, and each place came back again when the list's own address was opened as a fresh arrival rather than a step back through history.`,
   );
 });
 test("the three bulk actions review the selection first and report each row's own result", async ({ page, request }) => {

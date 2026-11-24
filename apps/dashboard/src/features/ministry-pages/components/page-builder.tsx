@@ -67,14 +67,21 @@ const variantRecordOf = (documentId: string, edition: EditionRecord): ContentVar
   ...(edition.releaseHeadId === null ? {} : { releaseHeadId: edition.releaseHeadId }),
 });
 const editionViewsOf = (documentId: string, editions: readonly EditionRecord[]): readonly EditionView[] =>
-  editions.map((edition) => ({ locale: edition.locale.tag, direction: edition.locale.direction, variant: variantRecordOf(documentId, edition), ...(edition.headRelease === null ? {} : { release: edition.headRelease }), ...(edition.candidateId === null ? {} : { candidateId: edition.candidateId }) }));
+  editions.map((edition) => ({
+    locale: edition.locale.tag,
+    direction: edition.locale.direction,
+    variant: variantRecordOf(documentId, edition),
+    ...(edition.headRelease === null ? {} : { release: edition.headRelease }),
+    ...(edition.candidateId === null ? {} : { candidateId: edition.candidateId }),
+    ...(edition.candidate === null ? {} : { candidateDecision: edition.candidate.decision }),
+  }));
 const editionListOf = (localesRead: PageLocalesReadResult | undefined, seed: ReadEnvelope<readonly EditionView[]>, documentId: string, editions: readonly EditionRecord[]): readonly EditionView[] =>
   localesRead === undefined ? seed.data : editionViewsOf(documentId, localesRead.kind === "envelope" ? localesRead.envelope.data.editions : editions);
 const releaseVariantsOf = (documentId: string, editions: readonly EditionRecord[]): readonly ReleaseVariantView[] =>
   editions.map((edition) => ({
     variantId: edition.variantId,
     locale: edition.locale.tag,
-    lifecycle: lifecycleOf(variantRecordOf(documentId, edition), edition.headRelease ?? undefined),
+    lifecycle: lifecycleOf(variantRecordOf(documentId, edition), edition.headRelease ?? undefined, { reviewDecision: edition.candidate?.decision ?? null }),
     ...(edition.candidateId === null ? {} : { candidateId: edition.candidateId }),
     ...(edition.draftRevisionId === null ? {} : { revisionId: edition.draftRevisionId }),
     ...(edition.releaseHeadId === null ? {} : { releaseHeadId: edition.releaseHeadId }),

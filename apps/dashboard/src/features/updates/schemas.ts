@@ -79,16 +79,6 @@ export const requestChangesSchema = z.strictObject({
     .min(1, "Say what needs changing so the author can act on it. " + REVIEW_ROUND_NOTE.furtherRoundIsNewSubmission)
     .max(REVIEW_REASON_MAX_CHARS, `Keep the note to ${REVIEW_REASON_MAX_CHARS} characters, which is all this review record ` + "holds, so point at what needs changing and leave the rewriting to the author."),
 });
-export const rejectCandidateSchema = z.strictObject({
-  candidateId: contentIdSchema,
-  variantId: contentIdSchema,
-  reason: z
-    .string({ error: "State the reason as a note on this candidate, or leave the reason out entirely." })
-    .trim()
-    .min(1, "Either leave the reason out or say what ended this candidate: an empty note states nothing.")
-    .max(REVIEW_REASON_MAX_CHARS, `Keep the note to ${REVIEW_REASON_MAX_CHARS} characters, which is all this review record ` + "holds, so say what ended the candidate and leave the rest to its author.")
-    .optional(),
-});
 export const restoreRevisionAsDraftSchema = z.strictObject({ revisionId: contentIdSchema });
 export type ApproveCandidatePayload = z.infer<typeof approveCandidateSchema>;
 export type RequestChangesPayload = z.infer<typeof requestChangesSchema>;

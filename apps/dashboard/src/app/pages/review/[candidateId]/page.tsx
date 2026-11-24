@@ -42,7 +42,7 @@ function variantRecordOf(documentId: string, edition: EditionView): Parameters<t
   };
 }
 function lifecycleOfEdition(documentId: string, edition: EditionView): ReviewEditionView["lifecycle"] {
-  const derived = lifecycleOf(variantRecordOf(documentId, edition), edition.headRelease ?? undefined);
+  const derived = lifecycleOf(variantRecordOf(documentId, edition), edition.headRelease ?? undefined, { reviewDecision: edition.candidate?.decision ?? null });
   return edition.translation.status === "stale" && (derived === "draft" || derived === "not-started") ? "stale-translation" : derived;
 }
 const pageFamilyOf = (family: PageLocalesEnvelope["data"]["document"]["family"]): ReviewDocumentView["family"] | undefined => (family === "worker-page" || family === "project-page" ? family : undefined);
