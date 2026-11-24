@@ -345,11 +345,12 @@ function PublicationStanding({ release, level }: { readonly release: UpdatesQuer
     </section>
   );
 }
-function NoticeTarget({ edition, share, level }: { readonly edition: PublishEditionView | null; readonly share: UpdatesQueryState<SharePresentationData>; readonly level: ReviewHeadingLevel }): ReactElement {
+/** The edition whose notice this block describes, named by the identity alone: the attempt that submitted it is what decides whether a notice is part of this release, so the block asks for no lifecycle the live route data may since have changed. */
+function NoticeTarget({ variantId, share, level }: { readonly variantId: string | null; readonly share: UpdatesQueryState<SharePresentationData>; readonly level: ReviewHeadingLevel }): ReactElement {
   const Heading = HEADING_TAG[level];
   const result = share.result;
   const detail = (): ReactElement => {
-    if (edition === null) return <p className="type-supporting text-pretty">{NOTICE_NO_NOTIFY}</p>;
+    if (variantId === null) return <p className="type-supporting text-pretty">{NOTICE_NO_NOTIFY}</p>;
     if (result === undefined) return <StateNotice kind="loading" headingLevel={childLevel(level)} title={NOTICE_READING_TITLE} description={STANDING_CHECKING} loadingLines={1} />;
     if (result.kind === "denied") return <StateNotice kind="denied" headingLevel={childLevel(level)} title={NOTICE_READING_TITLE} description={NOTICE_UNREADABLE_REASON} reasonCode={result.denied.reasonCode} />;
     if (result.kind === "unavailable") return <StateNotice kind="unavailable" headingLevel={childLevel(level)} title={NOTICE_READING_TITLE} description={NOTICE_UNREADABLE_REASON} source={result.unavailable.source} />;
@@ -374,11 +375,11 @@ function NoticeTarget({ edition, share, level }: { readonly edition: PublishEdit
     );
   };
   return (
-    <section data-slot="publish-notice" data-notice-edition={edition?.variantId ?? ""} className="flex min-w-0 flex-col gap-2">
+    <section data-slot="publish-notice" data-notice-edition={variantId ?? ""} className="flex min-w-0 flex-col gap-2">
       <Heading className={HEADING_SCALE[level]}>{NOTICE_HEADING}</Heading>
       <p className="type-supporting text-pretty">{NOTICE_INTRO}</p>
       {detail()}
-      {edition === null ? null : <SimulationLabel effect={NOTICE_SIMULATION} />}
+      {variantId === null ? null : <SimulationLabel effect={NOTICE_SIMULATION} />}
     </section>
   );
 }
@@ -447,14 +448,16 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
   const selectable = useMemo(() => editions.filter((edition) => edition.candidate !== null), [editions]);
   const chosen = useMemo(() => selectable.filter((edition) => selected.includes(edition.variantId)), [selectable, selected]);
   const notifyEditions = useMemo(() => chosen.filter((edition) => fixedModeOf(edition) === NOTIFY_NOW_MODE), [chosen]);
-  const noticeEdition = notifyEditions[0] ?? null;
+  const selectionKey = selectionKeyOf(scope, documentId, selected);
+  const current = report !== null && report.selectionKey === selectionKey ? report : null;
+  // The notice block describes the submission this attempt made, so a report on screen answers it: publishing consumes the released edition's candidate and the page's own refresh brings route data without one, which empties the selection above and would otherwise leave this block stating that no notice is part of a release whose receipt names one.
+  const reportedNoticeVariantId = current === null ? null : (current.submitted.find((submitted) => submitted.mode === NOTIFY_NOW_MODE)?.variantId ?? null);
+  const noticeVariantId = reportedNoticeVariantId ?? notifyEditions[0]?.variantId ?? null;
   const standingEdition = chosen[0] ?? null;
   const release = useRelease({ scope, variantId: standingEdition?.variantId ?? "" });
-  const share = useSharePresentation({ scope, variantId: noticeEdition?.variantId ?? "" });
+  const share = useSharePresentation({ scope, variantId: noticeVariantId ?? "" });
   const payload = useMemo<PublishVariantsPayload>(() => ({ documentId, variants: chosen.flatMap((edition) => (edition.candidate === null ? [] : [selectionOf(edition, edition.candidate)])) }), [documentId, chosen]);
-  const selectionKey = selectionKeyOf(scope, documentId, selected);
   const refusal = useMemo(() => (payload.variants.length === 0 ? null : selectionRefusalOf(payload)), [payload]);
-  const current = report !== null && report.selectionKey === selectionKey ? report : null;
   const releaseRead = release.result;
   const standingRelease = releaseRead !== undefined && releaseRead.kind === "envelope" && releaseRead.envelope.data.status === "released" ? releaseRead.envelope.data.release : undefined;
   const settled = current !== null && (current.outcome.outcome === "accepted" || current.outcome.outcome === "alreadyAccepted" || current.outcome.outcome === "unchanged");
@@ -475,11 +478,13 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
         const notices: NoticeAttempt[] = [];
         if (published.outcome === "accepted" || published.outcome === "alreadyAccepted") {
           const releases = releasedIdsOf(published);
+          // The notice leg is judged on the share-presentation read's own answer and never on how quickly the author confirmed this dialog: an edition that asked for a notice awaits that read here when the surface has not received its answer yet, so only a read that refused, was unavailable or answered nothing withholds the notice.
+          const shareAnswer = notifyEditions.length === 0 || share.result !== undefined ? share.result : await share.readNow();
           for (const edition of chosen) {
             if (fixedModeOf(edition) !== NOTIFY_NOW_MODE) continue;
             const releaseId = releases.get(edition.variantId);
             if (releaseId === undefined) continue;
-            const withheld = ceiling === undefined || ceiling.state !== "stated" ? NOTICE_CEILING_REASON : share.result === undefined ? NOTICE_NOT_READY_REASON : share.result.kind !== "envelope" ? NOTICE_UNREADABLE_REASON : null;
+            const withheld = ceiling === undefined || ceiling.state !== "stated" ? NOTICE_CEILING_REASON : shareAnswer === undefined ? NOTICE_NOT_READY_REASON : shareAnswer.kind !== "envelope" ? NOTICE_UNREADABLE_REASON : null;
             if (withheld !== null) {
               notices.push({ variantId: edition.variantId, withheld });
               continue;
@@ -502,7 +507,7 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
         setBusy(false);
       }
     },
-    [ceiling, chosen, documentId, notify, payload, publish, release, router, scope, selectionKey, share.result, submittedOf],
+    [ceiling, chosen, documentId, notify, notifyEditions, payload, publish, release, router, scope, selectionKey, share, submittedOf],
   );
   const confirmRelease = useCallback((): void => {
     void attempt(expectedRevision);
@@ -555,7 +560,8 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
     if (current !== null) resultRef.current?.focus();
   }, [current]);
   const selectEdition = (variantId: string, on: boolean): void => setSelected((previous) => (on ? (previous.includes(variantId) ? previous : [...previous, variantId]) : previous.filter((entry) => entry !== variantId)));
-  const blockedReason = editions.length === 0 ? null : chosen.length === 0 ? SELECTION_REQUIRED : refusal !== null ? REFUSED_BEFORE_SENDING : settled ? SETTLED_BLOCK : null;
+  // A settled attempt states that it is settled before it states that nothing is selected: the page's own refresh drops the released edition's candidate, and "nothing is selected" beside a receipt that names the edition this attempt released would contradict it.
+  const blockedReason = editions.length === 0 ? null : settled ? SETTLED_BLOCK : chosen.length === 0 ? SELECTION_REQUIRED : refusal !== null ? REFUSED_BEFORE_SENDING : null;
   const state = pending ? "working" : settled ? "settled" : "review";
   return (
     <section
@@ -606,7 +612,7 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
           {editions.length === 0 ? null : (
             <>
               <Separator />
-              <NoticeTarget edition={noticeEdition} share={share} level={childHeading} />
+              <NoticeTarget variantId={noticeVariantId} share={share} level={childHeading} />
               <p className="type-supporting text-pretty">{SIBLING_PROMISE}</p>
               <p className="type-supporting text-pretty">{NOTHING_OUTSIDE}</p>
               {settled ? <p className="type-supporting text-pretty">{SETTLED_NOTE}</p> : <p className="type-supporting text-pretty">{REPLAY_NOTE}</p>}

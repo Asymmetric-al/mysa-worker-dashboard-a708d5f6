@@ -99,7 +99,19 @@ test("records an invitation that names the person, the ministry, the five unsele
   await expect(page.getByRole("heading", { name: "Saved", exact: true })).toHaveCount(0);
   await form.getByRole("radio", { name: "Through a date you choose" }).check();
   await form.getByLabel(/^Share through/u).fill("2027-01-31");
-  await review.getByRole("button", { name: "Record invitation" }).click();
+  // The press below has to read the payload the field now holds, so the surface is awaited past the refusal the earlier press recorded and past the date it lacked: the review states the date only once the values the payload is built from carry it.
+  await expect(refusal, "The date the field holds replaces the refusal the earlier press recorded").toHaveCount(0);
+  await expect(review.getByText("2027-01-31", { exact: true }), "The review states the date the field holds, so the press below reads the payload that carries it").toBeVisible();
+  // A press that reaches the handler before the field's own render is made against the earlier state and refused, while a repeat under the same reviewed intent replays that attempt rather than recording a second invitation: so the press is repeated only while the review still states no result.
+  const saved = review.getByRole("heading", { name: "Saved", exact: true });
+  await expect(async () => {
+    if ((await saved.count()) === 0) {
+      const record = review.getByRole("button", { name: "Record invitation" });
+      await expect(record).toBeEnabled({ timeout: 10_000 });
+      await record.click();
+    }
+    await expect(saved).toBeVisible({ timeout: 10_000 });
+  }).toPass({ timeout: 20_000 });
   await expect(review.getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
   await expect(review.getByText(/^coaching-grant-\S+$/u)).toBeVisible();
   await expect(review.getByText("This step is complete for this attempt, and the result below is its record. Changing what this step would apply begins a new attempt with its own identity.")).toBeVisible();

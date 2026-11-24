@@ -37,7 +37,15 @@ export type VariantOverviewReadResult = ReadResult<ReadEnvelope<VariantOverviewD
 export type UpdateDraftReadResult = ReadResult<ReadEnvelope<UpdateDraftData>>;
 export type UpdateReleaseReadResult = ReadResult<ReadEnvelope<UpdateReleaseData>>;
 export type SendResultReadResult = ReadResult<ReadEnvelope<SendResultData>>;
-export type UpdatesQueryState<T> = { readonly result: ReadResult<ReadEnvelope<T>> | undefined; readonly isPending: boolean; readonly isFetching: boolean; readonly isStale: (result: ReadResult<ReadEnvelope<T>>) => boolean; readonly refetch: () => void };
+/** One Updates read as a surface holds it. `refetch` asks for a fresh answer without waiting for it; `readNow` asks for one and answers with it, so an action that judges something on this read's envelope awaits the answer instead of reading whatever the surface happened to have received by then. */
+export type UpdatesQueryState<T> = {
+  readonly result: ReadResult<ReadEnvelope<T>> | undefined;
+  readonly isPending: boolean;
+  readonly isFetching: boolean;
+  readonly isStale: (result: ReadResult<ReadEnvelope<T>>) => boolean;
+  readonly refetch: () => void;
+  readonly readNow: () => Promise<ReadResult<ReadEnvelope<T>> | undefined>;
+};
 export type UpdatesQueryOptions<T> = { readonly initialData?: ReadResult<ReadEnvelope<T>>; readonly initialDataUpdatedAt?: number };
 export const updateQueryKey = (scope: Scope, job: UpdatesReadJob, params: QueryParams = {}): ScopedQueryKey => queryKey(scope, job, params);
 const isObjectBody = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -71,6 +79,10 @@ function queryStateOf<T>(query: UseQueryResult<ReadResult<ReadEnvelope<T>>, neve
     isStale: (result) => result.kind === "envelope" && !sameScope(result.envelope.scope, scope),
     refetch: () => {
       void query.refetch();
+    },
+    readNow: async () => {
+      const answered = await query.refetch();
+      return answered.data ?? query.data;
     },
   };
 }

@@ -4,6 +4,7 @@ import { useId, type ReactElement, type ReactNode } from "react";
 import { DraftStatus, lifecycleOf, type VariantReleaseOutcome } from "@/components/draft-status";
 import { fieldErrorsFromInvalid } from "@/components/form-field";
 import OperationResult, { type ReceiptHeadingLevel } from "@/components/operation-result";
+import SimulationLabel from "@/components/simulation-label";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { SEND_STATUS, type SendStatus } from "@/components/status-badge";
 import { buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
-import { AUDIENCE_LABELS, LOCALE_DISPLAY_NAMES, REVIEW_ROUND_NOTE, WITHDRAWAL_WORDING } from "../copy/updates-copy";
+import { AUDIENCE_LABELS, LOCALE_DISPLAY_NAMES, REVIEW_ROUND_NOTE, SIMULATED_EFFECT_BY_TRIGGER, WITHDRAWAL_WORDING } from "../copy/updates-copy";
 type PublishingVariant = Parameters<typeof lifecycleOf>[0];
 type PublishingRelease = NonNullable<Parameters<typeof lifecycleOf>[1]>;
 export const PUBLISH_EDITION_STATES = ["released", "failed-with-prior-good-head", "needs-attention", "withdrawn"] as const;
@@ -126,6 +127,8 @@ function EditionRow({ edition, synthesis, renderAction }: EditionRowProps): Reac
               </p>
             </div>
           )}
+          {/* The boundary this notice crossed travels with the receipt that states it, so an accepted notice and one whose outcome is unknown are labelled alike wherever the result is read. */}
+          <SimulationLabel effect={SIMULATED_EFFECT_BY_TRIGGER.notify} />
         </div>
       )}
       {action === null ? null : <div className="min-w-0">{action}</div>}
