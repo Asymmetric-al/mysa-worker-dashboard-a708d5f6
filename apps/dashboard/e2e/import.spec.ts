@@ -11,6 +11,7 @@ const ROW_MARKER = { duplicateLooking: "ruth.okafor@example.org", skipped: "toma
 const CORRECTED_EMAIL = "nadia.rahman@example.org"; // The corrected address row 12 is given: the row's own value with one `@`, which is its only problem.
 const RESTRICTED_NAME = "Hilary Beckett";
 const CARRIED_RESTRICTION = "Do not contact"; // The restriction row 14 carries in the file, which acceptance must keep exactly as written.
+const OVERSIZE_FILE = { name: "contacts-over-the-size-limit.csv", bytes: 5_242_907 } as const; // QA's own reproduction at step 1: three bytes past the 5 MiB the limits state, so the chooser's own measurement of the file is what refuses it.
 const REVIEW_TABLE = "Rows awaiting a decision";
 const DECISIONS = { create: 2, reuse: 1, skip: 1 } as const;
 const UNDECIDED_ROWS = FIXTURE.dataRows - DECISIONS.create - DECISIONS.reuse - DECISIONS.skip;
@@ -29,6 +30,16 @@ function writeRefusalInputs(outputPath: (name: string) => string): { readonly to
   const workbook = outputPath("contacts.xlsx"); // A real ZIP local-file header, which is what every `.xlsx` is underneath: the importer types a file by its bytes, so this is refused as a workbook rather than parsed as text that merely looks odd.
   writeFileSync(workbook, Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00]), Buffer.from("not text this importer parses", "utf8")]));
   return { tooManyRows, workbook };
+}
+function writeOversizeFile(outputPath: (name: string) => string): string {
+  const path = outputPath(OVERSIZE_FILE.name); // Writes the file QA chose at step 1, of exactly the size it stated: many data rows of text, every character ASCII so a string's length is the file's byte count.
+  const header = "First name,Last name,Email,Notes\n";
+  const row = "Sweep,Contact,sweep@example.org,note\n";
+  const rows = Math.floor((OVERSIZE_FILE.bytes - header.length) / row.length) - 1; // One row fewer than the file has room for, so the closing row below carries the padding that lands the file on the exact byte count rather than a rounded one.
+  const opening = "Sweep,Contact,sweep@example.org,";
+  const closing = OVERSIZE_FILE.bytes - header.length - rows * row.length; // The closing row's own length, newline included: the remainder the repeated rows left, which here is between one and two rows' worth.
+  writeFileSync(path, `${header}${row.repeat(rows)}${opening}${"x".repeat(closing - opening.length - 1)}\n`, "utf8");
+  return path;
 }
 const armLostAcknowledgementOnAcceptance = async (page: Page): Promise<void> => armLostAcknowledgement(page.request, "acceptImportRows"); // Arms the lost acknowledgement on the acceptance itself: the acceptance is applied and recorded and only its
 const stepHeading = (page: Page, step: string): Locator => page.getByRole("heading", { level: 2, name: step });
@@ -242,6 +253,32 @@ test("a file over the row limit and a workbook are each refused before a single 
   await expect(stepHeading(page, "Choose file")).toBeVisible();
   await expect(page.getByRole("button", { name: "Confirm the column mapping" })).toHaveCount(0);
   await expect(page.getByRole("table", { name: REVIEW_TABLE })).toHaveCount(0);
+});
+test("a file over the size limit is refused in the browser, before its bytes are read or sent", async ({ page }, testInfo) => {
+  const path = writeOversizeFile((name) => testInfo.outputPath(name));
+  const posted: string[] = []; // Every POST this page addresses to the import route, so "nothing was sent" is counted rather than taken from the screen.
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/api/import") posted.push(request.url());
+  });
+  await openJourney(page);
+  const input = page.getByLabel("CSV file"); // Step 1 — the only step this file reaches: its own size is measured here, before a byte of it is read.
+  await input.setInputFiles(path);
+  await expect(input, "The refusal is stated at the control the file was chosen with, and that control is marked invalid as it is after a failed read.").toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText(/This file is 5242907 bytes; the limit is 5242880 bytes \(5 MiB\)/u), "The refusal names the size this file measures and the 5 MiB limit it passes.").toBeVisible();
+  await expect(page.getByText(/did not read that file and sent nothing/u), "The chooser states what happened here: the file was not read, and nothing from it was sent to the importer.").toBeVisible();
+  await expect(page.getByText(/^No file chosen yet\./u), "No file stands as the chosen one, so the step says none is chosen rather than naming a file the importer would refuse.").toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue to Map" })).toBeDisabled();
+  await expect(input, "Another file can be chosen at once: nothing is left reading, because nothing was read.").toBeEnabled();
+  await expect(stepHeading(page, "Choose file")).toBeVisible();
+  await expect(stepHeading(page, "Map"), "The journey stays at the step that refused the file, so no later step is reached with it.").toHaveCount(0);
+  await page.getByLabel("CSV file").setInputFiles(exampleFixturePath()); // A file the importer accepts, chosen after the refusal: the step reads it as it reads any other, so the guard has cost the worker nothing.
+  await expect(page.getByText(EXAMPLE_FILE, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue to Map" })).toBeEnabled();
+  await input.setInputFiles(path); // The over-limit file again, now that an accepted file stands: the refusal is stated and that file stays exactly as it was chosen, rather than being cleared by a file the browser read nothing from.
+  await expect(page.getByText(/did not read that file and sent nothing/u)).toBeVisible();
+  await expect(page.getByText(EXAMPLE_FILE, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue to Map" })).toBeEnabled();
+  expect(posted, "The over-limit file never became a request, so the service was asked to judge no body at all.").toEqual([]);
 });
 test("a decision whose revision moved on states the conflict beside the decision it kept, and the reread rows let it be recorded", async ({ page }) => {
   await openJourney(page);

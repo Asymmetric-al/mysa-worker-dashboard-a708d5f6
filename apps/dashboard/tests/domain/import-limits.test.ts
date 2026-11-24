@@ -143,10 +143,57 @@ it("import limits: cell length: accepts a cell of exactly 2,000 code points and 
   const failedRow = firstWhere(validation.rows, "rowNumber", 2, "the row the long cell belongs to");
   expect(failedRow.verdict).toBe("needs-correction");
   expect(failedRow.faults.map((entry) => entry.kind)).toEqual(["cell-too-long"]);
+  expect(failedRow.issues.map((issue) => [issue.code, issue.columnNumber, issue.fieldId, issue.header, issue.label])).toEqual([["cell-too-long", 1, "display-name", "Name", "Display name"]]);
+  const stated = mustFind(failedRow.issues[0], "the cell-length problem the row states");
+  for (const needle of [String(IMPORT_MAX_CELL_CODE_POINTS + 1), String(IMPORT_MAX_CELL_CODE_POINTS)]) expect(stated.message).toContain(needle);
+  expect(stated.value).toBe(overLimit);
   for (const rowNumber of [1, 3, 4]) {
     const sibling = firstWhere(validation.rows, "rowNumber", rowNumber, `row ${rowNumber}`);
-    expect([sibling.faults, sibling.verdict]).toEqual([[], "ready"]);
+    expect([sibling.faults, sibling.issues, sibling.verdict]).toEqual([[], [], "ready"]);
   }
+});
+it("import limits: cell length: states a long cell in a column that supplies no field", async () => {
+  const overLimit = "a".repeat(IMPORT_MAX_CELL_CODE_POINTS + 1);
+  const file = await parsedFile(
+    csvWith(
+      ["Name", "Favourite colour"],
+      [
+        ["Amara Okonkwo", overLimit],
+        ["Bo Lindqvist", "blue"],
+      ],
+    ),
+  );
+  const mapping = confirmedMappingFor(file);
+  expect(mapping.assignments.map((assignment) => [assignment.columnIndex, assignment.fieldId])).toEqual([[1, "display-name"]]);
+  const validation = validateRows(file, mapping);
+  expect([validation.counts.needsCorrection, validation.counts.ready]).toEqual([1, 1]);
+  const failedRow = firstWhere(validation.rows, "rowNumber", 1, "the row the unmapped long cell belongs to");
+  expect(failedRow.verdict).toBe("needs-correction");
+  expect(failedRow.issues.map((issue) => [issue.code, issue.columnNumber, issue.fieldId, issue.header, issue.label])).toEqual([["cell-too-long", 2, null, "Favourite colour", "Favourite colour"]]);
+  const sibling = firstWhere(validation.rows, "rowNumber", 2, "the row beside it");
+  expect([sibling.issues, sibling.verdict]).toEqual([[], "ready"]);
+});
+it("import limits: row shape: states a row that does not line up with the header", async () => {
+  const file = await parsedFile(csvWith(["Name", "Email"], [["Amara Okonkwo"], ["Bo Lindqvist", "bo@example.org"]]));
+  const validation = validateRows(file, confirmedMappingFor(file));
+  expect([validation.counts.needsCorrection, validation.counts.ready]).toEqual([1, 1]);
+  const failedRow = firstWhere(validation.rows, "rowNumber", 1, "the row that does not line up with the header");
+  expect(failedRow.verdict).toBe("needs-correction");
+  expect(failedRow.issues.map((issue) => [issue.code, issue.columnNumber, issue.fieldId, issue.header, issue.label, issue.value])).toEqual([["ragged-row", null, null, null, "Row shape", null]]);
+  expect(mustFind(failedRow.issues[0], "the row-shape problem the row states").message).toContain("has 1 columns but the header row names 2");
+});
+it("import limits: cell length: refuses the row naming the cell, and takes it once the cell is corrected", async () => {
+  const overLimit = "a".repeat(IMPORT_MAX_CELL_CODE_POINTS + 1);
+  const file = await parsedFile(csvWith(["Name"], [["first contact"], [overLimit]]));
+  const mapping = confirmedMappingFor(file);
+  const context: ImportDecisionContext = { file, mapping, validation: validateRows(file, mapping), candidates: [] };
+  const refused = recordDecision(createDecisionSet(file), { kind: "create", rowNumber: 2 }, context);
+  if (refused.ok) throw new Error("expected the row to be refused, but the decision was recorded");
+  expect([refused.refusal.code, refused.refusal.rowNumber, refused.refusal.columnNumbers, refused.refusal.message.includes("it has 1 problem(s)")]).toEqual(["row-needs-correction", 2, [1], true]);
+  for (const needle of ["Row 2, column 1", String(IMPORT_MAX_CELL_CODE_POINTS + 1), String(IMPORT_MAX_CELL_CODE_POINTS)]) expect(refused.refusal.message).toContain(needle);
+  const corrected = recordDecision(createDecisionSet(file), { kind: "create", rowNumber: 2, corrections: [{ columnNumber: 1, value: "Second contact" }] }, context);
+  if (!corrected.ok) throw new Error(`expected the corrected row to be accepted, but it was refused: ${corrected.refusal.message}`);
+  expect([corrected.decision.kind, corrected.decision.verdict, corrected.changed]).toEqual(["create", "ready", true]);
 });
 it("import limits: cell length: counts Unicode code points, not UTF-16 units", async () => {
   const astral = "\u{1F600}";

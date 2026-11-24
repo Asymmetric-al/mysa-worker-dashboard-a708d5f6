@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { compareCodeUnits } from "@/lib/ordering";
 import { IMPORT_FIELD_IDS, IMPORT_FIELD_VOCABULARY, listOf, uniqueInOrder, ImportContactKind, ImportFieldId, ImportIgnoredColumn, type ImportConfirmedMapping } from "./map";
-import type { ImportRowFault, ParsedCsvFile, ParsedCsvRow } from "./parse";
+import type { ImportRowFault, ImportRowFaultKind, ParsedCsvFile, ParsedCsvRow } from "./parse";
 export type ImportRowVerdict = "ready" | "needs-correction";
-export type ImportIssueCode = "name-missing" | "email-not-complete" | "phone-not-a-number" | "postal-not-an-address";
-export type ImportFieldIssue = { readonly rowNumber: number; readonly code: ImportIssueCode; readonly fieldId: ImportFieldId; readonly label: string; readonly columnNumber: number | null; readonly header: string | null; readonly value: string | null; readonly message: string };
+export type ImportIssueCode = "name-missing" | "email-not-complete" | "phone-not-a-number" | "postal-not-an-address" | "cell-too-long" | "ragged-row";
+/** One problem a row states about itself: a value the mapping could not use, or a shape fault `parse.ts` measured. `fieldId` is null when the problem is not a mapped field's value, because an over-long cell in a column the confirmed mapping assigns to no field still refuses its row and must be stated. */
+export type ImportFieldIssue = { readonly rowNumber: number; readonly code: ImportIssueCode; readonly fieldId: ImportFieldId | null; readonly label: string; readonly columnNumber: number | null; readonly header: string | null; readonly value: string | null; readonly message: string };
 export type ImportMappedCell = { readonly columnNumber: number; readonly header: string; readonly fieldId: ImportFieldId; readonly contactKind: ImportContactKind | null; readonly value: string };
 export type ImportPreservedReason = "blank-cell" | "rejected-value" | "consent-preserved" | "excluded-topic" | "unmapped-column";
 export type ImportPreservedCell = { readonly columnNumber: number; readonly header: string; readonly text: string; readonly reason: ImportPreservedReason; readonly statesConsent: boolean; readonly message: string };
@@ -46,6 +47,23 @@ const NON_WORD = /[^\p{L}\p{N}]+/u;
 const labelOf = (fieldId: ImportFieldId): string => DESCRIPTOR_BY_FIELD.get(fieldId)?.label ?? fieldId;
 const contactKindOf = (fieldId: ImportFieldId): ImportContactKind | null => DESCRIPTOR_BY_FIELD.get(fieldId)?.contactKind ?? null;
 const fieldIssue = (rowNumber: number, code: ImportIssueCode, fieldId: ImportFieldId, columnNumber: number | null, header: string | null, value: string | null, message: string): ImportFieldIssue => ({ rowNumber, code, fieldId, label: labelOf(fieldId), columnNumber, header, value, message });
+/** States one of a row's shape faults as one of the row's own problems, so the row says what refused it rather than leaving that to its verdict: the fault's own message, the column it measured and the cell exactly as it arrived. */
+const faultIssueOf = (row: ParsedCsvRow, fault: ImportRowFault, context: RowContext): ImportFieldIssue => {
+  const columnNumber = fault.columnNumber;
+  const header = columnNumber !== null && columnNumber <= context.headers.length ? headerAt(context.headers, columnNumber) : null;
+  const fieldId = columnNumber === null ? null : (context.assignments.get(columnNumber) ?? null);
+  return { rowNumber: row.rowNumber, code: fault.kind, fieldId, label: faultLabelOf(fault.kind, fieldId, header, columnNumber), columnNumber, header, value: faultCellOf(row, fault), message: fault.message };
+};
+/** The cell a long-cell fault measured, exactly as it arrived, and null when the fault is about the row's shape rather than one cell's value. */
+const faultCellOf = (row: ParsedCsvRow, fault: ImportRowFault): string | null => (fault.kind === "cell-too-long" && fault.columnNumber !== null ? (row.cells[fault.columnNumber - 1] ?? null) : null);
+/** Names a shape fault the way the row's own panel states it: the mapped field when the column supplies one, the file's own heading when it names no field, and a short name for a row that does not line up with the header. */
+const faultLabelOf = (kind: ImportRowFaultKind, fieldId: ImportFieldId | null, header: string | null, columnNumber: number | null): string => {
+  if (fieldId !== null) return labelOf(fieldId);
+  if (kind === "ragged-row") return "Row shape";
+  const heading = header?.trim() ?? "";
+  if (heading !== "") return heading;
+  return columnNumber === null ? "Cell length" : `Column ${columnNumber}`;
+};
 /** Validates every data row of a parsed file against a confirmed mapping, returning one entry per row in file order and keyed by the row number `parse.ts` assigned: the value or a readable. */
 export function validateRows(parsed: ParsedCsvFile, confirmedMapping: ImportConfirmedMapping): ImportValidation {
   const problems: ImportValidationProblem[] = [];
@@ -60,7 +78,8 @@ function validateRow(row: ParsedCsvRow, context: RowContext): ImportValidatedRow
   const { fields, faults } = context;
   const mappedCells: ImportMappedCell[] = [];
   const preservedCells: ImportPreservedCell[] = [];
-  const issues: ImportFieldIssue[] = [];
+  // A shape fault is stated before any cell's value: it refuses the row outright, so it is the first problem the row reports.
+  const issues: ImportFieldIssue[] = context.faults.map((fault) => faultIssueOf(row, fault, context));
   const restrictions: ImportRestriction[] = [];
   const tags: ImportTag[] = [];
   row.cells.forEach((cell, offset) => {

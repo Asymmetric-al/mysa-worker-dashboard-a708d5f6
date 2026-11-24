@@ -73,8 +73,14 @@ function draftOf(decision: ImportDecisionInput | undefined, review: ImportPropos
   }
   return decision.kind === "skip" ? { choice: "skip", candidate: "", corrections, reason: decision.reason ?? "" } : { choice: decision.kind, candidate: "", corrections, reason: "" };
 }
+/** The row's issues that offer a corrected value — one per column, however many problems that cell states, because an over-long cell also states the value the mapping could not read there. A column the confirmed mapping assigns to no field is stated but offers no correction: the service refuses a correction that would change nothing about the row, so the row is skipped instead. */
+const correctableIssuesOf = (review: ImportProposalRowReview | null): readonly ImportProposalRowReview["issues"][number][] => {
+  const byColumn = new Map<number, ImportProposalRowReview["issues"][number]>();
+  for (const issue of review?.issues ?? []) if (issue.columnNumber !== null && issue.fieldId !== null && !byColumn.has(issue.columnNumber)) byColumn.set(issue.columnNumber, issue);
+  return [...byColumn.values()];
+};
 const correctionsOf = (review: ImportProposalRowReview, draft: RowDraft): readonly ImportCellCorrectionInput[] =>
-  review.issues.flatMap((issue) => {
+  correctableIssuesOf(review).flatMap((issue) => {
     const typed = draft.corrections[issue.columnNumber ?? -1];
     return typed === undefined || issue.columnNumber === null || typed === (issue.value ?? "") ? [] : [{ columnNumber: issue.columnNumber, value: typed }];
   });
@@ -331,7 +337,7 @@ interface DecisionControlProps {
 function DecisionControl({ rowNumber, branch, review, draft, recorded, pending, onDraft, onRecord }: DecisionControlProps): ReactElement {
   const suggestions = review === null ? [] : review.suggestions;
   const decision = decisionOf(rowNumber, review, draft);
-  const correctable = (review?.issues ?? []).filter((issue) => issue.columnNumber !== null);
+  const correctable = correctableIssuesOf(review);
   const chosen = draft.choice;
   const candidate = suggestions[Number(draft.candidate)];
   const reuseOffered = suggestions.length > 0;

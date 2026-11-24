@@ -131,6 +131,8 @@ export const CHOOSE_FILE_COPY = {
   continueBlocked: "Choose a file to continue to the next step.",
   readingLabel: "Reading the chosen file in this browser…",
   readFailed: "This browser could not read that file, so no file was chosen. Choose it again, or choose another copy of it.",
+  /** What the chooser states about a file it measured as larger than the limit: the refusal the importer's own limit wording supplies, then the fact that nothing happened to the file here. */
+  sizeLimitRefused: (refusalMessage: string): string => `${refusalMessage} This browser did not read that file and sent nothing, so no part of it reached the importer.`,
 } as const;
 export const chosenFileSize = (byteLength: number): string => formatByteSize(byteLength);
 export const ACCEPTANCE_REVIEW_COPY = {

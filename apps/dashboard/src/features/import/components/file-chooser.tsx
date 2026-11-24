@@ -4,6 +4,7 @@ import { FormField } from "@/components/form-field";
 import SimulationLabel from "@/components/simulation-label";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { fileSizeRefusal } from "@/modules/import/parse";
 import { CHOOSE_FILE_COPY, IMPORT_SIMULATION_EFFECT, LIMIT_ROWS, chosenFileSize } from "../copy";
 import type { ImportFileSelection } from "../hooks/use-import-journey";
 import FactRow from "./fact-row";
@@ -35,6 +36,12 @@ export default function FileChooser({ selection, onChoose, onContinue }: FileCho
     const chosen = event.target.files?.[0] ?? null;
     event.target.value = "";
     if (chosen === null) return;
+    // The displayed file-size limit is judged on the file's own size before a byte of it is read, so a file the importer could never accept is not read in this browser and never becomes a request: the sentence is the importer's own, and the clause beside it states that nothing was read and nothing was sent.
+    const refusal = fileSizeRefusal(chosen.size);
+    if (refusal !== null) {
+      setReadError(CHOOSE_FILE_COPY.sizeLimitRefused(refusal.message));
+      return;
+    }
     setReadError(null);
     setReading(true);
     void readContentBase64(chosen).then(

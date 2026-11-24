@@ -121,10 +121,15 @@ async function scanCsv(text: string): Promise<ScanOutcome> {
   if (header === null) return refused(refusal("no-header-row", "This file has no header row. Add a header row naming each column and try again.", "columns", 0));
   return dataRecords.length === 0 ? refused(refusal("no-data-rows", "This file has a header row but no data rows. Add at least one contact row and try again.", "data-rows", 0)) : { ok: true, scan: { headerCells: header, dataRecords, blankRecordCount, rowFaults } };
 }
+/** Words the file-size refusal for a measured byte length, or nothing while the size is within the displayed limit: the one sentence a browser states about a file it declined to read and the service states about a file whose bytes arrived, so the two cannot word one refusal differently. */
+export function fileSizeRefusal(byteLength: number): ImportRefusal | null {
+  return byteLength > IMPORT_MAX_BYTES ? refusal("file-too-large", `This file is ${byteLength} bytes; the limit is ${IMPORT_MAX_BYTES} bytes (5 MiB). Choose a smaller CSV file.`, "file-bytes", byteLength) : null;
+}
 /** Enforces every displayed limit on a chosen file and returns either the admitted file (the UTF-8 text plus its measured structure) or the refusals that stopped it. */
 export async function checkLimits(bytes: Uint8Array, displayName = "the chosen file"): Promise<ImportLimitCheckResult> {
   if (bytes.byteLength === 0) return refused(refusal("file-empty", "This file is empty. Choose a CSV file with a header row and at least one data row.", "file-bytes", 0));
-  if (bytes.byteLength > IMPORT_MAX_BYTES) return refused(refusal("file-too-large", `This file is ${bytes.byteLength} bytes; the limit is ${IMPORT_MAX_BYTES} bytes (5 MiB). Choose a smaller CSV file.`, "file-bytes", bytes.byteLength));
+  const sizeRefusal = fileSizeRefusal(bytes.byteLength);
+  if (sizeRefusal !== null) return refused(sizeRefusal);
   if (isWorkbookContainer(bytes)) return refused(refusal("content-workbook", "This file is a spreadsheet workbook, not a CSV. Export the sheet as UTF-8 CSV and choose that file.", null, bytes.byteLength));
   const decoded = decodeUtf8(bytes);
   if (!decoded.ok) return refused(decoded.refusal);

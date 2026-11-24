@@ -148,7 +148,8 @@ function rowProblemOf(validated: ImportValidatedRow): string | null {
   const fault = validated.faults[0];
   return fault !== undefined ? fault.message : null;
 }
-const problemCountOf = (validated: ImportValidatedRow): number => validated.issues.length + validated.faults.length;
+// A row's issues are its complete problem list — validate.ts states each shape fault as one of them — so counting both would count a shape fault twice.
+const problemCountOf = (validated: ImportValidatedRow): number => validated.issues.length;
 function problemColumnsOf(validated: ImportValidatedRow): number[] {
   const named = [...validated.issues.map((issue) => issue.columnNumber), ...validated.faults.map((fault) => fault.columnNumber)];
   return [...new Set(named.flatMap((columnNumber) => (columnNumber === null ? [] : [columnNumber])))].sort((left, right) => left - right);
